@@ -11,6 +11,8 @@ members = [
   "crates/neo-fold-ffi",
   "crates/neo-fold-jni",
   "crates/neo-midnight-bridge",
+  "crates/neo-midnight-bridge-artifacts",
+  "crates/neo-midnight-mojo-bridge",
   "crates/nightstream-sdk",
   "crates/nightstream-sdk-macros",
   "crates/neo-spartan-bridge",

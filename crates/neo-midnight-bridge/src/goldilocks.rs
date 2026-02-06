@@ -9,6 +9,7 @@ use midnight_proofs::circuit::{Layouter, Value};
 use midnight_proofs::plonk::Error;
 use midnight_zk_stdlib::ZkStdLib;
 use num_bigint::BigUint;
+use crate::u192::U192;
 
 /// Goldilocks prime: `2^64 - 2^32 + 1`.
 pub const GOLDILOCKS_P_U64: u64 = 0xFFFF_FFFF_0000_0001;
@@ -92,34 +93,29 @@ pub fn gl_reduce_mod_p_quotient_72(
     std: &ZkStdLib,
     layouter: &mut impl Layouter<OuterScalar>,
     t: &AssignedNative<OuterScalar>,
-    t_val: Value<BigUint>,
+    t_val: Value<U192>,
 ) -> Result<GlVar, Error> {
-    let p_big = BigUint::from(GOLDILOCKS_P_U64);
-    let limb_mask = BigUint::from((1u64 << 24) - 1);
-
     // Compute (q0, q1, q2, r) from the host value (when known).
     let qr = t_val.map(|tv| {
-        let q = &tv / &p_big;
-        let r = &tv % &p_big;
-
-        let q0 = (&q & &limb_mask)
-            .to_u64_digits()
-            .first()
-            .copied()
-            .unwrap_or(0);
-        let q1 = ((&q >> 24usize) & &limb_mask)
-            .to_u64_digits()
-            .first()
-            .copied()
-            .unwrap_or(0);
-        let q2 = ((&q >> 48usize) & &limb_mask)
-            .to_u64_digits()
-            .first()
-            .copied()
-            .unwrap_or(0);
-
-        let r_u64 = r.to_u64_digits().first().copied().unwrap_or(0);
-        (q0, q1, q2, r_u64)
+        #[cfg(feature = "mojo")]
+        {
+            let out = neo_midnight_mojo_bridge::reduce_u192_quotient72(tv.limbs);
+            (out.q0 as u64, out.q1 as u64, out.q2 as u64, out.r)
+        }
+        #[cfg(not(feature = "mojo"))]
+        {
+            let (q, r_u64) = tv.div_rem_u64(GOLDILOCKS_P_U64);
+            debug_assert!(
+                q.limbs[2] == 0,
+                "gl_reduce_mod_p_quotient_72: quotient does not fit in 128 bits"
+            );
+            let q_u128 = q.low_u128();
+            let mask24 = (1u128 << 24) - 1;
+            let q0 = (q_u128 & mask24) as u64;
+            let q1 = ((q_u128 >> 24) & mask24) as u64;
+            let q2 = ((q_u128 >> 48) & mask24) as u64;
+            (q0, q1, q2, r_u64)
+        }
     });
 
     let q0_u64 = qr.clone().map(|(q0, _, _, _)| q0);

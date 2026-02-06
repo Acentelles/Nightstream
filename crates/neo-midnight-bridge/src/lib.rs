@@ -7,3 +7,4 @@ pub mod k_field;
 pub mod relations;
 pub mod statement;
 pub mod sumcheck;
+pub(crate) mod u192;

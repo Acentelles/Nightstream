@@ -1,0 +1,27 @@
+[package]
+name = "neo-midnight-bridge-ffi"
+version = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+license = "MIT"
+publish = false
+description = "C-ABI wrapper for neo-midnight-bridge (Mojo / native integration)"
+
+[lints]
+workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+blake2b_simd = "1"
+midnight-curves = "0.2"
+midnight-proofs = "0.7"
+midnight-zk-stdlib = "1"
+neo-fold = { path = "../neo-fold" }
+neo-math = { path = "../neo-math" }
+neo-midnight-bridge = { path = "../neo-midnight-bridge" }
+rand = "0.8"
+rand_chacha = "0.3"
+

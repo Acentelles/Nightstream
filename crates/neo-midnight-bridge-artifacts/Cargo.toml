@@ -1,0 +1,24 @@
+[package]
+name = "neo-midnight-bridge-artifacts"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license = "MIT"
+description = "Offline artifact exporter for neo-midnight-mojo-bridge (packages + witness snapshots)."
+
+[dependencies]
+anyhow = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+ff = { workspace = true }
+rand_core = "0.6"
+rand_chacha = "0.3"
+
+neo-midnight-bridge = { path = "../neo-midnight-bridge" }
+
+midnight-curves = "0.2"
+midnight-proofs = "0.7"
+midnight-zk-stdlib = "1"
+
+[lints]
+workspace = true

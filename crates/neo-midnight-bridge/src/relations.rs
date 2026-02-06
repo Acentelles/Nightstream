@@ -516,13 +516,13 @@ impl Relation for PiCcsSumcheckPublicRoundsRelation {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SparsePolyTermRepr {
     pub coeff: u64,
     pub exps: Vec<u32>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SparsePolyRepr {
     pub t: usize,
     pub terms: Vec<SparsePolyTermRepr>,

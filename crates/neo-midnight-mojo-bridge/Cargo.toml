@@ -1,0 +1,31 @@
+[package]
+name = "neo-midnight-mojo-bridge"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license = "MIT"
+description = "Mojo implementation of neo-midnight-bridge (pure Mojo runtime, CUDA-first)."
+
+[features]
+# Builds the bundled Mojo shared library via `mojo build` (used for host helper acceleration).
+build-mojo = ["dep:libloading"]
+
+[dependencies]
+anyhow = { workspace = true }
+libloading = { version = "0.8.9", optional = true }
+
+[dev-dependencies]
+anyhow = { workspace = true }
+neo-midnight-bridge = { path = "../neo-midnight-bridge" }
+neo-midnight-bridge-artifacts = { path = "../neo-midnight-bridge-artifacts" }
+neo-fold = { path = "../neo-fold" }
+neo-math = { path = "../neo-math" }
+midnight-zk-stdlib = "1"
+midnight-proofs = "0.7"
+midnight-curves = "0.2"
+blake2b_simd = "1"
+p3-field = { workspace = true }
+rand_chacha = "0.3"
+
+[lints]
+workspace = true

@@ -25,7 +25,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 
-pub const MIDNIGHT_MAX_K: u32 = 14;
+pub const MIDNIGHT_MAX_K: u32 = 17;
 
 const PARAMS_DIGEST_DOMAIN: &[u8] = b"neo/midnight-bridge/params-digest/v1";
 const ACC_DIGEST_DOMAIN: &[u8] = b"neo/midnight-bridge/acc-digest/v1";

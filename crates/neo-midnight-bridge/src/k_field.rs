@@ -7,8 +7,8 @@ use midnight_circuits::instructions::{ArithInstructions, AssertionInstructions, 
 use midnight_proofs::circuit::{Layouter, Value};
 use midnight_proofs::plonk::Error;
 use midnight_zk_stdlib::ZkStdLib;
-use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
+use crate::u192::U192;
 
 /// Quadratic extension field `K = F_p[u]/(u^2 - δ)` with `δ = 7` used by Neo.
 pub const K_DELTA_U64: u64 = 7;
@@ -144,27 +144,29 @@ pub fn k_mul_mod_var(
     let t0 = std.add(layouter, &a0b0, &delta_a1b1)?;
     let t1 = std.add(layouter, &a0b1, &a1b0)?;
 
-    let t0_val: Value<BigUint> =
-        a.c0.value
-            .zip(b.c0.value)
-            .zip(a.c1.value)
-            .zip(b.c1.value)
-            .map(|(((a0, b0), a1), b1)| {
-                let prod00 = BigUint::from((a0 as u128) * (b0 as u128));
-                let prod11 = BigUint::from((a1 as u128) * (b1 as u128));
-                prod00 + (BigUint::from(delta) * prod11)
-            });
+    let t0_val: Value<U192> = a
+        .c0
+        .value
+        .zip(b.c0.value)
+        .zip(a.c1.value)
+        .zip(b.c1.value)
+        .map(|(((a0, b0), a1), b1)| {
+            let prod00 = (a0 as u128) * (b0 as u128);
+            let prod11 = (a1 as u128) * (b1 as u128);
+            U192::from_u128(prod00).add(U192::mul_u128_u64(prod11, delta))
+        });
 
-    let t1_val: Value<BigUint> =
-        a.c0.value
-            .zip(b.c1.value)
-            .zip(a.c1.value)
-            .zip(b.c0.value)
-            .map(|(((a0, b1), a1), b0)| {
-                let prod01 = BigUint::from((a0 as u128) * (b1 as u128));
-                let prod10 = BigUint::from((a1 as u128) * (b0 as u128));
-                prod01 + prod10
-            });
+    let t1_val: Value<U192> = a
+        .c0
+        .value
+        .zip(b.c1.value)
+        .zip(a.c1.value)
+        .zip(b.c0.value)
+        .map(|(((a0, b1), a1), b0)| {
+            let prod01 = (a0 as u128) * (b1 as u128);
+            let prod10 = (a1 as u128) * (b0 as u128);
+            U192::from_u128(prod01).add_u128(prod10)
+        });
 
     let c0 = gl_reduce_mod_p_quotient_72(std, layouter, &t0, t0_val)?;
     let c1 = gl_reduce_mod_p_quotient_72(std, layouter, &t1, t1_val)?;
@@ -183,12 +185,10 @@ pub fn k_mle_fold_step(
     a: &KVar,
     delta: u64,
 ) -> Result<KVar, Error> {
-    // Add a large multiple of p^2 to keep the integer expressions non-negative (BigUint-friendly).
-    // This does not change the result modulo p.
-    let p_big = BigUint::from(GOLDILOCKS_P_U64);
-    let offset_big = BigUint::from(8u64) * &p_big * &p_big; // 8*p^2
     let p_fe = OuterScalar::from(GOLDILOCKS_P_U64);
     let offset_fe = OuterScalar::from(8u64) * p_fe * p_fe;
+    let p2_u128 = (GOLDILOCKS_P_U64 as u128) * (GOLDILOCKS_P_U64 as u128);
+    let offset_u192 = U192::from_u128(p2_u128).shl_small(3); // 8*p^2
 
     // next.c0 = v0.c0 + a0*(v1.c0 - v0.c0) + δ*a1*(v1.c1 - v0.c1)
     //         = v0.c0 + a0*v1.c0 - a0*v0.c0 + δ*a1*v1.c1 - δ*a1*v0.c1
@@ -213,7 +213,7 @@ pub fn k_mle_fold_step(
         offset_fe,
     )?;
 
-    let t0_val: Value<BigUint> = v0
+    let t0_val: Value<U192> = v0
         .c0
         .value
         .zip(v0.c1.value)
@@ -222,14 +222,12 @@ pub fn k_mle_fold_step(
         .zip(a.c0.value)
         .zip(a.c1.value)
         .map(|(((((v0c0, v0c1), v1c0), v1c1), a0), a1)| {
-            let mut acc = offset_big.clone();
-            acc += BigUint::from(v0c0);
-            acc += BigUint::from((a0 as u128) * (v1c0 as u128));
-            acc += BigUint::from(delta) * BigUint::from((a1 as u128) * (v1c1 as u128));
-            acc -= BigUint::from((a0 as u128) * (v0c0 as u128));
-            acc -= BigUint::from(delta) * BigUint::from((a1 as u128) * (v0c1 as u128));
-            // v0c1 is only used to subtract the δ*a1*v0.c1 term; keep v0c1 in scope.
-            let _ = v0c1;
+            let mut acc = offset_u192;
+            acc = acc.add_u64(v0c0);
+            acc = acc.add_u128((a0 as u128) * (v1c0 as u128));
+            acc = acc.add(U192::mul_u128_u64((a1 as u128) * (v1c1 as u128), delta));
+            acc = acc.sub_u128((a0 as u128) * (v0c0 as u128));
+            acc = acc.sub(U192::mul_u128_u64((a1 as u128) * (v0c1 as u128), delta));
             acc
         });
 
@@ -252,7 +250,7 @@ pub fn k_mle_fold_step(
         offset_fe,
     )?;
 
-    let t1_val: Value<BigUint> = v0
+    let t1_val: Value<U192> = v0
         .c0
         .value
         .zip(v0.c1.value)
@@ -261,12 +259,12 @@ pub fn k_mle_fold_step(
         .zip(a.c0.value)
         .zip(a.c1.value)
         .map(|(((((v0c0, v0c1), v1c0), v1c1), a0), a1)| {
-            let mut acc = offset_big.clone();
-            acc += BigUint::from(v0c1);
-            acc += BigUint::from((a0 as u128) * (v1c1 as u128));
-            acc += BigUint::from((a1 as u128) * (v1c0 as u128));
-            acc -= BigUint::from((a0 as u128) * (v0c1 as u128));
-            acc -= BigUint::from((a1 as u128) * (v0c0 as u128));
+            let mut acc = offset_u192;
+            acc = acc.add_u64(v0c1);
+            acc = acc.add_u128((a0 as u128) * (v1c1 as u128));
+            acc = acc.add_u128((a1 as u128) * (v1c0 as u128));
+            acc = acc.sub_u128((a0 as u128) * (v0c1 as u128));
+            acc = acc.sub_u128((a1 as u128) * (v0c0 as u128));
             acc
         });
 

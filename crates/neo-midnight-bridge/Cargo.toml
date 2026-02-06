@@ -11,6 +11,7 @@ anyhow = { workspace = true }
 bincode = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 num-bigint = "0.4"
+neo-midnight-mojo-bridge = { path = "../neo-midnight-mojo-bridge", optional = true }
 
 # Midnight proving stack (PLONK + KZG over BLS12-381)
 midnight-curves = "0.2"
@@ -19,6 +20,10 @@ midnight-circuits = "6"
 midnight-zk-stdlib = "1"
 blake2b_simd = "1"
 ff = "0.13"
+
+[features]
+# Use Mojo-accelerated host arithmetic helpers (falls back to Rust by default).
+mojo = ["dep:neo-midnight-mojo-bridge", "neo-midnight-mojo-bridge/build-mojo"]
 
 [dev-dependencies]
 rand = "0.8"
