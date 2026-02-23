@@ -118,7 +118,7 @@ pub fn prove_route_a_batched_time(
         &mut labels,
         &mut claim_is_dynamic,
         &mut claims,
-    );
+    )?;
 
     // Optional: event-table Shout linkage trace hash claim.
     let shout_event_trace_hash_claim = mem_oracles.shout_event_trace_hash.as_ref().map(|o| o.claim);
@@ -139,7 +139,7 @@ pub fn prove_route_a_batched_time(
     }
 
     let mut twist_protocol =
-        TwistRouteAProtocol::new(&mut mem_oracles.twist, ell_n, twist_read_claims, twist_write_claims);
+        TwistRouteAProtocol::new(&mut mem_oracles.twist, ell_n, twist_read_claims, twist_write_claims)?;
     twist_protocol.append_time_claims(
         ell_n,
         &mut claimed_sums,
@@ -147,7 +147,7 @@ pub fn prove_route_a_batched_time(
         &mut labels,
         &mut claim_is_dynamic,
         &mut claims,
-    );
+    )?;
     macro_rules! append_zero_optional_claim {
         ($claim_opt:ident, $degree_bound:ident, $oracle:ident, $label:ident, $missing_label_msg:literal, $missing_claimed_sum_msg:literal) => {
             let $degree_bound = $claim_opt.as_ref().map(|extra| extra.oracle.degree_bound());

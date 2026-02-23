@@ -6,7 +6,7 @@ pub fn fold_shard_prove<L, MR, MB>(
     params: &NeoParams,
     s_me: &CcsStructure<F>,
     steps: &[StepWitnessBundle<Cmt, F, K>],
-    acc_init: &[MeInstance<Cmt, F, K>],
+    acc_init: &[CeClaim<Cmt, F, K>],
     acc_wit_init: &[Mat<F>],
     l: &L,
     mixers: CommitMixers<MR, MB>,
@@ -16,23 +16,7 @@ where
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {
-    let (proof, _final_main_wits, _val_lane_wits) = fold_shard_prove_impl(
-        false,
-        mode,
-        tr,
-        params,
-        s_me,
-        steps,
-        0,
-        acc_init,
-        acc_wit_init,
-        l,
-        mixers,
-        None,
-        None,
-        None,
-    )?;
-    Ok(proof)
+    fold_shard_prove_mixed_ccs_batched(mode, tr, params, s_me, steps, acc_init, acc_wit_init, l, mixers, None)
 }
 
 pub(crate) fn fold_shard_prove_with_context<L, MR, MB>(
@@ -41,7 +25,7 @@ pub(crate) fn fold_shard_prove_with_context<L, MR, MB>(
     params: &NeoParams,
     s_me: &CcsStructure<F>,
     steps: &[StepWitnessBundle<Cmt, F, K>],
-    acc_init: &[MeInstance<Cmt, F, K>],
+    acc_init: &[CeClaim<Cmt, F, K>],
     acc_wit_init: &[Mat<F>],
     l: &L,
     mixers: CommitMixers<MR, MB>,
@@ -52,23 +36,18 @@ where
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {
-    let (proof, _final_main_wits, _val_lane_wits) = fold_shard_prove_impl(
-        false,
+    fold_shard_prove_mixed_ccs_batched(
         mode,
         tr,
         params,
         s_me,
         steps,
-        0,
         acc_init,
         acc_wit_init,
         l,
         mixers,
-        None,
         Some(ctx),
-        None,
-    )?;
-    Ok(proof)
+    )
 }
 
 pub(crate) fn fold_shard_prove_with_context_and_step_timings<L, MR, MB>(
@@ -77,7 +56,7 @@ pub(crate) fn fold_shard_prove_with_context_and_step_timings<L, MR, MB>(
     params: &NeoParams,
     s_me: &CcsStructure<F>,
     steps: &[StepWitnessBundle<Cmt, F, K>],
-    acc_init: &[MeInstance<Cmt, F, K>],
+    acc_init: &[CeClaim<Cmt, F, K>],
     acc_wit_init: &[Mat<F>],
     l: &L,
     mixers: CommitMixers<MR, MB>,
@@ -88,23 +67,26 @@ where
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {
-    let mut step_prove_ms = Vec::with_capacity(steps.len());
-    let (proof, _final_main_wits, _val_lane_wits) = fold_shard_prove_impl(
-        false,
+    let start = time_now();
+    let proof = fold_shard_prove_mixed_ccs_batched(
         mode,
         tr,
         params,
         s_me,
         steps,
-        0,
         acc_init,
         acc_wit_init,
         l,
         mixers,
-        None,
         Some(ctx),
-        Some(&mut step_prove_ms),
     )?;
+    let total_ms = elapsed_ms(start);
+    let step_count = proof.steps.len();
+    let step_prove_ms = if step_count == 0 {
+        Vec::new()
+    } else {
+        vec![total_ms / (step_count as f64); step_count]
+    };
     Ok((proof, step_prove_ms))
 }
 
@@ -114,7 +96,7 @@ pub fn fold_shard_prove_with_output_binding<L, MR, MB>(
     params: &NeoParams,
     s_me: &CcsStructure<F>,
     steps: &[StepWitnessBundle<Cmt, F, K>],
-    acc_init: &[MeInstance<Cmt, F, K>],
+    acc_init: &[CeClaim<Cmt, F, K>],
     acc_wit_init: &[Mat<F>],
     l: &L,
     mixers: CommitMixers<MR, MB>,
@@ -126,23 +108,20 @@ where
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {
-    let (proof, _final_main_wits, _val_lane_wits) = fold_shard_prove_impl(
-        false,
+    fold_shard_prove_mixed_ccs_batched_with_output_binding(
         mode,
         tr,
         params,
         s_me,
         steps,
-        0,
         acc_init,
         acc_wit_init,
         l,
         mixers,
-        Some((ob_cfg, final_memory_state)),
+        ob_cfg,
+        final_memory_state,
         None,
-        None,
-    )?;
-    Ok(proof)
+    )
 }
 
 pub(crate) fn fold_shard_prove_with_output_binding_with_context<L, MR, MB>(
@@ -151,7 +130,7 @@ pub(crate) fn fold_shard_prove_with_output_binding_with_context<L, MR, MB>(
     params: &NeoParams,
     s_me: &CcsStructure<F>,
     steps: &[StepWitnessBundle<Cmt, F, K>],
-    acc_init: &[MeInstance<Cmt, F, K>],
+    acc_init: &[CeClaim<Cmt, F, K>],
     acc_wit_init: &[Mat<F>],
     l: &L,
     mixers: CommitMixers<MR, MB>,
@@ -164,23 +143,20 @@ where
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {
-    let (proof, _final_main_wits, _val_lane_wits) = fold_shard_prove_impl(
-        false,
+    fold_shard_prove_mixed_ccs_batched_with_output_binding(
         mode,
         tr,
         params,
         s_me,
         steps,
-        0,
         acc_init,
         acc_wit_init,
         l,
         mixers,
-        Some((ob_cfg, final_memory_state)),
+        ob_cfg,
+        final_memory_state,
         Some(ctx),
-        None,
-    )?;
-    Ok(proof)
+    )
 }
 
 pub fn fold_shard_prove_with_witnesses<L, MR, MB>(
@@ -189,7 +165,7 @@ pub fn fold_shard_prove_with_witnesses<L, MR, MB>(
     params: &NeoParams,
     s_me: &CcsStructure<F>,
     steps: &[StepWitnessBundle<Cmt, F, K>],
-    acc_init: &[MeInstance<Cmt, F, K>],
+    acc_init: &[CeClaim<Cmt, F, K>],
     acc_wit_init: &[Mat<F>],
     l: &L,
     mixers: CommitMixers<MR, MB>,
@@ -199,20 +175,17 @@ where
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {
-    let (proof, final_main_wits, val_lane_wits) = fold_shard_prove_impl(
-        true,
+    let (proof, final_main_wits, val_lane_wits) = fold_shard_prove_mixed_ccs_batched_with_witnesses(
         mode,
         tr,
         params,
         s_me,
         steps,
-        0,
         acc_init,
         acc_wit_init,
         l,
         mixers,
-        None,
-        None,
+        0,
         None,
     )?;
     let outputs = proof.compute_fold_outputs(acc_init);
@@ -250,7 +223,7 @@ pub fn fold_shard_prove_with_witnesses_with_step_offset<L, MR, MB>(
     params: &NeoParams,
     s_me: &CcsStructure<F>,
     steps: &[StepWitnessBundle<Cmt, F, K>],
-    acc_init: &[MeInstance<Cmt, F, K>],
+    acc_init: &[CeClaim<Cmt, F, K>],
     acc_wit_init: &[Mat<F>],
     l: &L,
     mixers: CommitMixers<MR, MB>,
@@ -261,20 +234,17 @@ where
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {
-    let (proof, final_main_wits, val_lane_wits) = fold_shard_prove_impl(
-        true,
+    let (proof, final_main_wits, val_lane_wits) = fold_shard_prove_mixed_ccs_batched_with_witnesses(
         mode,
         tr,
         params,
         s_me,
         steps,
-        step_idx_offset,
         acc_init,
         acc_wit_init,
         l,
         mixers,
-        None,
-        None,
+        step_idx_offset,
         None,
     )?;
     let outputs = proof.compute_fold_outputs(acc_init);
@@ -313,11 +283,12 @@ pub(crate) fn fold_shard_verify_impl<MR, MB>(
     s_me: &CcsStructure<F>,
     steps: &[StepInstanceBundle<Cmt, F, K>],
     step_idx_offset: usize,
-    acc_init: &[MeInstance<Cmt, F, K>],
+    acc_init: &[CeClaim<Cmt, F, K>],
     proof: &ShardProof,
     mixers: CommitMixers<MR, MB>,
     ob_cfg: Option<&crate::output_binding::OutputBindingConfig>,
     prover_ctx: Option<&ShardProverContext>,
+    initial_prev_step: Option<&StepInstanceBundle<Cmt, F, K>>,
 ) -> Result<ShardFoldOutputs<Cmt, F, K>, PiCcsError>
 where
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
@@ -370,7 +341,7 @@ where
     }
 
     let mut accumulator = acc_init.to_vec();
-    let mut val_lane_obligations: Vec<MeInstance<Cmt, F, K>> = Vec::new();
+    let mut val_lane_obligations: Vec<CeClaim<Cmt, F, K>> = Vec::new();
     let ccs_sparse_cache: Option<Arc<SparseCache<F>>> = if mode_uses_sparse_cache(&mode) {
         Some(
             prover_ctx
@@ -478,14 +449,16 @@ where
 
         // Public initial sum T for CCS sumcheck (engine-selected).
         let claimed_initial = match &mode {
-            FoldingMode::Optimized => crate::optimized_engine::claimed_initial_sum_from_inputs(&s, &ch, &accumulator),
+            FoldingMode::Optimized => {
+                crate::optimized_engine::claimed_initial_sum_from_inputs_with_k_mcs(&s, &ch, 1, &accumulator)
+            }
             #[cfg(feature = "paper-exact")]
             FoldingMode::PaperExact => {
-                crate::paper_exact_engine::claimed_initial_sum_from_inputs(&s, &ch, &accumulator)
+                crate::paper_exact_engine::claimed_initial_sum_from_inputs_with_k_mcs(&s, &ch, 1, &accumulator)
             }
             #[cfg(feature = "paper-exact")]
             FoldingMode::OptimizedWithCrosscheck(_) => {
-                crate::optimized_engine::claimed_initial_sum_from_inputs(&s, &ch, &accumulator)
+                crate::optimized_engine::claimed_initial_sum_from_inputs_with_k_mcs(&s, &ch, 1, &accumulator)
             }
         };
         if let Some(x) = step_proof.fold.ccs_proof.sc_initial_sum {
@@ -826,7 +799,11 @@ where
         }
 
         // Verify mem proofs (shared CPU bus only).
-        let prev_step = (idx > 0).then(|| &steps[idx - 1]);
+        let prev_step = if idx > 0 {
+            Some(&steps[idx - 1])
+        } else {
+            initial_prev_step
+        };
         let mem_out = crate::memory_sidecar::memory::verify_route_a_memory_step(
             tr,
             &cpu_bus,
@@ -1122,7 +1099,7 @@ pub fn fold_shard_verify<MR, MB>(
     params: &NeoParams,
     s_me: &CcsStructure<F>,
     steps: &[StepInstanceBundle<Cmt, F, K>],
-    acc_init: &[MeInstance<Cmt, F, K>],
+    acc_init: &[CeClaim<Cmt, F, K>],
     proof: &ShardProof,
     mixers: CommitMixers<MR, MB>,
 ) -> Result<ShardFoldOutputs<Cmt, F, K>, PiCcsError>
@@ -1130,7 +1107,7 @@ where
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {
-    fold_shard_verify_impl(mode, tr, params, s_me, steps, 0, acc_init, proof, mixers, None, None)
+    fold_shard_verify_mixed_ccs_batched(mode, tr, params, s_me, steps, 0, acc_init, proof, mixers, None)
 }
 
 /// Same as `fold_shard_verify`, but offsets the per-step transcript index by `step_idx_offset`.
@@ -1140,7 +1117,7 @@ pub fn fold_shard_verify_with_step_offset<MR, MB>(
     params: &NeoParams,
     s_me: &CcsStructure<F>,
     steps: &[StepInstanceBundle<Cmt, F, K>],
-    acc_init: &[MeInstance<Cmt, F, K>],
+    acc_init: &[CeClaim<Cmt, F, K>],
     proof: &ShardProof,
     mixers: CommitMixers<MR, MB>,
     step_idx_offset: usize,
@@ -1149,7 +1126,7 @@ where
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {
-    fold_shard_verify_impl(
+    fold_shard_verify_mixed_ccs_batched(
         mode,
         tr,
         params,
@@ -1160,7 +1137,6 @@ where
         proof,
         mixers,
         None,
-        None,
     )
 }
 
@@ -1170,7 +1146,7 @@ pub fn fold_shard_verify_with_step_linking<MR, MB>(
     params: &NeoParams,
     s_me: &CcsStructure<F>,
     steps: &[StepInstanceBundle<Cmt, F, K>],
-    acc_init: &[MeInstance<Cmt, F, K>],
+    acc_init: &[CeClaim<Cmt, F, K>],
     proof: &ShardProof,
     mixers: CommitMixers<MR, MB>,
     step_linking: &StepLinkingConfig,
@@ -1189,7 +1165,7 @@ pub fn fold_shard_verify_with_output_binding<MR, MB>(
     params: &NeoParams,
     s_me: &CcsStructure<F>,
     steps: &[StepInstanceBundle<Cmt, F, K>],
-    acc_init: &[MeInstance<Cmt, F, K>],
+    acc_init: &[CeClaim<Cmt, F, K>],
     proof: &ShardProof,
     mixers: CommitMixers<MR, MB>,
     ob_cfg: &crate::output_binding::OutputBindingConfig,
@@ -1198,18 +1174,8 @@ where
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {
-    fold_shard_verify_impl(
-        mode,
-        tr,
-        params,
-        s_me,
-        steps,
-        0,
-        acc_init,
-        proof,
-        mixers,
-        Some(ob_cfg),
-        None,
+    fold_shard_verify_mixed_ccs_batched_with_output_binding(
+        mode, tr, params, s_me, steps, 0, acc_init, proof, mixers, ob_cfg, None,
     )
 }
 
@@ -1219,7 +1185,7 @@ pub(crate) fn fold_shard_verify_with_context<MR, MB>(
     params: &NeoParams,
     s_me: &CcsStructure<F>,
     steps: &[StepInstanceBundle<Cmt, F, K>],
-    acc_init: &[MeInstance<Cmt, F, K>],
+    acc_init: &[CeClaim<Cmt, F, K>],
     proof: &ShardProof,
     mixers: CommitMixers<MR, MB>,
     prover_ctx: &ShardProverContext,
@@ -1228,7 +1194,7 @@ where
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {
-    fold_shard_verify_impl(
+    fold_shard_verify_mixed_ccs_batched(
         mode,
         tr,
         params,
@@ -1238,7 +1204,6 @@ where
         acc_init,
         proof,
         mixers,
-        None,
         Some(prover_ctx),
     )
 }
@@ -1249,7 +1214,7 @@ pub(crate) fn fold_shard_verify_with_step_linking_with_context<MR, MB>(
     params: &NeoParams,
     s_me: &CcsStructure<F>,
     steps: &[StepInstanceBundle<Cmt, F, K>],
-    acc_init: &[MeInstance<Cmt, F, K>],
+    acc_init: &[CeClaim<Cmt, F, K>],
     proof: &ShardProof,
     mixers: CommitMixers<MR, MB>,
     step_linking: &StepLinkingConfig,
@@ -1269,7 +1234,7 @@ pub(crate) fn fold_shard_verify_with_output_binding_with_context<MR, MB>(
     params: &NeoParams,
     s_me: &CcsStructure<F>,
     steps: &[StepInstanceBundle<Cmt, F, K>],
-    acc_init: &[MeInstance<Cmt, F, K>],
+    acc_init: &[CeClaim<Cmt, F, K>],
     proof: &ShardProof,
     mixers: CommitMixers<MR, MB>,
     ob_cfg: &crate::output_binding::OutputBindingConfig,
@@ -1279,7 +1244,7 @@ where
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {
-    fold_shard_verify_impl(
+    fold_shard_verify_mixed_ccs_batched_with_output_binding(
         mode,
         tr,
         params,
@@ -1289,7 +1254,7 @@ where
         acc_init,
         proof,
         mixers,
-        Some(ob_cfg),
+        ob_cfg,
         Some(prover_ctx),
     )
 }
@@ -1300,7 +1265,7 @@ pub(crate) fn fold_shard_verify_with_output_binding_and_step_linking_with_contex
     params: &NeoParams,
     s_me: &CcsStructure<F>,
     steps: &[StepInstanceBundle<Cmt, F, K>],
-    acc_init: &[MeInstance<Cmt, F, K>],
+    acc_init: &[CeClaim<Cmt, F, K>],
     proof: &ShardProof,
     mixers: CommitMixers<MR, MB>,
     ob_cfg: &crate::output_binding::OutputBindingConfig,
@@ -1323,7 +1288,7 @@ pub fn fold_shard_verify_with_output_binding_and_step_linking<MR, MB>(
     params: &NeoParams,
     s_me: &CcsStructure<F>,
     steps: &[StepInstanceBundle<Cmt, F, K>],
-    acc_init: &[MeInstance<Cmt, F, K>],
+    acc_init: &[CeClaim<Cmt, F, K>],
     proof: &ShardProof,
     mixers: CommitMixers<MR, MB>,
     ob_cfg: &crate::output_binding::OutputBindingConfig,
@@ -1343,7 +1308,7 @@ pub fn fold_shard_verify_and_finalize<MR, MB, Fin>(
     params: &NeoParams,
     s_me: &CcsStructure<F>,
     steps: &[StepInstanceBundle<Cmt, F, K>],
-    acc_init: &[MeInstance<Cmt, F, K>],
+    acc_init: &[CeClaim<Cmt, F, K>],
     proof: &ShardProof,
     mixers: CommitMixers<MR, MB>,
     finalizer: &mut Fin,
@@ -1367,7 +1332,7 @@ pub fn fold_shard_verify_and_finalize_with_step_linking<MR, MB, Fin>(
     params: &NeoParams,
     s_me: &CcsStructure<F>,
     steps: &[StepInstanceBundle<Cmt, F, K>],
-    acc_init: &[MeInstance<Cmt, F, K>],
+    acc_init: &[CeClaim<Cmt, F, K>],
     proof: &ShardProof,
     mixers: CommitMixers<MR, MB>,
     step_linking: &StepLinkingConfig,
@@ -1388,7 +1353,7 @@ pub fn fold_shard_verify_and_finalize_with_output_binding<MR, MB, Fin>(
     params: &NeoParams,
     s_me: &CcsStructure<F>,
     steps: &[StepInstanceBundle<Cmt, F, K>],
-    acc_init: &[MeInstance<Cmt, F, K>],
+    acc_init: &[CeClaim<Cmt, F, K>],
     proof: &ShardProof,
     mixers: CommitMixers<MR, MB>,
     ob_cfg: &crate::output_binding::OutputBindingConfig,
@@ -1414,7 +1379,7 @@ pub fn fold_shard_verify_and_finalize_with_output_binding_and_step_linking<MR, M
     params: &NeoParams,
     s_me: &CcsStructure<F>,
     steps: &[StepInstanceBundle<Cmt, F, K>],
-    acc_init: &[MeInstance<Cmt, F, K>],
+    acc_init: &[CeClaim<Cmt, F, K>],
     proof: &ShardProof,
     mixers: CommitMixers<MR, MB>,
     ob_cfg: &crate::output_binding::OutputBindingConfig,

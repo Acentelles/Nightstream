@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 
 use neo_ajtai::{AjtaiSModule, Commitment as Cmt};
 use neo_ccs::poly::SparsePoly;
-use neo_ccs::relations::{CcsStructure, McsInstance, McsWitness};
+use neo_ccs::relations::{CcsClaim, CcsStructure, CcsWitness};
 use neo_ccs::traits::SModuleHomomorphism;
 use neo_ccs::Mat;
 use neo_fold::pi_ccs::FoldingMode;
@@ -231,7 +231,7 @@ fn build_one_step_fixture(seed: u64) -> SharedBusFixture {
     let c = l.commit(&Z);
     let x = z[..m_in].to_vec();
     let w = z[m_in..].to_vec();
-    let mcs = (McsInstance { c, x, m_in }, McsWitness { w, Z });
+    let mcs = (CcsClaim { c, x, m_in }, CcsWitness { w, Z });
 
     let steps_witness = vec![StepWitnessBundle {
         mcs,
@@ -304,16 +304,16 @@ fn shared_cpu_bus_tamper_bus_opening_fails() {
     .expect("prove");
 
     // Tamper a bus opening inside CPU ME output at r_time.
-    // In shared-bus mode, verifier reads these openings from `ccs_out[0].y_scalars` tail.
+    // In shared-bus mode, verifier reads these openings from `ccs_out[0].aux_openings`.
     let step0 = &mut proof.steps[0];
     let ccs_out0 = &mut step0.fold.ccs_out[0];
 
     let lut_inst = &fx.steps_witness[0].lut_instances[0].0;
     let mem_inst = &fx.steps_witness[0].mem_instances[0].0;
     let bus_cols_total = bus_cols_shout(lut_inst.d, lut_inst.ell) + bus_cols_twist(mem_inst.d, mem_inst.ell);
-    let bus_y_base = ccs_out0.y_scalars.len() - bus_cols_total;
+    let bus_y_base = ccs_out0.aux_openings.len() - bus_cols_total;
 
-    ccs_out0.y_scalars[bus_y_base] += K::ONE;
+    ccs_out0.aux_openings[bus_y_base] += K::ONE;
 
     let mut tr_v = Poseidon2Transcript::new(b"shared-cpu-bus");
     assert!(

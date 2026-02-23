@@ -7,7 +7,7 @@ pub fn verify_route_a_memory_step(
     core_t: usize,
     step: &StepInstanceBundle<Cmt, F, K>,
     prev_step: Option<&StepInstanceBundle<Cmt, F, K>>,
-    ccs_out0: &MeInstance<Cmt, F, K>,
+    ccs_out0: &CeClaim<Cmt, F, K>,
     r_time: &[K],
     r_cycle: &[K],
     batched_final_values: &[K],
@@ -107,15 +107,12 @@ pub fn verify_route_a_memory_step(
     }
 
     let bus_y_base_time = if cpu_bus.bus_cols > 0 {
-        let min_len = core_t
-            .checked_add(cpu_bus.bus_cols)
-            .ok_or_else(|| PiCcsError::InvalidInput("core_t + bus_cols overflow".into()))?;
-        if ccs_out0.y_scalars.len() < min_len {
+        if ccs_out0.aux_openings.len() < cpu_bus.bus_cols {
             return Err(PiCcsError::InvalidInput(
-                "CPU y_scalars too short for shared-bus openings".into(),
+                "CPU aux_openings too short for shared-bus openings".into(),
             ));
         }
-        core_t
+        0usize
     } else {
         0usize
     };
@@ -253,24 +250,26 @@ pub fn verify_route_a_memory_step(
             for (_j, col_id) in shout_cols.addr_bits.clone().enumerate() {
                 addr_bits_open.push(
                     ccs_out0
-                        .y_scalars
+                        .aux_openings
                         .get(cpu_bus.y_scalar_index(bus_y_base_time, col_id))
                         .copied()
                         .ok_or_else(|| {
-                            PiCcsError::ProtocolError("CPU y_scalars missing Shout addr_bits opening".into())
+                            PiCcsError::ProtocolError("CPU aux_openings missing Shout addr_bits opening".into())
                         })?,
                 );
             }
             let has_lookup_open = ccs_out0
-                .y_scalars
+                .aux_openings
                 .get(cpu_bus.y_scalar_index(bus_y_base_time, shout_cols.has_lookup))
                 .copied()
-                .ok_or_else(|| PiCcsError::ProtocolError("CPU y_scalars missing Shout has_lookup opening".into()))?;
+                .ok_or_else(|| {
+                    PiCcsError::ProtocolError("CPU aux_openings missing Shout has_lookup opening".into())
+                })?;
             let val_open = ccs_out0
-                .y_scalars
+                .aux_openings
                 .get(cpu_bus.y_scalar_index(bus_y_base_time, shout_cols.primary_val()))
                 .copied()
-                .ok_or_else(|| PiCcsError::ProtocolError("CPU y_scalars missing Shout val opening".into()))?;
+                .ok_or_else(|| PiCcsError::ProtocolError("CPU aux_openings missing Shout val opening".into()))?;
             let key = (shout_cols.addr_bits.start, shout_cols.addr_bits.end);
             let shared_addr_group_size = shout_addr_range_counts.get(&key).copied().unwrap_or(0);
             let shared_addr_group = shared_addr_group_size > 1;
@@ -593,11 +592,11 @@ pub fn verify_route_a_memory_step(
             for col_id in twist_cols.ra_bits.clone() {
                 ra_bits_open.push(
                     ccs_out0
-                        .y_scalars
+                        .aux_openings
                         .get(cpu_bus.y_scalar_index(bus_y_base_time, col_id))
                         .copied()
                         .ok_or_else(|| {
-                            PiCcsError::ProtocolError("CPU y_scalars missing Twist ra_bits opening".into())
+                            PiCcsError::ProtocolError("CPU aux_openings missing Twist ra_bits opening".into())
                         })?,
                 );
             }
@@ -605,40 +604,42 @@ pub fn verify_route_a_memory_step(
             for col_id in twist_cols.wa_bits.clone() {
                 wa_bits_open.push(
                     ccs_out0
-                        .y_scalars
+                        .aux_openings
                         .get(cpu_bus.y_scalar_index(bus_y_base_time, col_id))
                         .copied()
                         .ok_or_else(|| {
-                            PiCcsError::ProtocolError("CPU y_scalars missing Twist wa_bits opening".into())
+                            PiCcsError::ProtocolError("CPU aux_openings missing Twist wa_bits opening".into())
                         })?,
                 );
             }
 
             let has_read_open = ccs_out0
-                .y_scalars
+                .aux_openings
                 .get(cpu_bus.y_scalar_index(bus_y_base_time, twist_cols.has_read))
                 .copied()
-                .ok_or_else(|| PiCcsError::ProtocolError("CPU y_scalars missing Twist has_read opening".into()))?;
+                .ok_or_else(|| PiCcsError::ProtocolError("CPU aux_openings missing Twist has_read opening".into()))?;
             let has_write_open = ccs_out0
-                .y_scalars
+                .aux_openings
                 .get(cpu_bus.y_scalar_index(bus_y_base_time, twist_cols.has_write))
                 .copied()
-                .ok_or_else(|| PiCcsError::ProtocolError("CPU y_scalars missing Twist has_write opening".into()))?;
+                .ok_or_else(|| {
+                    PiCcsError::ProtocolError("CPU aux_openings missing Twist has_write opening".into())
+                })?;
             let wv_open = ccs_out0
-                .y_scalars
+                .aux_openings
                 .get(cpu_bus.y_scalar_index(bus_y_base_time, twist_cols.wv))
                 .copied()
-                .ok_or_else(|| PiCcsError::ProtocolError("CPU y_scalars missing Twist wv opening".into()))?;
+                .ok_or_else(|| PiCcsError::ProtocolError("CPU aux_openings missing Twist wv opening".into()))?;
             let rv_open = ccs_out0
-                .y_scalars
+                .aux_openings
                 .get(cpu_bus.y_scalar_index(bus_y_base_time, twist_cols.rv))
                 .copied()
-                .ok_or_else(|| PiCcsError::ProtocolError("CPU y_scalars missing Twist rv opening".into()))?;
+                .ok_or_else(|| PiCcsError::ProtocolError("CPU aux_openings missing Twist rv opening".into()))?;
             let inc_write_open = ccs_out0
-                .y_scalars
+                .aux_openings
                 .get(cpu_bus.y_scalar_index(bus_y_base_time, twist_cols.inc))
                 .copied()
-                .ok_or_else(|| PiCcsError::ProtocolError("CPU y_scalars missing Twist inc opening".into()))?;
+                .ok_or_else(|| PiCcsError::ProtocolError("CPU aux_openings missing Twist inc opening".into()))?;
 
             lane_opens.push(TwistLaneTimeOpen {
                 ra_bits: ra_bits_open,
@@ -917,11 +918,12 @@ pub fn verify_route_a_memory_step(
             None
         };
 
-        let bus_y_base_val = cpu_me_cur
-            .y_scalars
-            .len()
-            .checked_sub(cpu_bus.bus_cols)
-            .ok_or_else(|| PiCcsError::InvalidInput("CPU y_scalars too short for bus openings".into()))?;
+        if cpu_me_cur.aux_openings.len() < cpu_bus.bus_cols {
+            return Err(PiCcsError::InvalidInput(
+                "CPU aux_openings too short for bus openings".into(),
+            ));
+        }
+        let bus_y_base_val = 0usize;
 
         (Some(cpu_me_cur), cpu_me_prev, bus_y_base_val)
     };
@@ -975,24 +977,24 @@ pub fn verify_route_a_memory_step(
             for col_id in twist_cols.wa_bits.clone() {
                 wa_bits_val_open.push(
                     cpu_me_cur
-                        .y_scalars
+                        .aux_openings
                         .get(cpu_bus.y_scalar_index(bus_y_base_val, col_id))
                         .copied()
                         .ok_or_else(|| {
-                            PiCcsError::ProtocolError("CPU y_scalars missing wa_bits(val) opening".into())
+                            PiCcsError::ProtocolError("CPU aux_openings missing wa_bits(val) opening".into())
                         })?,
                 );
             }
             let has_write_val_open = cpu_me_cur
-                .y_scalars
+                .aux_openings
                 .get(cpu_bus.y_scalar_index(bus_y_base_val, twist_cols.has_write))
                 .copied()
-                .ok_or_else(|| PiCcsError::ProtocolError("CPU y_scalars missing has_write(val) opening".into()))?;
+                .ok_or_else(|| PiCcsError::ProtocolError("CPU aux_openings missing has_write(val) opening".into()))?;
             let inc_at_write_addr_val_open = cpu_me_cur
-                .y_scalars
+                .aux_openings
                 .get(cpu_bus.y_scalar_index(bus_y_base_val, twist_cols.inc))
                 .copied()
-                .ok_or_else(|| PiCcsError::ProtocolError("CPU y_scalars missing inc(val) opening".into()))?;
+                .ok_or_else(|| PiCcsError::ProtocolError("CPU aux_openings missing inc(val) opening".into()))?;
 
             let eq_wa_val = eq_bits_prod(&wa_bits_val_open, r_addr)?;
             inc_at_r_addr_val += has_write_val_open * inc_at_write_addr_val_open * eq_wa_val;
@@ -1036,24 +1038,26 @@ pub fn verify_route_a_memory_step(
                 for col_id in twist_cols.wa_bits.clone() {
                     wa_bits_prev_open.push(
                         cpu_me_prev
-                            .y_scalars
+                            .aux_openings
                             .get(cpu_bus.y_scalar_index(bus_y_base_val, col_id))
                             .copied()
                             .ok_or_else(|| {
-                                PiCcsError::ProtocolError("CPU y_scalars missing wa_bits(prev) opening".into())
+                                PiCcsError::ProtocolError("CPU aux_openings missing wa_bits(prev) opening".into())
                             })?,
                     );
                 }
                 let has_write_prev_open = cpu_me_prev
-                    .y_scalars
+                    .aux_openings
                     .get(cpu_bus.y_scalar_index(bus_y_base_val, twist_cols.has_write))
                     .copied()
-                    .ok_or_else(|| PiCcsError::ProtocolError("CPU y_scalars missing has_write(prev) opening".into()))?;
+                    .ok_or_else(|| {
+                        PiCcsError::ProtocolError("CPU aux_openings missing has_write(prev) opening".into())
+                    })?;
                 let inc_prev_open = cpu_me_prev
-                    .y_scalars
+                    .aux_openings
                     .get(cpu_bus.y_scalar_index(bus_y_base_val, twist_cols.inc))
                     .copied()
-                    .ok_or_else(|| PiCcsError::ProtocolError("CPU y_scalars missing inc(prev) opening".into()))?;
+                    .ok_or_else(|| PiCcsError::ProtocolError("CPU aux_openings missing inc(prev) opening".into()))?;
 
                 let eq_wa_prev = eq_bits_prod(&wa_bits_prev_open, r_addr)?;
                 inc_at_r_addr_prev += has_write_prev_open * inc_prev_open * eq_wa_prev;

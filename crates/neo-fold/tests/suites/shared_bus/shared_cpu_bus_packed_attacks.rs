@@ -101,12 +101,12 @@ fn tamper_divu_packed_diff_bit_opening(run: &Rv32TraceWiringRun, proof: &mut Sha
 
     let ccs_out0 = &mut proof.steps[0].fold.ccs_out[0];
     let bus_y_base = ccs_out0
-        .y_scalars
+        .aux_openings
         .len()
         .checked_sub(bus.bus_cols)
-        .expect("CPU y_scalars should include shared-bus tail openings");
+        .expect("CPU aux_openings should include shared-bus openings");
     let open_idx = bus.y_scalar_index(bus_y_base, diff_bit0_col);
-    ccs_out0.y_scalars[open_idx] += K::ONE;
+    ccs_out0.aux_openings[open_idx] += K::ONE;
 }
 
 #[test]

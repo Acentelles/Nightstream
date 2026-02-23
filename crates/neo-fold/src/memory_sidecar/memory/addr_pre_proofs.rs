@@ -38,7 +38,7 @@ pub(crate) fn prove_shout_addr_pre_time(
 
     let mut flat_lane_idx: usize = 0;
     let bus = cpu_bus;
-    let cpu_z_k = crate::memory_sidecar::cpu_bus::decode_cpu_z_to_k(params, &step.mcs.1.Z);
+    let cpu_z_k = crate::memory_sidecar::cpu_bus::decode_cpu_z_to_k(params, &step.mcs.1.Z, cpu_bus.m)?;
     if bus.shout_cols.len() != step.lut_instances.len() || bus.twist_cols.len() != step.mem_instances.len() {
         return Err(PiCcsError::InvalidInput(
             "shared_cpu_bus layout mismatch for step (instance counts)".into(),

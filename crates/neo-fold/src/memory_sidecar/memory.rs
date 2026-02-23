@@ -7,7 +7,7 @@ use crate::shard_proof_types::{
 };
 use crate::PiCcsError;
 use neo_ajtai::Commitment as Cmt;
-use neo_ccs::{CcsStructure, MeInstance};
+use neo_ccs::{CcsStructure, CeClaim};
 use neo_math::{KExtensions, F, K};
 use neo_memory::bit_ops::{eq_bit_affine, eq_bits_prod};
 use neo_memory::cpu::{

@@ -14,6 +14,7 @@ use crate::session::{FoldingSession, NeoStep, StepArtifacts, StepSpec};
 use crate::shard::StepLinkingConfig;
 #[cfg(target_arch = "wasm32")]
 use js_sys::Date;
+use neo_memory::ajtai::commit_cols_for_ccs_m;
 use neo_ajtai::{set_global_pp, setup as ajtai_setup, AjtaiSModule};
 use neo_ccs::{CcsMatrix, CcsStructure, CscMat, SparsePoly, Term};
 use neo_math::{D, F};
@@ -235,9 +236,10 @@ fn pad_witness_to_m(mut z: Vec<F>, m_target: usize) -> Vec<F> {
     z
 }
 
-fn setup_ajtai_for_dims(m: usize) {
+fn setup_ajtai_for_ccs_m(ccs_m: usize) {
+    let m_commit = commit_cols_for_ccs_m(ccs_m);
     let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(42);
-    let pp = ajtai_setup(&mut rng, D, 4, m).expect("Ajtai setup should succeed");
+    let pp = ajtai_setup(&mut rng, D, 4, m_commit).expect("Ajtai setup should succeed");
     let _ = set_global_pp(pp);
 }
 
@@ -335,16 +337,8 @@ impl TestExportSession {
     ) -> Result<Self, String> {
         let r1cs_padded_n = num_constraints.max(num_variables);
 
-        let mut params = NeoParams::goldilocks_auto_r1cs_ccs(r1cs_padded_n)
-            .map_err(|e| format!("goldilocks_auto_r1cs_ccs failed: {e}"))?;
-
-        // Needed for now for the decomposition to be bijective in pi_ccs.
-        params.b = 3;
-
-        let ajtai_start = time_now();
-        setup_ajtai_for_dims(r1cs_padded_n);
-        let l = AjtaiSModule::from_global_for_dims(D, r1cs_padded_n).map_err(|e| format!("Ajtai init: {e}"))?;
-        let ajtai_setup_ms = elapsed_ms(ajtai_start);
+        let params =
+            NeoParams::goldilocks_auto_r1cs_ccs(r1cs_padded_n).map_err(|e| format!("goldilocks_auto_r1cs_ccs failed: {e}"))?;
 
         let build_ccs_start = time_now();
         let step_ccs = Arc::new(build_step_ccs(
@@ -355,6 +349,12 @@ impl TestExportSession {
             matrix_c,
         ));
         let build_ccs_ms = elapsed_ms(build_ccs_start);
+
+        let ajtai_start = time_now();
+        let m_commit = commit_cols_for_ccs_m(step_ccs.m);
+        setup_ajtai_for_ccs_m(step_ccs.m);
+        let l = AjtaiSModule::from_global_for_dims(D, m_commit).map_err(|e| format!("Ajtai init: {e}"))?;
+        let ajtai_setup_ms = elapsed_ms(ajtai_start);
 
         let session_init_start = time_now();
         let mut session = FoldingSession::new(FoldingMode::Optimized, params, l);
@@ -659,11 +659,8 @@ pub fn run_test_export(export: &TestExport) -> Result<TestExportResult, String> 
     let r1cs_variables = export.num_variables;
     let r1cs_padded_n = r1cs_constraints.max(r1cs_variables);
 
-    let mut params = NeoParams::goldilocks_auto_r1cs_ccs(r1cs_padded_n)
-        .map_err(|e| format!("goldilocks_auto_r1cs_ccs failed: {e}"))?;
-
-    // Needed for now for the decomposition to be bijective in pi_ccs.
-    params.b = 3;
+    let params =
+        NeoParams::goldilocks_auto_r1cs_ccs(r1cs_padded_n).map_err(|e| format!("goldilocks_auto_r1cs_ccs failed: {e}"))?;
 
     let params_summary = TestExportParamsSummary {
         b: params.b,
@@ -674,11 +671,6 @@ pub fn run_test_export(export: &TestExport) -> Result<TestExportResult, String> 
         s: params.s,
         lambda: params.lambda,
     };
-
-    let ajtai_start = time_now();
-    setup_ajtai_for_dims(r1cs_padded_n);
-    let l = AjtaiSModule::from_global_for_dims(D, r1cs_padded_n).map_err(|e| format!("Ajtai init: {e}"))?;
-    let ajtai_setup_ms = elapsed_ms(ajtai_start);
 
     let step_spec = StepSpec {
         y_len: 0,
@@ -697,6 +689,12 @@ pub fn run_test_export(export: &TestExport) -> Result<TestExportResult, String> 
         &export.matrix_c,
     ));
     let build_ccs_ms = elapsed_ms(build_ccs_start);
+
+    let ajtai_start = time_now();
+    let m_commit = commit_cols_for_ccs_m(step_ccs.m);
+    setup_ajtai_for_ccs_m(step_ccs.m);
+    let l = AjtaiSModule::from_global_for_dims(D, m_commit).map_err(|e| format!("Ajtai init: {e}"))?;
+    let ajtai_setup_ms = elapsed_ms(ajtai_start);
 
     let ccs_matrix_nnz: Vec<usize> = step_ccs
         .matrices

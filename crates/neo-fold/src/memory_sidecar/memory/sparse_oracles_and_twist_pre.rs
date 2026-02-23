@@ -279,10 +279,10 @@ pub(crate) fn unpack_interleaved_halves_lsb(addr_bits: &[K]) -> Result<(K, K), P
 
 pub(crate) fn extract_trace_cpu_link_openings(
     m: usize,
-    core_t: usize,
+    _core_t: usize,
     y_prefix_cols: usize,
     step: &StepInstanceBundle<Cmt, F, K>,
-    ccs_out0: &MeInstance<Cmt, F, K>,
+    ccs_out0: &CeClaim<Cmt, F, K>,
 ) -> Result<Option<TraceCpuLinkOpenings>, PiCcsError> {
     if step.mem_insts.is_empty() && step.lut_insts.is_empty() {
         return Ok(None);
@@ -358,20 +358,19 @@ pub(crate) fn extract_trace_cpu_link_openings(
             m, trace.cols
         )));
     }
-    let expected_y_len = core_t
-        .checked_add(y_prefix_cols)
-        .and_then(|v| v.checked_add(trace_cols_to_open.len()))
-        .ok_or_else(|| PiCcsError::InvalidInput("core_t + y_prefix_cols + trace_openings overflow".into()))?;
-    if ccs_out0.y_scalars.len() != expected_y_len {
+    let expected_aux_len = y_prefix_cols
+        .checked_add(trace_cols_to_open.len())
+        .ok_or_else(|| PiCcsError::InvalidInput("y_prefix_cols + trace_openings overflow".into()))?;
+    if ccs_out0.aux_openings.len() != expected_aux_len {
         return Err(PiCcsError::InvalidInput(format!(
-            "trace linkage expects CPU ME output to contain exactly core_t + y_prefix_cols + trace_openings y_scalars (have {}, expected {expected_y_len})",
-            ccs_out0.y_scalars.len(),
+            "trace linkage expects CPU ME output to contain exactly y_prefix_cols + trace_openings aux_openings (have {}, expected {expected_aux_len})",
+            ccs_out0.aux_openings.len(),
         )));
     }
     let cpu_open = |idx: usize| -> Result<K, PiCcsError> {
         ccs_out0
-            .y_scalars
-            .get(core_t + y_prefix_cols + idx)
+            .aux_openings
+            .get(y_prefix_cols + idx)
             .copied()
             .ok_or_else(|| PiCcsError::ProtocolError("missing CPU trace linkage opening".into()))
     };
@@ -385,7 +384,7 @@ pub(crate) fn extract_trace_cpu_link_openings(
 }
 
 pub(crate) fn expected_trace_shout_table_id_from_openings(
-    core_t: usize,
+    _core_t: usize,
     step: &StepInstanceBundle<Cmt, F, K>,
     mem_proof: &MemSidecarProof<Cmt, F, K>,
     r_time: &[K],
@@ -426,9 +425,9 @@ pub(crate) fn expected_trace_shout_table_id_from_openings(
     };
     let decode_open_cols = rv32_decode_lookup_backed_cols(&decode_layout);
 
-    let decode_open_start = core_t
-        .checked_add(wp_cols.len())
-        .and_then(|v| v.checked_add(control_extra_cols.len()))
+    let decode_open_start = wp_cols
+        .len()
+        .checked_add(control_extra_cols.len())
         .ok_or_else(|| {
             PiCcsError::InvalidInput("decode-linked Shout table_id check: decode_open_start overflow".into())
         })?;
@@ -437,14 +436,14 @@ pub(crate) fn expected_trace_shout_table_id_from_openings(
         .ok_or_else(|| {
             PiCcsError::InvalidInput("decode-linked Shout table_id check: decode_open_end overflow".into())
         })?;
-    if wp_me.y_scalars.len() < decode_open_end {
+    if wp_me.aux_openings.len() < decode_open_end {
         return Err(PiCcsError::ProtocolError(format!(
             "decode-linked Shout table_id check: missing decode openings (got {}, need at least {decode_open_end})",
-            wp_me.y_scalars.len()
+            wp_me.aux_openings.len()
         )));
     }
 
-    let decode_open = &wp_me.y_scalars[decode_open_start..decode_open_end];
+    let decode_open = &wp_me.aux_openings[decode_open_start..decode_open_end];
     let decode_open_col = |col_id: usize| -> Result<K, PiCcsError> {
         let idx = decode_open_cols
             .iter()
@@ -473,7 +472,7 @@ pub(crate) fn prove_twist_addr_pre_time(
     }
     let mut out = Vec::with_capacity(step.mem_instances.len());
 
-    let cpu_z_k = crate::memory_sidecar::cpu_bus::decode_cpu_z_to_k(params, &step.mcs.1.Z);
+    let cpu_z_k = crate::memory_sidecar::cpu_bus::decode_cpu_z_to_k(params, &step.mcs.1.Z, cpu_bus.m)?;
     if cpu_bus.shout_cols.len() != step.lut_instances.len() || cpu_bus.twist_cols.len() != step.mem_instances.len() {
         return Err(PiCcsError::InvalidInput(
             "shared_cpu_bus layout mismatch for step (instance counts)".into(),

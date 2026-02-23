@@ -25,14 +25,24 @@ pub(crate) fn fold_shard_prove_impl<L, MR, MB>(
     s_me: &CcsStructure<F>,
     steps: &[StepWitnessBundle<Cmt, F, K>],
     step_idx_offset: usize,
-    acc_init: &[MeInstance<Cmt, F, K>],
+    acc_init: &[CeClaim<Cmt, F, K>],
     acc_wit_init: &[Mat<F>],
     l: &L,
     mixers: CommitMixers<MR, MB>,
     ob: Option<(&crate::output_binding::OutputBindingConfig, &[F])>,
     prover_ctx: Option<&ShardProverContext>,
     mut step_prove_ms_out: Option<&mut Vec<f64>>,
-) -> Result<(ShardProof, Vec<Mat<F>>, Vec<Mat<F>>), PiCcsError>
+    initial_prev_step: Option<&StepWitnessBundle<Cmt, F, K>>,
+    initial_prev_twist_decoded: Option<Vec<crate::memory_sidecar::memory::TwistDecodedColsSparse>>,
+) -> Result<
+    (
+        ShardProof,
+        Vec<Mat<F>>,
+        Vec<Mat<F>>,
+        Option<Vec<crate::memory_sidecar::memory::TwistDecodedColsSparse>>,
+    ),
+    PiCcsError,
+>
 where
     L: SModuleHomomorphism<F, Cmt> + Sync,
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
@@ -101,7 +111,7 @@ where
 
     let mut step_proofs = Vec::with_capacity(steps.len());
     let mut val_lane_wits: Vec<Mat<F>> = Vec::new();
-    let mut prev_twist_decoded: Option<Vec<crate::memory_sidecar::memory::TwistDecodedColsSparse>> = None;
+    let mut prev_twist_decoded = initial_prev_twist_decoded;
     let mut output_proof: Option<neo_memory::output_check::OutputBindingProof> = None;
 
     if ob.is_some() && steps.is_empty() {
@@ -217,7 +227,7 @@ where
         utils::bind_me_inputs(tr, &accumulator)?;
         let mut ch = utils::sample_challenges(tr, ell_d, ell)?;
         ch.beta_m = utils::sample_beta_m(tr, ell_m)?;
-        let ccs_initial_sum = claimed_initial_sum_from_inputs(&s, &ch, &accumulator);
+        let ccs_initial_sum = claimed_initial_sum_from_inputs_with_k_mcs(&s, &ch, 1, &accumulator);
         tr.append_fields(b"sumcheck/initial_sum", &ccs_initial_sum.as_coeffs());
 
         // Route A memory checks use a separate transcript-derived cycle point `r_cycle`
@@ -461,7 +471,7 @@ where
                 oracles.push(Box::new(oracle));
                 claimed_sum += claim;
             }
-            let oracle = crate::memory_sidecar::memory::SumRoundOracle::new(oracles);
+            let oracle = crate::memory_sidecar::memory::SumRoundOracle::new(oracles)?;
 
             ob_time_claim = Some(crate::memory_sidecar::route_a_time::ExtraBatchedTimeClaim {
                 oracle: Box::new(oracle),
@@ -690,7 +700,7 @@ where
             // whenever `shout_has_lookup == 0`, so we can compute their openings by summing only
             // over the active lookup rows.
             let active_shout_js: Vec<usize> = {
-                let d = neo_math::D;
+                let z_logical = crate::memory_sidecar::cpu_bus::decode_cpu_z_to_k(params, &mcs_wit.Z, s.m)?;
                 let mut out: Vec<usize> = Vec::new();
                 let col_offset = trace
                     .shout_has_lookup
@@ -701,21 +711,13 @@ where
                         .checked_add(col_offset)
                         .and_then(|x| x.checked_add(j))
                         .ok_or_else(|| PiCcsError::InvalidInput("trace z index overflow".into()))?;
-                    if z_idx >= mcs_wit.Z.cols() {
+                    if z_idx >= z_logical.len() {
                         return Err(PiCcsError::InvalidInput(format!(
                             "trace openings: z_idx out of range (z_idx={z_idx}, m={})",
-                            mcs_wit.Z.cols()
+                            z_logical.len()
                         )));
                     }
-
-                    let mut any = false;
-                    for rho in 0..d {
-                        if mcs_wit.Z[(rho, z_idx)] != F::ZERO {
-                            any = true;
-                            break;
-                        }
-                    }
-                    if any {
+                    if z_logical[z_idx] != K::ZERO {
                         out.push(j);
                     }
                 }
@@ -729,6 +731,7 @@ where
                 col_base,
                 &trace_cols_to_open_dense,
                 trace_open_base,
+                s.m,
                 &mcs_wit.Z,
                 &mut ccs_out[0],
             )?;
@@ -739,6 +742,7 @@ where
                 col_base,
                 &trace_cols_to_open_shout,
                 trace_open_base + trace_cols_to_open_dense.len(),
+                s.m,
                 &mcs_wit.Z,
                 &mut ccs_out[0],
                 &active_shout_js,
@@ -751,6 +755,7 @@ where
                     col_base,
                     &trace_cols_to_open_all,
                     trace_open_base,
+                    s.m,
                     Z,
                     out,
                 )?;
@@ -805,7 +810,11 @@ where
         outs_Z.extend(accumulator_wit.iter());
 
         // Memory sidecar: emit ME claims at the shared r_time (no fixed-challenge sumcheck).
-        let prev_step = (idx > 0).then(|| &steps[idx - 1]);
+        let prev_step = if idx > 0 {
+            Some(&steps[idx - 1])
+        } else {
+            initial_prev_step
+        };
         let prev_twist_decoded_ref = prev_twist_decoded.as_deref();
         let mut mem_proof = crate::memory_sidecar::memory::finalize_route_a_memory_prover(
             tr,
@@ -826,15 +835,15 @@ where
 
         // Normalize ME claim shapes for per-claim folding lanes.
         for me in mem_proof.val_me_claims.iter_mut() {
-            let t = me.y.len();
+            let t = me.y_ring.len();
             normalize_me_claims(core::slice::from_mut(me), ell_n, ell_d, t)?;
         }
         for me in mem_proof.wb_me_claims.iter_mut() {
-            let t = me.y.len();
+            let t = me.y_ring.len();
             normalize_me_claims(core::slice::from_mut(me), ell_n, ell_d, t)?;
         }
         for me in mem_proof.wp_me_claims.iter_mut() {
-            let t = me.y.len();
+            let t = me.y_ring.len();
             normalize_me_claims(core::slice::from_mut(me), ell_n, ell_d, t)?;
         }
 
@@ -912,7 +921,7 @@ where
                 if claim_idx == 0 {
                     if let Some(child_cs) = shared_val_lane_child_cs.as_ref() {
                         bind_rlc_inputs(tr, RlcLane::Val, step_idx, core::slice::from_ref(me))?;
-                        let rlc_rhos = ccs::sample_rot_rhos_n(tr, params, &ring, 1)?;
+                        let rlc_rhos = ccs::sample_rot_rhos_n_typed(tr, params, &ring, 1)?;
                         let mut rlc_parent = ccs::rlc_public(
                             &s,
                             params,
@@ -997,7 +1006,9 @@ where
         let mut wb_wp_dec_wits: Option<Vec<Mat<F>>> = None;
         let mut wb_wp_child_cs: Option<Vec<Cmt>> = None;
         if !mem_proof.wb_me_claims.is_empty() || !mem_proof.wp_me_claims.is_empty() {
-            let (dec_wits, digit_nonzero) = ccs::split_b_matrix_k_with_nonzero_flags(&mcs_wit.Z, k_dec, params.b)?;
+            let k_dec_wb_wp = core::cmp::max(k_dec, required_dec_digits_for_matrix(params, &mcs_wit.Z)?);
+            let (dec_wits, digit_nonzero) =
+                ccs::split_b_matrix_k_with_nonzero_flags(&mcs_wit.Z, k_dec_wb_wp, params.b)?;
             let zero_c = Cmt::zeros(mcs_inst.c.d, mcs_inst.c.kappa);
             let child_cs: Vec<Cmt> = {
                 #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-threads"))]
@@ -1067,7 +1078,7 @@ where
             for (claim_idx, me) in mem_proof.wb_me_claims.iter().enumerate() {
                 tr.append_message(b"fold/wb_lane_claim_idx", &(claim_idx as u64).to_le_bytes());
                 bind_rlc_inputs(tr, RlcLane::Val, step_idx, core::slice::from_ref(me))?;
-                let rlc_rhos = ccs::sample_rot_rhos_n(tr, params, &ring, 1)?;
+                let rlc_rhos = ccs::sample_rot_rhos_n_typed(tr, params, &ring, 1)?;
                 let rlc_parent = ccs::rlc_public(
                     &s,
                     params,
@@ -1103,7 +1114,7 @@ where
                 }
                 for (child, zi) in dec_children.iter_mut().zip(dec_wits.iter()) {
                     crate::memory_sidecar::cpu_bus::append_col_major_time_openings_to_me_instance(
-                        params, m_in, t_len, m_in, &wb_cols, core_t, zi, child,
+                        params, m_in, t_len, m_in, &wb_cols, core_t, s.m, zi, child,
                     )?;
                 }
                 if collect_val_lane_wits {
@@ -1180,7 +1191,7 @@ where
             for (claim_idx, me) in mem_proof.wp_me_claims.iter().enumerate() {
                 tr.append_message(b"fold/wp_lane_claim_idx", &(claim_idx as u64).to_le_bytes());
                 bind_rlc_inputs(tr, RlcLane::Val, step_idx, core::slice::from_ref(me))?;
-                let rlc_rhos = ccs::sample_rot_rhos_n(tr, params, &ring, 1)?;
+                let rlc_rhos = ccs::sample_rot_rhos_n_typed(tr, params, &ring, 1)?;
                 let rlc_parent = ccs::rlc_public(
                     &s,
                     params,
@@ -1222,6 +1233,7 @@ where
                         m_in,
                         &wp_open_cols,
                         core_t,
+                        s.m,
                         zi,
                         child,
                     )?;
@@ -1253,6 +1265,7 @@ where
             val_fold,
             wb_fold,
             wp_fold,
+            compressed_substeps: None,
         });
 
         tr.append_message(b"fold/step_done", &(step_idx as u64).to_le_bytes());
@@ -1265,8 +1278,10 @@ where
         ShardProof {
             steps: step_proofs,
             output_proof,
+            segment_meta: None,
         },
         accumulator_wit,
         val_lane_wits,
+        prev_twist_decoded,
     ))
 }

@@ -25,7 +25,7 @@ use std::marker::PhantomData;
 
 use neo_ajtai::Commitment as Cmt;
 use neo_ccs::poly::SparsePoly;
-use neo_ccs::relations::{CcsStructure, McsInstance, McsWitness};
+use neo_ccs::relations::{CcsClaim, CcsStructure, CcsWitness};
 use neo_ccs::traits::SModuleHomomorphism;
 use neo_ccs::Mat;
 use neo_fold::pi_ccs::FoldingMode;
@@ -284,12 +284,12 @@ fn ccs_must_reference_bus_columns_guardrail() {
     let c = l.commit(&Z);
 
     let mcs = (
-        McsInstance {
+        CcsClaim {
             c,
             x: z[..m_in].to_vec(),
             m_in,
         },
-        McsWitness {
+        CcsWitness {
             w: z[m_in..].to_vec(),
             Z,
         },
@@ -387,12 +387,12 @@ fn address_bit_tampering_attack_should_be_rejected() {
     let c = l.commit(&Z);
 
     let mcs = (
-        McsInstance {
+        CcsClaim {
             c,
             x: z[..m_in].to_vec(),
             m_in,
         },
-        McsWitness {
+        CcsWitness {
             w: z[m_in..].to_vec(),
             Z,
         },
@@ -516,12 +516,12 @@ fn has_read_flag_mismatch_attack_should_be_rejected() {
     let c = l.commit(&Z);
 
     let mcs = (
-        McsInstance {
+        CcsClaim {
             c,
             x: z[..m_in].to_vec(),
             m_in,
         },
-        McsWitness {
+        CcsWitness {
             w: z[m_in..].to_vec(),
             Z,
         },
@@ -647,12 +647,12 @@ fn increment_value_tampering_attack_should_be_rejected() {
     let c = l.commit(&Z);
 
     let mcs = (
-        McsInstance {
+        CcsClaim {
             c,
             x: z[..m_in].to_vec(),
             m_in,
         },
-        McsWitness {
+        CcsWitness {
             w: z[m_in..].to_vec(),
             Z,
         },
@@ -787,12 +787,12 @@ fn lookup_value_tampering_attack_should_be_rejected() {
     let c = l.commit(&Z);
 
     let mcs = (
-        McsInstance {
+        CcsClaim {
             c,
             x: z[..m_in].to_vec(),
             m_in,
         },
-        McsWitness {
+        CcsWitness {
             w: z[m_in..].to_vec(),
             Z,
         },
@@ -930,12 +930,12 @@ fn bus_region_mismatch_with_twist_trace_should_be_rejected() {
     let c = l.commit(&Z);
 
     let mcs = (
-        McsInstance {
+        CcsClaim {
             c,
             x: z[..m_in].to_vec(),
             m_in,
         },
-        McsWitness {
+        CcsWitness {
             w: z[m_in..].to_vec(),
             Z,
         },
@@ -1069,12 +1069,12 @@ fn write_then_read_consistency_attack_should_be_rejected() {
     let Z1 = neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z1);
     let c1 = l.commit(&Z1);
     let mcs1 = (
-        McsInstance {
+        CcsClaim {
             c: c1,
             x: z1[..m_in].to_vec(),
             m_in,
         },
-        McsWitness {
+        CcsWitness {
             w: z1[m_in..].to_vec(),
             Z: Z1,
         },
@@ -1108,12 +1108,12 @@ fn write_then_read_consistency_attack_should_be_rejected() {
     let Z2 = neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z2);
     let c2 = l.commit(&Z2);
     let mcs2 = (
-        McsInstance {
+        CcsClaim {
             c: c2,
             x: z2[..m_in].to_vec(),
             m_in,
         },
-        McsWitness {
+        CcsWitness {
             w: z2[m_in..].to_vec(),
             Z: Z2,
         },
@@ -1234,12 +1234,12 @@ fn correct_witness_should_verify() {
     let c = l.commit(&Z);
 
     let mcs = (
-        McsInstance {
+        CcsClaim {
             c,
             x: z[..m_in].to_vec(),
             m_in,
         },
-        McsWitness {
+        CcsWitness {
             w: z[m_in..].to_vec(),
             Z,
         },

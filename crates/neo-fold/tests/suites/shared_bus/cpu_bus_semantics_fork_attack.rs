@@ -35,7 +35,7 @@
 use std::marker::PhantomData;
 
 use neo_ajtai::Commitment as Cmt;
-use neo_ccs::relations::{CcsStructure, McsInstance, McsWitness};
+use neo_ccs::relations::{CcsClaim, CcsStructure, CcsWitness};
 use neo_ccs::traits::SModuleHomomorphism;
 use neo_ccs::Mat;
 use neo_fold::pi_ccs::FoldingMode;
@@ -178,12 +178,12 @@ fn cpu_semantic_shadow_fork_attack_should_be_rejected() {
     let c_cpu = l.commit(&Z_cpu);
 
     let mcs = (
-        McsInstance {
+        CcsClaim {
             c: c_cpu,
             x: z_cpu[..m_in].to_vec(),
             m_in,
         },
-        McsWitness {
+        CcsWitness {
             w: z_cpu[m_in..].to_vec(),
             Z: Z_cpu,
         },
@@ -385,12 +385,12 @@ fn cpu_semantic_fork_splice_attack_should_be_rejected() {
     let c_fake = l.commit(&Z_fake);
 
     let mcs = (
-        McsInstance {
+        CcsClaim {
             c: c_fake,
             x: z_fake[..m_in].to_vec(),
             m_in,
         },
-        McsWitness {
+        CcsWitness {
             w: z_fake[m_in..].to_vec(),
             Z: Z_fake,
         },
@@ -568,12 +568,12 @@ fn cpu_lookup_shadow_fork_attack_should_be_rejected() {
     let c_cpu = l.commit(&Z_cpu);
 
     let mcs = (
-        McsInstance {
+        CcsClaim {
             c: c_cpu,
             x: z_cpu[..m_in].to_vec(),
             m_in,
         },
-        McsWitness {
+        CcsWitness {
             w: z_cpu[m_in..].to_vec(),
             Z: Z_cpu,
         },

@@ -168,9 +168,9 @@ pub(crate) fn finalize_route_a_memory_prover(
         }
     }
 
-    let mut val_me_claims: Vec<MeInstance<Cmt, F, K>> = Vec::new();
-    let mut wb_me_claims: Vec<MeInstance<Cmt, F, K>> = Vec::new();
-    let mut wp_me_claims: Vec<MeInstance<Cmt, F, K>> = Vec::new();
+    let mut val_me_claims: Vec<CeClaim<Cmt, F, K>> = Vec::new();
+    let mut wb_me_claims: Vec<CeClaim<Cmt, F, K>> = Vec::new();
+    let mut wp_me_claims: Vec<CeClaim<Cmt, F, K>> = Vec::new();
     let mut proofs: Vec<MemOrLutProof> = Vec::new();
 
     // --------------------------------------------------------------------
@@ -221,7 +221,7 @@ pub(crate) fn finalize_route_a_memory_prover(
                 lt_oracles.push(Box::new(oracle));
                 claimed_inc_sum_lt += claim;
             }
-            let oracle_lt: Box<dyn RoundOracle> = Box::new(SumRoundOracle::new(lt_oracles));
+            let oracle_lt: Box<dyn RoundOracle> = Box::new(SumRoundOracle::new(lt_oracles)?);
 
             let mut total_oracles: Vec<Box<dyn RoundOracle>> = Vec::with_capacity(decoded.lanes.len());
             let mut claimed_inc_sum_total = K::ZERO;
@@ -235,7 +235,7 @@ pub(crate) fn finalize_route_a_memory_prover(
                 total_oracles.push(Box::new(oracle));
                 claimed_inc_sum_total += claim;
             }
-            let oracle_total: Box<dyn RoundOracle> = Box::new(SumRoundOracle::new(total_oracles));
+            let oracle_total: Box<dyn RoundOracle> = Box::new(SumRoundOracle::new(total_oracles)?);
 
             val_oracles.push(oracle_lt);
             bind_claims.push((plan.bind_tags[claim_idx], claimed_inc_sum_lt));
@@ -295,7 +295,7 @@ pub(crate) fn finalize_route_a_memory_prover(
                     prev_total_oracles.push(Box::new(oracle));
                     claimed_prev_total += claim;
                 }
-                let oracle_prev_total: Box<dyn RoundOracle> = Box::new(SumRoundOracle::new(prev_total_oracles));
+                let oracle_prev_total: Box<dyn RoundOracle> = Box::new(SumRoundOracle::new(prev_total_oracles)?);
 
                 val_oracles.push(oracle_prev_total);
                 bind_claims.push((plan.bind_tags[claim_idx], claimed_prev_total));

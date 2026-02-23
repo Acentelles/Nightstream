@@ -1,7 +1,6 @@
 use crate::PiCcsError;
-use neo_ccs::{CcsMatrix, CcsStructure, Mat, MeInstance};
+use neo_ccs::{CcsMatrix, CcsStructure, CeClaim, Mat};
 use neo_math::{F, K};
-use neo_memory::ajtai::decode_vector as ajtai_decode_vector;
 use neo_memory::cpu::{
     build_bus_layout_for_instances_with_shout_shapes_and_twist_lanes, BusLayout, ShoutInstanceShape,
 };
@@ -295,7 +294,7 @@ pub(crate) fn append_bus_openings_to_me_instance<Cmt>(
     bus: &BusLayout,
     core_t: usize,
     Z: &Mat<F>,
-    me: &mut MeInstance<Cmt, F, K>,
+    me: &mut CeClaim<Cmt, F, K>,
 ) -> Result<(), PiCcsError>
 where
     Cmt: Clone,
@@ -316,13 +315,6 @@ where
             "bus openings require Z.rows()==D (got {}, want {})",
             Z.rows(),
             d
-        )));
-    }
-    if Z.cols() != bus.m {
-        return Err(PiCcsError::InvalidInput(format!(
-            "bus openings require Z.cols()==bus.m (got {}, want {})",
-            Z.cols(),
-            bus.m
         )));
     }
     if me.m_in != bus.m_in {
@@ -348,25 +340,42 @@ where
         }
     }
 
-    // Idempotent append: allow callers to call this once; reject unexpected shapes.
-    let want_len = core_t
-        .checked_add(bus.bus_cols)
-        .ok_or_else(|| PiCcsError::InvalidInput("core_t + bus_cols overflow".into()))?;
-    if me.y.len() >= want_len && me.y_scalars.len() >= want_len && me.y.len() == me.y_scalars.len() {
-        return Ok(());
-    }
-    if me.y.len() != core_t || me.y_scalars.len() != core_t {
+    if me.y_ring.len() != me.ct.len() {
         return Err(PiCcsError::InvalidInput(format!(
-            "bus openings expect ME y/y_scalars to start at core_t (y.len()={}, y_scalars.len()={}, core_t={})",
-            me.y.len(),
-            me.y_scalars.len(),
-            core_t
+            "bus openings require ME core y/y_scalars alignment (y.len()={}, y_scalars.len()={})",
+            me.y_ring.len(),
+            me.ct.len(),
         )));
     }
-    for (j, row) in me.y.iter().enumerate() {
+    if core_t < me.ct.len() {
+        return Err(PiCcsError::InvalidInput(format!(
+            "bus openings require core_t >= ME core y_scalars len (core_t={}, y_scalars.len()={})",
+            core_t,
+            me.ct.len(),
+        )));
+    }
+    let aux_base = core_t
+        .checked_sub(me.ct.len())
+        .ok_or_else(|| PiCcsError::InvalidInput("core_t underflow for bus aux base".into()))?;
+
+    // Idempotent append: allow callers to call this once; reject unexpected aux lengths.
+    let want_aux_len = aux_base
+        .checked_add(bus.bus_cols)
+        .ok_or_else(|| PiCcsError::InvalidInput("aux_base + bus_cols overflow".into()))?;
+    if me.aux_openings.len() >= want_aux_len {
+        return Ok(());
+    }
+    if me.aux_openings.len() != aux_base {
+        return Err(PiCcsError::InvalidInput(format!(
+            "bus openings expect ME aux_openings to start at aux_base (aux_openings.len()={}, aux_base={})",
+            me.aux_openings.len(),
+            aux_base
+        )));
+    }
+    for (j, row) in me.y_ring.iter().enumerate() {
         if row.len() != y_pad {
             return Err(PiCcsError::InvalidInput(format!(
-                "bus openings require ME.y[{j}].len()==y_pad (got {}, want {})",
+                "bus openings require ME.y_ring[{j}].len()==y_pad (got {}, want {})",
                 row.len(),
                 y_pad
             )));
@@ -381,14 +390,8 @@ where
         .filter_map(|(j, w)| (w != K::ZERO).then_some((j, w)))
         .collect();
 
-    // Base-b powers for recomposition.
-    let bK = K::from(F::from_u64(params.b as u64));
-    let mut pow_b = Vec::with_capacity(d);
-    let mut cur = K::ONE;
-    for _ in 0..d {
-        pow_b.push(cur);
-        cur *= bK;
-    }
+    // Decode once into logical witness coordinates so openings are layout-agnostic.
+    let z_logical = decode_cpu_z_to_k(params, Z, bus.m)?;
 
     // Append bus openings in canonical col_id order so `bus_y_base = y_scalars.len() - bus_cols`
     // remains valid.
@@ -401,19 +404,19 @@ where
                     .ok_or_else(|| PiCcsError::InvalidInput("bus col_id * chunk_size overflow".into()))?,
             )
             .ok_or_else(|| PiCcsError::InvalidInput("bus col_base overflow".into()))?;
-        let mut y_row = vec![K::ZERO; y_pad];
         let mut y_scalar = K::ZERO;
-        for rho in 0..d {
-            let mut acc = K::ZERO;
-            for &(j, w) in weighted_rows.iter() {
-                acc += w * K::from(Z[(rho, col_base + j)]);
-            }
-            y_row[rho] = acc;
-            y_scalar += acc * pow_b[rho];
+        for &(j, w) in weighted_rows.iter() {
+            let idx = col_base
+                .checked_add(j)
+                .ok_or_else(|| PiCcsError::InvalidInput("bus cell index overflow".into()))?;
+            let v = z_logical
+                .get(idx)
+                .copied()
+                .ok_or_else(|| PiCcsError::InvalidInput(format!("bus openings: logical index out of range (idx={idx}, m={})", z_logical.len())))?;
+            y_scalar += w * v;
         }
 
-        me.y.push(y_row);
-        me.y_scalars.push(y_scalar);
+        me.aux_openings.push(y_scalar);
     }
 
     Ok(())
@@ -435,8 +438,9 @@ pub(crate) fn append_col_major_time_openings_to_me_instance<Cmt>(
     col_base: usize,
     cols: &[usize],
     core_t: usize,
+    expected_m: usize,
     Z: &Mat<F>,
-    me: &mut MeInstance<Cmt, F, K>,
+    me: &mut CeClaim<Cmt, F, K>,
 ) -> Result<(), PiCcsError>
 where
     Cmt: Clone,
@@ -471,11 +475,11 @@ where
     if me.r.is_empty() {
         return Err(PiCcsError::InvalidInput("trace openings require non-empty ME.r".into()));
     }
-    if col_base >= Z.cols() {
+    if col_base >= expected_m {
         return Err(PiCcsError::InvalidInput(format!(
             "trace openings require col_base < m (col_base={}, m={})",
             col_base,
-            Z.cols()
+            expected_m
         )));
     }
 
@@ -496,25 +500,42 @@ where
         }
     }
 
-    // Idempotent append: allow callers to call this once; reject unexpected shapes.
-    let want_len = core_t
-        .checked_add(cols.len())
-        .ok_or_else(|| PiCcsError::InvalidInput("core_t + cols.len overflow".into()))?;
-    if me.y.len() == want_len && me.y_scalars.len() == want_len {
-        return Ok(());
-    }
-    if me.y.len() != core_t || me.y_scalars.len() != core_t {
+    if me.y_ring.len() != me.ct.len() {
         return Err(PiCcsError::InvalidInput(format!(
-            "trace openings expect ME y/y_scalars to start at core_t (y.len()={}, y_scalars.len()={}, core_t={})",
-            me.y.len(),
-            me.y_scalars.len(),
-            core_t
+            "trace openings require ME core y/y_scalars alignment (y.len()={}, y_scalars.len()={})",
+            me.y_ring.len(),
+            me.ct.len(),
         )));
     }
-    for (j, row) in me.y.iter().enumerate() {
+    if core_t < me.ct.len() {
+        return Err(PiCcsError::InvalidInput(format!(
+            "trace openings require core_t >= ME core y_scalars len (core_t={}, y_scalars.len()={})",
+            core_t,
+            me.ct.len(),
+        )));
+    }
+    let aux_base = core_t
+        .checked_sub(me.ct.len())
+        .ok_or_else(|| PiCcsError::InvalidInput("core_t underflow for trace aux base".into()))?;
+
+    // Idempotent append: allow callers to call this once; reject unexpected aux lengths.
+    let want_aux_len = aux_base
+        .checked_add(cols.len())
+        .ok_or_else(|| PiCcsError::InvalidInput("aux_base + cols.len overflow".into()))?;
+    if me.aux_openings.len() == want_aux_len {
+        return Ok(());
+    }
+    if me.aux_openings.len() != aux_base {
+        return Err(PiCcsError::InvalidInput(format!(
+            "trace openings expect ME aux_openings to start at aux_base (aux_openings.len()={}, aux_base={})",
+            me.aux_openings.len(),
+            aux_base
+        )));
+    }
+    for (j, row) in me.y_ring.iter().enumerate() {
         if row.len() != y_pad {
             return Err(PiCcsError::InvalidInput(format!(
-                "trace openings require ME.y[{j}].len()==y_pad (got {}, want {})",
+                "trace openings require ME.y_ring[{j}].len()==y_pad (got {}, want {})",
                 row.len(),
                 y_pad
             )));
@@ -529,14 +550,8 @@ where
         .filter_map(|(j, w)| (w != K::ZERO).then_some((j, w)))
         .collect();
 
-    // Base-b powers for recomposition.
-    let bK = K::from(F::from_u64(params.b as u64));
-    let mut pow_b = Vec::with_capacity(d);
-    let mut cur = K::ONE;
-    for _ in 0..d {
-        pow_b.push(cur);
-        cur *= bK;
-    }
+    // Decode once into logical witness coordinates so openings are layout-agnostic.
+    let z_logical = decode_cpu_z_to_k(params, Z, expected_m)?;
 
     for &col_id in cols {
         let col_offset = col_id
@@ -548,26 +563,26 @@ where
         let col_end = col_start
             .checked_add(t_len - 1)
             .ok_or_else(|| PiCcsError::InvalidInput("trace col_end overflow".into()))?;
-        if col_end >= Z.cols() {
+        if col_end >= expected_m {
             return Err(PiCcsError::InvalidInput(format!(
                 "trace openings: column span out of range (col_start={col_start}, col_end={col_end}, m={})",
-                Z.cols()
+                expected_m
             )));
         }
 
-        let mut y_row = vec![K::ZERO; y_pad];
         let mut y_scalar = K::ZERO;
-        for rho in 0..d {
-            let mut acc = K::ZERO;
-            for (j, w) in weighted_rows.iter() {
-                acc += *w * K::from(Z[(rho, col_start + *j)]);
-            }
-            y_row[rho] = acc;
-            y_scalar += acc * pow_b[rho];
+        for (j, w) in weighted_rows.iter() {
+            let idx = col_start
+                .checked_add(*j)
+                .ok_or_else(|| PiCcsError::InvalidInput("trace logical index overflow".into()))?;
+            let v = z_logical
+                .get(idx)
+                .copied()
+                .ok_or_else(|| PiCcsError::InvalidInput(format!("trace openings: logical index out of range (idx={idx}, m={})", z_logical.len())))?;
+            y_scalar += *w * v;
         }
 
-        me.y.push(y_row);
-        me.y_scalars.push(y_scalar);
+        me.aux_openings.push(y_scalar);
     }
 
     Ok(())
@@ -586,8 +601,9 @@ pub(crate) fn append_col_major_time_openings_to_me_instance_at_js<Cmt>(
     col_base: usize,
     cols: &[usize],
     core_t: usize,
+    expected_m: usize,
     Z: &Mat<F>,
-    me: &mut MeInstance<Cmt, F, K>,
+    me: &mut CeClaim<Cmt, F, K>,
     js: &[usize],
 ) -> Result<(), PiCcsError>
 where
@@ -623,11 +639,11 @@ where
     if me.r.is_empty() {
         return Err(PiCcsError::InvalidInput("trace openings require non-empty ME.r".into()));
     }
-    if col_base >= Z.cols() {
+    if col_base >= expected_m {
         return Err(PiCcsError::InvalidInput(format!(
             "trace openings require col_base < m (col_base={}, m={})",
             col_base,
-            Z.cols()
+            expected_m
         )));
     }
 
@@ -652,25 +668,42 @@ where
         }
     }
 
-    // Idempotent append: allow callers to call this once; reject unexpected shapes.
-    let want_len = core_t
-        .checked_add(cols.len())
-        .ok_or_else(|| PiCcsError::InvalidInput("core_t + cols.len overflow".into()))?;
-    if me.y.len() == want_len && me.y_scalars.len() == want_len {
-        return Ok(());
-    }
-    if me.y.len() != core_t || me.y_scalars.len() != core_t {
+    if me.y_ring.len() != me.ct.len() {
         return Err(PiCcsError::InvalidInput(format!(
-            "trace openings expect ME y/y_scalars to start at core_t (y.len()={}, y_scalars.len()={}, core_t={})",
-            me.y.len(),
-            me.y_scalars.len(),
-            core_t
+            "trace openings require ME core y/y_scalars alignment (y.len()={}, y_scalars.len()={})",
+            me.y_ring.len(),
+            me.ct.len(),
         )));
     }
-    for (j, row) in me.y.iter().enumerate() {
+    if core_t < me.ct.len() {
+        return Err(PiCcsError::InvalidInput(format!(
+            "trace openings require core_t >= ME core y_scalars len (core_t={}, y_scalars.len()={})",
+            core_t,
+            me.ct.len(),
+        )));
+    }
+    let aux_base = core_t
+        .checked_sub(me.ct.len())
+        .ok_or_else(|| PiCcsError::InvalidInput("core_t underflow for sparse-trace aux base".into()))?;
+
+    // Idempotent append: allow callers to call this once; reject unexpected aux lengths.
+    let want_aux_len = aux_base
+        .checked_add(cols.len())
+        .ok_or_else(|| PiCcsError::InvalidInput("aux_base + cols.len overflow".into()))?;
+    if me.aux_openings.len() == want_aux_len {
+        return Ok(());
+    }
+    if me.aux_openings.len() != aux_base {
+        return Err(PiCcsError::InvalidInput(format!(
+            "trace openings expect ME aux_openings to start at aux_base (aux_openings.len()={}, aux_base={})",
+            me.aux_openings.len(),
+            aux_base
+        )));
+    }
+    for (j, row) in me.y_ring.iter().enumerate() {
         if row.len() != y_pad {
             return Err(PiCcsError::InvalidInput(format!(
-                "trace openings require ME.y[{j}].len()==y_pad (got {}, want {})",
+                "trace openings require ME.y_ring[{j}].len()==y_pad (got {}, want {})",
                 row.len(),
                 y_pad
             )));
@@ -698,14 +731,8 @@ where
         .filter_map(|(j, w)| (w != K::ZERO).then_some((j, w)))
         .collect();
 
-    // Base-b powers for recomposition.
-    let bK = K::from(F::from_u64(params.b as u64));
-    let mut pow_b = Vec::with_capacity(d);
-    let mut cur = K::ONE;
-    for _ in 0..d {
-        pow_b.push(cur);
-        cur *= bK;
-    }
+    // Decode once into logical witness coordinates so openings are layout-agnostic.
+    let z_logical = decode_cpu_z_to_k(params, Z, expected_m)?;
 
     for &col_id in cols {
         let col_offset = col_id
@@ -717,26 +744,26 @@ where
         let col_end = col_start
             .checked_add(t_len - 1)
             .ok_or_else(|| PiCcsError::InvalidInput("trace col_end overflow".into()))?;
-        if col_end >= Z.cols() {
+        if col_end >= expected_m {
             return Err(PiCcsError::InvalidInput(format!(
                 "trace openings: column span out of range (col_start={col_start}, col_end={col_end}, m={})",
-                Z.cols()
+                expected_m
             )));
         }
 
-        let mut y_row = vec![K::ZERO; y_pad];
         let mut y_scalar = K::ZERO;
-        for rho in 0..d {
-            let mut acc = K::ZERO;
-            for (j, w) in weighted_rows.iter() {
-                acc += *w * K::from(Z[(rho, col_start + *j)]);
-            }
-            y_row[rho] = acc;
-            y_scalar += acc * pow_b[rho];
+        for (j, w) in weighted_rows.iter() {
+            let idx = col_start
+                .checked_add(*j)
+                .ok_or_else(|| PiCcsError::InvalidInput("trace logical index overflow".into()))?;
+            let v = z_logical
+                .get(idx)
+                .copied()
+                .ok_or_else(|| PiCcsError::InvalidInput(format!("trace openings: logical index out of range (idx={idx}, m={})", z_logical.len())))?;
+            y_scalar += *w * v;
         }
 
-        me.y.push(y_row);
-        me.y_scalars.push(y_scalar);
+        me.aux_openings.push(y_scalar);
     }
 
     Ok(())
@@ -1601,11 +1628,8 @@ fn ensure_ccs_has_shared_bus_padding_for_steps<Cmt, S: BusStepView<Cmt>>(
     ensure_ccs_has_bus_padding_constraints(s, bus, &const_one_cols, &required)
 }
 
-pub(crate) fn decode_cpu_z_to_k(params: &NeoParams, Z: &Mat<F>) -> Vec<K> {
-    ajtai_decode_vector(params, Z)
-        .into_iter()
-        .map(Into::into)
-        .collect()
+pub(crate) fn decode_cpu_z_to_k(params: &NeoParams, Z: &Mat<F>, expected_m: usize) -> Result<Vec<K>, PiCcsError> {
+    neo_reductions::common::decode_z_from_witness_mat(params, Z, expected_m)
 }
 
 pub(crate) fn build_time_sparse_from_bus_col(

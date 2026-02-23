@@ -120,6 +120,12 @@ pub(crate) fn build_route_a_width_time_claims(
             bus.bus_base,
             t_len,
             &step.mcs.1.Z,
+            step
+                .mcs
+                .0
+                .m_in
+                .checked_add(step.mcs.1.w.len())
+                .ok_or_else(|| PiCcsError::InvalidInput("W3(shared): witness width overflow".into()))?,
             bus.bus_cols,
             &width_bus_val_cols,
         )?;
@@ -1124,7 +1130,7 @@ pub(crate) fn emit_route_a_wb_wp_me_claims(
     s: &CcsStructure<F>,
     step: &StepWitnessBundle<Cmt, F, K>,
     r_time: &[K],
-) -> Result<(Vec<MeInstance<Cmt, F, K>>, Vec<MeInstance<Cmt, F, K>>), PiCcsError> {
+) -> Result<(Vec<CeClaim<Cmt, F, K>>, Vec<CeClaim<Cmt, F, K>>), PiCcsError> {
     if !wb_wp_required_for_step_witness(step) {
         return Ok((Vec::new(), Vec::new()));
     }
@@ -1159,6 +1165,7 @@ pub(crate) fn emit_route_a_wb_wp_me_claims(
         m_in,
         &wb_cols,
         core_t,
+        s.m,
         &mcs_wit.Z,
         &mut wb_claims[0],
     )?;
@@ -1223,6 +1230,7 @@ pub(crate) fn emit_route_a_wb_wp_me_claims(
         m_in,
         &wp_cols,
         core_t,
+        s.m,
         &mcs_wit.Z,
         &mut wp_claims[0],
     )?;
@@ -1230,7 +1238,7 @@ pub(crate) fn emit_route_a_wb_wp_me_claims(
 }
 
 pub(crate) fn verify_route_a_wb_wp_terminals(
-    core_t: usize,
+    _core_t: usize,
     step: &StepInstanceBundle<Cmt, F, K>,
     r_time: &[K],
     r_cycle: &[K],
@@ -1266,17 +1274,15 @@ pub(crate) fn verify_route_a_wb_wp_terminals(
         }
 
         let wb_bool_cols = rv32_trace_wb_columns(&trace);
-        let need = core_t
-            .checked_add(wb_bool_cols.len())
-            .ok_or_else(|| PiCcsError::InvalidInput("WB opening count overflow".into()))?;
-        if me.y_scalars.len() != need {
+        let need = wb_bool_cols.len();
+        if me.aux_openings.len() != need {
             return Err(PiCcsError::ProtocolError(format!(
                 "WB ME opening length mismatch (got {}, expected {need})",
-                me.y_scalars.len()
+                me.aux_openings.len()
             )));
         }
 
-        let wb_bool_open = &me.y_scalars[core_t..];
+        let wb_bool_open = &me.aux_openings[..need];
         let wb_weights = wb_weight_vector(r_cycle, wb_bool_cols.len());
         let mut wb_weighted_bitness = K::ZERO;
         for (&b, &w) in wb_bool_open.iter().zip(wb_weights.iter()) {
@@ -1322,25 +1328,21 @@ pub(crate) fn verify_route_a_wb_wp_terminals(
         }
 
         let wp_open_cols = rv32_trace_wp_opening_columns(&trace);
-        let need_min = core_t
-            .checked_add(wp_open_cols.len())
-            .ok_or_else(|| PiCcsError::InvalidInput("WP opening count overflow".into()))?;
-        if me.y_scalars.len() < need_min {
+        let need_min = wp_open_cols.len();
+        if me.aux_openings.len() < need_min {
             return Err(PiCcsError::ProtocolError(format!(
                 "WP ME opening length mismatch (got {}, expected at least {need_min})",
-                me.y_scalars.len()
+                me.aux_openings.len()
             )));
         }
 
         let active_open = me
-            .y_scalars
-            .get(core_t)
+            .aux_openings
+            .first()
             .copied()
             .ok_or_else(|| PiCcsError::ProtocolError("WP missing active opening".into()))?;
-        let wp_open_end = core_t
-            .checked_add(wp_open_cols.len())
-            .ok_or_else(|| PiCcsError::InvalidInput("WP opening end overflow".into()))?;
-        let wp_open = &me.y_scalars[(core_t + 1)..wp_open_end];
+        let wp_open_end = wp_open_cols.len();
+        let wp_open = &me.aux_openings[1..wp_open_end];
         let wp_weights = wp_weight_vector(r_cycle, wp_open.len());
         let mut wp_weighted_sum = K::ZERO;
         for (&v, &w) in wp_open.iter().zip(wp_weights.iter()) {

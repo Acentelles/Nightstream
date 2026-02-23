@@ -6,11 +6,13 @@ use neo_ajtai::Commitment as Cmt;
 use neo_ccs::traits::SModuleHomomorphism;
 use neo_ccs::{
     matrix::Mat,
-    relations::{CcsStructure, McsInstance, McsWitness, MeInstance},
+    relations::{CcsClaim, CcsStructure, CcsWitness, CeClaim},
 };
 use neo_fold::finalize::{FinalizeReport, ObligationFinalizer};
 use neo_fold::shard::CommitMixers;
-use neo_fold::shard::{fold_shard_prove, fold_shard_verify, fold_shard_verify_and_finalize, ShardObligations};
+use neo_fold::shard::{
+    fold_shard_prove, fold_shard_verify, fold_shard_verify_and_finalize, ShardObligations, ShardProof, StepProof,
+};
 use neo_fold::PiCcsError;
 use neo_math::K;
 use neo_memory::plain::{PlainLutTrace, PlainMemLayout, PlainMemTrace};
@@ -28,6 +30,38 @@ type Mixers = CommitMixers<fn(&[Mat<F>], &[Cmt]) -> Cmt, fn(&[Cmt], u32) -> Cmt>
 const TEST_M: usize = 128;
 // Shared-bus padding validation requires a public constant-one column.
 const M_IN: usize = 1;
+
+fn first_materialized_step(proof: &ShardProof) -> &StepProof {
+    let step0 = proof
+        .steps
+        .first()
+        .expect("expected at least one proof step");
+    if let Some(sub) = step0.compressed_substeps.as_ref() {
+        if let Some(first) = sub.first() {
+            return first;
+        }
+    }
+    step0
+}
+
+fn first_materialized_step_mut(proof: &mut ShardProof) -> &mut StepProof {
+    let step0 = proof
+        .steps
+        .first_mut()
+        .expect("expected at least one proof step");
+    if step0
+        .compressed_substeps
+        .as_ref()
+        .is_some_and(|sub| !sub.is_empty())
+    {
+        return step0
+            .compressed_substeps
+            .as_mut()
+            .and_then(|sub| sub.first_mut())
+            .expect("expected at least one compressed substep");
+    }
+    step0
+}
 
 /// Dummy commit that produces zero commitments.
 #[derive(Clone, Copy, Default)]
@@ -186,17 +220,12 @@ fn build_add_ccs(
     neo_ccs::r1cs_to_ccs(A, B, C)
 }
 
-fn build_mcs_from_z(
-    params: &NeoParams,
-    l: &DummyCommit,
-    m_in: usize,
-    z: Vec<F>,
-) -> (McsInstance<Cmt, F>, McsWitness<F>) {
-    let Z = neo_memory::ajtai::encode_vector_balanced_to_mat(params, &z);
+fn build_mcs_from_z(params: &NeoParams, l: &DummyCommit, m_in: usize, z: Vec<F>) -> (CcsClaim<Cmt, F>, CcsWitness<F>) {
+    let Z = neo_memory::ajtai::encode_vector_for_ccs_m(params, z.len(), &z).expect("encode witness for CCS width");
     let c = l.commit(&Z);
     let x = z[..m_in].to_vec();
     let w = z[m_in..].to_vec();
-    (McsInstance { c, x, m_in }, McsWitness { w, Z })
+    (CcsClaim { c, x, m_in }, CcsWitness { w, Z })
 }
 
 fn write_bus_for_chunk(
@@ -319,7 +348,7 @@ fn build_single_chunk_inputs() -> (
     NeoParams,
     CcsStructure<F>,
     StepWitnessBundle<Cmt, F, K>,
-    Vec<MeInstance<Cmt, F, K>>,
+    Vec<CeClaim<Cmt, F, K>>,
     Vec<Mat<F>>,
     DummyCommit,
     Mixers,
@@ -350,7 +379,7 @@ fn build_single_chunk_inputs() -> (
     let out_val = const_one + write_val + lookup_val;
 
     // Build CCS (single chunk) enforcing out = write_val + lookup_val (bus vars are extra).
-    let acc_init: Vec<MeInstance<Cmt, F, K>> = Vec::new();
+    let acc_init: Vec<CeClaim<Cmt, F, K>> = Vec::new();
     let acc_wit_init: Vec<Mat<F>> = Vec::new();
 
     // Plain memory trace for one step
@@ -486,7 +515,7 @@ fn full_folding_integration_single_chunk() {
     .expect("verify should succeed");
 
     // Print a short summary so it's clear what was enforced.
-    let step0 = &proof.steps[0];
+    let step0 = first_materialized_step(&proof);
     let mem_me_val = step0.mem.val_me_claims.len();
     let ccs_me = step0.fold.ccs_out.len();
     let total_me = ccs_me;
@@ -508,11 +537,11 @@ fn full_folding_integration_single_chunk() {
     if let Some(first) = final_children.first() {
         let r_len = first.r.len();
         let y0_prefix: Vec<K> = first
-            .y
+            .y_ring
             .get(0)
             .map(|row| row.iter().take(2).cloned().collect())
             .unwrap_or_default();
-        let y_scalars_prefix: Vec<K> = first.y_scalars.iter().take(2).cloned().collect();
+        let y_scalars_prefix: Vec<K> = first.ct.iter().take(2).cloned().collect();
         println!(
             "  First child: r_len={}, y[0][..2]={:?}, y_scalars[..2]={:?}",
             r_len, y0_prefix, y_scalars_prefix
@@ -667,7 +696,9 @@ fn tamper_batched_claimed_sum_fails() {
     .expect("prove should succeed");
 
     // Claim 0 is ccs/time; claim 1 is the first Shout time claim in this fixture.
-    proof.steps[0].batched_time.claimed_sums[1] += K::ONE;
+    first_materialized_step_mut(&mut proof)
+        .batched_time
+        .claimed_sums[1] += K::ONE;
 
     let mut tr_verify = Poseidon2Transcript::new(b"full-fold-tamper-claim");
     let steps_public = [StepInstanceBundle::from(&step_bundle)];
@@ -704,11 +735,11 @@ fn tamper_me_opening_fails() {
     .expect("prove should succeed");
 
     // Mutate a CPU ME opening used by shared-bus memory checks (a bus opening at r_time).
-    let step0 = &mut proof.steps[0];
+    let step0 = first_materialized_step_mut(&mut proof);
     let ccs_out0 = &mut step0.fold.ccs_out[0];
     let bus_cols = 10usize; // 1 Shout (3) + 1 Twist (7) in this fixture
-    let bus_y_base = ccs_out0.y_scalars.len() - bus_cols;
-    ccs_out0.y_scalars[bus_y_base] += K::ONE;
+    let bus_y_base = ccs_out0.aux_openings.len() - bus_cols;
+    ccs_out0.aux_openings[bus_y_base] += K::ONE;
 
     let mut tr_verify = Poseidon2Transcript::new(b"full-fold-tamper-me");
     let steps_public = [StepInstanceBundle::from(&step_bundle)];
@@ -744,7 +775,7 @@ fn tamper_shout_addr_pre_round_poly_fails() {
     )
     .expect("prove should succeed");
 
-    let mem0 = proof.steps.get_mut(0).expect("one step");
+    let mem0 = first_materialized_step_mut(&mut proof);
     let group0 = mem0
         .mem
         .shout_addr_pre
@@ -793,7 +824,7 @@ fn tamper_twist_val_eval_round_poly_fails() {
     )
     .expect("prove should succeed");
 
-    let mem0 = proof.steps.get_mut(0).expect("one step");
+    let mem0 = first_materialized_step_mut(&mut proof);
     let twist0 = mem0.mem.proofs.get_mut(1).expect("one Twist proof");
     let twist_proof = match twist0 {
         MemOrLutProof::Twist(p) => p,
@@ -841,10 +872,10 @@ fn missing_val_fold_fails() {
     .expect("prove should succeed");
 
     assert!(
-        !proof.steps[0].val_fold.is_empty(),
+        !first_materialized_step(&proof).val_fold.is_empty(),
         "fixture should produce val_fold when Twist is present"
     );
-    proof.steps[0].val_fold.clear();
+    first_materialized_step_mut(&mut proof).val_fold.clear();
 
     let mut tr_verify = Poseidon2Transcript::new(b"full-fold-missing-val-fold");
     let steps_public = [StepInstanceBundle::from(&step_bundle)];
@@ -977,13 +1008,14 @@ fn wrong_shout_lookup_value_witness_fails() {
     // Layout for 1 Shout instance (d=1, ell=1, chunk_size=1):
     //   [addr_bit0, has_lookup, val] => Shout val is column id 2.
     // There is also 1 Twist instance after it, but we don't touch it.
-    let m = step_bundle.mcs.1.Z.cols();
+    let m = ccs.m;
     let bus_cols = 10usize;
     let bus_base = m - bus_cols;
     let shout_val_col_id = 2usize;
-    let mut z = neo_memory::ajtai::decode_vector(&params, &step_bundle.mcs.1.Z);
+    let mut z = neo_memory::ajtai::decode_vector_for_ccs_m(&params, m, &step_bundle.mcs.1.Z)
+        .expect("decode witness for CCS width");
     z[bus_base + shout_val_col_id] += F::ONE;
-    let Z = neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z);
+    let Z = neo_memory::ajtai::encode_vector_for_ccs_m(&params, z.len(), &z).expect("encode witness for CCS width");
     let c = l.commit(&Z);
     step_bundle.mcs.0.c = c;
     step_bundle.mcs.1.Z = Z;

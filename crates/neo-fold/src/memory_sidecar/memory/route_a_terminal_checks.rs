@@ -1,7 +1,7 @@
 use super::*;
 
 pub(crate) fn verify_route_a_decode_terminals(
-    core_t: usize,
+    _core_t: usize,
     step: &StepInstanceBundle<Cmt, F, K>,
     r_time: &[K],
     r_cycle: &[K],
@@ -45,20 +45,20 @@ pub(crate) fn verify_route_a_decode_terminals(
     } else {
         Vec::new()
     };
-    let decode_open_start = core_t
-        .checked_add(wp_cols.len())
-        .and_then(|v| v.checked_add(control_extra_cols.len()))
+    let decode_open_start = wp_cols
+        .len()
+        .checked_add(control_extra_cols.len())
         .ok_or_else(|| PiCcsError::InvalidInput("W2 decode opening start overflow".into()))?;
     let decode_open_end = decode_open_start
         .checked_add(decode_open_cols.len())
         .ok_or_else(|| PiCcsError::InvalidInput("W2 decode opening end overflow".into()))?;
-    if wp_me.y_scalars.len() < decode_open_end {
+    if wp_me.aux_openings.len() < decode_open_end {
         return Err(PiCcsError::ProtocolError(format!(
             "W2 decode openings missing on WP ME claim (got {}, need at least {decode_open_end})",
-            wp_me.y_scalars.len()
+            wp_me.aux_openings.len()
         )));
     }
-    let decode_open = &wp_me.y_scalars[decode_open_start..decode_open_end];
+    let decode_open = &wp_me.aux_openings[decode_open_start..decode_open_end];
     let decode_open_map: BTreeMap<usize, K> = decode_open_cols
         .iter()
         .copied()
@@ -72,16 +72,14 @@ pub(crate) fn verify_route_a_decode_terminals(
     };
     let wb_me = &mem_proof.wb_me_claims[0];
     let wb_cols = rv32_trace_wb_columns(&trace);
-    let need_wb = core_t
-        .checked_add(wb_cols.len())
-        .ok_or_else(|| PiCcsError::InvalidInput("W2 WB opening count overflow".into()))?;
-    if wb_me.y_scalars.len() != need_wb {
+    let need_wb = wb_cols.len();
+    if wb_me.aux_openings.len() != need_wb {
         return Err(PiCcsError::ProtocolError(format!(
             "W2 WB opening length mismatch (got {}, expected {need_wb})",
-            wb_me.y_scalars.len()
+            wb_me.aux_openings.len()
         )));
     }
-    let wb_open = &wb_me.y_scalars[core_t..];
+    let wb_open = &wb_me.aux_openings[..need_wb];
     let wb_open_col = |col_id: usize| -> Result<K, PiCcsError> {
         let idx = wb_cols
             .iter()
@@ -91,16 +89,14 @@ pub(crate) fn verify_route_a_decode_terminals(
     };
 
     let wp_cols = rv32_trace_wp_opening_columns(&trace);
-    let need_wp = core_t
-        .checked_add(wp_cols.len())
-        .ok_or_else(|| PiCcsError::InvalidInput("W2 WP opening count overflow".into()))?;
-    if wp_me.y_scalars.len() < need_wp {
+    let need_wp = wp_cols.len();
+    if wp_me.aux_openings.len() < need_wp {
         return Err(PiCcsError::ProtocolError(format!(
             "W2 WP opening length mismatch (got {}, expected at least {need_wp})",
-            wp_me.y_scalars.len()
+            wp_me.aux_openings.len()
         )));
     }
-    let wp_open = &wp_me.y_scalars[core_t..need_wp];
+    let wp_open = &wp_me.aux_openings[..need_wp];
     let wp_open_col = |col_id: usize| -> Result<K, PiCcsError> {
         let idx = wp_cols
             .iter()
@@ -291,7 +287,7 @@ pub(crate) fn verify_route_a_decode_terminals(
 }
 
 pub(crate) fn verify_route_a_width_terminals(
-    core_t: usize,
+    _core_t: usize,
     step: &StepInstanceBundle<Cmt, F, K>,
     r_time: &[K],
     r_cycle: &[K],
@@ -331,16 +327,14 @@ pub(crate) fn verify_route_a_width_terminals(
         return Err(PiCcsError::ProtocolError("W3 WP ME claim m_in mismatch".into()));
     }
     let wp_cols = rv32_trace_wp_opening_columns(&trace);
-    let need_wp = core_t
-        .checked_add(wp_cols.len())
-        .ok_or_else(|| PiCcsError::InvalidInput("W3 WP opening count overflow".into()))?;
-    if wp_me.y_scalars.len() < need_wp {
+    let need_wp = wp_cols.len();
+    if wp_me.aux_openings.len() < need_wp {
         return Err(PiCcsError::ProtocolError(format!(
             "W3 WP ME opening length mismatch (got {}, expected at least {need_wp})",
-            wp_me.y_scalars.len()
+            wp_me.aux_openings.len()
         )));
     }
-    let wp_open = &wp_me.y_scalars[core_t..need_wp];
+    let wp_open = &wp_me.aux_openings[..need_wp];
     let wp_open_col = |col_id: usize| -> Result<K, PiCcsError> {
         let idx = wp_cols
             .iter()
@@ -355,20 +349,20 @@ pub(crate) fn verify_route_a_width_terminals(
     } else {
         Vec::new()
     };
-    let decode_open_start = core_t
-        .checked_add(wp_cols.len())
-        .and_then(|v| v.checked_add(control_extra_cols.len()))
+    let decode_open_start = wp_cols
+        .len()
+        .checked_add(control_extra_cols.len())
         .ok_or_else(|| PiCcsError::InvalidInput("W3 decode opening start overflow".into()))?;
     let decode_open_end = decode_open_start
         .checked_add(decode_open_cols.len())
         .ok_or_else(|| PiCcsError::InvalidInput("W3 decode opening end overflow".into()))?;
-    if wp_me.y_scalars.len() < decode_open_end {
+    if wp_me.aux_openings.len() < decode_open_end {
         return Err(PiCcsError::ProtocolError(format!(
             "W3 decode openings missing on WP ME claim (got {}, need at least {decode_open_end})",
-            wp_me.y_scalars.len()
+            wp_me.aux_openings.len()
         )));
     }
-    let decode_open = &wp_me.y_scalars[decode_open_start..decode_open_end];
+    let decode_open = &wp_me.aux_openings[decode_open_start..decode_open_end];
     let decode_open_map: BTreeMap<usize, K> = decode_open_cols
         .iter()
         .copied()
@@ -385,13 +379,13 @@ pub(crate) fn verify_route_a_width_terminals(
     let width_open_end = width_open_start
         .checked_add(width_open_cols.len())
         .ok_or_else(|| PiCcsError::InvalidInput("W3 width opening end overflow".into()))?;
-    if wp_me.y_scalars.len() < width_open_end {
+    if wp_me.aux_openings.len() < width_open_end {
         return Err(PiCcsError::ProtocolError(format!(
             "W3 width openings missing on WP ME claim (got {}, need at least {width_open_end})",
-            wp_me.y_scalars.len()
+            wp_me.aux_openings.len()
         )));
     }
-    let width_open_map: BTreeMap<usize, K> = wp_me.y_scalars[width_open_start..width_open_end]
+    let width_open_map: BTreeMap<usize, K> = wp_me.aux_openings[width_open_start..width_open_end]
         .iter()
         .copied()
         .zip(width_open_cols.iter().copied())
@@ -555,7 +549,7 @@ pub(crate) fn verify_route_a_width_terminals(
 }
 
 pub(crate) fn verify_route_a_control_terminals(
-    core_t: usize,
+    _core_t: usize,
     step: &StepInstanceBundle<Cmt, F, K>,
     r_time: &[K],
     r_cycle: &[K],
@@ -597,25 +591,23 @@ pub(crate) fn verify_route_a_control_terminals(
     }
     let wp_base_cols = rv32_trace_wp_opening_columns(&trace);
     let control_extra_cols = rv32_trace_control_extra_opening_columns(&trace);
-    let need_wp_min = core_t
-        .checked_add(wp_base_cols.len())
-        .ok_or_else(|| PiCcsError::InvalidInput("control stage WP opening count overflow".into()))?;
-    if wp_me.y_scalars.len() < need_wp_min {
+    let need_wp_min = wp_base_cols.len();
+    if wp_me.aux_openings.len() < need_wp_min {
         return Err(PiCcsError::ProtocolError(format!(
             "control stage WP ME opening length mismatch (got {}, expected at least {need_wp_min})",
-            wp_me.y_scalars.len()
+            wp_me.aux_openings.len()
         )));
     }
     let need_control_min = need_wp_min
         .checked_add(control_extra_cols.len())
         .ok_or_else(|| PiCcsError::InvalidInput("control stage WP+extra opening count overflow".into()))?;
-    if wp_me.y_scalars.len() < need_control_min {
+    if wp_me.aux_openings.len() < need_control_min {
         return Err(PiCcsError::ProtocolError(format!(
             "control stage requires control extra WP openings (got {}, expected at least {need_control_min})",
-            wp_me.y_scalars.len()
+            wp_me.aux_openings.len()
         )));
     }
-    let wp_open = &wp_me.y_scalars[core_t..];
+    let wp_open = &wp_me.aux_openings[..];
     let wp_open_col = |col_id: usize| -> Result<K, PiCcsError> {
         if let Some(idx) = wp_base_cols.iter().position(|&c| c == col_id) {
             return Ok(wp_open[idx]);
@@ -638,13 +630,13 @@ pub(crate) fn verify_route_a_control_terminals(
     let decode_open_end = decode_open_start
         .checked_add(decode_open_cols.len())
         .ok_or_else(|| PiCcsError::InvalidInput("control stage decode opening end overflow".into()))?;
-    if wp_me.y_scalars.len() < decode_open_end {
+    if wp_me.aux_openings.len() < decode_open_end {
         return Err(PiCcsError::ProtocolError(format!(
             "control stage decode openings missing on WP ME claim (got {}, need at least {decode_open_end})",
-            wp_me.y_scalars.len()
+            wp_me.aux_openings.len()
         )));
     }
-    let decode_open = &wp_me.y_scalars[decode_open_start..decode_open_end];
+    let decode_open = &wp_me.aux_openings[decode_open_start..decode_open_end];
     let decode_open_map: BTreeMap<usize, K> = decode_open_cols
         .iter()
         .copied()

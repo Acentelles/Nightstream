@@ -4,7 +4,7 @@ use crate::witness::{LutInstance, LutTableSpec, LutWitness, MemInstance, MemWitn
 use neo_vm_trace::TwistOpKind;
 use neo_vm_trace::VmTrace;
 
-use neo_ccs::relations::{McsInstance, McsWitness};
+use neo_ccs::relations::{CcsClaim, CcsWitness};
 use p3_field::PrimeCharacteristicRing;
 use p3_goldilocks::Goldilocks;
 use std::collections::HashMap;
@@ -18,12 +18,12 @@ pub trait CpuArithmetization<F, Cmt> {
         &self,
         trace: &VmTrace<u64, u64>,
         chunk_size: usize,
-    ) -> Result<Vec<(McsInstance<Cmt, F>, McsWitness<F>)>, Self::Error>;
+    ) -> Result<Vec<(CcsClaim<Cmt, F>, CcsWitness<F>)>, Self::Error>;
 
     fn build_ccs_steps(
         &self,
         trace: &VmTrace<u64, u64>,
-    ) -> Result<Vec<(McsInstance<Cmt, F>, McsWitness<F>)>, Self::Error> {
+    ) -> Result<Vec<(CcsClaim<Cmt, F>, CcsWitness<F>)>, Self::Error> {
         self.build_ccs_chunks(trace, 1)
     }
 

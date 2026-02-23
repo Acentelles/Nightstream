@@ -11,7 +11,7 @@
 #![allow(non_snake_case)]
 
 use std::collections::{HashMap, HashSet};
-use std::marker::PhantomData;
+use std::sync::Arc;
 use std::time::Duration;
 
 use crate::output_binding::OutputBindingConfig;
@@ -20,11 +20,8 @@ use crate::session::FoldingSession;
 use crate::shard::{ShardProof, StepLinkingConfig};
 use crate::PiCcsError;
 use neo_ajtai::AjtaiSModule;
-use neo_ccs::relations::{McsInstance, McsWitness};
-use neo_ccs::traits::SModuleHomomorphism;
 use neo_ccs::CcsStructure;
-use neo_math::{F, K};
-use neo_memory::cpu::build_bus_layout_for_instances_with_shout_and_twist_lanes;
+use neo_math::{D, F, K};
 use neo_memory::output_check::ProgramIO;
 use neo_memory::plain::{LutTable, PlainMemLayout};
 use neo_memory::riscv::ccs::{
@@ -39,16 +36,16 @@ use neo_memory::riscv::lookups::{
 use neo_memory::riscv::packed::{rv32_packed_d, rv32_packed_rollout_opcode};
 use neo_memory::riscv::rom_init::prog_rom_layout_and_init_words;
 use neo_memory::riscv::trace::{
-    extract_twist_lanes_over_time, rv32_decode_lookup_backed_cols, rv32_decode_lookup_backed_row_from_instr_word,
-    rv32_decode_lookup_table_id_for_col, rv32_width_lookup_backed_cols, rv32_width_lookup_table_id_for_col,
-    rv32_width_sidecar_witness_from_exec_table, Rv32DecodeSidecarLayout, Rv32WidthSidecarLayout, TwistLaneOverTime,
+    rv32_decode_lookup_backed_cols, rv32_decode_lookup_backed_row_from_instr_word, rv32_decode_lookup_table_id_for_col,
+    rv32_width_lookup_backed_cols, rv32_width_lookup_table_id_for_col, rv32_width_sidecar_witness_from_exec_table,
+    Rv32DecodeSidecarLayout, Rv32WidthSidecarLayout,
 };
-use neo_memory::witness::{LutInstance, LutWitness, MemInstance, MemWitness, StepWitnessBundle};
 use neo_memory::{LutTableSpec, MemInit, R1csCpu};
 use neo_params::NeoParams;
 use neo_vm_trace::{ShoutEvent, ShoutId, StepTrace, Twist as _, TwistOpKind, VmTrace};
 use p3_field::PrimeCharacteristicRing;
 use p3_field::PrimeField64;
+use rand_chacha::rand_core::SeedableRng;
 
 #[cfg(target_arch = "wasm32")]
 use js_sys::Date;
@@ -108,97 +105,6 @@ fn required_bits_for_max_addr(max_addr: u64) -> usize {
     } else {
         (u64::BITS - max_addr.leading_zeros()) as usize
     }
-}
-
-fn build_twist_only_bus_z(
-    m: usize,
-    m_in: usize,
-    t: usize,
-    ell_addr: usize,
-    lanes: usize,
-    lane_data: &[TwistLaneOverTime],
-    x_prefix: &[F],
-) -> Result<Vec<F>, String> {
-    if x_prefix.len() != m_in {
-        return Err(format!(
-            "build_twist_only_bus_z: x_prefix.len()={} != m_in={}",
-            x_prefix.len(),
-            m_in
-        ));
-    }
-    if lane_data.len() != lanes {
-        return Err(format!(
-            "build_twist_only_bus_z: lane_data.len()={} != lanes={}",
-            lane_data.len(),
-            lanes
-        ));
-    }
-
-    let bus = build_bus_layout_for_instances_with_shout_and_twist_lanes(
-        m,
-        m_in,
-        t,
-        core::iter::empty::<(usize, usize)>(),
-        core::iter::once((ell_addr, lanes)),
-    )?;
-    if bus.twist_cols.len() != 1 || !bus.shout_cols.is_empty() {
-        return Err("build_twist_only_bus_z: expected 1 twist instance and 0 shout instances".into());
-    }
-
-    let mut z = vec![F::ZERO; m];
-    z[..m_in].copy_from_slice(x_prefix);
-
-    let twist = &bus.twist_cols[0];
-    for (lane_idx, cols) in twist.lanes.iter().enumerate() {
-        let lane = &lane_data[lane_idx];
-        if lane.has_read.len() != t || lane.has_write.len() != t {
-            return Err("build_twist_only_bus_z: lane length mismatch".into());
-        }
-        for j in 0..t {
-            let has_r = lane.has_read[j];
-            let has_w = lane.has_write[j];
-
-            z[bus.bus_cell(cols.has_read, j)] = if has_r { F::ONE } else { F::ZERO };
-            z[bus.bus_cell(cols.has_write, j)] = if has_w { F::ONE } else { F::ZERO };
-
-            z[bus.bus_cell(cols.rv, j)] = if has_r { F::from_u64(lane.rv[j]) } else { F::ZERO };
-            z[bus.bus_cell(cols.wv, j)] = if has_w { F::from_u64(lane.wv[j]) } else { F::ZERO };
-            z[bus.bus_cell(cols.inc, j)] = if has_w { lane.inc_at_write_addr[j] } else { F::ZERO };
-
-            for (bit_idx, col_id) in cols.ra_bits.clone().enumerate() {
-                let bit_is_set = bit_idx < (u64::BITS as usize) && ((lane.ra[j] >> bit_idx) & 1) == 1;
-                z[bus.bus_cell(col_id, j)] = if bit_is_set { F::ONE } else { F::ZERO };
-            }
-            for (bit_idx, col_id) in cols.wa_bits.clone().enumerate() {
-                let bit_is_set = bit_idx < (u64::BITS as usize) && ((lane.wa[j] >> bit_idx) & 1) == 1;
-                z[bus.bus_cell(col_id, j)] = if bit_is_set { F::ONE } else { F::ZERO };
-            }
-        }
-    }
-
-    Ok(z)
-}
-
-fn mem_init_from_u64_sparse(sparse: &HashMap<u64, u64>, k: usize, label: &str) -> Result<MemInit<F>, PiCcsError> {
-    let mut pairs = Vec::<(u64, F)>::new();
-    for (&addr, &value) in sparse {
-        let addr_usize = usize::try_from(addr)
-            .map_err(|_| PiCcsError::InvalidInput(format!("{label} init addr does not fit usize: addr={addr}")))?;
-        if addr_usize >= k {
-            return Err(PiCcsError::InvalidInput(format!(
-                "{label} init addr out of range: addr={addr} >= k={k}"
-            )));
-        }
-        if value != 0 {
-            pairs.push((addr, F::from_u64(value)));
-        }
-    }
-    pairs.sort_by_key(|(addr, _)| *addr);
-    Ok(if pairs.is_empty() {
-        MemInit::Zero
-    } else {
-        MemInit::Sparse(pairs)
-    })
 }
 
 fn final_reg_state_dense(exec: &Rv32ExecTable, reg_init: &HashMap<u64, u64>) -> Result<Vec<F>, PiCcsError> {
@@ -275,95 +181,6 @@ fn final_ram_state_dense(exec: &Rv32ExecTable, ram_init: &HashMap<u64, u64>, k: 
     }
 
     Ok(out)
-}
-
-fn init_reg_state(reg_init: &HashMap<u64, u64>) -> Result<[u64; 32], PiCcsError> {
-    let mut regs = [0u64; 32];
-    for (&reg, &value) in reg_init {
-        if reg >= 32 {
-            return Err(PiCcsError::InvalidInput(format!(
-                "reg_init_u32: register index out of range: reg={reg} (expected 0..32)"
-            )));
-        }
-        if reg == 0 && value != 0 {
-            return Err(PiCcsError::InvalidInput(
-                "reg_init_u32: x0 must be 0 (non-zero init is forbidden)".into(),
-            ));
-        }
-        regs[reg as usize] = value as u32 as u64;
-    }
-    regs[0] = 0;
-    Ok(regs)
-}
-
-fn init_ram_state(ram_init: &HashMap<u64, u64>, ram_ell_addr: usize) -> Result<HashMap<u64, u64>, PiCcsError> {
-    if ram_ell_addr > 64 {
-        return Err(PiCcsError::InvalidInput(format!(
-            "RAM ell_addr too large for u64 addressing: ell_addr={ram_ell_addr}"
-        )));
-    }
-
-    let mut ram = HashMap::<u64, u64>::new();
-    for (&addr, &value) in ram_init {
-        if ram_ell_addr < 64 && (addr >> ram_ell_addr) != 0 {
-            return Err(PiCcsError::InvalidInput(format!(
-                "RAM init addr out of range for ell_addr={ram_ell_addr}: addr={addr}"
-            )));
-        }
-        let v = value as u32 as u64;
-        if v != 0 {
-            ram.insert(addr, v);
-        }
-    }
-    Ok(ram)
-}
-
-fn reg_state_to_sparse_map(regs: &[u64; 32]) -> HashMap<u64, u64> {
-    let mut out = HashMap::<u64, u64>::new();
-    for (idx, &value) in regs.iter().enumerate().skip(1) {
-        if value != 0 {
-            out.insert(idx as u64, value);
-        }
-    }
-    out
-}
-
-fn apply_exec_chunk_writes_to_state(
-    chunk: &Rv32ExecTable,
-    regs: &mut [u64; 32],
-    ram: &mut HashMap<u64, u64>,
-) -> Result<(), PiCcsError> {
-    for r in chunk.rows.iter().filter(|r| r.active) {
-        if let Some(w) = &r.reg_write_lane0 {
-            if w.addr == 0 {
-                return Err(PiCcsError::InvalidInput(format!(
-                    "trace writes x0 at cycle {} which is invalid",
-                    r.cycle
-                )));
-            }
-            if w.addr >= 32 {
-                return Err(PiCcsError::InvalidInput(format!(
-                    "trace register write addr out of range at cycle {}: addr={}",
-                    r.cycle, w.addr
-                )));
-            }
-            regs[w.addr as usize] = w.value as u32 as u64;
-            regs[0] = 0;
-        }
-
-        for e in &r.ram_events {
-            if e.kind != TwistOpKind::Write {
-                continue;
-            }
-            let value = e.value as u32 as u64;
-            if value == 0 {
-                ram.remove(&e.addr);
-            } else {
-                ram.insert(e.addr, value);
-            }
-        }
-    }
-    Ok(())
 }
 
 fn split_exec_into_fixed_chunks(exec: &Rv32ExecTable, chunk_rows: usize) -> Result<Vec<Rv32ExecTable>, PiCcsError> {
@@ -700,7 +517,6 @@ pub struct Rv32TraceWiring {
     max_steps: Option<usize>,
     min_trace_len: usize,
     chunk_rows: Option<usize>,
-    shared_cpu_bus: bool,
     mode: FoldingMode,
     ram_init: HashMap<u64, u64>,
     reg_init: HashMap<u64, u64>,
@@ -721,7 +537,6 @@ impl Rv32TraceWiring {
             max_steps: None,
             min_trace_len: 4,
             chunk_rows: None,
-            shared_cpu_bus: true,
             mode: FoldingMode::Optimized,
             ram_init: HashMap::new(),
             reg_init: HashMap::new(),
@@ -752,14 +567,6 @@ impl Rv32TraceWiring {
     /// and step-linking enforces `pc_final -> pc0`.
     pub fn chunk_rows(mut self, chunk_rows: usize) -> Self {
         self.chunk_rows = Some(chunk_rows);
-        self
-    }
-
-    /// Toggle shared-CPU-bus trace proving mode.
-    ///
-    /// `true` is the intended production default; `false` keeps the legacy no-shared-bus path.
-    pub fn shared_cpu_bus(mut self, enabled: bool) -> Self {
-        self.shared_cpu_bus = enabled;
         self
     }
 
@@ -899,12 +706,6 @@ impl Rv32TraceWiring {
             }
             None => DEFAULT_RV32_TRACE_MAX_STEPS,
         };
-        if !self.shared_cpu_bus {
-            return Err(PiCcsError::InvalidInput(
-                "RV32 trace wiring no-shared fallback is removed; Phase 2 decode lookup requires shared_cpu_bus=true"
-                    .into(),
-            ));
-        }
         let ram_init_map = self.ram_init.clone();
         let reg_init_map = self.reg_init.clone();
         let output_claims = self.output_claims.clone();
@@ -952,9 +753,7 @@ impl Rv32TraceWiring {
                 target_len, DEFAULT_RV32_TRACE_MAX_STEPS
             )));
         }
-        if self.shared_cpu_bus {
-            inject_rv32_decode_lookup_events_into_trace(&mut trace, &prog_layout, &prog_init_words)?;
-        }
+        inject_rv32_decode_lookup_events_into_trace(&mut trace, &prog_layout, &prog_init_words)?;
         let exec = Rv32ExecTable::from_trace_padded(&trace, target_len)
             .map_err(|e| PiCcsError::InvalidInput(format!("Rv32ExecTable::from_trace_padded failed: {e}")))?;
         exec.validate_cycle_chain()
@@ -966,7 +765,7 @@ impl Rv32TraceWiring {
         exec.validate_inactive_rows_are_empty()
             .map_err(|e| PiCcsError::InvalidInput(format!("validate_inactive_rows_are_empty failed: {e}")))?;
         let width_layout = Rv32WidthSidecarLayout::new();
-        let include_width_lookup = self.shared_cpu_bus && program_requires_width_lookup(&program);
+        let include_width_lookup = program_requires_width_lookup(&program);
         let (width_lookup_tables, width_lookup_addr_d) = if include_width_lookup {
             let (tables, addr_d) = build_rv32_width_lookup_tables(&width_layout, &exec, trace.steps.len())?;
             inject_rv32_width_lookup_events_into_trace(&mut trace, &exec, &width_layout)?;
@@ -1051,12 +850,8 @@ impl Rv32TraceWiring {
             None => inferred_shout_ops,
         };
         let decode_layout = Rv32DecodeSidecarLayout::new();
-        let decode_lookup_tables = if self.shared_cpu_bus {
-            build_rv32_decode_lookup_tables(&prog_layout, &prog_init_words)
-        } else {
-            HashMap::new()
-        };
-        let decode_lookup_bus_specs: Vec<TraceShoutBusSpec> = if self.shared_cpu_bus {
+        let decode_lookup_tables = build_rv32_decode_lookup_tables(&prog_layout, &prog_init_words);
+        let decode_lookup_bus_specs: Vec<TraceShoutBusSpec> = {
             let decode_lookup_cols = rv32_decode_lookup_backed_cols(&decode_layout);
             decode_lookup_cols
                 .iter()
@@ -1067,8 +862,6 @@ impl Rv32TraceWiring {
                     n_vals: 1usize,
                 })
                 .collect()
-        } else {
-            Vec::new()
         };
         let width_lookup_bus_specs: Vec<TraceShoutBusSpec> = if include_width_lookup {
             let width_lookup_cols = rv32_width_lookup_backed_cols(&width_layout);
@@ -1138,23 +931,17 @@ impl Rv32TraceWiring {
             }
         }
 
-        let mut ccs_reserved_rows = 0usize;
-        if self.shared_cpu_bus {
-            let (bus_region_len, reserved_rows) = rv32_trace_shared_bus_requirements_with_specs(
-                &layout,
-                &base_shout_table_ids,
-                &all_extra_shout_specs,
-                &mem_layouts,
-            )
-            .map_err(|e| {
-                PiCcsError::InvalidInput(format!("rv32_trace_shared_bus_requirements_with_specs failed: {e}"))
-            })?;
-            layout.m = layout
-                .m
-                .checked_add(bus_region_len)
-                .ok_or_else(|| PiCcsError::InvalidInput("trace layout m overflow after bus tail reservation".into()))?;
-            ccs_reserved_rows = reserved_rows;
-        }
+        let (bus_region_len, ccs_reserved_rows) = rv32_trace_shared_bus_requirements_with_specs(
+            &layout,
+            &base_shout_table_ids,
+            &all_extra_shout_specs,
+            &mem_layouts,
+        )
+        .map_err(|e| PiCcsError::InvalidInput(format!("rv32_trace_shared_bus_requirements_with_specs failed: {e}")))?;
+        layout.m = layout
+            .m
+            .checked_add(bus_region_len)
+            .ok_or_else(|| PiCcsError::InvalidInput("trace layout m overflow after bus tail reservation".into()))?;
 
         let mut ccs = if ccs_reserved_rows == 0 {
             build_rv32_trace_wiring_ccs(&layout)
@@ -1165,7 +952,14 @@ impl Rv32TraceWiring {
             })?
         };
 
-        let mut session = FoldingSession::<AjtaiSModule>::new_ajtai(self.mode.clone(), &ccs)?;
+        // Keep params as selected by NeoParams presets during debugging.
+        let params = NeoParams::goldilocks_auto_r1cs_ccs(ccs.n.max(ccs.m))
+            .map_err(|e| PiCcsError::InvalidInput(format!("NeoParams::goldilocks_auto_r1cs_ccs failed: {e}")))?;
+        let m_commit = neo_memory::ajtai::commit_cols_for_ccs_m(ccs.m);
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(42);
+        let pp = neo_ajtai::setup_par(&mut rng, D, params.kappa as usize, m_commit)
+            .map_err(|e| PiCcsError::InvalidInput(format!("Ajtai setup failed: {e}")))?;
+        let mut session = FoldingSession::new(self.mode.clone(), params, AjtaiSModule::new(Arc::new(pp)));
         session.set_step_linking(StepLinkingConfig::new(vec![(layout.pc_final, layout.pc0)]));
 
         let mut prog_init_pairs: Vec<(u64, F)> = prog_init_words
@@ -1201,199 +995,60 @@ impl Rv32TraceWiring {
 
         let setup_duration = elapsed_duration(setup_start);
         let mut chunk_build_commit_duration = Duration::ZERO;
-        if self.shared_cpu_bus {
-            let chunk_start = time_now();
+        let chunk_start = time_now();
 
-            let mut lut_tables = decode_lookup_tables.clone();
-            lut_tables.extend(width_lookup_tables.clone());
-            let lut_lanes: HashMap<u32, usize> = HashMap::new();
+        let mut lut_tables = decode_lookup_tables.clone();
+        lut_tables.extend(width_lookup_tables.clone());
+        let lut_lanes: HashMap<u32, usize> = HashMap::new();
 
-            let mut cpu = R1csCpu::new(
-                ccs.clone(),
-                session.params().clone(),
-                session.committer().clone(),
-                layout.m_in,
-                &lut_tables,
-                &table_specs,
-                rv32_trace_chunk_to_witness(layout.clone()),
-            )
-            .map_err(|e| PiCcsError::InvalidInput(format!("R1csCpu::new failed: {e}")))?;
-            cpu = cpu
-                .with_shared_cpu_bus(
-                    rv32_trace_shared_cpu_bus_config_with_specs(
-                        &layout,
-                        &base_shout_table_ids,
-                        &all_extra_shout_specs,
-                        mem_layouts.clone(),
-                        initial_mem.clone(),
-                    )
-                    .map_err(|e| {
-                        PiCcsError::InvalidInput(format!("rv32_trace_shared_cpu_bus_config_with_specs failed: {e}"))
-                    })?,
-                    layout.t,
+        let mut cpu = R1csCpu::new(
+            ccs.clone(),
+            session.params().clone(),
+            session.committer().clone(),
+            layout.m_in,
+            &lut_tables,
+            &table_specs,
+            rv32_trace_chunk_to_witness(layout.clone()),
+        )
+        .map_err(|e| PiCcsError::InvalidInput(format!("R1csCpu::new failed: {e}")))?;
+        cpu = cpu
+            .with_shared_cpu_bus(
+                rv32_trace_shared_cpu_bus_config_with_specs(
+                    &layout,
+                    &base_shout_table_ids,
+                    &all_extra_shout_specs,
+                    mem_layouts.clone(),
+                    initial_mem.clone(),
                 )
-                .map_err(|e| PiCcsError::InvalidInput(format!("shared bus inject failed: {e}")))?;
-
-            ccs = cpu.ccs.clone();
-
-            session.execute_shard_shared_cpu_bus_from_trace(
-                &trace,
-                max_steps,
+                .map_err(|e| {
+                    PiCcsError::InvalidInput(format!("rv32_trace_shared_cpu_bus_config_with_specs failed: {e}"))
+                })?,
                 layout.t,
-                &mem_layouts,
-                &lut_tables,
-                &table_specs,
-                &lut_lanes,
-                &initial_mem,
-                &cpu,
-            )?;
+            )
+            .map_err(|e| PiCcsError::InvalidInput(format!("shared bus inject failed: {e}")))?;
 
-            if session.steps_witness().len() != exec_chunks.len() {
-                return Err(PiCcsError::ProtocolError(format!(
-                    "shared trace build drift: step bundle count {} != exec chunk count {}",
-                    session.steps_witness().len(),
-                    exec_chunks.len()
-                )));
-            }
-            chunk_build_commit_duration += elapsed_duration(chunk_start);
-        } else {
-            // Route-A legacy fallback: keep the main CPU witness as pure trace columns (no bus tail),
-            // and attach PROG/REG/RAM as separately committed no-shared-bus Twist instances linked at r_time.
-            let mut reg_state = init_reg_state(&reg_init_map)?;
-            let mut ram_state = init_ram_state(&ram_init_map, ram_d)?;
-            for exec_chunk in &exec_chunks {
-                let chunk_start = time_now();
-                let reg_init_chunk = reg_state_to_sparse_map(&reg_state);
-                let ram_init_chunk = ram_state.clone();
+        ccs = cpu.ccs.clone();
 
-                let reg_mem_init = mem_init_from_u64_sparse(&reg_init_chunk, 32, "REG")?;
-                let ram_mem_init = mem_init_from_u64_sparse(&ram_init_chunk, ram_k, "RAM")?;
-                let twist_lanes = extract_twist_lanes_over_time(exec_chunk, &reg_init_chunk, &ram_init_chunk, ram_d)
-                    .map_err(|e| PiCcsError::InvalidInput(format!("extract_twist_lanes_over_time failed: {e}")))?;
+        session.execute_shard_shared_cpu_bus_from_trace(
+            &trace,
+            max_steps,
+            layout.t,
+            &mem_layouts,
+            &lut_tables,
+            &table_specs,
+            &lut_lanes,
+            &initial_mem,
+            &cpu,
+        )?;
 
-                let (x, w) = rv32_trace_ccs_witness_from_exec_table(&layout, exec_chunk).map_err(|e| {
-                    PiCcsError::InvalidInput(format!("rv32_trace_ccs_witness_from_exec_table failed: {e}"))
-                })?;
-                let z_cpu: Vec<F> = x.iter().copied().chain(w.iter().copied()).collect();
-                let Z_cpu = neo_memory::ajtai::encode_vector_balanced_to_mat(session.params(), &z_cpu);
-                let c_cpu = session.committer().commit(&Z_cpu);
-                let mcs = (
-                    McsInstance {
-                        c: c_cpu,
-                        x: x.clone(),
-                        m_in: layout.m_in,
-                    },
-                    McsWitness { w, Z: Z_cpu },
-                );
-
-                let prog_mem_inst = MemInstance {
-                    mem_id: PROG_ID.0,
-                    comms: Vec::new(),
-                    k: prog_layout.k,
-                    d: prog_layout.d,
-                    n_side: prog_layout.n_side,
-                    steps: layout.t,
-                    lanes: 1,
-                    ell: 1,
-                    init: prog_mem_init.clone(),
-                };
-                let reg_mem_inst = MemInstance {
-                    mem_id: REG_ID.0,
-                    comms: Vec::new(),
-                    k: 32,
-                    d: 5,
-                    n_side: 2,
-                    steps: layout.t,
-                    lanes: 2,
-                    ell: 1,
-                    init: reg_mem_init,
-                };
-                let ram_mem_inst = include_ram_sidecar.then_some(MemInstance {
-                    mem_id: RAM_ID.0,
-                    comms: Vec::new(),
-                    k: ram_k,
-                    d: ram_d,
-                    n_side: 2,
-                    steps: layout.t,
-                    lanes: 1,
-                    ell: 1,
-                    init: ram_mem_init,
-                });
-
-                let prog_z = build_twist_only_bus_z(
-                    ccs.m,
-                    layout.m_in,
-                    layout.t,
-                    prog_mem_inst.d * prog_mem_inst.ell,
-                    prog_mem_inst.lanes,
-                    std::slice::from_ref(&twist_lanes.prog),
-                    &x,
-                )
-                .map_err(|e| PiCcsError::InvalidInput(format!("build PROG twist z failed: {e}")))?;
-                let prog_Z = neo_memory::ajtai::encode_vector_balanced_to_mat(session.params(), &prog_z);
-                let prog_c = session.committer().commit(&prog_Z);
-                let prog_mem_inst = MemInstance {
-                    comms: vec![prog_c],
-                    ..prog_mem_inst
-                };
-                let prog_mem_wit = MemWitness { mats: vec![prog_Z] };
-
-                let reg_z = build_twist_only_bus_z(
-                    ccs.m,
-                    layout.m_in,
-                    layout.t,
-                    reg_mem_inst.d * reg_mem_inst.ell,
-                    reg_mem_inst.lanes,
-                    &[twist_lanes.reg_lane0.clone(), twist_lanes.reg_lane1.clone()],
-                    &x,
-                )
-                .map_err(|e| PiCcsError::InvalidInput(format!("build REG twist z failed: {e}")))?;
-                let reg_Z = neo_memory::ajtai::encode_vector_balanced_to_mat(session.params(), &reg_z);
-                let reg_c = session.committer().commit(&reg_Z);
-                let reg_mem_inst = MemInstance {
-                    comms: vec![reg_c],
-                    ..reg_mem_inst
-                };
-                let reg_mem_wit = MemWitness { mats: vec![reg_Z] };
-
-                let ram_mem = if let Some(ram_mem_inst) = ram_mem_inst {
-                    let ram_z = build_twist_only_bus_z(
-                        ccs.m,
-                        layout.m_in,
-                        layout.t,
-                        ram_mem_inst.d * ram_mem_inst.ell,
-                        ram_mem_inst.lanes,
-                        std::slice::from_ref(&twist_lanes.ram),
-                        &x,
-                    )
-                    .map_err(|e| PiCcsError::InvalidInput(format!("build RAM twist z failed: {e}")))?;
-                    let ram_Z = neo_memory::ajtai::encode_vector_balanced_to_mat(session.params(), &ram_z);
-                    let ram_c = session.committer().commit(&ram_Z);
-                    let ram_mem_inst = MemInstance {
-                        comms: vec![ram_c],
-                        ..ram_mem_inst
-                    };
-                    Some((ram_mem_inst, MemWitness { mats: vec![ram_Z] }))
-                } else {
-                    None
-                };
-
-                let mut mem_instances = vec![(prog_mem_inst, prog_mem_wit), (reg_mem_inst, reg_mem_wit)];
-                if let Some(ram_mem) = ram_mem {
-                    mem_instances.push(ram_mem);
-                }
-
-                session.add_step_bundle(StepWitnessBundle {
-                    mcs,
-                    lut_instances: Vec::<(LutInstance<_, _>, LutWitness<F>)>::new(),
-                    mem_instances,
-                    _phantom: PhantomData::<K>,
-                });
-
-                apply_exec_chunk_writes_to_state(exec_chunk, &mut reg_state, &mut ram_state)?;
-                chunk_build_commit_duration += elapsed_duration(chunk_start);
-            }
+        if session.steps_witness().len() != exec_chunks.len() {
+            return Err(PiCcsError::ProtocolError(format!(
+                "shared trace build drift: step bundle count {} != exec chunk count {}",
+                session.steps_witness().len(),
+                exec_chunks.len()
+            )));
         }
+        chunk_build_commit_duration += elapsed_duration(chunk_start);
 
         let mem_order = session
             .steps_public()
@@ -1557,7 +1212,21 @@ impl Rv32TraceWiringRun {
 
     /// Number of collected folding steps.
     pub fn fold_count(&self) -> usize {
-        self.proof.steps.len()
+        if let Some(meta) = self.proof.segment_meta.as_deref() {
+            let total_public_steps: usize = meta.iter().map(|entry| entry.public_steps).sum();
+            if total_public_steps != 0 {
+                return total_public_steps;
+            }
+        }
+        self.proof
+            .steps
+            .iter()
+            .map(|step| {
+                step.compressed_substeps
+                    .as_ref()
+                    .map_or(1, |sub| sub.len() + 1)
+            })
+            .sum()
     }
 
     pub fn prove_duration(&self) -> Duration {

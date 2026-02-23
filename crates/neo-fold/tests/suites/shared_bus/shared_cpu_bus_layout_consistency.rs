@@ -16,11 +16,14 @@ fn shared_cpu_bus_copyout_indices_match_bus_layout() {
 
     let step0_wit = &fx.steps_witness[0];
     let step0_inst = &fx.steps_instance[0];
-    let ccs_out0 = &proof.steps[0].fold.ccs_out[0];
+    let first_proof_step = proof.steps[0]
+        .compressed_substeps
+        .as_ref()
+        .and_then(|subs| subs.first())
+        .unwrap_or(&proof.steps[0]);
+    let ccs_out0 = &first_proof_step.fold.ccs_out[0];
 
     let s0 = fx.ccs.clone();
-    let base_t = s0.t();
-
     let bus = build_bus_layout_for_instances(
         s0.m,
         step0_inst.mcs_inst.m_in,
@@ -30,17 +33,18 @@ fn shared_cpu_bus_copyout_indices_match_bus_layout() {
     )
     .expect("bus layout");
 
-    assert_eq!(
-        ccs_out0.y_scalars.len(),
-        base_t + bus.bus_cols,
-        "copyout matrices count must match bus_cols"
+    assert!(
+        ccs_out0.aux_openings.len() >= bus.bus_cols,
+        "aux_openings must include at least bus_cols openings"
     );
+    let bus_y_base = ccs_out0
+        .aux_openings
+        .len()
+        .checked_sub(bus.bus_cols)
+        .expect("aux_openings must include shared-bus suffix");
 
-    let bus_y_base = ccs_out0.y_scalars.len() - bus.bus_cols;
-
-    let mut z = Vec::new();
-    z.extend_from_slice(&step0_wit.mcs.0.x);
-    z.extend_from_slice(&step0_wit.mcs.1.w);
+    let z = neo_memory::ajtai::decode_vector_for_ccs_m(&fx.params, s0.m, &step0_wit.mcs.1.Z)
+        .expect("decode logical witness from packed Z");
 
     let time_row = bus.time_index(0);
     let chi = chi_at_index(&ccs_out0.r, time_row);
@@ -59,7 +63,7 @@ fn shared_cpu_bus_copyout_indices_match_bus_layout() {
         let z_idx = bus.bus_cell(col_id, 0);
         let expected: K = z[z_idx].into();
         let expected = expected * chi;
-        let actual = ccs_out0.y_scalars[bus.y_scalar_index(bus_y_base, col_id)];
+        let actual = ccs_out0.aux_openings[bus.y_scalar_index(bus_y_base, col_id)];
         assert_eq!(actual, expected, "copyout mismatch at col_id={col_id}");
     }
 }
