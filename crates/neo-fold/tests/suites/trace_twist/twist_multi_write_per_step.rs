@@ -157,6 +157,8 @@ impl VmCpu<u64, u64> for MultiWriteVm {
         Ok(StepMeta {
             pc_after: self.pc,
             opcode: 0,
+            is_virtual: false,
+            virtual_sequence_remaining: None,
         })
     }
 }
@@ -211,6 +213,8 @@ fn twist_multi_write_duplicate_addr_rejected_by_lane_filler() {
         pc_before: 0,
         pc_after: 4,
         opcode: 0,
+        is_virtual: false,
+        virtual_sequence_remaining: None,
         regs_before: Vec::new(),
         regs_after: Vec::new(),
         twist_events: vec![
@@ -238,6 +242,8 @@ fn twist_multi_write_duplicate_addr_rejected_by_lane_filler() {
             pc_before: 4 * i as u64,
             pc_after: 4 * (i as u64 + 1),
             opcode: 0,
+            is_virtual: false,
+            virtual_sequence_remaining: None,
             regs_before: Vec::new(),
             regs_after: Vec::new(),
             twist_events: Vec::new(),

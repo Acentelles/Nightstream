@@ -87,6 +87,11 @@ fn elapsed_duration(start: TimePoint) -> Duration {
 
 /// Hard instruction cap for trace-wiring mode (Option C).
 const DEFAULT_RV32_TRACE_MAX_STEPS: usize = 1 << 20;
+/// Conservative upper bound on emitted trace rows per architectural RV32 instruction
+/// when runtime decomposition is enabled.
+const RV32_RUNTIME_DECOMP_MAX_ROWS_PER_INSTR: usize = 32;
+/// Hard VM-step cap after expansion through runtime decomposition.
+const DEFAULT_RV32_TRACE_MAX_VM_STEPS: usize = DEFAULT_RV32_TRACE_MAX_STEPS * RV32_RUNTIME_DECOMP_MAX_ROWS_PER_INSTR;
 
 /// Default per-step trace rows for trace-mode IVC.
 ///
@@ -100,6 +105,42 @@ fn max_ram_addr_from_exec(exec: &Rv32ExecTable) -> Option<u64> {
         .filter(|r| r.active)
         .flat_map(|r| r.ram_events.iter().map(|e| e.addr))
         .max()
+}
+
+fn max_reg_addr_from_exec(exec: &Rv32ExecTable) -> Option<u64> {
+    exec.rows
+        .iter()
+        .filter(|r| r.active)
+        .flat_map(|r| {
+            let mut addrs = Vec::with_capacity(3);
+            if let Some(rs1) = &r.reg_read_lane0 {
+                addrs.push(rs1.addr);
+            }
+            if let Some(rs2) = &r.reg_read_lane1 {
+                addrs.push(rs2.addr);
+            }
+            if let Some(wr) = &r.reg_write_lane0 {
+                addrs.push(wr.addr);
+            }
+            addrs
+        })
+        .max()
+}
+
+fn max_consecutive_pc_run(exec: &Rv32ExecTable) -> usize {
+    let mut best = 1usize;
+    let mut cur = 0usize;
+    let mut prev_pc: Option<u64> = None;
+    for row in exec.rows.iter().filter(|r| r.active) {
+        if prev_pc == Some(row.pc_before) {
+            cur += 1;
+        } else {
+            cur = 1;
+            prev_pc = Some(row.pc_before);
+        }
+        best = best.max(cur);
+    }
+    best
 }
 
 fn required_bits_for_max_addr(max_addr: u64) -> usize {
@@ -201,8 +242,8 @@ fn mem_init_from_u64_sparse(sparse: &HashMap<u64, u64>, k: usize, label: &str) -
     })
 }
 
-fn final_reg_state_dense(exec: &Rv32ExecTable, reg_init: &HashMap<u64, u64>) -> Result<Vec<F>, PiCcsError> {
-    let mut regs = [0u64; 32];
+fn final_reg_state_dense(exec: &Rv32ExecTable, reg_init: &HashMap<u64, u64>, k: usize) -> Result<Vec<F>, PiCcsError> {
+    let mut regs = vec![F::ZERO; k];
     for (&reg, &value) in reg_init {
         if reg >= 32 {
             return Err(PiCcsError::InvalidInput(format!(
@@ -214,30 +255,43 @@ fn final_reg_state_dense(exec: &Rv32ExecTable, reg_init: &HashMap<u64, u64>) -> 
                 "reg_init_u32: x0 must be 0 (non-zero init is forbidden)".into(),
             ));
         }
-        regs[reg as usize] = value as u32 as u64;
+        let idx = usize::try_from(reg)
+            .map_err(|_| PiCcsError::InvalidInput(format!("reg_init_u32: reg does not fit usize: reg={reg}")))?;
+        if idx >= k {
+            return Err(PiCcsError::InvalidInput(format!(
+                "reg_init_u32: register index out of range for output binding domain: reg={reg} >= k={k}"
+            )));
+        }
+        regs[idx] = F::from_u64(value as u32 as u64);
     }
-    regs[0] = 0;
+    regs[0] = F::ZERO;
 
     for r in exec.rows.iter().filter(|r| r.active) {
         if let Some(w) = &r.reg_write_lane0 {
-            if w.addr >= 32 {
-                return Err(PiCcsError::InvalidInput(format!(
-                    "trace register write addr out of range at cycle {}: addr={}",
-                    r.cycle, w.addr
-                )));
-            }
             if w.addr == 0 {
                 return Err(PiCcsError::InvalidInput(format!(
                     "trace writes x0 at cycle {} which is invalid",
                     r.cycle
                 )));
             }
-            regs[w.addr as usize] = w.value as u32 as u64;
-            regs[0] = 0;
+            let idx = usize::try_from(w.addr).map_err(|_| {
+                PiCcsError::InvalidInput(format!(
+                    "trace REG write addr does not fit usize at cycle {}: addr={}",
+                    r.cycle, w.addr
+                ))
+            })?;
+            if idx >= k {
+                return Err(PiCcsError::InvalidInput(format!(
+                    "trace REG write addr out of range for output binding domain at cycle {}: addr={} >= k={k}",
+                    r.cycle, w.addr
+                )));
+            }
+            regs[idx] = F::from_u64(w.value as u32 as u64);
+            regs[0] = F::ZERO;
         }
     }
 
-    Ok(regs.iter().map(|&v| F::from_u64(v)).collect())
+    Ok(regs)
 }
 
 fn final_ram_state_dense(exec: &Rv32ExecTable, ram_init: &HashMap<u64, u64>, k: usize) -> Result<Vec<F>, PiCcsError> {
@@ -277,8 +331,8 @@ fn final_ram_state_dense(exec: &Rv32ExecTable, ram_init: &HashMap<u64, u64>, k: 
     Ok(out)
 }
 
-fn init_reg_state(reg_init: &HashMap<u64, u64>) -> Result<[u64; 32], PiCcsError> {
-    let mut regs = [0u64; 32];
+fn init_reg_state(reg_init: &HashMap<u64, u64>) -> Result<HashMap<u64, u64>, PiCcsError> {
+    let mut regs = HashMap::<u64, u64>::new();
     for (&reg, &value) in reg_init {
         if reg >= 32 {
             return Err(PiCcsError::InvalidInput(format!(
@@ -290,9 +344,12 @@ fn init_reg_state(reg_init: &HashMap<u64, u64>) -> Result<[u64; 32], PiCcsError>
                 "reg_init_u32: x0 must be 0 (non-zero init is forbidden)".into(),
             ));
         }
-        regs[reg as usize] = value as u32 as u64;
+        let v = value as u32 as u64;
+        if v != 0 {
+            regs.insert(reg, v);
+        }
     }
-    regs[0] = 0;
+    regs.remove(&0);
     Ok(regs)
 }
 
@@ -318,19 +375,15 @@ fn init_ram_state(ram_init: &HashMap<u64, u64>, ram_ell_addr: usize) -> Result<H
     Ok(ram)
 }
 
-fn reg_state_to_sparse_map(regs: &[u64; 32]) -> HashMap<u64, u64> {
-    let mut out = HashMap::<u64, u64>::new();
-    for (idx, &value) in regs.iter().enumerate().skip(1) {
-        if value != 0 {
-            out.insert(idx as u64, value);
-        }
-    }
-    out
+fn reg_state_to_sparse_map(regs: &HashMap<u64, u64>) -> HashMap<u64, u64> {
+    regs.iter()
+        .filter_map(|(&addr, &value)| (addr != 0 && value != 0).then_some((addr, value)))
+        .collect()
 }
 
 fn apply_exec_chunk_writes_to_state(
     chunk: &Rv32ExecTable,
-    regs: &mut [u64; 32],
+    regs: &mut HashMap<u64, u64>,
     ram: &mut HashMap<u64, u64>,
 ) -> Result<(), PiCcsError> {
     for r in chunk.rows.iter().filter(|r| r.active) {
@@ -341,14 +394,13 @@ fn apply_exec_chunk_writes_to_state(
                     r.cycle
                 )));
             }
-            if w.addr >= 32 {
-                return Err(PiCcsError::InvalidInput(format!(
-                    "trace register write addr out of range at cycle {}: addr={}",
-                    r.cycle, w.addr
-                )));
+            let value = w.value as u32 as u64;
+            if value == 0 {
+                regs.remove(&w.addr);
+            } else {
+                regs.insert(w.addr, value);
             }
-            regs[w.addr as usize] = w.value as u32 as u64;
-            regs[0] = 0;
+            regs.remove(&0);
         }
 
         for e in &r.ram_events {
@@ -408,6 +460,31 @@ fn split_exec_into_fixed_chunks(exec: &Rv32ExecTable, chunk_rows: usize) -> Resu
     Ok(out)
 }
 
+fn boundary_splits_virtual_sequence(exec: &Rv32ExecTable, chunk_rows: usize) -> bool {
+    if chunk_rows == 0 {
+        return false;
+    }
+    let total = exec.rows.len();
+    if total <= chunk_rows {
+        return false;
+    }
+
+    let mut boundary = chunk_rows;
+    while boundary < total {
+        let prev = &exec.rows[boundary - 1];
+        // Splitting right after a virtual row drops transition constraints
+        // (virtual countdown/commit-link) across chunks.
+        if prev.active && prev.is_virtual {
+            return true;
+        }
+        boundary = match boundary.checked_add(chunk_rows) {
+            Some(next) => next,
+            None => break,
+        };
+    }
+    false
+}
+
 fn rv32_trace_chunk_to_witness(
     layout: Rv32TraceCcsLayout,
 ) -> Box<dyn Fn(&[StepTrace<u64, u64>]) -> Vec<F> + Send + Sync> {
@@ -463,6 +540,34 @@ fn infer_required_trace_shout_opcodes(program: &[RiscvInstruction]) -> HashSet<R
         match instr {
             RiscvInstruction::RAlu { op, .. } => {
                 ops.insert(*op);
+                // Decomposition expansion dependencies (runtime-trace emitted rows).
+                match op {
+                    RiscvOpcode::Mulh | RiscvOpcode::Mulhsu => {
+                        ops.insert(RiscvOpcode::Mul);
+                        ops.insert(RiscvOpcode::Mulhu);
+                        ops.insert(RiscvOpcode::Add);
+                        ops.insert(RiscvOpcode::Sra);
+                    }
+                    RiscvOpcode::Divu | RiscvOpcode::Remu => {
+                        ops.insert(RiscvOpcode::Divu);
+                        ops.insert(RiscvOpcode::Mul);
+                        ops.insert(RiscvOpcode::Mulhu);
+                        ops.insert(RiscvOpcode::Sub);
+                        ops.insert(RiscvOpcode::Eq);
+                        ops.insert(RiscvOpcode::Sltu);
+                    }
+                    RiscvOpcode::Div | RiscvOpcode::Rem => {
+                        ops.insert(RiscvOpcode::Div);
+                        ops.insert(RiscvOpcode::Mul);
+                        ops.insert(RiscvOpcode::Mulh);
+                        ops.insert(RiscvOpcode::Sub);
+                        ops.insert(RiscvOpcode::Xor);
+                        ops.insert(RiscvOpcode::Sra);
+                        ops.insert(RiscvOpcode::Eq);
+                        ops.insert(RiscvOpcode::Sltu);
+                    }
+                    _ => {}
+                }
             }
             RiscvInstruction::IAlu { op, .. } => {
                 ops.insert(*op);
@@ -899,6 +1004,13 @@ impl Rv32TraceWiring {
             }
             None => DEFAULT_RV32_TRACE_MAX_STEPS,
         };
+        let vm_max_steps = if self.xlen == 32 {
+            max_steps
+                .saturating_mul(RV32_RUNTIME_DECOMP_MAX_ROWS_PER_INSTR)
+                .min(DEFAULT_RV32_TRACE_MAX_VM_STEPS)
+        } else {
+            max_steps
+        };
         if !self.shared_cpu_bus {
             return Err(PiCcsError::InvalidInput(
                 "RV32 trace wiring no-shared fallback is removed; Phase 2 decode lookup requires shared_cpu_bus=true"
@@ -915,6 +1027,9 @@ impl Rv32TraceWiring {
 
         let mut vm = RiscvCpu::new(self.xlen);
         vm.load_program(/*base=*/ 0, program.clone());
+        if self.xlen == 32 {
+            vm.set_runtime_decomposition_enabled(true);
+        }
 
         let mut twist =
             RiscvMemory::with_program_in_twist(self.xlen, PROG_ID, /*base_addr=*/ 0, &self.program_bytes);
@@ -936,20 +1051,20 @@ impl Rv32TraceWiring {
         }
         let shout = RiscvShoutTables::new(self.xlen);
 
-        let mut trace = neo_vm_trace::trace_program(vm, twist, shout, max_steps)
+        let mut trace = neo_vm_trace::trace_program(vm, twist, shout, vm_max_steps)
             .map_err(|e| PiCcsError::InvalidInput(format!("trace_program failed: {e}")))?;
 
         if using_default_max_steps && !trace.did_halt() {
             return Err(PiCcsError::InvalidInput(format!(
-                "RV32 execution did not halt within max_steps={max_steps}; call .max_steps(...) to raise the limit or ensure the guest halts"
+                "RV32 execution did not halt within max_steps={max_steps} (vm_max_steps={vm_max_steps} after decomposition expansion); call .max_steps(...) to raise the limit or ensure the guest halts"
             )));
         }
 
         let target_len = trace.steps.len().max(self.min_trace_len);
-        if target_len > DEFAULT_RV32_TRACE_MAX_STEPS {
+        if target_len > DEFAULT_RV32_TRACE_MAX_VM_STEPS {
             return Err(PiCcsError::InvalidInput(format!(
-                "trace length {} exceeds trace-mode hard cap {}. Increase chunk_rows and prove in chunks for longer executions.",
-                target_len, DEFAULT_RV32_TRACE_MAX_STEPS
+                "trace length {} exceeds expanded trace-row hard cap {}. Lower max_steps/min_trace_len or reduce decomposition density.",
+                target_len, DEFAULT_RV32_TRACE_MAX_VM_STEPS
             )));
         }
         if self.shared_cpu_bus {
@@ -975,11 +1090,25 @@ impl Rv32TraceWiring {
             (HashMap::new(), 0usize)
         };
 
-        let requested_chunk_rows = self.chunk_rows.unwrap_or(DEFAULT_RV32_TRACE_CHUNK_ROWS);
-        if requested_chunk_rows == 0 {
+        let requested_chunk_rows_arch = self.chunk_rows.unwrap_or(DEFAULT_RV32_TRACE_CHUNK_ROWS);
+        if requested_chunk_rows_arch == 0 {
             return Err(PiCcsError::InvalidInput("trace chunk_rows must be non-zero".into()));
         }
-        let step_rows = requested_chunk_rows.min(exec.rows.len().max(1));
+        let mut requested_chunk_rows = requested_chunk_rows_arch;
+        if self.xlen == 32 {
+            requested_chunk_rows = requested_chunk_rows.max(max_consecutive_pc_run(&exec));
+        }
+        let base_step_rows = requested_chunk_rows.min(exec.rows.len().max(1));
+        let mut step_rows = base_step_rows
+            .checked_next_power_of_two()
+            .ok_or_else(|| PiCcsError::InvalidInput(format!("trace chunk_rows overflow: {base_step_rows}")))?;
+        if self.xlen == 32 {
+            while step_rows < exec.rows.len() && boundary_splits_virtual_sequence(&exec, step_rows) {
+                step_rows = step_rows
+                    .checked_mul(2)
+                    .ok_or_else(|| PiCcsError::InvalidInput(format!("trace chunk_rows overflow: {step_rows}")))?;
+            }
+        }
         let exec_chunks = split_exec_into_fixed_chunks(&exec, step_rows)?;
 
         let mut layout = Rv32TraceCcsLayout::new(step_rows)
@@ -992,6 +1121,10 @@ impl Rv32TraceWiring {
         if let Some(max_init_addr) = ram_init_map.keys().copied().max() {
             max_ram_addr = max_ram_addr.max(max_init_addr);
         }
+        let mut max_reg_addr = max_reg_addr_from_exec(&exec).unwrap_or(31);
+        if let Some(max_init_reg_addr) = reg_init_map.keys().copied().max() {
+            max_reg_addr = max_reg_addr.max(max_init_reg_addr);
+        }
         let wants_ram_output = matches!(output_target, OutputTarget::Ram) && !output_claims.is_empty();
         if matches!(output_target, OutputTarget::Ram) {
             if let Some(max_claim_addr) = output_claims.claimed_addresses().max() {
@@ -1002,6 +1135,10 @@ impl Rv32TraceWiring {
         let ram_k = 1usize
             .checked_shl(ram_d as u32)
             .ok_or_else(|| PiCcsError::InvalidInput(format!("RAM address width too large: d={ram_d}")))?;
+        let reg_d = required_bits_for_max_addr(max_reg_addr).max(5);
+        let reg_k = 1usize
+            .checked_shl(reg_d as u32)
+            .ok_or_else(|| PiCcsError::InvalidInput(format!("REG address width too large: d={reg_d}")))?;
         // Track A used-set derivation must be deterministic from public inputs/config.
         // Do not derive RAM inclusion from runtime witness/events.
         let include_ram_sidecar =
@@ -1011,8 +1148,8 @@ impl Rv32TraceWiring {
             (
                 REG_ID.0,
                 PlainMemLayout {
-                    k: 32,
-                    d: 5,
+                    k: reg_k,
+                    d: reg_d,
                     n_side: 2,
                     lanes: 2,
                 },
@@ -1238,7 +1375,7 @@ impl Rv32TraceWiring {
 
             session.execute_shard_shared_cpu_bus_from_trace(
                 &trace,
-                max_steps,
+                trace.steps.len(),
                 layout.t,
                 &mem_layouts,
                 &lut_tables,
@@ -1266,7 +1403,7 @@ impl Rv32TraceWiring {
                 let reg_init_chunk = reg_state_to_sparse_map(&reg_state);
                 let ram_init_chunk = ram_state.clone();
 
-                let reg_mem_init = mem_init_from_u64_sparse(&reg_init_chunk, 32, "REG")?;
+                let reg_mem_init = mem_init_from_u64_sparse(&reg_init_chunk, reg_k, "REG")?;
                 let ram_mem_init = mem_init_from_u64_sparse(&ram_init_chunk, ram_k, "RAM")?;
                 let twist_lanes = extract_twist_lanes_over_time(exec_chunk, &reg_init_chunk, &ram_init_chunk, ram_d)
                     .map_err(|e| PiCcsError::InvalidInput(format!("extract_twist_lanes_over_time failed: {e}")))?;
@@ -1300,8 +1437,8 @@ impl Rv32TraceWiring {
                 let reg_mem_inst = MemInstance {
                     mem_id: REG_ID.0,
                     comms: Vec::new(),
-                    k: 32,
-                    d: 5,
+                    k: reg_k,
+                    d: reg_d,
                     n_side: 2,
                     steps: layout.t,
                     lanes: 2,
@@ -1432,7 +1569,11 @@ impl Rv32TraceWiring {
                     ram_d,
                     final_ram_state_dense(&exec, &ram_init_map, ram_k)?,
                 ),
-                OutputTarget::Reg => (reg_ob_mem_idx, 5usize, final_reg_state_dense(&exec, &reg_init_map)?),
+                OutputTarget::Reg => (
+                    reg_ob_mem_idx,
+                    reg_d,
+                    final_reg_state_dense(&exec, &reg_init_map, reg_k)?,
+                ),
             };
             let ob_cfg = OutputBindingConfig::new(ob_num_bits, output_claims).with_mem_idx(ob_mem_idx);
             let proof = session.fold_and_prove_with_output_binding_simple(&ccs, &ob_cfg, &final_memory_state)?;

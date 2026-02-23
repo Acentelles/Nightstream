@@ -1,9 +1,14 @@
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 use neo_ccs::MeInstance;
 use neo_fold::riscv_trace_shard::Rv32TraceWiring;
 use neo_fold::shard::ShardProof;
-use neo_memory::riscv::ccs::{build_rv32_trace_wiring_ccs, Rv32TraceCcsLayout};
+use neo_memory::cpu::constraints::CpuConstraintLabel;
+use neo_memory::plain::PlainMemLayout;
+use neo_memory::riscv::ccs::{
+    build_rv32_trace_wiring_ccs, rv32_trace_shared_bus_extraction_with_specs, Rv32TraceCcsLayout, TraceShoutBusSpec,
+};
 use neo_memory::riscv::lookups::{encode_program, BranchCondition, RiscvInstruction, RiscvOpcode};
 
 #[test]
@@ -174,6 +179,39 @@ fn env_usize(name: &str, default: usize) -> usize {
     match std::env::var(name) {
         Ok(v) => v.parse::<usize>().unwrap_or(default),
         Err(_) => default,
+    }
+}
+
+fn bus_constraint_family(label: CpuConstraintLabel) -> &'static str {
+    match label {
+        CpuConstraintLabel::LoadValueBinding
+        | CpuConstraintLabel::StoreValueBinding
+        | CpuConstraintLabel::LoadAddressBinding
+        | CpuConstraintLabel::StoreAddressBinding
+        | CpuConstraintLabel::IncrementBinding => "twist/linkage",
+        CpuConstraintLabel::LoadSelectorBinding | CpuConstraintLabel::StoreSelectorBinding => "twist/selector_link",
+        CpuConstraintLabel::TwistHasReadBoolean | CpuConstraintLabel::TwistHasWriteBoolean => "twist/selector_bitness",
+        CpuConstraintLabel::ReadValueZeroPadding
+        | CpuConstraintLabel::WriteValueZeroPadding
+        | CpuConstraintLabel::IncrementZeroPadding => "twist/value_padding",
+        CpuConstraintLabel::TwistReadAddrBitBitness
+        | CpuConstraintLabel::TwistWriteAddrBitBitness
+        | CpuConstraintLabel::ReadAddressBitsZeroPadding
+        | CpuConstraintLabel::WriteAddressBitsZeroPadding => "twist/addr_bitness_padding",
+        CpuConstraintLabel::TwistReadAddressDomainSplit | CpuConstraintLabel::TwistWriteAddressDomainSplit => {
+            "twist/domain_split"
+        }
+        CpuConstraintLabel::TwistWriteMirrorHasWrite
+        | CpuConstraintLabel::TwistWriteMirrorWaBits
+        | CpuConstraintLabel::TwistWriteMirrorWv
+        | CpuConstraintLabel::TwistWriteMirrorInc => "twist/write_mirror",
+        CpuConstraintLabel::LookupValueBinding => "shout/value_link",
+        CpuConstraintLabel::LookupKeyBinding => "shout/key_link",
+        CpuConstraintLabel::LookupSelectorBinding => "shout/selector_link",
+        CpuConstraintLabel::ShoutHasLookupBoolean => "shout/selector_bitness",
+        CpuConstraintLabel::LookupValueZeroPadding => "shout/value_padding",
+        CpuConstraintLabel::ShoutAddrBitBitness => "shout/addr_bitness",
+        CpuConstraintLabel::LookupAddressBitsZeroPadding => "shout/addr_padding",
     }
 }
 
@@ -378,12 +416,12 @@ fn report_track_a_w0_w1_snapshot() {
     let mut program: Vec<RiscvInstruction> = (0..n).map(|i| base[i % base.len()].clone()).collect();
     program.push(RiscvInstruction::Halt);
     let program_bytes = encode_program(&program);
-    let steps = n + 1;
+    let requested_steps = n + 1;
 
     let total_start = Instant::now();
     let mut run = Rv32TraceWiring::from_rom(0, &program_bytes)
-        .min_trace_len(steps)
-        .max_steps(steps)
+        .min_trace_len(requested_steps)
+        .max_steps(requested_steps)
         .chunk_rows(chunk_rows)
         .prove()
         .expect("trace prove");
@@ -393,31 +431,73 @@ fn report_track_a_w0_w1_snapshot() {
     let total_time = total_start.elapsed();
     let openings = opening_surface_from_shard_proof(run.proof());
 
-    let layout = Rv32TraceCcsLayout::new(steps).expect("trace layout");
-    let core_ccs = build_rv32_trace_wiring_ccs(&layout).expect("trace core ccs");
-    let rows_per_cycle = core_ccs.n as f64 / steps as f64;
+    let executed_steps = run.trace_len();
+    let proving_rows = run.layout().t;
+    let padding_rows = proving_rows.saturating_sub(executed_steps);
+
+    let proving_layout = Rv32TraceCcsLayout::new(proving_rows).expect("trace proving layout");
+    let core_ccs = build_rv32_trace_wiring_ccs(&proving_layout).expect("trace core ccs (proving rows)");
+    let executed_layout = Rv32TraceCcsLayout::new(executed_steps).expect("trace executed layout");
+    let core_ccs_executed = build_rv32_trace_wiring_ccs(&executed_layout).expect("trace core ccs (executed rows)");
+    let rows_per_proving_row = core_ccs.n as f64 / proving_rows as f64;
+    let rows_per_executed_row = core_ccs.n as f64 / executed_steps as f64;
 
     let sep = "=".repeat(80);
     let thin_sep = "-".repeat(80);
 
     println!("\n{sep}");
-    println!("  TRACK A CONSTRAINT ARCHITECTURE REPORT (n={steps} steps)");
+    println!("  TRACK A CONSTRAINT ARCHITECTURE REPORT (executed={executed_steps} rows, proving_t={proving_rows})");
     println!("{sep}\n");
+
+    println!("0. TRACE SHAPE");
+    println!("{thin_sep}");
+    println!("  Requested steps:         {requested_steps}");
+    println!("  Executed active rows:    {executed_steps}");
+    println!("  Proving rows (padded t): {proving_rows}");
+    println!("  Padding rows:            {padding_rows}");
+    println!();
 
     // ── 1. Main CCS Layer ──
     println!("1. MAIN CCS LAYER (core glue constraints)");
     println!("{thin_sep}");
-    println!("  Trace columns:           {}", layout.trace.cols);
+    println!("  Trace columns:           {}", proving_layout.trace.cols);
     println!("  Core CCS rows (n):       {}", core_ccs.n);
     println!("  Core CCS cols (m):       {}", core_ccs.m);
-    println!("  Rows per cycle:          {:.3}", rows_per_cycle);
-    println!("  Public inputs (m_in):    {}", layout.m_in);
+    println!(
+        "  Core rows/proving row:   {:.3} (core_n/proving_t)",
+        rows_per_proving_row
+    );
+    println!(
+        "  Core rows/executed row:  {:.3} (core_n/executed_steps)",
+        rows_per_executed_row
+    );
+    println!("  Public inputs (m_in):    {}", proving_layout.m_in);
+    println!("  Core CCS rows @executed_t (ref): {}", core_ccs_executed.n);
+    let core_global_rows = 5usize;
+    let core_row_local_rows = 24usize.saturating_mul(proving_rows);
+    let core_transition_rows = 16usize.saturating_mul(proving_rows.saturating_sub(1));
+    let core_terminal_rows = 2usize;
+    let core_rows_from_shape = core_global_rows + core_row_local_rows + core_transition_rows + core_terminal_rows;
+    println!("  Core contribution rows (exact):");
+    println!("    - global/public anchors         {core_global_rows}");
+    println!("    - row-local invariants          {core_row_local_rows}");
+    println!("    - row-to-row transitions        {core_transition_rows}");
+    println!("    - terminal guards               {core_terminal_rows}");
+    println!("    - total from shape              {core_rows_from_shape}");
+    if core_rows_from_shape != core_ccs.n {
+        println!(
+            "    - WARNING shape drift: expected {} but core_ccs.n={}",
+            core_rows_from_shape, core_ccs.n
+        );
+    }
     println!();
 
     let col_names = [
         "one",
         "active",
         "halted",
+        "is_virtual",
+        "virtual_sequence_remaining",
         "cycle",
         "pc_before",
         "pc_after",
@@ -427,15 +507,22 @@ fn report_track_a_w0_w1_snapshot() {
         "rs2_addr",
         "rs2_val",
         "rd_addr",
+        "rd_has_write",
         "rd_val",
         "ram_addr",
         "ram_rv",
         "ram_wv",
         "shout_has_lookup",
+        "shout_table_id",
         "shout_val",
         "shout_lhs",
         "shout_rhs",
+        "shout_link_lhs",
+        "shout_link_rhs",
+        "shout_add_sub_key",
         "jalr_drop_bit",
+        "virtual_transition",
+        "virtual_commit_link",
     ];
     println!("  Trace columns ({}):", col_names.len());
     for (i, name) in col_names.iter().enumerate() {
@@ -448,20 +535,35 @@ fn report_track_a_w0_w1_snapshot() {
     println!("{thin_sep}");
     let total_ccs_m = run.ccs_num_variables();
     let total_ccs_n = run.ccs_num_constraints();
-    let trace_base_m = layout.m_in + layout.trace.cols * steps;
+    let trace_base_m = proving_layout.m_in + proving_layout.trace.cols * proving_rows;
     let bus_tail_cols = total_ccs_m.saturating_sub(trace_base_m);
+    let bus_cols_per_proving_row = if proving_rows > 0 {
+        bus_tail_cols / proving_rows
+    } else {
+        0
+    };
+    let bus_tail_cols_rem = if proving_rows > 0 {
+        bus_tail_cols % proving_rows
+    } else {
+        0
+    };
     println!("  Total CCS m (with bus):  {total_ccs_m}");
     println!("  Total CCS n (with bus):  {total_ccs_n}");
     println!(
         "  Trace base m:            {trace_base_m} (m_in={} + {}*{})",
-        layout.m_in, layout.trace.cols, steps
+        proving_layout.m_in, proving_layout.trace.cols, proving_rows
     );
-    println!("  Bus-tail columns:        {bus_tail_cols}");
+    println!("  Bus-tail columns:        {bus_tail_cols} ({bus_cols_per_proving_row} cols/row x {proving_rows} rows)");
+    if bus_tail_cols_rem != 0 {
+        println!("  Bus-tail remainder:      {bus_tail_cols_rem} (non-zero means shape mismatch; expected 0)");
+    }
     let bus_reserved_rows = total_ccs_n.saturating_sub(core_ccs.n);
+    let bus_reserved_rows_per_proving_row = bus_reserved_rows as f64 / proving_rows as f64;
     println!(
         "  Bus reserved rows:       {bus_reserved_rows} (total_n={total_ccs_n} - core_n={})",
         core_ccs.n
     );
+    println!("  Reserved rows/proving row: {:.3}", bus_reserved_rows_per_proving_row);
     println!();
 
     let step0 = run
@@ -471,6 +573,95 @@ fn report_track_a_w0_w1_snapshot() {
         .expect("at least one step");
     let n_lut = step0.lut_insts.len();
     let n_mem = step0.mem_insts.len();
+    let nominal_shout_cols: usize = step0
+        .lut_insts
+        .iter()
+        .map(|inst| {
+            let ell_addr = inst.d * inst.ell;
+            (ell_addr + 2) * inst.lanes
+        })
+        .sum();
+    let nominal_twist_cols: usize = step0
+        .mem_insts
+        .iter()
+        .map(|inst| {
+            let ell_addr = inst.d * inst.ell;
+            (2 * ell_addr + 5) * inst.lanes
+        })
+        .sum();
+    let nominal_total_cols = nominal_shout_cols + nominal_twist_cols;
+    let shared_col_savings = nominal_total_cols.saturating_sub(bus_cols_per_proving_row);
+    println!("  Bus cols/row (actual):   {bus_cols_per_proving_row}");
+    println!("  Bus cols/row (nominal):  {nominal_total_cols} (sum of per-instance widths before sharing)");
+    println!("  Shared-column savings:   {shared_col_savings}");
+    println!("  Note: per-instance bus_cols listed below are nominal and not additive.");
+
+    let mut mem_layouts: HashMap<u32, PlainMemLayout> = HashMap::new();
+    for inst in &step0.mem_insts {
+        mem_layouts.insert(
+            inst.mem_id,
+            PlainMemLayout {
+                k: inst.k,
+                d: inst.d,
+                n_side: inst.n_side,
+                lanes: inst.lanes.max(1),
+            },
+        );
+    }
+
+    let mut base_shout_table_ids: Vec<u32> = Vec::new();
+    let mut extra_shout_specs: Vec<TraceShoutBusSpec> = Vec::new();
+    let mut seen_extra_ids: HashSet<u32> = HashSet::new();
+    for inst in &step0.lut_insts {
+        if inst.table_id <= 19 {
+            base_shout_table_ids.push(inst.table_id);
+            continue;
+        }
+        if seen_extra_ids.insert(inst.table_id) {
+            extra_shout_specs.push(TraceShoutBusSpec {
+                table_id: inst.table_id,
+                ell_addr: inst.d * inst.ell,
+                n_vals: 1usize,
+            });
+        }
+    }
+    base_shout_table_ids.sort_unstable();
+    base_shout_table_ids.dedup();
+
+    let bus_extraction = rv32_trace_shared_bus_extraction_with_specs(
+        &proving_layout,
+        &base_shout_table_ids,
+        &extra_shout_specs,
+        &mem_layouts,
+    )
+    .expect("trace shared bus extraction");
+    if bus_extraction.constraints.len() != bus_reserved_rows {
+        println!(
+            "  WARNING: extraction rows {} != reported bus_reserved_rows {}",
+            bus_extraction.constraints.len(),
+            bus_reserved_rows
+        );
+    }
+
+    let mut bus_family_counts: BTreeMap<&'static str, usize> = BTreeMap::new();
+    for c in &bus_extraction.constraints {
+        *bus_family_counts
+            .entry(bus_constraint_family(c.label))
+            .or_insert(0) += 1;
+    }
+    let mut bus_family_rows: Vec<(&'static str, usize)> = bus_family_counts.into_iter().collect();
+    bus_family_rows.sort_unstable_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
+
+    println!("  Bus reserved rows by family (exact):");
+    for (family, count) in &bus_family_rows {
+        println!(
+            "    - {:<30} {:>6} ({:.3}/row)",
+            family,
+            count,
+            *count as f64 / proving_rows as f64
+        );
+    }
+    println!();
     println!("  Shout instances (LUT):   {n_lut}");
     for inst in &step0.lut_insts {
         let ell_addr = inst.d * inst.ell;
@@ -665,10 +856,19 @@ fn report_track_a_w0_w1_snapshot() {
     // ── 9. Summary ──
     println!("9. SUMMARY");
     println!("{sep}");
-    println!("  {:<36} {:>10}", "Main trace columns", layout.trace.cols);
-    println!("  {:<36} {:>10}", "Bus-tail columns", bus_tail_cols);
-    println!("  {:<36} {:>10}", "Core CCS rows", core_ccs.n);
+    println!("  {:<36} {:>10}", "Main trace columns", proving_layout.trace.cols);
+    println!("  {:<36} {:>10}", "Executed active rows", executed_steps);
+    println!("  {:<36} {:>10}", "Proving rows (padded t)", proving_rows);
+    println!("  {:<36} {:>10}", "Padding rows", padding_rows);
+    println!("  {:<36} {:>10}", "Bus cols/row (actual)", bus_cols_per_proving_row);
+    println!("  {:<36} {:>10}", "Bus-tail columns (total)", bus_tail_cols);
+    println!("  {:<36} {:>10}", "Core CCS rows (proving t)", core_ccs.n);
+    println!("  {:<36} {:>10}", "Core CCS rows (executed_t ref)", core_ccs_executed.n);
     println!("  {:<36} {:>10}", "Bus reserved rows", bus_reserved_rows);
+    println!(
+        "  {:<36} {:>10.3}",
+        "Bus reserved rows/proving row", bus_reserved_rows_per_proving_row
+    );
     println!("  {:<36} {:>10}", "Total CCS rows (n)", total_ccs_n);
     println!("  {:<36} {:>10}", "Total CCS cols (m)", total_ccs_m);
     println!("  {:<36} {:>10}", "Route-A batched claims", bt.claimed_sums.len());

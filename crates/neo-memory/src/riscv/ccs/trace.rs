@@ -170,6 +170,11 @@ pub fn build_rv32_trace_wiring_ccs_with_reserved_rows(
 
     for i in 0..t {
         let _halted = tr(l.halted, i);
+        let active = tr(l.active, i);
+        let is_virtual = tr(l.is_virtual, i);
+        let virtual_transition = tr(l.virtual_transition, i);
+        let virtual_commit_link = tr(l.virtual_commit_link, i);
+        let rd_has_write = tr(l.rd_has_write, i);
         let shout_has_lookup = tr(l.shout_has_lookup, i);
 
         // Canonical AIR-style one-column.
@@ -179,9 +184,67 @@ pub fn build_rv32_trace_wiring_ccs_with_reserved_rows(
             vec![(tr(l.one, i), F::ONE), (one, -F::ONE)],
         ));
 
-        // Booleanity and inactive-row quiescence are enforced by WB/WP sidecar stages.
+        // Booleanity for trace control columns.
+        cons.push(Constraint::terms(
+            is_virtual,
+            false,
+            vec![(is_virtual, F::ONE), (one, -F::ONE)],
+        ));
+        cons.push(Constraint::terms(
+            virtual_transition,
+            false,
+            vec![(virtual_transition, F::ONE), (one, -F::ONE)],
+        ));
+        cons.push(Constraint::terms(
+            virtual_commit_link,
+            false,
+            vec![(virtual_commit_link, F::ONE), (one, -F::ONE)],
+        ));
+        cons.push(Constraint::terms(
+            rd_has_write,
+            false,
+            vec![(rd_has_write, F::ONE), (one, -F::ONE)],
+        ));
+        cons.push(Constraint::terms(
+            shout_has_lookup,
+            false,
+            vec![(shout_has_lookup, F::ONE), (one, -F::ONE)],
+        ));
+        // Non-virtual rows must have zero virtual sequence metadata.
+        cons.push(Constraint::terms(
+            is_virtual,
+            true,
+            vec![(tr(l.virtual_sequence_remaining, i), F::ONE)],
+        ));
+        // Virtual rows do not advance architectural PC.
+        cons.push(Constraint::terms(
+            is_virtual,
+            false,
+            vec![(tr(l.pc_after, i), F::ONE), (tr(l.pc_before, i), -F::ONE)],
+        ));
+        // Virtual rows cannot claim halted.
+        cons.push(Constraint::terms(is_virtual, false, vec![(tr(l.halted, i), F::ONE)]));
+        // Inactive rows must carry zero virtual metadata.
+        cons.push(Constraint::terms(active, true, vec![(is_virtual, F::ONE)]));
+        cons.push(Constraint::terms(active, true, vec![(virtual_transition, F::ONE)]));
+        cons.push(Constraint::terms(active, true, vec![(virtual_commit_link, F::ONE)]));
+        cons.push(Constraint::terms(
+            active,
+            true,
+            vec![(tr(l.virtual_sequence_remaining, i), F::ONE)],
+        ));
+        cons.push(Constraint::terms(active, true, vec![(rd_has_write, F::ONE)]));
+        cons.push(Constraint::terms(active, true, vec![(shout_has_lookup, F::ONE)]));
+        // REG write lane must stay quiescent when no write is declared.
+        cons.push(Constraint::terms(rd_has_write, true, vec![(tr(l.rd_addr, i), F::ONE)]));
+        cons.push(Constraint::terms(rd_has_write, true, vec![(tr(l.rd_val, i), F::ONE)]));
 
         // Shout padding: (1 - has_lookup) * val == 0.
+        cons.push(Constraint::terms(
+            shout_has_lookup,
+            true,
+            vec![(tr(l.shout_table_id, i), F::ONE)],
+        ));
         cons.push(Constraint::terms(
             shout_has_lookup,
             true,
@@ -197,6 +260,21 @@ pub fn build_rv32_trace_wiring_ccs_with_reserved_rows(
             true,
             vec![(tr(l.shout_rhs, i), F::ONE)],
         ));
+        cons.push(Constraint::terms(
+            shout_has_lookup,
+            true,
+            vec![(tr(l.shout_link_lhs, i), F::ONE)],
+        ));
+        cons.push(Constraint::terms(
+            shout_has_lookup,
+            true,
+            vec![(tr(l.shout_link_rhs, i), F::ONE)],
+        ));
+        cons.push(Constraint::terms(
+            shout_has_lookup,
+            true,
+            vec![(tr(l.shout_add_sub_key, i), F::ONE)],
+        ));
     }
 
     for i in 0..t.saturating_sub(1) {
@@ -205,6 +283,78 @@ pub fn build_rv32_trace_wiring_ccs_with_reserved_rows(
             one,
             false,
             vec![(tr(l.pc_after, i), F::ONE), (tr(l.pc_before, i + 1), -F::ONE)],
+        ));
+        // Virtual rows must stay inside the active architectural sequence.
+        cons.push(Constraint::terms(
+            tr(l.is_virtual, i),
+            false,
+            vec![(tr(l.active, i + 1), F::ONE), (one, -F::ONE)],
+        ));
+        // Decomposition micro-rows must stay attached to the same instruction word.
+        cons.push(Constraint::terms(
+            tr(l.is_virtual, i),
+            false,
+            vec![(tr(l.instr_word, i + 1), F::ONE), (tr(l.instr_word, i), -F::ONE)],
+        ));
+
+        // Virtual sequence metadata must countdown by exactly one row-to-row.
+        // With the row-wise invariant `(1 - is_virtual) * remaining = 0`,
+        // this also forces the last virtual row before commit to have remaining=1.
+        cons.push(Constraint::terms(
+            tr(l.is_virtual, i),
+            false,
+            vec![
+                (tr(l.virtual_sequence_remaining, i), F::ONE),
+                (tr(l.virtual_sequence_remaining, i + 1), -F::ONE),
+                (one, -F::ONE),
+            ],
+        ));
+        // virtual_transition[i] == is_virtual[i] * active[i+1] * (1 - is_virtual[i+1])
+        cons.push(Constraint::terms(
+            tr(l.is_virtual, i),
+            false,
+            vec![
+                (tr(l.active, i + 1), F::ONE),
+                (tr(l.is_virtual, i + 1), -F::ONE),
+                (tr(l.virtual_transition, i), -F::ONE),
+            ],
+        ));
+        cons.push(Constraint::terms(
+            tr(l.is_virtual, i),
+            true,
+            vec![(tr(l.virtual_transition, i), F::ONE)],
+        ));
+        // Virtual transition rows must carry a final virtual write for commit linkage.
+        cons.push(Constraint::terms(
+            tr(l.virtual_transition, i),
+            false,
+            vec![(tr(l.rd_has_write, i), F::ONE), (one, -F::ONE)],
+        ));
+        // virtual_commit_link[i] == virtual_transition[i] * rd_has_write[i+1]
+        cons.push(Constraint::terms(
+            tr(l.virtual_transition, i),
+            false,
+            vec![
+                (tr(l.virtual_commit_link, i), F::ONE),
+                (tr(l.rd_has_write, i + 1), -F::ONE),
+            ],
+        ));
+        cons.push(Constraint::terms(
+            tr(l.virtual_transition, i),
+            true,
+            vec![(tr(l.virtual_commit_link, i), F::ONE)],
+        ));
+        // If virtual_commit_link is set, the next row must carry a write.
+        cons.push(Constraint::terms(
+            tr(l.virtual_commit_link, i),
+            false,
+            vec![(one, F::ONE), (tr(l.rd_has_write, i + 1), -F::ONE)],
+        ));
+        // Constrained virtual commit: last virtual write value must equal next-row write value.
+        cons.push(Constraint::terms(
+            tr(l.virtual_commit_link, i),
+            false,
+            vec![(tr(l.rd_val, i + 1), F::ONE), (tr(l.rd_val, i), -F::ONE)],
         ));
 
         // cycle[i+1] == cycle[i] + 1
@@ -239,6 +389,20 @@ pub fn build_rv32_trace_wiring_ccs_with_reserved_rows(
             tr(l.halted, i),
             false,
             vec![(tr(l.pc_after, i), F::ONE), (tr(l.pc_after, i + 1), -F::ONE)],
+        ));
+    }
+
+    if t > 0 {
+        let i = t - 1;
+        cons.push(Constraint::terms(
+            one,
+            false,
+            vec![(tr(l.virtual_transition, i), F::ONE)],
+        ));
+        cons.push(Constraint::terms(
+            one,
+            false,
+            vec![(tr(l.virtual_commit_link, i), F::ONE)],
         ));
     }
 

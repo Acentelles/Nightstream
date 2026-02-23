@@ -999,6 +999,14 @@ fn expr_neq_from_prod(val: K, prod: K) -> K {
     val + prod - K::ONE
 }
 
+fn expr_virtual_write_domain(cols: &[K; 2]) -> K {
+    cols[0] * (K::ONE - cols[1])
+}
+
+fn expr_nonvirtual_arch_domain(cols: &[K; 2]) -> K {
+    (K::ONE - cols[0]) * cols[1]
+}
+
 fn expr_eq_from_prod_bits(cols: &[K; 1], bits: &[K], _bit_sum: K, _w: &[K; 0]) -> K {
     let mut prod = K::ONE;
     for &b in bits {
@@ -1057,6 +1065,22 @@ define_sparse_time_expr_oracle!(
     3,
     expr_rv32_packed_sub,
     [lhs, rhs, borrow, val]
+);
+
+define_sparse_time_expr_oracle!(
+    Rv32VirtualWriteDomainOracleSparseTime,
+    2,
+    4,
+    expr_virtual_write_domain,
+    [has_write, wa_bit5]
+);
+
+define_sparse_time_expr_oracle!(
+    Rv32NonVirtualArchDomainOracleSparseTime,
+    2,
+    4,
+    expr_nonvirtual_arch_domain,
+    [is_virtual, addr_bit5]
 );
 
 macro_rules! define_weighted_bits32_oracle3 {

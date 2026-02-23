@@ -153,72 +153,62 @@ pub(crate) fn verify_route_a_decode_terminals(
             decode_open_col(decode_layout.funct7_bit[5])?,
             decode_open_col(decode_layout.funct7_bit[6])?,
         ];
-        let rd_is_zero = decode_open_col(decode_layout.rd_is_zero)?;
-        let op_write_flags = [
-            opcode_flags[0] * (K::ONE - rd_is_zero),
-            opcode_flags[1] * (K::ONE - rd_is_zero),
-            opcode_flags[2] * (K::ONE - rd_is_zero),
-            opcode_flags[3] * (K::ONE - rd_is_zero),
-            opcode_flags[7] * (K::ONE - rd_is_zero),
-            opcode_flags[8] * (K::ONE - rd_is_zero),
+        let rs1_bits = [
+            decode_open_col(decode_layout.rs1_bit[0])?,
+            decode_open_col(decode_layout.rs1_bit[1])?,
+            decode_open_col(decode_layout.rs1_bit[2])?,
+            decode_open_col(decode_layout.rs1_bit[3])?,
+            decode_open_col(decode_layout.rs1_bit[4])?,
         ];
-        let alu_reg_table_delta = w2_alu_reg_table_delta_from_bits(funct7_bits, funct3_is);
-        let alu_imm_table_delta = funct7_bits[5] * funct3_is[5];
-        let rs2_decode = decode_open_col(decode_layout.rs2)?;
+        let rd_bits = [
+            decode_open_col(decode_layout.rd_bit[0])?,
+            decode_open_col(decode_layout.rd_bit[1])?,
+            decode_open_col(decode_layout.rd_bit[2])?,
+            decode_open_col(decode_layout.rd_bit[3])?,
+            decode_open_col(decode_layout.rd_bit[4])?,
+        ];
+        let decode_rs1_addr = w2_reg_addr_from_bits(rs1_bits);
+        let decode_rs2_addr = decode_open_col(decode_layout.rs2)?;
+        let decode_rd_addr = w2_reg_addr_from_bits(rd_bits);
+        let rd_is_zero = decode_open_col(decode_layout.rd_is_zero)?;
+        let decode_rd_has_write = decode_open_col(decode_layout.rd_has_write)?;
         let imm_i = decode_open_col(decode_layout.imm_i)?;
-        let alu_imm_shift_rhs_delta = (funct3_is[1] + funct3_is[5]) * (rs2_decode - imm_i);
-        let shout_has_lookup = wp_open_col(trace.shout_has_lookup)?;
-        let rs1_val = wp_open_col(trace.rs1_val)?;
-        let shout_lhs = wp_open_col(trace.shout_lhs)?;
-        let shout_table_id = decode_open_col(decode_layout.shout_table_id)?;
-
-        let selector_residuals = w2_decode_selector_residuals(
-            wp_open_col(trace.active)?,
-            decode_open_col(decode_layout.opcode)?,
+        let decode_inputs = W2DecodeFieldsOpenings {
+            active: wp_open_col(trace.active)?,
+            halted: wb_open_col(trace.halted)?,
+            is_virtual: wp_open_col(trace.is_virtual)?,
+            virtual_sequence_remaining: wp_open_col(trace.virtual_sequence_remaining)?,
+            trace_rs1_addr: wp_open_col(trace.rs1_addr)?,
+            trace_rs2_addr: wp_open_col(trace.rs2_addr)?,
+            trace_rd_addr: wp_open_col(trace.rd_addr)?,
+            rs1_val: wp_open_col(trace.rs1_val)?,
+            rs2_val: wp_open_col(trace.rs2_val)?,
+            rd_val: wp_open_col(trace.rd_val)?,
+            trace_rd_has_write: wp_open_col(trace.rd_has_write)?,
+            ram_addr: wp_open_col(trace.ram_addr)?,
+            shout_has_lookup: wp_open_col(trace.shout_has_lookup)?,
+            shout_table_id: wp_open_col(trace.shout_table_id)?,
+            shout_val: wp_open_col(trace.shout_val)?,
+            shout_lhs: wp_open_col(trace.shout_lhs)?,
+            shout_rhs: wp_open_col(trace.shout_rhs)?,
+            shout_add_sub_key: wp_open_col(trace.shout_add_sub_key)?,
+            decode_opcode: decode_open_col(decode_layout.opcode)?,
+            decode_rs1_addr,
+            decode_rs2_addr,
+            decode_rd_addr,
+            rd_is_zero,
+            decode_rd_has_write,
+            ram_has_read: decode_open_col(decode_layout.ram_has_read)?,
+            ram_has_write: decode_open_col(decode_layout.ram_has_write)?,
             opcode_flags,
             funct3_is,
-            funct3_bits,
-            decode_open_col(decode_layout.op_amo)?,
-        );
-        let bitness_residuals = w2_decode_bitness_residuals(opcode_flags, funct3_is);
-        let alu_branch_residuals = w2_alu_branch_lookup_residuals(
-            wp_open_col(trace.active)?,
-            wb_open_col(trace.halted)?,
-            shout_has_lookup,
-            shout_lhs,
-            wp_open_col(trace.shout_rhs)?,
-            shout_table_id,
-            rs1_val,
-            wp_open_col(trace.rs2_val)?,
-            decode_open_col(decode_layout.rd_has_write)?,
-            rd_is_zero,
-            wp_open_col(trace.rd_val)?,
-            decode_open_col(decode_layout.ram_has_read)?,
-            decode_open_col(decode_layout.ram_has_write)?,
-            wp_open_col(trace.ram_addr)?,
-            wp_open_col(trace.shout_val)?,
             funct3_bits,
             funct7_bits,
-            opcode_flags,
-            op_write_flags,
-            funct3_is,
-            alu_reg_table_delta,
-            alu_imm_table_delta,
-            alu_imm_shift_rhs_delta,
-            rs2_decode,
             imm_i,
-            decode_open_col(decode_layout.imm_s)?,
-        );
-
-        let mut residuals = Vec::with_capacity(W2_FIELDS_RESIDUAL_COUNT);
-        residuals.extend_from_slice(&selector_residuals);
-        residuals.extend_from_slice(&bitness_residuals);
-        residuals.extend_from_slice(&alu_branch_residuals);
-        let mut weighted = K::ZERO;
-        let weights = w2_decode_pack_weight_vector(r_cycle, residuals.len());
-        for (r, w) in residuals.iter().zip(weights.iter()) {
-            weighted += *w * *r;
-        }
+            imm_s: decode_open_col(decode_layout.imm_s)?,
+        };
+        let weights = w2_decode_pack_weight_vector(r_cycle, W2_FIELDS_RESIDUAL_COUNT);
+        let weighted = w2_decode_fields_weighted_residual(&decode_inputs, &weights);
         let expected = eq_points(r_time, r_cycle) * weighted;
         if batched_final_values[claim_idx] != expected {
             return Err(PiCcsError::ProtocolError(
@@ -658,6 +648,7 @@ pub(crate) fn verify_route_a_control_terminals(
     };
 
     let active = wp_open_col(trace.active)?;
+    let is_virtual = wp_open_col(trace.is_virtual)?;
     let pc_before = wp_open_col(trace.pc_before)?;
     let pc_after = wp_open_col(trace.pc_after)?;
     let rs1_val = wp_open_col(trace.rs1_val)?;
@@ -725,6 +716,7 @@ pub(crate) fn verify_route_a_control_terminals(
         let residual = control_next_pc_linear_residual(
             pc_before,
             pc_after,
+            is_virtual,
             op_lui,
             op_auipc,
             op_load,
