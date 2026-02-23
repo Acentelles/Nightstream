@@ -8,6 +8,7 @@ use neo_fold::pi_ccs::FoldingMode;
 use neo_fold::session::{preprocess_shared_bus_r1cs, witness_layout, FoldingSession, NeoCircuit, SharedBusResources};
 use neo_fold::session::{Public, Scalar, ShoutPort};
 use neo_math::{D, F};
+use neo_memory::ajtai::commit_cols_for_ccs_m;
 use neo_memory::cpu::ShoutCpuBinding;
 use neo_memory::riscv::lookups::{compute_op, interleave_bits, uninterleave_bits, RiscvOpcode};
 use neo_memory::witness::LutTableSpec;
@@ -171,8 +172,9 @@ impl VmCpu<u64, u64> for MultiLookupImplicitSpecVm {
 }
 
 fn setup_ajtai_committer(m: usize, kappa: usize) -> AjtaiSModule {
+    let m_commit = commit_cols_for_ccs_m(m);
     let mut rng = ChaCha8Rng::seed_from_u64(42);
-    let pp = ajtai_setup(&mut rng, D, kappa, m).expect("Ajtai setup");
+    let pp = ajtai_setup(&mut rng, D, kappa, m_commit).expect("Ajtai setup");
     AjtaiSModule::new(Arc::new(pp))
 }
 

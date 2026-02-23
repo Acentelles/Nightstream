@@ -5,7 +5,7 @@ use neo_reductions::pi_ccs_paper_exact as refimpl;
 
 use neo_ajtai::{set_global_pp, setup as ajtai_setup, AjtaiSModule};
 use neo_ccs::traits::SModuleHomomorphism;
-use neo_ccs::{CcsStructure, Mat, McsInstance, McsWitness, MeInstance, SparsePoly, Term};
+use neo_ccs::{CcsClaim, CcsStructure, CcsWitness, CeClaim, Mat, SparsePoly, Term};
 
 use neo_math::{D, F, K};
 use neo_params::NeoParams;
@@ -142,21 +142,21 @@ fn paper_exact_rlc_matches_direct_opening_and_eval() {
     // Two inputs with same r
     let z1 = Mat::from_row_major(D, m, vec![F::ONE; D * m]);
     let z2 = Mat::from_row_major(D, m, vec![F::from_u64(2); D * m]);
-    let w1 = McsWitness {
+    let w1 = CcsWitness {
         w: vec![],
         Z: z1.clone(),
     };
-    let w2 = McsWitness {
+    let w2 = CcsWitness {
         w: vec![],
         Z: z2.clone(),
     };
     // choose m_in=1 so X is non-trivial
-    let inst1 = McsInstance {
+    let inst1 = CcsClaim {
         c: l.commit(&z1),
         x: vec![],
         m_in: 1,
     };
-    let inst2 = McsInstance {
+    let inst2 = CcsClaim {
         c: l.commit(&z2),
         x: vec![],
         m_in: 1,
@@ -229,32 +229,28 @@ fn paper_exact_rlc_matches_direct_opening_and_eval() {
     for j in 0..s.t() {
         let y_from_Z = mul_Z_vec_digits(&Z_exp, &vjs[j]);
         assert_eq!(
-            &combined_me.y[j][..D],
+            &combined_me.y_ring[j][..D],
             &y_from_Z[..],
             "RLC y_j must equal combined-Z eval for j={}",
             j
         );
         // padding tail must be zero
         assert!(
-            combined_me.y[j][D..].iter().all(|&v| v == K::ZERO),
+            combined_me.y_ring[j][D..].iter().all(|&v| v == K::ZERO),
             "padding tail must be zero"
         );
     }
 
-    // y_scalars must recompose from digits with base b
-    let bK = K::from(F::from_u64(params.b as u64));
-    let mut pow = vec![K::ONE; D];
-    for i in 1..D {
-        pow[i] = pow[i - 1] * bK;
-    }
+    // ct must match layout-aware CE scalar semantics.
     for j in 0..s.t() {
-        let mut recomposed = K::ZERO;
-        for rho in 0..D {
-            recomposed += combined_me.y[j][rho] * pow[rho];
-        }
+        let want = neo_reductions::common::ct_from_y_digits_for_ccs_m(
+            &combined_me.y_ring[j],
+            &params,
+            s.m,
+        );
         assert_eq!(
-            combined_me.y_scalars[j], recomposed,
-            "RLC y_scalars[j] must recompose digits"
+            combined_me.ct[j], want,
+            "RLC ct[j] mismatch"
         );
     }
 }
@@ -275,18 +271,18 @@ fn paper_exact_full_loop_k2_one_step_roundtrip() {
     let Z_mcs = Mat::from_row_major(D, m, vec![F::from_u64(2); D * m]);
     let Z_prev = Mat::from_row_major(D, m, vec![F::from_u64(3); D * m]);
 
-    let w_mcs = McsWitness {
+    let w_mcs = CcsWitness {
         w: vec![],
         Z: Z_mcs.clone(),
     };
-    let inst_mcs = McsInstance {
+    let inst_mcs = CcsClaim {
         c: l.commit(&Z_mcs),
         x: vec![],
         m_in: 1,
     };
 
     let me_r_prev = vec![K::from(F::from_u64(7)); 1];
-    let me_prev = MeInstance {
+    let me_prev = CeClaim {
         c_step_coords: vec![],
         u_offset: 0,
         u_len: 0,
@@ -294,8 +290,9 @@ fn paper_exact_full_loop_k2_one_step_roundtrip() {
         X: l.project_x(&Z_prev, 1),
         r: me_r_prev.clone(),
         s_col: vec![],
-        y: vec![vec![K::ZERO; D]; s.t()],
-        y_scalars: vec![K::ZERO; s.t()],
+        y_ring: vec![vec![K::ZERO; D]; s.t()],
+        ct: vec![K::ZERO; s.t()],
+        aux_openings: Vec::new(),
         y_zcol: vec![],
         m_in: 1,
         fold_digest: [0u8; 32],
@@ -369,13 +366,13 @@ fn paper_exact_full_loop_k2_one_step_roundtrip() {
     // After RLC (with powers of b) followed by DEC, we get back the CCS outputs
     for j in 0..s.t() {
         assert_eq!(
-            children[0].y[j], out_ccs[0].y[j],
-            "child[0].y must match CCS output for j={}",
+            children[0].y_ring[j], out_ccs[0].y_ring[j],
+            "child[0].y_ring must match CCS output for j={}",
             j
         );
         assert_eq!(
-            children[1].y[j], out_ccs[1].y[j],
-            "child[1].y must match CCS output for j={}",
+            children[1].y_ring[j], out_ccs[1].y_ring[j],
+            "child[1].y_ring must match CCS output for j={}",
             j
         );
     }
@@ -405,18 +402,18 @@ fn paper_exact_full_loop_k2_two_steps_chain() {
     let Z_mcs0 = Mat::from_row_major(D, m, vec![F::from_u64(2); D * m]);
     let Z_prev0 = Mat::from_row_major(D, m, vec![F::from_u64(3); D * m]);
 
-    let w_mcs0 = McsWitness {
+    let w_mcs0 = CcsWitness {
         w: vec![],
         Z: Z_mcs0.clone(),
     };
-    let inst_mcs0 = McsInstance {
+    let inst_mcs0 = CcsClaim {
         c: l.commit(&Z_mcs0),
         x: vec![],
         m_in: 1,
     };
 
     let me_r0 = vec![K::from(F::from_u64(23)); 1];
-    let me0 = MeInstance {
+    let me0 = CeClaim {
         c_step_coords: vec![],
         u_offset: 0,
         u_len: 0,
@@ -424,8 +421,9 @@ fn paper_exact_full_loop_k2_two_steps_chain() {
         X: l.project_x(&Z_prev0, 1),
         r: me_r0.clone(),
         s_col: vec![],
-        y: vec![vec![K::ZERO; D]; s.t()],
-        y_scalars: vec![K::ZERO; s.t()],
+        y_ring: vec![vec![K::ZERO; D]; s.t()],
+        ct: vec![K::ZERO; s.t()],
+        aux_openings: Vec::new(),
         y_zcol: vec![],
         m_in: 1,
         fold_digest: [0u8; 32],
@@ -474,11 +472,11 @@ fn paper_exact_full_loop_k2_two_steps_chain() {
 
     // Step 2: new MCS witness, same carried ME state
     let Z_mcs1 = Mat::from_row_major(D, m, vec![F::from_u64(4); D * m]);
-    let w_mcs1 = McsWitness {
+    let w_mcs1 = CcsWitness {
         w: vec![],
         Z: Z_mcs1.clone(),
     };
-    let inst_mcs1 = McsInstance {
+    let inst_mcs1 = CcsClaim {
         c: l.commit(&Z_mcs1),
         x: vec![],
         m_in: 1,
@@ -548,13 +546,13 @@ fn paper_exact_full_loop_k2_two_steps_chain() {
     assert!(ok_y2 && ok_X2, "step 2 DEC checks must pass");
     for j in 0..s.t() {
         assert_eq!(
-            children2[0].y[j], out2[0].y[j],
-            "step 2: child[0].y must match CCS output j={}",
+            children2[0].y_ring[j], out2[0].y_ring[j],
+            "step 2: child[0].y_ring must match CCS output j={}",
             j
         );
         assert_eq!(
-            children2[1].y[j], out2[1].y[j],
-            "step 2: child[1].y must match CCS output j={}",
+            children2[1].y_ring[j], out2[1].y_ring[j],
+            "step 2: child[1].y_ring must match CCS output j={}",
             j
         );
     }
@@ -579,20 +577,20 @@ fn paper_exact_rlc_tampered_input_y_breaks_consistency() {
 
     let z1 = Mat::from_row_major(D, m, vec![F::ONE; D * m]);
     let z2 = Mat::from_row_major(D, m, vec![F::from_u64(3); D * m]);
-    let w1 = McsWitness {
+    let w1 = CcsWitness {
         w: vec![],
         Z: z1.clone(),
     };
-    let w2 = McsWitness {
+    let w2 = CcsWitness {
         w: vec![],
         Z: z2.clone(),
     };
-    let inst1 = McsInstance {
+    let inst1 = CcsClaim {
         c: l.commit(&z1),
         x: vec![],
         m_in: 1,
     };
-    let inst2 = McsInstance {
+    let inst2 = CcsClaim {
         c: l.commit(&z2),
         x: vec![],
         m_in: 1,
@@ -629,7 +627,7 @@ fn paper_exact_rlc_tampered_input_y_breaks_consistency() {
     );
 
     // Tamper second input's first digit
-    out2[0].y[0][0] += K::ONE;
+    out2[0].y_ring[0][0] += K::ONE;
 
     let rhos = {
         let rho1 = Mat::identity(D);
@@ -650,7 +648,7 @@ fn paper_exact_rlc_tampered_input_y_breaks_consistency() {
     for j in 0..s.t() {
         let y_from_Z = mul_Z_vec_digits(&combined_Z, &vjs[j]);
         assert_ne!(
-            &combined_me.y[j][..D],
+            &combined_me.y_ring[j][..D],
             &y_from_Z[..],
             "tampering inputs' y must break RLC consistency for j={}",
             j

@@ -311,7 +311,7 @@ pub(crate) fn build_route_a_memory_oracles(
                             .ok_or_else(|| PiCcsError::InvalidInput("packed RV32 DIVU: missing rem opening".into()))?
                             .clone();
                         let rhs_is_zero = packed_cols
-                            .get(4)
+                            .get(3)
                             .ok_or_else(|| PiCcsError::InvalidInput("packed RV32 DIVU: missing rhs_is_zero".into()))?
                             .clone();
                         Box::new(Rv32PackedDivuOracleSparseTime::new(
@@ -330,7 +330,7 @@ pub(crate) fn build_route_a_memory_oracles(
                             .ok_or_else(|| PiCcsError::InvalidInput("packed RV32 REMU: missing quot opening".into()))?
                             .clone();
                         let rhs_is_zero = packed_cols
-                            .get(4)
+                            .get(3)
                             .ok_or_else(|| PiCcsError::InvalidInput("packed RV32 REMU: missing rhs_is_zero".into()))?
                             .clone();
                         Box::new(Rv32PackedRemuOracleSparseTime::new(
@@ -345,15 +345,15 @@ pub(crate) fn build_route_a_memory_oracles(
                     }
                     Rv32PackedShoutOp::Div => {
                         let rhs_is_zero = packed_cols
-                            .get(5)
+                            .get(4)
                             .ok_or_else(|| PiCcsError::InvalidInput("packed RV32 DIV: missing rhs_is_zero".into()))?
                             .clone();
                         let lhs_sign = packed_cols
-                            .get(6)
+                            .get(5)
                             .ok_or_else(|| PiCcsError::InvalidInput("packed RV32 DIV: missing lhs_sign".into()))?
                             .clone();
                         let rhs_sign = packed_cols
-                            .get(7)
+                            .get(6)
                             .ok_or_else(|| PiCcsError::InvalidInput("packed RV32 DIV: missing rhs_sign".into()))?
                             .clone();
                         let q_abs = packed_cols
@@ -361,7 +361,7 @@ pub(crate) fn build_route_a_memory_oracles(
                             .ok_or_else(|| PiCcsError::InvalidInput("packed RV32 DIV: missing q_abs".into()))?
                             .clone();
                         let q_is_zero = packed_cols
-                            .get(9)
+                            .get(7)
                             .ok_or_else(|| PiCcsError::InvalidInput("packed RV32 DIV: missing q_is_zero".into()))?
                             .clone();
                         Box::new(Rv32PackedDivOracleSparseTime::new(
@@ -377,11 +377,11 @@ pub(crate) fn build_route_a_memory_oracles(
                     }
                     Rv32PackedShoutOp::Rem => {
                         let rhs_is_zero = packed_cols
-                            .get(5)
+                            .get(4)
                             .ok_or_else(|| PiCcsError::InvalidInput("packed RV32 REM: missing rhs_is_zero".into()))?
                             .clone();
                         let lhs_sign = packed_cols
-                            .get(6)
+                            .get(5)
                             .ok_or_else(|| PiCcsError::InvalidInput("packed RV32 REM: missing lhs_sign".into()))?
                             .clone();
                         let r_abs = packed_cols
@@ -389,7 +389,7 @@ pub(crate) fn build_route_a_memory_oracles(
                             .ok_or_else(|| PiCcsError::InvalidInput("packed RV32 REM: missing r_abs".into()))?
                             .clone();
                         let r_is_zero = packed_cols
-                            .get(9)
+                            .get(7)
                             .ok_or_else(|| PiCcsError::InvalidInput("packed RV32 REM: missing r_is_zero".into()))?
                             .clone();
                         Box::new(Rv32PackedRemOracleSparseTime::new(
@@ -575,14 +575,14 @@ pub(crate) fn build_route_a_memory_oracles(
                             .ok_or_else(|| PiCcsError::InvalidInput("packed RV32 DIVU: missing rem opening".into()))?
                             .clone();
                         let rhs_is_zero = packed_cols
-                            .get(4)
+                            .get(3)
                             .ok_or_else(|| PiCcsError::InvalidInput("packed RV32 DIVU: missing rhs_is_zero".into()))?
                             .clone();
                         let diff = packed_cols
-                            .get(5)
+                            .get(4)
                             .ok_or_else(|| PiCcsError::InvalidInput("packed RV32 DIVU: missing diff".into()))?
                             .clone();
-                        let diff_bits: Vec<SparseIdxVec<K>> = packed_cols.iter().skip(6).cloned().collect();
+                        let diff_bits: Vec<SparseIdxVec<K>> = packed_cols.iter().skip(5).cloned().collect();
                         if diff_bits.len() != 32 {
                             return Err(PiCcsError::InvalidInput(format!(
                                 "packed RV32 DIVU: expected 32 diff bits, got {}",
@@ -604,14 +604,14 @@ pub(crate) fn build_route_a_memory_oracles(
                     }
                     Rv32PackedShoutOp::Remu => {
                         let rhs_is_zero = packed_cols
-                            .get(4)
+                            .get(3)
                             .ok_or_else(|| PiCcsError::InvalidInput("packed RV32 REMU: missing rhs_is_zero".into()))?
                             .clone();
                         let diff = packed_cols
-                            .get(5)
+                            .get(4)
                             .ok_or_else(|| PiCcsError::InvalidInput("packed RV32 REMU: missing diff".into()))?
                             .clone();
-                        let diff_bits: Vec<SparseIdxVec<K>> = packed_cols.iter().skip(6).cloned().collect();
+                        let diff_bits: Vec<SparseIdxVec<K>> = packed_cols.iter().skip(5).cloned().collect();
                         if diff_bits.len() != 32 {
                             return Err(PiCcsError::InvalidInput(format!(
                                 "packed RV32 REMU: expected 32 diff bits, got {}",
@@ -633,15 +633,15 @@ pub(crate) fn build_route_a_memory_oracles(
                     }
                     Rv32PackedShoutOp::Div => {
                         let rhs_is_zero = packed_cols
-                            .get(5)
+                            .get(4)
                             .ok_or_else(|| PiCcsError::InvalidInput("packed RV32 DIV: missing rhs_is_zero".into()))?
                             .clone();
                         let lhs_sign = packed_cols
-                            .get(6)
+                            .get(5)
                             .ok_or_else(|| PiCcsError::InvalidInput("packed RV32 DIV: missing lhs_sign".into()))?
                             .clone();
                         let rhs_sign = packed_cols
-                            .get(7)
+                            .get(6)
                             .ok_or_else(|| PiCcsError::InvalidInput("packed RV32 DIV: missing rhs_sign".into()))?
                             .clone();
                         let q_abs = packed_cols
@@ -653,14 +653,14 @@ pub(crate) fn build_route_a_memory_oracles(
                             .ok_or_else(|| PiCcsError::InvalidInput("packed RV32 DIV: missing r_abs".into()))?
                             .clone();
                         let q_is_zero = packed_cols
-                            .get(9)
+                            .get(7)
                             .ok_or_else(|| PiCcsError::InvalidInput("packed RV32 DIV: missing q_is_zero".into()))?
                             .clone();
                         let diff = packed_cols
-                            .get(10)
+                            .get(8)
                             .ok_or_else(|| PiCcsError::InvalidInput("packed RV32 DIV: missing diff".into()))?
                             .clone();
-                        let diff_bits: Vec<SparseIdxVec<K>> = packed_cols.iter().skip(11).cloned().collect();
+                        let diff_bits: Vec<SparseIdxVec<K>> = packed_cols.iter().skip(9).cloned().collect();
                         if diff_bits.len() != 32 {
                             return Err(PiCcsError::InvalidInput(format!(
                                 "packed RV32 DIV: expected 32 diff bits, got {}",
@@ -690,15 +690,15 @@ pub(crate) fn build_route_a_memory_oracles(
                     }
                     Rv32PackedShoutOp::Rem => {
                         let rhs_is_zero = packed_cols
-                            .get(5)
+                            .get(4)
                             .ok_or_else(|| PiCcsError::InvalidInput("packed RV32 REM: missing rhs_is_zero".into()))?
                             .clone();
                         let lhs_sign = packed_cols
-                            .get(6)
+                            .get(5)
                             .ok_or_else(|| PiCcsError::InvalidInput("packed RV32 REM: missing lhs_sign".into()))?
                             .clone();
                         let rhs_sign = packed_cols
-                            .get(7)
+                            .get(6)
                             .ok_or_else(|| PiCcsError::InvalidInput("packed RV32 REM: missing rhs_sign".into()))?
                             .clone();
                         let q_abs = packed_cols
@@ -710,14 +710,14 @@ pub(crate) fn build_route_a_memory_oracles(
                             .ok_or_else(|| PiCcsError::InvalidInput("packed RV32 REM: missing r_abs".into()))?
                             .clone();
                         let r_is_zero = packed_cols
-                            .get(9)
+                            .get(7)
                             .ok_or_else(|| PiCcsError::InvalidInput("packed RV32 REM: missing r_is_zero".into()))?
                             .clone();
                         let diff = packed_cols
-                            .get(10)
+                            .get(8)
                             .ok_or_else(|| PiCcsError::InvalidInput("packed RV32 REM: missing diff".into()))?
                             .clone();
-                        let diff_bits: Vec<SparseIdxVec<K>> = packed_cols.iter().skip(11).cloned().collect();
+                        let diff_bits: Vec<SparseIdxVec<K>> = packed_cols.iter().skip(9).cloned().collect();
                         if diff_bits.len() != 32 {
                             return Err(PiCcsError::InvalidInput(format!(
                                 "packed RV32 REM: expected 32 diff bits, got {}",
@@ -1159,12 +1159,12 @@ pub(crate) fn build_route_a_memory_oracles(
                     }
                     Some(Rv32PackedShoutOp::Divu | Rv32PackedShoutOp::Remu) => {
                         let rhs_is_zero = packed_cols
-                            .get(4)
+                            .get(3)
                             .ok_or_else(|| {
                                 PiCcsError::InvalidInput("packed RV32 DIVU/REMU: missing rhs_is_zero".into())
                             })?
                             .clone();
-                        let diff_bits: Vec<SparseIdxVec<K>> = packed_cols.iter().skip(6).cloned().collect();
+                        let diff_bits: Vec<SparseIdxVec<K>> = packed_cols.iter().skip(5).cloned().collect();
                         if diff_bits.len() != 32 {
                             return Err(PiCcsError::InvalidInput(format!(
                                 "packed RV32 DIVU/REMU: expected 32 diff bits, got {}",
@@ -1177,22 +1177,22 @@ pub(crate) fn build_route_a_memory_oracles(
                     }
                     Some(Rv32PackedShoutOp::Div) => {
                         let rhs_is_zero = packed_cols
-                            .get(5)
+                            .get(4)
                             .ok_or_else(|| PiCcsError::InvalidInput("packed RV32 DIV: missing rhs_is_zero".into()))?
                             .clone();
                         let lhs_sign = packed_cols
-                            .get(6)
+                            .get(5)
                             .ok_or_else(|| PiCcsError::InvalidInput("packed RV32 DIV: missing lhs_sign".into()))?
                             .clone();
                         let rhs_sign = packed_cols
-                            .get(7)
+                            .get(6)
                             .ok_or_else(|| PiCcsError::InvalidInput("packed RV32 DIV: missing rhs_sign".into()))?
                             .clone();
                         let q_is_zero = packed_cols
-                            .get(9)
+                            .get(7)
                             .ok_or_else(|| PiCcsError::InvalidInput("packed RV32 DIV: missing q_is_zero".into()))?
                             .clone();
-                        let diff_bits: Vec<SparseIdxVec<K>> = packed_cols.iter().skip(11).cloned().collect();
+                        let diff_bits: Vec<SparseIdxVec<K>> = packed_cols.iter().skip(9).cloned().collect();
                         if diff_bits.len() != 32 {
                             return Err(PiCcsError::InvalidInput(format!(
                                 "packed RV32 DIV: expected 32 diff bits, got {}",
@@ -1208,22 +1208,22 @@ pub(crate) fn build_route_a_memory_oracles(
                     }
                     Some(Rv32PackedShoutOp::Rem) => {
                         let rhs_is_zero = packed_cols
-                            .get(5)
+                            .get(4)
                             .ok_or_else(|| PiCcsError::InvalidInput("packed RV32 REM: missing rhs_is_zero".into()))?
                             .clone();
                         let lhs_sign = packed_cols
-                            .get(6)
+                            .get(5)
                             .ok_or_else(|| PiCcsError::InvalidInput("packed RV32 REM: missing lhs_sign".into()))?
                             .clone();
                         let rhs_sign = packed_cols
-                            .get(7)
+                            .get(6)
                             .ok_or_else(|| PiCcsError::InvalidInput("packed RV32 REM: missing rhs_sign".into()))?
                             .clone();
                         let r_is_zero = packed_cols
-                            .get(9)
+                            .get(7)
                             .ok_or_else(|| PiCcsError::InvalidInput("packed RV32 REM: missing r_is_zero".into()))?
                             .clone();
-                        let diff_bits: Vec<SparseIdxVec<K>> = packed_cols.iter().skip(11).cloned().collect();
+                        let diff_bits: Vec<SparseIdxVec<K>> = packed_cols.iter().skip(9).cloned().collect();
                         if diff_bits.len() != 32 {
                             return Err(PiCcsError::InvalidInput(format!(
                                 "packed RV32 REM: expected 32 diff bits, got {}",
@@ -1441,8 +1441,8 @@ pub(crate) fn build_route_a_memory_oracles(
                 inc_terms_at_r_addr.clone(),
             )));
         }
-        let read_check: Box<dyn RoundOracle> = Box::new(SumRoundOracle::new(read_oracles));
-        let write_check: Box<dyn RoundOracle> = Box::new(SumRoundOracle::new(write_oracles));
+        let read_check: Box<dyn RoundOracle> = Box::new(SumRoundOracle::new(read_oracles)?);
+        let write_check: Box<dyn RoundOracle> = Box::new(SumRoundOracle::new(write_oracles)?);
 
         let lane_count = pre.decoded.lanes.len();
         let mut bit_cols: Vec<SparseIdxVec<K>> = Vec::with_capacity(lane_count * (2 * ell_addr + 2));

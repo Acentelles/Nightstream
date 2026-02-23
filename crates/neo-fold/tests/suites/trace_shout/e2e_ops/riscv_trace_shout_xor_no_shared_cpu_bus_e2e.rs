@@ -3,7 +3,7 @@
 use std::marker::PhantomData;
 
 use neo_ajtai::Commitment as Cmt;
-use neo_ccs::relations::{McsInstance, McsWitness};
+use neo_ccs::relations::{CcsClaim, CcsWitness};
 use neo_ccs::traits::SModuleHomomorphism;
 use neo_ccs::Mat;
 use neo_fold::pi_ccs::FoldingMode;
@@ -197,12 +197,12 @@ fn riscv_trace_wiring_ccs_no_shared_cpu_bus_shout_xor_paged_prove_verify() {
     let Z_cpu = neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z_cpu);
     let c_cpu = l.commit(&Z_cpu);
     let mcs = (
-        McsInstance {
+        CcsClaim {
             c: c_cpu,
             x: x.clone(),
             m_in: layout.m_in,
         },
-        McsWitness { w, Z: Z_cpu },
+        CcsWitness { w, Z: Z_cpu },
     );
 
     // Shout instance: XOR table, 1 lane, bit-addressed (ell_addr=64) → paged across multiple mats.

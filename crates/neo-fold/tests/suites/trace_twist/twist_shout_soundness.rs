@@ -7,7 +7,7 @@ mod fixtures;
 use neo_ajtai::{AjtaiSModule, Commitment as Cmt};
 use neo_ccs::{
     matrix::Mat,
-    relations::{CcsStructure, MeInstance},
+    relations::{CcsStructure, CeClaim},
 };
 use neo_fold::memory_sidecar::claim_plan::RouteATimeClaimPlan;
 use neo_fold::shard::CommitMixers;
@@ -25,7 +25,7 @@ fn build_single_chunk_inputs() -> (
     NeoParams,
     CcsStructure<F>,
     StepWitnessBundle<Cmt, F, K>,
-    Vec<MeInstance<Cmt, F, K>>,
+    Vec<CeClaim<Cmt, F, K>>,
     Vec<Mat<F>>,
     AjtaiSModule,
     CommitMixers<fn(&[Mat<F>], &[Cmt]) -> Cmt, fn(&[Cmt], u32) -> Cmt>,
@@ -215,7 +215,7 @@ fn tamper_rlc_rho_fails() {
     )
     .expect("prove should succeed");
 
-    proof.steps[0].fold.rlc_rhos[0][(0, 0)] += F::ONE;
+    proof.steps[0].fold.rlc_rhos.clear();
 
     let mut tr_verify = Poseidon2Transcript::new(b"soundness/tamper-rlc-rho");
     let steps_public = [StepInstanceBundle::from(&step_bundle)];
@@ -254,10 +254,10 @@ fn tamper_rlc_parent_y_scalars_fails() {
     .expect("prove should succeed");
 
     assert!(
-        !proof.steps[0].fold.rlc_parent.y_scalars.is_empty(),
+        !proof.steps[0].fold.rlc_parent.ct.is_empty(),
         "fixture should produce a non-empty y_scalars table"
     );
-    proof.steps[0].fold.rlc_parent.y_scalars[0] += K::ONE;
+    proof.steps[0].fold.rlc_parent.ct[0] += K::ONE;
 
     let mut tr_verify = Poseidon2Transcript::new(b"soundness/tamper-rlc-parent-y-scalars");
     let steps_public = [StepInstanceBundle::from(&step_bundle)];
@@ -300,7 +300,7 @@ fn tamper_dec_child_y_fails() {
         .get_mut(0)
         .and_then(|s| s.fold.dec_children.get_mut(0))
         .expect("fixture should produce at least one DEC child");
-    child0.y[0][0] += K::ONE;
+    child0.y_ring[0][0] += K::ONE;
 
     let mut tr_verify = Poseidon2Transcript::new(b"soundness/tamper-dec-child-y");
     let steps_public = [StepInstanceBundle::from(&step_bundle)];

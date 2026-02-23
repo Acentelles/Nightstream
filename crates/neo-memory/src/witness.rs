@@ -1,5 +1,5 @@
 use neo_ccs::matrix::Mat;
-use neo_ccs::relations::{McsInstance, McsWitness};
+use neo_ccs::relations::{CcsClaim, CcsWitness};
 use neo_math::K;
 use neo_reductions::error::PiCcsError;
 use serde::{Deserialize, Serialize};
@@ -246,15 +246,15 @@ impl<C, F> LutInstance<C, F> {
 /// Per-step bundle that carries CPU + memory witnesses for a single folding step.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct StepWitnessBundle<Cmt, F, K> {
-    pub mcs: (McsInstance<Cmt, F>, McsWitness<F>),
+    pub mcs: (CcsClaim<Cmt, F>, CcsWitness<F>),
     pub lut_instances: Vec<(LutInstance<Cmt, F>, LutWitness<F>)>,
     pub mem_instances: Vec<(MemInstance<Cmt, F>, MemWitness<F>)>,
     #[serde(skip)]
     pub _phantom: PhantomData<K>,
 }
 
-impl<Cmt, F, K> From<(McsInstance<Cmt, F>, McsWitness<F>)> for StepWitnessBundle<Cmt, F, K> {
-    fn from(mcs: (McsInstance<Cmt, F>, McsWitness<F>)) -> Self {
+impl<Cmt, F, K> From<(CcsClaim<Cmt, F>, CcsWitness<F>)> for StepWitnessBundle<Cmt, F, K> {
+    fn from(mcs: (CcsClaim<Cmt, F>, CcsWitness<F>)) -> Self {
         Self {
             mcs,
             lut_instances: Vec::new(),
@@ -267,15 +267,15 @@ impl<Cmt, F, K> From<(McsInstance<Cmt, F>, McsWitness<F>)> for StepWitnessBundle
 /// Per-step bundle that carries *only public instances* (no witnesses).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct StepInstanceBundle<Cmt, F, K> {
-    pub mcs_inst: McsInstance<Cmt, F>,
+    pub mcs_inst: CcsClaim<Cmt, F>,
     pub lut_insts: Vec<LutInstance<Cmt, F>>,
     pub mem_insts: Vec<MemInstance<Cmt, F>>,
     #[serde(skip)]
     pub _phantom: PhantomData<K>,
 }
 
-impl<Cmt, F, K> From<McsInstance<Cmt, F>> for StepInstanceBundle<Cmt, F, K> {
-    fn from(mcs_inst: McsInstance<Cmt, F>) -> Self {
+impl<Cmt, F, K> From<CcsClaim<Cmt, F>> for StepInstanceBundle<Cmt, F, K> {
+    fn from(mcs_inst: CcsClaim<Cmt, F>) -> Self {
         Self {
             mcs_inst,
             lut_insts: Vec::new(),

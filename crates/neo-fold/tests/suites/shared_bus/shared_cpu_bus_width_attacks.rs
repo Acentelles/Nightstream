@@ -53,7 +53,7 @@ fn tamper_width_opening_scalar(proof: &mut ShardProof, width_col: usize) {
     );
     let me = &mut proof.steps[0].mem.wp_me_claims[0];
     let width_open_start = me
-        .y_scalars
+        .aux_openings
         .len()
         .checked_sub(width_open_cols.len())
         .expect("width openings must be appended to WP ME tail");
@@ -61,7 +61,7 @@ fn tamper_width_opening_scalar(proof: &mut ShardProof, width_col: usize) {
         .iter()
         .position(|&c| c == width_col)
         .expect("expected width lookup opening column");
-    me.y_scalars[width_open_start + width_idx] += K::ONE;
+    me.aux_openings[width_open_start + width_idx] += K::ONE;
 }
 
 #[test]

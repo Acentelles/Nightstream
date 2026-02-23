@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use neo_ccs::MeInstance;
+use neo_ccs::CeClaim;
 use neo_fold::riscv_trace_shard::Rv32TraceWiring;
 use neo_fold::shard::ShardProof;
 use neo_memory::riscv::ccs::{build_rv32_trace_wiring_ccs, Rv32TraceCcsLayout};
@@ -135,8 +135,8 @@ impl OpeningSurfaceBuckets {
     }
 }
 
-fn sum_y_scalars<C, FF, KK>(claims: &[MeInstance<C, FF, KK>]) -> usize {
-    claims.iter().map(|me| me.y_scalars.len()).sum()
+fn sum_y_scalars<C, FF, KK>(claims: &[CeClaim<C, FF, KK>]) -> usize {
+    claims.iter().map(|me| me.ct.len()).sum()
 }
 
 fn opening_surface_from_shard_proof(proof: &ShardProof) -> OpeningSurfaceBuckets {

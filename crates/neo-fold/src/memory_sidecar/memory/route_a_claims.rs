@@ -97,7 +97,7 @@ impl<'o> TimeBatchedClaims for ShoutRouteAProtocol<'o> {
         labels: &mut Vec<&'static [u8]>,
         claim_is_dynamic: &mut Vec<bool>,
         claims: &mut Vec<BatchedClaim<'a>>,
-    ) {
+    ) -> Result<(), PiCcsError> {
         append_route_a_shout_time_claims(
             &mut self.guard,
             claimed_sums,
@@ -105,7 +105,7 @@ impl<'o> TimeBatchedClaims for ShoutRouteAProtocol<'o> {
             labels,
             claim_is_dynamic,
             claims,
-        );
+        )
     }
 }
 
@@ -116,16 +116,23 @@ pub fn append_route_a_shout_time_claims<'a>(
     labels: &mut Vec<&'static [u8]>,
     claim_is_dynamic: &mut Vec<bool>,
     claims: &mut Vec<BatchedClaim<'a>>,
-) {
+) -> Result<(), PiCcsError> {
     if guard.lane_ranges.is_empty() {
-        return;
+        return Ok(());
     }
     if guard.bitness.len() != guard.lane_ranges.len() {
-        panic!("shout bitness count mismatch");
+        return Err(PiCcsError::ProtocolError(format!(
+            "shout bitness count mismatch (bitness={}, lane_ranges={})",
+            guard.bitness.len(),
+            guard.lane_ranges.len()
+        )));
     }
 
     let mut lane_ranges_iter = guard.lane_ranges.iter();
-    let mut next_end = lane_ranges_iter.next().expect("non-empty").end;
+    let mut next_end = lane_ranges_iter
+        .next()
+        .ok_or_else(|| PiCcsError::ProtocolError("shout lane_ranges unexpectedly empty".into()))?
+        .end;
     let mut bitness_iter = guard.bitness.iter_mut();
 
     for (lane_idx, lane) in guard.lanes.iter_mut().enumerate() {
@@ -152,9 +159,9 @@ pub fn append_route_a_shout_time_claims<'a>(
         }
 
         if let Some(prefix) = lane.event_table_hash_prefix.as_mut() {
-            let claim = lane
-                .event_table_hash_claim
-                .expect("event_table_hash_claim missing");
+            let claim = lane.event_table_hash_claim.ok_or_else(|| {
+                PiCcsError::ProtocolError(format!("event_table_hash_claim missing for shout lane_idx={lane_idx}"))
+            })?;
             claimed_sums.push(claim);
             degree_bounds.push(prefix.degree_bound());
             labels.push(b"shout/event_table_hash");
@@ -167,7 +174,11 @@ pub fn append_route_a_shout_time_claims<'a>(
         }
 
         if lane_idx + 1 == next_end {
-            let bitness_vec = bitness_iter.next().expect("shout bitness idx drift");
+            let bitness_vec = bitness_iter.next().ok_or_else(|| {
+                PiCcsError::ProtocolError(format!(
+                    "shout bitness idx drift at lane_idx={lane_idx} (missing bitness vector)"
+                ))
+            })?;
             for bit_oracle in bitness_vec.iter_mut() {
                 claimed_sums.push(K::ZERO);
                 degree_bounds.push(bit_oracle.degree_bound());
@@ -207,8 +218,11 @@ pub fn append_route_a_shout_time_claims<'a>(
     }
 
     if bitness_iter.next().is_some() {
-        panic!("shout bitness not fully consumed");
+        return Err(PiCcsError::ProtocolError(
+            "shout bitness not fully consumed after lane claim assembly".into(),
+        ));
     }
+    Ok(())
 }
 
 pub struct RouteATwistTimeClaimsGuard<'a> {
@@ -224,24 +238,24 @@ pub fn build_route_a_twist_time_claims_guard<'a>(
     ell_n: usize,
     read_check_claims: Vec<K>,
     write_check_claims: Vec<K>,
-) -> RouteATwistTimeClaimsGuard<'a> {
+) -> Result<RouteATwistTimeClaimsGuard<'a>, PiCcsError> {
     let mut read_check_prefixes: Vec<RoundOraclePrefix<'a>> = Vec::with_capacity(twist_oracles.len());
     let mut write_check_prefixes: Vec<RoundOraclePrefix<'a>> = Vec::with_capacity(twist_oracles.len());
     let mut bitness: Vec<Vec<Box<dyn RoundOracle>>> = Vec::with_capacity(twist_oracles.len());
 
     if read_check_claims.len() != twist_oracles.len() {
-        panic!(
+        return Err(PiCcsError::ProtocolError(format!(
             "twist read-check claim count mismatch (claims={}, oracles={})",
             read_check_claims.len(),
             twist_oracles.len()
-        );
+        )));
     }
     if write_check_claims.len() != twist_oracles.len() {
-        panic!(
+        return Err(PiCcsError::ProtocolError(format!(
             "twist write-check claim count mismatch (claims={}, oracles={})",
             write_check_claims.len(),
             twist_oracles.len()
-        );
+        )));
     }
 
     for o in twist_oracles.iter_mut() {
@@ -250,13 +264,13 @@ pub fn build_route_a_twist_time_claims_guard<'a>(
         write_check_prefixes.push(RoundOraclePrefix::new(o.write_check.as_mut(), ell_n));
     }
 
-    RouteATwistTimeClaimsGuard {
+    Ok(RouteATwistTimeClaimsGuard {
         read_check_prefixes,
         write_check_prefixes,
         read_check_claims,
         write_check_claims,
         bitness,
-    }
+    })
 }
 
 pub fn append_route_a_twist_time_claims<'a>(
@@ -266,7 +280,7 @@ pub fn append_route_a_twist_time_claims<'a>(
     labels: &mut Vec<&'static [u8]>,
     claim_is_dynamic: &mut Vec<bool>,
     claims: &mut Vec<BatchedClaim<'a>>,
-) {
+) -> Result<(), PiCcsError> {
     for (((read_check_time, write_check_time), bitness_vec), (read_claim, write_claim)) in guard
         .read_check_prefixes
         .iter_mut()
@@ -311,6 +325,7 @@ pub fn append_route_a_twist_time_claims<'a>(
             });
         }
     }
+    Ok(())
 }
 
 pub struct TwistRouteAProtocol<'a> {
@@ -323,10 +338,10 @@ impl<'a> TwistRouteAProtocol<'a> {
         ell_n: usize,
         read_check_claims: Vec<K>,
         write_check_claims: Vec<K>,
-    ) -> Self {
-        Self {
-            guard: build_route_a_twist_time_claims_guard(twist_oracles, ell_n, read_check_claims, write_check_claims),
-        }
+    ) -> Result<Self, PiCcsError> {
+        Ok(Self {
+            guard: build_route_a_twist_time_claims_guard(twist_oracles, ell_n, read_check_claims, write_check_claims)?,
+        })
     }
 }
 
@@ -339,7 +354,7 @@ impl<'o> TimeBatchedClaims for TwistRouteAProtocol<'o> {
         labels: &mut Vec<&'static [u8]>,
         claim_is_dynamic: &mut Vec<bool>,
         claims: &mut Vec<BatchedClaim<'a>>,
-    ) {
+    ) -> Result<(), PiCcsError> {
         append_route_a_twist_time_claims(
             &mut self.guard,
             claimed_sums,
@@ -347,7 +362,7 @@ impl<'o> TimeBatchedClaims for TwistRouteAProtocol<'o> {
             labels,
             claim_is_dynamic,
             claims,
-        );
+        )
     }
 }
 
@@ -381,8 +396,10 @@ pub(crate) fn build_bus_layout_for_step_witness(
     step: &StepWitnessBundle<Cmt, F, K>,
     t_len: usize,
 ) -> Result<BusLayout, PiCcsError> {
-    let m = step.mcs.1.Z.cols();
     let m_in = step.mcs.0.m_in;
+    let m = m_in
+        .checked_add(step.mcs.1.w.len())
+        .ok_or_else(|| PiCcsError::InvalidInput("step bus layout failed: witness width overflow".into()))?;
     let shout_shapes: Vec<ShoutInstanceShape> = step
         .lut_instances
         .iter()
@@ -598,6 +615,12 @@ pub(crate) fn build_route_a_decode_time_claims(
             bus.bus_base,
             t_len,
             &step.mcs.1.Z,
+            step
+                .mcs
+                .0
+                .m_in
+                .checked_add(step.mcs.1.w.len())
+                .ok_or_else(|| PiCcsError::InvalidInput("W2(shared): witness width overflow".into()))?,
             bus.bus_cols,
             &bus_val_cols,
         )?;

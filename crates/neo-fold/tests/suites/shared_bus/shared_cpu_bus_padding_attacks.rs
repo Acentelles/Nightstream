@@ -23,7 +23,7 @@
 use std::marker::PhantomData;
 
 use neo_ajtai::Commitment as Cmt;
-use neo_ccs::relations::{CcsStructure, McsInstance, McsWitness};
+use neo_ccs::relations::{CcsClaim, CcsStructure, CcsWitness};
 use neo_ccs::traits::SModuleHomomorphism;
 use neo_fold::pi_ccs::FoldingMode;
 use neo_fold::shard::{
@@ -200,12 +200,12 @@ fn has_write_flag_mismatch_wv_nonzero_should_be_rejected() {
     let c = l.commit(&Z);
 
     let mcs = (
-        McsInstance {
+        CcsClaim {
             c,
             x: z[..m_in].to_vec(),
             m_in,
         },
-        McsWitness {
+        CcsWitness {
             w: z[m_in..].to_vec(),
             Z,
         },
@@ -321,12 +321,12 @@ fn has_write_flag_mismatch_inc_nonzero_should_be_rejected() {
     let c = l.commit(&Z);
 
     let mcs = (
-        McsInstance {
+        CcsClaim {
             c,
             x: z[..m_in].to_vec(),
             m_in,
         },
-        McsWitness {
+        CcsWitness {
             w: z[m_in..].to_vec(),
             Z,
         },
@@ -442,12 +442,12 @@ fn has_read_flag_mismatch_ra_bits_nonzero_should_be_rejected() {
     let c = l.commit(&Z);
 
     let mcs = (
-        McsInstance {
+        CcsClaim {
             c,
             x: z[..m_in].to_vec(),
             m_in,
         },
-        McsWitness {
+        CcsWitness {
             w: z[m_in..].to_vec(),
             Z,
         },
@@ -563,12 +563,12 @@ fn has_write_flag_mismatch_wa_bits_nonzero_should_be_rejected() {
     let c = l.commit(&Z);
 
     let mcs = (
-        McsInstance {
+        CcsClaim {
             c,
             x: z[..m_in].to_vec(),
             m_in,
         },
-        McsWitness {
+        CcsWitness {
             w: z[m_in..].to_vec(),
             Z,
         },
@@ -694,12 +694,12 @@ fn has_lookup_flag_mismatch_val_nonzero_should_be_rejected() {
     let c = l.commit(&Z);
 
     let mcs = (
-        McsInstance {
+        CcsClaim {
             c,
             x: z[..m_in].to_vec(),
             m_in,
         },
-        McsWitness {
+        CcsWitness {
             w: z[m_in..].to_vec(),
             Z,
         },
@@ -835,12 +835,12 @@ fn has_lookup_flag_mismatch_addr_bits_nonzero_should_be_rejected() {
     let c = l.commit(&Z);
 
     let mcs = (
-        McsInstance {
+        CcsClaim {
             c,
             x: z[..m_in].to_vec(),
             m_in,
         },
-        McsWitness {
+        CcsWitness {
             w: z[m_in..].to_vec(),
             Z,
         },

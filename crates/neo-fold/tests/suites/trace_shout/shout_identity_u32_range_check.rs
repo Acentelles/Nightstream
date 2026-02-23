@@ -13,7 +13,7 @@ use std::marker::PhantomData;
 
 use neo_ajtai::{AjtaiSModule, Commitment as Cmt};
 use neo_ccs::poly::SparsePoly;
-use neo_ccs::relations::{CcsStructure, McsInstance, McsWitness};
+use neo_ccs::relations::{CcsClaim, CcsStructure, CcsWitness};
 use neo_ccs::traits::SModuleHomomorphism;
 use neo_ccs::Mat;
 use neo_fold::pi_ccs::FoldingMode;
@@ -38,13 +38,13 @@ fn create_mcs_from_z(
     l: &impl SModuleHomomorphism<F, Cmt>,
     m_in: usize,
     z: Vec<F>,
-) -> (McsInstance<Cmt, F>, McsWitness<F>) {
+) -> (CcsClaim<Cmt, F>, CcsWitness<F>) {
     let x = z[..m_in].to_vec();
     let w = z[m_in..].to_vec();
     let z_mat = neo_memory::ajtai::encode_vector_balanced_to_mat(params, &z);
     let c = l.commit(&z_mat);
 
-    (McsInstance { c, x, m_in }, McsWitness { w, Z: z_mat })
+    (CcsClaim { c, x, m_in }, CcsWitness { w, Z: z_mat })
 }
 
 /// Write one Shout lane row into the shared CPU bus tail at `bus_base`.

@@ -4,6 +4,7 @@
 //! R1CS-based CPU, allowing integration with Neo's shared CPU bus architecture.
 
 use crate::addr::write_addr_bits_dim_major_le_into_bus;
+use crate::ajtai::encode_vector_for_ccs_m;
 use crate::builder::CpuArithmetization;
 use crate::cpu::bus_layout::{
     build_bus_layout_for_instances_with_shout_shapes_and_twist_lanes, BusLayout, ShoutInstanceShape,
@@ -17,9 +18,7 @@ use crate::plain::PlainMemLayout;
 use crate::riscv::lookups::uninterleave_bits;
 use crate::riscv::packed::{build_rv32_packed_cols, rv32_packed_d};
 use crate::witness::{LutInstance, LutTableSpec, MemInstance};
-use neo_ajtai::{decomp_b, DecompStyle};
-use neo_ccs::matrix::Mat;
-use neo_ccs::relations::{CcsStructure, McsInstance, McsWitness};
+use neo_ccs::relations::{CcsClaim, CcsStructure, CcsWitness};
 use neo_ccs::traits::SModuleHomomorphism;
 use neo_params::NeoParams;
 use neo_vm_trace::{StepTrace, VmTrace};
@@ -482,7 +481,7 @@ where
         &self,
         trace: &VmTrace<u64, u64>,
         chunk_size: usize,
-    ) -> Result<Vec<(McsInstance<Cmt, Goldilocks>, McsWitness<Goldilocks>)>, Self::Error> {
+    ) -> Result<Vec<(CcsClaim<Cmt, Goldilocks>, CcsWitness<Goldilocks>)>, Self::Error> {
         if chunk_size == 0 {
             return Err("chunk_size must be >= 1".into());
         }
@@ -868,8 +867,7 @@ where
                 }
             }
 
-            // 3) Decompose z -> Z matrix
-            let d = self.params.d as usize;
+            // 3) Encode z -> Z matrix
             let m = z_vec.len(); // == ccs.m after padding
 
             // Validate m_in
@@ -878,17 +876,8 @@ where
                 return Err(format!("m_in={} exceeds witness length m={}", m_in, m));
             }
 
-            // Decompose: Z is d x m
-            let z_digits = decomp_b(&z_vec, self.params.b, d, DecompStyle::Balanced);
-
-            // Convert to Mat (row-major d x m)
-            let mut mat_data = vec![Goldilocks::ZERO; d * m];
-            for c in 0..m {
-                for r in 0..d {
-                    mat_data[r * m + c] = z_digits[c * d + r];
-                }
-            }
-            let z_mat = Mat::from_row_major(d, m, mat_data);
+            let z_mat = encode_vector_for_ccs_m(&self.params, self.ccs.m, &z_vec)
+                .map_err(|e| format!("shared_cpu_bus: witness encode failed: {e}"))?;
 
             // 4) Commit to Z
             let c = self.committer.commit(&z_mat);
@@ -897,7 +886,7 @@ where
             let x = z_vec[..m_in].to_vec();
             let w = z_vec[m_in..].to_vec();
 
-            mcss.push((McsInstance { c, x, m_in }, McsWitness { w, Z: z_mat }));
+            mcss.push((CcsClaim { c, x, m_in }, CcsWitness { w, Z: z_mat }));
 
             chunk_start = chunk_end;
         }
@@ -908,7 +897,7 @@ where
     fn build_ccs_steps(
         &self,
         trace: &VmTrace<u64, u64>,
-    ) -> Result<Vec<(McsInstance<Cmt, Goldilocks>, McsWitness<Goldilocks>)>, Self::Error> {
+    ) -> Result<Vec<(CcsClaim<Cmt, Goldilocks>, CcsWitness<Goldilocks>)>, Self::Error> {
         self.build_ccs_chunks(trace, 1)
     }
 

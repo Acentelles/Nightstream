@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 
 use neo_ajtai::Commitment as Cmt;
 use neo_ccs::poly::SparsePoly;
-use neo_ccs::relations::{CcsStructure, McsInstance, McsWitness, MeInstance};
+use neo_ccs::relations::{CcsClaim, CcsStructure, CcsWitness, CeClaim};
 use neo_ccs::traits::SModuleHomomorphism;
 use neo_ccs::Mat;
 use neo_fold::pi_ccs::FoldingMode;
@@ -53,18 +53,13 @@ fn create_identity_ccs(n: usize) -> CcsStructure<F> {
     CcsStructure::new(vec![mat], f).expect("CCS")
 }
 
-fn create_mcs_from_z(
-    params: &NeoParams,
-    l: &DummyCommit,
-    m_in: usize,
-    z: Vec<F>,
-) -> (McsInstance<Cmt, F>, McsWitness<F>) {
+fn create_mcs_from_z(params: &NeoParams, l: &DummyCommit, m_in: usize, z: Vec<F>) -> (CcsClaim<Cmt, F>, CcsWitness<F>) {
     let x = z[..m_in].to_vec();
     let w = z[m_in..].to_vec();
     let Z = neo_memory::ajtai::encode_vector_balanced_to_mat(params, &z);
     let c = l.commit(&Z);
 
-    (McsInstance { c, x, m_in }, McsWitness { w, Z })
+    (CcsClaim { c, x, m_in }, CcsWitness { w, Z })
 }
 
 fn write_shout_bus_row(
@@ -105,7 +100,7 @@ fn write_shout_bus_row(
 
 #[test]
 fn absorb_step_memory_binds_table_spec() {
-    let dummy_mcs = McsInstance {
+    let dummy_mcs = CcsClaim {
         c: Cmt::zeros(D, 1),
         x: vec![],
         m_in: 0,
@@ -187,7 +182,7 @@ fn route_a_shout_implicit_table_spec_verifies() {
         _phantom: PhantomData::<K>,
     };
 
-    let acc_init: Vec<MeInstance<Cmt, F, K>> = Vec::new();
+    let acc_init: Vec<CeClaim<Cmt, F, K>> = Vec::new();
     let acc_wit_init: Vec<Mat<F>> = Vec::new();
 
     let mut tr_prove = Poseidon2Transcript::new(b"implicit-shout-table-spec");
@@ -280,7 +275,7 @@ fn route_a_shout_implicit_identity_u32_table_spec_verifies() {
         _phantom: PhantomData::<K>,
     };
 
-    let acc_init: Vec<MeInstance<Cmt, F, K>> = Vec::new();
+    let acc_init: Vec<CeClaim<Cmt, F, K>> = Vec::new();
     let acc_wit_init: Vec<Mat<F>> = Vec::new();
 
     let mut tr_prove = Poseidon2Transcript::new(b"implicit-shout-identity-u32-table-spec");

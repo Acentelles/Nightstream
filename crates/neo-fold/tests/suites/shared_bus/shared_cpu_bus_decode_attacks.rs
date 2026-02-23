@@ -49,7 +49,7 @@ fn tamper_decode_opening_scalar(proof: &mut ShardProof, decode_col: usize) {
     );
     let me = &mut proof.steps[0].mem.wp_me_claims[0];
     let decode_start = me
-        .y_scalars
+        .aux_openings
         .len()
         .checked_sub(decode_open_cols.len())
         .expect("decode openings must be appended to WP ME tail");
@@ -57,7 +57,7 @@ fn tamper_decode_opening_scalar(proof: &mut ShardProof, decode_col: usize) {
         .iter()
         .position(|&c| c == decode_col)
         .expect("decode col must be present in WP decode opening tail");
-    me.y_scalars[decode_start + open_idx] += K::ONE;
+    me.aux_openings[decode_start + open_idx] += K::ONE;
 }
 
 #[test]
@@ -75,9 +75,9 @@ fn decode_write_gate_tamper_is_rejected() {
 fn decode_alu_table_delta_tamper_is_rejected() {
     let (run, mut proof) = prove_decode_trace_program();
     let layout = Rv32DecodeSidecarLayout::new();
-    tamper_decode_opening_scalar(&mut proof, layout.rs2);
+    tamper_decode_opening_scalar(&mut proof, layout.op_alu_reg);
     assert!(
         run.verify_proof(&proof).is_err(),
-        "tampered decode stage rs2-decode opening must fail verification"
+        "tampered decode stage ALU-reg selector opening must fail verification"
     );
 }

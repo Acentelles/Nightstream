@@ -1,4 +1,5 @@
 use neo_fold::riscv_trace_shard::Rv32TraceWiring;
+use neo_fold::shard::{ShardProof, StepProof};
 use neo_math::K;
 use neo_memory::riscv::ccs::TraceShoutBusSpec;
 use neo_memory::riscv::lookups::{
@@ -10,6 +11,43 @@ use neo_memory::riscv::trace::{
     Rv32DecodeSidecarLayout, Rv32WidthSidecarLayout,
 };
 use p3_field::PrimeCharacteristicRing;
+
+fn materialized_steps<'a>(proof: &'a ShardProof) -> Vec<&'a StepProof> {
+    let mut out = Vec::new();
+    for step in &proof.steps {
+        if let Some(sub) = step.compressed_substeps.as_ref() {
+            out.extend(sub.iter());
+        }
+        out.push(step);
+    }
+    out
+}
+
+fn first_materialized_step(proof: &ShardProof) -> &StepProof {
+    materialized_steps(proof)
+        .into_iter()
+        .next()
+        .expect("expected at least one materialized proof step")
+}
+
+fn first_materialized_step_mut(proof: &mut ShardProof) -> &mut StepProof {
+    let step0 = proof
+        .steps
+        .first_mut()
+        .expect("expected at least one proof step");
+    if step0
+        .compressed_substeps
+        .as_ref()
+        .is_some_and(|sub| !sub.is_empty())
+    {
+        return step0
+            .compressed_substeps
+            .as_mut()
+            .and_then(|sub| sub.first_mut())
+            .expect("expected at least one compressed materialized proof step");
+    }
+    step0
+}
 
 #[test]
 fn rv32_trace_wiring_runner_prove_verify() {
@@ -147,7 +185,7 @@ fn rv32_trace_wiring_runner_prove_verify_without_insecure_ack() {
 }
 
 #[test]
-fn rv32_trace_wiring_runner_shared_bus_default_and_legacy_fallback_differ() {
+fn rv32_trace_wiring_runner_shared_bus_default_has_expected_layout() {
     let program = vec![
         RiscvInstruction::IAlu {
             op: RiscvOpcode::Add,
@@ -164,20 +202,6 @@ fn rv32_trace_wiring_runner_shared_bus_default_and_legacy_fallback_differ() {
         .prove()
         .expect("trace wiring prove");
 
-    let legacy_err = match Rv32TraceWiring::from_rom(/*program_base=*/ 0, &program_bytes)
-        .shared_cpu_bus(false)
-        .min_trace_len(1)
-        .prove()
-    {
-        Ok(_) => panic!("legacy no-shared fallback must be rejected"),
-        Err(e) => e,
-    };
-
-    let msg = legacy_err.to_string();
-    assert!(
-        msg.contains("no-shared fallback is removed"),
-        "unexpected no-shared rejection error: {msg}"
-    );
     assert_eq!(
         run_shared.ccs_num_variables(),
         run_shared.layout().m,
@@ -415,10 +439,11 @@ fn rv32_trace_wiring_runner_chunked_ivc_batches_no_shared_val_lanes_per_mem() {
     let steps_public = run.steps_public();
     let shard_proof = run.proof();
     assert_eq!(steps_public.len(), 2, "expected two public steps");
-    assert_eq!(shard_proof.steps.len(), 2, "expected two proof steps");
+    let materialized = materialized_steps(shard_proof);
+    assert_eq!(materialized.len(), 2, "expected two materialized proof steps");
 
     // Step 0 (shared-bus): one current CPU val claim.
-    let proof_step0 = &shard_proof.steps[0];
+    let proof_step0 = materialized[0];
     assert_eq!(
         proof_step0.mem.val_me_claims.len(),
         1,
@@ -431,7 +456,7 @@ fn rv32_trace_wiring_runner_chunked_ivc_batches_no_shared_val_lanes_per_mem() {
     );
 
     // Step 1 (shared-bus): val claims are [current_cpu, previous_cpu], each with its own fold proof.
-    let proof_step1 = &shard_proof.steps[1];
+    let proof_step1 = materialized[1];
     assert_eq!(
         proof_step1.mem.val_me_claims.len(),
         2,
@@ -464,33 +489,37 @@ fn rv32_trace_wiring_runner_wb_wp_folds_are_emitted_and_required() {
     run.verify().expect("trace wiring verify");
 
     let proof = run.proof().clone();
-    assert_eq!(proof.steps.len(), 1, "expected one step proof");
+    let step0 = first_materialized_step(&proof);
     assert!(
-        !proof.steps[0].mem.wb_me_claims.is_empty(),
+        !step0.mem.wb_me_claims.is_empty(),
         "expected WB ME claims for RV32 trace route-A"
     );
     assert!(
-        !proof.steps[0].mem.wp_me_claims.is_empty(),
+        !step0.mem.wp_me_claims.is_empty(),
         "expected WP ME claims for RV32 trace route-A"
     );
     assert!(
-        !proof.steps[0].wb_fold.is_empty(),
+        !step0.wb_fold.is_empty(),
         "expected wb_fold proofs for RV32 trace route-A"
     );
     assert!(
-        !proof.steps[0].wp_fold.is_empty(),
+        !step0.wp_fold.is_empty(),
         "expected wp_fold proofs for RV32 trace route-A"
     );
 
     let mut proof_missing_wb = proof.clone();
-    proof_missing_wb.steps[0].wb_fold.clear();
+    first_materialized_step_mut(&mut proof_missing_wb)
+        .wb_fold
+        .clear();
     assert!(
         run.verify_proof(&proof_missing_wb).is_err(),
         "missing wb_fold must fail verification"
     );
 
     let mut proof_missing_wp = proof.clone();
-    proof_missing_wp.steps[0].wp_fold.clear();
+    first_materialized_step_mut(&mut proof_missing_wp)
+        .wp_fold
+        .clear();
     assert!(
         run.verify_proof(&proof_missing_wp).is_err(),
         "missing wp_fold must fail verification"
@@ -517,14 +546,16 @@ fn rv32_trace_wiring_runner_decode_openings_are_embedded_in_wp_and_required() {
     run.verify().expect("trace wiring verify");
 
     let proof = run.proof().clone();
-    assert_eq!(proof.steps.len(), 1, "expected one step proof");
-    assert_eq!(proof.steps[0].mem.wp_me_claims.len(), 1, "expected one WP ME claim");
+    let step0 = first_materialized_step(&proof);
+    assert_eq!(step0.mem.wp_me_claims.len(), 1, "expected one WP ME claim");
     let mut proof_missing_decode_me = proof.clone();
     let decode_layout = Rv32DecodeSidecarLayout::new();
     let decode_open_cols = rv32_decode_lookup_backed_cols(&decode_layout);
-    let me = &mut proof_missing_decode_me.steps[0].mem.wp_me_claims[0];
+    let me = &mut first_materialized_step_mut(&mut proof_missing_decode_me)
+        .mem
+        .wp_me_claims[0];
     let decode_start = me
-        .y_scalars
+        .aux_openings
         .len()
         .checked_sub(decode_open_cols.len())
         .expect("decode openings must be appended to WP ME tail");
@@ -532,7 +563,7 @@ fn rv32_trace_wiring_runner_decode_openings_are_embedded_in_wp_and_required() {
         .iter()
         .position(|&c| c == decode_layout.op_alu_imm)
         .expect("decode opening column must be present");
-    me.y_scalars[decode_start + decode_idx] += K::ONE;
+    me.aux_openings[decode_start + decode_idx] += K::ONE;
     assert!(
         run.verify_proof(&proof_missing_decode_me).is_err(),
         "tampered decode lookup opening embedded in WP ME must fail verification"
@@ -559,15 +590,17 @@ fn rv32_trace_wiring_runner_width_openings_on_wp_are_required() {
     run.verify().expect("trace wiring verify");
 
     let proof = run.proof().clone();
-    assert_eq!(proof.steps.len(), 1, "expected one step proof");
-    assert_eq!(proof.steps[0].mem.wp_me_claims.len(), 1, "expected one WP ME claim");
+    let step0 = first_materialized_step(&proof);
+    assert_eq!(step0.mem.wp_me_claims.len(), 1, "expected one WP ME claim");
 
     let mut proof_tampered_width_open = proof.clone();
     let width_layout = Rv32WidthSidecarLayout::new();
     let width_open_cols = rv32_width_lookup_backed_cols(&width_layout);
-    let wp_me = &mut proof_tampered_width_open.steps[0].mem.wp_me_claims[0];
+    let wp_me = &mut first_materialized_step_mut(&mut proof_tampered_width_open)
+        .mem
+        .wp_me_claims[0];
     let width_open_start = wp_me
-        .y_scalars
+        .aux_openings
         .len()
         .checked_sub(width_open_cols.len())
         .expect("width openings must be appended to WP ME tail");
@@ -575,7 +608,7 @@ fn rv32_trace_wiring_runner_width_openings_on_wp_are_required() {
         .iter()
         .position(|&c| c == width_layout.rs2_low_bit[0])
         .expect("width opening column must be present");
-    wp_me.y_scalars[width_open_start + width_idx] += K::ONE;
+    wp_me.aux_openings[width_open_start + width_idx] += K::ONE;
     assert!(
         run.verify_proof(&proof_tampered_width_open).is_err(),
         "tampered width lookup opening embedded in WP ME must fail verification"
@@ -602,9 +635,9 @@ fn rv32_trace_wiring_runner_control_claims_are_emitted_and_required() {
     run.verify().expect("trace wiring verify");
 
     let proof = run.proof().clone();
-    assert_eq!(proof.steps.len(), 1, "expected one step proof");
+    let step0 = first_materialized_step(&proof);
 
-    let labels = &proof.steps[0].batched_time.labels;
+    let labels = &step0.batched_time.labels;
     let find_w4 = |label: &'static [u8]| -> usize {
         labels
             .iter()
@@ -621,19 +654,20 @@ fn rv32_trace_wiring_runner_control_claims_are_emitted_and_required() {
     );
 
     let mut proof_missing_control_claim = proof.clone();
-    let _ = proof_missing_control_claim.steps[0]
+    let step0_missing_control = first_materialized_step_mut(&mut proof_missing_control_claim);
+    let _ = step0_missing_control
         .batched_time
         .claimed_sums
         .remove(control_control_idx);
-    let _ = proof_missing_control_claim.steps[0]
+    let _ = step0_missing_control
         .batched_time
         .degree_bounds
         .remove(control_control_idx);
-    let _ = proof_missing_control_claim.steps[0]
+    let _ = step0_missing_control
         .batched_time
         .labels
         .remove(control_control_idx);
-    let _ = proof_missing_control_claim.steps[0]
+    let _ = step0_missing_control
         .batched_time
         .round_polys
         .remove(control_control_idx);
@@ -643,7 +677,7 @@ fn rv32_trace_wiring_runner_control_claims_are_emitted_and_required() {
     );
 
     let mut proof_tampered_control_round = proof.clone();
-    let coeff = proof_tampered_control_round.steps[0]
+    let coeff = first_materialized_step_mut(&mut proof_tampered_control_round)
         .batched_time
         .round_polys[control_control_idx]
         .get_mut(0)

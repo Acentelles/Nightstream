@@ -1,4 +1,5 @@
 use super::*;
+use p3_field::PrimeField64;
 
 pub(crate) enum CcsOracleDispatch<'a> {
     Optimized(neo_reductions::engines::optimized_engine::oracle::OptimizedOracle<'a, F>),
@@ -105,7 +106,7 @@ where
 }
 
 pub fn normalize_me_claims(
-    me_claims: &mut [MeInstance<Cmt, F, K>],
+    me_claims: &mut [CeClaim<Cmt, F, K>],
     ell_n: usize,
     ell_d: usize,
     t: usize,
@@ -120,15 +121,15 @@ pub fn normalize_me_claims(
                 ell_n
             )));
         }
-        if me.y.len() > t {
+        if me.y_ring.len() > t {
             return Err(PiCcsError::InvalidInput(format!(
                 "ME[{}] y.len()={}, expected <= t={}",
                 i,
-                me.y.len(),
+                me.y_ring.len(),
                 t
             )));
         }
-        for (j, row) in me.y.iter_mut().enumerate() {
+        for (j, row) in me.y_ring.iter_mut().enumerate() {
             if row.len() > y_pad {
                 return Err(PiCcsError::InvalidInput(format!(
                     "ME[{}] y[{}].len()={}, expected <= {}",
@@ -140,30 +141,30 @@ pub fn normalize_me_claims(
             }
             row.resize(y_pad, K::ZERO);
         }
-        me.y.resize_with(t, || vec![K::ZERO; y_pad]);
-        if me.y_scalars.len() > t {
+        me.y_ring.resize_with(t, || vec![K::ZERO; y_pad]);
+        if me.ct.len() > t {
             return Err(PiCcsError::InvalidInput(format!(
                 "ME[{}] y_scalars.len()={}, expected <= t={}",
                 i,
-                me.y_scalars.len(),
+                me.ct.len(),
                 t
             )));
         }
-        me.y_scalars.resize(t, K::ZERO);
+        me.ct.resize(t, K::ZERO);
     }
     Ok(())
 }
 
-pub(crate) fn validate_me_batch_invariants(batch: &[MeInstance<Cmt, F, K>], context: &str) -> Result<(), PiCcsError> {
+pub(crate) fn validate_me_batch_invariants(batch: &[CeClaim<Cmt, F, K>], context: &str) -> Result<(), PiCcsError> {
     if batch.is_empty() {
         return Ok(());
     }
     let me0 = &batch[0];
     let r0 = &me0.r;
     let m_in0 = me0.m_in;
-    let y_len0 = me0.y.len();
-    let y_row_len0 = me0.y.first().map(|r| r.len()).unwrap_or(0);
-    let y_scalars_len0 = me0.y_scalars.len();
+    let y_len0 = me0.y_ring.len();
+    let y_row_len0 = me0.y_ring.first().map(|r| r.len()).unwrap_or(0);
+    let y_scalars_len0 = me0.ct.len();
 
     if me0.X.rows() != D {
         return Err(PiCcsError::ProtocolError(format!(
@@ -206,16 +207,16 @@ pub(crate) fn validate_me_batch_invariants(batch: &[MeInstance<Cmt, F, K>], cont
                 m_in0
             )));
         }
-        if me.y.len() != y_len0 {
+        if me.y_ring.len() != y_len0 {
             return Err(PiCcsError::ProtocolError(format!(
                 "{}: ME claim {} has y.len()={}, expected {}",
                 context,
                 i,
-                me.y.len(),
+                me.y_ring.len(),
                 y_len0
             )));
         }
-        for (j, row) in me.y.iter().enumerate() {
+        for (j, row) in me.y_ring.iter().enumerate() {
             if row.len() != y_row_len0 {
                 return Err(PiCcsError::ProtocolError(format!(
                     "{}: ME claim {} has y[{}].len()={}, expected {}",
@@ -227,12 +228,12 @@ pub(crate) fn validate_me_batch_invariants(batch: &[MeInstance<Cmt, F, K>], cont
                 )));
             }
         }
-        if me.y_scalars.len() != y_scalars_len0 {
+        if me.ct.len() != y_scalars_len0 {
             return Err(PiCcsError::ProtocolError(format!(
                 "{}: ME claim {} has y_scalars.len()={}, expected {}",
                 context,
                 i,
-                me.y_scalars.len(),
+                me.ct.len(),
                 y_scalars_len0
             )));
         }
@@ -288,42 +289,96 @@ pub(crate) fn f_from_i64(x: i64) -> F {
 }
 
 #[inline]
+fn balanced_abs_u128(v: F) -> u128 {
+    let p = F::ORDER_U64 as u128;
+    let u = v.as_canonical_u64() as u128;
+    core::cmp::min(u, p.saturating_sub(u))
+}
+
+#[inline]
+fn min_balanced_digits_for_abs(abs: u128, b: u32) -> Result<usize, PiCcsError> {
+    if b < 2 {
+        return Err(PiCcsError::InvalidInput(format!("invalid base b={b}")));
+    }
+    if abs == 0 {
+        return Ok(1);
+    }
+    let base = b as u128;
+    let half = (b / 2) as u128;
+    if half == 0 {
+        return Err(PiCcsError::InvalidInput(format!(
+            "invalid balanced digit range for b={b}"
+        )));
+    }
+    let mut k = 0usize;
+    let mut place = 1u128;
+    let mut geom_sum = 0u128; // 1 + b + ... + b^{k-1}
+    loop {
+        k = k
+            .checked_add(1)
+            .ok_or_else(|| PiCcsError::InvalidInput("k_dec overflow".into()))?;
+        geom_sum = geom_sum
+            .checked_add(place)
+            .ok_or_else(|| PiCcsError::InvalidInput(format!("balanced range overflow for b={b}, k={k}")))?;
+        let max_abs = half
+            .checked_mul(geom_sum)
+            .ok_or_else(|| PiCcsError::InvalidInput(format!("balanced range overflow for b={b}, k={k}")))?;
+        if abs <= max_abs {
+            return Ok(k);
+        }
+        place = place
+            .checked_mul(base)
+            .ok_or_else(|| PiCcsError::InvalidInput(format!("b^k overflow for b={b}, k={k}")))?;
+    }
+}
+
+/// Lower bound on DEC digit count needed so every entry of `Z` fits in balanced base-`b`.
+pub(crate) fn required_dec_digits_for_matrix(params: &NeoParams, z: &Mat<F>) -> Result<usize, PiCcsError> {
+    let mut need = 1usize;
+    for &v in z.as_slice() {
+        let k = min_balanced_digits_for_abs(balanced_abs_u128(v), params.b)?;
+        need = core::cmp::max(need, k);
+    }
+    Ok(need)
+}
+
+#[inline]
 pub(crate) fn verify_me_y_scalars_canonical(
-    me: &MeInstance<Cmt, F, K>,
-    b: u32,
+    me: &CeClaim<Cmt, F, K>,
+    _b: u32,
+    ccs_m: usize,
     step_idx: usize,
     context: &str,
 ) -> Result<(), PiCcsError> {
-    if me.y_scalars.len() != me.y.len() {
+    if me.ct.len() != me.y_ring.len() {
         return Err(PiCcsError::InvalidInput(format!(
             "step {}: {}: y_scalars.len()={} must equal y.len()={}",
             step_idx,
             context,
-            me.y_scalars.len(),
-            me.y.len()
+            me.ct.len(),
+            me.y_ring.len()
         )));
     }
-    let bK = K::from(F::from_u64(b as u64));
-    for (j, row) in me.y.iter().enumerate() {
-        if row.len() < D {
+    for (j, row) in me.y_ring.iter().enumerate() {
+        if row.is_empty() {
             return Err(PiCcsError::InvalidInput(format!(
-                "step {}: {}: y[{}].len()={} must be >= D={}",
+                "step {}: {}: y[{}].len()={} must be >= 1",
                 step_idx,
                 context,
                 j,
                 row.len(),
-                D
             )));
         }
-        let mut expect = K::ZERO;
-        let mut pow = K::ONE;
-        for rho in 0..D {
-            expect += pow * row[rho];
-            pow *= bK;
+        if ccs_m == 0 {
+            return Err(PiCcsError::InvalidInput(format!(
+                "step {}: {}: invalid ccs_m=0",
+                step_idx, context
+            )));
         }
-        if me.y_scalars[j] != expect {
+        let expect = neo_reductions::common::ct_from_y_digits(row);
+        if me.ct[j] != expect {
             return Err(PiCcsError::ProtocolError(format!(
-                "step {}: {}: non-canonical y_scalars at row {}",
+                "step {}: {}: ct[{}] does not match layout-aware CE scalar semantics",
                 step_idx, context, j
             )));
         }
@@ -334,28 +389,33 @@ pub(crate) fn verify_me_y_scalars_canonical(
 pub(crate) fn dec_stream_no_witness<MB>(
     params: &NeoParams,
     s: &CcsStructure<F>,
-    parent: &MeInstance<Cmt, F, K>,
+    parent: &CeClaim<Cmt, F, K>,
     Z_mix: &Mat<F>,
     ell_d: usize,
     k_dec: usize,
     combine_b_pows: MB,
     sparse: Option<&SparseCache<F>>,
-) -> Result<(Vec<MeInstance<Cmt, F, K>>, Vec<Cmt>, bool, bool, bool), PiCcsError>
+) -> Result<(Vec<CeClaim<Cmt, F, K>>, Vec<Cmt>, bool, bool, bool), PiCcsError>
 where
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {
     if k_dec == 0 {
         return Err(PiCcsError::InvalidInput("DEC: k_dec must be > 0".into()));
     }
-    if Z_mix.rows() != D || Z_mix.cols() != s.m {
+    if Z_mix.rows() != D {
         return Err(PiCcsError::InvalidInput(format!(
-            "DEC: Z_mix must have shape D×m = {}×{} (got {}×{})",
+            "DEC: Z_mix must have {} rows (got {})",
             D,
-            s.m,
-            Z_mix.rows(),
-            Z_mix.cols()
+            Z_mix.rows()
         )));
     }
+    let z_layout = neo_reductions::common::witness_mat_layout(Z_mix, s.m).map_err(|e| {
+        PiCcsError::InvalidInput(format!(
+            "DEC: Z_mix shape is incompatible with logical CCS width m={} ({})",
+            s.m, e
+        ))
+    })?;
+    let m_commit = Z_mix.cols();
 
     let d_pad = 1usize << ell_d;
     let want_nc_channel = !(parent.s_col.is_empty() && parent.y_zcol.is_empty());
@@ -383,16 +443,16 @@ where
         },
     }
 
-    let pp_access = if let Some(pp) = try_get_loaded_global_pp_for_dims(D, s.m) {
+    let pp_access = if let Some(pp) = try_get_loaded_global_pp_for_dims(D, m_commit) {
         if pp.kappa == 0 {
             return Err(PiCcsError::InvalidInput("DEC: PP.kappa must be > 0".into()));
         }
         PpAccess::Loaded { pp }
-    } else if let Ok((kappa, seed)) = get_global_pp_seeded_params_for_dims(D, s.m) {
+    } else if let Ok((kappa, seed)) = get_global_pp_seeded_params_for_dims(D, m_commit) {
         if kappa == 0 {
             return Err(PiCcsError::InvalidInput("DEC: PP.kappa must be > 0".into()));
         }
-        let (chunk_size, chunk_seeds_by_row) = seeded_pp_chunk_seeds(seed, kappa, s.m);
+        let (chunk_size, chunk_seeds_by_row) = seeded_pp_chunk_seeds(seed, kappa, m_commit);
         PpAccess::Seeded {
             kappa,
             chunk_size,
@@ -400,8 +460,11 @@ where
         }
     } else {
         // Fallback: non-seeded entry. This will materialize PP if needed.
-        let pp = get_global_pp_for_dims(D, s.m).map_err(|e| {
-            PiCcsError::InvalidInput(format!("DEC: Ajtai PP unavailable for (d,m)=({},{}) ({})", D, s.m, e))
+        let pp = get_global_pp_for_dims(D, m_commit).map_err(|e| {
+            PiCcsError::InvalidInput(format!(
+                "DEC: Ajtai PP unavailable for (d,m_commit)=({},{}) ({})",
+                D, m_commit, e
+            ))
         })?;
         if pp.kappa == 0 {
             return Err(PiCcsError::InvalidInput("DEC: PP.kappa must be > 0".into()));
@@ -483,13 +546,9 @@ where
         VjsAccess::Dense(vjs)
     };
 
-    // Base-b powers in K for y_scalar recomposition.
+    // Base in K for decomposition checks.
     let bF = F::from_u64(params.b as u64);
     let bK = K::from(bF);
-    let mut pow_b_k = [K::ONE; D];
-    for rho in 1..D {
-        pow_b_k[rho] = pow_b_k[rho - 1] * bK;
-    }
 
     // Precompute parameters for bounded signed decoding of Z_mix entries.
     let b_u = params.b as u128;
@@ -504,7 +563,7 @@ where
 
     struct Acc {
         commit: Vec<[F; D]>, // [digit][kappa] -> [D]
-        y: Vec<[K; D]>,      // [digit][t] -> [D]
+        y_ring: Vec<[K; D]>, // [digit][t] -> [D]
         y_zcol: Vec<[K; D]>, // [digit] -> [D]
         any_nonzero: Vec<bool>,
         vj: Vec<K>,          // scratch: t
@@ -517,7 +576,7 @@ where
         fn new(k_dec: usize, kappa: usize, t: usize) -> Self {
             Self {
                 commit: vec![[F::ZERO; D]; k_dec * kappa],
-                y: vec![[K::ZERO; D]; k_dec * t],
+                y_ring: vec![[K::ZERO; D]; k_dec * t],
                 y_zcol: vec![[K::ZERO; D]; k_dec],
                 any_nonzero: vec![false; k_dec],
                 vj: vec![K::ZERO; t],
@@ -534,7 +593,7 @@ where
                     dst[r] += src[r];
                 }
             }
-            for (dst, src) in self.y.iter_mut().zip(rhs.y.iter()) {
+            for (dst, src) in self.y_ring.iter_mut().zip(rhs.y_ring.iter()) {
                 for r in 0..D {
                     dst[r] += src[r];
                 }
@@ -555,9 +614,14 @@ where
         }
     }
 
-    let m = s.m;
+    let m_phys = m_commit;
     let b_i64 = params.b as i64;
     let b_i128 = params.b as i128;
+
+    #[inline]
+    fn logical_col_for_entry(_layout: neo_reductions::common::WitnessMatLayout, col_phys: usize, rho: usize) -> usize {
+        col_phys * D + rho
+    }
 
     // Specialized rot_step for Φ₈₁(X) = X^54 + X^27 + 1 (η=81, D=54).
     // Mirrors `neo_ajtai::commit::rot_step_phi_81` but kept local to avoid pulling a large
@@ -714,62 +778,62 @@ where
                     }
                 }
 
-                // vj[col] := M_j^T · χ_r (compute per column to avoid materializing all vjs).
-                match &vjs_access {
-                    VjsAccess::Dense(vjs) => {
-                        for j in 0..t_mats {
-                            st.vj[j] = vjs[j][col];
-                        }
-                    }
-                    VjsAccess::Sparse { cap, cache } => {
-                        for j in 0..t_mats {
-                            st.vj[j] = if let Some(csc) = cache.csc(j) {
-                                let mut sum = K::ZERO;
-                                let s = csc.col_ptr[col];
-                                let e = csc.col_ptr[col + 1];
-                                for k in s..e {
-                                    let r = csc.row_idx[k];
-                                    if r < n_eff {
-                                        sum += K::from(csc.vals[k]) * chi_r[r];
-                                    }
-                                }
-                                sum
-                            } else if col < *cap {
-                                chi_r[col]
-                            } else {
-                                K::ZERO
-                            };
-                        }
-                    }
-                }
+                // y_(i,j)[rho] += Z_i[rho,col_phys] * (M_j^T · χ_r)[col_logical]
+                // and optional y_zcol_i[rho] += Z_i[rho,col_phys] * χ_{s_col}[col_logical].
+                for rho in 0..D {
+                    let logical_col = logical_col_for_entry(z_layout, col, rho);
+                    debug_assert!(logical_col < s.m);
 
-                // y_(i,j)[rho] += Z_i[rho,col] * vj[col]
-                for i in 0..k_dec {
-                    let y_base = i * t_mats;
-                    for rho in 0..D {
+                    match &vjs_access {
+                        VjsAccess::Dense(vjs) => {
+                            for j in 0..t_mats {
+                                st.vj[j] = vjs[j][logical_col];
+                            }
+                        }
+                        VjsAccess::Sparse { cap, cache } => {
+                            for j in 0..t_mats {
+                                st.vj[j] = if let Some(csc) = cache.csc(j) {
+                                    let mut sum = K::ZERO;
+                                    let s_ptr = csc.col_ptr[logical_col];
+                                    let e_ptr = csc.col_ptr[logical_col + 1];
+                                    for k in s_ptr..e_ptr {
+                                        let r = csc.row_idx[k];
+                                        if r < n_eff {
+                                            sum += K::from(csc.vals[k]) * chi_r[r];
+                                        }
+                                    }
+                                    sum
+                                } else if logical_col < *cap {
+                                    chi_r[logical_col]
+                                } else {
+                                    K::ZERO
+                                };
+                            }
+                        }
+                    }
+
+                    for i in 0..k_dec {
                         let digit = st.digits[i * D + rho];
                         if digit == 0 {
                             continue;
                         }
+                        let y_base = i * t_mats;
                         for j in 0..t_mats {
                             let vj = st.vj[j];
                             if vj != K::ZERO {
                                 match digit {
-                                    1 => st.y[y_base + j][rho] += vj,
-                                    -1 => st.y[y_base + j][rho] -= vj,
-                                    _ => st.y[y_base + j][rho] += vj.scale_base(f_from_i64(digit as i64)),
+                                    1 => st.y_ring[y_base + j][rho] += vj,
+                                    -1 => st.y_ring[y_base + j][rho] -= vj,
+                                    _ => st.y_ring[y_base + j][rho] += vj.scale_base(f_from_i64(digit as i64)),
                                 }
                             }
                         }
                     }
-                }
 
-                // y_zcol_i[rho] += Z_i[rho,col] * χ_{s_col}[col] (optional).
-                if !chi_s.is_empty() {
-                    let w_col = chi_s[col];
-                    if w_col != K::ZERO {
-                        for i in 0..k_dec {
-                            for rho in 0..D {
+                    if !chi_s.is_empty() {
+                        let w_col = chi_s[logical_col];
+                        if w_col != K::ZERO {
+                            for i in 0..k_dec {
                                 let digit = st.digits[i * D + rho];
                                 if digit == 0 {
                                     continue;
@@ -811,7 +875,7 @@ where
             let acc = {
                 #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-threads"))]
                 {
-                    (0..m)
+                    (0..m_phys)
                         .into_par_iter()
                         .fold(|| Acc::new(k_dec, kappa, t_mats), |st, col| process_col(st, col))
                         .reduce(
@@ -827,7 +891,7 @@ where
                 #[cfg(all(target_arch = "wasm32", not(feature = "wasm-threads")))]
                 {
                     let mut st = Acc::new(k_dec, kappa, t_mats);
-                    for col in 0..m {
+                    for col in 0..m_phys {
                         st = process_col(st, col);
                     }
                     st
@@ -842,7 +906,7 @@ where
         } => {
             let kappa = *kappa;
             let chunk_size = *chunk_size;
-            let num_chunks = (m + chunk_size - 1) / chunk_size;
+            let num_chunks = (m_phys + chunk_size - 1) / chunk_size;
 
             let process_chunk = |mut st: Acc, chunk_idx: usize| -> Acc {
                 if st.err.is_some() {
@@ -850,7 +914,7 @@ where
                 }
 
                 let start = chunk_idx * chunk_size;
-                let end = core::cmp::min(m, start + chunk_size);
+                let end = core::cmp::min(m_phys, start + chunk_size);
 
                 let mut rngs: Vec<ChaCha8Rng> = (0..kappa)
                     .map(|kr| ChaCha8Rng::from_seed(chunk_seeds_by_row[kr][chunk_idx]))
@@ -937,62 +1001,62 @@ where
                         }
                     }
 
-                    // vj[col] := M_j^T · χ_r (compute per column to avoid materializing all vjs).
-                    match &vjs_access {
-                        VjsAccess::Dense(vjs) => {
-                            for j in 0..t_mats {
-                                st.vj[j] = vjs[j][col];
-                            }
-                        }
-                        VjsAccess::Sparse { cap, cache } => {
-                            for j in 0..t_mats {
-                                st.vj[j] = if let Some(csc) = cache.csc(j) {
-                                    let mut sum = K::ZERO;
-                                    let s = csc.col_ptr[col];
-                                    let e = csc.col_ptr[col + 1];
-                                    for k in s..e {
-                                        let r = csc.row_idx[k];
-                                        if r < n_eff {
-                                            sum += K::from(csc.vals[k]) * chi_r[r];
-                                        }
-                                    }
-                                    sum
-                                } else if col < *cap {
-                                    chi_r[col]
-                                } else {
-                                    K::ZERO
-                                };
-                            }
-                        }
-                    }
+                    // y_(i,j)[rho] += Z_i[rho,col_phys] * (M_j^T · χ_r)[col_logical]
+                    // and optional y_zcol_i[rho] += Z_i[rho,col_phys] * χ_{s_col}[col_logical].
+                    for rho in 0..D {
+                        let logical_col = logical_col_for_entry(z_layout, col, rho);
+                        debug_assert!(logical_col < s.m);
 
-                    // y_(i,j)[rho] += Z_i[rho,col] * vj[col]
-                    for i in 0..k_dec {
-                        let y_base = i * t_mats;
-                        for rho in 0..D {
+                        match &vjs_access {
+                            VjsAccess::Dense(vjs) => {
+                                for j in 0..t_mats {
+                                    st.vj[j] = vjs[j][logical_col];
+                                }
+                            }
+                            VjsAccess::Sparse { cap, cache } => {
+                                for j in 0..t_mats {
+                                    st.vj[j] = if let Some(csc) = cache.csc(j) {
+                                        let mut sum = K::ZERO;
+                                        let s_ptr = csc.col_ptr[logical_col];
+                                        let e_ptr = csc.col_ptr[logical_col + 1];
+                                        for k in s_ptr..e_ptr {
+                                            let r = csc.row_idx[k];
+                                            if r < n_eff {
+                                                sum += K::from(csc.vals[k]) * chi_r[r];
+                                            }
+                                        }
+                                        sum
+                                    } else if logical_col < *cap {
+                                        chi_r[logical_col]
+                                    } else {
+                                        K::ZERO
+                                    };
+                                }
+                            }
+                        }
+
+                        for i in 0..k_dec {
                             let digit = st.digits[i * D + rho];
                             if digit == 0 {
                                 continue;
                             }
+                            let y_base = i * t_mats;
                             for j in 0..t_mats {
                                 let vj = st.vj[j];
                                 if vj != K::ZERO {
                                     match digit {
-                                        1 => st.y[y_base + j][rho] += vj,
-                                        -1 => st.y[y_base + j][rho] -= vj,
-                                        _ => st.y[y_base + j][rho] += vj.scale_base(f_from_i64(digit as i64)),
+                                        1 => st.y_ring[y_base + j][rho] += vj,
+                                        -1 => st.y_ring[y_base + j][rho] -= vj,
+                                        _ => st.y_ring[y_base + j][rho] += vj.scale_base(f_from_i64(digit as i64)),
                                     }
                                 }
                             }
                         }
-                    }
 
-                    // y_zcol_i[rho] += Z_i[rho,col] * χ_{s_col}[col] (optional).
-                    if !chi_s.is_empty() {
-                        let w_col = chi_s[col];
-                        if w_col != K::ZERO {
-                            for i in 0..k_dec {
-                                for rho in 0..D {
+                        if !chi_s.is_empty() {
+                            let w_col = chi_s[logical_col];
+                            if w_col != K::ZERO {
+                                for i in 0..k_dec {
                                     let digit = st.digits[i * D + rho];
                                     if digit == 0 {
                                         continue;
@@ -1088,7 +1152,8 @@ where
     let mut xs_row_major: Vec<Vec<F>> = vec![vec![F::ZERO; D * m_in]; k_dec];
     for col in 0..m_in {
         for rho in 0..D {
-            let u = z_rows[rho][col].as_canonical_u64() as u128;
+            let z_rc = neo_reductions::common::witness_mat_get_f(Z_mix, z_layout, s.m, rho, col);
+            let u = z_rc.as_canonical_u64() as u128;
             if B_u <= i64::MAX as u128 {
                 let val_opt: Option<i64> = if u < B_u {
                     Some(u as i64)
@@ -1152,24 +1217,19 @@ where
     let parent_r = parent.r.clone();
     let fold_digest = parent.fold_digest;
 
-    let mut children: Vec<MeInstance<Cmt, F, K>> = Vec::with_capacity(k_dec);
+    let mut children: Vec<CeClaim<Cmt, F, K>> = Vec::with_capacity(k_dec);
     for i in 0..k_dec {
         let Xi = Mat::from_row_major(D, m_in, xs_row_major[i].clone());
         let mut y_i: Vec<Vec<K>> = Vec::with_capacity(t_mats);
-        let mut y_scalars_i: Vec<K> = Vec::with_capacity(t_mats);
         for j in 0..t_mats {
             let mut yj = vec![K::ZERO; d_pad];
-            let row = &acc.y[i * t_mats + j];
+            let row = &acc.y_ring[i * t_mats + j];
             for rho in 0..D {
                 yj[rho] = row[rho];
             }
-            let mut sc = K::ZERO;
-            for rho in 0..D {
-                sc += yj[rho] * pow_b_k[rho];
-            }
             y_i.push(yj);
-            y_scalars_i.push(sc);
         }
+        let y_scalars_i = neo_reductions::common::ct_from_y_ring_for_ccs_m(&y_i, params, s.m);
 
         let y_zcol = if chi_s.is_empty() {
             Vec::new()
@@ -1182,7 +1242,7 @@ where
             yz
         };
 
-        children.push(MeInstance::<Cmt, F, K> {
+        children.push(CeClaim::<Cmt, F, K> {
             c_step_coords: vec![],
             u_offset: 0,
             u_len: 0,
@@ -1190,8 +1250,9 @@ where
             X: Xi,
             r: parent_r.clone(),
             s_col: parent.s_col.clone(),
-            y: y_i,
-            y_scalars: y_scalars_i,
+            y_ring: y_i,
+            ct: y_scalars_i,
+            aux_openings: Vec::new(),
             y_zcol,
             m_in,
             fold_digest,
@@ -1205,11 +1266,11 @@ where
         let mut pow = K::ONE;
         for i in 0..k_dec {
             for t in 0..d_pad {
-                lhs[t] += pow * children[i].y[j][t];
+                lhs[t] += pow * children[i].y_ring[j][t];
             }
             pow *= bK;
         }
-        if lhs != parent.y[j] {
+        if lhs != parent.y_ring[j] {
             ok_y = false;
             break;
         }
@@ -1250,7 +1311,7 @@ pub(crate) fn bind_rlc_inputs(
     tr: &mut Poseidon2Transcript,
     lane: RlcLane,
     step_idx: usize,
-    me_inputs: &[MeInstance<Cmt, F, K>],
+    me_inputs: &[CeClaim<Cmt, F, K>],
 ) -> Result<(), PiCcsError> {
     let lane_scope: &'static [u8] = match lane {
         RlcLane::Main => b"main",
@@ -1300,33 +1361,31 @@ pub(crate) fn bind_rlc_inputs(
 
         tr.append_fields(b"X", me.X.as_slice());
 
-        let y_elem_coeffs_per_elem =
-            me.y.iter()
-                .find_map(|row| row.first())
-                .map(|v| v.as_coeffs().len())
-                .unwrap_or(0);
-        let y_elem_count = me.y.iter().map(Vec::len).sum::<usize>();
+        let y_elem_coeffs_per_elem = me
+            .y_ring
+            .iter()
+            .find_map(|row| row.first())
+            .map(|v| v.as_coeffs().len())
+            .unwrap_or(0);
+        let y_elem_count = me.y_ring.iter().map(Vec::len).sum::<usize>();
         tr.append_fields_iter(
             b"y_elem",
             y_elem_count
                 .checked_mul(y_elem_coeffs_per_elem)
                 .ok_or_else(|| PiCcsError::ProtocolError("y_elem length overflow".into()))?,
-            me.y.iter()
+            me.y_ring
+                .iter()
                 .flat_map(|row| row.iter().flat_map(|v| v.as_coeffs())),
         );
 
-        let y_scalar_coeffs_per_elem = me
-            .y_scalars
-            .first()
-            .map(|v| v.as_coeffs().len())
-            .unwrap_or(0);
+        let y_scalar_coeffs_per_elem = me.ct.first().map(|v| v.as_coeffs().len()).unwrap_or(0);
         tr.append_fields_iter(
             b"y_scalar",
-            me.y_scalars
+            me.ct
                 .len()
                 .checked_mul(y_scalar_coeffs_per_elem)
                 .ok_or_else(|| PiCcsError::ProtocolError("y_scalar length overflow".into()))?,
-            me.y_scalars.iter().flat_map(|ysc| ysc.as_coeffs()),
+            me.ct.iter().flat_map(|ysc| ysc.as_coeffs()),
         );
 
         tr.append_u64s(b"c_step_coords_len", &[me.c_step_coords.len() as u64]);

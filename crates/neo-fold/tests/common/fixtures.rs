@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use neo_ajtai::{s_lincomb, s_mul, setup as ajtai_setup, AjtaiSModule, Commitment as Cmt};
 use neo_ccs::poly::SparsePoly;
-use neo_ccs::relations::{CcsStructure, McsInstance, McsWitness, MeInstance};
+use neo_ccs::relations::{CcsClaim, CcsStructure, CcsWitness, CeClaim};
 use neo_ccs::traits::SModuleHomomorphism;
 use neo_ccs::Mat;
 use neo_fold::pi_ccs::FoldingMode;
@@ -16,6 +16,7 @@ use neo_fold::shard::{fold_shard_prove, fold_shard_verify, ShardFoldOutputs, Sha
 use neo_fold::{finalize::ObligationFinalizer, PiCcsError};
 use neo_math::ring::Rq as RqEl;
 use neo_math::{D, F, K};
+use neo_memory::ajtai::{commit_cols_for_ccs_m, encode_vector_for_ccs_m};
 use neo_memory::plain::{LutTable, PlainLutTrace, PlainMemLayout, PlainMemTrace};
 use neo_memory::witness::{StepInstanceBundle, StepWitnessBundle};
 use neo_memory::MemInit;
@@ -29,7 +30,8 @@ pub type Mixers = CommitMixers<fn(&[Mat<F>], &[Cmt]) -> Cmt, fn(&[Cmt], u32) -> 
 
 fn setup_ajtai_committer(params: &NeoParams, m: usize) -> AjtaiSModule {
     let mut rng = ChaCha8Rng::seed_from_u64(7);
-    let pp = ajtai_setup(&mut rng, D, params.kappa as usize, m).expect("Ajtai setup should succeed");
+    let m_commit = commit_cols_for_ccs_m(m);
+    let pp = ajtai_setup(&mut rng, D, params.kappa as usize, m_commit).expect("Ajtai setup should succeed");
     AjtaiSModule::new(Arc::new(pp))
 }
 
@@ -84,13 +86,13 @@ fn create_mcs_from_z(
     l: &AjtaiSModule,
     m_in: usize,
     z: Vec<F>,
-) -> (McsInstance<Cmt, F>, McsWitness<F>) {
+) -> (CcsClaim<Cmt, F>, CcsWitness<F>) {
     let x = z[..m_in].to_vec();
     let w = z[m_in..].to_vec();
-    let Z = neo_memory::ajtai::encode_vector_balanced_to_mat(params, &z);
+    let Z = encode_vector_for_ccs_m(params, z.len(), &z).expect("encode witness for CCS width");
     let c = l.commit(&Z);
 
-    (McsInstance { c, x, m_in }, McsWitness { w, Z })
+    (CcsClaim { c, x, m_in }, CcsWitness { w, Z })
 }
 
 fn write_bits_le(out: &mut [F], mut x: u64, ell: usize) {
@@ -209,7 +211,7 @@ pub struct ShardFixture {
     pub ccs: CcsStructure<F>,
     pub steps_witness: Vec<StepWitnessBundle<Cmt, F, K>>,
     pub steps_instance: Vec<StepInstanceBundle<Cmt, F, K>>,
-    pub acc_init: Vec<MeInstance<Cmt, F, K>>,
+    pub acc_init: Vec<CeClaim<Cmt, F, K>>,
     pub acc_wit_init: Vec<Mat<F>>,
     pub l: AjtaiSModule,
     pub mixers: Mixers,
@@ -227,7 +229,7 @@ fn build_twist_shout_2step_fixture_inner(seed: u64, bad_lookup_step1: bool) -> S
     let mixers = default_mixers();
 
     // Empty initial accumulator (start from scratch).
-    let acc_init: Vec<MeInstance<Cmt, F, K>> = Vec::new();
+    let acc_init: Vec<CeClaim<Cmt, F, K>> = Vec::new();
     let acc_wit_init: Vec<Mat<F>> = Vec::new();
 
     // Per-step MCS instances (vary tags so transcript-binding is strong).

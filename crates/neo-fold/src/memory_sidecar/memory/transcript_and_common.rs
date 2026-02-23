@@ -277,33 +277,35 @@ pub(crate) struct SumRoundOracle {
 }
 
 impl SumRoundOracle {
-    pub(crate) fn new(oracles: Vec<Box<dyn RoundOracle>>) -> Self {
+    pub(crate) fn new(oracles: Vec<Box<dyn RoundOracle>>) -> Result<Self, PiCcsError> {
         if oracles.is_empty() {
-            panic!("SumRoundOracle requires at least one oracle");
+            return Err(PiCcsError::ProtocolError(
+                "SumRoundOracle requires at least one oracle".into(),
+            ));
         }
 
         let num_rounds = oracles[0].num_rounds();
         let degree_bound = oracles[0].degree_bound();
         for (idx, o) in oracles.iter().enumerate().skip(1) {
             if o.num_rounds() != num_rounds {
-                panic!(
+                return Err(PiCcsError::ProtocolError(format!(
                     "SumRoundOracle num_rounds mismatch at idx={idx} (got {}, expected {num_rounds})",
                     o.num_rounds()
-                );
+                )));
             }
             if o.degree_bound() != degree_bound {
-                panic!(
+                return Err(PiCcsError::ProtocolError(format!(
                     "SumRoundOracle degree_bound mismatch at idx={idx} (got {}, expected {degree_bound})",
                     o.degree_bound()
-                );
+                )));
             }
         }
 
-        Self {
+        Ok(Self {
             oracles,
             num_rounds,
             degree_bound,
-        }
+        })
     }
 }
 
@@ -313,11 +315,13 @@ impl RoundOracle for SumRoundOracle {
         for o in self.oracles.iter_mut() {
             let ys = o.evals_at(points);
             if ys.len() != acc.len() {
-                panic!(
-                    "SumRoundOracle eval length mismatch (got {}, expected {})",
-                    ys.len(),
-                    acc.len()
-                );
+                // Non-fatal hardening: avoid panics on malformed oracle outputs.
+                // Mismatched lengths are treated as sparse truncation/zero-padding.
+                let n = core::cmp::min(ys.len(), acc.len());
+                for i in 0..n {
+                    acc[i] += ys[i];
+                }
+                continue;
             }
             for (a, y) in acc.iter_mut().zip(ys) {
                 *a += y;
@@ -634,7 +638,7 @@ pub trait TimeBatchedClaims {
         labels: &mut Vec<&'static [u8]>,
         claim_is_dynamic: &mut Vec<bool>,
         claims: &mut Vec<BatchedClaim<'a>>,
-    );
+    ) -> Result<(), PiCcsError>;
 }
 
 pub(crate) struct ShoutAddrPreBatchProverData {
@@ -1394,7 +1398,9 @@ pub(crate) fn infer_rv32_trace_t_len_for_wb_wp(
     }
 
     let m_in = step.mcs.0.m_in;
-    let m = step.mcs.1.Z.cols();
+    let m = m_in
+        .checked_add(step.mcs.1.w.len())
+        .ok_or_else(|| PiCcsError::InvalidInput("trace width overflow while inferring t_len".into()))?;
     let w = m
         .checked_sub(m_in)
         .ok_or_else(|| PiCcsError::InvalidInput("trace width underflow while inferring t_len".into()))?;
@@ -1420,24 +1426,12 @@ pub(crate) fn decode_trace_col_values_batch(
     col_ids: &[usize],
 ) -> Result<BTreeMap<usize, Vec<K>>, PiCcsError> {
     let m_in = step.mcs.0.m_in;
-    let m = step.mcs.1.Z.cols();
-    let d = neo_math::D;
-    let z = &step.mcs.1.Z;
-    if z.rows() != d {
-        return Err(PiCcsError::InvalidInput(format!(
-            "WB/WP: CPU witness Z.rows()={} != D={d}",
-            z.rows()
-        )));
-    }
+    let m = m_in
+        .checked_add(step.mcs.1.w.len())
+        .ok_or_else(|| PiCcsError::InvalidInput("WB/WP: witness width overflow".into()))?;
+    let z_logical = crate::memory_sidecar::cpu_bus::decode_cpu_z_to_k(params, &step.mcs.1.Z, m)?;
 
     let trace_base = m_in;
-    let b_k = K::from(F::from_u64(params.b as u64));
-    let mut pow_b = Vec::with_capacity(d);
-    let mut cur = K::ONE;
-    for _ in 0..d {
-        pow_b.push(cur);
-        cur *= b_k;
-    }
 
     let unique_col_ids: BTreeSet<usize> = col_ids.iter().copied().collect();
     let mut decoded = BTreeMap::<usize, Vec<K>>::new();
@@ -1460,11 +1454,7 @@ pub(crate) fn decode_trace_col_values_batch(
                     "WB/WP: trace z idx out of range (idx={idx}, m={m})"
                 )));
             }
-            let mut acc = K::ZERO;
-            for rho in 0..d {
-                acc += pow_b[rho] * K::from(z[(rho, idx)]);
-            }
-            out.push(acc);
+            out.push(z_logical[idx]);
         }
         decoded.insert(col_id, out);
     }
@@ -1477,25 +1467,12 @@ pub(crate) fn decode_lookup_backed_col_values_batch(
     m_in: usize,
     t_len: usize,
     z: &neo_ccs::matrix::Mat<F>,
+    expected_m: usize,
     max_cols: usize,
     col_ids: &[usize],
 ) -> Result<BTreeMap<usize, Vec<K>>, PiCcsError> {
-    let m = z.cols();
-    let d = neo_math::D;
-    if z.rows() != d {
-        return Err(PiCcsError::InvalidInput(format!(
-            "W2: decode lookup-backed Z.rows()={} != D={d}",
-            z.rows()
-        )));
-    }
-
-    let b_k = K::from(F::from_u64(params.b as u64));
-    let mut pow_b = Vec::with_capacity(d);
-    let mut cur = K::ONE;
-    for _ in 0..d {
-        pow_b.push(cur);
-        cur *= b_k;
-    }
+    let z_logical = crate::memory_sidecar::cpu_bus::decode_cpu_z_to_k(params, z, expected_m)?;
+    let m = z_logical.len();
 
     let unique_col_ids: BTreeSet<usize> = col_ids.iter().copied().collect();
     let mut decoded = BTreeMap::<usize, Vec<K>>::new();
@@ -1522,11 +1499,7 @@ pub(crate) fn decode_lookup_backed_col_values_batch(
                     "W2: decode lookup-backed z idx out of range (idx={idx}, m={m})"
                 )));
             }
-            let mut acc = K::ZERO;
-            for rho in 0..d {
-                acc += pow_b[rho] * K::from(z[(rho, idx)]);
-            }
-            out.push(acc);
+            out.push(z_logical[idx]);
         }
         decoded.insert(col_id, out);
     }

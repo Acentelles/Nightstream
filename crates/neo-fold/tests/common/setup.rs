@@ -9,6 +9,7 @@ use neo_ccs::Mat;
 use neo_fold::shard::CommitMixers;
 use neo_math::ring::{cf_inv, Rq as RqEl};
 use neo_math::{D, F};
+use neo_memory::ajtai::commit_cols_for_ccs_m;
 use neo_params::NeoParams;
 use p3_field::PrimeCharacteristicRing;
 use rand_chacha::rand_core::SeedableRng;
@@ -18,7 +19,8 @@ pub type Mixers = CommitMixers<fn(&[Mat<F>], &[Cmt]) -> Cmt, fn(&[Cmt], u32) -> 
 
 pub fn setup_ajtai_committer(params: &NeoParams, m: usize) -> AjtaiSModule {
     let mut rng = ChaCha8Rng::seed_from_u64(7);
-    let pp = ajtai_setup(&mut rng, D, params.kappa as usize, m).expect("Ajtai setup should succeed");
+    let m_commit = commit_cols_for_ccs_m(m);
+    let pp = ajtai_setup(&mut rng, D, params.kappa as usize, m_commit).expect("Ajtai setup should succeed");
     AjtaiSModule::new(Arc::new(pp))
 }
 

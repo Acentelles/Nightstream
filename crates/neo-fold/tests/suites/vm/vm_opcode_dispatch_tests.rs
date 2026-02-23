@@ -20,7 +20,7 @@ use std::sync::Arc;
 
 use neo_ajtai::{set_global_pp, setup as ajtai_setup, AjtaiSModule, Commitment as Cmt};
 use neo_ccs::poly::SparsePoly;
-use neo_ccs::relations::{CcsStructure, McsInstance, McsWitness, MeInstance};
+use neo_ccs::relations::{CcsClaim, CcsStructure, CcsWitness, CeClaim};
 use neo_ccs::traits::SModuleHomomorphism;
 use neo_ccs::Mat;
 use neo_fold::pi_ccs::FoldingMode;
@@ -48,12 +48,13 @@ const OP_HALT: u64 = 4;
 /// Setup real Ajtai public parameters for tests.
 fn setup_ajtai_pp(m: usize, seed: u64) -> AjtaiSModule {
     let d = D;
-    let kappa = neo_params::NeoParams::goldilocks_auto_r1cs_ccs(m)
+    let m_commit = neo_memory::ajtai::commit_cols_for_ccs_m(m);
+    let kappa = neo_params::NeoParams::goldilocks_auto_r1cs_ccs(m_commit)
         .expect("params")
         .kappa as usize;
 
     let mut rng = ChaCha20Rng::seed_from_u64(seed);
-    let pp = ajtai_setup(&mut rng, d, kappa, m).expect("Ajtai setup should succeed");
+    let pp = ajtai_setup(&mut rng, d, kappa, m_commit).expect("Ajtai setup should succeed");
     set_global_pp(pp.clone()).expect("set_global_pp");
     AjtaiSModule::new(Arc::new(pp))
 }
@@ -167,7 +168,7 @@ fn create_mcs_with_bus(
     tag: u64,
     lut_insts: &[(&neo_memory::witness::LutInstance<Cmt, F>, &PlainLutTrace<F>)],
     mem_insts: &[(&neo_memory::witness::MemInstance<Cmt, F>, &PlainMemTrace<F>)],
-) -> (McsInstance<Cmt, F>, McsWitness<F>) {
+) -> (CcsClaim<Cmt, F>, CcsWitness<F>) {
     let m_in = 0usize;
     let mut z: Vec<F> = vec![F::ZERO; ccs.m];
     if !z.is_empty() {
@@ -205,7 +206,7 @@ fn create_mcs_with_bus(
     let x = z[..m_in].to_vec();
     let w = z[m_in..].to_vec();
 
-    (McsInstance { c, x, m_in }, McsWitness { w, Z })
+    (CcsClaim { c, x, m_in }, CcsWitness { w, Z })
 }
 
 /// Build a bytecode table for a simple program.
@@ -376,7 +377,7 @@ fn vm_simple_add_program() {
 
     assert_eq!(register, 15, "Final register should be 10 + 5 = 15");
 
-    let acc_init: Vec<MeInstance<Cmt, F, K>> = Vec::new();
+    let acc_init: Vec<CeClaim<Cmt, F, K>> = Vec::new();
     let acc_wit_init: Vec<Mat<F>> = Vec::new();
 
     let mut tr_prove = Poseidon2Transcript::new(b"vm-add-program");
@@ -512,7 +513,7 @@ fn vm_register_file_operations() {
         });
     }
 
-    let acc_init: Vec<MeInstance<Cmt, F, K>> = Vec::new();
+    let acc_init: Vec<CeClaim<Cmt, F, K>> = Vec::new();
     let acc_wit_init: Vec<Mat<F>> = Vec::new();
 
     let mut tr_prove = Poseidon2Transcript::new(b"vm-register-file");
@@ -612,7 +613,7 @@ fn vm_combined_bytecode_and_data_memory() {
         _phantom: PhantomData::<K>,
     };
 
-    let acc_init: Vec<MeInstance<Cmt, F, K>> = Vec::new();
+    let acc_init: Vec<CeClaim<Cmt, F, K>> = Vec::new();
     let acc_wit_init: Vec<Mat<F>> = Vec::new();
 
     let mut tr_prove = Poseidon2Transcript::new(b"vm-combined-rom-ram");
@@ -679,7 +680,7 @@ fn vm_invalid_opcode_claim_fails() {
         _phantom: PhantomData::<K>,
     };
 
-    let acc_init: Vec<MeInstance<Cmt, F, K>> = Vec::new();
+    let acc_init: Vec<CeClaim<Cmt, F, K>> = Vec::new();
     let acc_wit_init: Vec<Mat<F>> = Vec::new();
 
     let mut tr_prove = Poseidon2Transcript::new(b"vm-invalid-opcode-claim");
@@ -774,7 +775,7 @@ fn vm_multi_instruction_sequence() {
         });
     }
 
-    let acc_init: Vec<MeInstance<Cmt, F, K>> = Vec::new();
+    let acc_init: Vec<CeClaim<Cmt, F, K>> = Vec::new();
     let acc_wit_init: Vec<Mat<F>> = Vec::new();
 
     let mut tr_prove = Poseidon2Transcript::new(b"vm-multi-instr");

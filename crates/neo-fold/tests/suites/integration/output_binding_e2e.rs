@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 use neo_ajtai::Commitment as Cmt;
 use neo_ccs::matrix::Mat;
 use neo_ccs::poly::{SparsePoly, Term};
-use neo_ccs::relations::{CcsStructure, McsInstance, McsWitness, MeInstance};
+use neo_ccs::relations::{CcsClaim, CcsStructure, CcsWitness, CeClaim};
 use neo_ccs::traits::SModuleHomomorphism;
 use neo_fold::output_binding::OutputBindingConfig;
 use neo_fold::pi_ccs::FoldingMode;
@@ -70,17 +70,12 @@ fn empty_identity_first_r1cs_ccs(n: usize) -> CcsStructure<F> {
     CcsStructure::new(vec![i_n, a, b, c], f).expect("CCS")
 }
 
-fn create_mcs_from_z(
-    params: &NeoParams,
-    l: &DummyCommit,
-    m_in: usize,
-    z: Vec<F>,
-) -> (McsInstance<Cmt, F>, McsWitness<F>) {
+fn create_mcs_from_z(params: &NeoParams, l: &DummyCommit, m_in: usize, z: Vec<F>) -> (CcsClaim<Cmt, F>, CcsWitness<F>) {
     let Z = neo_memory::ajtai::encode_vector_balanced_to_mat(params, &z);
     let c = l.commit(&Z);
     let x = z[..m_in].to_vec();
     let w = z[m_in..].to_vec();
-    (McsInstance { c, x, m_in }, McsWitness { w, Z })
+    (CcsClaim { c, x, m_in }, CcsWitness { w, Z })
 }
 
 #[test]
@@ -194,7 +189,7 @@ fn output_binding_e2e_wrong_claim_fails() -> Result<(), PiCcsError> {
     let ob_cfg_ok = OutputBindingConfig::new(2, ProgramIO::new().with_output(2, F::from_u64(7)));
     let ob_cfg_bad = OutputBindingConfig::new(2, ProgramIO::new().with_output(2, F::from_u64(8)));
 
-    let acc_init: Vec<MeInstance<Cmt, F, K>> = Vec::new();
+    let acc_init: Vec<CeClaim<Cmt, F, K>> = Vec::new();
     let acc_wit_init: Vec<Mat<F>> = Vec::new();
 
     let mut tr_prove = Poseidon2Transcript::new(b"output-binding-e2e");
@@ -240,4 +235,50 @@ fn output_binding_e2e_wrong_claim_fails() -> Result<(), PiCcsError> {
     assert!(res.is_err(), "wrong output claim must fail verification");
 
     Ok(())
+}
+
+#[test]
+fn output_binding_rejects_ccs_only_final_segment() {
+    let n = 16usize;
+    let ccs = empty_identity_first_r1cs_ccs(n);
+    let params = NeoParams::goldilocks_auto_r1cs_ccs(n).expect("params");
+    let l = DummyCommit::default();
+    let mixers = default_mixers();
+
+    let m_in = 1usize;
+    let z = vec![F::ONE; ccs.m];
+    let (mcs_inst, mcs_wit) = create_mcs_from_z(&params, &l, m_in, z);
+    let steps_witness: Vec<StepWitnessBundle<Cmt, F, K>> = vec![StepWitnessBundle {
+        mcs: (mcs_inst, mcs_wit),
+        lut_instances: vec![],
+        mem_instances: vec![],
+        _phantom: PhantomData,
+    }];
+
+    let acc_init: Vec<CeClaim<Cmt, F, K>> = Vec::new();
+    let acc_wit_init: Vec<Mat<F>> = Vec::new();
+    let ob_cfg = OutputBindingConfig::new(2, ProgramIO::new().with_output(0, F::ONE));
+    let final_memory_state = vec![F::ZERO; 4];
+
+    let mut tr = Poseidon2Transcript::new(b"output-binding-ccs-only-reject");
+    let err = fold_shard_prove_with_output_binding(
+        FoldingMode::Optimized,
+        &mut tr,
+        &params,
+        &ccs,
+        &steps_witness,
+        &acc_init,
+        &acc_wit_init,
+        &l,
+        mixers,
+        &ob_cfg,
+        &final_memory_state,
+    )
+    .expect_err("ccs-only final segment must be rejected for output binding");
+
+    assert!(
+        err.to_string()
+            .contains("output binding requires final segment to include Route-A sidecars"),
+        "unexpected error: {err:?}"
+    );
 }

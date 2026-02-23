@@ -48,7 +48,7 @@ fn tamper_control_decode_opening_scalar(proof: &mut ShardProof, decode_col: usiz
     );
     let me = &mut proof.steps[0].mem.wp_me_claims[0];
     let decode_start = me
-        .y_scalars
+        .aux_openings
         .len()
         .checked_sub(decode_open_cols.len())
         .expect("control stage decode opening shape in WP ME tail");
@@ -56,7 +56,7 @@ fn tamper_control_decode_opening_scalar(proof: &mut ShardProof, decode_col: usiz
         .iter()
         .position(|&c| c == decode_col)
         .expect("decode col must be present in control stage decode opening set");
-    me.y_scalars[decode_start + open_idx] += K::ONE;
+    me.aux_openings[decode_start + open_idx] += K::ONE;
 }
 
 fn tamper_control_wp_opening_scalar(proof: &mut ShardProof, trace_col: usize) {
@@ -74,13 +74,13 @@ fn tamper_control_wp_opening_scalar(proof: &mut ShardProof, trace_col: usize) {
     );
     let me = &mut proof.steps[0].mem.wp_me_claims[0];
     let core_t = me
-        .y_scalars
+        .aux_openings
         .len()
         .checked_sub(decode_open_cols.len())
         .expect("control stage decode opening tail shape")
         .checked_sub(open_cols.len())
         .expect("control stage WP opening shape");
-    me.y_scalars[core_t + open_idx] += K::ONE;
+    me.aux_openings[core_t + open_idx] += K::ONE;
 }
 
 #[test]
