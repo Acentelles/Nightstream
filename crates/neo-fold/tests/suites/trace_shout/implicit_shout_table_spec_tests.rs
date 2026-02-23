@@ -11,7 +11,8 @@ use neo_fold::pi_ccs::FoldingMode;
 use neo_fold::shard::CommitMixers;
 use neo_fold::shard::{absorb_step_memory, fold_shard_prove, fold_shard_verify};
 use neo_math::{D, F, K};
-use neo_memory::riscv::lookups::{compute_op, interleave_bits, RiscvOpcode};
+use neo_memory::riscv::instruction::encode_lookup_key;
+use neo_memory::riscv::lookups::{compute_op, RiscvOpcode};
 use neo_memory::witness::{LutInstance, LutTableSpec, LutWitness, StepInstanceBundle, StepWitnessBundle};
 use neo_params::NeoParams;
 use neo_transcript::{Poseidon2Transcript, Transcript};
@@ -155,7 +156,7 @@ fn route_a_shout_implicit_table_spec_verifies() {
     let xlen = 32usize;
     let rs1 = 0x1234_5678u64;
     let rs2 = 0x9abc_def0u64;
-    let addr = interleave_bits(rs1, rs2) as u64;
+    let addr = encode_lookup_key(opcode, rs1, rs2, xlen);
     let out = compute_op(opcode, rs1, rs2, xlen);
 
     let inst = LutInstance::<Cmt, F> {

@@ -9,7 +9,8 @@ use neo_fold::session::{preprocess_shared_bus_r1cs, witness_layout, FoldingSessi
 use neo_fold::session::{Public, Scalar, ShoutPort};
 use neo_math::{D, F};
 use neo_memory::cpu::ShoutCpuBinding;
-use neo_memory::riscv::lookups::{compute_op, interleave_bits, uninterleave_bits, RiscvOpcode};
+use neo_memory::riscv::instruction::{encode_lookup_key, mask_to_xlen};
+use neo_memory::riscv::lookups::RiscvOpcode;
 use neo_memory::witness::LutTableSpec;
 use neo_params::NeoParams;
 use neo_vm_trace::{Shout, ShoutId, StepMeta, StepTrace, Twist, TwistId, VmCpu};
@@ -120,8 +121,10 @@ struct RiscvOpcodeShout {
 
 impl Shout<u64> for RiscvOpcodeShout {
     fn lookup(&mut self, _shout_id: ShoutId, key: u64) -> u64 {
-        let (rs1, rs2) = uninterleave_bits(key as u128);
-        compute_op(self.opcode, rs1, rs2, self.xlen)
+        match self.opcode {
+            RiscvOpcode::Add | RiscvOpcode::Sub => mask_to_xlen(key, self.xlen),
+            _ => panic!("test shout supports only ADD/SUB combined-key mode"),
+        }
     }
 }
 
@@ -155,8 +158,8 @@ impl VmCpu<u64, u64> for MultiLookupImplicitSpecVm {
         let rs1_b = 0x0bad_beefu64;
         let rs2_b = 0x00c0_ffeeu64;
 
-        let key0 = interleave_bits(rs1_a, rs2_a) as u64;
-        let key1 = interleave_bits(rs1_b, rs2_b) as u64;
+        let key0 = encode_lookup_key(RiscvOpcode::Add, rs1_a, rs2_a, 32);
+        let key1 = encode_lookup_key(RiscvOpcode::Add, rs1_b, rs2_b, 32);
         debug_assert_ne!(key0, key1);
 
         let _ = shout.lookup(ShoutId(0), key0);
@@ -166,6 +169,8 @@ impl VmCpu<u64, u64> for MultiLookupImplicitSpecVm {
         Ok(StepMeta {
             pc_after: self.pc,
             opcode: 0,
+            is_virtual: false,
+            virtual_sequence_remaining: None,
         })
     }
 }
@@ -183,9 +188,6 @@ fn shout_multi_lookup_implicit_table_spec_two_lookups_per_step_prove_verify() {
     let m = pre.m();
 
     // Use b=4 so Ajtai digit encoding can represent full Goldilocks values.
-    //
-    // This matters for implicit RISC-V opcode tables: interleaved (rs1,rs2) keys are 64-bit
-    // and can exceed the b=2^54 representable range of the paper params.
     let base_params = NeoParams::goldilocks_auto_r1cs_ccs(m).expect("params");
     let params = NeoParams::new(
         base_params.q,

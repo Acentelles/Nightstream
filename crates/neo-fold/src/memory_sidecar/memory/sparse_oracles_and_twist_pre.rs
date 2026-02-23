@@ -308,8 +308,9 @@ pub(crate) fn extract_trace_cpu_link_openings(
         trace.ram_wv,
         trace.shout_has_lookup,
         trace.shout_val,
-        trace.shout_lhs,
-        trace.shout_rhs,
+        trace.shout_link_lhs,
+        trace.shout_link_rhs,
+        trace.shout_add_sub_key,
     ];
 
     let m_in = step.mcs_inst.m_in;
@@ -379,8 +380,9 @@ pub(crate) fn extract_trace_cpu_link_openings(
     Ok(Some(TraceCpuLinkOpenings {
         shout_has_lookup: cpu_open(13)?,
         shout_val: cpu_open(14)?,
-        shout_lhs: cpu_open(15)?,
-        shout_rhs: cpu_open(16)?,
+        shout_link_lhs: cpu_open(15)?,
+        shout_link_rhs: cpu_open(16)?,
+        shout_add_sub_key: cpu_open(17)?,
     }))
 }
 
@@ -389,9 +391,9 @@ pub(crate) fn expected_trace_shout_table_id_from_openings(
     step: &StepInstanceBundle<Cmt, F, K>,
     mem_proof: &MemSidecarProof<Cmt, F, K>,
     r_time: &[K],
-) -> Result<K, PiCcsError> {
+) -> Result<Option<K>, PiCcsError> {
     if !decode_stage_required_for_step_instance(step) {
-        return Ok(K::ZERO);
+        return Ok(None);
     }
 
     if mem_proof.wp_me_claims.len() != 1 {
@@ -417,47 +419,30 @@ pub(crate) fn expected_trace_shout_table_id_from_openings(
     }
 
     let trace = Rv32TraceLayout::new();
-    let decode_layout = Rv32DecodeSidecarLayout::new();
     let wp_cols = rv32_trace_wp_opening_columns(&trace);
-    let control_extra_cols = if control_stage_required_for_step_instance(step) {
-        rv32_trace_control_extra_opening_columns(&trace)
-    } else {
-        Vec::new()
-    };
-    let decode_open_cols = rv32_decode_lookup_backed_cols(&decode_layout);
-
-    let decode_open_start = core_t
+    let wp_end = core_t
         .checked_add(wp_cols.len())
-        .and_then(|v| v.checked_add(control_extra_cols.len()))
-        .ok_or_else(|| {
-            PiCcsError::InvalidInput("decode-linked Shout table_id check: decode_open_start overflow".into())
-        })?;
-    let decode_open_end = decode_open_start
-        .checked_add(decode_open_cols.len())
-        .ok_or_else(|| {
-            PiCcsError::InvalidInput("decode-linked Shout table_id check: decode_open_end overflow".into())
-        })?;
-    if wp_me.y_scalars.len() < decode_open_end {
+        .ok_or_else(|| PiCcsError::InvalidInput("decode-linked Shout table_id check: wp_end overflow".into()))?;
+    if wp_me.y_scalars.len() < wp_end {
         return Err(PiCcsError::ProtocolError(format!(
-            "decode-linked Shout table_id check: missing decode openings (got {}, need at least {decode_open_end})",
+            "decode-linked Shout table_id check: missing WP openings (got {}, need at least {wp_end})",
             wp_me.y_scalars.len()
         )));
     }
+    let shout_table_id_idx = wp_cols
+        .iter()
+        .position(|&c| c == trace.shout_table_id)
+        .ok_or_else(|| {
+            PiCcsError::ProtocolError("decode-linked Shout table_id check: missing WP shout_table_id".into())
+        })?;
+    let open_idx = core_t
+        .checked_add(shout_table_id_idx)
+        .ok_or_else(|| PiCcsError::InvalidInput("decode-linked Shout table_id check: opening index overflow".into()))?;
+    let shout_table_id = wp_me.y_scalars.get(open_idx).copied().ok_or_else(|| {
+        PiCcsError::ProtocolError("decode-linked Shout table_id check: missing WP shout_table_id opening".into())
+    })?;
 
-    let decode_open = &wp_me.y_scalars[decode_open_start..decode_open_end];
-    let decode_open_col = |col_id: usize| -> Result<K, PiCcsError> {
-        let idx = decode_open_cols
-            .iter()
-            .position(|&c| c == col_id)
-            .ok_or_else(|| {
-                PiCcsError::ProtocolError(format!(
-                    "decode-linked Shout table_id check: missing decode opening col {col_id}"
-                ))
-            })?;
-        Ok(decode_open[idx])
-    };
-
-    Ok(decode_open_col(decode_layout.shout_table_id)?)
+    Ok(Some(shout_table_id))
 }
 
 pub(crate) fn prove_twist_addr_pre_time(

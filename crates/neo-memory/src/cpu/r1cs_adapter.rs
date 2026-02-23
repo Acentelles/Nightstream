@@ -710,6 +710,23 @@ where
                         }
                     }
 
+                    let reg_read_pair_u32 = shared
+                        .mem_ids
+                        .binary_search(&crate::riscv::lookups::REG_ID.0)
+                        .ok()
+                        .and_then(|reg_idx| {
+                            let lanes = twist_reads.get(reg_idx)?;
+                            let lhs = lanes
+                                .get(0)
+                                .and_then(|slot| *slot)
+                                .map(|(_, v)| v.as_canonical_u64() as u32)?;
+                            let rhs = lanes
+                                .get(1)
+                                .and_then(|slot| *slot)
+                                .map(|(_, v)| v.as_canonical_u64() as u32)?;
+                            Some((lhs, rhs))
+                        });
+
                     // Shout lanes: addr_bits, has_lookup, vals[0].
                     for (i, table_id) in shared.table_ids.iter().enumerate() {
                         let inst_cols = &shared.layout.shout_cols[i];
@@ -729,9 +746,12 @@ where
                                                 "packed shout table_id={table_id} requires xlen=32 (got xlen={xlen})"
                                             ));
                                         }
-                                        let (lhs_raw, rhs_raw) = uninterleave_bits(key as u128);
-                                        let lhs = lhs_raw as u32;
-                                        let rhs = rhs_raw as u32;
+                                        // Packed lanes should be derived from architectural operands, not key encoding.
+                                        // This keeps packed synthesis correct when some opcodes migrate to combined keys.
+                                        let (lhs, rhs) = reg_read_pair_u32.unwrap_or_else(|| {
+                                            let (lhs_raw, rhs_raw) = uninterleave_bits(key as u128);
+                                            (lhs_raw as u32, rhs_raw as u32)
+                                        });
                                         let val_u64 = val.as_canonical_u64();
                                         if val_u64 > u32::MAX as u64 {
                                             return Err(format!(

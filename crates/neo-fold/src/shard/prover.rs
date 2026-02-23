@@ -674,8 +674,9 @@ where
             let trace_cols_to_open_shout: Vec<usize> = vec![
                 trace.shout_has_lookup,
                 trace.shout_val,
-                trace.shout_lhs,
-                trace.shout_rhs,
+                trace.shout_link_lhs,
+                trace.shout_link_rhs,
+                trace.shout_add_sub_key,
             ];
             let trace_cols_to_open_all: Vec<usize> = trace_cols_to_open_dense
                 .iter()

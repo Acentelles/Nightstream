@@ -3,7 +3,7 @@ use neo_memory::riscv::ccs::{build_rv32_trace_wiring_ccs, rv32_trace_ccs_witness
 use neo_memory::riscv::exec_table::Rv32ExecTable;
 use neo_memory::riscv::lookups::{
     decode_program, encode_program, BranchCondition, RiscvCpu, RiscvInstruction, RiscvMemOp, RiscvMemory, RiscvOpcode,
-    RiscvShoutTables, PROG_ID, RAM_ID,
+    RiscvShoutTables, PROG_ID, RAM_ID, REG_ID,
 };
 use neo_vm_trace::trace_program;
 use neo_vm_trace::Twist as _;
@@ -11,16 +11,16 @@ use p3_field::PrimeCharacteristicRing;
 use p3_goldilocks::Goldilocks as F;
 
 #[test]
-fn rv32_trace_layout_removes_fixed_shout_table_selector_lanes() {
+fn rv32_trace_layout_tracks_shout_table_id_and_virtual_linkage_columns() {
     let layout = Rv32TraceCcsLayout::new(/*t=*/ 4).expect("trace CCS layout");
 
     assert_eq!(
-        layout.trace.cols, 21,
-        "trace width regression: expected 21 columns after shout_lhs/jalr_drop_bit hardening"
+        layout.trace.cols, 30,
+        "trace width regression: expected 30 columns after adding shout_table_id + virtual linkage columns"
     );
     assert_eq!(
         layout.trace.cols,
-        layout.trace.jalr_drop_bit + 1,
+        layout.trace.virtual_commit_link + 1,
         "trace layout should remain densely packed"
     );
 }
@@ -58,6 +58,164 @@ fn rv32_trace_wiring_ccs_satisfies_addi_halt() {
     let ccs = build_rv32_trace_wiring_ccs(&layout).expect("trace CCS");
 
     check_ccs_rowwise_zero(&ccs, &x, &w).expect("trace CCS satisfied");
+}
+
+#[test]
+fn rv32_trace_wiring_ccs_rejects_virtual_row_pc_advance() {
+    // Program: ADDI x1, x0, 1; HALT
+    let program = vec![
+        RiscvInstruction::IAlu {
+            op: RiscvOpcode::Add,
+            rd: 1,
+            rs1: 0,
+            imm: 1,
+        },
+        RiscvInstruction::Halt,
+    ];
+    let program_bytes = encode_program(&program);
+
+    let decoded_program = decode_program(&program_bytes).expect("decode_program");
+    let mut cpu = RiscvCpu::new(/*xlen=*/ 32);
+    cpu.load_program(/*base=*/ 0, decoded_program);
+    let twist = RiscvMemory::with_program_in_twist(/*xlen=*/ 32, PROG_ID, /*base_addr=*/ 0, &program_bytes);
+    let shout = RiscvShoutTables::new(/*xlen=*/ 32);
+    let trace = trace_program(cpu, twist, shout, /*max_steps=*/ 16).expect("trace_program");
+
+    let exec = Rv32ExecTable::from_trace_padded_pow2(&trace, /*min_len=*/ 4).expect("from_trace_padded_pow2");
+    let layout = Rv32TraceCcsLayout::new(exec.rows.len()).expect("trace CCS layout");
+    let (x, mut w) = rv32_trace_ccs_witness_from_exec_table(&layout, &exec).expect("trace CCS witness");
+    let ccs = build_rv32_trace_wiring_ccs(&layout).expect("trace CCS");
+
+    // Forge row0 as virtual while keeping its ADDI pc advance.
+    let is_virtual_row0 = layout.cell(layout.trace.is_virtual, 0) - layout.m_in;
+    w[is_virtual_row0] = F::ONE;
+
+    let err = check_ccs_rowwise_zero(&ccs, &x, &w).expect_err("mutated witness should violate virtual row pc rule");
+    assert!(
+        err.to_string().contains("row"),
+        "unexpected error (should include row context): {err:?}"
+    );
+}
+
+#[test]
+fn rv32_trace_wiring_ccs_rejects_virtual_sequence_remaining_countdown_break() {
+    let program = vec![
+        RiscvInstruction::RAlu {
+            op: RiscvOpcode::Mulh,
+            rd: 5,
+            rs1: 1,
+            rs2: 2,
+        },
+        RiscvInstruction::Halt,
+    ];
+    let program_bytes = encode_program(&program);
+
+    let decoded_program = decode_program(&program_bytes).expect("decode_program");
+    let mut cpu = RiscvCpu::new(/*xlen=*/ 32);
+    cpu.load_program(/*base=*/ 0, decoded_program);
+    cpu.set_runtime_decomposition_enabled(true);
+    let mut twist =
+        RiscvMemory::with_program_in_twist(/*xlen=*/ 32, PROG_ID, /*base_addr=*/ 0, &program_bytes);
+    twist.store(REG_ID, 1, 0x8000_0000);
+    twist.store(REG_ID, 2, 0xFFFF_FFFF);
+    let shout = RiscvShoutTables::new(/*xlen=*/ 32);
+    let trace = trace_program(cpu, twist, shout, /*max_steps=*/ 64).expect("trace_program");
+
+    let exec = Rv32ExecTable::from_trace_padded_pow2(&trace, /*min_len=*/ 8).expect("from_trace_padded_pow2");
+    let layout = Rv32TraceCcsLayout::new(exec.rows.len()).expect("trace CCS layout");
+    let (x, mut w) = rv32_trace_ccs_witness_from_exec_table(&layout, &exec).expect("trace CCS witness");
+    let ccs = build_rv32_trace_wiring_ccs(&layout).expect("trace CCS");
+
+    let idx = layout.cell(layout.trace.virtual_sequence_remaining, 0) - layout.m_in;
+    w[idx] += F::ONE;
+
+    let err =
+        check_ccs_rowwise_zero(&ccs, &x, &w).expect_err("mutated witness should violate virtual sequence countdown");
+    assert!(
+        err.to_string().contains("row"),
+        "unexpected error (should include row context): {err:?}"
+    );
+}
+
+#[test]
+fn rv32_trace_wiring_ccs_rejects_virtual_commit_value_mismatch() {
+    let program = vec![
+        RiscvInstruction::RAlu {
+            op: RiscvOpcode::Mulh,
+            rd: 5,
+            rs1: 1,
+            rs2: 2,
+        },
+        RiscvInstruction::Halt,
+    ];
+    let program_bytes = encode_program(&program);
+
+    let decoded_program = decode_program(&program_bytes).expect("decode_program");
+    let mut cpu = RiscvCpu::new(/*xlen=*/ 32);
+    cpu.load_program(/*base=*/ 0, decoded_program);
+    cpu.set_runtime_decomposition_enabled(true);
+    let mut twist =
+        RiscvMemory::with_program_in_twist(/*xlen=*/ 32, PROG_ID, /*base_addr=*/ 0, &program_bytes);
+    twist.store(REG_ID, 1, 0x8000_0000);
+    twist.store(REG_ID, 2, 0xFFFF_FFFF);
+    let shout = RiscvShoutTables::new(/*xlen=*/ 32);
+    let trace = trace_program(cpu, twist, shout, /*max_steps=*/ 64).expect("trace_program");
+
+    let exec = Rv32ExecTable::from_trace_padded_pow2(&trace, /*min_len=*/ 8).expect("from_trace_padded_pow2");
+    let layout = Rv32TraceCcsLayout::new(exec.rows.len()).expect("trace CCS layout");
+    let (x, mut w) = rv32_trace_ccs_witness_from_exec_table(&layout, &exec).expect("trace CCS witness");
+    let ccs = build_rv32_trace_wiring_ccs(&layout).expect("trace CCS");
+
+    // Row 6 is the last virtual write in MULH decomposition and row 7 is the non-virtual commit.
+    let commit_row = 7usize;
+    let rd_val_idx = layout.cell(layout.trace.rd_val, commit_row) - layout.m_in;
+    w[rd_val_idx] += F::ONE;
+
+    let err = check_ccs_rowwise_zero(&ccs, &x, &w).expect_err("mutated witness should violate virtual commit linkage");
+    assert!(
+        err.to_string().contains("row"),
+        "unexpected error (should include row context): {err:?}"
+    );
+}
+
+#[test]
+fn rv32_trace_wiring_ccs_rejects_nonzero_rd_lane_when_rd_has_write_is_zero() {
+    let program = vec![
+        RiscvInstruction::IAlu {
+            op: RiscvOpcode::Add,
+            rd: 1,
+            rs1: 0,
+            imm: 1,
+        },
+        RiscvInstruction::Halt,
+    ];
+    let program_bytes = encode_program(&program);
+
+    let decoded_program = decode_program(&program_bytes).expect("decode_program");
+    let mut cpu = RiscvCpu::new(/*xlen=*/ 32);
+    cpu.load_program(/*base=*/ 0, decoded_program);
+    let twist = RiscvMemory::with_program_in_twist(/*xlen=*/ 32, PROG_ID, /*base_addr=*/ 0, &program_bytes);
+    let shout = RiscvShoutTables::new(/*xlen=*/ 32);
+    let trace = trace_program(cpu, twist, shout, /*max_steps=*/ 16).expect("trace_program");
+
+    let exec = Rv32ExecTable::from_trace_padded_pow2(&trace, /*min_len=*/ 4).expect("from_trace_padded_pow2");
+    let layout = Rv32TraceCcsLayout::new(exec.rows.len()).expect("trace CCS layout");
+    let (x, mut w) = rv32_trace_ccs_witness_from_exec_table(&layout, &exec).expect("trace CCS witness");
+    let ccs = build_rv32_trace_wiring_ccs(&layout).expect("trace CCS");
+
+    // HALT row has no architectural write, so rd_has_write=0 and rd lane must stay zero.
+    let halt_row = 1usize;
+    let rd_addr_idx = layout.cell(layout.trace.rd_addr, halt_row) - layout.m_in;
+    let rd_val_idx = layout.cell(layout.trace.rd_val, halt_row) - layout.m_in;
+    w[rd_addr_idx] = F::from_u64(7);
+    w[rd_val_idx] = F::from_u64(99);
+
+    let err =
+        check_ccs_rowwise_zero(&ccs, &x, &w).expect_err("mutated witness should violate rd write-lane quiescence");
+    assert!(
+        err.to_string().contains("row"),
+        "unexpected error (should include row context): {err:?}"
+    );
 }
 
 #[test]
