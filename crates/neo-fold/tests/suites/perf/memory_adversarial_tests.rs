@@ -199,6 +199,7 @@ fn create_step_with_twist_bus(
         mcs: (mcs, mcs_wit),
         lut_instances: vec![],
         mem_instances: mem_instances.into_iter().map(|(i, w, _)| (i, w)).collect(),
+        trace_sidecar: None,
         _phantom: PhantomData::<K>,
     }
 }

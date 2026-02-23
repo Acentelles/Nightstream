@@ -1,21 +1,13 @@
 use super::*;
 
-pub(crate) fn prove_shout_addr_pre_time(
+fn prove_shout_addr_pre_time_from_lut_witness(
     tr: &mut Poseidon2Transcript,
     params: &NeoParams,
     step: &StepWitnessBundle<Cmt, F, K>,
-    cpu_bus: &BusLayout,
     ell_n: usize,
     r_cycle: &[K],
     step_idx: usize,
 ) -> Result<ShoutAddrPreBatchProverData, PiCcsError> {
-    if step.lut_instances.is_empty() {
-        return Ok(ShoutAddrPreBatchProverData {
-            addr_pre: ShoutAddrPreProof::default(),
-            decoded: Vec::new(),
-        });
-    }
-
     let pow2_cycle = 1usize << ell_n;
     let n_lut = step.lut_instances.len();
     let total_lanes: usize = step
@@ -23,9 +15,7 @@ pub(crate) fn prove_shout_addr_pre_time(
         .iter()
         .map(|(inst, _)| inst.lanes.max(1))
         .sum();
-
-    let mut decoded_cols: Vec<ShoutDecodedColsSparse> = Vec::with_capacity(n_lut);
-    let mut claimed_sums: Vec<K> = vec![K::ZERO; total_lanes];
+    let m_in = step.mcs.0.m_in;
 
     struct AddrPreGroupBuilder {
         active_lanes: Vec<u32>,
@@ -33,43 +23,18 @@ pub(crate) fn prove_shout_addr_pre_time(
         addr_oracles: Vec<Box<dyn RoundOracle>>,
     }
 
-    // Group Shout addr-pre claims by `ell_addr` so we can run one batched sumcheck per group.
+    let mut decoded_cols: Vec<ShoutDecodedColsSparse> = Vec::with_capacity(n_lut);
+    let mut claimed_sums: Vec<K> = vec![K::ZERO; total_lanes];
     let mut groups: std::collections::BTreeMap<u32, AddrPreGroupBuilder> = std::collections::BTreeMap::new();
+    let mut addr_group_counts = std::collections::HashMap::<u64, usize>::new();
+    for (inst, _) in step.lut_instances.iter() {
+        if let Some(group) = inst.addr_group {
+            *addr_group_counts.entry(group).or_insert(0) += inst.lanes.max(1);
+        }
+    }
 
     let mut flat_lane_idx: usize = 0;
-    let bus = cpu_bus;
-    let cpu_z_k = crate::memory_sidecar::cpu_bus::decode_cpu_z_to_k(params, &step.mcs.1.Z);
-    if bus.shout_cols.len() != step.lut_instances.len() || bus.twist_cols.len() != step.mem_instances.len() {
-        return Err(PiCcsError::InvalidInput(
-            "shared_cpu_bus layout mismatch for step (instance counts)".into(),
-        ));
-    }
-    let mut addr_range_counts = std::collections::HashMap::<(usize, usize), usize>::new();
-    for inst_cols in bus.shout_cols.iter() {
-        for lane_cols in inst_cols.lanes.iter() {
-            let key = (lane_cols.addr_bits.start, lane_cols.addr_bits.end);
-            *addr_range_counts.entry(key).or_insert(0) += 1;
-        }
-    }
-    // Shared-bus trace mode can have many lookup families reusing the same bus columns
-    // (e.g. decode/width selector+addr groups and opcode addr groups). Cache sparse
-    // decodes by (col_id, steps) to avoid rebuilding identical SparseIdxVec values.
-    let mut full_col_sparse_cache: std::collections::HashMap<(usize, usize), SparseIdxVec<K>> =
-        std::collections::HashMap::new();
-    let mut has_lookup_cache: std::collections::HashMap<(usize, usize), (SparseIdxVec<K>, Vec<usize>, bool)> =
-        std::collections::HashMap::new();
-
-    let mut decode_full_col = |col_id: usize, steps: usize| -> Result<SparseIdxVec<K>, PiCcsError> {
-        if let Some(cached) = full_col_sparse_cache.get(&(col_id, steps)) {
-            return Ok(cached.clone());
-        }
-        let decoded =
-            crate::memory_sidecar::cpu_bus::build_time_sparse_from_bus_col(&cpu_z_k, bus, col_id, steps, pow2_cycle)?;
-        full_col_sparse_cache.insert((col_id, steps), decoded.clone());
-        Ok(decoded)
-    };
-
-    for (idx, (lut_inst, _lut_wit)) in step.lut_instances.iter().enumerate() {
+    for (idx, (lut_inst, lut_wit)) in step.lut_instances.iter().enumerate() {
         neo_memory::addr::validate_shout_bit_addressing(lut_inst)?;
         if lut_inst.steps > pow2_cycle {
             return Err(PiCcsError::InvalidInput(format!(
@@ -77,9 +42,23 @@ pub(crate) fn prove_shout_addr_pre_time(
                 lut_inst.steps
             )));
         }
+        let expected_lanes = lut_inst.lanes.max(1);
+        if expected_lanes != 1 {
+            return Err(PiCcsError::InvalidInput(format!(
+                "Shout(Route A): sidecar decode currently requires lanes=1 (lut_idx={idx}, table_id={}, lanes={})",
+                lut_inst.table_id, lut_inst.lanes
+            )));
+        }
 
-        let z = &cpu_z_k;
-        let inst_ell_addr = lut_inst.d * lut_inst.ell;
+        let shout_layout = lut_inst.shout_layout();
+        let inst_ell_addr = shout_layout.ell_addr;
+        let expected_cols = shout_layout.expected_len();
+        if lut_wit.mats.len() != expected_cols {
+            return Err(PiCcsError::InvalidInput(format!(
+                "Shout(Route A): sidecar witness mats mismatch at lut_idx={idx} (mats={}, expected={expected_cols})",
+                lut_wit.mats.len()
+            )));
+        }
         let is_packed_spec = matches!(
             lut_inst.table_spec,
             Some(LutTableSpec::RiscvOpcodePacked { .. } | LutTableSpec::RiscvOpcodeEventTablePacked { .. })
@@ -93,159 +72,151 @@ pub(crate) fn prove_shout_addr_pre_time(
                 active_claimed_sums: Vec::new(),
                 addr_oracles: Vec::new(),
             });
-        let inst_cols = bus.shout_cols.get(idx).ok_or_else(|| {
-            PiCcsError::InvalidInput(format!(
-                "shared_cpu_bus layout mismatch: missing shout_cols for lut_idx={idx}"
-            ))
-        })?;
-        let expected_lanes = lut_inst.lanes.max(1);
-        if inst_cols.lanes.len() != expected_lanes {
-            return Err(PiCcsError::InvalidInput(format!(
-                "shared_cpu_bus layout mismatch at lut_idx={idx}: shout lanes={} but instance expects {}",
-                inst_cols.lanes.len(),
-                expected_lanes
-            )));
-        }
+
+        let decode_to_k = |mat: &neo_ccs::Mat<F>, ctx: &str| -> Result<Vec<K>, PiCcsError> {
+            if mat.rows() != params.d as usize {
+                return Err(PiCcsError::InvalidInput(format!(
+                    "{ctx}: rows mismatch (rows={}, expected D={})",
+                    mat.rows(),
+                    params.d
+                )));
+            }
+            if mat.cols() != lut_inst.steps {
+                return Err(PiCcsError::InvalidInput(format!(
+                    "{ctx}: cols mismatch (cols={}, expected steps={})",
+                    mat.cols(),
+                    lut_inst.steps
+                )));
+            }
+            Ok(neo_memory::ajtai::decode_vector(params, mat)
+                .into_iter()
+                .map(K::from)
+                .collect())
+        };
+
+        let has_lookup_vals = decode_to_k(&lut_wit.mats[shout_layout.has_lookup], "Shout sidecar has_lookup")?;
+
+        let has_lookup = sparse_trace_col_from_values(m_in, ell_n, &has_lookup_vals)?;
+        let has_any_lookup = has_lookup
+            .entries()
+            .iter()
+            .any(|&(_t, gate)| gate != K::ZERO);
+        let active_js: Vec<usize> = if has_any_lookup {
+            let mut out: Vec<usize> = Vec::with_capacity(has_lookup.entries().len());
+            for &(t, gate) in has_lookup.entries() {
+                if gate == K::ZERO {
+                    continue;
+                }
+                let j = t.checked_sub(m_in).ok_or_else(|| {
+                    PiCcsError::InvalidInput(format!(
+                        "Shout(Route A): has_lookup time index underflow: t={t} < m_in={m_in}"
+                    ))
+                })?;
+                if j >= lut_inst.steps {
+                    return Err(PiCcsError::ProtocolError(format!(
+                        "Shout(Route A): has_lookup time index out of range: j={j} >= steps={}",
+                        lut_inst.steps
+                    )));
+                }
+                out.push(j);
+            }
+            out
+        } else {
+            Vec::new()
+        };
+
+        let shared_addr_group = lut_inst
+            .addr_group
+            .and_then(|group| addr_group_counts.get(&group).copied())
+            .unwrap_or(0)
+            > 1;
 
         let mut lanes: Vec<ShoutLaneSparseCols> = Vec::with_capacity(expected_lanes);
-
-        for (lane_idx, shout_cols) in inst_cols.lanes.iter().enumerate() {
-            if shout_cols.addr_bits.end - shout_cols.addr_bits.start != inst_ell_addr {
-                return Err(PiCcsError::InvalidInput(format!(
-                        "shared_cpu_bus layout mismatch at lut_idx={idx}, lane_idx={lane_idx}: expected ell_addr={inst_ell_addr}"
-                    )));
-            }
-            let addr_key = (shout_cols.addr_bits.start, shout_cols.addr_bits.end);
-            let shared_addr_group = addr_range_counts.get(&addr_key).copied().unwrap_or(0) > 1;
-
-            let (has_lookup, active_js, has_any_lookup) = if let Some((cached_has, cached_js, cached_any)) =
-                has_lookup_cache.get(&(shout_cols.has_lookup, lut_inst.steps))
-            {
-                (cached_has.clone(), cached_js.clone(), *cached_any)
-            } else {
-                let has_lookup = decode_full_col(shout_cols.has_lookup, lut_inst.steps)?;
-                let has_any_lookup = has_lookup
-                    .entries()
-                    .iter()
-                    .any(|&(_t, gate)| gate != K::ZERO);
-                let active_js: Vec<usize> = if has_any_lookup {
-                    let m_in = bus.m_in;
-                    let mut out: Vec<usize> = Vec::with_capacity(has_lookup.entries().len());
-                    for &(t, gate) in has_lookup.entries() {
-                        if gate == K::ZERO {
-                            continue;
-                        }
-                        let j = t.checked_sub(m_in).ok_or_else(|| {
-                            PiCcsError::InvalidInput(format!(
-                                "Shout(Route A): has_lookup time index underflow: t={t} < m_in={m_in}"
-                            ))
-                        })?;
-                        if j >= lut_inst.steps {
-                            return Err(PiCcsError::ProtocolError(format!(
-                                "Shout(Route A): has_lookup time index out of range: j={j} >= steps={}",
-                                lut_inst.steps
-                            )));
-                        }
-                        out.push(j);
-                    }
-                    out
-                } else {
-                    Vec::new()
-                };
-                has_lookup_cache.insert(
-                    (shout_cols.has_lookup, lut_inst.steps),
-                    (has_lookup.clone(), active_js.clone(), has_any_lookup),
-                );
-                (has_lookup, active_js, has_any_lookup)
-            };
-
-            let addr_bits: Vec<SparseIdxVec<K>> = if shared_addr_group {
-                let mut out = Vec::with_capacity(inst_ell_addr);
-                for col_id in shout_cols.addr_bits.clone() {
-                    out.push(decode_full_col(col_id, lut_inst.steps)?);
-                }
-                out
+        let mut addr_bits: Vec<SparseIdxVec<K>> = Vec::with_capacity(inst_ell_addr);
+        for bit_idx in shout_layout.addr_bits.clone() {
+            let vals = decode_to_k(&lut_wit.mats[bit_idx], "Shout sidecar addr_bits")?;
+            let sparse = if shared_addr_group {
+                sparse_trace_col_from_values(m_in, ell_n, &vals)?
             } else if has_any_lookup {
-                let mut out = Vec::with_capacity(inst_ell_addr);
-                for col_id in shout_cols.addr_bits.clone() {
-                    out.push(crate::memory_sidecar::cpu_bus::build_time_sparse_from_bus_col_at_js(
-                        z, bus, col_id, &active_js, pow2_cycle,
-                    )?);
+                let mut entries = Vec::new();
+                for &j in active_js.iter() {
+                    let v = vals[j];
+                    if v != K::ZERO {
+                        entries.push((m_in + j, v));
+                    }
                 }
-                out
-            } else {
-                vec![SparseIdxVec::new(pow2_cycle); inst_ell_addr]
-            };
-
-            let val = if has_any_lookup {
-                crate::memory_sidecar::cpu_bus::build_time_sparse_from_bus_col_at_js(
-                    z,
-                    bus,
-                    shout_cols.primary_val(),
-                    &active_js,
-                    pow2_cycle,
-                )?
+                SparseIdxVec::from_entries(pow2_cycle, entries)
             } else {
                 SparseIdxVec::new(pow2_cycle)
             };
-
-            if has_any_lookup && !is_packed_spec {
-                let (addr_oracle, lane_sum): (Box<dyn RoundOracle>, K) = match &lut_inst.table_spec {
-                    None => {
-                        let table_k: Vec<K> = lut_inst.table.iter().map(|&v| v.into()).collect();
-                        let (o, sum) =
-                            AddressLookupOracle::new(&addr_bits, &has_lookup, &table_k, r_cycle, inst_ell_addr);
-                        (Box::new(o), sum)
-                    }
-                    Some(LutTableSpec::RiscvOpcode { opcode, xlen }) => {
-                        let (o, sum) = RiscvAddressLookupOracleSparse::new_sparse_time(
-                            *opcode,
-                            *xlen,
-                            &addr_bits,
-                            &has_lookup,
-                            r_cycle,
-                        )?;
-                        (Box::new(o), sum)
-                    }
-                    Some(LutTableSpec::RiscvOpcodePacked { .. })
-                    | Some(LutTableSpec::RiscvOpcodeEventTablePacked { .. }) => {
-                        return Err(PiCcsError::ProtocolError(
-                            "packed shout lane unexpectedly reached implicit addr-pre oracle path".into(),
-                        ));
-                    }
-                    Some(LutTableSpec::IdentityU32) => {
-                        let (o, sum) = IdentityAddressLookupOracleSparse::new_sparse_time(
-                            inst_ell_addr,
-                            &addr_bits,
-                            &has_lookup,
-                            r_cycle,
-                        )?;
-                        (Box::new(o), sum)
-                    }
-                };
-
-                claimed_sums[flat_lane_idx] = lane_sum;
-                let lane_idx_u32 = u32::try_from(flat_lane_idx)
-                    .map_err(|_| PiCcsError::InvalidInput("Shout(Route A): lane index overflow".into()))?;
-                let group = groups
-                    .get_mut(&inst_ell_addr_u32)
-                    .ok_or_else(|| PiCcsError::ProtocolError("Shout(Route A): missing ell_addr group".into()))?;
-                group.active_lanes.push(lane_idx_u32);
-                group.active_claimed_sums.push(lane_sum);
-                group.addr_oracles.push(addr_oracle);
+            addr_bits.push(sparse);
+        }
+        let val_vals = decode_to_k(&lut_wit.mats[shout_layout.val], "Shout sidecar val")?;
+        let val = if has_any_lookup {
+            let mut entries = Vec::new();
+            for &j in active_js.iter() {
+                let v = val_vals[j];
+                if v != K::ZERO {
+                    entries.push((m_in + j, v));
+                }
             }
+            SparseIdxVec::from_entries(pow2_cycle, entries)
+        } else {
+            SparseIdxVec::new(pow2_cycle)
+        };
 
-            lanes.push(ShoutLaneSparseCols {
-                addr_bits,
-                has_lookup,
-                val,
-            });
-            flat_lane_idx += 1;
+        if has_any_lookup && !is_packed_spec {
+            let (addr_oracle, lane_sum): (Box<dyn RoundOracle>, K) = match &lut_inst.table_spec {
+                None => {
+                    let table_k: Vec<K> = lut_inst.table.iter().map(|&v| v.into()).collect();
+                    let (o, sum) = AddressLookupOracle::new(&addr_bits, &has_lookup, &table_k, r_cycle, inst_ell_addr);
+                    (Box::new(o), sum)
+                }
+                Some(LutTableSpec::RiscvOpcode { opcode, xlen }) => {
+                    let (o, sum) = RiscvAddressLookupOracleSparse::new_sparse_time(
+                        *opcode,
+                        *xlen,
+                        &addr_bits,
+                        &has_lookup,
+                        r_cycle,
+                    )?;
+                    (Box::new(o), sum)
+                }
+                Some(LutTableSpec::RiscvOpcodePacked { .. })
+                | Some(LutTableSpec::RiscvOpcodeEventTablePacked { .. }) => {
+                    return Err(PiCcsError::ProtocolError(
+                        "packed shout lane unexpectedly reached implicit addr-pre oracle path".into(),
+                    ));
+                }
+                Some(LutTableSpec::IdentityU32) => {
+                    let (o, sum) = IdentityAddressLookupOracleSparse::new_sparse_time(
+                        inst_ell_addr,
+                        &addr_bits,
+                        &has_lookup,
+                        r_cycle,
+                    )?;
+                    (Box::new(o), sum)
+                }
+            };
+
+            claimed_sums[flat_lane_idx] = lane_sum;
+            let lane_idx_u32 = u32::try_from(flat_lane_idx)
+                .map_err(|_| PiCcsError::InvalidInput("Shout(Route A): lane index overflow".into()))?;
+            let group = groups
+                .get_mut(&inst_ell_addr_u32)
+                .ok_or_else(|| PiCcsError::ProtocolError("Shout(Route A): missing ell_addr group".into()))?;
+            group.active_lanes.push(lane_idx_u32);
+            group.active_claimed_sums.push(lane_sum);
+            group.addr_oracles.push(addr_oracle);
         }
 
-        let decoded = ShoutDecodedColsSparse { lanes };
-
-        decoded_cols.push(decoded);
+        lanes.push(ShoutLaneSparseCols {
+            addr_bits,
+            has_lookup,
+            val,
+        });
+        flat_lane_idx += 1;
+        decoded_cols.push(ShoutDecodedColsSparse { lanes });
     }
     if flat_lane_idx != total_lanes {
         return Err(PiCcsError::ProtocolError(format!(
@@ -263,7 +234,6 @@ pub(crate) fn prove_shout_addr_pre_time(
         tr.append_message(b"shout/addr_pre_time/group_ell_addr", &(ell_addr as u64).to_le_bytes());
 
         let (r_addr, round_polys) = if group.active_lanes.is_empty() {
-            // No active lanes in this `ell_addr` group; sample an arbitrary `r_addr` without running sumcheck.
             tr.append_message(b"shout/addr_pre_time/no_sumcheck", &(step_idx as u64).to_le_bytes());
             tr.append_message(
                 b"shout/addr_pre_time/no_sumcheck/ell_addr",
@@ -304,9 +274,9 @@ pub(crate) fn prove_shout_addr_pre_time(
 
         group_proofs.push(ShoutAddrPreGroupProof {
             ell_addr,
+            r_addr,
             active_lanes: group.active_lanes,
             round_polys,
-            r_addr,
         });
     }
 
@@ -317,6 +287,23 @@ pub(crate) fn prove_shout_addr_pre_time(
         },
         decoded: decoded_cols,
     })
+}
+
+pub(crate) fn prove_shout_addr_pre_time(
+    tr: &mut Poseidon2Transcript,
+    params: &NeoParams,
+    step: &StepWitnessBundle<Cmt, F, K>,
+    ell_n: usize,
+    r_cycle: &[K],
+    step_idx: usize,
+) -> Result<ShoutAddrPreBatchProverData, PiCcsError> {
+    if step.lut_instances.is_empty() {
+        return Ok(ShoutAddrPreBatchProverData {
+            addr_pre: ShoutAddrPreProof::default(),
+            decoded: Vec::new(),
+        });
+    }
+    prove_shout_addr_pre_time_from_lut_witness(tr, params, step, ell_n, r_cycle, step_idx)
 }
 
 pub fn verify_shout_addr_pre_time(

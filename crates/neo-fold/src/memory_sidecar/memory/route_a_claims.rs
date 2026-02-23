@@ -377,39 +377,90 @@ pub(crate) fn wb_wp_required_for_step_witness(step: &StepWitnessBundle<Cmt, F, K
     has_trace_lookup_families_witness(step)
 }
 
-pub(crate) fn build_bus_layout_for_step_witness(
+fn unique_lut_index_for_table_witness(
     step: &StepWitnessBundle<Cmt, F, K>,
-    t_len: usize,
-) -> Result<BusLayout, PiCcsError> {
-    let m = step.mcs.1.Z.cols();
-    let m_in = step.mcs.0.m_in;
-    let shout_shapes: Vec<ShoutInstanceShape> = step
+    table_id: u32,
+    ctx: &str,
+) -> Result<usize, PiCcsError> {
+    let mut matches = step
         .lut_instances
         .iter()
-        .map(|(inst, _)| ShoutInstanceShape {
-            ell_addr: inst.d * inst.ell,
-            lanes: inst.lanes.max(1),
-            n_vals: 1usize,
-            addr_group: inst.addr_group,
-            selector_group: inst.selector_group,
-        })
-        .collect();
-    let grouped_shout_instances = shout_shapes
-        .iter()
-        .filter(|shape| shape.addr_group.is_some())
-        .count();
-    let twist = step
-        .mem_instances
-        .iter()
-        .map(|(inst, _)| (inst.d * inst.ell, inst.lanes.max(1)));
-    build_bus_layout_for_instances_with_shout_shapes_and_twist_lanes(m, m_in, t_len, shout_shapes, twist).map_err(
-        |e| {
-            PiCcsError::InvalidInput(format!(
-                "step bus layout failed: m={m}, m_in={m_in}, t_len={t_len}, lut_insts={}, grouped_lut_insts={grouped_shout_instances}: {e}",
-                step.lut_instances.len()
-            ))
-        },
-    )
+        .enumerate()
+        .filter(|(_, (inst, _))| inst.table_id == table_id)
+        .map(|(idx, _)| idx);
+    let first = matches
+        .next()
+        .ok_or_else(|| PiCcsError::ProtocolError(format!("{ctx}: missing LUT instance for table_id={table_id}")))?;
+    if matches.next().is_some() {
+        return Err(PiCcsError::ProtocolError(format!(
+            "{ctx}: non-unique LUT instance for table_id={table_id}"
+        )));
+    }
+    Ok(first)
+}
+
+fn shared_bus_lut_value_mat<'a>(
+    inst: &LutInstance<Cmt, F>,
+    wit: &'a neo_memory::witness::LutWitness<F>,
+) -> Option<&'a neo_ccs::matrix::Mat<F>> {
+    if inst.lanes != 1 {
+        return None;
+    }
+    if wit.mats.len() == 1 {
+        return wit.mats.first();
+    }
+    let shout_layout = inst.shout_layout();
+    wit.mats.get(shout_layout.val)
+}
+
+pub(crate) fn decode_lookup_value_cols_by_table_id_witness(
+    params: &NeoParams,
+    step: &StepWitnessBundle<Cmt, F, K>,
+    t_len: usize,
+    table_ids: &[u32],
+    ctx: &str,
+) -> Result<BTreeMap<u32, Vec<K>>, PiCcsError> {
+    let unique_table_ids: BTreeSet<u32> = table_ids.iter().copied().collect();
+    if unique_table_ids.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+
+    // Decode lookup values from LUT witness mats only. Shared-bus fallback decoding is
+    // intentionally disabled to keep Route-A sidecar bindings commitment-bound.
+    let mut by_table_lut = BTreeMap::<u32, Vec<K>>::new();
+    for table_id in unique_table_ids.iter().copied() {
+        let idx = unique_lut_index_for_table_witness(step, table_id, ctx)?;
+        let (inst, wit) = &step.lut_instances[idx];
+        if inst.steps != t_len {
+            return Err(PiCcsError::ProtocolError(format!(
+                "{ctx}: LUT steps mismatch for table_id={table_id} (inst.steps={}, t_len={t_len})",
+                inst.steps
+            )));
+        }
+        let val_mat = shared_bus_lut_value_mat(inst, wit)
+            .ok_or_else(|| {
+                PiCcsError::ProtocolError(format!(
+                    "{ctx}: missing LUT value witness mat for table_id={table_id} (expected compact len=1 or full shout layout)"
+                ))
+            })?;
+        if val_mat.rows() != params.d as usize {
+            return Err(PiCcsError::ProtocolError(format!(
+                "{ctx}: LUT value witness rows mismatch for table_id={table_id} (rows={}, expected D={})",
+                val_mat.rows(),
+                params.d
+            )));
+        }
+        let vals_f = neo_memory::ajtai::decode_vector(params, val_mat);
+        if vals_f.len() != t_len {
+            return Err(PiCcsError::ProtocolError(format!(
+                "{ctx}: LUT value vector length mismatch for table_id={table_id} (len={}, t_len={t_len})",
+                vals_f.len()
+            )));
+        }
+        by_table_lut.insert(table_id, vals_f.into_iter().map(K::from).collect());
+    }
+
+    Ok(by_table_lut)
 }
 
 #[inline]
@@ -458,6 +509,76 @@ pub(crate) fn control_stage_required_for_step_witness(step: &StepWitnessBundle<C
     decode_stage_required_for_step_witness(step)
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct RouteALookupSidecarPlan {
+    pub include_trace_main: bool,
+    pub include_decode: bool,
+    pub include_width: bool,
+}
+
+impl RouteALookupSidecarPlan {
+    #[inline]
+    pub(crate) fn n_cols(self) -> usize {
+        if !self.include_trace_main {
+            return 0;
+        }
+        let trace_cols = rv32_trace_main_opening_columns(&Rv32TraceLayout::new()).len();
+        let decode_cols = if self.include_decode {
+            rv32_decode_lookup_backed_cols(&Rv32DecodeSidecarLayout::new()).len()
+        } else {
+            0
+        };
+        let width_cols = if self.include_width {
+            rv32_width_lookup_backed_cols(&Rv32WidthSidecarLayout::new()).len()
+        } else {
+            0
+        };
+        trace_cols + decode_cols + width_cols
+    }
+}
+
+#[inline]
+pub(crate) fn route_a_lookup_sidecar_required_for_step_instance(step: &StepInstanceBundle<Cmt, F, K>) -> bool {
+    wb_wp_required_for_step_instance(step)
+        || decode_stage_required_for_step_instance(step)
+        || width_stage_required_for_step_instance(step)
+        || control_stage_required_for_step_instance(step)
+}
+
+#[inline]
+pub(crate) fn route_a_lookup_sidecar_required_for_step_witness(step: &StepWitnessBundle<Cmt, F, K>) -> bool {
+    wb_wp_required_for_step_witness(step)
+        || decode_stage_required_for_step_witness(step)
+        || width_stage_required_for_step_witness(step)
+        || control_stage_required_for_step_witness(step)
+}
+
+#[inline]
+pub(crate) fn route_a_lookup_sidecar_plan_for_step_instance(
+    step: &StepInstanceBundle<Cmt, F, K>,
+) -> RouteALookupSidecarPlan {
+    let include_width = width_stage_required_for_step_instance(step);
+    let include_decode = decode_stage_required_for_step_instance(step) || include_width;
+    RouteALookupSidecarPlan {
+        include_trace_main: route_a_lookup_sidecar_required_for_step_instance(step),
+        include_decode,
+        include_width,
+    }
+}
+
+#[inline]
+pub(crate) fn route_a_lookup_sidecar_plan_for_step_witness(
+    step: &StepWitnessBundle<Cmt, F, K>,
+) -> RouteALookupSidecarPlan {
+    let include_width = width_stage_required_for_step_witness(step);
+    let include_decode = decode_stage_required_for_step_witness(step) || include_width;
+    RouteALookupSidecarPlan {
+        include_trace_main: route_a_lookup_sidecar_required_for_step_witness(step),
+        include_decode,
+        include_width,
+    }
+}
+
 pub(crate) fn build_route_a_wb_wp_time_claims(
     params: &NeoParams,
     step: &StepWitnessBundle<Cmt, F, K>,
@@ -468,7 +589,7 @@ pub(crate) fn build_route_a_wb_wp_time_claims(
     }
 
     let trace = Rv32TraceLayout::new();
-    let t_len = infer_rv32_trace_t_len_for_wb_wp(step, &trace)?;
+    let trace_source = TraceColumnSourceWitness::from_step(step, &trace, "WB/WP(shared)")?;
     let m_in = step.mcs.0.m_in;
     let ell_n = r_cycle.len();
     let wb_bool_cols = rv32_trace_wb_columns(&trace);
@@ -478,7 +599,7 @@ pub(crate) fn build_route_a_wb_wp_time_claims(
     decode_cols.push(trace.active);
     decode_cols.extend(wb_bool_cols.iter().copied());
     decode_cols.extend(wp_cols.iter().copied());
-    let decoded = decode_trace_col_values_batch(params, step, t_len, &decode_cols)?;
+    let decoded = trace_source.decode_cols(params, &decode_cols, "WB/WP(shared)")?;
 
     let wb_weights = wb_weight_vector(r_cycle, wb_bool_cols.len());
     let mut wb_bool_sparse_cols: Vec<SparseIdxVec<K>> = Vec::with_capacity(wb_bool_cols.len());
@@ -521,7 +642,8 @@ pub(crate) fn build_route_a_decode_time_claims(
 
     let trace = Rv32TraceLayout::new();
     let decode = Rv32DecodeSidecarLayout::new();
-    let t_len = infer_rv32_trace_t_len_for_wb_wp(step, &trace)?;
+    let trace_source = TraceColumnSourceWitness::from_step(step, &trace, "W2(shared)")?;
+    let t_len = trace_source.t_len();
     let m_in = step.mcs.0.m_in;
     let ell_n = r_cycle.len();
 
@@ -538,7 +660,7 @@ pub(crate) fn build_route_a_decode_time_claims(
         trace.shout_lhs,
         trace.shout_rhs,
     ];
-    let cpu_decoded = decode_trace_col_values_batch(params, step, t_len, &cpu_cols)?;
+    let cpu_decoded = trace_source.decode_cols(params, &cpu_cols, "W2(shared)")?;
 
     let decode_decoded = {
         let instr_vals = cpu_decoded
@@ -573,45 +695,7 @@ pub(crate) fn build_route_a_decode_time_claims(
             }
         }
 
-        // In shared lookup-backed mode, overwrite lookup-backed decode columns with the values
-        // actually committed on the shared Shout bus so prover oracles and verifier terminals
-        // are sourced from identical openings.
-        let (decode_open_cols, decode_lut_indices) = resolve_shared_decode_lookup_lut_indices(step, &decode)?;
-        let bus = build_bus_layout_for_step_witness(step, t_len)?;
-        if bus.shout_cols.len() != step.lut_instances.len() {
-            return Err(PiCcsError::ProtocolError(
-                "W2(shared): bus layout shout lane count drift".into(),
-            ));
-        }
-        let mut bus_val_cols = Vec::with_capacity(decode_open_cols.len());
-        for &lut_idx in decode_lut_indices.iter() {
-            let inst_cols = bus.shout_cols.get(lut_idx).ok_or_else(|| {
-                PiCcsError::ProtocolError("W2(shared): missing shout cols for decode lookup table".into())
-            })?;
-            let lane0 = inst_cols.lanes.get(0).ok_or_else(|| {
-                PiCcsError::ProtocolError("W2(shared): expected one shout lane for decode lookup table".into())
-            })?;
-            bus_val_cols.push(lane0.primary_val());
-        }
-        let lookup_vals = decode_lookup_backed_col_values_batch(
-            params,
-            bus.bus_base,
-            t_len,
-            &step.mcs.1.Z,
-            bus.bus_cols,
-            &bus_val_cols,
-        )?;
-        for (open_idx, &decode_col_id) in decode_open_cols.iter().enumerate() {
-            let bus_col_id = bus_val_cols[open_idx];
-            let values = lookup_vals.get(&bus_col_id).ok_or_else(|| {
-                PiCcsError::ProtocolError(format!(
-                    "W2(shared): missing decoded lookup values for bus_col={bus_col_id}"
-                ))
-            })?;
-            decoded.insert(decode_col_id, values.clone());
-        }
-
-        // Recompute derived decode helper columns from opened lookup-backed decode columns.
+        // Recompute derived decode helper columns from instruction-derived decode columns.
         let rd_is_zero_vals = decoded
             .get(&decode.rd_is_zero)
             .ok_or_else(|| PiCcsError::ProtocolError("W2(shared): missing rd_is_zero decode column".into()))?;
@@ -738,6 +822,7 @@ pub(crate) fn build_route_a_decode_time_claims(
         decoded
     };
 
+    #[cfg(feature = "debug-logs")]
     let cpu_value_at = |col_id: usize, row: usize| -> Result<K, PiCcsError> {
         cpu_decoded
             .get(&col_id)
@@ -757,49 +842,6 @@ pub(crate) fn build_route_a_decode_time_claims(
         .map(|_| Vec::with_capacity(t_len))
         .collect();
     for j in 0..t_len {
-        let active = cpu_value_at(trace.active, j)?;
-        let halted = cpu_value_at(trace.halted, j)?;
-        let decode_opcode = decode_value_at(decode.opcode, j)?;
-        let rd_has_write = decode_value_at(decode.rd_has_write, j)?;
-        let rd_is_zero = decode_value_at(decode.rd_is_zero, j)?;
-        let rs1_val = cpu_value_at(trace.rs1_val, j)?;
-        let rs2_val = cpu_value_at(trace.rs2_val, j)?;
-        let rd_val = cpu_value_at(trace.rd_val, j)?;
-        let ram_has_read = decode_value_at(decode.ram_has_read, j)?;
-        let ram_has_write = decode_value_at(decode.ram_has_write, j)?;
-        let ram_addr = cpu_value_at(trace.ram_addr, j)?;
-        let shout_has_lookup = cpu_value_at(trace.shout_has_lookup, j)?;
-        let shout_val = cpu_value_at(trace.shout_val, j)?;
-        let shout_lhs = cpu_value_at(trace.shout_lhs, j)?;
-        let shout_rhs = cpu_value_at(trace.shout_rhs, j)?;
-        let opcode_flags = [
-            decode_value_at(decode.op_lui, j)?,
-            decode_value_at(decode.op_auipc, j)?,
-            decode_value_at(decode.op_jal, j)?,
-            decode_value_at(decode.op_jalr, j)?,
-            decode_value_at(decode.op_branch, j)?,
-            decode_value_at(decode.op_load, j)?,
-            decode_value_at(decode.op_store, j)?,
-            decode_value_at(decode.op_alu_imm, j)?,
-            decode_value_at(decode.op_alu_reg, j)?,
-            decode_value_at(decode.op_misc_mem, j)?,
-            decode_value_at(decode.op_system, j)?,
-            decode_value_at(decode.op_amo, j)?,
-        ];
-        let funct3_is = [
-            decode_value_at(decode.funct3_is[0], j)?,
-            decode_value_at(decode.funct3_is[1], j)?,
-            decode_value_at(decode.funct3_is[2], j)?,
-            decode_value_at(decode.funct3_is[3], j)?,
-            decode_value_at(decode.funct3_is[4], j)?,
-            decode_value_at(decode.funct3_is[5], j)?,
-            decode_value_at(decode.funct3_is[6], j)?,
-            decode_value_at(decode.funct3_is[7], j)?,
-        ];
-        let rs2_decode = decode_value_at(decode.rs2, j)?;
-        let imm_i = decode_value_at(decode.imm_i, j)?;
-        let imm_s = decode_value_at(decode.imm_s, j)?;
-
         let funct3_bits = [
             decode_value_at(decode.funct3_bit[0], j)?,
             decode_value_at(decode.funct3_bit[1], j)?,
@@ -844,81 +886,126 @@ pub(crate) fn build_route_a_decode_time_claims(
             funct7_bits,
         );
 
-        let op_write_flags = [
-            opcode_flags[0] * (K::ONE - rd_is_zero),
-            opcode_flags[1] * (K::ONE - rd_is_zero),
-            opcode_flags[2] * (K::ONE - rd_is_zero),
-            opcode_flags[3] * (K::ONE - rd_is_zero),
-            opcode_flags[7] * (K::ONE - rd_is_zero),
-            opcode_flags[8] * (K::ONE - rd_is_zero),
-        ];
-        let shout_table_id = decode_value_at(decode.shout_table_id, j)?;
-        let alu_reg_table_delta = w2_alu_reg_table_delta_from_bits(funct7_bits, funct3_is);
-        let alu_imm_table_delta = funct7_bits[5] * funct3_is[5];
-        let alu_imm_shift_rhs_delta = (funct3_is[1] + funct3_is[5]) * (rs2_decode - imm_i);
-        let selector_residuals = w2_decode_selector_residuals(
-            active,
-            decode_opcode,
-            opcode_flags,
-            funct3_is,
-            funct3_bits,
-            opcode_flags[11],
-        );
-        let bitness_residuals = w2_decode_bitness_residuals(opcode_flags, funct3_is);
-        let alu_branch_residuals = w2_alu_branch_lookup_residuals(
-            active,
-            halted,
-            shout_has_lookup,
-            shout_lhs,
-            shout_rhs,
-            shout_table_id,
-            rs1_val,
-            rs2_val,
-            rd_has_write,
-            rd_is_zero,
-            rd_val,
-            ram_has_read,
-            ram_has_write,
-            ram_addr,
-            shout_val,
-            funct3_bits,
-            funct7_bits,
-            opcode_flags,
-            op_write_flags,
-            funct3_is,
-            alu_reg_table_delta,
-            alu_imm_table_delta,
-            alu_imm_shift_rhs_delta,
-            rs2_decode,
-            imm_i,
-            imm_s,
-        );
-        if let Some((idx, _)) = selector_residuals
-            .iter()
-            .enumerate()
-            .find(|(_, r)| **r != K::ZERO)
+        #[cfg(feature = "debug-logs")]
         {
-            return Err(PiCcsError::ProtocolError(format!(
-                "decode/fields selector residual non-zero at row={j}, idx={idx}"
-            )));
-        }
-        if let Some((idx, _)) = bitness_residuals
-            .iter()
-            .enumerate()
-            .find(|(_, r)| **r != K::ZERO)
-        {
-            return Err(PiCcsError::ProtocolError(format!(
-                "decode/fields bitness residual non-zero at row={j}, idx={idx}"
-            )));
-        }
-        if let Some((idx, _)) = alu_branch_residuals
-            .iter()
-            .enumerate()
-            .find(|(_, r)| **r != K::ZERO)
-        {
-            return Err(PiCcsError::ProtocolError(format!(
-                "decode/fields alu_branch residual non-zero at row={j}, idx={idx}"
-            )));
+            let active = cpu_value_at(trace.active, j)?;
+            let halted = cpu_value_at(trace.halted, j)?;
+            let decode_opcode = decode_value_at(decode.opcode, j)?;
+            let rd_has_write = decode_value_at(decode.rd_has_write, j)?;
+            let rd_is_zero = decode_value_at(decode.rd_is_zero, j)?;
+            let rs1_val = cpu_value_at(trace.rs1_val, j)?;
+            let rs2_val = cpu_value_at(trace.rs2_val, j)?;
+            let rd_val = cpu_value_at(trace.rd_val, j)?;
+            let ram_has_read = decode_value_at(decode.ram_has_read, j)?;
+            let ram_has_write = decode_value_at(decode.ram_has_write, j)?;
+            let ram_addr = cpu_value_at(trace.ram_addr, j)?;
+            let shout_has_lookup = cpu_value_at(trace.shout_has_lookup, j)?;
+            let shout_val = cpu_value_at(trace.shout_val, j)?;
+            let shout_lhs = cpu_value_at(trace.shout_lhs, j)?;
+            let shout_rhs = cpu_value_at(trace.shout_rhs, j)?;
+            let opcode_flags = [
+                decode_value_at(decode.op_lui, j)?,
+                decode_value_at(decode.op_auipc, j)?,
+                decode_value_at(decode.op_jal, j)?,
+                decode_value_at(decode.op_jalr, j)?,
+                decode_value_at(decode.op_branch, j)?,
+                decode_value_at(decode.op_load, j)?,
+                decode_value_at(decode.op_store, j)?,
+                decode_value_at(decode.op_alu_imm, j)?,
+                decode_value_at(decode.op_alu_reg, j)?,
+                decode_value_at(decode.op_misc_mem, j)?,
+                decode_value_at(decode.op_system, j)?,
+                decode_value_at(decode.op_amo, j)?,
+            ];
+            let funct3_is = [
+                decode_value_at(decode.funct3_is[0], j)?,
+                decode_value_at(decode.funct3_is[1], j)?,
+                decode_value_at(decode.funct3_is[2], j)?,
+                decode_value_at(decode.funct3_is[3], j)?,
+                decode_value_at(decode.funct3_is[4], j)?,
+                decode_value_at(decode.funct3_is[5], j)?,
+                decode_value_at(decode.funct3_is[6], j)?,
+                decode_value_at(decode.funct3_is[7], j)?,
+            ];
+            let op_write_flags = [
+                opcode_flags[0] * (K::ONE - rd_is_zero),
+                opcode_flags[1] * (K::ONE - rd_is_zero),
+                opcode_flags[2] * (K::ONE - rd_is_zero),
+                opcode_flags[3] * (K::ONE - rd_is_zero),
+                opcode_flags[7] * (K::ONE - rd_is_zero),
+                opcode_flags[8] * (K::ONE - rd_is_zero),
+            ];
+            let rs2_decode = decode_value_at(decode.rs2, j)?;
+            let imm_i = decode_value_at(decode.imm_i, j)?;
+            let imm_s = decode_value_at(decode.imm_s, j)?;
+            let shout_table_id = decode_value_at(decode.shout_table_id, j)?;
+            let alu_reg_table_delta = w2_alu_reg_table_delta_from_bits(funct7_bits, funct3_is);
+            let alu_imm_table_delta = funct7_bits[5] * funct3_is[5];
+            let alu_imm_shift_rhs_delta = (funct3_is[1] + funct3_is[5]) * (rs2_decode - imm_i);
+            let selector_residuals = w2_decode_selector_residuals(
+                active,
+                decode_opcode,
+                opcode_flags,
+                funct3_is,
+                funct3_bits,
+                opcode_flags[11],
+            );
+            let bitness_residuals = w2_decode_bitness_residuals(opcode_flags, funct3_is);
+            let alu_branch_residuals = w2_alu_branch_lookup_residuals(
+                active,
+                halted,
+                shout_has_lookup,
+                shout_lhs,
+                shout_rhs,
+                shout_table_id,
+                rs1_val,
+                rs2_val,
+                rd_has_write,
+                rd_is_zero,
+                rd_val,
+                ram_has_read,
+                ram_has_write,
+                ram_addr,
+                shout_val,
+                funct3_bits,
+                funct7_bits,
+                opcode_flags,
+                op_write_flags,
+                funct3_is,
+                alu_reg_table_delta,
+                alu_imm_table_delta,
+                alu_imm_shift_rhs_delta,
+                rs2_decode,
+                imm_i,
+                imm_s,
+            );
+            if let Some((idx, _)) = selector_residuals
+                .iter()
+                .enumerate()
+                .find(|(_, r)| **r != K::ZERO)
+            {
+                return Err(PiCcsError::ProtocolError(format!(
+                    "decode/fields selector residual non-zero at row={j}, idx={idx}"
+                )));
+            }
+            if let Some((idx, _)) = bitness_residuals
+                .iter()
+                .enumerate()
+                .find(|(_, r)| **r != K::ZERO)
+            {
+                return Err(PiCcsError::ProtocolError(format!(
+                    "decode/fields bitness residual non-zero at row={j}, idx={idx}"
+                )));
+            }
+            if let Some((idx, _)) = alu_branch_residuals
+                .iter()
+                .enumerate()
+                .find(|(_, r)| **r != K::ZERO)
+            {
+                return Err(PiCcsError::ProtocolError(format!(
+                    "decode/fields alu_branch residual non-zero at row={j}, idx={idx}"
+                )));
+            }
         }
 
         for (k, r) in imm.iter().enumerate() {

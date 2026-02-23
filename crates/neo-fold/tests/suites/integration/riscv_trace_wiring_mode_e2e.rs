@@ -48,7 +48,7 @@ fn rv32_trace_wiring_mode_prove_verify() {
 }
 
 #[test]
-fn rv32_trace_wiring_mode_does_not_force_pow2_padding() {
+fn rv32_trace_wiring_mode_enforces_pow2_chunk_rows() {
     let program_bytes = trace_mode_program_bytes();
 
     let mut run = Rv32TraceWiring::from_rom(/*program_base=*/ 0, &program_bytes)
@@ -62,9 +62,13 @@ fn rv32_trace_wiring_mode_does_not_force_pow2_padding() {
     assert_eq!(
         run.exec_table().rows.len(),
         3,
-        "trace-wiring mode should keep unpadded trace length when min bound is smaller"
+        "trace runner keeps unpadded execution rows before chunk padding"
     );
-    assert_eq!(run.layout().t, 3, "layout t should match unpadded trace length");
+    assert_eq!(
+        run.layout().t,
+        4,
+        "layout t should be canonicalized to the next power-of-two"
+    );
 }
 
 #[test]

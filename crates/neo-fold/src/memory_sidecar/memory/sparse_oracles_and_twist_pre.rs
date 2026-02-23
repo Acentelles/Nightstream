@@ -48,27 +48,18 @@ pub(crate) fn decode_k_to_u32(v: K, ctx: &str) -> Result<u32, PiCcsError> {
     Ok(lo as u32)
 }
 
-pub(crate) fn resolve_shared_decode_lookup_lut_indices(
-    step: &StepWitnessBundle<Cmt, F, K>,
-    decode_layout: &Rv32DecodeSidecarLayout,
-) -> Result<(Vec<usize>, Vec<usize>), PiCcsError> {
-    let decode_open_cols = rv32_decode_lookup_backed_cols(decode_layout);
-    let mut decode_lut_indices = Vec::with_capacity(decode_open_cols.len());
-    for &col_id in decode_open_cols.iter() {
-        let table_id = rv32_decode_lookup_table_id_for_col(col_id);
-        let idx = step
-            .lut_instances
-            .iter()
-            .position(|(inst, _)| inst.table_id == table_id)
-            .ok_or_else(|| {
-                PiCcsError::ProtocolError(format!(
-                    "W2(shared): missing decode lookup table_id={table_id} for col_id={col_id}"
-                ))
-            })?;
-        decode_lut_indices.push(idx);
+#[inline]
+pub(crate) fn decode_k_to_base_f(v: K, ctx: &str) -> Result<F, PiCcsError> {
+    let coeffs = v.as_coeffs();
+    if coeffs.iter().skip(1).any(|&c| c != F::ZERO) {
+        return Err(PiCcsError::ProtocolError(format!(
+            "{ctx}: expected base-field value while decoding shared columns"
+        )));
     }
-
-    Ok((decode_open_cols, decode_lut_indices))
+    coeffs
+        .first()
+        .copied()
+        .ok_or_else(|| PiCcsError::ProtocolError(format!("{ctx}: missing base coefficient")))
 }
 
 pub(crate) struct WeightedMaskOracleSparseTime {
@@ -278,109 +269,208 @@ pub(crate) fn unpack_interleaved_halves_lsb(addr_bits: &[K]) -> Result<(K, K), P
 }
 
 pub(crate) fn extract_trace_cpu_link_openings(
-    m: usize,
     core_t: usize,
-    y_prefix_cols: usize,
     step: &StepInstanceBundle<Cmt, F, K>,
-    ccs_out0: &MeInstance<Cmt, F, K>,
+    mem_proof: &MemSidecarProof<Cmt, F, K>,
+    r_time: &[K],
 ) -> Result<Option<TraceCpuLinkOpenings>, PiCcsError> {
-    if step.mem_insts.is_empty() && step.lut_insts.is_empty() {
-        return Ok(None);
-    }
-
-    // RV32 trace linkage: the prover appends time-combined openings for selected CPU trace columns
-    // to the CCS ME output at r_time. We use those to bind Twist instances (PROG/REG/RAM) to the
-    // same trace, without embedding a shared CPU bus tail.
+    let Some(open_map) = trace_main_openings_at_r_time(core_t, step, mem_proof, r_time)? else {
+        return Err(PiCcsError::ProtocolError(
+            "missing lookup sidecar trace openings for CPU linkage".into(),
+        ));
+    };
     let trace = Rv32TraceLayout::new();
-    let trace_cols_to_open: Vec<usize> = vec![
-        trace.active,
-        trace.cycle,
-        trace.pc_before,
-        trace.instr_word,
-        trace.rs1_addr,
-        trace.rs1_val,
-        trace.rs2_addr,
-        trace.rs2_val,
-        trace.rd_addr,
-        trace.rd_val,
-        trace.ram_addr,
-        trace.ram_rv,
-        trace.ram_wv,
-        trace.shout_has_lookup,
-        trace.shout_val,
-        trace.shout_lhs,
-        trace.shout_rhs,
-    ];
-
-    let m_in = step.mcs_inst.m_in;
-    let t_len = step
-        .mem_insts
-        .first()
-        .map(|inst| inst.steps)
-        .or_else(|| {
-            // Shout event-table instances may have `steps != t_len`; prefer a non-event-table
-            // instance if present, otherwise fall back to inferring from the trace layout.
-            step.lut_insts
-                .iter()
-                .find(|inst| !matches!(inst.table_spec, Some(LutTableSpec::RiscvOpcodeEventTablePacked { .. })))
-                .map(|inst| inst.steps)
-        })
-        .or_else(|| {
-            // Trace CCS layout inference: z = [x (m_in) | trace_cols * t_len]
-            let w = m.checked_sub(m_in)?;
-            if trace.cols == 0 || w % trace.cols != 0 {
-                return None;
-            }
-            Some(w / trace.cols)
-        })
-        .ok_or_else(|| PiCcsError::InvalidInput("missing mem/lut instances".into()))?;
-    if t_len == 0 {
-        return Err(PiCcsError::InvalidInput("trace linkage requires steps>=1".into()));
-    }
-    for (i, inst) in step.mem_insts.iter().enumerate() {
-        if inst.steps != t_len {
-            return Err(PiCcsError::InvalidInput(format!(
-                "trace linkage requires stable steps across mem instances (mem_idx={i} has steps={}, expected {t_len})",
-                inst.steps
-            )));
-        }
-    }
-    let trace_len = trace
-        .cols
-        .checked_mul(t_len)
-        .ok_or_else(|| PiCcsError::InvalidInput("trace cols * t_len overflow".into()))?;
-    let expected_m = m_in
-        .checked_add(trace_len)
-        .ok_or_else(|| PiCcsError::InvalidInput("m_in + trace_len overflow".into()))?;
-    if m < expected_m {
-        return Err(PiCcsError::InvalidInput(format!(
-            "trace linkage expects m >= m_in + trace.cols*t_len (m={}; min_m={expected_m} for t_len={t_len}, trace_cols={})",
-            m, trace.cols
-        )));
-    }
-    let expected_y_len = core_t
-        .checked_add(y_prefix_cols)
-        .and_then(|v| v.checked_add(trace_cols_to_open.len()))
-        .ok_or_else(|| PiCcsError::InvalidInput("core_t + y_prefix_cols + trace_openings overflow".into()))?;
-    if ccs_out0.y_scalars.len() != expected_y_len {
-        return Err(PiCcsError::InvalidInput(format!(
-            "trace linkage expects CPU ME output to contain exactly core_t + y_prefix_cols + trace_openings y_scalars (have {}, expected {expected_y_len})",
-            ccs_out0.y_scalars.len(),
-        )));
-    }
-    let cpu_open = |idx: usize| -> Result<K, PiCcsError> {
-        ccs_out0
-            .y_scalars
-            .get(core_t + y_prefix_cols + idx)
+    let cpu_open = |col_id: usize| -> Result<K, PiCcsError> {
+        open_map
+            .get(&col_id)
             .copied()
-            .ok_or_else(|| PiCcsError::ProtocolError("missing CPU trace linkage opening".into()))
+            .ok_or_else(|| PiCcsError::ProtocolError(format!("missing CPU trace linkage opening for col_id={col_id}")))
     };
 
     Ok(Some(TraceCpuLinkOpenings {
-        shout_has_lookup: cpu_open(13)?,
-        shout_val: cpu_open(14)?,
-        shout_lhs: cpu_open(15)?,
-        shout_rhs: cpu_open(16)?,
+        shout_has_lookup: cpu_open(trace.shout_has_lookup)?,
+        shout_val: cpu_open(trace.shout_val)?,
+        shout_lhs: cpu_open(trace.shout_lhs)?,
+        shout_rhs: cpu_open(trace.shout_rhs)?,
+    }))
+}
+
+#[inline]
+fn route_a_lookup_sidecar_claim_index(step: &StepInstanceBundle<Cmt, F, K>) -> Result<Option<usize>, PiCcsError> {
+    if !route_a_lookup_sidecar_required_for_step_instance(step) {
+        return Ok(None);
+    }
+    let idx = step
+        .lut_insts
+        .len()
+        .checked_add(step.mem_insts.len())
+        .ok_or_else(|| PiCcsError::InvalidInput("lookup sidecar claim index overflow".into()))?;
+    Ok(Some(idx))
+}
+
+pub(crate) fn trace_main_openings_at_r_time(
+    core_t: usize,
+    step: &StepInstanceBundle<Cmt, F, K>,
+    mem_proof: &MemSidecarProof<Cmt, F, K>,
+    r_time: &[K],
+) -> Result<Option<BTreeMap<usize, K>>, PiCcsError> {
+    let Some(lookup_idx) = route_a_lookup_sidecar_claim_index(step)? else {
+        return Ok(None);
+    };
+    let lookup_me = mem_proof
+        .sidecar_me_claims
+        .get(lookup_idx)
+        .ok_or_else(|| PiCcsError::ProtocolError("missing lookup sidecar ME claim".into()))?;
+    if lookup_me.r.as_slice() != r_time {
+        return Err(PiCcsError::ProtocolError("lookup sidecar ME r mismatch".into()));
+    }
+    if lookup_me.m_in != step.mcs_inst.m_in {
+        return Err(PiCcsError::ProtocolError(format!(
+            "lookup sidecar ME m_in mismatch: got {}, expected {}",
+            lookup_me.m_in, step.mcs_inst.m_in
+        )));
+    }
+    let trace = Rv32TraceLayout::new();
+    let trace_open_cols = rv32_trace_main_opening_columns(&trace);
+    let trace_open_start = core_t;
+    let trace_open_end = trace_open_start
+        .checked_add(trace_open_cols.len())
+        .ok_or_else(|| PiCcsError::InvalidInput("trace sidecar opening range overflow".into()))?;
+    if lookup_me.y_scalars.len() < trace_open_end {
+        return Err(PiCcsError::ProtocolError(format!(
+            "trace sidecar openings missing (got {}, need at least {trace_open_end})",
+            lookup_me.y_scalars.len()
+        )));
+    }
+    let open_map = trace_open_cols
+        .iter()
+        .copied()
+        .zip(
+            lookup_me.y_scalars[trace_open_start..trace_open_end]
+                .iter()
+                .copied(),
+        )
+        .collect();
+    Ok(Some(open_map))
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct TraceDecodeOpeningsAtRTime {
+    pub shout_table_id: K,
+    pub rd_has_write: K,
+    pub ram_has_read: K,
+    pub ram_has_write: K,
+}
+
+pub(crate) fn trace_decode_width_open_maps_at_r_time(
+    core_t: usize,
+    step: &StepInstanceBundle<Cmt, F, K>,
+    mem_proof: &MemSidecarProof<Cmt, F, K>,
+    r_time: &[K],
+    require_width: bool,
+) -> Result<Option<(BTreeMap<usize, K>, BTreeMap<usize, K>)>, PiCcsError> {
+    let decode_required = decode_stage_required_for_step_instance(step);
+    let width_required = width_stage_required_for_step_instance(step);
+    if !decode_required && !width_required {
+        return Ok(None);
+    }
+
+    let decode_layout = Rv32DecodeSidecarLayout::new();
+    let decode_open_cols = rv32_decode_lookup_backed_cols(&decode_layout);
+    let width_layout = Rv32WidthSidecarLayout::new();
+    let width_open_cols = rv32_width_lookup_backed_cols(&width_layout);
+
+    let Some(lookup_idx) = route_a_lookup_sidecar_claim_index(step)? else {
+        return Ok(None);
+    };
+    let lookup_me = mem_proof
+        .sidecar_me_claims
+        .get(lookup_idx)
+        .ok_or_else(|| PiCcsError::ProtocolError("missing lookup sidecar ME claim".into()))?;
+    if lookup_me.r.as_slice() != r_time {
+        return Err(PiCcsError::ProtocolError("lookup sidecar ME r mismatch".into()));
+    }
+    if lookup_me.m_in != step.mcs_inst.m_in {
+        return Err(PiCcsError::ProtocolError(format!(
+            "lookup sidecar ME m_in mismatch: got {}, expected {}",
+            lookup_me.m_in, step.mcs_inst.m_in
+        )));
+    }
+
+    let trace_layout = Rv32TraceLayout::new();
+    let trace_open_cols = rv32_trace_main_opening_columns(&trace_layout);
+    let decode_open_start = core_t
+        .checked_add(trace_open_cols.len())
+        .ok_or_else(|| PiCcsError::InvalidInput("decode sidecar opening range overflow".into()))?;
+    let decode_open_end = decode_open_start
+        .checked_add(decode_open_cols.len())
+        .ok_or_else(|| PiCcsError::InvalidInput("decode sidecar opening range overflow".into()))?;
+    if lookup_me.y_scalars.len() < decode_open_end {
+        return Err(PiCcsError::ProtocolError(format!(
+            "decode sidecar openings missing (got {}, need at least {decode_open_end})",
+            lookup_me.y_scalars.len()
+        )));
+    }
+
+    let decode_open_map: BTreeMap<usize, K> = decode_open_cols
+        .iter()
+        .copied()
+        .zip(
+            lookup_me.y_scalars[decode_open_start..decode_open_end]
+                .iter()
+                .copied(),
+        )
+        .collect();
+    let width_open_map = if require_width {
+        let width_open_end = decode_open_end
+            .checked_add(width_open_cols.len())
+            .ok_or_else(|| PiCcsError::InvalidInput("width sidecar opening range overflow".into()))?;
+        if lookup_me.y_scalars.len() < width_open_end {
+            return Err(PiCcsError::ProtocolError(format!(
+                "width sidecar openings missing (got {}, need at least {width_open_end})",
+                lookup_me.y_scalars.len()
+            )));
+        }
+        width_open_cols
+            .iter()
+            .copied()
+            .zip(
+                lookup_me.y_scalars[decode_open_end..width_open_end]
+                    .iter()
+                    .copied(),
+            )
+            .collect()
+    } else {
+        BTreeMap::new()
+    };
+
+    Ok(Some((decode_open_map, width_open_map)))
+}
+
+pub(crate) fn trace_decode_openings_at_r_time(
+    core_t: usize,
+    step: &StepInstanceBundle<Cmt, F, K>,
+    mem_proof: &MemSidecarProof<Cmt, F, K>,
+    r_time: &[K],
+) -> Result<Option<TraceDecodeOpeningsAtRTime>, PiCcsError> {
+    let Some((decode_open_map, _)) = trace_decode_width_open_maps_at_r_time(core_t, step, mem_proof, r_time, false)?
+    else {
+        return Ok(None);
+    };
+    let decode_layout = Rv32DecodeSidecarLayout::new();
+    let decode_open_col = |col_id: usize| -> Result<K, PiCcsError> {
+        decode_open_map.get(&col_id).copied().ok_or_else(|| {
+            PiCcsError::ProtocolError(format!(
+                "decode-linked Shout table_id check: missing decode opening col {col_id}"
+            ))
+        })
+    };
+
+    Ok(Some(TraceDecodeOpeningsAtRTime {
+        shout_table_id: decode_open_col(decode_layout.shout_table_id)?,
+        rd_has_write: decode_open_col(decode_layout.rd_has_write)?,
+        ram_has_read: decode_open_col(decode_layout.ram_has_read)?,
+        ram_has_write: decode_open_col(decode_layout.ram_has_write)?,
     }))
 }
 
@@ -390,81 +480,15 @@ pub(crate) fn expected_trace_shout_table_id_from_openings(
     mem_proof: &MemSidecarProof<Cmt, F, K>,
     r_time: &[K],
 ) -> Result<K, PiCcsError> {
-    if !decode_stage_required_for_step_instance(step) {
-        return Ok(K::ZERO);
-    }
-
-    if mem_proof.wp_me_claims.len() != 1 {
-        return Err(PiCcsError::ProtocolError(
-            "decode-linked Shout table_id check requires one WP ME claim".into(),
-        ));
-    }
-    let wp_me = &mem_proof.wp_me_claims[0];
-    if wp_me.r.as_slice() != r_time {
-        return Err(PiCcsError::ProtocolError(
-            "decode-linked Shout table_id check: WP ME r mismatch".into(),
-        ));
-    }
-    if wp_me.c != step.mcs_inst.c {
-        return Err(PiCcsError::ProtocolError(
-            "decode-linked Shout table_id check: WP ME commitment mismatch".into(),
-        ));
-    }
-    if wp_me.m_in != step.mcs_inst.m_in {
-        return Err(PiCcsError::ProtocolError(
-            "decode-linked Shout table_id check: WP ME m_in mismatch".into(),
-        ));
-    }
-
-    let trace = Rv32TraceLayout::new();
-    let decode_layout = Rv32DecodeSidecarLayout::new();
-    let wp_cols = rv32_trace_wp_opening_columns(&trace);
-    let control_extra_cols = if control_stage_required_for_step_instance(step) {
-        rv32_trace_control_extra_opening_columns(&trace)
-    } else {
-        Vec::new()
-    };
-    let decode_open_cols = rv32_decode_lookup_backed_cols(&decode_layout);
-
-    let decode_open_start = core_t
-        .checked_add(wp_cols.len())
-        .and_then(|v| v.checked_add(control_extra_cols.len()))
-        .ok_or_else(|| {
-            PiCcsError::InvalidInput("decode-linked Shout table_id check: decode_open_start overflow".into())
-        })?;
-    let decode_open_end = decode_open_start
-        .checked_add(decode_open_cols.len())
-        .ok_or_else(|| {
-            PiCcsError::InvalidInput("decode-linked Shout table_id check: decode_open_end overflow".into())
-        })?;
-    if wp_me.y_scalars.len() < decode_open_end {
-        return Err(PiCcsError::ProtocolError(format!(
-            "decode-linked Shout table_id check: missing decode openings (got {}, need at least {decode_open_end})",
-            wp_me.y_scalars.len()
-        )));
-    }
-
-    let decode_open = &wp_me.y_scalars[decode_open_start..decode_open_end];
-    let decode_open_col = |col_id: usize| -> Result<K, PiCcsError> {
-        let idx = decode_open_cols
-            .iter()
-            .position(|&c| c == col_id)
-            .ok_or_else(|| {
-                PiCcsError::ProtocolError(format!(
-                    "decode-linked Shout table_id check: missing decode opening col {col_id}"
-                ))
-            })?;
-        Ok(decode_open[idx])
-    };
-
-    Ok(decode_open_col(decode_layout.shout_table_id)?)
+    Ok(trace_decode_openings_at_r_time(core_t, step, mem_proof, r_time)?
+        .map(|open| open.shout_table_id)
+        .unwrap_or(K::ZERO))
 }
 
 pub(crate) fn prove_twist_addr_pre_time(
     tr: &mut Poseidon2Transcript,
     params: &NeoParams,
     step: &StepWitnessBundle<Cmt, F, K>,
-    cpu_bus: &BusLayout,
     ell_n: usize,
     r_cycle: &[K],
 ) -> Result<Vec<TwistAddrPreProverData>, PiCcsError> {
@@ -473,14 +497,7 @@ pub(crate) fn prove_twist_addr_pre_time(
     }
     let mut out = Vec::with_capacity(step.mem_instances.len());
 
-    let cpu_z_k = crate::memory_sidecar::cpu_bus::decode_cpu_z_to_k(params, &step.mcs.1.Z);
-    if cpu_bus.shout_cols.len() != step.lut_instances.len() || cpu_bus.twist_cols.len() != step.mem_instances.len() {
-        return Err(PiCcsError::InvalidInput(
-            "shared_cpu_bus layout mismatch for step (instance counts)".into(),
-        ));
-    }
-
-    for (idx, (mem_inst, _mem_wit)) in step.mem_instances.iter().enumerate() {
+    for (idx, (mem_inst, mem_wit)) in step.mem_instances.iter().enumerate() {
         neo_memory::addr::validate_twist_bit_addressing(mem_inst)?;
         let pow2_cycle = 1usize << ell_n;
         if mem_inst.steps > pow2_cycle {
@@ -490,90 +507,64 @@ pub(crate) fn prove_twist_addr_pre_time(
             )));
         }
 
-        let bus = cpu_bus.clone();
-        let z = cpu_z_k.clone();
-
         let ell_addr = mem_inst.d * mem_inst.ell;
         let expected_lanes = mem_inst.lanes.max(1);
-        let twist_inst_cols = bus.twist_cols.get(idx).ok_or_else(|| {
-            PiCcsError::InvalidInput(format!(
-                "shared_cpu_bus layout mismatch: missing twist_cols for mem_idx={idx}"
-            ))
-        })?;
-        if twist_inst_cols.lanes.len() != expected_lanes {
+        let mut lanes: Vec<TwistLaneSparseCols> = Vec::with_capacity(expected_lanes);
+        let twist_layout = mem_inst.twist_layout();
+        if mem_wit.mats.len() != twist_layout.expected_len() {
             return Err(PiCcsError::InvalidInput(format!(
-                "shared_cpu_bus layout mismatch at mem_idx={idx}: expected lanes={expected_lanes}, got {}",
-                twist_inst_cols.lanes.len()
+                "Twist(Route A): witness mats shape mismatch at mem_idx={idx} (mats={}, expected={})",
+                mem_wit.mats.len(),
+                twist_layout.expected_len()
             )));
         }
-
-        let mut lanes: Vec<TwistLaneSparseCols> = Vec::with_capacity(twist_inst_cols.lanes.len());
-        for (lane_idx, twist_cols) in twist_inst_cols.lanes.iter().enumerate() {
-            if twist_cols.ra_bits.end - twist_cols.ra_bits.start != ell_addr
-                || twist_cols.wa_bits.end - twist_cols.wa_bits.start != ell_addr
-            {
+        for (lane_idx, lane_layout) in twist_layout.lanes.iter().enumerate() {
+            if lane_layout.ell_addr != ell_addr {
                 return Err(PiCcsError::InvalidInput(format!(
-                    "shared_cpu_bus layout mismatch at mem_idx={idx}, lane={lane_idx}: expected ell_addr={ell_addr}"
+                    "Twist(Route A): witness/layout ell_addr mismatch at mem_idx={idx}, lane={lane_idx} (layout={}, expected={ell_addr})",
+                    lane_layout.ell_addr
                 )));
             }
+            let decode_col_sparse = |col_idx: usize, name: &str| -> Result<SparseIdxVec<K>, PiCcsError> {
+                let mat = mem_wit.mats.get(col_idx).ok_or_else(|| {
+                    PiCcsError::InvalidInput(format!(
+                        "Twist(Route A): witness mats missing {name} column at mem_idx={idx}, col_idx={col_idx}"
+                    ))
+                })?;
+                if mat.rows() != params.d as usize {
+                    return Err(PiCcsError::InvalidInput(format!(
+                        "Twist(Route A): witness mat rows mismatch at mem_idx={idx}, col_idx={col_idx} (rows={}, expected D={})",
+                        mat.rows(),
+                        params.d
+                    )));
+                }
+                if mat.cols() != mem_inst.steps {
+                    return Err(PiCcsError::InvalidInput(format!(
+                        "Twist(Route A): witness mat cols mismatch at mem_idx={idx}, col_idx={col_idx} (cols={}, expected steps={})",
+                        mat.cols(),
+                        mem_inst.steps
+                    )));
+                }
+                let vals: Vec<K> = neo_memory::ajtai::decode_vector(params, mat)
+                    .into_iter()
+                    .map(Into::into)
+                    .collect();
+                sparse_trace_col_from_values(step.mcs.0.m_in, ell_n, &vals)
+            };
 
             let mut ra_bits = Vec::with_capacity(ell_addr);
-            for col_id in twist_cols.ra_bits.clone() {
-                ra_bits.push(crate::memory_sidecar::cpu_bus::build_time_sparse_from_bus_col(
-                    &z,
-                    &bus,
-                    col_id,
-                    mem_inst.steps,
-                    pow2_cycle,
-                )?);
+            for col_idx in lane_layout.ra_bits.clone() {
+                ra_bits.push(decode_col_sparse(col_idx, "ra_bits")?);
             }
-
             let mut wa_bits = Vec::with_capacity(ell_addr);
-            for col_id in twist_cols.wa_bits.clone() {
-                wa_bits.push(crate::memory_sidecar::cpu_bus::build_time_sparse_from_bus_col(
-                    &z,
-                    &bus,
-                    col_id,
-                    mem_inst.steps,
-                    pow2_cycle,
-                )?);
+            for col_idx in lane_layout.wa_bits.clone() {
+                wa_bits.push(decode_col_sparse(col_idx, "wa_bits")?);
             }
-
-            let has_read = crate::memory_sidecar::cpu_bus::build_time_sparse_from_bus_col(
-                &z,
-                &bus,
-                twist_cols.has_read,
-                mem_inst.steps,
-                pow2_cycle,
-            )?;
-            let has_write = crate::memory_sidecar::cpu_bus::build_time_sparse_from_bus_col(
-                &z,
-                &bus,
-                twist_cols.has_write,
-                mem_inst.steps,
-                pow2_cycle,
-            )?;
-            let wv = crate::memory_sidecar::cpu_bus::build_time_sparse_from_bus_col(
-                &z,
-                &bus,
-                twist_cols.wv,
-                mem_inst.steps,
-                pow2_cycle,
-            )?;
-            let rv = crate::memory_sidecar::cpu_bus::build_time_sparse_from_bus_col(
-                &z,
-                &bus,
-                twist_cols.rv,
-                mem_inst.steps,
-                pow2_cycle,
-            )?;
-            let inc_at_write_addr = crate::memory_sidecar::cpu_bus::build_time_sparse_from_bus_col(
-                &z,
-                &bus,
-                twist_cols.inc,
-                mem_inst.steps,
-                pow2_cycle,
-            )?;
+            let has_read = decode_col_sparse(lane_layout.has_read, "has_read")?;
+            let has_write = decode_col_sparse(lane_layout.has_write, "has_write")?;
+            let wv = decode_col_sparse(lane_layout.wv, "wv")?;
+            let rv = decode_col_sparse(lane_layout.rv, "rv")?;
+            let inc_at_write_addr = decode_col_sparse(lane_layout.inc_at_write_addr, "inc_at_write_addr")?;
 
             lanes.push(TwistLaneSparseCols {
                 ra_bits,

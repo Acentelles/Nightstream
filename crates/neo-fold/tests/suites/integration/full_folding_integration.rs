@@ -311,6 +311,103 @@ fn write_bus_for_chunk(
     }
 }
 
+fn decompose_addr_bits(addr: u64, d: usize, ell: usize, n_side: usize) -> Vec<F> {
+    let mut out = vec![F::ZERO; d * ell];
+    let mut tmp = addr;
+    for dim in 0..d {
+        let comp = (tmp % (n_side as u64)) as u64;
+        tmp /= n_side as u64;
+        for bit in 0..ell {
+            out[dim * ell + bit] = if ((comp >> bit) & 1) == 1 { F::ONE } else { F::ZERO };
+        }
+    }
+    out
+}
+
+fn build_lut_witness_from_plain(
+    params: &NeoParams,
+    lut_inst: &neo_memory::witness::LutInstance<Cmt, F>,
+    lut_trace: &PlainLutTrace<F>,
+) -> neo_memory::witness::LutWitness<F> {
+    let layout = lut_inst.shout_layout();
+    let steps = lut_inst.steps;
+    let mut cols = vec![vec![F::ZERO; steps]; layout.expected_len()];
+
+    for j in 0..steps {
+        let has_lookup = lut_trace.has_lookup[j];
+        cols[layout.has_lookup][j] = has_lookup;
+        if has_lookup == F::ONE {
+            cols[layout.val][j] = lut_trace.val[j];
+            let addr_bits = decompose_addr_bits(lut_trace.addr[j], lut_inst.d, lut_inst.ell, lut_inst.n_side);
+            for (k, bit_idx) in layout.addr_bits.clone().enumerate() {
+                cols[bit_idx][j] = addr_bits[k];
+            }
+        }
+    }
+
+    let mats = cols
+        .iter()
+        .map(|col| neo_memory::ajtai::encode_vector_balanced_to_mat(params, col))
+        .collect();
+    neo_memory::witness::LutWitness { mats }
+}
+
+fn build_mem_witness_from_plain(
+    params: &NeoParams,
+    mem_inst: &neo_memory::witness::MemInstance<Cmt, F>,
+    mem_trace: &PlainMemTrace<F>,
+) -> neo_memory::witness::MemWitness<F> {
+    let layout = mem_inst.twist_layout();
+    let steps = mem_inst.steps;
+    let mut cols = vec![vec![F::ZERO; steps]; layout.expected_len()];
+
+    for (lane_idx, lane) in layout.lanes.iter().enumerate() {
+        if lane_idx > 0 {
+            continue;
+        }
+        for j in 0..steps {
+            let has_read = mem_trace.has_read[j];
+            let has_write = mem_trace.has_write[j];
+            cols[lane.has_read][j] = has_read;
+            cols[lane.has_write][j] = has_write;
+            cols[lane.rv][j] = if has_read == F::ONE {
+                mem_trace.read_val[j]
+            } else {
+                F::ZERO
+            };
+            cols[lane.wv][j] = if has_write == F::ONE {
+                mem_trace.write_val[j]
+            } else {
+                F::ZERO
+            };
+            cols[lane.inc_at_write_addr][j] = if has_write == F::ONE {
+                mem_trace.inc_at_write_addr[j]
+            } else {
+                F::ZERO
+            };
+
+            if has_read == F::ONE {
+                let ra_bits = decompose_addr_bits(mem_trace.read_addr[j], mem_inst.d, mem_inst.ell, mem_inst.n_side);
+                for (k, bit_idx) in lane.ra_bits.clone().enumerate() {
+                    cols[bit_idx][j] = ra_bits[k];
+                }
+            }
+            if has_write == F::ONE {
+                let wa_bits = decompose_addr_bits(mem_trace.write_addr[j], mem_inst.d, mem_inst.ell, mem_inst.n_side);
+                for (k, bit_idx) in lane.wa_bits.clone().enumerate() {
+                    cols[bit_idx][j] = wa_bits[k];
+                }
+            }
+        }
+    }
+
+    let mats = cols
+        .iter()
+        .map(|col| neo_memory::ajtai::encode_vector_balanced_to_mat(params, col))
+        .collect();
+    neo_memory::witness::MemWitness { mats }
+}
+
 fn default_mixers() -> Mixers {
     crate::common_setup::default_mixers()
 }
@@ -400,7 +497,7 @@ fn build_single_chunk_inputs() -> (
         ell: mem_layout.n_side.trailing_zeros() as usize,
         init: mem_init.clone(),
     };
-    let mem_wit = neo_memory::witness::MemWitness { mats: Vec::new() };
+    let mem_wit = build_mem_witness_from_plain(&params, &mem_inst, &plain_mem);
     let lut_inst = neo_memory::witness::LutInstance::<Cmt, F> {
         table_id: lut_table.table_id,
         comms: Vec::new(),
@@ -415,7 +512,7 @@ fn build_single_chunk_inputs() -> (
         addr_group: None,
         selector_group: None,
     };
-    let lut_wit = neo_memory::witness::LutWitness { mats: Vec::new() };
+    let lut_wit = build_lut_witness_from_plain(&params, &lut_inst, &plain_lut);
 
     // CPU witness z: core coords in [0..4), bus in the tail segment.
     let bus_cols = (lut_inst.d * lut_inst.ell + 2) + (2 * mem_inst.d * mem_inst.ell + 5);
@@ -447,6 +544,7 @@ fn build_single_chunk_inputs() -> (
         mcs: (mcs_inst.clone(), mcs_wit.clone()),
         lut_instances: vec![(lut_inst.clone(), lut_wit)],
         mem_instances: vec![(mem_inst.clone(), mem_wit)],
+        trace_sidecar: None,
         _phantom: PhantomData::<K>,
     };
 
@@ -571,7 +669,7 @@ fn full_folding_integration_multi_step_chunk() {
         ell: mem_layout.n_side.trailing_zeros() as usize,
         init: mem_init.clone(),
     };
-    let mem_wit = neo_memory::witness::MemWitness { mats: Vec::new() };
+    let mem_wit = build_mem_witness_from_plain(&params, &mem_inst, &plain_mem);
     let lut_inst = neo_memory::witness::LutInstance::<Cmt, F> {
         table_id: lut_table.table_id,
         comms: Vec::new(),
@@ -586,7 +684,7 @@ fn full_folding_integration_multi_step_chunk() {
         addr_group: None,
         selector_group: None,
     };
-    let lut_wit = neo_memory::witness::LutWitness { mats: Vec::new() };
+    let lut_wit = build_lut_witness_from_plain(&params, &lut_inst, &plain_lut);
 
     let bus_cols = (lut_inst.d * lut_inst.ell + 2) + (2 * mem_inst.d * mem_inst.ell + 5);
     let chunk_size = plain_mem.steps;
@@ -616,6 +714,7 @@ fn full_folding_integration_multi_step_chunk() {
         mcs: (mcs_inst, mcs_wit),
         lut_instances: vec![(lut_inst, lut_wit)],
         mem_instances: vec![(mem_inst, mem_wit)],
+        trace_sidecar: None,
         _phantom: PhantomData,
     };
 
@@ -703,12 +802,14 @@ fn tamper_me_opening_fails() {
     )
     .expect("prove should succeed");
 
-    // Mutate a CPU ME opening used by shared-bus memory checks (a bus opening at r_time).
+    // Mutate a sidecar ME opening used by Route-A memory checks at r_time.
     let step0 = &mut proof.steps[0];
-    let ccs_out0 = &mut step0.fold.ccs_out[0];
-    let bus_cols = 10usize; // 1 Shout (3) + 1 Twist (7) in this fixture
-    let bus_y_base = ccs_out0.y_scalars.len() - bus_cols;
-    ccs_out0.y_scalars[bus_y_base] += K::ONE;
+    let shout_sidecar_me = step0
+        .mem
+        .sidecar_me_claims
+        .get_mut(0)
+        .expect("expected at least one sidecar ME claim");
+    shout_sidecar_me.y_scalars[0] += K::ONE;
 
     let mut tr_verify = Poseidon2Transcript::new(b"full-fold-tamper-me");
     let steps_public = [StepInstanceBundle::from(&step_bundle)];
@@ -969,25 +1070,16 @@ fn main_only_finalizer_is_rejected_when_val_lane_present() {
 
 #[test]
 fn wrong_shout_lookup_value_witness_fails() {
-    // In shared-bus mode, Shout consumes its access rows from the CPU witness.
-    // So a wrong Shout value must make verification fail.
+    // Tamper the Shout value witness itself (sidecar source-of-truth).
     let (params, ccs, mut step_bundle, acc_init, acc_wit_init, l, mixers, _out_val) = build_single_chunk_inputs();
-
-    // Flip the Shout `val` entry inside the CPU bus tail (step j=0, last column of the Shout slot).
-    // Layout for 1 Shout instance (d=1, ell=1, chunk_size=1):
-    //   [addr_bit0, has_lookup, val] => Shout val is column id 2.
-    // There is also 1 Twist instance after it, but we don't touch it.
-    let m = step_bundle.mcs.1.Z.cols();
-    let bus_cols = 10usize;
-    let bus_base = m - bus_cols;
-    let shout_val_col_id = 2usize;
-    let mut z = neo_memory::ajtai::decode_vector(&params, &step_bundle.mcs.1.Z);
-    z[bus_base + shout_val_col_id] += F::ONE;
-    let Z = neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z);
-    let c = l.commit(&Z);
-    step_bundle.mcs.0.c = c;
-    step_bundle.mcs.1.Z = Z;
-    step_bundle.mcs.1.w = z[M_IN..].to_vec();
+    let (lut_inst, lut_wit) = step_bundle
+        .lut_instances
+        .get_mut(0)
+        .expect("one LUT instance");
+    let val_idx = lut_inst.shout_layout().val;
+    let mut vals = neo_memory::ajtai::decode_vector(&params, &lut_wit.mats[val_idx]);
+    vals[0] += F::ONE;
+    lut_wit.mats[val_idx] = neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &vals);
 
     let mut tr_prove = Poseidon2Transcript::new(b"full-fold-wrong-shout-bus");
     let proof = fold_shard_prove(
@@ -1001,7 +1093,7 @@ fn wrong_shout_lookup_value_witness_fails() {
         &l,
         mixers,
     )
-    .expect("prove should succeed (even with invalid Shout bus)");
+    .expect("prove should succeed for tampered sidecar witness");
 
     let mut tr_verify = Poseidon2Transcript::new(b"full-fold-wrong-shout-bus");
     let steps_public = [StepInstanceBundle::from(&step_bundle)];
@@ -1016,5 +1108,5 @@ fn wrong_shout_lookup_value_witness_fails() {
         mixers,
     );
 
-    assert!(res.is_err(), "wrong Shout bus value must fail verification");
+    assert!(res.is_err(), "tampered Shout witness must fail verification");
 }

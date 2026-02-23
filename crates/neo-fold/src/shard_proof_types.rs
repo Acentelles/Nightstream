@@ -135,12 +135,14 @@ pub enum MemOrLutProof {
 pub struct MemSidecarProof<C, FF, KK> {
     /// ME claims evaluated at `r_val` (Twist val-eval terminal point).
     ///
-    /// Shared-bus mode only: these are CPU ME openings at `r_val` that include appended bus openings.
+    /// Shared-bus mode only: these are Twist sidecar ME openings at `r_val`.
+    /// Ordering is `[current mem_0..mem_n-1, prev mem_0..mem_n-1 (when rollover is enabled)]`.
     pub val_me_claims: Vec<MeInstance<C, FF, KK>>,
-    /// CPU ME openings at `r_time` used to bind WB booleanity terminals to committed trace columns.
-    pub wb_me_claims: Vec<MeInstance<C, FF, KK>>,
-    /// CPU ME openings at `r_time` used to bind WP quiescence terminals to committed trace columns.
-    pub wp_me_claims: Vec<MeInstance<C, FF, KK>>,
+    /// Reserved: folded sidecar ME claims at `r_time` that are not part of WB/WP/Twist-val lanes.
+    ///
+    /// This keeps a single Route-A/Folding stack while we migrate bus-derived openings
+    /// to commitment-bound sidecar openings.
+    pub sidecar_me_claims: Vec<MeInstance<C, FF, KK>>,
     /// Route A Shout address pre-time proofs batched across all Shout instances in the step.
     pub shout_addr_pre: ShoutAddrPreProof<KK>,
     pub proofs: Vec<MemOrLutProof>,
@@ -182,10 +184,8 @@ pub struct StepProof {
     ///
     /// Each proof is an independent Π_RLC→Π_DEC lane (k=1 in current usage).
     pub val_fold: Vec<RlcDecProof>,
-    /// Reserved WB folding lane(s) for staged booleanity claims.
-    pub wb_fold: Vec<RlcDecProof>,
-    /// Reserved WP folding lane(s) for staged quiescence claims.
-    pub wp_fold: Vec<RlcDecProof>,
+    /// Reserved sidecar folding lane(s) for `mem.sidecar_me_claims`.
+    pub sidecar_fold: Vec<RlcDecProof>,
 }
 
 #[derive(Clone, Debug)]
@@ -228,10 +228,7 @@ impl ShardProof {
             for p in &step.val_fold {
                 val.extend_from_slice(&p.dec_children);
             }
-            for p in &step.wb_fold {
-                val.extend_from_slice(&p.dec_children);
-            }
-            for p in &step.wp_fold {
+            for p in &step.sidecar_fold {
                 val.extend_from_slice(&p.dec_children);
             }
         }

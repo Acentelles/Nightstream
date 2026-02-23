@@ -41,12 +41,11 @@ fn rv32_wp_opening_cols(layout: &Rv32TraceLayout) -> Vec<usize> {
 fn tamper_control_decode_opening_scalar(proof: &mut ShardProof, decode_col: usize) {
     let layout = Rv32DecodeSidecarLayout::new();
     let decode_open_cols = rv32_decode_lookup_backed_cols(&layout);
-    assert_eq!(
-        proof.steps[0].mem.wp_me_claims.len(),
-        1,
-        "expected one WP ME claim carrying decode openings for control stage checks"
-    );
-    let me = &mut proof.steps[0].mem.wp_me_claims[0];
+    let me = proof.steps[0]
+        .mem
+        .sidecar_me_claims
+        .last_mut()
+        .expect("expected sidecar lookup ME claim carrying decode openings");
     let decode_start = me
         .y_scalars
         .len()
@@ -67,12 +66,11 @@ fn tamper_control_wp_opening_scalar(proof: &mut ShardProof, trace_col: usize) {
         .iter()
         .position(|&c| c == trace_col)
         .expect("trace col must be present in control stage WP opening set");
-    assert_eq!(
-        proof.steps[0].mem.wp_me_claims.len(),
-        1,
-        "expected one WP ME claim reused by control stage checks"
-    );
-    let me = &mut proof.steps[0].mem.wp_me_claims[0];
+    let me = proof.steps[0]
+        .mem
+        .sidecar_me_claims
+        .last_mut()
+        .expect("expected sidecar lookup ME claim reused by control stage checks");
     let core_t = me
         .y_scalars
         .len()

@@ -28,14 +28,14 @@ fn prove_run_addi_halt(imm: i32) -> Rv32TraceWiringRun {
 
 fn tamper_decode_related_scalar(proof: &mut ShardProof) {
     for step in &mut proof.steps {
-        for claim in &mut step.mem.wp_me_claims {
-            if let Some(first) = claim.y_scalars.first_mut() {
+        if let Some(first_out) = step.fold.ccs_out.first_mut() {
+            if let Some(first) = first_out.y_scalars.first_mut() {
                 *first += K::ONE;
                 return;
             }
         }
     }
-    panic!("expected at least one decode-related scalar in wp claims");
+    panic!("expected at least one decode-related scalar in main trace openings");
 }
 
 #[test]

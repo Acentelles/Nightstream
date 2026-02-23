@@ -1,5 +1,407 @@
 use super::*;
 
+#[derive(Clone, Copy, Debug)]
+struct ValSidecarExtraPlan {
+    core_t: usize,
+    m_in: usize,
+    t_len: usize,
+    extra_rows: usize,
+}
+
+#[inline]
+fn balanced_divrem_i64(v: i64, b: i64) -> (i64, i64) {
+    debug_assert!(b >= 2);
+    let mut r = v % b;
+    let mut q = (v - r) / b;
+    let half = b / 2;
+    if r > half {
+        r -= b;
+        q += 1;
+    } else if r < -half {
+        r += b;
+        q -= 1;
+    }
+    (r, q)
+}
+
+#[inline]
+fn balanced_divrem_i128(v: i128, b: i128) -> (i128, i128) {
+    debug_assert!(b >= 2);
+    let mut r = v % b;
+    let mut q = (v - r) / b;
+    let half = b / 2;
+    if r > half {
+        r -= b;
+        q += 1;
+    } else if r < -half {
+        r += b;
+        q -= 1;
+    }
+    (r, q)
+}
+
+#[inline]
+fn f_from_i64(v: i64) -> F {
+    if v >= 0 {
+        F::from_u64(v as u64)
+    } else {
+        -F::from_u64((-v) as u64)
+    }
+}
+
+fn infer_val_sidecar_extra_plan(
+    s: &CcsStructure<F>,
+    parent_me: &MeInstance<Cmt, F, K>,
+    child_m: usize,
+) -> Result<Option<ValSidecarExtraPlan>, PiCcsError> {
+    let core_t = s.t();
+    if parent_me.y.len() < core_t || parent_me.y_scalars.len() < core_t {
+        return Err(PiCcsError::ProtocolError(format!(
+            "val-lane parent too short for core_t (y.len()={}, y_scalars.len()={}, core_t={core_t})",
+            parent_me.y.len(),
+            parent_me.y_scalars.len()
+        )));
+    }
+    if parent_me.y_scalars.len() != parent_me.y.len() {
+        return Err(PiCcsError::ProtocolError(format!(
+            "val-lane parent y/y_scalars length mismatch (y.len()={}, y_scalars.len()={})",
+            parent_me.y.len(),
+            parent_me.y_scalars.len()
+        )));
+    }
+    let extra_rows = parent_me.y.len() - core_t;
+    if extra_rows == 0 {
+        return Ok(None);
+    }
+
+    let m_in = parent_me.m_in;
+    if child_m < m_in {
+        return Err(PiCcsError::ProtocolError(format!(
+            "val-lane child witness width underflow (m={child_m}, m_in={m_in})"
+        )));
+    }
+    let payload = child_m - m_in;
+    if payload == 0 || payload % extra_rows != 0 {
+        return Err(PiCcsError::ProtocolError(format!(
+            "val-lane child witness geometry mismatch for sidecar openings (payload={payload}, extra={extra_rows})"
+        )));
+    }
+    let t_len = payload / extra_rows;
+    if t_len == 0 {
+        return Err(PiCcsError::ProtocolError(
+            "val-lane sidecar opening derivation produced t_len=0".into(),
+        ));
+    }
+    Ok(Some(ValSidecarExtraPlan {
+        core_t,
+        m_in,
+        t_len,
+        extra_rows,
+    }))
+}
+
+fn append_full_val_sidecar_openings_to_child(
+    params: &NeoParams,
+    parent_me: &MeInstance<Cmt, F, K>,
+    child_Z: &Mat<F>,
+    child_me: &mut MeInstance<Cmt, F, K>,
+    plan: &ValSidecarExtraPlan,
+) -> Result<(), PiCcsError> {
+    if plan.extra_rows == 0 {
+        return Ok(());
+    }
+    if child_Z.cols() < plan.m_in {
+        return Err(PiCcsError::ProtocolError(format!(
+            "val-lane child witness width underflow (m={}, m_in={})",
+            child_Z.cols()
+            , plan.m_in
+        )));
+    }
+    let payload = child_Z.cols() - plan.m_in;
+    if payload
+        != plan
+            .extra_rows
+            .checked_mul(plan.t_len)
+            .ok_or_else(|| PiCcsError::InvalidInput("val-lane sidecar payload overflow".into()))?
+    {
+        return Err(PiCcsError::ProtocolError(format!(
+            "val-lane child witness geometry mismatch for sidecar openings (payload={payload}, extra={}, t_len={})",
+            plan.extra_rows, plan.t_len
+        )));
+    }
+    let col_starts: Vec<usize> = (0..plan.extra_rows)
+        .map(|i| {
+            let offset = i
+                .checked_mul(plan.t_len)
+                .ok_or_else(|| PiCcsError::InvalidInput("val-lane sidecar column offset overflow".into()))?;
+            plan.m_in
+                .checked_add(offset)
+                .ok_or_else(|| PiCcsError::InvalidInput("val-lane sidecar column start overflow".into()))
+        })
+        .collect::<Result<_, _>>()?;
+
+    crate::memory_sidecar::cpu_bus::append_col_major_time_openings_to_me_instance(
+        params,
+        plan.m_in,
+        plan.t_len,
+        &col_starts,
+        plan.core_t,
+        child_Z,
+        child_me,
+    )?;
+    if child_me.y.len() != parent_me.y.len() || child_me.y_scalars.len() != parent_me.y_scalars.len() {
+        return Err(PiCcsError::ProtocolError(format!(
+            "val-lane child sidecar opening length mismatch after append (child y/y_scalars = {}/{}, parent y/y_scalars = {}/{})",
+            child_me.y.len(),
+            child_me.y_scalars.len(),
+            parent_me.y.len(),
+            parent_me.y_scalars.len()
+        )));
+    }
+    Ok(())
+}
+
+fn append_full_val_sidecar_openings_to_children_streaming(
+    params: &NeoParams,
+    parent_me: &MeInstance<Cmt, F, K>,
+    Z_mix: &Mat<F>,
+    children: &mut [MeInstance<Cmt, F, K>],
+    plan: &ValSidecarExtraPlan,
+) -> Result<(), PiCcsError> {
+    if plan.extra_rows == 0 {
+        return Ok(());
+    }
+    if children.is_empty() {
+        return Err(PiCcsError::ProtocolError(
+            "val-lane streaming append requires non-empty DEC children".into(),
+        ));
+    }
+    if parent_me.y_scalars.len() != parent_me.y.len() {
+        return Err(PiCcsError::ProtocolError(format!(
+            "val-lane parent y/y_scalars length mismatch (y.len()={}, y_scalars.len()={})",
+            parent_me.y.len(),
+            parent_me.y_scalars.len()
+        )));
+    }
+    if parent_me.y.len() != plan.core_t + plan.extra_rows {
+        return Err(PiCcsError::ProtocolError(format!(
+            "val-lane parent length mismatch for streaming append (y.len()={}, expected core_t+extra={}+{}={})",
+            parent_me.y.len(),
+            plan.core_t,
+            plan.extra_rows,
+            plan.core_t + plan.extra_rows
+        )));
+    }
+    if Z_mix.rows() != D {
+        return Err(PiCcsError::ProtocolError(format!(
+            "val-lane streaming append requires Z_mix.rows()==D (got {}, D={})",
+            Z_mix.rows(),
+            D
+        )));
+    }
+    let payload = plan
+        .extra_rows
+        .checked_mul(plan.t_len)
+        .ok_or_else(|| PiCcsError::InvalidInput("val-lane sidecar payload overflow".into()))?;
+    let expected_m = plan
+        .m_in
+        .checked_add(payload)
+        .ok_or_else(|| PiCcsError::InvalidInput("val-lane sidecar width overflow".into()))?;
+    if Z_mix.cols() != expected_m {
+        return Err(PiCcsError::ProtocolError(format!(
+            "val-lane streaming append expects Z_mix.cols()==m_in+payload (got {}, expected {})",
+            Z_mix.cols(),
+            expected_m
+        )));
+    }
+
+    let ell_n = parent_me.r.len();
+    if ell_n == 0 {
+        return Err(PiCcsError::ProtocolError(
+            "val-lane streaming append requires non-empty r".into(),
+        ));
+    }
+    let n_pad = 1usize
+        .checked_shl(ell_n as u32)
+        .ok_or_else(|| PiCcsError::InvalidInput("val-lane streaming append: 2^ell_n overflow".into()))?;
+    let end_row = plan
+        .m_in
+        .checked_add(plan.t_len)
+        .ok_or_else(|| PiCcsError::InvalidInput("val-lane streaming append row overflow".into()))?;
+    if end_row > n_pad {
+        return Err(PiCcsError::InvalidInput(format!(
+            "val-lane streaming append row range out of bounds (m_in+t_len={} > n_pad={})",
+            end_row, n_pad
+        )));
+    }
+
+    let d_pad = parent_me
+        .y
+        .first()
+        .map(|row| row.len())
+        .ok_or_else(|| PiCcsError::ProtocolError("val-lane parent has empty y".into()))?;
+    if d_pad < D {
+        return Err(PiCcsError::ProtocolError(format!(
+            "val-lane parent y row width too small (d_pad={}, D={})",
+            d_pad, D
+        )));
+    }
+    let mut pow_b = Vec::with_capacity(D);
+    let mut cur = K::ONE;
+    let b_k = K::from(F::from_u64(params.b as u64));
+    for _ in 0..D {
+        pow_b.push(cur);
+        cur *= b_k;
+    }
+
+    let mut time_weights = vec![K::ZERO; plan.t_len];
+    for (j, dst) in time_weights.iter_mut().enumerate() {
+        let row_idx = plan.m_in + j;
+        let mut w = K::ONE;
+        for (bit_idx, &rb) in parent_me.r.iter().enumerate() {
+            let bit = (row_idx >> bit_idx) & 1;
+            if bit == 1 {
+                w *= rb;
+            } else {
+                w *= K::ONE - rb;
+            }
+        }
+        *dst = w;
+    }
+
+    let k_dec = children.len();
+    let mut acc = vec![[K::ZERO; D]; k_dec * plan.extra_rows];
+    let mut digits = vec![0i32; k_dec];
+
+    let b_u = params.b as u128;
+    let mut B_u: u128 = 1;
+    for _ in 0..k_dec {
+        B_u = B_u.saturating_mul(b_u);
+    }
+    let p: u128 = F::ORDER_U64 as u128;
+    let b_i64 = params.b as i64;
+    let b_i128 = params.b as i128;
+
+    for rel_col in 0..payload {
+        let lane_col = rel_col / plan.t_len;
+        let j = rel_col % plan.t_len;
+        let w = time_weights[j];
+        if w == K::ZERO {
+            continue;
+        }
+        let col = plan.m_in + rel_col;
+        for rho in 0..D {
+            let u = Z_mix[(rho, col)].as_canonical_u64() as u128;
+            if B_u <= i64::MAX as u128 {
+                let val_opt: Option<i64> = if u < B_u {
+                    Some(u as i64)
+                } else if p.checked_sub(u).map(|v| v < B_u).unwrap_or(false) {
+                    Some(-((p - u) as i64))
+                } else {
+                    None
+                };
+                let mut v = val_opt.ok_or_else(|| {
+                    PiCcsError::ProtocolError(format!(
+                        "val-lane streaming split out of range at (rho={rho}, col={col}) for k_dec={k_dec}, b={}",
+                        params.b
+                    ))
+                })?;
+                for digit in digits.iter_mut().take(k_dec) {
+                    if v == 0 {
+                        *digit = 0;
+                        continue;
+                    }
+                    let (r_i, q) = balanced_divrem_i64(v, b_i64);
+                    *digit = r_i as i32;
+                    v = q;
+                }
+                if v != 0 {
+                    return Err(PiCcsError::ProtocolError(format!(
+                        "val-lane streaming split overflow at (rho={rho}, col={col}) for k_dec={k_dec}, b={}",
+                        params.b
+                    )));
+                }
+            } else {
+                let val_opt: Option<i128> = if u < B_u {
+                    Some(u as i128)
+                } else if p.checked_sub(u).map(|v| v < B_u).unwrap_or(false) {
+                    Some(-((p - u) as i128))
+                } else {
+                    None
+                };
+                let mut v = val_opt.ok_or_else(|| {
+                    PiCcsError::ProtocolError(format!(
+                        "val-lane streaming split out of range at (rho={rho}, col={col}) for k_dec={k_dec}, b={}",
+                        params.b
+                    ))
+                })?;
+                for digit in digits.iter_mut().take(k_dec) {
+                    if v == 0 {
+                        *digit = 0;
+                        continue;
+                    }
+                    let (r_i, q) = balanced_divrem_i128(v, b_i128);
+                    *digit = r_i as i32;
+                    v = q;
+                }
+                if v != 0 {
+                    return Err(PiCcsError::ProtocolError(format!(
+                        "val-lane streaming split overflow at (rho={rho}, col={col}) for k_dec={k_dec}, b={}",
+                        params.b
+                    )));
+                }
+            }
+
+            for i in 0..k_dec {
+                let d = digits[i];
+                if d == 0 {
+                    continue;
+                }
+                let acc_row = &mut acc[i * plan.extra_rows + lane_col];
+                match d {
+                    1 => acc_row[rho] += w,
+                    -1 => acc_row[rho] -= w,
+                    _ => acc_row[rho] += w.scale_base(f_from_i64(d as i64)),
+                }
+            }
+        }
+    }
+
+    for (child_idx, child) in children.iter_mut().enumerate() {
+        if child.y.len() != plan.core_t || child.y_scalars.len() != plan.core_t {
+            return Err(PiCcsError::ProtocolError(format!(
+                "val-lane child core length mismatch before streaming append (child y/y_scalars = {}/{}, core_t={})",
+                child.y.len(),
+                child.y_scalars.len(),
+                plan.core_t
+            )));
+        }
+        for lane_col in 0..plan.extra_rows {
+            let src = &acc[child_idx * plan.extra_rows + lane_col];
+            let mut y_row = vec![K::ZERO; d_pad];
+            let mut y_scalar = K::ZERO;
+            for rho in 0..D {
+                let v = src[rho];
+                y_row[rho] = v;
+                y_scalar += v * pow_b[rho];
+            }
+            child.y.push(y_row);
+            child.y_scalars.push(y_scalar);
+        }
+        if child.y.len() != parent_me.y.len() || child.y_scalars.len() != parent_me.y_scalars.len() {
+            return Err(PiCcsError::ProtocolError(format!(
+                "val-lane child sidecar opening length mismatch after streaming append (child y/y_scalars = {}/{}, parent y/y_scalars = {}/{})",
+                child.y.len(),
+                child.y_scalars.len(),
+                parent_me.y.len(),
+                parent_me.y_scalars.len()
+            )));
+        }
+    }
+
+    Ok(())
+}
+
 pub(crate) fn prove_rlc_dec_lane<L, MR, MB>(
     mode: &FoldingMode,
     lane: RlcLane,
@@ -147,11 +549,20 @@ where
 
     let Z_mix = Z_mix.as_ref();
 
+    let dec_parent = &rlc_parent;
+    let val_extra_plan = if matches!(lane, RlcLane::Val) {
+        infer_val_sidecar_extra_plan(s, &rlc_parent, Z_mix.cols())?
+    } else {
+        None
+    };
+    let val_lane_has_extra_openings = val_extra_plan.is_some();
     let inputs_have_extra_y = me_inputs.iter().any(|me| me.y.len() > s.t());
-    let can_stream_dec = !want_witnesses
-        && has_global_pp_for_dims(D, s.m)
-        && !cpu_bus.map(|b| b.bus_cols > 0).unwrap_or(false)
-        && !inputs_have_extra_y;
+    let can_stream_extra_val = matches!(lane, RlcLane::Val) && val_extra_plan.is_some();
+    let can_stream_dec =
+        !want_witnesses
+            && has_global_pp_for_dims(D, s.m)
+            && !cpu_bus.map(|b| b.bus_cols > 0).unwrap_or(false)
+            && (!inputs_have_extra_y || can_stream_extra_val);
 
     let materialize_dec = || -> Result<(Vec<MeInstance<Cmt, F, K>>, bool, bool, bool, Vec<Mat<F>>), PiCcsError> {
         // Standard DEC: materialize digit matrices (needed when carrying witnesses forward).
@@ -207,7 +618,7 @@ where
             mode.clone(),
             s,
             params,
-            &rlc_parent,
+            dec_parent,
             &Z_split,
             ell_d,
             &child_cs,
@@ -217,6 +628,7 @@ where
         Ok((dec_children, ok_y, ok_X, ok_c, Z_split))
     };
 
+    let mut used_stream_dec = false;
     let (mut dec_children, ok_y, ok_X, ok_c, maybe_wits) = if can_stream_dec {
         // Memory-optimized DEC: compute children + commitments without materializing Z_split.
         // If public consistency checks fail (e.g. global PP mismatch vs local committer),
@@ -224,7 +636,7 @@ where
         let (children, _child_cs, ok_y, ok_X, ok_c) = dec_stream_no_witness(
             params,
             s,
-            &rlc_parent,
+            dec_parent,
             Z_mix,
             ell_d,
             k_dec,
@@ -232,6 +644,7 @@ where
             ccs_sparse_cache,
         )?;
         if ok_y && ok_X && ok_c {
+            used_stream_dec = true;
             (children, ok_y, ok_X, ok_c, Vec::new())
         } else {
             materialize_dec()?
@@ -248,6 +661,29 @@ where
             "{} public check failed at step {} (y={}, X={}, c={})",
             lane_label, step_idx, ok_y, ok_X, ok_c
         )));
+    }
+    if val_lane_has_extra_openings {
+        let plan = val_extra_plan
+            .as_ref()
+            .ok_or_else(|| PiCcsError::ProtocolError("val-lane extra plan missing".into()))?;
+        if used_stream_dec {
+            append_full_val_sidecar_openings_to_children_streaming(
+                params,
+                &rlc_parent,
+                Z_mix,
+                &mut dec_children,
+                plan,
+            )?;
+        } else {
+            if dec_children.len() != maybe_wits.len() {
+                return Err(PiCcsError::ProtocolError(
+                    "val-lane full-vector DEC requires materialized DEC witnesses".into(),
+                ));
+            }
+            for (child, Zi) in dec_children.iter_mut().zip(maybe_wits.iter()) {
+                append_full_val_sidecar_openings_to_child(params, &rlc_parent, Zi, child, plan)?;
+            }
+        }
     }
 
     // Shared CPU bus: carry the implicit bus openings through Π_RLC/Π_DEC so they remain
@@ -274,25 +710,7 @@ where
         let core_t = s.t();
         let trace_open_base = core_t + cpu_bus.map_or(0usize, |bus| bus.bus_cols);
         let trace = Rv32TraceLayout::new();
-        let trace_cols_to_open: Vec<usize> = vec![
-            trace.active,
-            trace.cycle,
-            trace.pc_before,
-            trace.instr_word,
-            trace.rs1_addr,
-            trace.rs1_val,
-            trace.rs2_addr,
-            trace.rs2_val,
-            trace.rd_addr,
-            trace.rd_val,
-            trace.ram_addr,
-            trace.ram_rv,
-            trace.ram_wv,
-            trace.shout_has_lookup,
-            trace.shout_val,
-            trace.shout_lhs,
-            trace.shout_rhs,
-        ];
+        let trace_cols_to_open = crate::memory_sidecar::memory::rv32_trace_main_opening_columns(&trace);
 
         let want_len = trace_open_base + trace_cols_to_open.len();
         let has_base_only = rlc_parent.y.len() == trace_open_base && rlc_parent.y_scalars.len() == trace_open_base;
@@ -323,12 +741,22 @@ where
                 )));
             }
 
+            let trace_col_starts: Vec<usize> = trace_cols_to_open
+                .iter()
+                .copied()
+                .map(|col_id| {
+                    let col_offset = col_id
+                        .checked_mul(t_len)
+                        .ok_or_else(|| PiCcsError::InvalidInput("trace linkage column offset overflow".into()))?;
+                    m_in.checked_add(col_offset)
+                        .ok_or(PiCcsError::InvalidInput("trace linkage column start overflow".into()))
+                })
+                .collect::<Result<_, _>>()?;
             crate::memory_sidecar::cpu_bus::append_col_major_time_openings_to_me_instance(
                 params,
                 m_in,
                 t_len,
-                /*col_base=*/ m_in,
-                &trace_cols_to_open,
+                &trace_col_starts,
                 trace_open_base,
                 Z_mix,
                 &mut rlc_parent,
@@ -343,8 +771,7 @@ where
                     params,
                     m_in,
                     t_len,
-                    /*col_base=*/ m_in,
-                    &trace_cols_to_open,
+                    &trace_col_starts,
                     trace_open_base,
                     Zi,
                     child,
@@ -492,8 +919,10 @@ where
     }
     if parent_pub.y != rlc_parent.y {
         return Err(PiCcsError::ProtocolError(format!(
-            "step {}: {prefix}RLC y mismatch",
-            step_idx
+            "step {}: {prefix}RLC y mismatch (public_len={}, proof_len={})",
+            step_idx,
+            parent_pub.y.len(),
+            rlc_parent.y.len()
         )));
     }
     if parent_pub.y_scalars != rlc_parent.y_scalars {
@@ -536,11 +965,81 @@ where
         }
     }
 
-    if !ccs::verify_dec_public(s, params, rlc_parent, dec_children, mixers.combine_b_pows, ell_d) {
+    if rlc_parent.y.len() > s.t() {
+        for (child_idx, child) in dec_children.iter().enumerate() {
+            if child.y.len() != rlc_parent.y.len() || child.y_scalars.len() != rlc_parent.y_scalars.len() {
+                return Err(PiCcsError::ProtocolError(format!(
+                    "step {}: {prefix}DEC child[{child_idx}] full-vector length mismatch (child y/y_scalars = {}/{}, parent y/y_scalars = {}/{})",
+                    step_idx,
+                    child.y.len(),
+                    child.y_scalars.len(),
+                    rlc_parent.y.len(),
+                    rlc_parent.y_scalars.len()
+                )));
+            }
+        }
+    }
+
+    let dec_ok = ccs::verify_dec_public(s, params, rlc_parent, dec_children, mixers.combine_b_pows, ell_d);
+
+    if !dec_ok {
         return Err(PiCcsError::ProtocolError(match lane {
             RlcLane::Main => format!("step {}: DEC public check failed", step_idx),
             RlcLane::Val => format!("step {}: val-lane DEC public check failed", step_idx),
         }));
+    }
+
+    // Defense-in-depth for appended full-vector outputs (j >= s.t()):
+    // keep an explicit local check so sidecar suffix binding remains enforced
+    // even if shared DEC verification helpers are refactored later.
+    if rlc_parent.y.len() > s.t() {
+        let d_pad = 1usize
+            .checked_shl(ell_d as u32)
+            .ok_or_else(|| PiCcsError::ProtocolError(format!("step {}: 2^ell_d overflow", step_idx)))?;
+        let b_k = K::from(F::from_u64(params.b as u64));
+        for j in s.t()..rlc_parent.y.len() {
+            if rlc_parent.y[j].len() != d_pad {
+                return Err(PiCcsError::ProtocolError(format!(
+                    "step {}: {prefix}DEC parent y[{j}] len mismatch (got {}, expected {d_pad})",
+                    step_idx,
+                    rlc_parent.y[j].len()
+                )));
+            }
+            let mut lhs_y = vec![K::ZERO; d_pad];
+            let mut pow = K::ONE;
+            for child in dec_children.iter() {
+                if child.y[j].len() != d_pad {
+                    return Err(PiCcsError::ProtocolError(format!(
+                        "step {}: {prefix}DEC child y[{j}] len mismatch (got {}, expected {d_pad})",
+                        step_idx,
+                        child.y[j].len()
+                    )));
+                }
+                for t in 0..d_pad {
+                    lhs_y[t] += pow * child.y[j][t];
+                }
+                pow *= b_k;
+            }
+            if lhs_y != rlc_parent.y[j] {
+                return Err(PiCcsError::ProtocolError(format!(
+                    "step {}: {prefix}DEC appended y mismatch at j={j}",
+                    step_idx
+                )));
+            }
+
+            let mut lhs_s = K::ZERO;
+            let mut pow = K::ONE;
+            for child in dec_children.iter() {
+                lhs_s += pow * child.y_scalars[j];
+                pow *= b_k;
+            }
+            if lhs_s != rlc_parent.y_scalars[j] {
+                return Err(PiCcsError::ProtocolError(format!(
+                    "step {}: {prefix}DEC appended y_scalars mismatch at j={j}",
+                    step_idx
+                )));
+            }
+        }
     }
 
     Ok(())
@@ -785,73 +1284,6 @@ where
             )?;
             for (out, Z) in out_me_ref.iter_mut().skip(1).zip(me_witnesses.iter()) {
                 crate::memory_sidecar::cpu_bus::append_bus_openings_to_me_instance(params, cpu_bus, core_t, Z, out)?;
-            }
-
-            let trace = Rv32TraceLayout::new();
-            let trace_cols_to_open: Vec<usize> = vec![
-                trace.active,
-                trace.cycle,
-                trace.pc_before,
-                trace.instr_word,
-                trace.rs1_addr,
-                trace.rs1_val,
-                trace.rs2_addr,
-                trace.rs2_val,
-                trace.rd_addr,
-                trace.rd_val,
-                trace.ram_addr,
-                trace.ram_rv,
-                trace.ram_wv,
-                trace.shout_has_lookup,
-                trace.shout_val,
-                trace.shout_lhs,
-                trace.shout_rhs,
-            ];
-            let want_with_trace = core_t + cpu_bus.bus_cols + trace_cols_to_open.len();
-            if ccs_out
-                .first()
-                .map(|me| me.y_scalars.len() == want_with_trace)
-                .unwrap_or(false)
-            {
-                let m_in = mcs_inst.m_in;
-                let bus_region_len = cpu_bus
-                    .bus_cols
-                    .checked_mul(cpu_bus.chunk_size)
-                    .ok_or_else(|| PiCcsError::ProtocolError("crosscheck bus region overflow".into()))?;
-                let trace_region =
-                    s.m.checked_sub(m_in)
-                        .and_then(|v| v.checked_sub(bus_region_len))
-                        .ok_or_else(|| PiCcsError::ProtocolError("crosscheck trace region underflow".into()))?;
-                if trace.cols == 0 || trace_region % trace.cols != 0 {
-                    return Err(PiCcsError::ProtocolError(format!(
-                        "step {}: crosscheck cannot infer trace t_len (trace_region={}, trace_cols={})",
-                        step_idx, trace_region, trace.cols
-                    )));
-                }
-                let t_len = trace_region / trace.cols;
-                let trace_open_base = core_t + cpu_bus.bus_cols;
-                crate::memory_sidecar::cpu_bus::append_col_major_time_openings_to_me_instance(
-                    params,
-                    m_in,
-                    t_len,
-                    m_in,
-                    &trace_cols_to_open,
-                    trace_open_base,
-                    &mcs_wit.Z,
-                    &mut out_me_ref[0],
-                )?;
-                for (out, Z) in out_me_ref.iter_mut().skip(1).zip(me_witnesses.iter()) {
-                    crate::memory_sidecar::cpu_bus::append_col_major_time_openings_to_me_instance(
-                        params,
-                        m_in,
-                        t_len,
-                        m_in,
-                        &trace_cols_to_open,
-                        trace_open_base,
-                        Z,
-                        out,
-                    )?;
-                }
             }
         }
 

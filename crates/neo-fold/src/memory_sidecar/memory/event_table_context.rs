@@ -37,19 +37,8 @@ pub(crate) fn build_event_table_shout_context(
             )));
         }
         let trace = Rv32TraceLayout::new();
-        let m = step.mcs.1.Z.cols();
-        let t_len = step
-            .mem_instances
-            .first()
-            .map(|(inst, _wit)| inst.steps)
-            .or_else(|| {
-                let w = m.checked_sub(m_in)?;
-                if trace.cols == 0 || w % trace.cols != 0 {
-                    return None;
-                }
-                Some(w / trace.cols)
-            })
-            .ok_or_else(|| PiCcsError::InvalidInput("event-table Shout trace linkage missing t_len".into()))?;
+        let trace_source = TraceColumnSourceWitness::from_step(step, &trace, "event-table Shout trace linkage")?;
+        let t_len = trace_source.t_len();
         if t_len == 0 {
             return Err(PiCcsError::InvalidInput(
                 "event-table Shout trace linkage requires t_len >= 1".into(),
@@ -67,66 +56,48 @@ pub(crate) fn build_event_table_shout_context(
                 "event-table Shout: trace time rows out of range: m_in({m_in}) + t_len({t_len}) > 2^ell_n({pow2_cycle})"
             )));
         }
-
-        let d = neo_math::D;
-        let z = &step.mcs.1.Z;
-        if z.rows() != d {
-            return Err(PiCcsError::InvalidInput(format!(
-                "event-table Shout: CPU witness Z.rows()={} != D={d}",
-                z.rows()
+        let shout_cols = [
+            trace.shout_has_lookup,
+            trace.shout_val,
+            trace.shout_lhs,
+            trace.shout_rhs,
+        ];
+        let decoded = trace_source.decode_cols(params, &shout_cols, "event-table Shout trace linkage")?;
+        let gate_vals = decoded.get(&trace.shout_has_lookup).ok_or_else(|| {
+            PiCcsError::ProtocolError("event-table Shout: missing shout_has_lookup trace column".into())
+        })?;
+        let val_vals = decoded
+            .get(&trace.shout_val)
+            .ok_or_else(|| PiCcsError::ProtocolError("event-table Shout: missing shout_val trace column".into()))?;
+        let lhs_vals = decoded
+            .get(&trace.shout_lhs)
+            .ok_or_else(|| PiCcsError::ProtocolError("event-table Shout: missing shout_lhs trace column".into()))?;
+        let rhs_vals = decoded
+            .get(&trace.shout_rhs)
+            .ok_or_else(|| PiCcsError::ProtocolError("event-table Shout: missing shout_rhs trace column".into()))?;
+        if gate_vals.len() != t_len || val_vals.len() != t_len || lhs_vals.len() != t_len || rhs_vals.len() != t_len {
+            return Err(PiCcsError::ProtocolError(format!(
+                "event-table Shout: trace column length mismatch (gate={}, val={}, lhs={}, rhs={}, expected t_len={t_len})",
+                gate_vals.len(),
+                val_vals.len(),
+                lhs_vals.len(),
+                rhs_vals.len()
             )));
         }
-        if z.cols() != m {
-            return Err(PiCcsError::ProtocolError(
-                "event-table Shout: CPU witness width drift".into(),
-            ));
-        }
-
-        let b_k = K::from(F::from_u64(params.b as u64));
-        let mut pow_b = Vec::with_capacity(d);
-        let mut cur = K::ONE;
-        for _ in 0..d {
-            pow_b.push(cur);
-            cur *= b_k;
-        }
-        let decode_idx = |idx: usize| -> Result<K, PiCcsError> {
-            if idx >= m {
-                return Err(PiCcsError::InvalidInput(format!(
-                    "event-table Shout: z idx out of range (idx={idx}, m={m})"
-                )));
-            }
-            let mut acc = K::ZERO;
-            for rho in 0..d {
-                acc += pow_b[rho] * K::from(z[(rho, idx)]);
-            }
-            Ok(acc)
-        };
-
-        let trace_base = m_in;
-        let shout_col = |col_id: usize, j: usize| -> Result<K, PiCcsError> {
-            let col_offset = col_id
-                .checked_mul(t_len)
-                .ok_or_else(|| PiCcsError::InvalidInput("trace col_id * t_len overflow".into()))?;
-            let idx = trace_base
-                .checked_add(col_offset)
-                .and_then(|x| x.checked_add(j))
-                .ok_or_else(|| PiCcsError::InvalidInput("trace z idx overflow".into()))?;
-            decode_idx(idx)
-        };
 
         let mut gate_entries: Vec<(usize, K)> = Vec::new();
         let mut hash_entries: Vec<(usize, K)> = Vec::new();
         for j in 0..t_len {
             let t = m_in + j;
-            let gate = shout_col(trace.shout_has_lookup, j)?;
+            let gate = gate_vals[j];
             if gate == K::ZERO {
                 continue;
             }
             gate_entries.push((t, gate));
 
-            let val = shout_col(trace.shout_val, j)?;
-            let lhs = shout_col(trace.shout_lhs, j)?;
-            let rhs = shout_col(trace.shout_rhs, j)?;
+            let val = val_vals[j];
+            let lhs = lhs_vals[j];
+            let rhs = rhs_vals[j];
             let hash = K::ONE + event_alpha * val + event_beta * lhs + event_gamma * rhs;
             if hash != K::ZERO {
                 hash_entries.push((t, hash));

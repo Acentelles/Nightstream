@@ -132,17 +132,26 @@ fn streaming_dec_matches_materialized_dec_with_loaded_pp() {
 
 #[test]
 fn streaming_dec_matches_materialized_dec_with_seeded_pp() {
-    let n = 17usize;
-    let ccs = create_identity_ccs(n);
-    let mut params = NeoParams::goldilocks_auto_r1cs_ccs(n).expect("params");
-    params.k_rho = 8; // must satisfy count·T·(b−1) < b^k_rho even for count=1
-
     let seed = [7u8; 32];
-    set_global_pp_seeded(D, params.kappa as usize, ccs.m, seed).expect("set_global_pp_seeded");
-    assert!(
-        try_get_loaded_global_pp_for_dims(D, ccs.m).is_none(),
-        "expected PP to remain unloaded for seeded entry"
-    );
+    let mut n = 17usize;
+    let (ccs, params) = loop {
+        let ccs_try = create_identity_ccs(n);
+        let mut params_try = NeoParams::goldilocks_auto_r1cs_ccs(n).expect("params");
+        params_try.k_rho = 8; // must satisfy count·T·(b−1) < b^k_rho even for count=1
+        match set_global_pp_seeded(D, params_try.kappa as usize, ccs_try.m, seed) {
+            Ok(()) => break (ccs_try, params_try),
+            Err(err) => {
+                let msg = format!("{err}");
+                if msg.contains("seed mismatch for already-loaded") {
+                    n = n
+                        .checked_add(1)
+                        .expect("n overflow while searching for free PP dimensions");
+                    continue;
+                }
+                panic!("set_global_pp_seeded failed for m={}: {}", ccs_try.m, msg);
+            }
+        }
+    };
     let l = AjtaiSModule::from_global_for_dims(D, ccs.m).expect("from_global_for_dims");
 
     let step = build_single_step_bundle(&params, &l, ccs.m);

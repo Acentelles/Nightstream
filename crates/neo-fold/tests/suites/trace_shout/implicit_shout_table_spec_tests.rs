@@ -184,6 +184,7 @@ fn route_a_shout_implicit_table_spec_verifies() {
         mcs: (mcs, mcs_wit),
         lut_instances: vec![(inst, wit)],
         mem_instances: vec![],
+        trace_sidecar: None,
         _phantom: PhantomData::<K>,
     };
 
@@ -277,6 +278,7 @@ fn route_a_shout_implicit_identity_u32_table_spec_verifies() {
         mcs: (mcs, mcs_wit),
         lut_instances: vec![(inst, wit)],
         mem_instances: vec![],
+        trace_sidecar: None,
         _phantom: PhantomData::<K>,
     };
 

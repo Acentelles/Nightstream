@@ -34,8 +34,7 @@ fn tamper_any_claim_scalar(proof: &mut ShardProof) {
         for claims in [
             &mut step.fold.ccs_out,
             &mut step.mem.val_me_claims,
-            &mut step.mem.wb_me_claims,
-            &mut step.mem.wp_me_claims,
+            &mut step.mem.sidecar_me_claims,
         ] {
             for claim in claims.iter_mut() {
                 if let Some(first) = claim.y_scalars.first_mut() {

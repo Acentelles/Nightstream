@@ -1170,14 +1170,14 @@ where
         let is_shared_bus = step0
             .mem_instances
             .iter()
-            .all(|(inst, wit)| inst.comms.is_empty() && wit.mats.is_empty())
+            .all(|(inst, _wit)| inst.comms.is_empty())
             && step0
                 .lut_instances
                 .iter()
-                .all(|(inst, wit)| inst.comms.is_empty() && wit.mats.is_empty());
+                .all(|(inst, _wit)| inst.comms.is_empty());
         if !is_shared_bus {
             return Err(PiCcsError::InvalidInput(
-                "legacy no-shared CPU bus witness format was removed; use shared-bus witness bundles".into(),
+                "invalid shared-bus witness format: Twist/Shout instances must remain metadata-only (comms empty) in Route-A".into(),
             ));
         }
 
@@ -1729,16 +1729,9 @@ where
             }
         };
 
-        // Val-lane obligations are expected when the session carries any sidecar val lane:
-        // Twist/Shout folds, or WB/WP folds over RV32 trace openings.
+        // Val-lane obligations are expected when the session carries any sidecar val lane.
         let has_twist_or_shout = self.has_twist_instances() || self.has_shout_instances();
-        let has_wb_or_wp = run.steps.iter().any(|step| {
-            !step.mem.wb_me_claims.is_empty()
-                || !step.mem.wp_me_claims.is_empty()
-                || !step.wb_fold.is_empty()
-                || !step.wp_fold.is_empty()
-        });
-        if !(has_twist_or_shout || has_wb_or_wp) && !outputs.obligations.val.is_empty() {
+        if !has_twist_or_shout && !outputs.obligations.val.is_empty() {
             return Err(PiCcsError::ProtocolError(
                 "CCS-only session verification produced unexpected val-lane obligations".into(),
             ));
@@ -1904,13 +1897,7 @@ where
         };
 
         let has_twist_or_shout = self.has_twist_instances() || self.has_shout_instances();
-        let has_wb_or_wp = run.steps.iter().any(|step| {
-            !step.mem.wb_me_claims.is_empty()
-                || !step.mem.wp_me_claims.is_empty()
-                || !step.wb_fold.is_empty()
-                || !step.wp_fold.is_empty()
-        });
-        if !(has_twist_or_shout || has_wb_or_wp) && !outputs.obligations.val.is_empty() {
+        if !has_twist_or_shout && !outputs.obligations.val.is_empty() {
             return Err(PiCcsError::ProtocolError(
                 "CCS-only session verification produced unexpected val-lane obligations".into(),
             ));

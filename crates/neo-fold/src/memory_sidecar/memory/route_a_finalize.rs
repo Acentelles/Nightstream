@@ -138,20 +138,63 @@ pub(crate) fn finalize_route_a_memory_prover(
     }
 
     for (idx, (lut_inst, lut_wit)) in step.lut_instances.iter().enumerate() {
-        if !lut_inst.comms.is_empty() || !lut_wit.mats.is_empty() {
+        if !lut_inst.comms.is_empty() {
             return Err(PiCcsError::InvalidInput(format!(
-                "shared CPU bus requires metadata-only Shout instances (comms/mats must be empty, lut_idx={idx})"
+                "shared CPU bus requires metadata-only Shout instances (comms must be empty, lut_idx={idx}, table_id={})",
+                lut_inst.table_id
+            )));
+        }
+        if lut_wit.mats.is_empty() {
+            continue;
+        }
+        if lut_inst.lanes != 1 {
+            return Err(PiCcsError::InvalidInput(format!(
+                "shared CPU bus: compact LUT witness mats require lanes=1 (lut_idx={idx}, lanes={})",
+                lut_inst.lanes
+            )));
+        }
+        let val_mat = if lut_wit.mats.len() == 1 {
+            &lut_wit.mats[0]
+        } else {
+            let val_idx = lut_inst.shout_layout().val;
+            lut_wit.mats.get(val_idx).ok_or_else(|| {
+                PiCcsError::InvalidInput(format!(
+                    "shared CPU bus: LUT witness mats missing value slot (lut_idx={idx}, len={}, val_idx={val_idx})",
+                    lut_wit.mats.len()
+                ))
+            })?
+        };
+        if val_mat.rows() != params.d as usize {
+            return Err(PiCcsError::InvalidInput(format!(
+                "shared CPU bus: LUT value mat rows mismatch at lut_idx={idx} (rows={}, expected params.d={})",
+                val_mat.rows(),
+                params.d
+            )));
+        }
+        if val_mat.cols() != lut_inst.steps {
+            return Err(PiCcsError::InvalidInput(format!(
+                "shared CPU bus: LUT value mat cols mismatch at lut_idx={idx} (cols={}, expected steps={})",
+                val_mat.cols(),
+                lut_inst.steps
             )));
         }
     }
-    for (idx, (mem_inst, mem_wit)) in step.mem_instances.iter().enumerate() {
-        if !mem_inst.comms.is_empty() || !mem_wit.mats.is_empty() {
+    for (idx, (mem_inst, _mem_wit)) in step.mem_instances.iter().enumerate() {
+        if !mem_inst.comms.is_empty() {
             return Err(PiCcsError::InvalidInput(format!(
-                "shared CPU bus requires metadata-only Twist instances (comms/mats must be empty, mem_idx={idx})"
+                "shared CPU bus requires metadata-only Twist instances (comms must be empty, mem_idx={idx})"
             )));
         }
     }
     if let Some(prev) = prev_step {
+        for (idx, (lut_inst, _lut_wit)) in prev.lut_instances.iter().enumerate() {
+            if !lut_inst.comms.is_empty() {
+                return Err(PiCcsError::InvalidInput(format!(
+                    "shared CPU bus requires metadata-only Shout instances (comms must be empty, prev lut_idx={idx}, table_id={})",
+                    lut_inst.table_id
+                )));
+            }
+        }
         if prev.mem_instances.len() != step.mem_instances.len() {
             return Err(PiCcsError::InvalidInput(format!(
                 "Twist rollover requires stable mem instance count: prev has {}, current has {}",
@@ -159,18 +202,16 @@ pub(crate) fn finalize_route_a_memory_prover(
                 step.mem_instances.len()
             )));
         }
-        for (idx, (mem_inst, mem_wit)) in prev.mem_instances.iter().enumerate() {
-            if !mem_inst.comms.is_empty() || !mem_wit.mats.is_empty() {
+        for (idx, (mem_inst, _mem_wit)) in prev.mem_instances.iter().enumerate() {
+            if !mem_inst.comms.is_empty() {
                 return Err(PiCcsError::InvalidInput(format!(
-                    "shared CPU bus requires metadata-only Twist instances (comms/mats must be empty, prev mem_idx={idx})"
+                    "shared CPU bus requires metadata-only Twist instances (comms must be empty, prev mem_idx={idx})"
                 )));
             }
         }
     }
 
     let mut val_me_claims: Vec<MeInstance<Cmt, F, K>> = Vec::new();
-    let mut wb_me_claims: Vec<MeInstance<Cmt, F, K>> = Vec::new();
-    let mut wp_me_claims: Vec<MeInstance<Cmt, F, K>> = Vec::new();
     let mut proofs: Vec<MemOrLutProof> = Vec::new();
 
     // --------------------------------------------------------------------
@@ -395,8 +436,9 @@ pub(crate) fn finalize_route_a_memory_prover(
 
         let core_t = s.t();
 
-        // Shared-bus mode: val-lane checks read bus openings from CPU ME claims at r_val.
-        // Emit CPU ME at r_val for current step (and previous step for rollover).
+        // Temporary r_val placeholder claims from CPU witness.
+        // The shard prover rewrites `val_me_claims` to commitment-bound Twist sidecar claims
+        // at the same `r_val` before folding/emission.
         let (mcs_inst, mcs_wit) = &step.mcs;
         let cpu_claims_cur = ts::emit_me_claims_for_mats(
             tr,
@@ -476,14 +518,9 @@ pub(crate) fn finalize_route_a_memory_prover(
         ));
     }
 
-    let (wb_claims, wp_claims) = emit_route_a_wb_wp_me_claims(tr, params, s, step, r_time)?;
-    wb_me_claims.extend(wb_claims);
-    wp_me_claims.extend(wp_claims);
-
     Ok(MemSidecarProof {
         val_me_claims,
-        wb_me_claims,
-        wp_me_claims,
+        sidecar_me_claims: Vec::new(),
         shout_addr_pre: shout_addr_pre.clone(),
         proofs,
     })

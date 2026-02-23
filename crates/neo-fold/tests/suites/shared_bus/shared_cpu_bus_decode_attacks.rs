@@ -42,12 +42,11 @@ fn prove_decode_trace_program() -> (Rv32TraceWiringRun, ShardProof) {
 fn tamper_decode_opening_scalar(proof: &mut ShardProof, decode_col: usize) {
     let layout = Rv32DecodeSidecarLayout::new();
     let decode_open_cols = rv32_decode_lookup_backed_cols(&layout);
-    assert_eq!(
-        proof.steps[0].mem.wp_me_claims.len(),
-        1,
-        "expected one WP ME claim carrying decode openings"
-    );
-    let me = &mut proof.steps[0].mem.wp_me_claims[0];
+    let me = proof.steps[0]
+        .mem
+        .sidecar_me_claims
+        .last_mut()
+        .expect("expected sidecar lookup ME claim carrying decode openings");
     let decode_start = me
         .y_scalars
         .len()

@@ -476,6 +476,7 @@ fn riscv_trace_wiring_ccs_no_shared_cpu_bus_shout_divu_remu_semantics_redteam() 
         mcs,
         lut_instances: vec![(divu_inst, divu_wit), (remu_inst, remu_wit)],
         mem_instances: Vec::new(),
+        trace_sidecar: None,
         _phantom: PhantomData,
     }];
     let steps_instance: Vec<StepInstanceBundle<Cmt, F, neo_math::K>> =

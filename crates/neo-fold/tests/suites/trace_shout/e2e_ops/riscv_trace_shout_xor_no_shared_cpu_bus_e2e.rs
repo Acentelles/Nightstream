@@ -249,6 +249,7 @@ fn riscv_trace_wiring_ccs_no_shared_cpu_bus_shout_xor_paged_prove_verify() {
         mcs,
         lut_instances: vec![(xor_lut_inst, xor_lut_wit)],
         mem_instances: Vec::new(),
+        trace_sidecar: None,
         _phantom: PhantomData,
     }];
     let steps_instance: Vec<StepInstanceBundle<Cmt, F, neo_math::K>> =

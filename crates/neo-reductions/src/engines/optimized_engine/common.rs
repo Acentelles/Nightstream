@@ -1001,18 +1001,42 @@ where
     assert_eq!(rhos.len(), k1, "Π_RLC: |rhos| must equal |inputs|");
     assert_eq!(Zs.len(), k1, "Π_RLC: |Zs| must equal |inputs|");
 
-    // IMPORTANT: The folding layer may append extra ME outputs (e.g. shared-bus openings)
-    // beyond `s.t()`. Π_RLC in this module mixes only the core CCS outputs; the sidecar
-    // outputs are recomputed later from `Z_mix` and appended once.
-    let t_core = s.t();
+    // The folding layer may append extra ME outputs beyond `s.t()` (e.g. sidecar openings).
+    // Π_RLC must preserve and mix all public ME outputs that participate in verification.
+    let t_full = me_inputs[0].y.len();
+    assert!(
+        t_full >= s.t(),
+        "Π_RLC: input y.len() must be >= s.t() (got {}, s.t()={})",
+        t_full,
+        s.t()
+    );
+    for (idx, inst) in me_inputs.iter().enumerate() {
+        assert_eq!(
+            inst.y.len(),
+            t_full,
+            "Π_RLC: y.len mismatch at input {idx} (expected {t_full}, got {})",
+            inst.y.len()
+        );
+        assert_eq!(
+            inst.y_scalars.len(),
+            t_full,
+            "Π_RLC: y_scalars.len mismatch at input {idx} (expected {t_full}, got {})",
+            inst.y_scalars.len()
+        );
+        for (j, row) in inst.y.iter().enumerate() {
+            assert!(
+                row.len() >= D,
+                "Π_RLC: y[{j}].len()={} must be >= D={} at input {idx}",
+                row.len(),
+                D
+            );
+        }
+    }
 
     // k=1: no mixing needed (common for the first step and for CCS-only flows).
-    // We still return only the core CCS outputs to preserve the "append sidecar once" invariant.
+    // Preserve the full ME public outputs.
     if k1 == 1 {
-        let mut out = me_inputs[0].clone();
-        out.y.truncate(t_core);
-        out.y_scalars.truncate(t_core);
-        return (out, (*Zs[0]).clone());
+        return (me_inputs[0].clone(), (*Zs[0]).clone());
     }
 
     let d = D;
@@ -1052,8 +1076,8 @@ where
     }
 
     // y_j := Σ ρ_i y_(i,j) (apply ρ to the first D digits; keep padding to 2^{ell_d})
-    let mut y: Vec<Vec<K>> = Vec::with_capacity(t_core);
-    for j in 0..t_core {
+    let mut y: Vec<Vec<K>> = Vec::with_capacity(t_full);
+    for j in 0..t_full {
         let mut yj_acc = vec![K::ZERO; d_pad];
         for i in 0..k1 {
             let yi = &me_inputs[i].y[j];
@@ -1385,6 +1409,13 @@ where
         }
     }
 
+    // Fast path for zero-operator lanes (e.g. Route-A sidecar CCS views):
+    // if all v_j are zero, each child's core y rows are identically zero and
+    // we can skip the expensive Z_i · v_j dense products.
+    let all_vjs_zero = vjs
+        .iter()
+        .all(|vj| vj.iter().all(|&x| x == K::ZERO));
+
     // base-b powers in K and F
     let bF = Ff::from_u64(params.b as u64);
     let bK = K::from(bF);
@@ -1443,31 +1474,38 @@ where
         let mut y_i: Vec<Vec<K>> = Vec::with_capacity(t_mats);
         let mut y_scalars_i: Vec<K> = Vec::with_capacity(t_mats);
 
-        for j in 0..t_mats {
-            // y_(i,j) = Z_i · v_j ∈ K^d (then pad to 2^{ℓ_d})
-            let vj = &vjs[j];
-            let mut yij_pad = vec![K::ZERO; d_pad];
+        if all_vjs_zero {
+            for _ in 0..t_mats {
+                y_i.push(vec![K::ZERO; d_pad]);
+                y_scalars_i.push(K::ZERO);
+            }
+        } else {
+            for j in 0..t_mats {
+                // y_(i,j) = Z_i · v_j ∈ K^d (then pad to 2^{ℓ_d})
+                let vj = &vjs[j];
+                let mut yij_pad = vec![K::ZERO; d_pad];
 
-            for rho in 0..d {
-                let mut acc = K::ZERO;
-                if rho < Zi.rows() {
-                    let z_row = Zi.row(rho);
-                    let cap = core::cmp::min(s.m, z_row.len());
-                    for c in 0..cap {
-                        acc += K::from(z_row[c]) * vj[c];
+                for rho in 0..d {
+                    let mut acc = K::ZERO;
+                    if rho < Zi.rows() {
+                        let z_row = Zi.row(rho);
+                        let cap = core::cmp::min(s.m, z_row.len());
+                        for c in 0..cap {
+                            acc += K::from(z_row[c]) * vj[c];
+                        }
                     }
+                    yij_pad[rho] = acc;
                 }
-                yij_pad[rho] = acc;
-            }
 
-            // y_scalars: base-b recomposition of first D digits of yij.
-            let mut sc = K::ZERO;
-            for rho in 0..D {
-                sc += yij_pad[rho] * pow_b_k[rho];
-            }
+                // y_scalars: base-b recomposition of first D digits of yij.
+                let mut sc = K::ZERO;
+                for rho in 0..D {
+                    sc += yij_pad[rho] * pow_b_k[rho];
+                }
 
-            y_i.push(yij_pad);
-            y_scalars_i.push(sc);
+                y_i.push(yij_pad);
+                y_scalars_i.push(sc);
+            }
         }
 
         let y_zcol = if chi_s.is_empty() {
@@ -1517,18 +1555,27 @@ where
 
     // Verify: y_j ?= Σ b^i · y_(i,j)
     let mut ok_y = true;
-    for j in 0..t_mats {
-        let mut lhs = vec![K::ZERO; d_pad];
-        let mut pow = K::ONE;
-        for i in 0..k {
-            for t in 0..d_pad {
-                lhs[t] += pow * children[i].y[j][t];
+    if all_vjs_zero {
+        for j in 0..t_mats {
+            if parent.y[j].iter().any(|&v| v != K::ZERO) {
+                ok_y = false;
+                break;
             }
-            pow *= bK;
         }
-        if lhs != parent.y[j] {
-            ok_y = false;
-            break;
+    } else {
+        for j in 0..t_mats {
+            let mut lhs = vec![K::ZERO; d_pad];
+            let mut pow = K::ONE;
+            for i in 0..k {
+                for t in 0..d_pad {
+                    lhs[t] += pow * children[i].y[j][t];
+                }
+                pow *= bK;
+            }
+            if lhs != parent.y[j] {
+                ok_y = false;
+                break;
+            }
         }
     }
 

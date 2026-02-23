@@ -32,9 +32,9 @@ use neo_ajtai::{
 use neo_ccs::traits::SModuleHomomorphism;
 use neo_ccs::{CcsStructure, Mat, MeInstance};
 use neo_math::{KExtensions, D, F, K};
-use neo_memory::riscv::trace::{Rv32DecodeSidecarLayout, Rv32TraceLayout};
+use neo_memory::riscv::trace::Rv32TraceLayout;
 use neo_memory::ts_common as ts;
-use neo_memory::witness::{LutTableSpec, StepInstanceBundle, StepWitnessBundle};
+use neo_memory::witness::{StepInstanceBundle, StepWitnessBundle};
 use neo_params::NeoParams;
 use neo_reductions::engines::optimized_engine::oracle::SparseCache;
 use neo_reductions::engines::utils;

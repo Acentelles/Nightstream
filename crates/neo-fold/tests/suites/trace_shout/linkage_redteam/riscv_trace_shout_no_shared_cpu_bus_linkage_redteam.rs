@@ -220,6 +220,7 @@ where
         mcs,
         lut_instances: vec![(add_lut_inst, add_lut_wit)],
         mem_instances: Vec::new(),
+        trace_sidecar: None,
         _phantom: PhantomData,
     }];
     let steps_instance: Vec<StepInstanceBundle<Cmt, F, neo_math::K>> =

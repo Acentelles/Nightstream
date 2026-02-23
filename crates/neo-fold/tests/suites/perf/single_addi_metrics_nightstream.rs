@@ -3,8 +3,10 @@ use std::time::{Duration, Instant};
 use neo_ccs::MeInstance;
 use neo_fold::riscv_trace_shard::Rv32TraceWiring;
 use neo_fold::shard::ShardProof;
+use neo_math::F;
 use neo_memory::riscv::ccs::{build_rv32_trace_wiring_ccs, Rv32TraceCcsLayout};
 use neo_memory::riscv::lookups::{encode_program, BranchCondition, RiscvInstruction, RiscvOpcode};
+use p3_field::PrimeCharacteristicRing;
 
 #[test]
 #[ignore = "perf-style test: run with `cargo test -p neo-fold --release --test perf -- --ignored --nocapture compare_single_mixed_metrics_nightstream_only`"]
@@ -145,9 +147,8 @@ fn opening_surface_from_shard_proof(proof: &ShardProof) -> OpeningSurfaceBuckets
         buckets.core_ccs += sum_y_scalars(&step.fold.ccs_out);
 
         buckets.sidecars += sum_y_scalars(&step.mem.val_me_claims);
+        buckets.sidecars += sum_y_scalars(&step.mem.sidecar_me_claims);
 
-        buckets.claim_reduction_linkage += sum_y_scalars(&step.mem.wb_me_claims);
-        buckets.claim_reduction_linkage += sum_y_scalars(&step.mem.wp_me_claims);
         buckets.claim_reduction_linkage += step.batched_time.claimed_sums.len();
 
         buckets.pcs_open += step.fold.dec_children.len();
@@ -157,12 +158,7 @@ fn opening_surface_from_shard_proof(proof: &ShardProof) -> OpeningSurfaceBuckets
             .map(|p| p.dec_children.len())
             .sum::<usize>();
         buckets.pcs_open += step
-            .wb_fold
-            .iter()
-            .map(|p| p.dec_children.len())
-            .sum::<usize>();
-        buckets.pcs_open += step
-            .wp_fold
+            .sidecar_fold
             .iter()
             .map(|p| p.dec_children.len())
             .sum::<usize>();
@@ -371,8 +367,8 @@ fn debug_trace_core_rows_per_cycle_equiv() {
 #[ignore = "W0 snapshot: NS_DEBUG_N=10 cargo test -p neo-fold --release --test perf -- --ignored --nocapture report_track_a_w0_w1_snapshot"]
 fn report_track_a_w0_w1_snapshot() {
     let n = env_usize("NS_DEBUG_N", 256);
-    assert!(n > 0);
     let chunk_rows = n + 1;
+    assert!(n > 0);
 
     let base = mixed_instruction_sequence();
     let mut program: Vec<RiscvInstruction> = (0..n).map(|i| base[i % base.len()].clone()).collect();
@@ -393,25 +389,30 @@ fn report_track_a_w0_w1_snapshot() {
     let total_time = total_start.elapsed();
     let openings = opening_surface_from_shard_proof(run.proof());
 
-    let layout = Rv32TraceCcsLayout::new(steps).expect("trace layout");
-    let core_ccs = build_rv32_trace_wiring_ccs(&layout).expect("trace core ccs");
-    let rows_per_cycle = core_ccs.n as f64 / steps as f64;
+    let layout = run.layout().clone();
+    let core_ccs_n = run.ccs_num_constraints();
+    let core_ccs_m = run.ccs_num_variables();
+    let rows_per_cycle = core_ccs_n as f64 / layout.t as f64;
 
     let sep = "=".repeat(80);
     let thin_sep = "-".repeat(80);
 
     println!("\n{sep}");
-    println!("  TRACK A CONSTRAINT ARCHITECTURE REPORT (n={steps} steps)");
+    println!(
+        "  TRACK A CONSTRAINT ARCHITECTURE REPORT (n={steps} steps, shard_t={})",
+        layout.t
+    );
     println!("{sep}\n");
 
     // ── 1. Main CCS Layer ──
     println!("1. MAIN CCS LAYER (core glue constraints)");
     println!("{thin_sep}");
     println!("  Trace columns:           {}", layout.trace.cols);
-    println!("  Core CCS rows (n):       {}", core_ccs.n);
-    println!("  Core CCS cols (m):       {}", core_ccs.m);
+    println!("  Core CCS rows (n):       {core_ccs_n}");
+    println!("  Core CCS cols (m_core):  {core_ccs_m}");
     println!("  Rows per cycle:          {:.3}", rows_per_cycle);
     println!("  Public inputs (m_in):    {}", layout.m_in);
+    println!("  Core width note:         trace/decode/width values are opened from sidecar ME claims");
     println!();
 
     let col_names = [
@@ -443,25 +444,24 @@ fn report_track_a_w0_w1_snapshot() {
     }
     println!();
 
-    // ── 2. Shared CPU Bus (Sidecar) Layer ──
-    println!("2. SHARED CPU BUS LAYER (Shout + Twist bus-tail columns)");
+    // ── 2. Sidecar Reservation Layer ──
+    println!("2. SIDECAR RESERVATION LAYER (non-bus packed sidecar width)");
     println!("{thin_sep}");
     let total_ccs_m = run.ccs_num_variables();
     let total_ccs_n = run.ccs_num_constraints();
-    let trace_base_m = layout.m_in + layout.trace.cols * steps;
-    let bus_tail_cols = total_ccs_m.saturating_sub(trace_base_m);
-    println!("  Total CCS m (with bus):  {total_ccs_m}");
-    println!("  Total CCS n (with bus):  {total_ccs_n}");
+    let trace_base_m_counterfactual = layout.m_in + layout.trace.cols * layout.t;
+    let sidecar_reserved_cols = total_ccs_m.saturating_sub(trace_base_m_counterfactual);
+    let cols_saved_vs_counterfactual = trace_base_m_counterfactual.saturating_sub(total_ccs_m);
+    println!("  Total CCS m (core only): {total_ccs_m}");
+    println!("  Total CCS n:             {total_ccs_n}");
     println!(
-        "  Trace base m:            {trace_base_m} (m_in={} + {}*{})",
-        layout.m_in, layout.trace.cols, steps
+        "  Counterfactual flattened trace m (reference only): {trace_base_m_counterfactual} (m_in={} + {}*{})",
+        layout.m_in, layout.trace.cols, layout.t
     );
-    println!("  Bus-tail columns:        {bus_tail_cols}");
-    let bus_reserved_rows = total_ccs_n.saturating_sub(core_ccs.n);
-    println!(
-        "  Bus reserved rows:       {bus_reserved_rows} (total_n={total_ccs_n} - core_n={})",
-        core_ccs.n
-    );
+    println!("  Column reduction vs ref: {cols_saved_vs_counterfactual}");
+    println!("  Sidecar reserved cols:   {sidecar_reserved_cols}");
+    let reserved_rows_delta = total_ccs_n.saturating_sub(core_ccs_n);
+    println!("  Reserved rows delta:     {reserved_rows_delta} (total_n={total_ccs_n} - core_n={core_ccs_n})",);
     println!();
 
     let step0 = run
@@ -476,7 +476,7 @@ fn report_track_a_w0_w1_snapshot() {
         let ell_addr = inst.d * inst.ell;
         let bus_cols_per_lane = ell_addr + 2;
         println!(
-            "    - table_id={:<10} d={} n_side={} ell={} lanes={} bus_cols={}",
+            "    - table_id={:<10} d={} n_side={} ell={} lanes={} packed_sidecar_cols={}",
             inst.table_id,
             inst.d,
             inst.n_side,
@@ -490,7 +490,7 @@ fn report_track_a_w0_w1_snapshot() {
         let ell_addr = inst.d * inst.ell;
         let bus_cols_per_lane = 2 * ell_addr + 5;
         println!(
-            "    - mem_id={:<10} d={} n_side={} ell={} lanes={} bus_cols={}",
+            "    - mem_id={:<10} d={} n_side={} ell={} lanes={} packed_sidecar_cols={}",
             inst.mem_id,
             inst.d,
             inst.n_side,
@@ -612,25 +612,15 @@ fn report_track_a_w0_w1_snapshot() {
         step_proof.val_fold.len(),
         val_count
     );
-    let wb_count: usize = step_proof
-        .wb_fold
+    let sidecar_count: usize = step_proof
+        .sidecar_fold
         .iter()
-        .map(|w| w.dec_children.len())
+        .map(|v| v.dec_children.len())
         .sum();
     println!(
-        "  WB fold lanes:           {} (dec children={})",
-        step_proof.wb_fold.len(),
-        wb_count
-    );
-    let wp_count: usize = step_proof
-        .wp_fold
-        .iter()
-        .map(|w| w.dec_children.len())
-        .sum();
-    println!(
-        "  WP fold lanes:           {} (dec children={})",
-        step_proof.wp_fold.len(),
-        wp_count
+        "  Sidecar fold lanes:      {} (dec children={})",
+        step_proof.sidecar_fold.len(),
+        sidecar_count
     );
     println!();
 
@@ -638,9 +628,19 @@ fn report_track_a_w0_w1_snapshot() {
     println!("6. MEMORY SIDECAR ME CLAIMS");
     println!("{thin_sep}");
     let mem = &step_proof.mem;
+    println!("  Time sidecar ME claims:  {} claims", mem.sidecar_me_claims.len());
     println!("  Val ME @ r_val:          {} claims", mem.val_me_claims.len());
-    println!("  WB ME claims:            {} claims", mem.wb_me_claims.len());
-    println!("  WP ME claims:            {} claims", mem.wp_me_claims.len());
+    let proof_sidecar_commitments_total = mem.sidecar_me_claims.len() + mem.val_me_claims.len();
+    let proof_sidecar_commitments_nonzero = mem
+        .sidecar_me_claims
+        .iter()
+        .chain(mem.val_me_claims.iter())
+        .filter(|me| me.c.data.iter().any(|x| *x != F::ZERO))
+        .count();
+    println!(
+        "  Sidecar ME commitments:  {} claims (non-zero={})",
+        proof_sidecar_commitments_total, proof_sidecar_commitments_nonzero
+    );
     println!();
 
     // ── 7. Used Sets ──
@@ -666,11 +666,11 @@ fn report_track_a_w0_w1_snapshot() {
     println!("9. SUMMARY");
     println!("{sep}");
     println!("  {:<36} {:>10}", "Main trace columns", layout.trace.cols);
-    println!("  {:<36} {:>10}", "Bus-tail columns", bus_tail_cols);
-    println!("  {:<36} {:>10}", "Core CCS rows", core_ccs.n);
-    println!("  {:<36} {:>10}", "Bus reserved rows", bus_reserved_rows);
+    println!("  {:<36} {:>10}", "Sidecar reserved cols", sidecar_reserved_cols);
+    println!("  {:<36} {:>10}", "Core CCS rows", core_ccs_n);
+    println!("  {:<36} {:>10}", "Reserved rows delta", reserved_rows_delta);
     println!("  {:<36} {:>10}", "Total CCS rows (n)", total_ccs_n);
-    println!("  {:<36} {:>10}", "Total CCS cols (m)", total_ccs_m);
+    println!("  {:<36} {:>10}", "Total CCS cols (m_core)", total_ccs_m);
     println!("  {:<36} {:>10}", "Route-A batched claims", bt.claimed_sums.len());
     println!("  {:<36} {:>10}", "  of which: CCS", ccs_claims.len());
     println!("  {:<36} {:>10}", "  of which: Shout", shout_claims.len());
@@ -679,8 +679,30 @@ fn report_track_a_w0_w1_snapshot() {
     println!("  {:<36} {:>10}", "  of which: Decode", decode_claims.len());
     println!("  {:<36} {:>10}", "  of which: Width", width_claims.len());
     println!("  {:<36} {:>10}", "  of which: Control", control_claims.len());
+    println!("  {:<36} {:>10}", "Time sidecar ME claims", mem.sidecar_me_claims.len());
+    let statement_sidecar_commitments = step0
+        .lut_insts
+        .iter()
+        .map(|inst| inst.comms.len())
+        .sum::<usize>()
+        + step0
+            .mem_insts
+            .iter()
+            .map(|inst| inst.comms.len())
+            .sum::<usize>();
+    println!(
+        "  {:<36} {:>10}",
+        "Statement sidecar commitments", statement_sidecar_commitments
+    );
+    println!(
+        "  {:<36} {:>10}",
+        "Proof sidecar commitments", proof_sidecar_commitments_total
+    );
+    println!(
+        "  {:<36} {:>10}",
+        "Proof sidecar comms nonzero", proof_sidecar_commitments_nonzero
+    );
     println!("  {:<36} {:>10}", "Commit lanes", 1);
-    println!("  {:<36} {:>10}", "Committed sidecars", 0);
     println!("{sep}");
 }
 

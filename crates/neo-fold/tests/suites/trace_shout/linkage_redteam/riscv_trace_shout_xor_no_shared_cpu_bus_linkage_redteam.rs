@@ -243,6 +243,7 @@ fn riscv_trace_no_shared_cpu_bus_shout_xor_paging_linkage_redteam() {
         mcs,
         lut_instances: vec![(xor_lut_inst, xor_lut_wit)],
         mem_instances: Vec::new(),
+        trace_sidecar: None,
         _phantom: PhantomData,
     }];
     let mut steps_instance: Vec<StepInstanceBundle<Cmt, F, neo_math::K>> =
@@ -384,6 +385,7 @@ fn riscv_trace_no_shared_cpu_bus_shout_table_id_mismatch_redteam() {
         mcs,
         lut_instances: vec![(wrong_lut_inst, wrong_lut_wit)],
         mem_instances: Vec::new(),
+        trace_sidecar: None,
         _phantom: PhantomData,
     }];
     let steps_instance: Vec<StepInstanceBundle<Cmt, F, neo_math::K>> =

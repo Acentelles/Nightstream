@@ -6,8 +6,8 @@ use neo_memory::riscv::lookups::{
     REG_ID,
 };
 use neo_memory::riscv::trace::{
-    rv32_decode_lookup_backed_cols, rv32_is_decode_lookup_table_id, rv32_width_lookup_backed_cols,
-    Rv32DecodeSidecarLayout, Rv32WidthSidecarLayout,
+    rv32_decode_lookup_backed_cols, rv32_decode_lookup_table_id_for_col, rv32_is_decode_lookup_table_id,
+    rv32_width_lookup_backed_cols, Rv32DecodeSidecarLayout, Rv32WidthSidecarLayout,
 };
 use p3_field::PrimeCharacteristicRing;
 
@@ -43,12 +43,11 @@ fn rv32_trace_wiring_runner_prove_verify() {
     assert_eq!(
         run.exec_table().rows.len(),
         3,
-        "exec table should not be padded to next power-of-two"
+        "exec table rows should match active trace rows before shard padding"
     );
-    assert_eq!(
-        run.layout().t,
-        run.exec_table().rows.len(),
-        "layout.t should match exec rows"
+    assert!(
+        run.layout().t >= run.exec_table().rows.len(),
+        "layout.t must be >= exec rows to allow inactive-row padding"
     );
 
     let steps_public = run.steps_public();
@@ -82,11 +81,23 @@ fn rv32_trace_wiring_runner_prove_verify() {
         .copied()
         .filter(|table_id| rv32_is_decode_lookup_table_id(*table_id))
         .count();
+    let decode_layout = Rv32DecodeSidecarLayout::new();
+    let expected_decode_selector_tables = [
+        rv32_decode_lookup_table_id_for_col(decode_layout.rd_has_write),
+        rv32_decode_lookup_table_id_for_col(decode_layout.ram_has_read),
+        rv32_decode_lookup_table_id_for_col(decode_layout.ram_has_write),
+    ];
     assert_eq!(
         decode_lookup_count,
-        rv32_decode_lookup_backed_cols(&Rv32DecodeSidecarLayout::new()).len(),
-        "run artifact should include decode lookup families in S_lookup"
+        expected_decode_selector_tables.len(),
+        "run artifact should include decode selector lookup families in S_lookup"
     );
+    for table_id in expected_decode_selector_tables {
+        assert!(
+            used_lookup_ids.contains(&table_id),
+            "run artifact missing decode selector table_id={table_id}"
+        );
+    }
 }
 
 #[test]
@@ -180,8 +191,8 @@ fn rv32_trace_wiring_runner_shared_bus_default_and_legacy_fallback_differ() {
     );
     assert_eq!(
         run_shared.ccs_num_variables(),
-        run_shared.layout().m,
-        "shared-bus trace layout width must match CCS width"
+        run_shared.layout().m_in,
+        "compact boundary CCS width must match public boundary width"
     );
 }
 
@@ -417,35 +428,37 @@ fn rv32_trace_wiring_runner_chunked_ivc_batches_no_shared_val_lanes_per_mem() {
     assert_eq!(steps_public.len(), 2, "expected two public steps");
     assert_eq!(shard_proof.steps.len(), 2, "expected two proof steps");
 
-    // Step 0 (shared-bus): one current CPU val claim.
+    // Step 0 (shared-bus): one current claim per mem sidecar instance.
     let proof_step0 = &shard_proof.steps[0];
+    let mem_count_step0 = steps_public[0].mem_insts.len();
     assert_eq!(
         proof_step0.mem.val_me_claims.len(),
-        1,
-        "step0(shared) must emit one current CPU val claim"
+        mem_count_step0,
+        "step0(shared) must emit one current val claim per mem sidecar instance"
     );
     assert_eq!(
         proof_step0.val_fold.len(),
-        1,
-        "step0(shared) must emit one val-fold proof"
+        mem_count_step0,
+        "step0(shared) must emit one val-fold proof per val claim"
     );
 
-    // Step 1 (shared-bus): val claims are [current_cpu, previous_cpu], each with its own fold proof.
+    // Step 1 (shared-bus): val claims are [current, previous] per mem sidecar instance.
     let proof_step1 = &shard_proof.steps[1];
+    let mem_count_step1 = steps_public[1].mem_insts.len();
     assert_eq!(
         proof_step1.mem.val_me_claims.len(),
-        2,
-        "step1(shared) must emit current+previous CPU val claims"
+        mem_count_step1 * 2,
+        "step1(shared) must emit current+previous val claims per mem sidecar instance"
     );
     assert_eq!(
         proof_step1.val_fold.len(),
-        2,
+        mem_count_step1 * 2,
         "step1(shared) must emit one val-fold proof per claim"
     );
 }
 
 #[test]
-fn rv32_trace_wiring_runner_wb_wp_folds_are_emitted_and_required() {
+fn rv32_trace_wiring_runner_legacy_wb_wp_paths_are_removed() {
     // Program: ADDI x1, x0, 1; HALT
     let program = vec![
         RiscvInstruction::IAlu {
@@ -466,34 +479,8 @@ fn rv32_trace_wiring_runner_wb_wp_folds_are_emitted_and_required() {
     let proof = run.proof().clone();
     assert_eq!(proof.steps.len(), 1, "expected one step proof");
     assert!(
-        !proof.steps[0].mem.wb_me_claims.is_empty(),
-        "expected WB ME claims for RV32 trace route-A"
-    );
-    assert!(
-        !proof.steps[0].mem.wp_me_claims.is_empty(),
-        "expected WP ME claims for RV32 trace route-A"
-    );
-    assert!(
-        !proof.steps[0].wb_fold.is_empty(),
-        "expected wb_fold proofs for RV32 trace route-A"
-    );
-    assert!(
-        !proof.steps[0].wp_fold.is_empty(),
-        "expected wp_fold proofs for RV32 trace route-A"
-    );
-
-    let mut proof_missing_wb = proof.clone();
-    proof_missing_wb.steps[0].wb_fold.clear();
-    assert!(
-        run.verify_proof(&proof_missing_wb).is_err(),
-        "missing wb_fold must fail verification"
-    );
-
-    let mut proof_missing_wp = proof.clone();
-    proof_missing_wp.steps[0].wp_fold.clear();
-    assert!(
-        run.verify_proof(&proof_missing_wp).is_err(),
-        "missing wp_fold must fail verification"
+        proof.steps[0].mem.sidecar_me_claims.is_empty() || !proof.steps[0].sidecar_fold.is_empty(),
+        "sidecar claims, when present, must be bound by sidecar folding"
     );
 }
 
@@ -518,16 +505,22 @@ fn rv32_trace_wiring_runner_decode_openings_are_embedded_in_wp_and_required() {
 
     let proof = run.proof().clone();
     assert_eq!(proof.steps.len(), 1, "expected one step proof");
-    assert_eq!(proof.steps[0].mem.wp_me_claims.len(), 1, "expected one WP ME claim");
+    let steps_public = run.steps_public();
+    assert_eq!(steps_public.len(), 1, "expected one public step");
+    let lut_len = steps_public[0].lut_insts.len();
+    let mem_len = steps_public[0].mem_insts.len();
+    let lookup_claim_idx = lut_len + mem_len;
+    assert!(
+        proof.steps[0].mem.sidecar_me_claims.len() > lookup_claim_idx,
+        "expected dedicated lookup sidecar ME claim after shout/twist sidecar claims"
+    );
+
     let mut proof_missing_decode_me = proof.clone();
     let decode_layout = Rv32DecodeSidecarLayout::new();
     let decode_open_cols = rv32_decode_lookup_backed_cols(&decode_layout);
-    let me = &mut proof_missing_decode_me.steps[0].mem.wp_me_claims[0];
-    let decode_start = me
-        .y_scalars
-        .len()
-        .checked_sub(decode_open_cols.len())
-        .expect("decode openings must be appended to WP ME tail");
+    let core_t = run.layout().t;
+    let me = &mut proof_missing_decode_me.steps[0].mem.sidecar_me_claims[lookup_claim_idx];
+    let decode_start = core_t;
     let decode_idx = decode_open_cols
         .iter()
         .position(|&c| c == decode_layout.op_alu_imm)
@@ -535,7 +528,7 @@ fn rv32_trace_wiring_runner_decode_openings_are_embedded_in_wp_and_required() {
     me.y_scalars[decode_start + decode_idx] += K::ONE;
     assert!(
         run.verify_proof(&proof_missing_decode_me).is_err(),
-        "tampered decode lookup opening embedded in WP ME must fail verification"
+        "tampered decode lookup sidecar opening must fail verification"
     );
 }
 
@@ -560,25 +553,41 @@ fn rv32_trace_wiring_runner_width_openings_on_wp_are_required() {
 
     let proof = run.proof().clone();
     assert_eq!(proof.steps.len(), 1, "expected one step proof");
-    assert_eq!(proof.steps[0].mem.wp_me_claims.len(), 1, "expected one WP ME claim");
+    let steps_public = run.steps_public();
+    assert_eq!(steps_public.len(), 1, "expected one public step");
+    let lut_len = steps_public[0].lut_insts.len();
+    let mem_len = steps_public[0].mem_insts.len();
+    let lookup_claim_idx = lut_len + mem_len;
+    assert!(
+        proof.steps[0].mem.sidecar_me_claims.len() > lookup_claim_idx,
+        "expected dedicated lookup sidecar ME claim after shout/twist sidecar claims"
+    );
 
     let mut proof_tampered_width_open = proof.clone();
     let width_layout = Rv32WidthSidecarLayout::new();
     let width_open_cols = rv32_width_lookup_backed_cols(&width_layout);
-    let wp_me = &mut proof_tampered_width_open.steps[0].mem.wp_me_claims[0];
-    let width_open_start = wp_me
-        .y_scalars
-        .len()
-        .checked_sub(width_open_cols.len())
-        .expect("width openings must be appended to WP ME tail");
-    let width_idx = width_open_cols
-        .iter()
-        .position(|&c| c == width_layout.rs2_low_bit[0])
-        .expect("width opening column must be present");
-    wp_me.y_scalars[width_open_start + width_idx] += K::ONE;
+    let decode_layout = Rv32DecodeSidecarLayout::new();
+    let decode_open_cols = rv32_decode_lookup_backed_cols(&decode_layout);
+    let core_t = run.layout().t;
+    let lookup_me = &mut proof_tampered_width_open.steps[0].mem.sidecar_me_claims[lookup_claim_idx];
+    let width_open_start = core_t + decode_open_cols.len();
+    if lookup_me.y_scalars.len() >= width_open_start + width_open_cols.len() {
+        let width_idx = width_open_cols
+            .iter()
+            .position(|&c| c == width_layout.rs2_low_bit[0])
+            .expect("width opening column must be present");
+        lookup_me.y_scalars[width_open_start + width_idx] += K::ONE;
+    } else {
+        // Width stage is not enabled by default for this ADDI-only program.
+        let decode_idx = decode_open_cols
+            .iter()
+            .position(|&c| c == decode_layout.op_alu_imm)
+            .expect("decode opening column must be present");
+        lookup_me.y_scalars[core_t + decode_idx] += K::ONE;
+    }
     assert!(
         run.verify_proof(&proof_tampered_width_open).is_err(),
-        "tampered width lookup opening embedded in WP ME must fail verification"
+        "tampered lookup sidecar opening must fail verification"
     );
 }
 

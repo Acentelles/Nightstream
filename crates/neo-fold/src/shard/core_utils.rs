@@ -46,6 +46,140 @@ impl<'a> RoundOracle for CcsOracleDispatch<'a> {
 
 pub use crate::memory_sidecar::memory::absorb_step_memory;
 
+pub(crate) fn packed_sidecar_width(m_in: usize, t_len: usize, n_cols: usize, ctx: &str) -> Result<usize, PiCcsError> {
+    m_in.checked_add(
+        n_cols
+            .checked_mul(t_len)
+            .ok_or_else(|| PiCcsError::InvalidInput(format!("{ctx}: n_cols * t_len overflow")))?,
+    )
+    .ok_or_else(|| PiCcsError::InvalidInput(format!("{ctx}: m_in + packed sidecar width overflow")))
+}
+
+pub(crate) fn absorb_route_a_sidecar_time_commitments(
+    tr: &mut Poseidon2Transcript,
+    step_idx: usize,
+    shout_comms: &[Cmt],
+    twist_comms: &[Cmt],
+    lookup_comm: Option<&Cmt>,
+) {
+    tr.append_message(b"route_a/sidecar_time_commitments/v1", &(step_idx as u64).to_le_bytes());
+    tr.append_u64s(
+        b"route_a/sidecar_time_counts",
+        &[
+            shout_comms.len() as u64,
+            twist_comms.len() as u64,
+            u64::from(lookup_comm.is_some()),
+        ],
+    );
+    for c in shout_comms.iter() {
+        tr.append_fields(b"route_a/sidecar_time_c", &c.data);
+    }
+    for c in twist_comms.iter() {
+        tr.append_fields(b"route_a/sidecar_time_c", &c.data);
+    }
+    if let Some(c) = lookup_comm {
+        tr.append_fields(b"route_a/sidecar_time_c", &c.data);
+    }
+}
+
+pub(crate) fn absorb_route_a_sidecar_val_commitments(
+    tr: &mut Poseidon2Transcript,
+    step_idx: usize,
+    cur_twist_comms: &[Cmt],
+    prev_twist_comms: &[Cmt],
+) {
+    tr.append_message(b"route_a/sidecar_val_commitments/v1", &(step_idx as u64).to_le_bytes());
+    tr.append_u64s(
+        b"route_a/sidecar_val_counts",
+        &[cur_twist_comms.len() as u64, prev_twist_comms.len() as u64],
+    );
+    for c in cur_twist_comms.iter() {
+        tr.append_fields(b"route_a/sidecar_val_c", &c.data);
+    }
+    for c in prev_twist_comms.iter() {
+        tr.append_fields(b"route_a/sidecar_val_c", &c.data);
+    }
+}
+
+pub(crate) fn get_or_build_zero_sidecar_ccs<'a>(
+    cache: &'a mut std::collections::HashMap<usize, CcsStructure<F>>,
+    base: &CcsStructure<F>,
+    m: usize,
+) -> Result<&'a CcsStructure<F>, PiCcsError> {
+    if m == 0 {
+        return Err(PiCcsError::InvalidInput("sidecar CCS width must be >= 1".into()));
+    }
+    if !cache.contains_key(&m) {
+        let zero_mats: Vec<neo_ccs::CcsMatrix<F>> = (0..base.t())
+            .map(|_| neo_ccs::CcsMatrix::Csc(neo_ccs::CscMat::from_triplets(Vec::new(), base.n, m)))
+            .collect();
+        let s_sidecar = neo_ccs::CcsStructure::new_sparse(zero_mats, base.f.clone()).map_err(|e| {
+            PiCcsError::InvalidInput(format!(
+                "failed to build sidecar CCS view (n={}, m={}, t={}): {e:?}",
+                base.n,
+                m,
+                base.t()
+            ))
+        })?;
+        cache.insert(m, s_sidecar);
+    }
+    cache
+        .get(&m)
+        .ok_or_else(|| PiCcsError::ProtocolError("sidecar CCS cache insertion drift".into()))
+}
+
+pub(crate) fn get_or_build_sidecar_committer<'a>(
+    cache: &'a mut std::collections::HashMap<usize, neo_ajtai::AjtaiSModule>,
+    params: &NeoParams,
+    m: usize,
+) -> Result<&'a neo_ajtai::AjtaiSModule, PiCcsError> {
+    if m == 0 {
+        return Err(PiCcsError::InvalidInput("sidecar committer width must be >= 1".into()));
+    }
+    if let std::collections::hash_map::Entry::Vacant(v) = cache.entry(m) {
+        if !neo_ajtai::has_global_pp_for_dims(D, m) {
+            return Err(PiCcsError::InvalidInput(format!(
+                "missing sidecar Ajtai PP for (d,m)=({},{}); initialize sidecar PP widths before proving",
+                D, m
+            )));
+        }
+        let pp_ref = neo_ajtai::get_global_pp_for_dims(D, m).map_err(|e| {
+            PiCcsError::InvalidInput(format!("failed to load sidecar Ajtai PP for (d,m)=({},{}): {e}", D, m))
+        })?;
+        if pp_ref.kappa != params.kappa as usize {
+            return Err(PiCcsError::InvalidInput(format!(
+                "sidecar Ajtai PP κ mismatch for (d,m)=({},{}): expected {}, got {}",
+                D, m, params.kappa, pp_ref.kappa
+            )));
+        }
+        v.insert(neo_ajtai::AjtaiSModule::new(pp_ref));
+    }
+    cache
+        .get(&m)
+        .ok_or_else(|| PiCcsError::ProtocolError("sidecar committer cache insertion drift".into()))
+}
+
+pub(crate) fn ensure_sidecar_pp_for_width(params: &NeoParams, m: usize) -> Result<(), PiCcsError> {
+    if m == 0 {
+        return Err(PiCcsError::InvalidInput("sidecar PP width must be >= 1".into()));
+    }
+    if neo_ajtai::has_global_pp_for_dims(D, m) {
+        return Ok(());
+    }
+    let mut seed = [0u8; 32];
+    // Domain-separated deterministic seed for Route-A sidecar widths.
+    seed[..8].copy_from_slice(&(m as u64).to_le_bytes());
+    seed[8..16].copy_from_slice(&(params.kappa as u64).to_le_bytes());
+    seed[16..24].copy_from_slice(&(params.b as u64).to_le_bytes());
+    seed[24..32].copy_from_slice(b"sidecar!");
+    neo_ajtai::set_global_pp_seeded(D, params.kappa as usize, m, seed).map_err(|e| {
+        PiCcsError::InvalidInput(format!(
+            "failed to register sidecar Ajtai PP seed for (d,m)=({},{}): {e}",
+            D, m
+        ))
+    })
+}
+
 // ============================================================================
 // Optional step-to-step (cross-chunk) linking
 // ============================================================================
@@ -83,7 +217,8 @@ pub fn check_step_linking(steps: &[StepInstanceBundle<Cmt, F, K>], cfg: &StepLin
             }
             if prev_x[prev_idx] != next_x[next_idx] {
                 return Err(PiCcsError::ProtocolError(format!(
-                    "step linking failed at boundary {i}: prev_x[{prev_idx}] != next_x[{next_idx}]",
+                    "step linking failed at boundary {i}: prev_x[{prev_idx}] != next_x[{next_idx}] (prev={}, next={})",
+                    prev_x[prev_idx], next_x[next_idx]
                 )));
             }
         }
@@ -238,6 +373,43 @@ pub(crate) fn validate_me_batch_invariants(batch: &[MeInstance<Cmt, F, K>], cont
         }
     }
     Ok(())
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct LaneWidthGroup {
+    pub lane_m: usize,
+    pub claim_indices: Vec<usize>,
+}
+
+pub(crate) fn group_claims_by_lane_shape(
+    lane_shapes: &[(usize, usize)],
+    ctx: &str,
+) -> Result<Vec<LaneWidthGroup>, PiCcsError> {
+    let mut groups: Vec<LaneWidthGroup> = Vec::new();
+    let mut by_shape: std::collections::HashMap<(usize, usize), usize> = std::collections::HashMap::new();
+    for (claim_idx, &(lane_m, lane_t)) in lane_shapes.iter().enumerate() {
+        if lane_m == 0 {
+            return Err(PiCcsError::InvalidInput(format!(
+                "{ctx}: lane width must be >= 1 (claim_idx={claim_idx})"
+            )));
+        }
+        if lane_t == 0 {
+            return Err(PiCcsError::InvalidInput(format!(
+                "{ctx}: lane t must be >= 1 (claim_idx={claim_idx})"
+            )));
+        }
+        if let Some(&group_idx) = by_shape.get(&(lane_m, lane_t)) {
+            groups[group_idx].claim_indices.push(claim_idx);
+        } else {
+            let group_idx = groups.len();
+            by_shape.insert((lane_m, lane_t), group_idx);
+            groups.push(LaneWidthGroup {
+                lane_m,
+                claim_indices: vec![claim_idx],
+            });
+        }
+    }
+    Ok(groups)
 }
 
 #[derive(Clone, Copy, Debug)]

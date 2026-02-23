@@ -231,6 +231,7 @@ fn riscv_trace_wiring_ccs_no_shared_cpu_bus_shout_bitwise_packed_prove_verify() 
         mcs,
         lut_instances,
         mem_instances: Vec::new(),
+        trace_sidecar: None,
         _phantom: PhantomData,
     }];
     let steps_instance: Vec<StepInstanceBundle<Cmt, F, neo_math::K>> =

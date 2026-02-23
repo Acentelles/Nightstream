@@ -129,6 +129,82 @@ pub fn build_rv32_trace_wiring_ccs(layout: &Rv32TraceCcsLayout) -> Result<CcsStr
     build_rv32_trace_wiring_ccs_with_reserved_rows(layout, 0)
 }
 
+/// Build a compact boundary-only CCS for trace runner mode.
+///
+/// This keeps Route-A time-domain semantics in sidecar claims while reducing
+/// core CCS witness width to public-boundary scalars (`m_in=5`).
+///
+/// Notes:
+/// - `n` keeps the same scale as legacy trace wiring (`10*t - 1`) so Route-A
+///   row/time domains remain large enough.
+/// - Constraints are intentionally minimal and only pin the public boundary
+///   tuple shape through the base CCS machinery.
+pub fn build_rv32_trace_boundary_ccs(t: usize) -> Result<CcsStructure<F>, String> {
+    if t == 0 {
+        return Err("RV32 boundary CCS: t must be >= 1".into());
+    }
+
+    let const_one: usize = 0;
+    let pc0: usize = 1;
+    let pc_final: usize = 2;
+    let halted_in: usize = 3;
+    let halted_out: usize = 4;
+    let m: usize = 5;
+
+    let n = t
+        .checked_mul(10)
+        .and_then(|v| v.checked_sub(1))
+        .ok_or_else(|| "RV32 boundary CCS: n overflow".to_string())?;
+    if n == 0 {
+        return Err("RV32 boundary CCS: n must be >= 1".into());
+    }
+
+    // Minimal anchor constraints in the same A*B=C form:
+    // one * pc_final = pc_final
+    // one * halted_out = halted_out
+    //
+    // This keeps the core CCS non-empty while preserving compact width.
+    let cons = vec![
+        Constraint {
+            condition_col: const_one,
+            negate_condition: false,
+            additional_condition_cols: Vec::new(),
+            b_terms: vec![(pc_final, F::ONE)],
+            c_terms: vec![(pc_final, F::ONE)],
+        },
+        Constraint {
+            condition_col: const_one,
+            negate_condition: false,
+            additional_condition_cols: Vec::new(),
+            b_terms: vec![(halted_out, F::ONE)],
+            c_terms: vec![(halted_out, F::ONE)],
+        },
+        Constraint {
+            condition_col: halted_in,
+            negate_condition: false,
+            additional_condition_cols: Vec::new(),
+            b_terms: vec![(halted_in, F::ONE), (const_one, -F::ONE)],
+            c_terms: Vec::new(),
+        },
+        Constraint {
+            condition_col: halted_out,
+            negate_condition: false,
+            additional_condition_cols: Vec::new(),
+            b_terms: vec![(halted_out, F::ONE), (const_one, -F::ONE)],
+            c_terms: Vec::new(),
+        },
+        Constraint {
+            condition_col: const_one,
+            negate_condition: false,
+            additional_condition_cols: Vec::new(),
+            b_terms: vec![(pc0, F::ONE)],
+            c_terms: vec![(pc0, F::ONE)],
+        },
+    ];
+
+    build_r1cs_ccs(&cons, n, m, const_one)
+}
+
 pub fn build_rv32_trace_wiring_ccs_with_reserved_rows(
     layout: &Rv32TraceCcsLayout,
     reserved_rows: usize,

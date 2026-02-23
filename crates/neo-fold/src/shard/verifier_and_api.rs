@@ -327,16 +327,17 @@ where
         if step.lut_insts.is_empty() && step.mem_insts.is_empty() {
             continue;
         }
-        let is_shared_step = step.lut_insts.iter().all(|inst| inst.comms.is_empty())
-            && step.mem_insts.iter().all(|inst| inst.comms.is_empty());
+        let shout_ok = step.lut_insts.iter().all(|inst| inst.comms.is_empty());
+        let twist_ok = step.mem_insts.iter().all(|inst| inst.comms.is_empty());
+        let is_shared_step = shout_ok && twist_ok;
         if !is_shared_step {
             return Err(PiCcsError::InvalidInput(format!(
-                "legacy no-shared CPU bus mode was removed; step_idx={step_idx} must use shared-bus statement format"
+                "step_idx={step_idx} must use shared-bus statement format (Twist/Shout metadata-only instances)"
             )));
         }
     }
     tr.append_message(b"shard/cpu_bus_mode", &[1u8]);
-    let (s, cpu_bus) = crate::memory_sidecar::cpu_bus::prepare_ccs_for_shared_cpu_bus_steps(s_me, steps)?;
+    let (s, _cpu_bus) = crate::memory_sidecar::cpu_bus::prepare_ccs_for_shared_cpu_bus_steps(s_me, steps)?;
     let dims = utils::build_dims_and_policy(params, s)?;
     let utils::Dims {
         ell_d,
@@ -371,6 +372,7 @@ where
 
     let mut accumulator = acc_init.to_vec();
     let mut val_lane_obligations: Vec<MeInstance<Cmt, F, K>> = Vec::new();
+    let mut sidecar_ccs_cache = std::collections::HashMap::<usize, CcsStructure<F>>::new();
     let ccs_sparse_cache: Option<Arc<SparseCache<F>>> = if mode_uses_sparse_cache(&mode) {
         Some(
             prover_ctx
@@ -459,6 +461,47 @@ where
             &ccs_mat_digest,
         )?;
         utils::bind_me_inputs(tr, &accumulator)?;
+        let lookup_sidecar_plan = crate::memory_sidecar::memory::route_a_lookup_sidecar_plan_for_step_instance(step);
+        let expected_time_sidecar_claims = step
+            .lut_insts
+            .len()
+            .checked_add(step.mem_insts.len())
+            .and_then(|v| v.checked_add(usize::from(lookup_sidecar_plan.include_trace_main)))
+            .ok_or_else(|| PiCcsError::InvalidInput("sidecar claim count overflow".into()))?;
+        if step_proof.mem.sidecar_me_claims.len() != expected_time_sidecar_claims {
+            return Err(PiCcsError::InvalidInput(format!(
+                "step {}: Route-A sidecar time claim count mismatch (expected {}, got {})",
+                idx,
+                expected_time_sidecar_claims,
+                step_proof.mem.sidecar_me_claims.len()
+            )));
+        }
+        let shout_count = step.lut_insts.len();
+        let twist_count = step.mem_insts.len();
+        let shout_time_comms: Vec<Cmt> = step_proof.mem.sidecar_me_claims[..shout_count]
+            .iter()
+            .map(|me| me.c.clone())
+            .collect();
+        let twist_start = shout_count;
+        let twist_end = twist_start
+            .checked_add(twist_count)
+            .ok_or_else(|| PiCcsError::InvalidInput("sidecar twist index overflow".into()))?;
+        let twist_time_comms: Vec<Cmt> = step_proof.mem.sidecar_me_claims[twist_start..twist_end]
+            .iter()
+            .map(|me| me.c.clone())
+            .collect();
+        let lookup_time_comm = if lookup_sidecar_plan.include_trace_main {
+            Some(step_proof.mem.sidecar_me_claims[twist_end].c.clone())
+        } else {
+            None
+        };
+        absorb_route_a_sidecar_time_commitments(
+            tr,
+            step_idx,
+            &shout_time_comms,
+            &twist_time_comms,
+            lookup_time_comm.as_ref(),
+        );
         let mut ch = utils::sample_challenges(tr, ell_d, ell)?;
         if step_proof.fold.ccs_proof.variant == crate::optimized_engine::PiCcsProofVariant::SplitNcV1 {
             ch.beta_m = utils::sample_beta_m(tr, ell_m)?;
@@ -827,13 +870,50 @@ where
 
         // Verify mem proofs (shared CPU bus only).
         let prev_step = (idx > 0).then(|| &steps[idx - 1]);
+        let prev_mem_proof = (idx > 0).then(|| &proof.steps[idx - 1].mem);
+        let mut cur_val_sidecar_comms: Vec<Cmt> = Vec::new();
+        let mut prev_val_sidecar_comms: Vec<Cmt> = Vec::new();
+        if !step.mem_insts.is_empty() {
+            let cur_count = step.mem_insts.len();
+            if step_proof.mem.val_me_claims.len() < cur_count {
+                return Err(PiCcsError::ProtocolError(format!(
+                    "step {}: missing current Twist val sidecar commitments (have {}, need >= {})",
+                    idx,
+                    step_proof.mem.val_me_claims.len(),
+                    cur_count
+                )));
+            }
+            cur_val_sidecar_comms = step_proof.mem.val_me_claims[..cur_count]
+                .iter()
+                .map(|me| me.c.clone())
+                .collect();
+            if has_prev {
+                let prev_count = step.mem_insts.len();
+                let prev_start = cur_count;
+                let prev_end = prev_start
+                    .checked_add(prev_count)
+                    .ok_or_else(|| PiCcsError::ProtocolError("val sidecar prev index overflow".into()))?;
+                if step_proof.mem.val_me_claims.len() < prev_end {
+                    return Err(PiCcsError::ProtocolError(format!(
+                        "step {}: missing prev Twist val sidecar commitments (have {}, need >= {})",
+                        idx,
+                        step_proof.mem.val_me_claims.len(),
+                        prev_end
+                    )));
+                }
+                prev_val_sidecar_comms = step_proof.mem.val_me_claims[prev_start..prev_end]
+                    .iter()
+                    .map(|me| me.c.clone())
+                    .collect();
+            }
+        }
+        absorb_route_a_sidecar_val_commitments(tr, step_idx, &cur_val_sidecar_comms, &prev_val_sidecar_comms);
         let mem_out = crate::memory_sidecar::memory::verify_route_a_memory_step(
             tr,
-            &cpu_bus,
-            s.m,
             s.t(),
             step,
             prev_step,
+            prev_mem_proof,
             &step_proof.fold.ccs_out[0],
             &r_time,
             &r_cycle,
@@ -953,7 +1033,11 @@ where
             }
         } else {
             tr.append_message(b"fold/val_lane_start", &(step_idx as u64).to_le_bytes());
-            let expected = 1usize + usize::from(has_prev);
+            let expected = step
+                .mem_insts
+                .len()
+                .checked_mul(1usize + usize::from(has_prev))
+                .ok_or_else(|| PiCcsError::ProtocolError("val-lane claim count overflow".into()))?;
             if step_proof.mem.val_me_claims.len() != expected {
                 return Err(PiCcsError::ProtocolError(format!(
                     "step {}: val_me_claims count mismatch in shared-bus mode (have {}, expected {})",
@@ -970,6 +1054,40 @@ where
                     expected
                 )));
             }
+            let mut val_lane_ms = Vec::with_capacity(expected);
+            for (mem_idx, mem_inst) in step.mem_insts.iter().enumerate() {
+                let n_cols = mem_inst.twist_layout().expected_len();
+                let lane_m = packed_sidecar_width(
+                    step.mcs_inst.m_in,
+                    mem_inst.steps,
+                    n_cols,
+                    &format!("verify/val-sidecar mem_idx={mem_idx}"),
+                )?;
+                val_lane_ms.push(lane_m);
+            }
+            if has_prev {
+                let prev = prev_step.ok_or_else(|| {
+                    PiCcsError::ProtocolError("missing prev step while has_prev=true in val-lane verification".into())
+                })?;
+                for (mem_idx, mem_inst) in prev.mem_insts.iter().enumerate() {
+                    let n_cols = mem_inst.twist_layout().expected_len();
+                    let lane_m = packed_sidecar_width(
+                        step.mcs_inst.m_in,
+                        mem_inst.steps,
+                        n_cols,
+                        &format!("verify/val-sidecar-prev mem_idx={mem_idx}"),
+                    )?;
+                    val_lane_ms.push(lane_m);
+                }
+            }
+            if val_lane_ms.len() != expected {
+                return Err(PiCcsError::ProtocolError(format!(
+                    "step {}: internal val-sidecar width plan drift (have {}, expected {})",
+                    idx,
+                    val_lane_ms.len(),
+                    expected
+                )));
+            }
 
             for (claim_idx, (me, proof)) in step_proof
                 .mem
@@ -978,22 +1096,19 @@ where
                 .zip(step_proof.val_fold.iter())
                 .enumerate()
             {
-                let ctx = match claim_idx {
-                    0 => "cpu",
-                    1 => "cpu_prev",
-                    _ => {
-                        return Err(PiCcsError::ProtocolError(
-                            "unexpected extra r_val ME claim in shared-bus mode".into(),
-                        ));
-                    }
-                };
                 tr.append_message(b"fold/val_lane_claim_idx", &(claim_idx as u64).to_le_bytes());
-                tr.append_message(b"fold/val_lane_claim_ctx", ctx.as_bytes());
+                let lane_m = *val_lane_ms.get(claim_idx).ok_or_else(|| {
+                    PiCcsError::ProtocolError(format!(
+                        "step {}: missing val-sidecar width for claim_idx={claim_idx}",
+                        idx
+                    ))
+                })?;
+                let lane_s = get_or_build_zero_sidecar_ccs(&mut sidecar_ccs_cache, &s, lane_m)?;
                 verify_rlc_dec_lane(
                     RlcLane::Val,
                     tr,
                     params,
-                    &s,
+                    lane_s,
                     &ring,
                     ell_d,
                     mixers,
@@ -1005,7 +1120,7 @@ where
                 )
                 .map_err(|e| {
                     PiCcsError::ProtocolError(format!(
-                        "step {} val_fold(shared) claim {} ({ctx}) verify failed: {e:?}",
+                        "step {} val_fold(shared) claim {} verify failed: {e:?}",
                         idx, claim_idx
                     ))
                 })?;
@@ -1013,93 +1128,118 @@ where
             }
         }
 
-        if step_proof.mem.wb_me_claims.is_empty() {
-            if !step_proof.wb_fold.is_empty() {
+        if step_proof.mem.sidecar_me_claims.is_empty() {
+            if !step_proof.sidecar_fold.is_empty() {
                 return Err(PiCcsError::ProtocolError(format!(
-                    "step {}: unexpected wb_fold proof(s) (no WB ME claims)",
+                    "step {}: unexpected sidecar_fold proof(s) (no sidecar ME claims)",
                     idx
                 )));
             }
         } else {
-            if step_proof.wb_fold.len() != step_proof.mem.wb_me_claims.len() {
+            let mut sidecar_lane_ms = Vec::new();
+            for (lut_idx, inst) in step.lut_insts.iter().enumerate() {
+                let n_cols = inst.shout_layout().expected_len();
+                let lane_m = packed_sidecar_width(
+                    step.mcs_inst.m_in,
+                    inst.steps,
+                    n_cols,
+                    &format!("verify/shout-sidecar lut_idx={lut_idx}"),
+                )?;
+                sidecar_lane_ms.push(lane_m);
+            }
+            for (mem_idx, inst) in step.mem_insts.iter().enumerate() {
+                let n_cols = inst.twist_layout().expected_len();
+                let lane_m = packed_sidecar_width(
+                    step.mcs_inst.m_in,
+                    inst.steps,
+                    n_cols,
+                    &format!("verify/twist-sidecar mem_idx={mem_idx}"),
+                )?;
+                sidecar_lane_ms.push(lane_m);
+            }
+            let lookup_plan = crate::memory_sidecar::memory::route_a_lookup_sidecar_plan_for_step_instance(step);
+            if lookup_plan.include_trace_main {
+                let trace = Rv32TraceLayout::new();
+                let t_len = crate::memory_sidecar::memory::infer_trace_t_len_for_step_instance(
+                    step,
+                    &trace,
+                    Some(s.m),
+                    "verify/lookup-sidecar",
+                )?;
+                let n_cols = lookup_plan.n_cols();
+                if n_cols == 0 {
+                    return Err(PiCcsError::ProtocolError(
+                        "verify/lookup-sidecar plan selected include_trace_main but computed zero columns".into(),
+                    ));
+                }
+                let lane_m = packed_sidecar_width(step.mcs_inst.m_in, t_len, n_cols, "verify/lookup-sidecar")?;
+                sidecar_lane_ms.push(lane_m);
+            }
+            if sidecar_lane_ms.len() != step_proof.mem.sidecar_me_claims.len() {
                 return Err(PiCcsError::ProtocolError(format!(
-                    "step {}: wb_fold count mismatch (have {}, expected {})",
+                    "step {}: sidecar width plan mismatch (planned {}, claims {})",
                     idx,
-                    step_proof.wb_fold.len(),
-                    step_proof.mem.wb_me_claims.len()
+                    sidecar_lane_ms.len(),
+                    step_proof.mem.sidecar_me_claims.len()
                 )));
             }
-            tr.append_message(b"fold/wb_lane_start", &(step_idx as u64).to_le_bytes());
-            for (claim_idx, (me, proof)) in step_proof
-                .mem
-                .wb_me_claims
+            let sidecar_lane_shapes: Vec<(usize, usize)> = sidecar_lane_ms
                 .iter()
-                .zip(step_proof.wb_fold.iter())
+                .copied()
+                .zip(step_proof.mem.sidecar_me_claims.iter().map(|me| me.y.len()))
+                .collect();
+            let sidecar_groups = group_claims_by_lane_shape(&sidecar_lane_shapes, "verify/sidecar-fold")?;
+            if step_proof.sidecar_fold.len() != sidecar_groups.len() {
+                return Err(PiCcsError::ProtocolError(format!(
+                    "step {}: sidecar_fold group count mismatch (have {}, expected {})",
+                    idx,
+                    step_proof.sidecar_fold.len(),
+                    sidecar_groups.len()
+                )));
+            }
+            tr.append_message(b"fold/sidecar_lane_start", &(step_idx as u64).to_le_bytes());
+            for (group_idx, (group, proof)) in sidecar_groups
+                .iter()
+                .zip(step_proof.sidecar_fold.iter())
                 .enumerate()
             {
-                tr.append_message(b"fold/wb_lane_claim_idx", &(claim_idx as u64).to_le_bytes());
+                tr.append_message(b"fold/sidecar_lane_group_idx", &(group_idx as u64).to_le_bytes());
+                let mut me_group = Vec::with_capacity(group.claim_indices.len());
+                for &claim_idx in group.claim_indices.iter() {
+                    tr.append_message(b"fold/sidecar_lane_claim_idx", &(claim_idx as u64).to_le_bytes());
+                    let me = step_proof
+                        .mem
+                        .sidecar_me_claims
+                        .get(claim_idx)
+                        .ok_or_else(|| {
+                            PiCcsError::ProtocolError(format!(
+                                "step {}: sidecar claim index out of range (claim_idx={claim_idx})",
+                                idx
+                            ))
+                        })?;
+                    me_group.push(me.clone());
+                }
+                let lane_m = group.lane_m;
+                let lane_s = get_or_build_zero_sidecar_ccs(&mut sidecar_ccs_cache, &s, lane_m)?;
                 verify_rlc_dec_lane(
                     RlcLane::Val,
                     tr,
                     params,
-                    &s,
+                    lane_s,
                     &ring,
                     ell_d,
                     mixers,
                     step_idx,
-                    core::slice::from_ref(me),
+                    &me_group,
                     &proof.rlc_rhos,
                     &proof.rlc_parent,
                     &proof.dec_children,
                 )
                 .map_err(|e| {
-                    PiCcsError::ProtocolError(format!("step {} wb_fold claim {} verify failed: {e:?}", idx, claim_idx))
-                })?;
-                val_lane_obligations.extend_from_slice(&proof.dec_children);
-            }
-        }
-
-        if step_proof.mem.wp_me_claims.is_empty() {
-            if !step_proof.wp_fold.is_empty() {
-                return Err(PiCcsError::ProtocolError(format!(
-                    "step {}: unexpected wp_fold proof(s) (no WP ME claims)",
-                    idx
-                )));
-            }
-        } else {
-            if step_proof.wp_fold.len() != step_proof.mem.wp_me_claims.len() {
-                return Err(PiCcsError::ProtocolError(format!(
-                    "step {}: wp_fold count mismatch (have {}, expected {})",
-                    idx,
-                    step_proof.wp_fold.len(),
-                    step_proof.mem.wp_me_claims.len()
-                )));
-            }
-            tr.append_message(b"fold/wp_lane_start", &(step_idx as u64).to_le_bytes());
-            for (claim_idx, (me, proof)) in step_proof
-                .mem
-                .wp_me_claims
-                .iter()
-                .zip(step_proof.wp_fold.iter())
-                .enumerate()
-            {
-                tr.append_message(b"fold/wp_lane_claim_idx", &(claim_idx as u64).to_le_bytes());
-                verify_rlc_dec_lane(
-                    RlcLane::Val,
-                    tr,
-                    params,
-                    &s,
-                    &ring,
-                    ell_d,
-                    mixers,
-                    step_idx,
-                    core::slice::from_ref(me),
-                    &proof.rlc_rhos,
-                    &proof.rlc_parent,
-                    &proof.dec_children,
-                )
-                .map_err(|e| {
-                    PiCcsError::ProtocolError(format!("step {} wp_fold claim {} verify failed: {e:?}", idx, claim_idx))
+                    PiCcsError::ProtocolError(format!(
+                        "step {} sidecar_fold group {} verify failed: {e:?}",
+                        idx, group_idx
+                    ))
                 })?;
                 val_lane_obligations.extend_from_slice(&proof.dec_children);
             }

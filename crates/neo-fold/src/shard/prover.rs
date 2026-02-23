@@ -17,6 +17,671 @@ pub(crate) fn mode_uses_sparse_cache(mode: &FoldingMode) -> bool {
     }
 }
 
+#[derive(Clone)]
+struct SidecarLaneWitness {
+    mat: Mat<F>,
+    t_len: usize,
+    n_cols: usize,
+    is_all_zero: bool,
+}
+
+#[inline]
+fn mat_is_all_zero(mat: &Mat<F>) -> bool {
+    mat.as_slice().iter().all(|&x| x == F::ZERO)
+}
+
+#[inline]
+fn copy_mat_column_into_packed(packed: &mut Mat<F>, src: &Mat<F>, dst_col_start: usize, t_len: usize, d: usize) {
+    for rho in 0..d {
+        let src_row = src.row(rho);
+        let dst_row = packed.row_mut(rho);
+        dst_row[dst_col_start..dst_col_start + t_len].copy_from_slice(src_row);
+    }
+}
+
+fn normalize_or_copy_sidecar_column(
+    params: &NeoParams,
+    packed: &mut Mat<F>,
+    src: &Mat<F>,
+    dst_col_start: usize,
+    t_len: usize,
+    bool_expected: bool,
+    ctx: &str,
+) -> Result<(), PiCcsError> {
+    let d = params.d as usize;
+    if src.rows() != d {
+        return Err(PiCcsError::InvalidInput(format!(
+            "{ctx}: source rows mismatch (rows={}, expected D={d})",
+            src.rows()
+        )));
+    }
+    if src.cols() != t_len {
+        return Err(PiCcsError::InvalidInput(format!(
+            "{ctx}: source cols mismatch (cols={}, expected steps={t_len})",
+            src.cols()
+        )));
+    }
+
+    // Fast path: scalar row-0 columns (builder shape). Fallback: already-decomposed mats.
+    let mut scalar_row0 = true;
+    for rho in 1..d {
+        let row = src.row(rho);
+        for &x in row {
+            if x != F::ZERO {
+                scalar_row0 = false;
+                break;
+            }
+        }
+        if !scalar_row0 {
+            break;
+        }
+    }
+
+    if !scalar_row0 {
+        copy_mat_column_into_packed(packed, src, dst_col_start, t_len, d);
+        return Ok(());
+    }
+
+    let row0 = src.row(0);
+    if bool_expected {
+        let mut all_bool = true;
+        for &x in row0 {
+            if x != F::ZERO && x != F::ONE {
+                all_bool = false;
+                break;
+            }
+        }
+        if all_bool {
+            let dst_row0 = packed.row_mut(0);
+            dst_row0[dst_col_start..dst_col_start + t_len].copy_from_slice(row0);
+            return Ok(());
+        }
+    }
+
+    let half = (params.b / 2) as u64;
+    let mut all_small_nonneg = true;
+    for &x in row0 {
+        if x.as_canonical_u64() > half {
+            all_small_nonneg = false;
+            break;
+        }
+    }
+    if all_small_nonneg {
+        let dst_row0 = packed.row_mut(0);
+        dst_row0[dst_col_start..dst_col_start + t_len].copy_from_slice(row0);
+        return Ok(());
+    }
+
+    let src_norm = neo_memory::ajtai::encode_vector_balanced_to_mat(params, row0);
+    copy_mat_column_into_packed(packed, &src_norm, dst_col_start, t_len, d);
+    Ok(())
+}
+
+fn build_shout_sidecar_lane_witnesses(
+    params: &NeoParams,
+    step: &StepWitnessBundle<Cmt, F, K>,
+) -> Result<Vec<SidecarLaneWitness>, PiCcsError> {
+    if step.lut_instances.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let d = params.d as usize;
+    let m_in = step.mcs.0.m_in;
+    if step.mcs.1.Z.rows() != d {
+        return Err(PiCcsError::InvalidInput(format!(
+            "Shout sidecar: witness rows mismatch (rows={}, expected D={d})",
+            step.mcs.1.Z.rows()
+        )));
+    }
+
+    let mut out = Vec::new();
+    for (lut_idx, (inst, wit)) in step.lut_instances.iter().enumerate() {
+        if !inst.comms.is_empty() {
+            return Err(PiCcsError::InvalidInput(format!(
+                "Route-A Shout sidecar requires metadata-only LUT instances (comms must be empty, lut_idx={lut_idx}, table_id={})",
+                inst.table_id
+            )));
+        }
+        let lanes = inst.lanes.max(1);
+        if lanes != 1 {
+            return Err(PiCcsError::InvalidInput(format!(
+                "Shout sidecar currently requires lanes=1 (lut_idx={lut_idx}, table_id={}, lanes={})",
+                inst.table_id, inst.lanes
+            )));
+        }
+        if inst.steps == 0 {
+            return Err(PiCcsError::InvalidInput(format!(
+                "Shout sidecar requires steps>=1 (lut_idx={lut_idx}, table_id={})",
+                inst.table_id
+            )));
+        }
+
+        let ell_addr = inst
+            .d
+            .checked_mul(inst.ell)
+            .ok_or_else(|| PiCcsError::InvalidInput("Shout sidecar: d*ell overflow".into()))?;
+        let n_cols = ell_addr
+            .checked_add(2)
+            .ok_or_else(|| PiCcsError::InvalidInput("Shout sidecar: ell_addr+2 overflow".into()))?;
+        let packed_cols = packed_sidecar_width(m_in, inst.steps, n_cols, "Shout sidecar")?;
+        let mut packed = Mat::zero(d, packed_cols, F::ZERO);
+        let mut normalize_or_copy_col = |col_idx: usize, src: &Mat<F>, bool_expected: bool| -> Result<(), PiCcsError> {
+            let dst_col_start = m_in
+                .checked_add(
+                    col_idx
+                        .checked_mul(inst.steps)
+                        .ok_or_else(|| PiCcsError::InvalidInput("Shout sidecar dst offset overflow".into()))?,
+                )
+                .ok_or_else(|| PiCcsError::InvalidInput("Shout sidecar dst start overflow".into()))?;
+            normalize_or_copy_sidecar_column(
+                params,
+                &mut packed,
+                src,
+                dst_col_start,
+                inst.steps,
+                bool_expected,
+                "Shout sidecar",
+            )
+        };
+        if wit.mats.len() == n_cols {
+            for (col_idx, src) in wit.mats.iter().enumerate() {
+                if src.rows() != d {
+                    return Err(PiCcsError::InvalidInput(format!(
+                        "Shout sidecar mat rows mismatch (lut_idx={lut_idx}, table_id={}, col_idx={col_idx}, rows={}, expected D={d})",
+                        inst.table_id,
+                        src.rows()
+                    )));
+                }
+                if src.cols() != inst.steps {
+                    return Err(PiCcsError::InvalidInput(format!(
+                        "Shout sidecar mat cols mismatch (lut_idx={lut_idx}, table_id={}, col_idx={col_idx}, cols={}, expected steps={})",
+                        inst.table_id,
+                        src.cols(),
+                        inst.steps
+                    )));
+                }
+                let bool_expected = col_idx < ell_addr + 1;
+                normalize_or_copy_col(col_idx, src, bool_expected)?;
+            }
+        } else if wit.mats.is_empty() {
+            return Err(PiCcsError::InvalidInput(format!(
+                "Shout sidecar witness mats missing at lut_idx={lut_idx}, table_id={} (expected full mats len={n_cols} or compact decode/width len=1)",
+                inst.table_id
+            )));
+        } else if wit.mats.len() == 1 {
+            // Compact single-mat fallback is only valid for decode/width lookup families when the
+            // value column is identically zero across the shard (inactive lane). Any non-zero
+            // entries would require has_lookup/addr-bit witnesses to stay sound.
+            let is_decode_or_width = neo_memory::riscv::trace::rv32_is_decode_lookup_table_id(inst.table_id)
+                || neo_memory::riscv::trace::rv32_is_width_lookup_table_id(inst.table_id);
+            if !is_decode_or_width {
+                return Err(PiCcsError::InvalidInput(format!(
+                    "Shout sidecar compact single-mat witness is only allowed for decode/width families (lut_idx={lut_idx}, table_id={})",
+                    inst.table_id
+                )));
+            }
+            let src = &wit.mats[0];
+            if src.rows() != d {
+                return Err(PiCcsError::InvalidInput(format!(
+                    "Shout sidecar compact mat rows mismatch (lut_idx={lut_idx}, table_id={}, rows={}, expected D={d})",
+                    inst.table_id,
+                    src.rows()
+                )));
+            }
+            if src.cols() != inst.steps {
+                return Err(PiCcsError::InvalidInput(format!(
+                    "Shout sidecar compact mat cols mismatch (lut_idx={lut_idx}, table_id={}, cols={}, expected steps={})",
+                    inst.table_id,
+                    src.cols(),
+                    inst.steps
+                )));
+            }
+            let vals = neo_memory::ajtai::decode_vector(params, src);
+            if vals.iter().any(|&v| v != F::ZERO) {
+                return Err(PiCcsError::InvalidInput(format!(
+                    "Shout sidecar compact witness has non-zero values but missing has_lookup/addr bits (lut_idx={lut_idx}, table_id={})",
+                    inst.table_id
+                )));
+            }
+            // Keep packed matrix all-zero. This encodes inactive lookup lane safely.
+        } else {
+            return Err(PiCcsError::InvalidInput(format!(
+                "Shout sidecar witness shape mismatch at lut_idx={lut_idx}, table_id={} (mats={}, expected full={n_cols} or compact decode/width len=1)",
+                inst.table_id,
+                wit.mats.len()
+            )));
+        }
+
+        let is_all_zero = mat_is_all_zero(&packed);
+        out.push(SidecarLaneWitness {
+            mat: packed,
+            t_len: inst.steps,
+            n_cols,
+            is_all_zero,
+        });
+    }
+
+    Ok(out)
+}
+
+fn build_twist_sidecar_lane_witnesses(
+    params: &NeoParams,
+    step: &StepWitnessBundle<Cmt, F, K>,
+) -> Result<Vec<SidecarLaneWitness>, PiCcsError> {
+    if step.mem_instances.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let d = params.d as usize;
+    let m_in = step.mcs.0.m_in;
+
+    let mut out = Vec::with_capacity(step.mem_instances.len());
+    for (mem_idx, (inst, wit)) in step.mem_instances.iter().enumerate() {
+        if !inst.comms.is_empty() {
+            return Err(PiCcsError::InvalidInput(format!(
+                "Route-A Twist sidecar requires metadata-only MEM instances (comms must be empty, mem_idx={mem_idx}, mem_id={})",
+                inst.mem_id
+            )));
+        }
+        let lanes = inst.lanes.max(1);
+        if inst.steps == 0 {
+            return Err(PiCcsError::InvalidInput(format!(
+                "Twist sidecar requires steps>=1 (mem_idx={mem_idx}, mem_id={})",
+                inst.mem_id
+            )));
+        }
+
+        let lane_cols = inst
+            .d
+            .checked_mul(inst.ell)
+            .and_then(|ell_addr| ell_addr.checked_mul(2))
+            .and_then(|v| v.checked_add(5))
+            .ok_or_else(|| PiCcsError::InvalidInput("Twist sidecar: lane width overflow".into()))?;
+        let n_cols = lane_cols
+            .checked_mul(lanes)
+            .ok_or_else(|| PiCcsError::InvalidInput("Twist sidecar: n_cols overflow".into()))?;
+        let packed_cols = packed_sidecar_width(m_in, inst.steps, n_cols, "Twist sidecar")?;
+        let mut packed = Mat::zero(d, packed_cols, F::ZERO);
+        let ell_addr = inst
+            .d
+            .checked_mul(inst.ell)
+            .ok_or_else(|| PiCcsError::InvalidInput("Twist sidecar: d*ell overflow".into()))?;
+        let mut normalize_or_copy_col = |col_idx: usize, src: &Mat<F>| -> Result<(), PiCcsError> {
+            let dst_col_start = m_in
+                .checked_add(
+                    col_idx
+                        .checked_mul(inst.steps)
+                        .ok_or_else(|| PiCcsError::InvalidInput("Twist sidecar dst offset overflow".into()))?,
+                )
+                .ok_or_else(|| PiCcsError::InvalidInput("Twist sidecar dst start overflow".into()))?;
+            let lane_col = col_idx % lane_cols;
+            let bool_expected = lane_col < (2 * ell_addr + 2) || lane_col == (2 * ell_addr + 4);
+            normalize_or_copy_sidecar_column(
+                params,
+                &mut packed,
+                src,
+                dst_col_start,
+                inst.steps,
+                bool_expected,
+                "Twist sidecar",
+            )
+        };
+        if wit.mats.len() == n_cols {
+            for (col_idx, src) in wit.mats.iter().enumerate() {
+                if src.rows() != d {
+                    return Err(PiCcsError::InvalidInput(format!(
+                        "Twist sidecar mat rows mismatch (mem_idx={mem_idx}, mem_id={}, col_idx={col_idx}, rows={}, expected D={d})",
+                        inst.mem_id,
+                        src.rows()
+                    )));
+                }
+                if src.cols() != inst.steps {
+                    return Err(PiCcsError::InvalidInput(format!(
+                        "Twist sidecar mat cols mismatch (mem_idx={mem_idx}, mem_id={}, col_idx={col_idx}, cols={}, expected steps={})",
+                        inst.mem_id,
+                        src.cols(),
+                        inst.steps
+                    )));
+                }
+                normalize_or_copy_col(col_idx, src)?;
+            }
+        } else if wit.mats.is_empty() {
+            return Err(PiCcsError::InvalidInput(format!(
+                "Twist sidecar witness mats missing at mem_idx={mem_idx}, mem_id={} (expected full mats len={n_cols})",
+                inst.mem_id
+            )));
+        } else {
+            return Err(PiCcsError::InvalidInput(format!(
+                "Twist sidecar witness shape mismatch at mem_idx={mem_idx}, mem_id={} (mats={}, expected full={n_cols})",
+                inst.mem_id,
+                wit.mats.len()
+            )));
+        }
+
+        let is_all_zero = mat_is_all_zero(&packed);
+        out.push(SidecarLaneWitness {
+            mat: packed,
+            t_len: inst.steps,
+            n_cols,
+            is_all_zero,
+        });
+    }
+
+    Ok(out)
+}
+
+fn build_sidecar_me_claims_from_lane_wits(
+    tr: &Poseidon2Transcript,
+    params: &NeoParams,
+    s: &CcsStructure<F>,
+    sidecar_ccs_cache: &mut std::collections::HashMap<usize, CcsStructure<F>>,
+    sidecar_committer_cache: &mut std::collections::HashMap<usize, neo_ajtai::AjtaiSModule>,
+    m_in: usize,
+    r_eval: &[K],
+    digest_label: &'static [u8],
+    lane_wits: &[SidecarLaneWitness],
+    expected_comms: Option<&[Cmt]>,
+) -> Result<Vec<MeInstance<Cmt, F, K>>, PiCcsError> {
+    let core_t = s.t();
+    if lane_wits.is_empty() {
+        return Ok(Vec::new());
+    }
+    if let Some(comms) = expected_comms {
+        if comms.len() != lane_wits.len() {
+            return Err(PiCcsError::InvalidInput(format!(
+                "sidecar claim commitment count mismatch (comms={}, lane_wits={})",
+                comms.len(),
+                lane_wits.len()
+            )));
+        }
+    } else {
+        let mut widths: Vec<usize> = lane_wits.iter().map(|lane| lane.mat.cols()).collect();
+        widths.sort_unstable();
+        widths.dedup();
+        for lane_m in widths {
+            ensure_sidecar_pp_for_width(params, lane_m)?;
+            let _ = get_or_build_sidecar_committer(sidecar_committer_cache, params, lane_m)?;
+        }
+    }
+
+    let mut claims = Vec::with_capacity(lane_wits.len());
+    for (lane_idx, lane) in lane_wits.iter().enumerate() {
+        let lane_m = lane.mat.cols();
+        let lane_s = get_or_build_zero_sidecar_ccs(sidecar_ccs_cache, s, lane_m)?;
+        let c = if let Some(comms) = expected_comms {
+            comms[lane_idx].clone()
+        } else {
+            let lane_l = get_or_build_sidecar_committer(sidecar_committer_cache, params, lane_m)?;
+            lane_l.commit(&lane.mat)
+        };
+        let mut me = neo_memory::ts_common::mk_me_opening_with_ccs(
+            tr,
+            digest_label,
+            params,
+            lane_s,
+            &c,
+            &lane.mat,
+            r_eval,
+            m_in,
+        )?;
+
+        let col_starts: Vec<usize> = (0..lane.n_cols)
+            .map(|col_idx| {
+                let col_offset = col_idx
+                    .checked_mul(lane.t_len)
+                    .ok_or_else(|| PiCcsError::InvalidInput("sidecar lane column offset overflow".into()))?;
+                m_in.checked_add(col_offset)
+                    .ok_or(PiCcsError::InvalidInput("sidecar lane column start overflow".into()))
+            })
+            .collect::<Result<_, _>>()?;
+        crate::memory_sidecar::cpu_bus::append_col_major_time_openings_to_me_instance(
+            params,
+            m_in,
+            lane.t_len,
+            &col_starts,
+            core_t,
+            &lane.mat,
+            &mut me,
+        )?;
+        claims.push(me);
+    }
+
+    Ok(claims)
+}
+
+fn commit_sidecar_lane_witnesses(
+    params: &NeoParams,
+    sidecar_committer_cache: &mut std::collections::HashMap<usize, neo_ajtai::AjtaiSModule>,
+    lane_wits: &[SidecarLaneWitness],
+) -> Result<Vec<Cmt>, PiCcsError> {
+    let mut widths: Vec<usize> = lane_wits
+        .iter()
+        .filter(|lane| !lane.is_all_zero)
+        .map(|lane| lane.mat.cols())
+        .collect();
+    widths.sort_unstable();
+    widths.dedup();
+    for m in widths {
+        ensure_sidecar_pp_for_width(params, m)?;
+        let _ = get_or_build_sidecar_committer(sidecar_committer_cache, params, m)?;
+    }
+
+    let mut out = Vec::with_capacity(lane_wits.len());
+    let zero_c = Cmt::zeros(D, params.kappa as usize);
+    for lane in lane_wits.iter() {
+        if lane.is_all_zero {
+            // Keep sidecar PP availability consistent for later fold lanes that may
+            // require a committer handle at this width, even when commit is skipped.
+            ensure_sidecar_pp_for_width(params, lane.mat.cols())?;
+            out.push(zero_c.clone());
+            continue;
+        }
+        let lane_l = get_or_build_sidecar_committer(sidecar_committer_cache, params, lane.mat.cols())?;
+        out.push(lane_l.commit(&lane.mat));
+    }
+    Ok(out)
+}
+
+fn build_decode_width_sidecar_lane_witness(
+    params: &NeoParams,
+    step: &StepWitnessBundle<Cmt, F, K>,
+    plan: crate::memory_sidecar::memory::RouteALookupSidecarPlan,
+) -> Result<Option<SidecarLaneWitness>, PiCcsError> {
+    if !plan.include_trace_main {
+        return Ok(None);
+    }
+    let include_decode = plan.include_decode;
+    let include_width = plan.include_width;
+    let decode_needed = include_decode || include_width;
+
+    let trace = Rv32TraceLayout::new();
+    let decode = neo_memory::riscv::trace::Rv32DecodeSidecarLayout::new();
+    let width = neo_memory::riscv::trace::Rv32WidthSidecarLayout::new();
+    let t_len = crate::memory_sidecar::memory::infer_rv32_trace_t_len_for_wb_wp(step, &trace)?;
+    if t_len == 0 {
+        return Err(PiCcsError::InvalidInput("lookup sidecar requires t_len >= 1".into()));
+    }
+
+    let m_in = step.mcs.0.m_in;
+    let trace_main_cols = crate::memory_sidecar::memory::rv32_trace_main_opening_columns(&trace);
+    let decoded_trace =
+        crate::memory_sidecar::memory::decode_trace_col_values_batch(params, step, t_len, &trace_main_cols)?;
+    let active_vals_opt = if decode_needed {
+        Some(
+            decoded_trace
+                .get(&trace.active)
+                .ok_or_else(|| PiCcsError::ProtocolError("lookup sidecar: missing active column".into()))?,
+        )
+    } else {
+        None
+    };
+    let instr_vals_opt = if decode_needed {
+        Some(
+            decoded_trace
+                .get(&trace.instr_word)
+                .ok_or_else(|| PiCcsError::ProtocolError("lookup sidecar: missing instr_word column".into()))?,
+        )
+    } else {
+        None
+    };
+    if let (Some(active_vals), Some(instr_vals)) = (active_vals_opt.as_ref(), instr_vals_opt.as_ref()) {
+        if active_vals.len() != t_len || instr_vals.len() != t_len {
+            return Err(PiCcsError::ProtocolError(format!(
+                "lookup sidecar: decoded active/instr lengths drift (active={}, instr={}, t_len={t_len})",
+                active_vals.len(),
+                instr_vals.len()
+            )));
+        }
+    }
+
+    let rs2_vals_opt = if include_width {
+        Some(
+            decoded_trace
+                .get(&trace.rs2_val)
+                .ok_or_else(|| PiCcsError::ProtocolError("lookup sidecar: missing rs2_val column".into()))?,
+        )
+    } else {
+        None
+    };
+    let ram_rv_vals_opt = if include_width {
+        Some(
+            decoded_trace
+                .get(&trace.ram_rv)
+                .ok_or_else(|| PiCcsError::ProtocolError("lookup sidecar: missing ram_rv column".into()))?,
+        )
+    } else {
+        None
+    };
+    if let (Some(rs2_vals), Some(ram_rv_vals)) = (rs2_vals_opt, ram_rv_vals_opt) {
+        if rs2_vals.len() != t_len || ram_rv_vals.len() != t_len {
+            return Err(PiCcsError::ProtocolError(format!(
+                "lookup sidecar: decoded rs2/ram_rv lengths drift (rs2={}, ram_rv={}, t_len={t_len})",
+                rs2_vals.len(),
+                ram_rv_vals.len()
+            )));
+        }
+    }
+
+    let decode_col_ids = if include_decode {
+        neo_memory::riscv::trace::rv32_decode_lookup_backed_cols(&decode)
+    } else {
+        Vec::new()
+    };
+    let width_col_ids = if include_width {
+        neo_memory::riscv::trace::rv32_width_lookup_backed_cols(&width)
+    } else {
+        Vec::new()
+    };
+    let n_cols = trace_main_cols
+        .len()
+        .checked_add(decode_col_ids.len())
+        .and_then(|v| v.checked_add(width_col_ids.len()))
+        .ok_or_else(|| PiCcsError::InvalidInput("lookup sidecar: n_cols overflow".into()))?;
+    let packed_cols = packed_sidecar_width(m_in, t_len, n_cols, "lookup sidecar")?;
+
+    let mut col_vals = vec![vec![F::ZERO; t_len]; n_cols];
+    for (idx, &col_id) in trace_main_cols.iter().enumerate() {
+        let vals = decoded_trace
+            .get(&col_id)
+            .ok_or_else(|| PiCcsError::ProtocolError(format!("lookup sidecar: missing trace column {col_id}")))?;
+        if vals.len() != t_len {
+            return Err(PiCcsError::ProtocolError(format!(
+                "lookup sidecar: trace column length drift for col_id={col_id} (len={}, t_len={t_len})",
+                vals.len()
+            )));
+        }
+        for j in 0..t_len {
+            col_vals[idx][j] =
+                crate::memory_sidecar::memory::decode_k_to_base_f(vals[j], "lookup sidecar/trace_open_col")?;
+        }
+    }
+    let decode_base = trace_main_cols.len();
+    let width_base = decode_base
+        .checked_add(decode_col_ids.len())
+        .ok_or_else(|| PiCcsError::InvalidInput("lookup sidecar width base overflow".into()))?;
+    for j in 0..t_len {
+        if decode_needed {
+            let active_vals = active_vals_opt.ok_or_else(|| {
+                PiCcsError::ProtocolError("lookup sidecar: active column missing while decode is enabled".into())
+            })?;
+            let instr_vals = instr_vals_opt.ok_or_else(|| {
+                PiCcsError::ProtocolError("lookup sidecar: instr column missing while decode is enabled".into())
+            })?;
+            let active = active_vals[j] != K::ZERO;
+            let instr_word =
+                crate::memory_sidecar::memory::decode_k_to_u32(instr_vals[j], "lookup sidecar/instr_word")?;
+
+            let mut decode_row =
+                neo_memory::riscv::trace::rv32_decode_lookup_backed_row_from_instr_word(&decode, instr_word, active);
+            if !active {
+                decode_row.fill(F::ZERO);
+            }
+            if include_decode {
+                for (idx, &col_id) in decode_col_ids.iter().enumerate() {
+                    col_vals[decode_base + idx][j] = decode_row[col_id];
+                }
+            }
+
+            if include_width {
+                let rs2_vals = rs2_vals_opt.ok_or_else(|| {
+                    PiCcsError::ProtocolError("lookup sidecar: rs2 column missing while width is enabled".into())
+                })?;
+                let ram_rv_vals = ram_rv_vals_opt.ok_or_else(|| {
+                    PiCcsError::ProtocolError("lookup sidecar: ram_rv column missing while width is enabled".into())
+                })?;
+                let mut width_row = vec![F::ZERO; width.cols];
+                if active {
+                    let rs2_u32 =
+                        crate::memory_sidecar::memory::decode_k_to_u32(rs2_vals[j], "lookup sidecar/rs2_val")? as u64;
+                    width_row[width.rs2_q16] = F::from_u64(rs2_u32 >> 16);
+                    for (k, &bit_col) in width.rs2_low_bit.iter().enumerate() {
+                        width_row[bit_col] = F::from_u64((rs2_u32 >> k) & 1);
+                    }
+
+                    if decode_row[decode.ram_has_read] != F::ZERO {
+                        let ram_rv_u32 =
+                            crate::memory_sidecar::memory::decode_k_to_u32(ram_rv_vals[j], "lookup sidecar/ram_rv")?
+                                as u64;
+                        width_row[width.ram_rv_q16] = F::from_u64(ram_rv_u32 >> 16);
+                        for (k, &bit_col) in width.ram_rv_low_bit.iter().enumerate() {
+                            width_row[bit_col] = F::from_u64((ram_rv_u32 >> k) & 1);
+                        }
+                    }
+                }
+                for (w_idx, &col_id) in width_col_ids.iter().enumerate() {
+                    col_vals[width_base + w_idx][j] = width_row[col_id];
+                }
+            }
+        }
+    }
+
+    let d = params.d as usize;
+    let mut packed = Mat::zero(d, packed_cols, F::ZERO);
+    for (col_idx, vals) in col_vals.iter().enumerate() {
+        let src_norm = neo_memory::ajtai::encode_vector_balanced_to_mat(params, vals);
+        let dst_col_start = m_in
+            .checked_add(
+                col_idx
+                    .checked_mul(t_len)
+                    .ok_or_else(|| PiCcsError::InvalidInput("lookup sidecar dst offset overflow".into()))?,
+            )
+            .ok_or_else(|| PiCcsError::InvalidInput("lookup sidecar dst start overflow".into()))?;
+        for rho in 0..d {
+            let src_row = src_norm.row(rho);
+            let dst_row = packed.row_mut(rho);
+            dst_row[dst_col_start..dst_col_start + t_len].copy_from_slice(src_row);
+        }
+    }
+
+    let is_all_zero = mat_is_all_zero(&packed);
+    Ok(Some(SidecarLaneWitness {
+        mat: packed,
+        t_len,
+        n_cols,
+        is_all_zero,
+    }))
+}
+
 pub(crate) fn fold_shard_prove_impl<L, MR, MB>(
     collect_val_lane_wits: bool,
     mode: FoldingMode,
@@ -42,17 +707,18 @@ where
         if step.lut_instances.is_empty() && step.mem_instances.is_empty() {
             continue;
         }
-        let is_shared_step = step
+        let shout_ok = step
             .lut_instances
             .iter()
-            .all(|(inst, wit)| inst.comms.is_empty() && wit.mats.is_empty())
-            && step
-                .mem_instances
-                .iter()
-                .all(|(inst, wit)| inst.comms.is_empty() && wit.mats.is_empty());
+            .all(|(inst, _wit)| inst.comms.is_empty());
+        let twist_ok = step
+            .mem_instances
+            .iter()
+            .all(|(inst, _wit)| inst.comms.is_empty());
+        let is_shared_step = shout_ok && twist_ok;
         if !is_shared_step {
             return Err(PiCcsError::InvalidInput(format!(
-                "legacy no-shared CPU bus mode was removed; step_idx={step_idx} must use shared-bus witness format"
+                "step_idx={step_idx} must use shared-bus witness format (Twist/Shout metadata-only instances with empty comms)"
             )));
         }
     }
@@ -102,6 +768,9 @@ where
     let mut step_proofs = Vec::with_capacity(steps.len());
     let mut val_lane_wits: Vec<Mat<F>> = Vec::new();
     let mut prev_twist_decoded: Option<Vec<crate::memory_sidecar::memory::TwistDecodedColsSparse>> = None;
+    let mut prev_twist_sidecar_wits: Option<Vec<SidecarLaneWitness>> = None;
+    let mut sidecar_ccs_cache = std::collections::HashMap::<usize, CcsStructure<F>>::new();
+    let mut sidecar_committer_cache = std::collections::HashMap::<usize, neo_ajtai::AjtaiSModule>::new();
     let mut output_proof: Option<neo_memory::output_check::OutputBindingProof> = None;
 
     if ob.is_some() && steps.is_empty() {
@@ -194,6 +863,34 @@ where
 
         // k = accumulator.len() + 1
         let k = accumulator.len() + 1;
+        let lookup_sidecar_plan = crate::memory_sidecar::memory::route_a_lookup_sidecar_plan_for_step_witness(step);
+        let shout_sidecar_wits = build_shout_sidecar_lane_witnesses(params, step)?;
+        let twist_sidecar_wits = build_twist_sidecar_lane_witnesses(params, step)?;
+        let lookup_sidecar_wit = if lookup_sidecar_plan.include_trace_main {
+            Some(
+                build_decode_width_sidecar_lane_witness(params, step, lookup_sidecar_plan)?.ok_or_else(|| {
+                    PiCcsError::ProtocolError("lookup sidecar plan enabled but lane witness is missing".into())
+                })?,
+            )
+        } else {
+            None
+        };
+        let shout_sidecar_comms =
+            commit_sidecar_lane_witnesses(params, &mut sidecar_committer_cache, &shout_sidecar_wits)?;
+        let twist_sidecar_comms =
+            commit_sidecar_lane_witnesses(params, &mut sidecar_committer_cache, &twist_sidecar_wits)?;
+        let lookup_sidecar_comm = if let Some(wit) = lookup_sidecar_wit.as_ref() {
+            ensure_sidecar_pp_for_width(params, wit.mat.cols())?;
+            let lane_l = get_or_build_sidecar_committer(&mut sidecar_committer_cache, params, wit.mat.cols())?;
+            Some(lane_l.commit(&wit.mat))
+        } else {
+            None
+        };
+        if lookup_sidecar_plan.include_trace_main && (lookup_sidecar_wit.is_none() || lookup_sidecar_comm.is_none()) {
+            return Err(PiCcsError::ProtocolError(
+                "lookup sidecar plan enabled but witness/commitment precomputation is missing".into(),
+            ));
+        }
 
         // --------------------------------------------------------------------
         // Route A: Shared-challenge batched sum-check for time/row rounds.
@@ -215,6 +912,13 @@ where
             &ccs_mat_digest,
         )?;
         utils::bind_me_inputs(tr, &accumulator)?;
+        absorb_route_a_sidecar_time_commitments(
+            tr,
+            step_idx,
+            &shout_sidecar_comms,
+            &twist_sidecar_comms,
+            lookup_sidecar_comm.as_ref(),
+        );
         let mut ch = utils::sample_challenges(tr, ell_d, ell)?;
         ch.beta_m = utils::sample_beta_m(tr, ell_m)?;
         let ccs_initial_sum = claimed_initial_sum_from_inputs(&s, &ch, &accumulator);
@@ -284,12 +988,11 @@ where
             }
         };
 
-        let shout_pre = crate::memory_sidecar::memory::prove_shout_addr_pre_time(
-            tr, params, step, &cpu_bus, ell_n, &r_cycle, step_idx,
-        )?;
+        let shout_pre =
+            crate::memory_sidecar::memory::prove_shout_addr_pre_time(tr, params, step, ell_n, &r_cycle, step_idx)?;
 
         let twist_pre =
-            crate::memory_sidecar::memory::prove_twist_addr_pre_time(tr, params, step, &cpu_bus, ell_n, &r_cycle)
+            crate::memory_sidecar::memory::prove_twist_addr_pre_time(tr, params, step, ell_n, &r_cycle)
                 .map_err(|e| PiCcsError::ProtocolError(format!("twist addr-pre failed at step_idx={step_idx}: {e}")))?;
         let twist_read_claims: Vec<K> = twist_pre.iter().map(|p| p.read_check_claim_sum).collect();
         let twist_write_claims: Vec<K> = twist_pre.iter().map(|p| p.write_check_claim_sum).collect();
@@ -573,7 +1276,7 @@ where
         // CCS oracle borrows accumulator_wit; drop before updating accumulator_wit at the end.
         drop(ccs_oracle);
 
-        let mut trace_linkage_t_len: Option<usize> = None;
+        let trace_linkage_t_len: Option<usize> = None;
 
         // Shared CPU bus: append "implicit openings" for all bus columns without materializing
         // bus copyout matrices into the CCS.
@@ -599,164 +1302,8 @@ where
             }
         }
 
-        // For RV32 trace wiring CCS, append time-combined openings for trace columns needed to
-        // link Twist/Shout sidecars at r_time. In shared-bus mode this is appended after bus openings.
-        if (!step.mem_instances.is_empty() || !step.lut_instances.is_empty()) && mcs_inst.m_in == 5 {
-            // Infer that the CPU witness is the RV32 trace column-major layout:
-            // z = [x (m_in) | trace_cols * t_len]
-            let m_in = mcs_inst.m_in;
-            let t_len = step
-                .mem_instances
-                .first()
-                .map(|(inst, _wit)| inst.steps)
-                .or_else(|| {
-                    // Shout event-table instances may have `steps != t_len`; prefer a non-event-table
-                    // instance if present, otherwise fall back to inferring from the trace layout.
-                    step.lut_instances
-                        .iter()
-                        .find(|(inst, _wit)| {
-                            !matches!(inst.table_spec, Some(LutTableSpec::RiscvOpcodeEventTablePacked { .. }))
-                        })
-                        .map(|(inst, _wit)| inst.steps)
-                })
-                .or_else(|| {
-                    // Trace CCS layout inference: z = [x (m_in) | trace_cols * t_len]
-                    let trace = Rv32TraceLayout::new();
-                    let w = s.m.checked_sub(m_in)?;
-                    if trace.cols == 0 || w % trace.cols != 0 {
-                        return None;
-                    }
-                    Some(w / trace.cols)
-                })
-                .ok_or_else(|| PiCcsError::InvalidInput("missing mem/lut instances".into()))?;
-            if t_len == 0 {
-                return Err(PiCcsError::InvalidInput("trace linkage requires steps>=1".into()));
-            }
-            for (i, (inst, _wit)) in step.mem_instances.iter().enumerate() {
-                if inst.steps != t_len {
-                    return Err(PiCcsError::InvalidInput(format!(
-                        "trace linkage requires stable steps across mem instances (mem_idx={i} has steps={}, expected {t_len})",
-                        inst.steps
-                    )));
-                }
-            }
-
-            let trace = Rv32TraceLayout::new();
-            let trace_len = trace
-                .cols
-                .checked_mul(t_len)
-                .ok_or_else(|| PiCcsError::InvalidInput("trace cols * t_len overflow".into()))?;
-            let expected_m = m_in
-                .checked_add(trace_len)
-                .ok_or_else(|| PiCcsError::InvalidInput("m_in + trace_len overflow".into()))?;
-            if s.m < expected_m {
-                return Err(PiCcsError::InvalidInput(format!(
-                    "trace linkage expects m >= m_in + trace.cols*t_len (m={}; min_m={expected_m} for t_len={t_len}, trace_cols={})",
-                    s.m, trace.cols
-                )));
-            }
-
-            let trace_cols_to_open_dense: Vec<usize> = vec![
-                trace.active,
-                trace.cycle,
-                trace.pc_before,
-                trace.instr_word,
-                trace.rs1_addr,
-                trace.rs1_val,
-                trace.rs2_addr,
-                trace.rs2_val,
-                trace.rd_addr,
-                trace.rd_val,
-                trace.ram_addr,
-                trace.ram_rv,
-                trace.ram_wv,
-            ];
-            let trace_cols_to_open_shout: Vec<usize> = vec![
-                trace.shout_has_lookup,
-                trace.shout_val,
-                trace.shout_lhs,
-                trace.shout_rhs,
-            ];
-            let trace_cols_to_open_all: Vec<usize> = trace_cols_to_open_dense
-                .iter()
-                .chain(trace_cols_to_open_shout.iter())
-                .copied()
-                .collect();
-            let core_t = s.t();
-            let trace_open_base = core_t + cpu_bus.bus_cols;
-            let col_base = m_in; // trace_base in the RV32 trace layout
-
-            // Event-table style micro-optimization: Shout trace columns are constrained to be 0
-            // whenever `shout_has_lookup == 0`, so we can compute their openings by summing only
-            // over the active lookup rows.
-            let active_shout_js: Vec<usize> = {
-                let d = neo_math::D;
-                let mut out: Vec<usize> = Vec::new();
-                let col_offset = trace
-                    .shout_has_lookup
-                    .checked_mul(t_len)
-                    .ok_or_else(|| PiCcsError::InvalidInput("trace col_id * t_len overflow".into()))?;
-                for j in 0..t_len {
-                    let z_idx = col_base
-                        .checked_add(col_offset)
-                        .and_then(|x| x.checked_add(j))
-                        .ok_or_else(|| PiCcsError::InvalidInput("trace z index overflow".into()))?;
-                    if z_idx >= mcs_wit.Z.cols() {
-                        return Err(PiCcsError::InvalidInput(format!(
-                            "trace openings: z_idx out of range (z_idx={z_idx}, m={})",
-                            mcs_wit.Z.cols()
-                        )));
-                    }
-
-                    let mut any = false;
-                    for rho in 0..d {
-                        if mcs_wit.Z[(rho, z_idx)] != F::ZERO {
-                            any = true;
-                            break;
-                        }
-                    }
-                    if any {
-                        out.push(j);
-                    }
-                }
-                out
-            };
-
-            crate::memory_sidecar::cpu_bus::append_col_major_time_openings_to_me_instance(
-                params,
-                m_in,
-                t_len,
-                col_base,
-                &trace_cols_to_open_dense,
-                trace_open_base,
-                &mcs_wit.Z,
-                &mut ccs_out[0],
-            )?;
-            crate::memory_sidecar::cpu_bus::append_col_major_time_openings_to_me_instance_at_js(
-                params,
-                m_in,
-                t_len,
-                col_base,
-                &trace_cols_to_open_shout,
-                trace_open_base + trace_cols_to_open_dense.len(),
-                &mcs_wit.Z,
-                &mut ccs_out[0],
-                &active_shout_js,
-            )?;
-            for (out, Z) in ccs_out.iter_mut().skip(1).zip(accumulator_wit.iter()) {
-                crate::memory_sidecar::cpu_bus::append_col_major_time_openings_to_me_instance(
-                    params,
-                    m_in,
-                    t_len,
-                    col_base,
-                    &trace_cols_to_open_all,
-                    trace_open_base,
-                    Z,
-                    out,
-                )?;
-            }
-            trace_linkage_t_len = Some(t_len);
-        }
+        // Trace linkage openings now come from the lookup sidecar ME claim instead of
+        // appending flattened trace openings onto `ccs_out`.
 
         if ccs_out.len() != k {
             return Err(PiCcsError::ProtocolError(format!(
@@ -806,7 +1353,17 @@ where
 
         // Memory sidecar: emit ME claims at the shared r_time (no fixed-challenge sumcheck).
         let prev_step = (idx > 0).then(|| &steps[idx - 1]);
+        let has_prev = prev_step.is_some();
         let prev_twist_decoded_ref = prev_twist_decoded.as_deref();
+        let prev_twist_sidecar_comms = if has_prev {
+            let prev_wits = prev_twist_sidecar_wits
+                .as_ref()
+                .ok_or_else(|| PiCcsError::ProtocolError("missing prev Twist sidecar witnesses for rollover".into()))?;
+            commit_sidecar_lane_witnesses(params, &mut sidecar_committer_cache, prev_wits)?
+        } else {
+            Vec::new()
+        };
+        absorb_route_a_sidecar_val_commitments(tr, step_idx, &twist_sidecar_comms, &prev_twist_sidecar_comms);
         let mut mem_proof = crate::memory_sidecar::memory::finalize_route_a_memory_prover(
             tr,
             params,
@@ -823,17 +1380,117 @@ where
             step_idx,
         )?;
         prev_twist_decoded = Some(twist_pre.into_iter().map(|p| p.decoded).collect());
+        let mut sidecar_wits = shout_sidecar_wits.clone();
+        let mut sidecar_me_claims = build_sidecar_me_claims_from_lane_wits(
+            tr,
+            params,
+            &s,
+            &mut sidecar_ccs_cache,
+            &mut sidecar_committer_cache,
+            step.mcs.0.m_in,
+            &r_time,
+            b"shout/sidecar/me_digest_time",
+            &shout_sidecar_wits,
+            Some(&shout_sidecar_comms),
+        )?;
+        let twist_sidecar_me_claims = build_sidecar_me_claims_from_lane_wits(
+            tr,
+            params,
+            &s,
+            &mut sidecar_ccs_cache,
+            &mut sidecar_committer_cache,
+            step.mcs.0.m_in,
+            &r_time,
+            b"twist/sidecar/me_digest_time",
+            &twist_sidecar_wits,
+            Some(&twist_sidecar_comms),
+        )?;
+        let mut val_claim_wits: Vec<SidecarLaneWitness> = Vec::new();
+        if !step.mem_instances.is_empty() {
+            let r_val = mem_proof
+                .val_me_claims
+                .first()
+                .map(|me| me.r.clone())
+                .ok_or_else(|| PiCcsError::ProtocolError("missing r_val CPU placeholder claim".into()))?;
+
+            let mut val_sidecar_claims = build_sidecar_me_claims_from_lane_wits(
+                tr,
+                params,
+                &s,
+                &mut sidecar_ccs_cache,
+                &mut sidecar_committer_cache,
+                step.mcs.0.m_in,
+                &r_val,
+                b"twist/sidecar/me_digest_val",
+                &twist_sidecar_wits,
+                Some(&twist_sidecar_comms),
+            )?;
+            val_claim_wits.extend(twist_sidecar_wits.iter().cloned());
+
+            if has_prev {
+                let prev_wits = prev_twist_sidecar_wits.as_ref().ok_or_else(|| {
+                    PiCcsError::ProtocolError("missing prev Twist sidecar witnesses for rollover".into())
+                })?;
+                if prev_wits.len() != step.mem_instances.len() {
+                    return Err(PiCcsError::ProtocolError(format!(
+                        "Twist prev sidecar witness count mismatch (have {}, expected {})",
+                        prev_wits.len(),
+                        step.mem_instances.len()
+                    )));
+                }
+                let prev_claims = build_sidecar_me_claims_from_lane_wits(
+                    tr,
+                    params,
+                    &s,
+                    &mut sidecar_ccs_cache,
+                    &mut sidecar_committer_cache,
+                    step.mcs.0.m_in,
+                    &r_val,
+                    b"twist/sidecar/me_digest_val",
+                    prev_wits,
+                    Some(&prev_twist_sidecar_comms),
+                )?;
+                val_sidecar_claims.extend(prev_claims);
+                val_claim_wits.extend(prev_wits.iter().cloned());
+            }
+            mem_proof.val_me_claims = val_sidecar_claims;
+        } else {
+            mem_proof.val_me_claims.clear();
+        }
+
+        sidecar_me_claims.extend(twist_sidecar_me_claims);
+        sidecar_wits.extend(twist_sidecar_wits.iter().cloned());
+        if let (Some(lookup_wit), Some(lookup_comm)) = (lookup_sidecar_wit.as_ref(), lookup_sidecar_comm.as_ref()) {
+            let lookup_claims = build_sidecar_me_claims_from_lane_wits(
+                tr,
+                params,
+                &s,
+                &mut sidecar_ccs_cache,
+                &mut sidecar_committer_cache,
+                step.mcs.0.m_in,
+                &r_time,
+                b"lookup/sidecar/me_digest_time",
+                core::slice::from_ref(lookup_wit),
+                Some(core::slice::from_ref(lookup_comm)),
+            )?;
+            if lookup_claims.len() != 1 {
+                return Err(PiCcsError::ProtocolError(format!(
+                    "lookup sidecar expected exactly one ME claim, got {}",
+                    lookup_claims.len()
+                )));
+            }
+            sidecar_me_claims.extend(lookup_claims);
+            sidecar_wits.push(lookup_wit.clone());
+        }
+        mem_proof.sidecar_me_claims = sidecar_me_claims;
+        prev_twist_sidecar_wits = Some(twist_sidecar_wits);
 
         // Normalize ME claim shapes for per-claim folding lanes.
         for me in mem_proof.val_me_claims.iter_mut() {
             let t = me.y.len();
             normalize_me_claims(core::slice::from_mut(me), ell_n, ell_d, t)?;
         }
-        for me in mem_proof.wb_me_claims.iter_mut() {
-            let t = me.y.len();
-            normalize_me_claims(core::slice::from_mut(me), ell_n, ell_d, t)?;
-        }
-        for me in mem_proof.wp_me_claims.iter_mut() {
+        for me in mem_proof.sidecar_me_claims.iter_mut() {
             let t = me.y.len();
             normalize_me_claims(core::slice::from_mut(me), ell_n, ell_d, t)?;
         }
@@ -866,15 +1523,17 @@ where
             dec_children: children,
         } = main_fold;
 
-        let has_prev = prev_step.is_some();
-
         // --------------------------------------------------------------------
         // Phase 2: Second folding lane for Twist val-eval ME claims at r_val.
         // --------------------------------------------------------------------
         let mut val_fold: Vec<RlcDecProof> = Vec::new();
         if !mem_proof.val_me_claims.is_empty() {
             tr.append_message(b"fold/val_lane_start", &(step_idx as u64).to_le_bytes());
-            let expected = 1usize + usize::from(has_prev);
+            let expected = step
+                .mem_instances
+                .len()
+                .checked_mul(1usize + usize::from(has_prev))
+                .ok_or_else(|| PiCcsError::ProtocolError("Twist(val) claim count overflow".into()))?;
             if mem_proof.val_me_claims.len() != expected {
                 return Err(PiCcsError::ProtocolError(format!(
                     "Twist(val) claim count mismatch (have {}, expected {})",
@@ -882,358 +1541,125 @@ where
                     expected
                 )));
             }
-            let can_reuse_main_lane_dec =
-                ccs_out.len() == 1 && outs_Z.len() == 1 && !Z_split.is_empty() && children.len() == Z_split.len();
-            let shared_val_lane_child_cs: Option<Vec<Cmt>> = if can_reuse_main_lane_dec {
-                Some(children.iter().map(|child| child.c.clone()).collect())
-            } else {
-                None
-            };
+            if val_claim_wits.len() != expected {
+                return Err(PiCcsError::ProtocolError(format!(
+                    "Twist(val) sidecar witness count mismatch (have {}, expected {})",
+                    val_claim_wits.len(),
+                    expected
+                )));
+            }
 
-            for (claim_idx, me) in mem_proof.val_me_claims.iter().enumerate() {
-                let (wit, ctx) = match claim_idx {
-                    0 => (&mcs_wit.Z, "cpu"),
-                    1 => {
-                        let prev = prev_step
-                            .ok_or_else(|| PiCcsError::ProtocolError("missing prev_step for r_val claim".into()))?;
-                        (&prev.mcs.1.Z, "cpu_prev")
-                    }
-                    _ => {
-                        return Err(PiCcsError::ProtocolError(
-                            "unexpected extra r_val ME claim in shared-bus mode".into(),
-                        ));
-                    }
-                };
+            for (claim_idx, (me, wit)) in mem_proof
+                .val_me_claims
+                .iter()
+                .zip(val_claim_wits.iter())
+                .enumerate()
+            {
                 tr.append_message(b"fold/val_lane_claim_idx", &(claim_idx as u64).to_le_bytes());
-                tr.append_message(b"fold/val_lane_claim_ctx", ctx.as_bytes());
-
-                // Reuse main-lane split/commit artifacts for the current-step shared-bus
-                // val lane so we don't pay an extra full split+commit.
-                if claim_idx == 0 {
-                    if let Some(child_cs) = shared_val_lane_child_cs.as_ref() {
-                        bind_rlc_inputs(tr, RlcLane::Val, step_idx, core::slice::from_ref(me))?;
-                        let rlc_rhos = ccs::sample_rot_rhos_n(tr, params, &ring, 1)?;
-                        let mut rlc_parent = ccs::rlc_public(
-                            &s,
-                            params,
-                            &rlc_rhos,
-                            core::slice::from_ref(me),
-                            mixers.mix_rhos_commits,
-                            ell_d,
-                        )?;
-                        let (mut dec_children, ok_y, ok_x, ok_c) = ccs::dec_children_with_commit_cached(
-                            mode.clone(),
-                            &s,
-                            params,
-                            &rlc_parent,
-                            &Z_split,
-                            ell_d,
-                            child_cs,
-                            mixers.combine_b_pows,
-                            ccs_sparse_cache.as_deref(),
-                        );
-                        if !(ok_y && ok_x && ok_c) {
-                            return Err(PiCcsError::ProtocolError(format!(
-                                "DEC(val) public check failed at step {} (y={}, X={}, c={})",
-                                step_idx, ok_y, ok_x, ok_c
-                            )));
-                        }
-                        if cpu_bus.bus_cols > 0 {
-                            let core_t = s.t();
-                            crate::memory_sidecar::cpu_bus::append_bus_openings_to_me_instance(
-                                params,
-                                &cpu_bus,
-                                core_t,
-                                wit,
-                                &mut rlc_parent,
-                            )?;
-                            for (child, zi) in dec_children.iter_mut().zip(Z_split.iter()) {
-                                crate::memory_sidecar::cpu_bus::append_bus_openings_to_me_instance(
-                                    params, &cpu_bus, core_t, zi, child,
-                                )?;
-                            }
-                        }
-                        if collect_val_lane_wits {
-                            val_lane_wits.extend(Z_split.iter().cloned());
-                        }
-                        val_fold.push(RlcDecProof {
-                            rlc_rhos,
-                            rlc_parent,
-                            dec_children,
-                        });
-                        continue;
-                    }
-                }
-
-                let (proof, mut Z_split_val) = prove_rlc_dec_lane(
+                let lane_s = get_or_build_zero_sidecar_ccs(&mut sidecar_ccs_cache, &s, wit.mat.cols())?;
+                let lane_l = get_or_build_sidecar_committer(&mut sidecar_committer_cache, params, wit.mat.cols())?;
+                let (proof, mut z_split_val) = prove_rlc_dec_lane(
                     &mode,
                     RlcLane::Val,
                     tr,
                     params,
-                    &s,
-                    ccs_sparse_cache.as_deref(),
-                    Some(&cpu_bus),
+                    lane_s,
+                    None,
+                    None,
                     &ring,
                     ell_d,
                     k_dec,
                     step_idx,
                     None,
                     core::slice::from_ref(me),
-                    core::slice::from_ref(&wit),
+                    &[&wit.mat],
                     collect_val_lane_wits,
-                    l,
+                    lane_l,
                     mixers,
                 )?;
                 if collect_val_lane_wits {
-                    val_lane_wits.extend(Z_split_val.drain(..));
+                    if proof.dec_children.len() != z_split_val.len() {
+                        return Err(PiCcsError::ProtocolError(format!(
+                            "Twist(val) DEC witness count mismatch (children={}, wits={})",
+                            proof.dec_children.len(),
+                            z_split_val.len()
+                        )));
+                    }
+                    val_lane_wits.extend(z_split_val.drain(..));
                 }
                 val_fold.push(proof);
             }
         }
 
-        // Additional WB/WP folding lane(s): CPU ME openings used by wb/booleanity and
-        // wp/quiescence stages. These lanes share the same witness matrix (`mcs_wit.Z`),
-        // so precompute DEC digit witnesses + child commitments once per step.
-        let mut wb_wp_dec_wits: Option<Vec<Mat<F>>> = None;
-        let mut wb_wp_child_cs: Option<Vec<Cmt>> = None;
-        if !mem_proof.wb_me_claims.is_empty() || !mem_proof.wp_me_claims.is_empty() {
-            let (dec_wits, digit_nonzero) = ccs::split_b_matrix_k_with_nonzero_flags(&mcs_wit.Z, k_dec, params.b)?;
-            let zero_c = Cmt::zeros(mcs_inst.c.d, mcs_inst.c.kappa);
-            let child_cs: Vec<Cmt> = {
-                #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-threads"))]
-                {
-                    const PAR_CHILD_COMMIT_THRESHOLD: usize = 32;
-                    let use_parallel = dec_wits.len() >= PAR_CHILD_COMMIT_THRESHOLD && rayon::current_num_threads() > 1;
-                    if use_parallel {
-                        dec_wits
-                            .par_iter()
-                            .enumerate()
-                            .map(|(idx, Zi)| {
-                                if digit_nonzero[idx] {
-                                    l.commit(Zi)
-                                } else {
-                                    zero_c.clone()
-                                }
-                            })
-                            .collect()
-                    } else {
-                        dec_wits
-                            .iter()
-                            .enumerate()
-                            .map(|(idx, Zi)| {
-                                if digit_nonzero[idx] {
-                                    l.commit(Zi)
-                                } else {
-                                    zero_c.clone()
-                                }
-                            })
-                            .collect()
+        let mut sidecar_fold: Vec<RlcDecProof> = Vec::new();
+        if !mem_proof.sidecar_me_claims.is_empty() {
+            if mem_proof.sidecar_me_claims.len() != sidecar_wits.len() {
+                return Err(PiCcsError::ProtocolError(format!(
+                    "Route-A sidecar claim/witness count mismatch (claims={}, wits={})",
+                    mem_proof.sidecar_me_claims.len(),
+                    sidecar_wits.len()
+                )));
+            }
+            let sidecar_lane_shapes: Vec<(usize, usize)> = sidecar_wits
+                .iter()
+                .zip(mem_proof.sidecar_me_claims.iter())
+                .map(|(wit, me)| (wit.mat.cols(), me.y.len()))
+                .collect();
+            let sidecar_groups = group_claims_by_lane_shape(&sidecar_lane_shapes, "prove/sidecar-fold")?;
+            tr.append_message(b"fold/sidecar_lane_start", &(step_idx as u64).to_le_bytes());
+            for (group_idx, group) in sidecar_groups.iter().enumerate() {
+                tr.append_message(b"fold/sidecar_lane_group_idx", &(group_idx as u64).to_le_bytes());
+                for &claim_idx in group.claim_indices.iter() {
+                    tr.append_message(b"fold/sidecar_lane_claim_idx", &(claim_idx as u64).to_le_bytes());
+                }
+                let lane_s = get_or_build_zero_sidecar_ccs(&mut sidecar_ccs_cache, &s, group.lane_m)?;
+                let lane_l = get_or_build_sidecar_committer(&mut sidecar_committer_cache, params, group.lane_m)?;
+                let mut me_group = Vec::with_capacity(group.claim_indices.len());
+                let mut wit_group: Vec<&Mat<F>> = Vec::with_capacity(group.claim_indices.len());
+                for &claim_idx in group.claim_indices.iter() {
+                    let me = mem_proof.sidecar_me_claims.get(claim_idx).ok_or_else(|| {
+                        PiCcsError::ProtocolError(format!(
+                            "Route-A sidecar group index out of range (claim_idx={claim_idx})"
+                        ))
+                    })?;
+                    let wit = sidecar_wits.get(claim_idx).ok_or_else(|| {
+                        PiCcsError::ProtocolError(format!(
+                            "Route-A sidecar witness index out of range (claim_idx={claim_idx})"
+                        ))
+                    })?;
+                    me_group.push(me.clone());
+                    wit_group.push(&wit.mat);
+                }
+                let (proof, mut z_split_sidecar) = prove_rlc_dec_lane(
+                    &mode,
+                    RlcLane::Val,
+                    tr,
+                    params,
+                    lane_s,
+                    None,
+                    None,
+                    &ring,
+                    ell_d,
+                    k_dec,
+                    step_idx,
+                    None,
+                    &me_group,
+                    &wit_group,
+                    collect_val_lane_wits,
+                    lane_l,
+                    mixers,
+                )?;
+                if collect_val_lane_wits {
+                    if proof.dec_children.len() != z_split_sidecar.len() {
+                        return Err(PiCcsError::ProtocolError(format!(
+                            "Route-A sidecar DEC witness count mismatch (children={}, wits={})",
+                            proof.dec_children.len(),
+                            z_split_sidecar.len()
+                        )));
                     }
+                    val_lane_wits.extend(z_split_sidecar.drain(..));
                 }
-                #[cfg(all(target_arch = "wasm32", not(feature = "wasm-threads")))]
-                {
-                    dec_wits
-                        .iter()
-                        .enumerate()
-                        .map(|(idx, Zi)| {
-                            if digit_nonzero[idx] {
-                                l.commit(Zi)
-                            } else {
-                                zero_c.clone()
-                            }
-                        })
-                        .collect()
-                }
-            };
-            wb_wp_dec_wits = Some(dec_wits);
-            wb_wp_child_cs = Some(child_cs);
-        }
-
-        // Additional WB folding lane(s): CPU ME openings used by wb/booleanity stage.
-        let mut wb_fold: Vec<RlcDecProof> = Vec::new();
-        if !mem_proof.wb_me_claims.is_empty() {
-            let trace = Rv32TraceLayout::new();
-            let t_len = crate::memory_sidecar::memory::infer_rv32_trace_t_len_for_wb_wp(step, &trace)?;
-            let wb_cols = crate::memory_sidecar::memory::rv32_trace_wb_columns(&trace);
-            let core_t = s.t();
-            let m_in = mcs_inst.m_in;
-            let dec_wits = wb_wp_dec_wits
-                .as_ref()
-                .ok_or_else(|| PiCcsError::ProtocolError("WB fold missing shared DEC witnesses".into()))?;
-            let child_cs = wb_wp_child_cs
-                .as_ref()
-                .ok_or_else(|| PiCcsError::ProtocolError("WB fold missing shared DEC commitments".into()))?;
-            tr.append_message(b"fold/wb_lane_start", &(step_idx as u64).to_le_bytes());
-            for (claim_idx, me) in mem_proof.wb_me_claims.iter().enumerate() {
-                tr.append_message(b"fold/wb_lane_claim_idx", &(claim_idx as u64).to_le_bytes());
-                bind_rlc_inputs(tr, RlcLane::Val, step_idx, core::slice::from_ref(me))?;
-                let rlc_rhos = ccs::sample_rot_rhos_n(tr, params, &ring, 1)?;
-                let rlc_parent = ccs::rlc_public(
-                    &s,
-                    params,
-                    &rlc_rhos,
-                    core::slice::from_ref(me),
-                    mixers.mix_rhos_commits,
-                    ell_d,
-                )?;
-                let (mut dec_children, ok_y, ok_x, ok_c) = ccs::dec_children_with_commit_cached(
-                    mode.clone(),
-                    &s,
-                    params,
-                    &rlc_parent,
-                    dec_wits,
-                    ell_d,
-                    child_cs,
-                    mixers.combine_b_pows,
-                    ccs_sparse_cache.as_deref(),
-                );
-                if !(ok_y && ok_x && ok_c) {
-                    return Err(PiCcsError::ProtocolError(format!(
-                        "DEC(val) public check failed at step {} (y={}, X={}, c={})",
-                        step_idx, ok_y, ok_x, ok_c
-                    )));
-                }
-                if dec_children.len() != dec_wits.len() {
-                    return Err(PiCcsError::ProtocolError(format!(
-                        "step {}: WB fold requires materialized DEC witnesses (children={}, wits={})",
-                        step_idx,
-                        dec_children.len(),
-                        dec_wits.len()
-                    )));
-                }
-                for (child, zi) in dec_children.iter_mut().zip(dec_wits.iter()) {
-                    crate::memory_sidecar::cpu_bus::append_col_major_time_openings_to_me_instance(
-                        params, m_in, t_len, m_in, &wb_cols, core_t, zi, child,
-                    )?;
-                }
-                if collect_val_lane_wits {
-                    val_lane_wits.extend(dec_wits.iter().cloned());
-                }
-                wb_fold.push(RlcDecProof {
-                    rlc_rhos,
-                    rlc_parent,
-                    dec_children,
-                });
-            }
-        }
-
-        // Additional WP folding lane(s): CPU ME openings used by wp/quiescence stage.
-        let mut wp_fold: Vec<RlcDecProof> = Vec::new();
-        if !mem_proof.wp_me_claims.is_empty() {
-            let trace = Rv32TraceLayout::new();
-            let t_len = crate::memory_sidecar::memory::infer_rv32_trace_t_len_for_wb_wp(step, &trace)?;
-            let mut wp_open_cols = crate::memory_sidecar::memory::rv32_trace_wp_opening_columns(&trace);
-            if control_required {
-                wp_open_cols.extend(crate::memory_sidecar::memory::rv32_trace_control_extra_opening_columns(
-                    &trace,
-                ));
-            }
-            if decode_required {
-                let decode_layout = Rv32DecodeSidecarLayout::new();
-                let (_decode_open_cols, decode_lut_indices) =
-                    crate::memory_sidecar::memory::resolve_shared_decode_lookup_lut_indices(step, &decode_layout)?;
-                let bus = crate::memory_sidecar::memory::build_bus_layout_for_step_witness(step, t_len)?;
-                if bus.shout_cols.len() != step.lut_instances.len() {
-                    return Err(PiCcsError::ProtocolError(
-                        "W2(shared): bus layout shout lane count drift in WP fold".into(),
-                    ));
-                }
-                let bus_base_delta = bus
-                    .bus_base
-                    .checked_sub(mcs_inst.m_in)
-                    .ok_or_else(|| PiCcsError::ProtocolError("W2(shared): bus_base underflow in WP fold".into()))?;
-                if bus_base_delta % t_len != 0 {
-                    return Err(PiCcsError::ProtocolError(format!(
-                        "W2(shared): bus_base alignment mismatch in WP fold (bus_base_delta={}, t_len={t_len})",
-                        bus_base_delta
-                    )));
-                }
-                let bus_col_offset = bus_base_delta / t_len;
-                for &lut_idx in decode_lut_indices.iter() {
-                    let inst_cols = bus.shout_cols.get(lut_idx).ok_or_else(|| {
-                        PiCcsError::ProtocolError(
-                            "W2(shared): missing shout cols for decode lookup table in WP fold".into(),
-                        )
-                    })?;
-                    let lane0 = inst_cols.lanes.get(0).ok_or_else(|| {
-                        PiCcsError::ProtocolError(
-                            "W2(shared): expected one shout lane for decode lookup table in WP fold".into(),
-                        )
-                    })?;
-                    wp_open_cols.push(bus_col_offset + lane0.primary_val());
-                }
-            }
-            if width_required {
-                wp_open_cols.extend(crate::memory_sidecar::memory::width_lookup_bus_val_cols_witness(
-                    step, t_len,
-                )?);
-            }
-            let core_t = s.t();
-            let m_in = mcs_inst.m_in;
-            let dec_wits = wb_wp_dec_wits
-                .as_ref()
-                .ok_or_else(|| PiCcsError::ProtocolError("WP fold missing shared DEC witnesses".into()))?;
-            let child_cs = wb_wp_child_cs
-                .as_ref()
-                .ok_or_else(|| PiCcsError::ProtocolError("WP fold missing shared DEC commitments".into()))?;
-            tr.append_message(b"fold/wp_lane_start", &(step_idx as u64).to_le_bytes());
-            for (claim_idx, me) in mem_proof.wp_me_claims.iter().enumerate() {
-                tr.append_message(b"fold/wp_lane_claim_idx", &(claim_idx as u64).to_le_bytes());
-                bind_rlc_inputs(tr, RlcLane::Val, step_idx, core::slice::from_ref(me))?;
-                let rlc_rhos = ccs::sample_rot_rhos_n(tr, params, &ring, 1)?;
-                let rlc_parent = ccs::rlc_public(
-                    &s,
-                    params,
-                    &rlc_rhos,
-                    core::slice::from_ref(me),
-                    mixers.mix_rhos_commits,
-                    ell_d,
-                )?;
-                let (mut dec_children, ok_y, ok_x, ok_c) = ccs::dec_children_with_commit_cached(
-                    mode.clone(),
-                    &s,
-                    params,
-                    &rlc_parent,
-                    dec_wits,
-                    ell_d,
-                    child_cs,
-                    mixers.combine_b_pows,
-                    ccs_sparse_cache.as_deref(),
-                );
-                if !(ok_y && ok_x && ok_c) {
-                    return Err(PiCcsError::ProtocolError(format!(
-                        "DEC(val) public check failed at step {} (y={}, X={}, c={})",
-                        step_idx, ok_y, ok_x, ok_c
-                    )));
-                }
-                if dec_children.len() != dec_wits.len() {
-                    return Err(PiCcsError::ProtocolError(format!(
-                        "step {}: WP fold requires materialized DEC witnesses (children={}, wits={})",
-                        step_idx,
-                        dec_children.len(),
-                        dec_wits.len()
-                    )));
-                }
-                for (child, zi) in dec_children.iter_mut().zip(dec_wits.iter()) {
-                    crate::memory_sidecar::cpu_bus::append_col_major_time_openings_to_me_instance(
-                        params,
-                        m_in,
-                        t_len,
-                        m_in,
-                        &wp_open_cols,
-                        core_t,
-                        zi,
-                        child,
-                    )?;
-                }
-                if collect_val_lane_wits {
-                    val_lane_wits.extend(dec_wits.iter().cloned());
-                }
-                wp_fold.push(RlcDecProof {
-                    rlc_rhos,
-                    rlc_parent,
-                    dec_children,
-                });
+                sidecar_fold.push(proof);
             }
         }
 
@@ -1251,8 +1677,7 @@ where
             mem: mem_proof,
             batched_time,
             val_fold,
-            wb_fold,
-            wp_fold,
+            sidecar_fold,
         });
 
         tr.append_message(b"fold/step_done", &(step_idx as u64).to_le_bytes());

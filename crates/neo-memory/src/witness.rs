@@ -5,12 +5,21 @@ use neo_reductions::error::PiCcsError;
 use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
 use std::ops::Range;
+use std::sync::Arc;
 
 use crate::mem_init::MemInit;
 use crate::riscv::lookups::RiscvOpcode;
 
 fn default_one_usize() -> usize {
     1
+}
+
+#[derive(Clone, Debug)]
+pub struct TraceColumnsSidecar<F> {
+    pub m_in: usize,
+    pub t_len: usize,
+    pub trace_cols: usize,
+    pub cols: Arc<Vec<Vec<F>>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -250,6 +259,8 @@ pub struct StepWitnessBundle<Cmt, F, K> {
     pub lut_instances: Vec<(LutInstance<Cmt, F>, LutWitness<F>)>,
     pub mem_instances: Vec<(MemInstance<Cmt, F>, MemWitness<F>)>,
     #[serde(skip)]
+    pub trace_sidecar: Option<TraceColumnsSidecar<F>>,
+    #[serde(skip)]
     pub _phantom: PhantomData<K>,
 }
 
@@ -259,6 +270,7 @@ impl<Cmt, F, K> From<(McsInstance<Cmt, F>, McsWitness<F>)> for StepWitnessBundle
             mcs,
             lut_instances: Vec::new(),
             mem_instances: Vec::new(),
+            trace_sidecar: None,
             _phantom: PhantomData,
         }
     }
@@ -310,6 +322,7 @@ impl<Cmt, F, K> From<StepWitnessBundle<Cmt, F, K>> for StepInstanceBundle<Cmt, F
             mcs: (mcs_inst, _mcs_wit),
             lut_instances,
             mem_instances,
+            trace_sidecar: _,
             _phantom: _,
         } = step;
         Self {

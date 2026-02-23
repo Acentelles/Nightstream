@@ -1378,39 +1378,38 @@ pub(crate) fn rv32_trace_wp_opening_columns(layout: &Rv32TraceLayout) -> Vec<usi
     out
 }
 
-pub(crate) fn rv32_trace_control_extra_opening_columns(layout: &Rv32TraceLayout) -> Vec<usize> {
-    vec![layout.pc_before, layout.pc_after]
+pub(crate) fn rv32_trace_main_opening_columns(layout: &Rv32TraceLayout) -> Vec<usize> {
+    // Canonical main-lane trace opening order appended to `ccs_out[0]`.
+    // Keep shout quartet contiguous for linkage checks that consume a fixed suffix.
+    vec![
+        layout.active,
+        layout.cycle,
+        layout.pc_before,
+        layout.instr_word,
+        layout.rs1_addr,
+        layout.rs1_val,
+        layout.rs2_addr,
+        layout.rs2_val,
+        layout.rd_addr,
+        layout.rd_val,
+        layout.ram_addr,
+        layout.ram_rv,
+        layout.ram_wv,
+        layout.shout_has_lookup,
+        layout.shout_val,
+        layout.shout_lhs,
+        layout.shout_rhs,
+        layout.halted,
+        layout.pc_after,
+        layout.jalr_drop_bit,
+    ]
 }
 
 pub(crate) fn infer_rv32_trace_t_len_for_wb_wp(
     step: &StepWitnessBundle<Cmt, F, K>,
     trace: &Rv32TraceLayout,
 ) -> Result<usize, PiCcsError> {
-    if let Some((inst, _)) = step.mem_instances.first() {
-        return Ok(inst.steps);
-    }
-    if let Some((inst, _)) = step.lut_instances.first() {
-        return Ok(inst.steps);
-    }
-
-    let m_in = step.mcs.0.m_in;
-    let m = step.mcs.1.Z.cols();
-    let w = m
-        .checked_sub(m_in)
-        .ok_or_else(|| PiCcsError::InvalidInput("trace width underflow while inferring t_len".into()))?;
-    if trace.cols == 0 || w % trace.cols != 0 {
-        return Err(PiCcsError::InvalidInput(
-            "cannot infer RV32 trace t_len for WB/WP (missing mem/lut instances and non-divisible witness width)"
-                .into(),
-        ));
-    }
-    let t_len = w / trace.cols;
-    if t_len == 0 {
-        return Err(PiCcsError::InvalidInput(
-            "RV32 trace t_len must be >= 1 for WB/WP".into(),
-        ));
-    }
-    Ok(t_len)
+    Ok(TraceColumnSourceWitness::from_step(step, trace, "WB/WP")?.t_len())
 }
 
 pub(crate) fn decode_trace_col_values_batch(
@@ -1419,116 +1418,12 @@ pub(crate) fn decode_trace_col_values_batch(
     t_len: usize,
     col_ids: &[usize],
 ) -> Result<BTreeMap<usize, Vec<K>>, PiCcsError> {
-    let m_in = step.mcs.0.m_in;
-    let m = step.mcs.1.Z.cols();
-    let d = neo_math::D;
-    let z = &step.mcs.1.Z;
-    if z.rows() != d {
+    let source = TraceColumnSourceWitness::from_step(step, &Rv32TraceLayout::new(), "WB/WP")?;
+    if source.t_len() != t_len {
         return Err(PiCcsError::InvalidInput(format!(
-            "WB/WP: CPU witness Z.rows()={} != D={d}",
-            z.rows()
+            "WB/WP: t_len mismatch (explicit={t_len}, inferred={})",
+            source.t_len()
         )));
     }
-
-    let trace_base = m_in;
-    let b_k = K::from(F::from_u64(params.b as u64));
-    let mut pow_b = Vec::with_capacity(d);
-    let mut cur = K::ONE;
-    for _ in 0..d {
-        pow_b.push(cur);
-        cur *= b_k;
-    }
-
-    let unique_col_ids: BTreeSet<usize> = col_ids.iter().copied().collect();
-    let mut decoded = BTreeMap::<usize, Vec<K>>::new();
-    for col_id in unique_col_ids {
-        let col_start = trace_base
-            .checked_add(
-                col_id
-                    .checked_mul(t_len)
-                    .ok_or_else(|| PiCcsError::InvalidInput("WB/WP: col_id * t_len overflow".into()))?,
-            )
-            .ok_or_else(|| PiCcsError::InvalidInput("WB/WP: trace column start overflow".into()))?;
-
-        let mut out = Vec::with_capacity(t_len);
-        for j in 0..t_len {
-            let idx = col_start
-                .checked_add(j)
-                .ok_or_else(|| PiCcsError::InvalidInput("WB/WP: trace z idx overflow".into()))?;
-            if idx >= m {
-                return Err(PiCcsError::InvalidInput(format!(
-                    "WB/WP: trace z idx out of range (idx={idx}, m={m})"
-                )));
-            }
-            let mut acc = K::ZERO;
-            for rho in 0..d {
-                acc += pow_b[rho] * K::from(z[(rho, idx)]);
-            }
-            out.push(acc);
-        }
-        decoded.insert(col_id, out);
-    }
-
-    Ok(decoded)
-}
-
-pub(crate) fn decode_lookup_backed_col_values_batch(
-    params: &NeoParams,
-    m_in: usize,
-    t_len: usize,
-    z: &neo_ccs::matrix::Mat<F>,
-    max_cols: usize,
-    col_ids: &[usize],
-) -> Result<BTreeMap<usize, Vec<K>>, PiCcsError> {
-    let m = z.cols();
-    let d = neo_math::D;
-    if z.rows() != d {
-        return Err(PiCcsError::InvalidInput(format!(
-            "W2: decode lookup-backed Z.rows()={} != D={d}",
-            z.rows()
-        )));
-    }
-
-    let b_k = K::from(F::from_u64(params.b as u64));
-    let mut pow_b = Vec::with_capacity(d);
-    let mut cur = K::ONE;
-    for _ in 0..d {
-        pow_b.push(cur);
-        cur *= b_k;
-    }
-
-    let unique_col_ids: BTreeSet<usize> = col_ids.iter().copied().collect();
-    let mut decoded = BTreeMap::<usize, Vec<K>>::new();
-    for col_id in unique_col_ids {
-        if col_id >= max_cols {
-            return Err(PiCcsError::InvalidInput(format!(
-                "W2: decode lookup-backed column out of range (col_id={col_id}, cols={max_cols})"
-            )));
-        }
-        let col_start = m_in
-            .checked_add(
-                col_id
-                    .checked_mul(t_len)
-                    .ok_or_else(|| PiCcsError::InvalidInput("W2: col_id * t_len overflow".into()))?,
-            )
-            .ok_or_else(|| PiCcsError::InvalidInput("W2: trace column start overflow".into()))?;
-        let mut out = Vec::with_capacity(t_len);
-        for j in 0..t_len {
-            let idx = col_start
-                .checked_add(j)
-                .ok_or_else(|| PiCcsError::InvalidInput("W2: trace z idx overflow".into()))?;
-            if idx >= m {
-                return Err(PiCcsError::InvalidInput(format!(
-                    "W2: decode lookup-backed z idx out of range (idx={idx}, m={m})"
-                )));
-            }
-            let mut acc = K::ZERO;
-            for rho in 0..d {
-                acc += pow_b[rho] * K::from(z[(rho, idx)]);
-            }
-            out.push(acc);
-        }
-        decoded.insert(col_id, out);
-    }
-    Ok(decoded)
+    source.decode_cols(params, col_ids, "WB/WP")
 }

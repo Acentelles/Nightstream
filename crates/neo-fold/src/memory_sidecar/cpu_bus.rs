@@ -1,13 +1,11 @@
 use crate::PiCcsError;
 use neo_ccs::{CcsMatrix, CcsStructure, Mat, MeInstance};
 use neo_math::{F, K};
-use neo_memory::ajtai::decode_vector as ajtai_decode_vector;
 use neo_memory::cpu::{
     build_bus_layout_for_instances_with_shout_shapes_and_twist_lanes, BusLayout, ShoutInstanceShape,
 };
 use neo_memory::riscv::lookups::{PROG_ID, REG_ID};
 use neo_memory::riscv::trace::{rv32_is_decode_lookup_table_id, rv32_is_width_lookup_table_id};
-use neo_memory::sparse_time::SparseIdxVec;
 use neo_memory::witness::{LutInstance, MemInstance, StepInstanceBundle, StepWitnessBundle};
 use neo_params::NeoParams;
 use p3_field::PrimeCharacteristicRing;
@@ -91,7 +89,7 @@ fn infer_chunk_size_from_steps<Cmt, S: BusStepView<Cmt>>(steps: &[S]) -> Result<
     Ok(max_steps)
 }
 
-fn infer_bus_layout_for_steps<Cmt, S: BusStepView<Cmt>>(
+fn infer_route_a_bus_layout_for_steps_disabled<Cmt, S: BusStepView<Cmt>>(
     s: &CcsStructure<F>,
     steps: &[S],
 ) -> Result<BusLayout, PiCcsError> {
@@ -109,99 +107,10 @@ fn infer_bus_layout_for_steps<Cmt, S: BusStepView<Cmt>>(
     }
 
     let chunk_size = infer_chunk_size_from_steps(steps)?;
-    let base_shout_ell_addrs: Vec<usize> = (0..steps[0].lut_insts_len())
-        .map(|i| {
-            let inst = steps[0].lut_inst(i);
-            inst.d * inst.ell
-        })
-        .collect();
-    let base_shout_lanes: Vec<usize> = (0..steps[0].lut_insts_len())
-        .map(|i| {
-            let inst = steps[0].lut_inst(i);
-            inst.lanes
-        })
-        .collect();
-    let base_shout_addr_groups: Vec<Option<u64>> = (0..steps[0].lut_insts_len())
-        .map(|i| steps[0].lut_inst(i).addr_group)
-        .collect();
-    let base_shout_selector_groups: Vec<Option<u64>> = (0..steps[0].lut_insts_len())
-        .map(|i| steps[0].lut_inst(i).selector_group)
-        .collect();
-    let base_twist_ell_addrs: Vec<usize> = (0..steps[0].mem_insts_len())
-        .map(|i| {
-            let inst = steps[0].mem_inst(i);
-            inst.d * inst.ell
-        })
-        .collect();
-    let base_twist_lanes: Vec<usize> = (0..steps[0].mem_insts_len())
-        .map(|i| {
-            let inst = steps[0].mem_inst(i);
-            inst.lanes
-        })
-        .collect();
-
-    for (i, step) in steps.iter().enumerate().skip(1) {
-        let cur_shout: Vec<usize> = (0..step.lut_insts_len())
-            .map(|j| {
-                let inst = step.lut_inst(j);
-                inst.d * inst.ell
-            })
-            .collect();
-        let cur_shout_lanes: Vec<usize> = (0..step.lut_insts_len())
-            .map(|j| {
-                let inst = step.lut_inst(j);
-                inst.lanes
-            })
-            .collect();
-        let cur_shout_addr_groups: Vec<Option<u64>> = (0..step.lut_insts_len())
-            .map(|j| step.lut_inst(j).addr_group)
-            .collect();
-        let cur_shout_selector_groups: Vec<Option<u64>> = (0..step.lut_insts_len())
-            .map(|j| step.lut_inst(j).selector_group)
-            .collect();
-        let cur_twist: Vec<usize> = (0..step.mem_insts_len())
-            .map(|j| {
-                let inst = step.mem_inst(j);
-                inst.d * inst.ell
-            })
-            .collect();
-        let cur_twist_lanes: Vec<usize> = (0..step.mem_insts_len())
-            .map(|j| {
-                let inst = step.mem_inst(j);
-                inst.lanes
-            })
-            .collect();
-        if cur_shout != base_shout_ell_addrs
-            || cur_shout_lanes != base_shout_lanes
-            || cur_shout_addr_groups != base_shout_addr_groups
-            || cur_shout_selector_groups != base_shout_selector_groups
-            || cur_twist != base_twist_ell_addrs
-            || cur_twist_lanes != base_twist_lanes
-        {
-            return Err(PiCcsError::InvalidInput(format!(
-                "shared CPU bus layout mismatch across steps (step 0 vs step {i})"
-            )));
-        }
-    }
-
-    let shout_shapes = base_shout_ell_addrs
-        .iter()
-        .copied()
-        .zip(base_shout_lanes.iter().copied())
-        .zip(base_shout_addr_groups.iter().copied())
-        .zip(base_shout_selector_groups.iter().copied())
-        .map(|(((ell_addr, lanes), addr_group), selector_group)| ShoutInstanceShape {
-            ell_addr,
-            lanes,
-            n_vals: 1usize,
-            addr_group,
-            selector_group,
-        });
-    let twist_ell_addrs_and_lanes = base_twist_ell_addrs
-        .iter()
-        .copied()
-        .zip(base_twist_lanes.iter().copied())
-        .map(|(ell_addr, lanes)| (ell_addr, lanes));
+    // Route-A cutover: Shout/Twist openings are commitment-bound through sidecar ME claims,
+    // so CPU-bus columns are always disabled.
+    let shout_shapes: Vec<ShoutInstanceShape> = Vec::new();
+    let twist_ell_addrs_and_lanes = std::iter::empty::<(usize, usize)>();
     let layout = build_bus_layout_for_instances_with_shout_shapes_and_twist_lanes(
         s.m,
         m_in,
@@ -211,8 +120,7 @@ fn infer_bus_layout_for_steps<Cmt, S: BusStepView<Cmt>>(
     )
     .map_err(PiCcsError::InvalidInput)?;
 
-    // If there are no bus columns (no Twist/Shout instances), Route A doesn't use the bus time rows.
-    // Allow small CCS instances (including m_in == n) in this case.
+    // Route-A path keeps bus disabled, so small CCS instances are allowed.
     if layout.bus_cols == 0 {
         return Ok(layout);
     }
@@ -235,7 +143,7 @@ pub(crate) fn prepare_ccs_for_shared_cpu_bus_steps<'a, Cmt, S: BusStepView<Cmt>>
     s0: &'a CcsStructure<F>,
     steps: &[S],
 ) -> Result<(&'a CcsStructure<F>, BusLayout), PiCcsError> {
-    let bus = infer_bus_layout_for_steps(s0, steps)?;
+    let bus = infer_route_a_bus_layout_for_steps_disabled(s0, steps)?;
     let padding_rows = ensure_ccs_has_shared_bus_padding_for_steps(s0, &bus, steps)?;
     ensure_ccs_binds_shared_bus_for_steps(s0, &bus, &padding_rows, steps)?;
     // Performance: do NOT materialize bus copyout matrices into the CCS. Instead, we append the
@@ -419,21 +327,15 @@ where
     Ok(())
 }
 
-/// Append time-indexed openings for a column-major region of the CPU witness.
+/// Append time-indexed openings for explicit contiguous column ranges in `Z`.
 ///
-/// This is a "no shared CPU bus tail" bridge: instead of materializing copyout matrices for
-/// per-row columns (e.g. an execution trace), we compute their Route-A time-combined openings
-/// directly from the committed witness matrix `Z` and append them to the ME instance.
-///
-/// Semantics: for each `col_id` in `cols`, append an opening for the vector
-/// `{ z[col_base + col_id * t_len + j] }_{j=0..t_len-1}` combined with weights
-/// `χ_r(m_in + j)` where `r = me.r`.
+/// For each `col_start` in `col_starts`, this appends an opening for the length-`t_len` vector
+/// `{ z[col_start + j] }_{j=0..t_len-1}` combined with weights `χ_r(m_in + j)` where `r = me.r`.
 pub(crate) fn append_col_major_time_openings_to_me_instance<Cmt>(
     params: &NeoParams,
     m_in: usize,
     t_len: usize,
-    col_base: usize,
-    cols: &[usize],
+    col_starts: &[usize],
     core_t: usize,
     Z: &Mat<F>,
     me: &mut MeInstance<Cmt, F, K>,
@@ -441,7 +343,7 @@ pub(crate) fn append_col_major_time_openings_to_me_instance<Cmt>(
 where
     Cmt: Clone,
 {
-    if cols.is_empty() {
+    if col_starts.is_empty() {
         return Ok(());
     }
     if t_len == 0 {
@@ -471,14 +373,6 @@ where
     if me.r.is_empty() {
         return Err(PiCcsError::InvalidInput("trace openings require non-empty ME.r".into()));
     }
-    if col_base >= Z.cols() {
-        return Err(PiCcsError::InvalidInput(format!(
-            "trace openings require col_base < m (col_base={}, m={})",
-            col_base,
-            Z.cols()
-        )));
-    }
-
     let n_pad = 1usize
         .checked_shl(me.r.len() as u32)
         .ok_or_else(|| PiCcsError::InvalidInput("2^ell_n overflow".into()))?;
@@ -498,8 +392,8 @@ where
 
     // Idempotent append: allow callers to call this once; reject unexpected shapes.
     let want_len = core_t
-        .checked_add(cols.len())
-        .ok_or_else(|| PiCcsError::InvalidInput("core_t + cols.len overflow".into()))?;
+        .checked_add(col_starts.len())
+        .ok_or_else(|| PiCcsError::InvalidInput("core_t + col_starts.len overflow".into()))?;
     if me.y.len() == want_len && me.y_scalars.len() == want_len {
         return Ok(());
     }
@@ -538,182 +432,7 @@ where
         cur *= bK;
     }
 
-    for &col_id in cols {
-        let col_offset = col_id
-            .checked_mul(t_len)
-            .ok_or_else(|| PiCcsError::InvalidInput("trace col_id * t_len overflow".into()))?;
-        let col_start = col_base
-            .checked_add(col_offset)
-            .ok_or_else(|| PiCcsError::InvalidInput("trace col_base + col_offset overflow".into()))?;
-        let col_end = col_start
-            .checked_add(t_len - 1)
-            .ok_or_else(|| PiCcsError::InvalidInput("trace col_end overflow".into()))?;
-        if col_end >= Z.cols() {
-            return Err(PiCcsError::InvalidInput(format!(
-                "trace openings: column span out of range (col_start={col_start}, col_end={col_end}, m={})",
-                Z.cols()
-            )));
-        }
-
-        let mut y_row = vec![K::ZERO; y_pad];
-        let mut y_scalar = K::ZERO;
-        for rho in 0..d {
-            let mut acc = K::ZERO;
-            for (j, w) in weighted_rows.iter() {
-                acc += *w * K::from(Z[(rho, col_start + *j)]);
-            }
-            y_row[rho] = acc;
-            y_scalar += acc * pow_b[rho];
-        }
-
-        me.y.push(y_row);
-        me.y_scalars.push(y_scalar);
-    }
-
-    Ok(())
-}
-
-/// Append time-indexed openings for a column-major region of the CPU witness, using only the
-/// selected time rows `js`.
-///
-/// This is valid when the caller knows that for each opened column `col_id`, all omitted rows
-/// (`j` not in `js`) are zero in the witness; then the opening can be computed by summing only
-/// over `js`.
-pub(crate) fn append_col_major_time_openings_to_me_instance_at_js<Cmt>(
-    params: &NeoParams,
-    m_in: usize,
-    t_len: usize,
-    col_base: usize,
-    cols: &[usize],
-    core_t: usize,
-    Z: &Mat<F>,
-    me: &mut MeInstance<Cmt, F, K>,
-    js: &[usize],
-) -> Result<(), PiCcsError>
-where
-    Cmt: Clone,
-{
-    if cols.is_empty() {
-        return Ok(());
-    }
-    if t_len == 0 {
-        return Err(PiCcsError::InvalidInput("trace openings require t_len >= 1".into()));
-    }
-
-    let y_pad = (params.d as usize).next_power_of_two();
-    let d = neo_math::D;
-    if y_pad < d {
-        return Err(PiCcsError::InvalidInput(format!(
-            "trace openings require y_pad >= D (y_pad={y_pad}, D={d})"
-        )));
-    }
-    if Z.rows() != d {
-        return Err(PiCcsError::InvalidInput(format!(
-            "trace openings require Z.rows()==D (got {}, want {})",
-            Z.rows(),
-            d
-        )));
-    }
-    if me.m_in != m_in {
-        return Err(PiCcsError::InvalidInput(format!(
-            "trace openings require ME.m_in==m_in (got {}, want {})",
-            me.m_in, m_in
-        )));
-    }
-    if me.r.is_empty() {
-        return Err(PiCcsError::InvalidInput("trace openings require non-empty ME.r".into()));
-    }
-    if col_base >= Z.cols() {
-        return Err(PiCcsError::InvalidInput(format!(
-            "trace openings require col_base < m (col_base={}, m={})",
-            col_base,
-            Z.cols()
-        )));
-    }
-
-    let n_pad = 1usize
-        .checked_shl(me.r.len() as u32)
-        .ok_or_else(|| PiCcsError::InvalidInput("2^ell_n overflow".into()))?;
-    for &j in js {
-        if j >= t_len {
-            return Err(PiCcsError::InvalidInput(format!(
-                "trace js out of range: j={j} >= t_len={t_len}"
-            )));
-        }
-        let row = m_in
-            .checked_add(j)
-            .ok_or_else(|| PiCcsError::InvalidInput("m_in + j overflow".into()))?;
-        if row >= n_pad {
-            return Err(PiCcsError::InvalidInput(format!(
-                "trace time row index out of range: (m_in + j)={row} out of range for ell_n={} (n_pad={})",
-                me.r.len(),
-                n_pad
-            )));
-        }
-    }
-
-    // Idempotent append: allow callers to call this once; reject unexpected shapes.
-    let want_len = core_t
-        .checked_add(cols.len())
-        .ok_or_else(|| PiCcsError::InvalidInput("core_t + cols.len overflow".into()))?;
-    if me.y.len() == want_len && me.y_scalars.len() == want_len {
-        return Ok(());
-    }
-    if me.y.len() != core_t || me.y_scalars.len() != core_t {
-        return Err(PiCcsError::InvalidInput(format!(
-            "trace openings expect ME y/y_scalars to start at core_t (y.len()={}, y_scalars.len()={}, core_t={})",
-            me.y.len(),
-            me.y_scalars.len(),
-            core_t
-        )));
-    }
-    for (j, row) in me.y.iter().enumerate() {
-        if row.len() != y_pad {
-            return Err(PiCcsError::InvalidInput(format!(
-                "trace openings require ME.y[{j}].len()==y_pad (got {}, want {})",
-                row.len(),
-                y_pad
-            )));
-        }
-    }
-
-    // Precompute χ_r(m_in + j) weights for the selected time rows.
-    let dense_selection = js.len().saturating_mul(3) >= t_len;
-    let time_weights: Vec<(usize, K)> = if dense_selection {
-        let all = precompute_contiguous_time_weights(&me.r, m_in, t_len, n_pad);
-        let mut out = Vec::with_capacity(js.len());
-        for &j in js {
-            out.push((j, all[j]));
-        }
-        out
-    } else {
-        let mut out = Vec::with_capacity(js.len());
-        for &j in js {
-            out.push((j, chi_for_row_index(&me.r, m_in + j)));
-        }
-        out
-    };
-    let weighted_rows: Vec<(usize, K)> = time_weights
-        .into_iter()
-        .filter_map(|(j, w)| (w != K::ZERO).then_some((j, w)))
-        .collect();
-
-    // Base-b powers for recomposition.
-    let bK = K::from(F::from_u64(params.b as u64));
-    let mut pow_b = Vec::with_capacity(d);
-    let mut cur = K::ONE;
-    for _ in 0..d {
-        pow_b.push(cur);
-        cur *= bK;
-    }
-
-    for &col_id in cols {
-        let col_offset = col_id
-            .checked_mul(t_len)
-            .ok_or_else(|| PiCcsError::InvalidInput("trace col_id * t_len overflow".into()))?;
-        let col_start = col_base
-            .checked_add(col_offset)
-            .ok_or_else(|| PiCcsError::InvalidInput("trace col_base + col_offset overflow".into()))?;
+    for &col_start in col_starts {
         let col_end = col_start
             .checked_add(t_len - 1)
             .ok_or_else(|| PiCcsError::InvalidInput("trace col_end overflow".into()))?;
@@ -1599,92 +1318,4 @@ fn ensure_ccs_has_shared_bus_padding_for_steps<Cmt, S: BusStepView<Cmt>>(
     let const_one_cols = infer_public_constant_one_cols_from_steps(steps);
     let required = required_bus_padding_for_layout(bus);
     ensure_ccs_has_bus_padding_constraints(s, bus, &const_one_cols, &required)
-}
-
-pub(crate) fn decode_cpu_z_to_k(params: &NeoParams, Z: &Mat<F>) -> Vec<K> {
-    ajtai_decode_vector(params, Z)
-        .into_iter()
-        .map(Into::into)
-        .collect()
-}
-
-pub(crate) fn build_time_sparse_from_bus_col(
-    z: &[K],
-    bus: &BusLayout,
-    col_id: usize,
-    steps_len: usize,
-    pow2_cycle: usize,
-) -> Result<SparseIdxVec<K>, PiCcsError> {
-    if col_id >= bus.bus_cols {
-        return Err(PiCcsError::InvalidInput(format!(
-            "bus col_id out of range: {col_id} >= {}",
-            bus.bus_cols
-        )));
-    }
-    if steps_len > bus.chunk_size {
-        return Err(PiCcsError::InvalidInput(format!(
-            "steps_len({steps_len}) > bus.chunk_size({})",
-            bus.chunk_size
-        )));
-    }
-    let mut entries: Vec<(usize, K)> = Vec::new();
-    for j in 0..bus.chunk_size {
-        let t = bus.time_index(j);
-        if t >= pow2_cycle {
-            return Err(PiCcsError::InvalidInput(format!(
-                "bus time index out of range: t={t} >= pow2_cycle={pow2_cycle}"
-            )));
-        }
-        if j >= steps_len {
-            continue;
-        }
-        let idx = bus.bus_cell(col_id, j);
-        let v = z
-            .get(idx)
-            .copied()
-            .ok_or_else(|| PiCcsError::InvalidInput(format!("CPU witness too short for bus idx={idx}")))?;
-        if v != K::ZERO {
-            entries.push((t, v));
-        }
-    }
-    Ok(SparseIdxVec::from_entries(pow2_cycle, entries))
-}
-
-pub(crate) fn build_time_sparse_from_bus_col_at_js(
-    z: &[K],
-    bus: &BusLayout,
-    col_id: usize,
-    js: &[usize],
-    pow2_cycle: usize,
-) -> Result<SparseIdxVec<K>, PiCcsError> {
-    if col_id >= bus.bus_cols {
-        return Err(PiCcsError::InvalidInput(format!(
-            "bus col_id out of range: {col_id} >= {}",
-            bus.bus_cols
-        )));
-    }
-    let mut entries: Vec<(usize, K)> = Vec::new();
-    for &j in js {
-        if j >= bus.chunk_size {
-            return Err(PiCcsError::InvalidInput(format!(
-                "bus j out of range: j={j} >= bus.chunk_size={}",
-                bus.chunk_size
-            )));
-        }
-        let t = bus.time_index(j);
-        if t >= pow2_cycle {
-            return Err(PiCcsError::InvalidInput(format!(
-                "bus time index out of range: t={t} >= pow2_cycle={pow2_cycle}"
-            )));
-        }
-        let idx = bus.bus_cell(col_id, j);
-        let v = z
-            .get(idx)
-            .copied()
-            .ok_or_else(|| PiCcsError::InvalidInput(format!("CPU witness too short for bus idx={idx}")))?;
-        if v != K::ZERO {
-            entries.push((t, v));
-        }
-    }
-    Ok(SparseIdxVec::from_entries(pow2_cycle, entries))
 }

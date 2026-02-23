@@ -231,6 +231,7 @@ fn cpu_semantic_shadow_fork_attack_should_be_rejected() {
         mcs,
         lut_instances: vec![],
         mem_instances: vec![(mem_inst, mem_wit)],
+        trace_sidecar: None,
         _phantom: PhantomData::<K>,
     }];
     let steps_instance: Vec<StepInstanceBundle<Cmt, F, K>> =
@@ -430,6 +431,7 @@ fn cpu_semantic_fork_splice_attack_should_be_rejected() {
         mcs,
         lut_instances: vec![],
         mem_instances: vec![(mem_inst, mem_wit)],
+        trace_sidecar: None,
         _phantom: PhantomData::<K>,
     }];
     let steps_instance: Vec<StepInstanceBundle<Cmt, F, K>> =
@@ -644,6 +646,7 @@ fn cpu_lookup_shadow_fork_attack_should_be_rejected() {
         mcs,
         lut_instances: vec![(lut_inst, lut_wit)],
         mem_instances: vec![(mem_inst, mem_wit)],
+        trace_sidecar: None,
         _phantom: PhantomData::<K>,
     }];
     let steps_instance: Vec<StepInstanceBundle<Cmt, F, K>> =

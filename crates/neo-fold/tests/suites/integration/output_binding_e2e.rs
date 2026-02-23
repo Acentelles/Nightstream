@@ -83,6 +83,65 @@ fn create_mcs_from_z(
     (McsInstance { c, x, m_in }, McsWitness { w, Z })
 }
 
+fn decompose_addr_bits(addr: u64, d: usize, ell: usize, n_side: usize) -> Vec<F> {
+    let mut out = vec![F::ZERO; d * ell];
+    let mut tmp = addr;
+    for dim in 0..d {
+        let comp = (tmp % (n_side as u64)) as u64;
+        tmp /= n_side as u64;
+        for bit in 0..ell {
+            out[dim * ell + bit] = if ((comp >> bit) & 1) == 1 { F::ONE } else { F::ZERO };
+        }
+    }
+    out
+}
+
+fn build_mem_witness_single_step(
+    params: &NeoParams,
+    mem_inst: &MemInstance<Cmt, F>,
+    has_read: F,
+    has_write: F,
+    read_addr: u64,
+    write_addr: u64,
+    read_val: F,
+    write_val: F,
+    inc: F,
+) -> MemWitness<F> {
+    let layout = mem_inst.twist_layout();
+    let steps = mem_inst.steps;
+    assert_eq!(steps, 1, "single-step helper expects steps=1");
+    let mut cols = vec![vec![F::ZERO; steps]; layout.expected_len()];
+
+    for (lane_idx, lane) in layout.lanes.iter().enumerate() {
+        if lane_idx > 0 {
+            continue;
+        }
+        cols[lane.has_read][0] = has_read;
+        cols[lane.has_write][0] = has_write;
+        cols[lane.rv][0] = if has_read == F::ONE { read_val } else { F::ZERO };
+        cols[lane.wv][0] = if has_write == F::ONE { write_val } else { F::ZERO };
+        cols[lane.inc_at_write_addr][0] = if has_write == F::ONE { inc } else { F::ZERO };
+        if has_read == F::ONE {
+            let ra_bits = decompose_addr_bits(read_addr, mem_inst.d, mem_inst.ell, mem_inst.n_side);
+            for (k, bit_idx) in lane.ra_bits.clone().enumerate() {
+                cols[bit_idx][0] = ra_bits[k];
+            }
+        }
+        if has_write == F::ONE {
+            let wa_bits = decompose_addr_bits(write_addr, mem_inst.d, mem_inst.ell, mem_inst.n_side);
+            for (k, bit_idx) in lane.wa_bits.clone().enumerate() {
+                cols[bit_idx][0] = wa_bits[k];
+            }
+        }
+    }
+
+    let mats = cols
+        .iter()
+        .map(|col| neo_memory::ajtai::encode_vector_balanced_to_mat(params, col))
+        .collect();
+    MemWitness { mats }
+}
+
 #[test]
 fn output_binding_e2e_wrong_claim_fails() -> Result<(), PiCcsError> {
     // R1CS base CCS with enough slack rows to inject shared-bus constraints.
@@ -108,7 +167,17 @@ fn output_binding_e2e_wrong_claim_fails() -> Result<(), PiCcsError> {
         ell: 2,
         init: MemInit::Zero,
     };
-    let mem_wit = MemWitness { mats: Vec::new() };
+    let mem_wit = build_mem_witness_single_step(
+        &params,
+        &mem_inst,
+        F::ZERO,
+        F::ONE,
+        0,
+        2,
+        F::ZERO,
+        F::from_u64(7),
+        F::from_u64(7),
+    );
 
     // Minimal CPU columns used by the injected constraints (all < bus_base).
     const COL_HAS_READ: usize = 1;
@@ -185,6 +254,7 @@ fn output_binding_e2e_wrong_claim_fails() -> Result<(), PiCcsError> {
         mcs: (mcs_inst, mcs_wit),
         lut_instances: vec![],
         mem_instances: vec![(mem_inst, mem_wit)],
+        trace_sidecar: None,
         _phantom: PhantomData,
     }];
     let steps_public: Vec<StepInstanceBundle<Cmt, F, K>> = steps_witness.iter().map(StepInstanceBundle::from).collect();

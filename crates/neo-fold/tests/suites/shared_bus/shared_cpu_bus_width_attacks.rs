@@ -46,12 +46,11 @@ fn prove_width_trace_program() -> (Rv32TraceWiringRun, ShardProof) {
 fn tamper_width_opening_scalar(proof: &mut ShardProof, width_col: usize) {
     let layout = Rv32WidthSidecarLayout::new();
     let width_open_cols = rv32_width_lookup_backed_cols(&layout);
-    assert_eq!(
-        proof.steps[0].mem.wp_me_claims.len(),
-        1,
-        "expected one WP ME claim carrying width lookup openings"
-    );
-    let me = &mut proof.steps[0].mem.wp_me_claims[0];
+    let me = proof.steps[0]
+        .mem
+        .sidecar_me_claims
+        .last_mut()
+        .expect("expected sidecar lookup ME claim carrying width openings");
     let width_open_start = me
         .y_scalars
         .len()

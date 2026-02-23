@@ -613,9 +613,13 @@ where
                     // Collect Shout events keyed by (sorted) table_id list.
                     for ev in &step.shout_events {
                         let id = ev.shout_id.0;
-                        let idx = shared.table_ids.binary_search(&id).map_err(|_| {
-                            format!("unexpected shout_id={id} in one step (chunk_start={chunk_start}, j={j})")
-                        })?;
+                        // In minimal shared-bus mode we only reserve selected lookup families
+                        // (e.g. decode selectors for Twist gating). Other Shout events are
+                        // carried by LUT witness sidecars and are intentionally not written
+                        // into the CPU bus tail.
+                        let Ok(idx) = shared.table_ids.binary_search(&id) else {
+                            continue;
+                        };
                         let lanes = shout_events[idx].len();
                         let lane_idx = used_shout[idx];
                         if lane_idx >= lanes {

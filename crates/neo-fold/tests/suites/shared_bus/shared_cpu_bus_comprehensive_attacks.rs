@@ -301,6 +301,7 @@ fn ccs_must_reference_bus_columns_guardrail() {
         mcs,
         lut_instances: vec![],
         mem_instances: vec![(mem_inst, mem_wit)],
+        trace_sidecar: None,
         _phantom: PhantomData::<K>,
     }];
 
@@ -416,6 +417,7 @@ fn address_bit_tampering_attack_should_be_rejected() {
         mcs,
         lut_instances: vec![],
         mem_instances: vec![(mem_inst, mem_wit)],
+        trace_sidecar: None,
         _phantom: PhantomData::<K>,
     }];
     let steps_instance: Vec<StepInstanceBundle<Cmt, F, K>> =
@@ -545,6 +547,7 @@ fn has_read_flag_mismatch_attack_should_be_rejected() {
         mcs,
         lut_instances: vec![],
         mem_instances: vec![(mem_inst, mem_wit)],
+        trace_sidecar: None,
         _phantom: PhantomData::<K>,
     }];
     let steps_instance: Vec<StepInstanceBundle<Cmt, F, K>> =
@@ -675,6 +678,7 @@ fn increment_value_tampering_attack_should_be_rejected() {
         mcs,
         lut_instances: vec![],
         mem_instances: vec![(mem_inst, mem_wit)],
+        trace_sidecar: None,
         _phantom: PhantomData::<K>,
     }];
     let steps_instance: Vec<StepInstanceBundle<Cmt, F, K>> =
@@ -830,6 +834,7 @@ fn lookup_value_tampering_attack_should_be_rejected() {
         mcs,
         lut_instances: vec![(lut_inst, lut_wit)],
         mem_instances: vec![(mem_inst, mem_wit)],
+        trace_sidecar: None,
         _phantom: PhantomData::<K>,
     }];
     let steps_instance: Vec<StepInstanceBundle<Cmt, F, K>> =
@@ -959,6 +964,7 @@ fn bus_region_mismatch_with_twist_trace_should_be_rejected() {
         mcs,
         lut_instances: vec![],
         mem_instances: vec![(mem_inst, mem_wit)],
+        trace_sidecar: None,
         _phantom: PhantomData::<K>,
     }];
     let steps_instance: Vec<StepInstanceBundle<Cmt, F, K>> =
@@ -1126,12 +1132,14 @@ fn write_then_read_consistency_attack_should_be_rejected() {
             mcs: mcs1,
             lut_instances: vec![],
             mem_instances: vec![(mem_inst1, mem_wit1)],
+            trace_sidecar: None,
             _phantom: PhantomData::<K>,
         },
         StepWitnessBundle {
             mcs: mcs2,
             lut_instances: vec![],
             mem_instances: vec![(mem_inst2, mem_wit2)],
+            trace_sidecar: None,
             _phantom: PhantomData::<K>,
         },
     ];
@@ -1262,6 +1270,7 @@ fn correct_witness_should_verify() {
         mcs,
         lut_instances: vec![],
         mem_instances: vec![(mem_inst, mem_wit)],
+        trace_sidecar: None,
         _phantom: PhantomData::<K>,
     }];
     let steps_instance: Vec<StepInstanceBundle<Cmt, F, K>> =
