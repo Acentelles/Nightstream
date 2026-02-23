@@ -116,6 +116,20 @@ fn build_trivial_fold_run_and_instance() -> (FoldRunInstance, FoldRunWitness) {
         rlc_rhos: rlc_rhos_step.clone(),
         rlc_parent: rlc_parent.clone(),
         dec_children: dec_children.clone(),
+        cpu_sumcheck: Default::default(),
+        shift_sumcheck: Default::default(),
+        time_cpu_commitments: Vec::new(),
+        time_mem_commitments: Vec::new(),
+        time_t: 0,
+        time_declared_len: 0,
+        time_col_ids: Vec::new(),
+        memory_time_proofs: Vec::new(),
+        openings: Vec::new(),
+        opening_proofs: Vec::new(),
+        opening_manifest: Default::default(),
+        opening_reduction: Default::default(),
+        joint_opening_lane: Default::default(),
+        folding_lanes: Default::default(),
     };
 
     // FoldRun with one step (final outputs computed from steps).
@@ -138,6 +152,7 @@ fn build_trivial_fold_run_and_instance() -> (FoldRunInstance, FoldRunWitness) {
             val_fold: Vec::new(),
             wb_fold: Vec::new(),
             wp_fold: Vec::new(),
+            stage8_fold: Vec::new(),
         }],
         output_proof: None,
     };

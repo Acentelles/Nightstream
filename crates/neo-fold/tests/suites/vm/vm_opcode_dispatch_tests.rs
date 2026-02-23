@@ -366,12 +366,13 @@ fn vm_simple_add_program() {
         let mem_bus = [(&mem_inst, &mem_trace)];
         let (mcs, mcs_wit) = create_mcs_with_bus(&params, &ccs, &l, pc, &lut_bus, &mem_bus);
 
-        steps.push(StepWitnessBundle {
+        steps.push(crate::common_setup::canonicalize_step_time_columns(StepWitnessBundle {
             mcs: (mcs, mcs_wit),
             lut_instances: vec![(opcode_inst, opcode_wit), (imm_inst, imm_wit)],
             mem_instances: vec![(mem_inst, mem_wit)],
+            time_columns: crate::common_setup::empty_time_columns(),
             _phantom: PhantomData::<K>,
-        });
+        }));
     }
 
     assert_eq!(register, 15, "Final register should be 10 + 5 = 15");
@@ -449,12 +450,13 @@ fn vm_register_file_operations() {
         let mem_bus = [(&reg_inst, &reg_trace)];
         let (mcs, mcs_wit) = create_mcs_with_bus(&params, &ccs, &l, 0, &[], &mem_bus);
 
-        steps.push(StepWitnessBundle {
+        steps.push(crate::common_setup::canonicalize_step_time_columns(StepWitnessBundle {
             mcs: (mcs, mcs_wit),
             lut_instances: vec![],
             mem_instances: vec![(reg_inst, reg_wit)],
+            time_columns: crate::common_setup::empty_time_columns(),
             _phantom: PhantomData::<K>,
-        });
+        }));
     }
 
     // Step 1: Write 20 to R1 (R0 still contains 10)
@@ -476,12 +478,13 @@ fn vm_register_file_operations() {
         let mem_bus = [(&reg_inst, &reg_trace)];
         let (mcs, mcs_wit) = create_mcs_with_bus(&params, &ccs, &l, 1, &[], &mem_bus);
 
-        steps.push(StepWitnessBundle {
+        steps.push(crate::common_setup::canonicalize_step_time_columns(StepWitnessBundle {
             mcs: (mcs, mcs_wit),
             lut_instances: vec![],
             mem_instances: vec![(reg_inst, reg_wit)],
+            time_columns: crate::common_setup::empty_time_columns(),
             _phantom: PhantomData::<K>,
-        });
+        }));
     }
 
     // Step 2: Read R0 (10), compute R0+R1=30, write to R2
@@ -504,12 +507,13 @@ fn vm_register_file_operations() {
         let mem_bus = [(&reg_inst, &reg_trace)];
         let (mcs, mcs_wit) = create_mcs_with_bus(&params, &ccs, &l, 2, &[], &mem_bus);
 
-        steps.push(StepWitnessBundle {
+        steps.push(crate::common_setup::canonicalize_step_time_columns(StepWitnessBundle {
             mcs: (mcs, mcs_wit),
             lut_instances: vec![],
             mem_instances: vec![(reg_inst, reg_wit)],
+            time_columns: crate::common_setup::empty_time_columns(),
             _phantom: PhantomData::<K>,
-        });
+        }));
     }
 
     let acc_init: Vec<MeInstance<Cmt, F, K>> = Vec::new();
@@ -605,12 +609,13 @@ fn vm_combined_bytecode_and_data_memory() {
     let mem_bus = [(&ram_inst, &ram_trace)];
     let (mcs, mcs_wit) = create_mcs_with_bus(&params, &ccs, &l, 0, &lut_bus, &mem_bus);
 
-    let step_bundle = StepWitnessBundle {
+    let step_bundle = crate::common_setup::canonicalize_step_time_columns(StepWitnessBundle {
         mcs: (mcs, mcs_wit),
         lut_instances: vec![(bytecode_inst, bytecode_wit)],
         mem_instances: vec![(ram_inst, ram_wit)],
+        time_columns: crate::common_setup::empty_time_columns(),
         _phantom: PhantomData::<K>,
-    };
+    });
 
     let acc_init: Vec<MeInstance<Cmt, F, K>> = Vec::new();
     let acc_wit_init: Vec<Mat<F>> = Vec::new();
@@ -672,12 +677,13 @@ fn vm_invalid_opcode_claim_fails() {
     let lut_bus = [(&bytecode_inst, &bad_trace)];
     let (mcs, mcs_wit) = create_mcs_with_bus(&params, &ccs, &l, 0, &lut_bus, &[]);
 
-    let step_bundle = StepWitnessBundle {
+    let step_bundle = crate::common_setup::canonicalize_step_time_columns(StepWitnessBundle {
         mcs: (mcs, mcs_wit),
         lut_instances: vec![(bytecode_inst, bytecode_wit)],
         mem_instances: vec![],
+        time_columns: crate::common_setup::empty_time_columns(),
         _phantom: PhantomData::<K>,
-    };
+    });
 
     let acc_init: Vec<MeInstance<Cmt, F, K>> = Vec::new();
     let acc_wit_init: Vec<Mat<F>> = Vec::new();
@@ -766,12 +772,13 @@ fn vm_multi_instruction_sequence() {
         let mem_bus = [(&mem_inst, &mem_trace)];
         let (mcs, mcs_wit) = create_mcs_with_bus(&params, &ccs, &l, pc, &lut_bus, &mem_bus);
 
-        steps.push(StepWitnessBundle {
+        steps.push(crate::common_setup::canonicalize_step_time_columns(StepWitnessBundle {
             mcs: (mcs, mcs_wit),
             lut_instances: vec![(bytecode_inst, bytecode_wit)],
             mem_instances: vec![(mem_inst, mem_wit)],
+            time_columns: crate::common_setup::empty_time_columns(),
             _phantom: PhantomData::<K>,
-        });
+        }));
     }
 
     let acc_init: Vec<MeInstance<Cmt, F, K>> = Vec::new();

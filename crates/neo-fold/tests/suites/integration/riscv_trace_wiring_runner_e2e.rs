@@ -43,13 +43,9 @@ fn rv32_trace_wiring_runner_prove_verify() {
     assert_eq!(
         run.exec_table().rows.len(),
         3,
-        "exec table should not be padded to next power-of-two"
+        "exec rows remain unpadded; power-of-two padding applies to proving/layout length"
     );
-    assert_eq!(
-        run.layout().t,
-        run.exec_table().rows.len(),
-        "layout.t should match exec rows"
-    );
+    assert_eq!(run.layout().t, 4, "layout.t should reflect padded power-of-two proving length");
 
     let steps_public = run.steps_public();
     assert_eq!(steps_public.len(), 1, "trace runner should expose one step instance");

@@ -26,8 +26,8 @@ use p3_goldilocks::Goldilocks as F;
 type Mixers = CommitMixers<fn(&[Mat<F>], &[Cmt]) -> Cmt, fn(&[Cmt], u32) -> Cmt>;
 
 const TEST_M: usize = 128;
-// Shared-bus padding validation requires a public constant-one column.
-const M_IN: usize = 1;
+// Canonical Route-A path requires RV32-style public input width.
+const M_IN: usize = 5;
 
 /// Dummy commit that produces zero commitments.
 #[derive(Clone, Copy, Default)]
@@ -311,6 +311,57 @@ fn write_bus_for_chunk(
     }
 }
 
+fn build_time_columns_from_flattened_test_witness(
+    z: &[F],
+    m_in: usize,
+    bus_base: usize,
+    bus_cols: usize,
+    chunk_size: usize,
+) -> neo_memory::witness::TimeColumns<F> {
+    let cpu_region_len = bus_base
+        .checked_sub(m_in)
+        .expect("bus_base must be >= m_in for flattened test witness");
+    let cpu_is_flattened = cpu_region_len % chunk_size == 0;
+    let cpu_cols_len = if cpu_is_flattened {
+        cpu_region_len / chunk_size
+    } else {
+        // Uniform kernel path: CPU region is already per-column (row-0 anchored).
+        cpu_region_len
+    };
+
+    let mut cpu_cols = vec![vec![F::ZERO; chunk_size]; cpu_cols_len];
+    for col in 0..cpu_cols_len {
+        for j in 0..chunk_size {
+            cpu_cols[col][j] = if cpu_is_flattened {
+                z[m_in + col * chunk_size + j]
+            } else {
+                // Expand row-0 anchored uniform CPU witness into a time column.
+                z[m_in + col]
+            };
+        }
+    }
+
+    let mut mem_cols = vec![vec![F::ZERO; chunk_size]; bus_cols];
+    for col in 0..bus_cols {
+        for j in 0..chunk_size {
+            mem_cols[col][j] = z[bus_base + col * chunk_size + j];
+        }
+    }
+
+    let mut col_ids = Vec::with_capacity(cpu_cols_len + bus_cols);
+    for id in 0..(cpu_cols_len + bus_cols) {
+        col_ids.push(id);
+    }
+
+    neo_memory::witness::TimeColumns {
+        t: chunk_size,
+        cpu_cols,
+        mem_cols,
+        active_col: vec![F::ONE; chunk_size],
+        col_ids,
+    }
+}
+
 fn default_mixers() -> Mixers {
     crate::common_setup::default_mixers()
 }
@@ -441,12 +492,14 @@ fn build_single_chunk_inputs() -> (
     write_bus_for_chunk(
         &mut z, bus_base, chunk_size, &lut_inst, &plain_lut, &mem_inst, &plain_mem,
     );
+    let time_columns = build_time_columns_from_flattened_test_witness(&z, M_IN, bus_base, bus_cols, chunk_size);
     let (mcs_inst, mcs_wit) = build_mcs_from_z(&params, &l, M_IN, z);
 
     let step_bundle = StepWitnessBundle {
         mcs: (mcs_inst.clone(), mcs_wit.clone()),
         lut_instances: vec![(lut_inst.clone(), lut_wit)],
         mem_instances: vec![(mem_inst.clone(), mem_wit)],
+        time_columns,
         _phantom: PhantomData::<K>,
     };
 
@@ -610,12 +663,14 @@ fn full_folding_integration_multi_step_chunk() {
     write_bus_for_chunk(
         &mut z, bus_base, chunk_size, &lut_inst, &plain_lut, &mem_inst, &plain_mem,
     );
+    let time_columns = build_time_columns_from_flattened_test_witness(&z, M_IN, bus_base, bus_cols, chunk_size);
     let (mcs_inst, mcs_wit) = build_mcs_from_z(&params, &l, M_IN, z);
 
     let step_bundle = StepWitnessBundle {
         mcs: (mcs_inst, mcs_wit),
         lut_instances: vec![(lut_inst, lut_wit)],
         mem_instances: vec![(mem_inst, mem_wit)],
+        time_columns,
         _phantom: PhantomData,
     };
 
@@ -771,6 +826,122 @@ fn tamper_shout_addr_pre_round_poly_fails() {
         result.is_err(),
         "tampered Shout addr-pre round poly must fail verification"
     );
+}
+
+#[test]
+fn tamper_batched_time_label_order_fails() {
+    let (params, ccs, step_bundle, acc_init, acc_wit_init, l, mixers, _out_val) = build_single_chunk_inputs();
+
+    let mut tr_prove = Poseidon2Transcript::new(b"full-fold-tamper-label-order");
+    let mut proof = fold_shard_prove(
+        FoldingMode::Optimized,
+        &mut tr_prove,
+        &params,
+        &ccs,
+        &[step_bundle.clone()],
+        &acc_init,
+        &acc_wit_init,
+        &l,
+        mixers,
+    )
+    .expect("prove should succeed");
+
+    let labels = &mut proof.steps[0].batched_time.labels;
+    assert!(labels.len() >= 2, "fixture must include >=2 batched claims");
+    labels.swap(0, 1);
+
+    let mut tr_verify = Poseidon2Transcript::new(b"full-fold-tamper-label-order");
+    let steps_public = [StepInstanceBundle::from(&step_bundle)];
+    let result = fold_shard_verify(
+        FoldingMode::Optimized,
+        &mut tr_verify,
+        &params,
+        &ccs,
+        &steps_public,
+        &acc_init,
+        &proof,
+        mixers,
+    );
+
+    assert!(
+        result.is_err(),
+        "tampered batched-time label order must fail verification"
+    );
+}
+
+#[test]
+fn tamper_shift_sumcheck_metadata_fails() {
+    let (params, ccs, step_bundle, acc_init, acc_wit_init, l, mixers, _out_val) = build_single_chunk_inputs();
+
+    let mut tr_prove = Poseidon2Transcript::new(b"full-fold-tamper-shift-sumcheck");
+    let mut proof = fold_shard_prove(
+        FoldingMode::Optimized,
+        &mut tr_prove,
+        &params,
+        &ccs,
+        &[step_bundle.clone()],
+        &acc_init,
+        &acc_wit_init,
+        &l,
+        mixers,
+    )
+    .expect("prove should succeed");
+
+    proof.steps[0].fold.shift_sumcheck.claimed_sum += K::ONE;
+
+    let mut tr_verify = Poseidon2Transcript::new(b"full-fold-tamper-shift-sumcheck");
+    let steps_public = [StepInstanceBundle::from(&step_bundle)];
+    let result = fold_shard_verify(
+        FoldingMode::Optimized,
+        &mut tr_verify,
+        &params,
+        &ccs,
+        &steps_public,
+        &acc_init,
+        &proof,
+        mixers,
+    );
+
+    assert!(
+        result.is_err(),
+        "tampered shift_sumcheck metadata must fail verification"
+    );
+}
+
+#[test]
+fn tamper_time_declared_len_fails() {
+    let (params, ccs, step_bundle, acc_init, acc_wit_init, l, mixers, _out_val) = build_single_chunk_inputs();
+
+    let mut tr_prove = Poseidon2Transcript::new(b"full-fold-tamper-time-declared-len");
+    let mut proof = fold_shard_prove(
+        FoldingMode::Optimized,
+        &mut tr_prove,
+        &params,
+        &ccs,
+        &[step_bundle.clone()],
+        &acc_init,
+        &acc_wit_init,
+        &l,
+        mixers,
+    )
+    .expect("prove should succeed");
+
+    proof.steps[0].fold.time_declared_len = proof.steps[0].fold.time_declared_len.saturating_add(1);
+
+    let mut tr_verify = Poseidon2Transcript::new(b"full-fold-tamper-time-declared-len");
+    let steps_public = [StepInstanceBundle::from(&step_bundle)];
+    let result = fold_shard_verify(
+        FoldingMode::Optimized,
+        &mut tr_verify,
+        &params,
+        &ccs,
+        &steps_public,
+        &acc_init,
+        &proof,
+        mixers,
+    );
+
+    assert!(result.is_err(), "tampered time_declared_len must fail verification");
 }
 
 #[test]
@@ -973,21 +1144,20 @@ fn wrong_shout_lookup_value_witness_fails() {
     // So a wrong Shout value must make verification fail.
     let (params, ccs, mut step_bundle, acc_init, acc_wit_init, l, mixers, _out_val) = build_single_chunk_inputs();
 
-    // Flip the Shout `val` entry inside the CPU bus tail (step j=0, last column of the Shout slot).
-    // Layout for 1 Shout instance (d=1, ell=1, chunk_size=1):
-    //   [addr_bit0, has_lookup, val] => Shout val is column id 2.
-    // There is also 1 Twist instance after it, but we don't touch it.
-    let m = step_bundle.mcs.1.Z.cols();
-    let bus_cols = 10usize;
-    let bus_base = m - bus_cols;
-    let shout_val_col_id = 2usize;
-    let mut z = neo_memory::ajtai::decode_vector(&params, &step_bundle.mcs.1.Z);
-    z[bus_base + shout_val_col_id] += F::ONE;
-    let Z = neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z);
-    let c = l.commit(&Z);
-    step_bundle.mcs.0.c = c;
-    step_bundle.mcs.1.Z = Z;
-    step_bundle.mcs.1.w = z[M_IN..].to_vec();
+    // Flip the canonical Shout `val` column directly in committed time columns.
+    // Layout for 1 Shout instance (d=1, ell=1): [addr_bit0, has_lookup, val].
+    let shout_val_local_col = 2usize;
+    assert!(
+        step_bundle.time_columns.mem_cols.len() > shout_val_local_col,
+        "expected at least {} mem columns, got {}",
+        shout_val_local_col + 1,
+        step_bundle.time_columns.mem_cols.len()
+    );
+    assert!(
+        !step_bundle.time_columns.mem_cols[shout_val_local_col].is_empty(),
+        "expected non-empty Shout value time column"
+    );
+    step_bundle.time_columns.mem_cols[shout_val_local_col][0] += F::ONE;
 
     let mut tr_prove = Poseidon2Transcript::new(b"full-fold-wrong-shout-bus");
     let proof = fold_shard_prove(

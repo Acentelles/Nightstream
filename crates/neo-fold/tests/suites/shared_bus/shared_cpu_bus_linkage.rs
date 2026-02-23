@@ -135,6 +135,53 @@ fn build_cpu_witness_with_bus(
     z
 }
 
+fn build_time_columns_from_flattened_test_witness(
+    z: &[F],
+    m_in: usize,
+    bus_base: usize,
+    bus_cols: usize,
+    chunk_size: usize,
+) -> neo_memory::witness::TimeColumns<F> {
+    let cpu_region_len = bus_base
+        .checked_sub(m_in)
+        .expect("bus_base must be >= m_in for flattened test witness");
+    assert!(
+        cpu_region_len % chunk_size == 0,
+        "cpu region must be chunk-aligned (cpu_region_len={}, chunk_size={})",
+        cpu_region_len,
+        chunk_size
+    );
+    let cpu_cols_len_raw = cpu_region_len / chunk_size;
+    let cpu_cols_len = cpu_cols_len_raw.max(21);
+
+    let mut cpu_cols = vec![vec![F::ZERO; chunk_size]; cpu_cols_len];
+    for col in 0..cpu_cols_len_raw {
+        for j in 0..chunk_size {
+            cpu_cols[col][j] = z[m_in + col * chunk_size + j];
+        }
+    }
+
+    let mut mem_cols = vec![vec![F::ZERO; chunk_size]; bus_cols];
+    for col in 0..bus_cols {
+        for j in 0..chunk_size {
+            mem_cols[col][j] = z[bus_base + col * chunk_size + j];
+        }
+    }
+
+    let mut col_ids = Vec::with_capacity(cpu_cols_len + bus_cols);
+    for id in 0..(cpu_cols_len + bus_cols) {
+        col_ids.push(id);
+    }
+
+    neo_memory::witness::TimeColumns {
+        t: chunk_size,
+        cpu_cols,
+        mem_cols,
+        active_col: vec![F::ONE; chunk_size],
+        col_ids,
+    }
+}
+
 struct SharedBusFixture {
     params: NeoParams,
     ccs: CcsStructure<F>,
@@ -152,7 +199,7 @@ fn build_one_step_fixture(seed: u64) -> SharedBusFixture {
     let l = setup_ajtai_committer(&params, ccs.m);
     let mixers = default_mixers();
 
-    let m_in = 0usize;
+    let m_in = 5usize;
 
     // Geometry: k=2, d=1, n_side=2 (minimal).
     let mem_layout = PlainMemLayout {
@@ -227,6 +274,7 @@ fn build_one_step_fixture(seed: u64) -> SharedBusFixture {
     let z = build_cpu_witness_with_bus(
         ccs.m, bus_base, chunk_size, 0, &lut_inst, &lut_trace, &mem_inst, &mem_trace, seed,
     );
+    let time_columns = build_time_columns_from_flattened_test_witness(&z, m_in, bus_base, bus_cols_total, chunk_size);
     let Z = neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z);
     let c = l.commit(&Z);
     let x = z[..m_in].to_vec();
@@ -237,6 +285,7 @@ fn build_one_step_fixture(seed: u64) -> SharedBusFixture {
         mcs,
         lut_instances: vec![(lut_inst, lut_wit)],
         mem_instances: vec![(mem_inst, mem_wit)],
+        time_columns,
         _phantom: PhantomData::<K>,
     }];
     let steps_instance = steps_witness.iter().map(StepInstanceBundle::from).collect();
@@ -367,5 +416,155 @@ fn shared_cpu_bus_missing_cpu_me_claim_val_fails() {
         )
         .is_err(),
         "missing CPU ME@r_val must fail in shared-bus mode"
+    );
+}
+
+#[test]
+fn shared_cpu_bus_missing_named_time_opening_fails() {
+    let fx = build_one_step_fixture(10);
+
+    let mut tr = Poseidon2Transcript::new(b"shared-cpu-bus");
+    let mut proof = fold_shard_prove(
+        FoldingMode::Optimized,
+        &mut tr,
+        &fx.params,
+        &fx.ccs,
+        &fx.steps_witness,
+        &[],
+        &[],
+        &fx.l,
+        fx.mixers,
+    )
+    .expect("prove");
+
+    // In the in-place Route-A refactor, shared-bus verification requires explicit named time openings.
+    proof.steps[0].fold.openings.clear();
+
+    let mut tr_v = Poseidon2Transcript::new(b"shared-cpu-bus");
+    assert!(
+        fold_shard_verify(
+            FoldingMode::Optimized,
+            &mut tr_v,
+            &fx.params,
+            &fx.ccs,
+            &fx.steps_instance,
+            &[],
+            &proof,
+            fx.mixers,
+        )
+        .is_err(),
+        "missing named time openings must fail in shared-bus mode"
+    );
+}
+
+#[test]
+fn shared_cpu_bus_stage8_tamper_matrix_fails() {
+    let fx = build_one_step_fixture(11);
+
+    let mut tr = Poseidon2Transcript::new(b"shared-cpu-bus");
+    let proof = fold_shard_prove(
+        FoldingMode::Optimized,
+        &mut tr,
+        &fx.params,
+        &fx.ccs,
+        &fx.steps_witness,
+        &[],
+        &[],
+        &fx.l,
+        fx.mixers,
+    )
+    .expect("prove");
+
+    let verify = |candidate| {
+        let mut tr_v = Poseidon2Transcript::new(b"shared-cpu-bus");
+        fold_shard_verify(
+            FoldingMode::Optimized,
+            &mut tr_v,
+            &fx.params,
+            &fx.ccs,
+            &fx.steps_instance,
+            &[],
+            candidate,
+            fx.mixers,
+        )
+    };
+
+    // Baseline must pass.
+    let _ = verify(&proof).expect("baseline verify");
+    assert!(
+        proof.steps[0].fold.joint_opening_lane.unified_fold.is_some(),
+        "canonical Stage-8 must always emit unified_fold when groups are present"
+    );
+    let expected_stage8_fold_len = if proof.steps[0].fold.joint_opening_lane.groups.is_empty() {
+        0usize
+    } else {
+        1usize
+    };
+    assert_eq!(
+        proof.steps[0].stage8_fold.len(),
+        expected_stage8_fold_len,
+        "Stage-8 fold proof count must match canonical lane plan"
+    );
+
+    // 1) Manifest digest tamper must fail.
+    let mut tampered_manifest = proof.clone();
+    tampered_manifest.steps[0].fold.opening_manifest.digest[0] ^= 1;
+    assert!(
+        verify(&tampered_manifest).is_err(),
+        "tampering opening manifest digest must fail verification"
+    );
+
+    // 2) Reduction group digest tamper must fail.
+    let mut tampered_reduction = proof.clone();
+    assert!(
+        !tampered_reduction.steps[0]
+            .fold
+            .opening_reduction
+            .groups
+            .is_empty(),
+        "fixture must have at least one Stage-8 reduction group"
+    );
+    tampered_reduction.steps[0].fold.opening_reduction.groups[0].group_digest[0] ^= 1;
+    assert!(
+        verify(&tampered_reduction).is_err(),
+        "tampering reduction group digest must fail verification"
+    );
+
+    // 3) Unification proof tamper must fail.
+    let mut tampered_unification = proof.clone();
+    assert!(
+        !tampered_unification.steps[0]
+            .fold
+            .opening_unification
+            .round_polys
+            .is_empty(),
+        "fixture must have non-empty opening unification rounds"
+    );
+    tampered_unification.steps[0].fold.opening_unification.round_polys[0][0] += K::ONE;
+    assert!(
+        verify(&tampered_unification).is_err(),
+        "tampering opening unification sumcheck proof must fail verification"
+    );
+
+    // 4) Unified claim tamper must fail.
+    let mut tampered_unified_claim = proof.clone();
+    let unified = tampered_unified_claim.steps[0]
+        .fold
+        .joint_opening_lane
+        .unified_fold
+        .as_mut()
+        .expect("unified fold present");
+    unified.joint_claim += K::ONE;
+    assert!(
+        verify(&tampered_unified_claim).is_err(),
+        "tampering Stage-8 unified claim must fail verification"
+    );
+
+    // 5) Missing stage8_fold proof with non-empty Stage-8 groups must fail.
+    let mut tampered_stage8_lane = proof.clone();
+    tampered_stage8_lane.steps[0].stage8_fold.clear();
+    assert!(
+        verify(&tampered_stage8_lane).is_err(),
+        "missing Stage-8 fold proof must fail verification when Stage-8 groups exist"
     );
 }

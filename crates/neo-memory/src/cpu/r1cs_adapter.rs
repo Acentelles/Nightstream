@@ -106,6 +106,10 @@ where
     /// When present, we overwrite a reserved tail segment of `z_vec` with Twist/Shout access rows
     /// (in deterministic id order) before Ajtai decomposition + commitment.
     shared_cpu_bus: Option<SharedCpuBusState<F>>,
+    /// Optional lookup-family sharing metadata used by Route-A claim planning in uniform mode.
+    /// This is intentionally independent from physical shared-bus constraint injection.
+    lookup_shout_addr_groups: HashMap<u32, u64>,
+    lookup_shout_selector_groups: HashMap<u32, u64>,
 
     /// Function to map a trace chunk (up to `chunk_size` steps) to the full witness z = (x, w).
     /// The witness MUST satisfy the CCS relation.
@@ -178,9 +182,22 @@ where
             shout_meta,
             shout_specs,
             shared_cpu_bus: None,
+            lookup_shout_addr_groups: HashMap::new(),
+            lookup_shout_selector_groups: HashMap::new(),
             chunk_to_witness,
             _phantom: PhantomData,
         })
+    }
+
+    /// Attach lookup-family sharing metadata without enabling physical shared-bus tail injection.
+    pub fn with_lookup_sharing_groups(
+        mut self,
+        shout_addr_groups: HashMap<u32, u64>,
+        shout_selector_groups: HashMap<u32, u64>,
+    ) -> Self {
+        self.lookup_shout_addr_groups = shout_addr_groups;
+        self.lookup_shout_selector_groups = shout_selector_groups;
+        self
     }
 
     fn shared_bus_schema(
@@ -913,23 +930,19 @@ where
     }
 
     fn shout_addr_groups(&self) -> &HashMap<u32, u64> {
-        self.shared_cpu_bus
-            .as_ref()
-            .map(|s| &s.cfg.shout_addr_groups)
-            .unwrap_or_else(|| {
-                static EMPTY: std::sync::LazyLock<HashMap<u32, u64>> = std::sync::LazyLock::new(HashMap::new);
-                &EMPTY
-            })
+        if let Some(shared) = self.shared_cpu_bus.as_ref() {
+            &shared.cfg.shout_addr_groups
+        } else {
+            &self.lookup_shout_addr_groups
+        }
     }
 
     fn shout_selector_groups(&self) -> &HashMap<u32, u64> {
-        self.shared_cpu_bus
-            .as_ref()
-            .map(|s| &s.cfg.shout_selector_groups)
-            .unwrap_or_else(|| {
-                static EMPTY: std::sync::LazyLock<HashMap<u32, u64>> = std::sync::LazyLock::new(HashMap::new);
-                &EMPTY
-            })
+        if let Some(shared) = self.shared_cpu_bus.as_ref() {
+            &shared.cfg.shout_selector_groups
+        } else {
+            &self.lookup_shout_selector_groups
+        }
     }
 
     type Error = String;

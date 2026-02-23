@@ -11,7 +11,7 @@ use neo_memory::sparse_time::SparseIdxVec;
 use neo_memory::witness::{LutInstance, MemInstance, StepInstanceBundle, StepWitnessBundle};
 use neo_params::NeoParams;
 use p3_field::PrimeCharacteristicRing;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 pub(crate) trait BusStepView<Cmt> {
     fn m_in(&self) -> usize;
@@ -20,6 +20,15 @@ pub(crate) trait BusStepView<Cmt> {
     fn mem_insts_len(&self) -> usize;
     fn lut_inst(&self, idx: usize) -> &LutInstance<Cmt, F>;
     fn mem_inst(&self, idx: usize) -> &MemInstance<Cmt, F>;
+    fn time_t(&self) -> usize {
+        0
+    }
+    fn time_cpu_cols_len(&self) -> usize {
+        0
+    }
+    fn time_mem_cols_len(&self) -> usize {
+        0
+    }
 }
 
 impl<Cmt, KK> BusStepView<Cmt> for StepWitnessBundle<Cmt, F, KK> {
@@ -46,6 +55,18 @@ impl<Cmt, KK> BusStepView<Cmt> for StepWitnessBundle<Cmt, F, KK> {
     fn mem_inst(&self, idx: usize) -> &MemInstance<Cmt, F> {
         &self.mem_instances[idx].0
     }
+
+    fn time_t(&self) -> usize {
+        self.time_columns.t
+    }
+
+    fn time_cpu_cols_len(&self) -> usize {
+        self.time_columns.cpu_cols.len()
+    }
+
+    fn time_mem_cols_len(&self) -> usize {
+        self.time_columns.mem_cols.len()
+    }
 }
 
 impl<Cmt, KK> BusStepView<Cmt> for StepInstanceBundle<Cmt, F, KK> {
@@ -71,6 +92,18 @@ impl<Cmt, KK> BusStepView<Cmt> for StepInstanceBundle<Cmt, F, KK> {
 
     fn mem_inst(&self, idx: usize) -> &MemInstance<Cmt, F> {
         &self.mem_insts[idx]
+    }
+
+    fn time_t(&self) -> usize {
+        self.time_columns.t
+    }
+
+    fn time_cpu_cols_len(&self) -> usize {
+        self.time_columns.cpu_cols.len()
+    }
+
+    fn time_mem_cols_len(&self) -> usize {
+        self.time_columns.mem_cols.len()
     }
 }
 
@@ -202,14 +235,50 @@ fn infer_bus_layout_for_steps<Cmt, S: BusStepView<Cmt>>(
         .copied()
         .zip(base_twist_lanes.iter().copied())
         .map(|(ell_addr, lanes)| (ell_addr, lanes));
+    let uniform_width_matches_ccs = m_in
+        .checked_add(steps[0].time_cpu_cols_len())
+        .and_then(|v| v.checked_add(steps[0].time_mem_cols_len()))
+        .map_or(false, |uniform_m| uniform_m == s.m);
+    let use_time_columns = uniform_width_matches_ccs
+        && steps[0].time_t() == chunk_size
+        && steps[0].time_mem_cols_len() > 0
+        && steps.iter().all(|step| {
+            step.time_t() == chunk_size
+                && step.time_mem_cols_len() == steps[0].time_mem_cols_len()
+                && step.time_cpu_cols_len() == steps[0].time_cpu_cols_len()
+        });
+    let m_virtual = if use_time_columns {
+        let cpu_region = steps[0]
+            .time_cpu_cols_len()
+            .checked_mul(chunk_size)
+            .ok_or_else(|| PiCcsError::InvalidInput("time cpu_cols*chunk_size overflow".into()))?;
+        let mem_region = steps[0]
+            .time_mem_cols_len()
+            .checked_mul(chunk_size)
+            .ok_or_else(|| PiCcsError::InvalidInput("time mem_cols*chunk_size overflow".into()))?;
+        m_in.checked_add(cpu_region)
+            .and_then(|v| v.checked_add(mem_region))
+            .ok_or_else(|| PiCcsError::InvalidInput("time virtual m overflow".into()))?
+    } else {
+        s.m
+    };
+
     let layout = build_bus_layout_for_instances_with_shout_shapes_and_twist_lanes(
-        s.m,
+        m_virtual,
         m_in,
         chunk_size,
         shout_shapes,
         twist_ell_addrs_and_lanes,
     )
     .map_err(PiCcsError::InvalidInput)?;
+
+    if use_time_columns && layout.bus_cols != steps[0].time_mem_cols_len() {
+        return Err(PiCcsError::InvalidInput(format!(
+            "time mem column count mismatch: layout.bus_cols={} vs time_columns.mem_cols={}",
+            layout.bus_cols,
+            steps[0].time_mem_cols_len()
+        )));
+    }
 
     // If there are no bus columns (no Twist/Shout instances), Route A doesn't use the bus time rows.
     // Allow small CCS instances (including m_in == n) in this case.
@@ -236,6 +305,30 @@ pub(crate) fn prepare_ccs_for_shared_cpu_bus_steps<'a, Cmt, S: BusStepView<Cmt>>
     steps: &[S],
 ) -> Result<(&'a CcsStructure<F>, BusLayout), PiCcsError> {
     let bus = infer_bus_layout_for_steps(s0, steps)?;
+    let m_in = steps.first().map(|s| s.m_in()).unwrap_or(0usize);
+    let uniform_width_matches_ccs = steps.first().and_then(|step0| {
+        m_in.checked_add(step0.time_cpu_cols_len())
+            .and_then(|v| v.checked_add(step0.time_mem_cols_len()))
+    }) == Some(s0.m);
+    let has_physical_bus_refs = ccs_references_any_bus_cols(s0, &bus);
+    let using_time_columns = !steps.is_empty()
+        && steps[0].time_t() == bus.chunk_size
+        && steps[0].time_mem_cols_len() > 0
+        && steps.iter().all(|step| {
+            step.time_t() == bus.chunk_size
+                && step.time_mem_cols_len() == steps[0].time_mem_cols_len()
+                && step.time_cpu_cols_len() == steps[0].time_cpu_cols_len()
+        });
+    let route_a_uniform_mode = using_time_columns && uniform_width_matches_ccs && m_in == 5;
+    if route_a_uniform_mode && !has_physical_bus_refs {
+        // Canonical uniform Route-A kernel: no active CCS matrix references any physical
+        // bus-tail coordinates, so shared-bus padding/binding constraints are not required.
+        return Ok((s0, bus));
+    }
+    if using_time_columns {
+        // Physical bus coordinates are referenced by active CCS matrices; enforce canonical
+        // shared-bus binding/padding invariants.
+    }
     let padding_rows = ensure_ccs_has_shared_bus_padding_for_steps(s0, &bus, steps)?;
     ensure_ccs_binds_shared_bus_for_steps(s0, &bus, &padding_rows, steps)?;
     // Performance: do NOT materialize bus copyout matrices into the CCS. Instead, we append the
@@ -256,9 +349,23 @@ fn chi_for_row_index(r: &[K], idx: usize) -> K {
 }
 
 #[inline]
-fn precompute_contiguous_time_weights(r: &[K], start_row: usize, len: usize, n_pad: usize) -> Vec<K> {
+fn precompute_contiguous_time_weights(
+    r: &[K],
+    start_row: usize,
+    len: usize,
+    n_pad: usize,
+) -> Result<Vec<K>, PiCcsError> {
     if len == 0 {
-        return Vec::new();
+        return Ok(Vec::new());
+    }
+    let end_row = start_row
+        .checked_add(len)
+        .ok_or_else(|| PiCcsError::InvalidInput("time-weight range overflow".into()))?;
+    if end_row > n_pad {
+        return Err(PiCcsError::InvalidInput(format!(
+            "time-weight range out of bounds (start_row={}, len={}, n_pad={})",
+            start_row, len, n_pad
+        )));
     }
 
     // For large contiguous windows, build χ_r over the full boolean domain once and slice.
@@ -280,14 +387,14 @@ fn precompute_contiguous_time_weights(r: &[K], start_row: usize, len: usize, n_p
                 chi.push(v * ri);
             }
         }
-        return chi[start_row..start_row + len].to_vec();
+        return Ok(chi[start_row..start_row + len].to_vec());
     }
 
     let mut out = Vec::with_capacity(len);
     for off in 0..len {
         out.push(chi_for_row_index(r, start_row + off));
     }
-    out
+    Ok(out)
 }
 
 pub(crate) fn append_bus_openings_to_me_instance<Cmt>(
@@ -304,7 +411,32 @@ where
         return Ok(());
     }
 
+    let want_len = core_t
+        .checked_add(bus.bus_cols)
+        .ok_or_else(|| PiCcsError::InvalidInput("core_t + bus_cols overflow".into()))?;
     let y_pad = (params.d as usize).next_power_of_two();
+
+    if Z.cols() != bus.m {
+        return Err(PiCcsError::InvalidInput(format!(
+            "bus openings require physical bus-tail witness width (Z.cols()={}, bus.m={}); use explicit zero-opening helper only when non-physical propagation is intended",
+            Z.cols(),
+            bus.m
+        )));
+    }
+
+    // Idempotent append: allow callers to call this once; reject unexpected shapes.
+    if me.y.len() >= want_len && me.y_scalars.len() >= want_len && me.y.len() == me.y_scalars.len() {
+        return Ok(());
+    }
+    if me.y.len() != core_t || me.y_scalars.len() != core_t {
+        return Err(PiCcsError::InvalidInput(format!(
+            "bus openings expect ME y/y_scalars to start at core_t (y.len()={}, y_scalars.len()={}, core_t={})",
+            me.y.len(),
+            me.y_scalars.len(),
+            core_t
+        )));
+    }
+
     let d = neo_math::D;
     if y_pad < d {
         return Err(PiCcsError::InvalidInput(format!(
@@ -316,13 +448,6 @@ where
             "bus openings require Z.rows()==D (got {}, want {})",
             Z.rows(),
             d
-        )));
-    }
-    if Z.cols() != bus.m {
-        return Err(PiCcsError::InvalidInput(format!(
-            "bus openings require Z.cols()==bus.m (got {}, want {})",
-            Z.cols(),
-            bus.m
         )));
     }
     if me.m_in != bus.m_in {
@@ -337,6 +462,7 @@ where
     let n_pad = 1usize
         .checked_shl(me.r.len() as u32)
         .ok_or_else(|| PiCcsError::InvalidInput("2^ell_n overflow".into()))?;
+    let start_row = bus.time_index(0);
     for j in 0..bus.chunk_size {
         let row = bus.time_index(j);
         if row >= n_pad {
@@ -346,21 +472,20 @@ where
                 n_pad
             )));
         }
+        if row != start_row + j {
+            return Err(PiCcsError::InvalidInput(format!(
+                "bus time_index must be contiguous: time_index({j})={row}, expected {}",
+                start_row + j
+            )));
+        }
     }
-
-    // Idempotent append: allow callers to call this once; reject unexpected shapes.
-    let want_len = core_t
-        .checked_add(bus.bus_cols)
-        .ok_or_else(|| PiCcsError::InvalidInput("core_t + bus_cols overflow".into()))?;
-    if me.y.len() >= want_len && me.y_scalars.len() >= want_len && me.y.len() == me.y_scalars.len() {
-        return Ok(());
-    }
-    if me.y.len() != core_t || me.y_scalars.len() != core_t {
+    if start_row
+        .checked_add(bus.chunk_size)
+        .map_or(true, |end| end > n_pad)
+    {
         return Err(PiCcsError::InvalidInput(format!(
-            "bus openings expect ME y/y_scalars to start at core_t (y.len()={}, y_scalars.len()={}, core_t={})",
-            me.y.len(),
-            me.y_scalars.len(),
-            core_t
+            "bus time row range out of bounds: start_row={} chunk_size={} n_pad={}",
+            start_row, bus.chunk_size, n_pad
         )));
     }
     for (j, row) in me.y.iter().enumerate() {
@@ -374,7 +499,7 @@ where
     }
 
     // Precompute χ_r(time_index(j)) weights for the bus time rows.
-    let time_weights = precompute_contiguous_time_weights(&me.r, bus.time_index(0), bus.chunk_size, n_pad);
+    let time_weights = precompute_contiguous_time_weights(&me.r, start_row, bus.chunk_size, n_pad)?;
     let weighted_rows: Vec<(usize, K)> = time_weights
         .into_iter()
         .enumerate()
@@ -416,6 +541,735 @@ where
         me.y_scalars.push(y_scalar);
     }
 
+    Ok(())
+}
+
+pub(crate) fn shared_bus_openings_from_time_columns_at_point(
+    bus: &BusLayout,
+    mem_cols: &[Vec<F>],
+    point: &[K],
+    label: &str,
+) -> Result<BTreeMap<usize, K>, PiCcsError> {
+    if bus.bus_cols == 0 {
+        return Ok(BTreeMap::new());
+    }
+    if mem_cols.len() != bus.bus_cols {
+        return Err(PiCcsError::InvalidInput(format!(
+            "{label}: mem_cols.len()={} != bus.bus_cols={}",
+            mem_cols.len(),
+            bus.bus_cols
+        )));
+    }
+    if point.is_empty() {
+        return Err(PiCcsError::InvalidInput(format!("{label}: point must be non-empty")));
+    }
+
+    let n_pad = 1usize
+        .checked_shl(point.len() as u32)
+        .ok_or_else(|| PiCcsError::InvalidInput(format!("{label}: 2^ell_n overflow")))?;
+    let start_row = bus.time_index(0);
+    for j in 0..bus.chunk_size {
+        let row = bus.time_index(j);
+        if row >= n_pad {
+            return Err(PiCcsError::InvalidInput(format!(
+                "{label}: bus time row index out of range: t={row} >= 2^ell_n={n_pad}"
+            )));
+        }
+        if row != start_row + j {
+            return Err(PiCcsError::InvalidInput(format!(
+                "{label}: bus time_index must be contiguous: time_index({j})={row}, expected {}",
+                start_row + j
+            )));
+        }
+    }
+    if start_row
+        .checked_add(bus.chunk_size)
+        .map_or(true, |end| end > n_pad)
+    {
+        return Err(PiCcsError::InvalidInput(format!(
+            "{label}: bus time row range out of bounds: start_row={} chunk_size={} n_pad={}",
+            start_row, bus.chunk_size, n_pad
+        )));
+    }
+
+    let time_weights = precompute_contiguous_time_weights(point, start_row, bus.chunk_size, n_pad)?;
+    let weighted_rows: Vec<(usize, K)> = time_weights
+        .into_iter()
+        .enumerate()
+        .filter_map(|(j, w)| (w != K::ZERO).then_some((j, w)))
+        .collect();
+
+    let mut out = BTreeMap::new();
+    for col_id in 0..bus.bus_cols {
+        let vals = mem_cols
+            .get(col_id)
+            .ok_or_else(|| PiCcsError::InvalidInput(format!("{label}: missing mem column {col_id}")))?;
+        if vals.len() != bus.chunk_size {
+            return Err(PiCcsError::InvalidInput(format!(
+                "{label}: time mem column length mismatch for bus col_id={col_id}: len={}, chunk_size={}",
+                vals.len(),
+                bus.chunk_size
+            )));
+        }
+        let mut eval = K::ZERO;
+        for &(j, w) in weighted_rows.iter() {
+            eval += w * K::from(vals[j]);
+        }
+        out.insert(col_id, eval);
+    }
+    Ok(out)
+}
+
+pub(crate) fn time_columns_openings_from_time_columns_at_point(
+    m_in: usize,
+    t_len: usize,
+    cpu_cols: &[Vec<F>],
+    col_ids: &[usize],
+    point: &[K],
+    label: &str,
+) -> Result<BTreeMap<usize, K>, PiCcsError> {
+    if t_len == 0 {
+        return Err(PiCcsError::InvalidInput(format!("{label}: t_len must be non-zero")));
+    }
+    if point.is_empty() {
+        return Err(PiCcsError::InvalidInput(format!("{label}: point must be non-empty")));
+    }
+
+    let n_pad = 1usize
+        .checked_shl(point.len() as u32)
+        .ok_or_else(|| PiCcsError::InvalidInput(format!("{label}: 2^ell_n overflow")))?;
+    if m_in.checked_add(t_len).map_or(true, |end| end > n_pad) {
+        return Err(PiCcsError::InvalidInput(format!(
+            "{label}: time row range out of bounds: m_in={} t_len={} n_pad={}",
+            m_in, t_len, n_pad
+        )));
+    }
+
+    let time_weights = precompute_contiguous_time_weights(point, m_in, t_len, n_pad)?;
+    let weighted_rows: Vec<(usize, K)> = time_weights
+        .into_iter()
+        .enumerate()
+        .filter_map(|(j, w)| (w != K::ZERO).then_some((j, w)))
+        .collect();
+
+    let mut out = BTreeMap::new();
+    for &col_id in col_ids {
+        let vals = cpu_cols.get(col_id).ok_or_else(|| {
+            PiCcsError::InvalidInput(format!(
+                "{label}: trace col_id {} out of range for cpu_cols.len()={}",
+                col_id,
+                cpu_cols.len()
+            ))
+        })?;
+        if vals.len() != t_len {
+            return Err(PiCcsError::InvalidInput(format!(
+                "{label}: time cpu column length mismatch for col_id={col_id}: len={}, t_len={t_len}",
+                vals.len()
+            )));
+        }
+        let mut eval = K::ZERO;
+        for &(j, w) in weighted_rows.iter() {
+            eval += w * K::from(vals[j]);
+        }
+        out.insert(col_id, eval);
+    }
+    Ok(out)
+}
+
+pub(crate) fn append_bus_openings_to_me_instance_from_time_columns<Cmt>(
+    params: &NeoParams,
+    bus: &BusLayout,
+    core_t: usize,
+    mem_cols: &[Vec<F>],
+    me: &mut MeInstance<Cmt, F, K>,
+) -> Result<(), PiCcsError>
+where
+    Cmt: Clone,
+{
+    if bus.bus_cols == 0 {
+        return Ok(());
+    }
+    if mem_cols.len() != bus.bus_cols {
+        return Err(PiCcsError::InvalidInput(format!(
+            "bus openings require mem_cols.len()==bus.bus_cols (got {}, want {})",
+            mem_cols.len(),
+            bus.bus_cols
+        )));
+    }
+
+    let y_pad = (params.d as usize).next_power_of_two();
+    let d = neo_math::D;
+    if y_pad < d {
+        return Err(PiCcsError::InvalidInput(format!(
+            "bus openings require y_pad >= D (y_pad={y_pad}, D={d})"
+        )));
+    }
+    if me.r.is_empty() {
+        return Err(PiCcsError::InvalidInput("bus openings require non-empty ME.r".into()));
+    }
+
+    let n_pad = 1usize
+        .checked_shl(me.r.len() as u32)
+        .ok_or_else(|| PiCcsError::InvalidInput("2^ell_n overflow".into()))?;
+    let start_row = bus.time_index(0);
+    for j in 0..bus.chunk_size {
+        let row = bus.time_index(j);
+        if row >= n_pad {
+            return Err(PiCcsError::InvalidInput(format!(
+                "bus time row index out of range: t={row} >= 2^ell_n={n_pad}"
+            )));
+        }
+        if row != start_row + j {
+            return Err(PiCcsError::InvalidInput(format!(
+                "bus time_index must be contiguous: time_index({j})={row}, expected {}",
+                start_row + j
+            )));
+        }
+    }
+    if start_row
+        .checked_add(bus.chunk_size)
+        .map_or(true, |end| end > n_pad)
+    {
+        return Err(PiCcsError::InvalidInput(format!(
+            "bus time row range out of bounds: start_row={} chunk_size={} n_pad={}",
+            start_row, bus.chunk_size, n_pad
+        )));
+    }
+    let want_len = core_t
+        .checked_add(bus.bus_cols)
+        .ok_or_else(|| PiCcsError::InvalidInput("core_t + bus_cols overflow".into()))?;
+    if me.y.len() == want_len && me.y_scalars.len() == want_len {
+        return Ok(());
+    }
+    if me.y.len() != core_t || me.y_scalars.len() != core_t {
+        return Err(PiCcsError::InvalidInput(format!(
+            "bus openings expect ME y/y_scalars to start at core_t (y.len()={}, y_scalars.len()={}, core_t={})",
+            me.y.len(),
+            me.y_scalars.len(),
+            core_t
+        )));
+    }
+    for (j, row) in me.y.iter().enumerate() {
+        if row.len() != y_pad {
+            return Err(PiCcsError::InvalidInput(format!(
+                "bus openings require ME.y[{j}].len()==y_pad (got {}, want {})",
+                row.len(),
+                y_pad
+            )));
+        }
+    }
+
+    let time_weights = precompute_contiguous_time_weights(&me.r, start_row, bus.chunk_size, n_pad)?;
+    let weighted_rows: Vec<(usize, K)> = time_weights
+        .into_iter()
+        .enumerate()
+        .filter_map(|(j, w)| (w != K::ZERO).then_some((j, w)))
+        .collect();
+
+    let bK = K::from(F::from_u64(params.b as u64));
+    let mut pow_b = Vec::with_capacity(d);
+    let mut cur = K::ONE;
+    for _ in 0..d {
+        pow_b.push(cur);
+        cur *= bK;
+    }
+
+    for col_id in 0..bus.bus_cols {
+        let vals = mem_cols
+            .get(col_id)
+            .ok_or_else(|| PiCcsError::InvalidInput(format!("missing mem column {col_id} for bus openings")))?;
+        if vals.len() != bus.chunk_size {
+            return Err(PiCcsError::InvalidInput(format!(
+                "time mem column length mismatch for bus col_id={col_id}: len={}, chunk_size={}",
+                vals.len(),
+                bus.chunk_size
+            )));
+        }
+
+        let mut y_row = vec![K::ZERO; y_pad];
+        let mut acc = K::ZERO;
+        for &(j, w) in weighted_rows.iter() {
+            acc += w * K::from(vals[j]);
+        }
+        y_row[0] = acc;
+        let y_scalar = acc * pow_b[0];
+
+        me.y.push(y_row);
+        me.y_scalars.push(y_scalar);
+    }
+
+    Ok(())
+}
+
+pub(crate) fn append_zero_bus_openings_to_me_instance<Cmt>(
+    params: &NeoParams,
+    bus: &BusLayout,
+    core_t: usize,
+    me: &mut MeInstance<Cmt, F, K>,
+) -> Result<(), PiCcsError>
+where
+    Cmt: Clone,
+{
+    if bus.bus_cols == 0 {
+        return Ok(());
+    }
+
+    let y_pad = (params.d as usize).next_power_of_two();
+    let d = neo_math::D;
+    if y_pad < d {
+        return Err(PiCcsError::InvalidInput(format!(
+            "bus openings require y_pad >= D (y_pad={y_pad}, D={d})"
+        )));
+    }
+
+    let want_len = core_t
+        .checked_add(bus.bus_cols)
+        .ok_or_else(|| PiCcsError::InvalidInput("core_t + bus_cols overflow".into()))?;
+    if me.y.len() == want_len && me.y_scalars.len() == want_len {
+        return Ok(());
+    }
+    if me.y.len() != core_t || me.y_scalars.len() != core_t {
+        return Err(PiCcsError::InvalidInput(format!(
+            "bus openings expect ME y/y_scalars to start at core_t (y.len()={}, y_scalars.len()={}, core_t={})",
+            me.y.len(),
+            me.y_scalars.len(),
+            core_t
+        )));
+    }
+    for (j, row) in me.y.iter().enumerate() {
+        if row.len() != y_pad {
+            return Err(PiCcsError::InvalidInput(format!(
+                "bus openings require ME.y[{j}].len()==y_pad (got {}, want {})",
+                row.len(),
+                y_pad
+            )));
+        }
+    }
+
+    for _ in 0..bus.bus_cols {
+        me.y.push(vec![K::ZERO; y_pad]);
+        me.y_scalars.push(K::ZERO);
+    }
+    Ok(())
+}
+
+pub(crate) fn append_zero_time_openings_to_me_instance<Cmt>(
+    params: &NeoParams,
+    num_openings: usize,
+    core_t: usize,
+    me: &mut MeInstance<Cmt, F, K>,
+) -> Result<(), PiCcsError>
+where
+    Cmt: Clone,
+{
+    if num_openings == 0 {
+        return Ok(());
+    }
+    let y_pad = (params.d as usize).next_power_of_two();
+    let d = neo_math::D;
+    if y_pad < d {
+        return Err(PiCcsError::InvalidInput(format!(
+            "time openings require y_pad >= D (y_pad={y_pad}, D={d})"
+        )));
+    }
+    let want_len = core_t
+        .checked_add(num_openings)
+        .ok_or_else(|| PiCcsError::InvalidInput("core_t + num_openings overflow".into()))?;
+    if me.y.len() == want_len && me.y_scalars.len() == want_len {
+        return Ok(());
+    }
+    if me.y.len() != core_t || me.y_scalars.len() != core_t {
+        return Err(PiCcsError::InvalidInput(format!(
+            "time openings expect ME y/y_scalars to start at core_t (y.len()={}, y_scalars.len()={}, core_t={})",
+            me.y.len(),
+            me.y_scalars.len(),
+            core_t
+        )));
+    }
+    for (j, row) in me.y.iter().enumerate() {
+        if row.len() != y_pad {
+            return Err(PiCcsError::InvalidInput(format!(
+                "time openings require ME.y[{j}].len()==y_pad (got {}, want {})",
+                row.len(),
+                y_pad
+            )));
+        }
+    }
+    for _ in 0..num_openings {
+        me.y.push(vec![K::ZERO; y_pad]);
+        me.y_scalars.push(K::ZERO);
+    }
+    Ok(())
+}
+
+pub(crate) fn append_time_columns_openings_to_me_instance<Cmt>(
+    params: &NeoParams,
+    m_in: usize,
+    t_len: usize,
+    cpu_cols: &[Vec<F>],
+    cols: &[usize],
+    core_t: usize,
+    me: &mut MeInstance<Cmt, F, K>,
+) -> Result<(), PiCcsError>
+where
+    Cmt: Clone,
+{
+    if cols.is_empty() {
+        return Ok(());
+    }
+    if t_len == 0 {
+        return Err(PiCcsError::InvalidInput("time openings require t_len >= 1".into()));
+    }
+    let y_pad = (params.d as usize).next_power_of_two();
+    let d = neo_math::D;
+    if y_pad < d {
+        return Err(PiCcsError::InvalidInput(format!(
+            "time openings require y_pad >= D (y_pad={y_pad}, D={d})"
+        )));
+    }
+    if me.m_in != m_in {
+        return Err(PiCcsError::InvalidInput(format!(
+            "time openings require ME.m_in==m_in (got {}, want {})",
+            me.m_in, m_in
+        )));
+    }
+    if me.r.is_empty() {
+        return Err(PiCcsError::InvalidInput("time openings require non-empty ME.r".into()));
+    }
+    let n_pad = 1usize
+        .checked_shl(me.r.len() as u32)
+        .ok_or_else(|| PiCcsError::InvalidInput("2^ell_n overflow".into()))?;
+    for j in 0..t_len {
+        let row = m_in
+            .checked_add(j)
+            .ok_or_else(|| PiCcsError::InvalidInput("m_in + j overflow".into()))?;
+        if row >= n_pad {
+            return Err(PiCcsError::InvalidInput(format!(
+                "time row index out of range: (m_in + j)={row} out of range for ell_n={} (n_pad={})",
+                me.r.len(),
+                n_pad
+            )));
+        }
+    }
+    let want_len = core_t
+        .checked_add(cols.len())
+        .ok_or_else(|| PiCcsError::InvalidInput("core_t + cols.len overflow".into()))?;
+    if me.y.len() == want_len && me.y_scalars.len() == want_len {
+        return Ok(());
+    }
+    if me.y.len() != core_t || me.y_scalars.len() != core_t {
+        return Err(PiCcsError::InvalidInput(format!(
+            "time openings expect ME y/y_scalars to start at core_t (y.len()={}, y_scalars.len()={}, core_t={})",
+            me.y.len(),
+            me.y_scalars.len(),
+            core_t
+        )));
+    }
+    for (j, row) in me.y.iter().enumerate() {
+        if row.len() != y_pad {
+            return Err(PiCcsError::InvalidInput(format!(
+                "time openings require ME.y[{j}].len()==y_pad (got {}, want {})",
+                row.len(),
+                y_pad
+            )));
+        }
+    }
+
+    let time_weights = precompute_contiguous_time_weights(&me.r, m_in, t_len, n_pad)?;
+    let weighted_rows: Vec<(usize, K)> = time_weights
+        .into_iter()
+        .enumerate()
+        .filter_map(|(j, w)| (w != K::ZERO).then_some((j, w)))
+        .collect();
+
+    for &col_id in cols {
+        let vals = cpu_cols.get(col_id).ok_or_else(|| {
+            PiCcsError::InvalidInput(format!(
+                "time openings: col_id={} out of range for cpu_cols.len()={}",
+                col_id,
+                cpu_cols.len()
+            ))
+        })?;
+        if vals.len() != t_len {
+            return Err(PiCcsError::InvalidInput(format!(
+                "time openings: cpu_cols[{col_id}].len()={} != t_len={t_len}",
+                vals.len()
+            )));
+        }
+        let mut acc = K::ZERO;
+        for &(j, w) in weighted_rows.iter() {
+            acc += w * K::from(vals[j]);
+        }
+        let mut y_row = vec![K::ZERO; y_pad];
+        y_row[0] = acc;
+        me.y.push(y_row);
+        me.y_scalars.push(acc);
+    }
+    Ok(())
+}
+
+pub(crate) fn append_mixed_time_columns_openings_to_me_instance<Cmt>(
+    params: &NeoParams,
+    m_in: usize,
+    t_len: usize,
+    cpu_cols: &[Vec<F>],
+    mem_cols: &[Vec<F>],
+    logical_col_ids: &[usize],
+    cols: &[usize],
+    core_t: usize,
+    me: &mut MeInstance<Cmt, F, K>,
+) -> Result<(), PiCcsError>
+where
+    Cmt: Clone,
+{
+    if cols.is_empty() {
+        return Ok(());
+    }
+    if t_len == 0 {
+        return Err(PiCcsError::InvalidInput("time openings require t_len >= 1".into()));
+    }
+    let y_pad = (params.d as usize).next_power_of_two();
+    let d = neo_math::D;
+    if y_pad < d {
+        return Err(PiCcsError::InvalidInput(format!(
+            "time openings require y_pad >= D (y_pad={y_pad}, D={d})"
+        )));
+    }
+    if me.m_in != m_in {
+        return Err(PiCcsError::InvalidInput(format!(
+            "time openings require ME.m_in==m_in (got {}, want {})",
+            me.m_in, m_in
+        )));
+    }
+    if me.r.is_empty() {
+        return Err(PiCcsError::InvalidInput("time openings require non-empty ME.r".into()));
+    }
+    let total_cols = cpu_cols
+        .len()
+        .checked_add(mem_cols.len())
+        .ok_or_else(|| PiCcsError::InvalidInput("time openings: cpu_cols + mem_cols overflow".into()))?;
+    if logical_col_ids.len() != total_cols {
+        return Err(PiCcsError::InvalidInput(format!(
+            "time openings require logical_col_ids.len()==cpu_cols+mem_cols (got {}, expected {})",
+            logical_col_ids.len(),
+            total_cols
+        )));
+    }
+    let n_pad = 1usize
+        .checked_shl(me.r.len() as u32)
+        .ok_or_else(|| PiCcsError::InvalidInput("2^ell_n overflow".into()))?;
+    for j in 0..t_len {
+        let row = m_in
+            .checked_add(j)
+            .ok_or_else(|| PiCcsError::InvalidInput("m_in + j overflow".into()))?;
+        if row >= n_pad {
+            return Err(PiCcsError::InvalidInput(format!(
+                "time row index out of range: (m_in + j)={row} out of range for ell_n={} (n_pad={})",
+                me.r.len(),
+                n_pad
+            )));
+        }
+    }
+    let want_len = core_t
+        .checked_add(cols.len())
+        .ok_or_else(|| PiCcsError::InvalidInput("core_t + cols.len overflow".into()))?;
+    if me.y.len() == want_len && me.y_scalars.len() == want_len {
+        return Ok(());
+    }
+    if me.y.len() != core_t || me.y_scalars.len() != core_t {
+        return Err(PiCcsError::InvalidInput(format!(
+            "time openings expect ME y/y_scalars to start at core_t (y.len()={}, y_scalars.len()={}, core_t={})",
+            me.y.len(),
+            me.y_scalars.len(),
+            core_t
+        )));
+    }
+    for (j, row) in me.y.iter().enumerate() {
+        if row.len() != y_pad {
+            return Err(PiCcsError::InvalidInput(format!(
+                "time openings require ME.y[{j}].len()==y_pad (got {}, want {})",
+                row.len(),
+                y_pad
+            )));
+        }
+    }
+
+    let time_weights = precompute_contiguous_time_weights(&me.r, m_in, t_len, n_pad)?;
+    let weighted_rows: Vec<(usize, K)> = time_weights
+        .into_iter()
+        .enumerate()
+        .filter_map(|(j, w)| (w != K::ZERO).then_some((j, w)))
+        .collect();
+
+    for &col_id in cols {
+        let logical_pos = logical_col_ids
+            .iter()
+            .position(|&id| id == col_id)
+            .ok_or_else(|| {
+                PiCcsError::InvalidInput(format!(
+                    "time openings: logical col_id={} is not present in logical_col_ids",
+                    col_id
+                ))
+            })?;
+        let vals: &Vec<F> = if logical_pos < cpu_cols.len() {
+            cpu_cols.get(logical_pos).ok_or_else(|| {
+                PiCcsError::InvalidInput(format!(
+                    "time openings: cpu column position {} out of range for cpu_cols.len()={}",
+                    logical_pos,
+                    cpu_cols.len()
+                ))
+            })?
+        } else {
+            let mem_col = logical_pos - cpu_cols.len();
+            mem_cols.get(mem_col).ok_or_else(|| {
+                PiCcsError::InvalidInput(format!(
+                    "time openings: mem column position {} out of range for mem_cols.len()={}",
+                    mem_col,
+                    mem_cols.len()
+                ))
+            })?
+        };
+        if vals.len() != t_len {
+            return Err(PiCcsError::InvalidInput(format!(
+                "time openings: selected column len={} != t_len={t_len} for col_id={col_id}",
+                vals.len()
+            )));
+        }
+
+        let mut acc = K::ZERO;
+        for &(j, w) in weighted_rows.iter() {
+            acc += w * K::from(vals[j]);
+        }
+        let mut y_row = vec![K::ZERO; y_pad];
+        y_row[0] = acc;
+        me.y.push(y_row);
+        me.y_scalars.push(acc);
+    }
+    Ok(())
+}
+
+pub(crate) fn append_time_columns_openings_to_me_instance_at_js<Cmt>(
+    params: &NeoParams,
+    m_in: usize,
+    t_len: usize,
+    cpu_cols: &[Vec<F>],
+    cols: &[usize],
+    core_t: usize,
+    me: &mut MeInstance<Cmt, F, K>,
+    js: &[usize],
+) -> Result<(), PiCcsError>
+where
+    Cmt: Clone,
+{
+    if cols.is_empty() {
+        return Ok(());
+    }
+    if t_len == 0 {
+        return Err(PiCcsError::InvalidInput("time openings require t_len >= 1".into()));
+    }
+    let y_pad = (params.d as usize).next_power_of_two();
+    let d = neo_math::D;
+    if y_pad < d {
+        return Err(PiCcsError::InvalidInput(format!(
+            "time openings require y_pad >= D (y_pad={y_pad}, D={d})"
+        )));
+    }
+    if me.m_in != m_in {
+        return Err(PiCcsError::InvalidInput(format!(
+            "time openings require ME.m_in==m_in (got {}, want {})",
+            me.m_in, m_in
+        )));
+    }
+    if me.r.is_empty() {
+        return Err(PiCcsError::InvalidInput("time openings require non-empty ME.r".into()));
+    }
+    let n_pad = 1usize
+        .checked_shl(me.r.len() as u32)
+        .ok_or_else(|| PiCcsError::InvalidInput("2^ell_n overflow".into()))?;
+    for &j in js {
+        if j >= t_len {
+            return Err(PiCcsError::InvalidInput(format!(
+                "time openings js out of range: j={j} >= t_len={t_len}"
+            )));
+        }
+        let row = m_in
+            .checked_add(j)
+            .ok_or_else(|| PiCcsError::InvalidInput("m_in + j overflow".into()))?;
+        if row >= n_pad {
+            return Err(PiCcsError::InvalidInput(format!(
+                "time row index out of range: (m_in + j)={row} out of range for ell_n={} (n_pad={})",
+                me.r.len(),
+                n_pad
+            )));
+        }
+    }
+    let want_len = core_t
+        .checked_add(cols.len())
+        .ok_or_else(|| PiCcsError::InvalidInput("core_t + cols.len overflow".into()))?;
+    if me.y.len() == want_len && me.y_scalars.len() == want_len {
+        return Ok(());
+    }
+    if me.y.len() != core_t || me.y_scalars.len() != core_t {
+        return Err(PiCcsError::InvalidInput(format!(
+            "time openings expect ME y/y_scalars to start at core_t (y.len()={}, y_scalars.len()={}, core_t={})",
+            me.y.len(),
+            me.y_scalars.len(),
+            core_t
+        )));
+    }
+    for (j, row) in me.y.iter().enumerate() {
+        if row.len() != y_pad {
+            return Err(PiCcsError::InvalidInput(format!(
+                "time openings require ME.y[{j}].len()==y_pad (got {}, want {})",
+                row.len(),
+                y_pad
+            )));
+        }
+    }
+
+    let dense_selection = js.len().saturating_mul(3) >= t_len;
+    let time_weights: Vec<(usize, K)> = if dense_selection {
+        let all = precompute_contiguous_time_weights(&me.r, m_in, t_len, n_pad)?;
+        let mut out = Vec::with_capacity(js.len());
+        for &j in js {
+            out.push((j, all[j]));
+        }
+        out
+    } else {
+        let mut out = Vec::with_capacity(js.len());
+        for &j in js {
+            out.push((j, chi_for_row_index(&me.r, m_in + j)));
+        }
+        out
+    };
+    let weighted_rows: Vec<(usize, K)> = time_weights
+        .into_iter()
+        .filter_map(|(j, w)| (w != K::ZERO).then_some((j, w)))
+        .collect();
+
+    for &col_id in cols {
+        let vals = cpu_cols.get(col_id).ok_or_else(|| {
+            PiCcsError::InvalidInput(format!(
+                "time openings: col_id={} out of range for cpu_cols.len()={}",
+                col_id,
+                cpu_cols.len()
+            ))
+        })?;
+        if vals.len() != t_len {
+            return Err(PiCcsError::InvalidInput(format!(
+                "time openings: cpu_cols[{col_id}].len()={} != t_len={t_len}",
+                vals.len()
+            )));
+        }
+        let mut acc = K::ZERO;
+        for &(j, w) in weighted_rows.iter() {
+            acc += w * K::from(vals[j]);
+        }
+        let mut y_row = vec![K::ZERO; y_pad];
+        y_row[0] = acc;
+        me.y.push(y_row);
+        me.y_scalars.push(acc);
+    }
     Ok(())
 }
 
@@ -522,179 +1376,10 @@ where
     }
 
     // Precompute χ_r(m_in + j) weights for the time rows.
-    let time_weights = precompute_contiguous_time_weights(&me.r, m_in, t_len, n_pad);
+    let time_weights = precompute_contiguous_time_weights(&me.r, m_in, t_len, n_pad)?;
     let weighted_rows: Vec<(usize, K)> = time_weights
         .into_iter()
         .enumerate()
-        .filter_map(|(j, w)| (w != K::ZERO).then_some((j, w)))
-        .collect();
-
-    // Base-b powers for recomposition.
-    let bK = K::from(F::from_u64(params.b as u64));
-    let mut pow_b = Vec::with_capacity(d);
-    let mut cur = K::ONE;
-    for _ in 0..d {
-        pow_b.push(cur);
-        cur *= bK;
-    }
-
-    for &col_id in cols {
-        let col_offset = col_id
-            .checked_mul(t_len)
-            .ok_or_else(|| PiCcsError::InvalidInput("trace col_id * t_len overflow".into()))?;
-        let col_start = col_base
-            .checked_add(col_offset)
-            .ok_or_else(|| PiCcsError::InvalidInput("trace col_base + col_offset overflow".into()))?;
-        let col_end = col_start
-            .checked_add(t_len - 1)
-            .ok_or_else(|| PiCcsError::InvalidInput("trace col_end overflow".into()))?;
-        if col_end >= Z.cols() {
-            return Err(PiCcsError::InvalidInput(format!(
-                "trace openings: column span out of range (col_start={col_start}, col_end={col_end}, m={})",
-                Z.cols()
-            )));
-        }
-
-        let mut y_row = vec![K::ZERO; y_pad];
-        let mut y_scalar = K::ZERO;
-        for rho in 0..d {
-            let mut acc = K::ZERO;
-            for (j, w) in weighted_rows.iter() {
-                acc += *w * K::from(Z[(rho, col_start + *j)]);
-            }
-            y_row[rho] = acc;
-            y_scalar += acc * pow_b[rho];
-        }
-
-        me.y.push(y_row);
-        me.y_scalars.push(y_scalar);
-    }
-
-    Ok(())
-}
-
-/// Append time-indexed openings for a column-major region of the CPU witness, using only the
-/// selected time rows `js`.
-///
-/// This is valid when the caller knows that for each opened column `col_id`, all omitted rows
-/// (`j` not in `js`) are zero in the witness; then the opening can be computed by summing only
-/// over `js`.
-pub(crate) fn append_col_major_time_openings_to_me_instance_at_js<Cmt>(
-    params: &NeoParams,
-    m_in: usize,
-    t_len: usize,
-    col_base: usize,
-    cols: &[usize],
-    core_t: usize,
-    Z: &Mat<F>,
-    me: &mut MeInstance<Cmt, F, K>,
-    js: &[usize],
-) -> Result<(), PiCcsError>
-where
-    Cmt: Clone,
-{
-    if cols.is_empty() {
-        return Ok(());
-    }
-    if t_len == 0 {
-        return Err(PiCcsError::InvalidInput("trace openings require t_len >= 1".into()));
-    }
-
-    let y_pad = (params.d as usize).next_power_of_two();
-    let d = neo_math::D;
-    if y_pad < d {
-        return Err(PiCcsError::InvalidInput(format!(
-            "trace openings require y_pad >= D (y_pad={y_pad}, D={d})"
-        )));
-    }
-    if Z.rows() != d {
-        return Err(PiCcsError::InvalidInput(format!(
-            "trace openings require Z.rows()==D (got {}, want {})",
-            Z.rows(),
-            d
-        )));
-    }
-    if me.m_in != m_in {
-        return Err(PiCcsError::InvalidInput(format!(
-            "trace openings require ME.m_in==m_in (got {}, want {})",
-            me.m_in, m_in
-        )));
-    }
-    if me.r.is_empty() {
-        return Err(PiCcsError::InvalidInput("trace openings require non-empty ME.r".into()));
-    }
-    if col_base >= Z.cols() {
-        return Err(PiCcsError::InvalidInput(format!(
-            "trace openings require col_base < m (col_base={}, m={})",
-            col_base,
-            Z.cols()
-        )));
-    }
-
-    let n_pad = 1usize
-        .checked_shl(me.r.len() as u32)
-        .ok_or_else(|| PiCcsError::InvalidInput("2^ell_n overflow".into()))?;
-    for &j in js {
-        if j >= t_len {
-            return Err(PiCcsError::InvalidInput(format!(
-                "trace js out of range: j={j} >= t_len={t_len}"
-            )));
-        }
-        let row = m_in
-            .checked_add(j)
-            .ok_or_else(|| PiCcsError::InvalidInput("m_in + j overflow".into()))?;
-        if row >= n_pad {
-            return Err(PiCcsError::InvalidInput(format!(
-                "trace time row index out of range: (m_in + j)={row} out of range for ell_n={} (n_pad={})",
-                me.r.len(),
-                n_pad
-            )));
-        }
-    }
-
-    // Idempotent append: allow callers to call this once; reject unexpected shapes.
-    let want_len = core_t
-        .checked_add(cols.len())
-        .ok_or_else(|| PiCcsError::InvalidInput("core_t + cols.len overflow".into()))?;
-    if me.y.len() == want_len && me.y_scalars.len() == want_len {
-        return Ok(());
-    }
-    if me.y.len() != core_t || me.y_scalars.len() != core_t {
-        return Err(PiCcsError::InvalidInput(format!(
-            "trace openings expect ME y/y_scalars to start at core_t (y.len()={}, y_scalars.len()={}, core_t={})",
-            me.y.len(),
-            me.y_scalars.len(),
-            core_t
-        )));
-    }
-    for (j, row) in me.y.iter().enumerate() {
-        if row.len() != y_pad {
-            return Err(PiCcsError::InvalidInput(format!(
-                "trace openings require ME.y[{j}].len()==y_pad (got {}, want {})",
-                row.len(),
-                y_pad
-            )));
-        }
-    }
-
-    // Precompute χ_r(m_in + j) weights for the selected time rows.
-    let dense_selection = js.len().saturating_mul(3) >= t_len;
-    let time_weights: Vec<(usize, K)> = if dense_selection {
-        let all = precompute_contiguous_time_weights(&me.r, m_in, t_len, n_pad);
-        let mut out = Vec::with_capacity(js.len());
-        for &j in js {
-            out.push((j, all[j]));
-        }
-        out
-    } else {
-        let mut out = Vec::with_capacity(js.len());
-        for &j in js {
-            out.push((j, chi_for_row_index(&me.r, m_in + j)));
-        }
-        out
-    };
-    let weighted_rows: Vec<(usize, K)> = time_weights
-        .into_iter()
         .filter_map(|(j, w)| (w != K::ZERO).then_some((j, w)))
         .collect();
 
@@ -1016,6 +1701,31 @@ fn ensure_ccs_references_bus_cols(
          Missing examples: {}",
         examples.join(", ")
     )))
+}
+
+fn ccs_references_any_bus_cols(s: &CcsStructure<F>, bus: &BusLayout) -> bool {
+    if bus.bus_cols == 0 {
+        return false;
+    }
+    let active = active_matrix_indices(s);
+    if active.is_empty() {
+        return false;
+    }
+
+    for col_id in 0..bus.bus_cols {
+        for j in 0..bus.chunk_size {
+            let z_idx = bus.bus_cell(col_id, j);
+            if z_idx >= s.m {
+                continue;
+            }
+            for &mj in &active {
+                if ccs_col_has_any_nonzero(&s.matrices[mj], z_idx) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 fn ensure_ccs_references_bus_cols_outside_padding_rows(
@@ -1684,6 +2394,104 @@ pub(crate) fn build_time_sparse_from_bus_col_at_js(
             .ok_or_else(|| PiCcsError::InvalidInput(format!("CPU witness too short for bus idx={idx}")))?;
         if v != K::ZERO {
             entries.push((t, v));
+        }
+    }
+    Ok(SparseIdxVec::from_entries(pow2_cycle, entries))
+}
+
+pub(crate) fn build_time_sparse_from_mem_cols(
+    mem_cols: &[Vec<F>],
+    bus: &BusLayout,
+    col_id: usize,
+    steps_len: usize,
+    pow2_cycle: usize,
+) -> Result<SparseIdxVec<K>, PiCcsError> {
+    if col_id >= bus.bus_cols {
+        return Err(PiCcsError::InvalidInput(format!(
+            "bus col_id out of range: {col_id} >= {}",
+            bus.bus_cols
+        )));
+    }
+    if col_id >= mem_cols.len() {
+        return Err(PiCcsError::InvalidInput(format!(
+            "time mem col_id out of range: {col_id} >= {}",
+            mem_cols.len()
+        )));
+    }
+    if steps_len > bus.chunk_size {
+        return Err(PiCcsError::InvalidInput(format!(
+            "steps_len({steps_len}) > bus.chunk_size({})",
+            bus.chunk_size
+        )));
+    }
+    let vals = &mem_cols[col_id];
+    if vals.len() != bus.chunk_size {
+        return Err(PiCcsError::InvalidInput(format!(
+            "time mem column length mismatch: col_id={col_id}, len={}, chunk_size={}",
+            vals.len(),
+            bus.chunk_size
+        )));
+    }
+    let mut entries: Vec<(usize, K)> = Vec::new();
+    for (j, v) in vals.iter().copied().enumerate().take(steps_len) {
+        let t = bus.time_index(j);
+        if t >= pow2_cycle {
+            return Err(PiCcsError::InvalidInput(format!(
+                "bus time index out of range: t={t} >= pow2_cycle={pow2_cycle}"
+            )));
+        }
+        let vk = K::from(v);
+        if vk != K::ZERO {
+            entries.push((t, vk));
+        }
+    }
+    Ok(SparseIdxVec::from_entries(pow2_cycle, entries))
+}
+
+pub(crate) fn build_time_sparse_from_mem_cols_at_js(
+    mem_cols: &[Vec<F>],
+    bus: &BusLayout,
+    col_id: usize,
+    js: &[usize],
+    pow2_cycle: usize,
+) -> Result<SparseIdxVec<K>, PiCcsError> {
+    if col_id >= bus.bus_cols {
+        return Err(PiCcsError::InvalidInput(format!(
+            "bus col_id out of range: {col_id} >= {}",
+            bus.bus_cols
+        )));
+    }
+    if col_id >= mem_cols.len() {
+        return Err(PiCcsError::InvalidInput(format!(
+            "time mem col_id out of range: {col_id} >= {}",
+            mem_cols.len()
+        )));
+    }
+    let vals = &mem_cols[col_id];
+    if vals.len() != bus.chunk_size {
+        return Err(PiCcsError::InvalidInput(format!(
+            "time mem column length mismatch: col_id={col_id}, len={}, chunk_size={}",
+            vals.len(),
+            bus.chunk_size
+        )));
+    }
+    let mut entries: Vec<(usize, K)> = Vec::new();
+    for &j in js {
+        if j >= bus.chunk_size {
+            return Err(PiCcsError::InvalidInput(format!(
+                "bus j out of range: j={j} >= bus.chunk_size={}",
+                bus.chunk_size
+            )));
+        }
+        let t = bus.time_index(j);
+        if t >= pow2_cycle {
+            return Err(PiCcsError::InvalidInput(format!(
+                "bus time index out of range: t={t} >= pow2_cycle={pow2_cycle}"
+            )));
+        }
+        let vk = K::from(vals[j]);
+        if vk != K::ZERO {
+            entries.push((t, vk));
         }
     }
     Ok(SparseIdxVec::from_entries(pow2_cycle, entries))

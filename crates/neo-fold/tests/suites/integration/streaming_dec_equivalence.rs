@@ -49,17 +49,36 @@ fn assert_step_fold_eq(a: &neo_fold::shard::FoldStep, b: &neo_fold::shard::FoldS
 
 #[test]
 fn streaming_dec_matches_materialized_dec_with_loaded_pp() {
-    let n = 16usize;
-    let ccs = create_identity_ccs(n);
-    let mut params = NeoParams::goldilocks_auto_r1cs_ccs(n).expect("params");
+    let mut selected: Option<(usize, NeoParams, CcsStructure<F>)> = None;
+    for n in 32usize..256usize {
+        let params = NeoParams::goldilocks_auto_r1cs_ccs(n).expect("params");
+        let ccs = create_identity_ccs(n);
+        if try_get_loaded_global_pp_for_dims(D, ccs.m).is_some() {
+            selected = Some((n, params, ccs));
+            break;
+        }
+
+        let mut rng = ChaCha8Rng::seed_from_u64(7 ^ (n as u64));
+        let pp = setup_par(&mut rng, D, params.kappa as usize, ccs.m).expect("setup_par");
+        match set_global_pp(pp) {
+            Ok(()) => {
+                selected = Some((n, params, ccs));
+                break;
+            }
+            Err(e) if e.to_string().contains("seed is already registered") => {
+                // This dimension has a seeded-only registry entry in this test process; try another n.
+                continue;
+            }
+            Err(e) => panic!("set_global_pp: {e}"),
+        }
+    }
+    let (n, mut params, ccs) = selected.expect("failed to find a dimension with loaded global PP");
     params.k_rho = 8; // must satisfy count·T·(b−1) < b^k_rho even for count=1
 
-    let mut rng = ChaCha8Rng::seed_from_u64(7);
-    let pp = setup_par(&mut rng, D, params.kappa as usize, ccs.m).expect("setup_par");
-    set_global_pp(pp).expect("set_global_pp");
     assert!(
         try_get_loaded_global_pp_for_dims(D, ccs.m).is_some(),
-        "expected loaded PP"
+        "expected loaded PP for n={n}, m={}",
+        ccs.m
     );
     let l = AjtaiSModule::from_global_for_dims(D, ccs.m).expect("from_global_for_dims");
 
@@ -132,16 +151,35 @@ fn streaming_dec_matches_materialized_dec_with_loaded_pp() {
 
 #[test]
 fn streaming_dec_matches_materialized_dec_with_seeded_pp() {
-    let n = 17usize;
-    let ccs = create_identity_ccs(n);
-    let mut params = NeoParams::goldilocks_auto_r1cs_ccs(n).expect("params");
+    let mut selected: Option<(usize, NeoParams, CcsStructure<F>, [u8; 32])> = None;
+    for n in 17usize..256usize {
+        let params = NeoParams::goldilocks_auto_r1cs_ccs(n).expect("params");
+        let ccs = create_identity_ccs(n);
+        if try_get_loaded_global_pp_for_dims(D, ccs.m).is_some() {
+            continue;
+        }
+        let mut seed = [7u8; 32];
+        seed[0] = (n & 0xff) as u8;
+        match set_global_pp_seeded(D, params.kappa as usize, ccs.m, seed) {
+            Ok(()) => {
+                selected = Some((n, params, ccs, seed));
+                break;
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                if msg.contains("already loaded") || msg.contains("already registered") {
+                    continue;
+                }
+                panic!("set_global_pp_seeded: {e}");
+            }
+        }
+    }
+    let (n, mut params, ccs, _seed) = selected.expect("failed to find a dimension for seeded global PP");
     params.k_rho = 8; // must satisfy count·T·(b−1) < b^k_rho even for count=1
-
-    let seed = [7u8; 32];
-    set_global_pp_seeded(D, params.kappa as usize, ccs.m, seed).expect("set_global_pp_seeded");
     assert!(
         try_get_loaded_global_pp_for_dims(D, ccs.m).is_none(),
-        "expected PP to remain unloaded for seeded entry"
+        "expected PP to remain unloaded for seeded entry (n={n}, m={})",
+        ccs.m
     );
     let l = AjtaiSModule::from_global_for_dims(D, ccs.m).expect("from_global_for_dims");
 

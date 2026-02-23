@@ -20,6 +20,7 @@ pub struct RouteAShoutTimeLaneClaims<'a> {
 pub struct RouteAShoutTimeGammaGroupClaims<'a> {
     pub value_prefix: RoundOraclePrefix<'a>,
     pub adapter_prefix: RoundOraclePrefix<'a>,
+    pub bitness_prefix: RoundOraclePrefix<'a>,
     pub value_claim: K,
     pub adapter_claim: K,
 }
@@ -59,6 +60,7 @@ pub fn build_route_a_shout_time_claims_guard<'a>(
         gamma_groups.push(RouteAShoutTimeGammaGroupClaims {
             value_prefix: RoundOraclePrefix::new(g.value.as_mut(), ell_n),
             adapter_prefix: RoundOraclePrefix::new(g.adapter.as_mut(), ell_n),
+            bitness_prefix: RoundOraclePrefix::new(g.bitness.as_mut(), ell_n),
             value_claim: g.value_claim,
             adapter_claim: g.adapter_claim,
         });
@@ -203,6 +205,16 @@ pub fn append_route_a_shout_time_claims<'a>(
             oracle: &mut group.adapter_prefix,
             claimed_sum: group.adapter_claim,
             label: b"shout/adapter",
+        });
+
+        claimed_sums.push(K::ZERO);
+        degree_bounds.push(group.bitness_prefix.degree_bound());
+        labels.push(b"shout/bitness");
+        claim_is_dynamic.push(false);
+        claims.push(BatchedClaim {
+            oracle: &mut group.bitness_prefix,
+            claimed_sum: K::ZERO,
+            label: b"shout/bitness",
         });
     }
 
@@ -381,8 +393,30 @@ pub(crate) fn build_bus_layout_for_step_witness(
     step: &StepWitnessBundle<Cmt, F, K>,
     t_len: usize,
 ) -> Result<BusLayout, PiCcsError> {
-    let m = step.mcs.1.Z.cols();
     let m_in = step.mcs.0.m_in;
+    if step.time_columns.t != t_len || step.time_columns.cpu_cols.is_empty() {
+        return Err(PiCcsError::InvalidInput(format!(
+            "step bus layout requires canonical time columns (time_t={}, cpu_cols={}, expected_t={t_len})",
+            step.time_columns.t,
+            step.time_columns.cpu_cols.len()
+        )));
+    }
+    let cpu_region_len = step
+        .time_columns
+        .cpu_cols
+        .len()
+        .checked_mul(t_len)
+        .ok_or_else(|| PiCcsError::InvalidInput("step bus layout: cpu_cols*t_len overflow".into()))?;
+    let bus_region_len = step
+        .time_columns
+        .mem_cols
+        .len()
+        .checked_mul(t_len)
+        .ok_or_else(|| PiCcsError::InvalidInput("step bus layout: mem_cols*t_len overflow".into()))?;
+    let m = m_in
+        .checked_add(cpu_region_len)
+        .and_then(|v| v.checked_add(bus_region_len))
+        .ok_or_else(|| PiCcsError::InvalidInput("step bus layout: virtual m overflow".into()))?;
     let shout_shapes: Vec<ShoutInstanceShape> = step
         .lut_instances
         .iter()
@@ -402,14 +436,23 @@ pub(crate) fn build_bus_layout_for_step_witness(
         .mem_instances
         .iter()
         .map(|(inst, _)| (inst.d * inst.ell, inst.lanes.max(1)));
-    build_bus_layout_for_instances_with_shout_shapes_and_twist_lanes(m, m_in, t_len, shout_shapes, twist).map_err(
-        |e| {
-            PiCcsError::InvalidInput(format!(
-                "step bus layout failed: m={m}, m_in={m_in}, t_len={t_len}, lut_insts={}, grouped_lut_insts={grouped_shout_instances}: {e}",
-                step.lut_instances.len()
-            ))
-        },
-    )
+    let layout =
+        build_bus_layout_for_instances_with_shout_shapes_and_twist_lanes(m, m_in, t_len, shout_shapes, twist).map_err(
+            |e| {
+                PiCcsError::InvalidInput(format!(
+                    "step bus layout failed: m={m}, m_in={m_in}, t_len={t_len}, lut_insts={}, grouped_lut_insts={grouped_shout_instances}: {e}",
+                    step.lut_instances.len()
+                ))
+            },
+        )?;
+    if layout.bus_cols != step.time_columns.mem_cols.len() {
+        return Err(PiCcsError::InvalidInput(format!(
+            "step bus layout mismatch: layout.bus_cols={} != time_columns.mem_cols.len()={}",
+            layout.bus_cols,
+            step.time_columns.mem_cols.len()
+        )));
+    }
+    Ok(layout)
 }
 
 #[inline]
@@ -594,11 +637,9 @@ pub(crate) fn build_route_a_decode_time_claims(
             bus_val_cols.push(lane0.primary_val());
         }
         let lookup_vals = decode_lookup_backed_col_values_batch(
-            params,
-            bus.bus_base,
             t_len,
-            &step.mcs.1.Z,
             bus.bus_cols,
+            Some(&step.time_columns.mem_cols),
             &bus_val_cols,
         )?;
         for (open_idx, &decode_col_id) in decode_open_cols.iter().enumerate() {

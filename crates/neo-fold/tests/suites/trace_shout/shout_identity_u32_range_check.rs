@@ -122,12 +122,13 @@ fn route_a_shout_identity_u32_range_check_two_lanes_same_value_verifies() {
     }
 
     let (mcs, mcs_wit) = create_mcs_from_z(&params, session.committer(), M_IN, z);
-    let step_bundle = StepWitnessBundle {
+    let step_bundle = crate::common_setup::canonicalize_step_time_columns(StepWitnessBundle {
         mcs: (mcs, mcs_wit),
         lut_instances: vec![(inst, wit)],
         mem_instances: vec![],
+        time_columns: crate::common_setup::empty_time_columns(),
         _phantom: PhantomData::<K>,
-    };
+    });
 
     session.add_step_bundle(step_bundle);
     let _run = session
@@ -169,12 +170,13 @@ fn route_a_shout_identity_u32_range_check_rejects_wrong_val() {
     write_shout_lane_row(&mut z, bus_base, 1, 0, &inst, x, F::from_u64(bad), F::ONE);
 
     let (mcs, mcs_wit) = create_mcs_from_z(&params, session.committer(), M_IN, z);
-    let step_bundle = StepWitnessBundle {
+    let step_bundle = crate::common_setup::canonicalize_step_time_columns(StepWitnessBundle {
         mcs: (mcs, mcs_wit),
         lut_instances: vec![(inst, wit)],
         mem_instances: vec![],
+        time_columns: crate::common_setup::empty_time_columns(),
         _phantom: PhantomData::<K>,
-    };
+    });
 
     session.add_step_bundle(step_bundle);
     let _ = session

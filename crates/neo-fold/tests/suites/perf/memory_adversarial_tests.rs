@@ -195,12 +195,13 @@ fn create_step_with_twist_bus(
     debug_assert_eq!(col_id, bus_cols_total);
 
     let (mcs, mcs_wit) = create_mcs_from_z(params, l, M_IN, z);
-    StepWitnessBundle {
+    crate::common_setup::canonicalize_step_time_columns(StepWitnessBundle {
         mcs: (mcs, mcs_wit),
         lut_instances: vec![],
         mem_instances: mem_instances.into_iter().map(|(i, w, _)| (i, w)).collect(),
+        time_columns: crate::common_setup::empty_time_columns(),
         _phantom: PhantomData::<K>,
-    }
+    })
 }
 
 /// Valid 3-step memory trace:

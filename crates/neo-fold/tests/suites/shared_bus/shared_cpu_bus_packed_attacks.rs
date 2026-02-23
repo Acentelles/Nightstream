@@ -65,8 +65,14 @@ fn tamper_divu_packed_diff_bit_opening(run: &Rv32TraceWiringRun, proof: &mut Sha
         (inst.d * ell, inst.lanes.max(1))
     });
 
+    // Uniform Route-A no longer embeds the bus region into physical CCS width. For test-only
+    // column-id reconstruction, provide a synthetic m that is guaranteed to fit all bus cols.
+    let synthetic_m = run
+        .layout()
+        .m_in
+        .saturating_add(run.layout().t.saturating_mul(10_000));
     let bus = build_bus_layout_for_instances_with_shout_shapes_and_twist_lanes(
-        run.layout().m,
+        synthetic_m,
         run.layout().m_in,
         run.layout().t,
         shout_shapes,

@@ -1249,13 +1249,22 @@ pub(crate) fn build_route_a_memory_oracles(
             vec![Box::new(bitness_oracle)]
         } else {
             let mut bit_cols: Vec<SparseIdxVec<K>> = Vec::with_capacity(lane_count * (ell_addr + 1));
-            for lane in decoded.lanes.iter() {
+            for (lane_idx, lane) in decoded.lanes.iter().enumerate() {
+                // Gamma-grouped lanes emit bitness through grouped claims, so the
+                // per-instance bitness claim only covers ungrouped lanes.
+                if shout_lane_to_gamma.contains_key(&(lut_idx, lane_idx)) {
+                    continue;
+                }
                 bit_cols.extend(lane.addr_bits.iter().cloned());
                 bit_cols.push(lane.has_lookup.clone());
             }
-            let weights = bitness_weights(r_cycle, bit_cols.len(), 0x5348_4F55_54u64 + lut_idx as u64);
-            let bitness_oracle = LazyWeightedBitnessOracleSparseTime::new_with_cycle(r_cycle, bit_cols, weights);
-            vec![Box::new(bitness_oracle)]
+            if bit_cols.is_empty() {
+                Vec::new()
+            } else {
+                let weights = bitness_weights(r_cycle, bit_cols.len(), 0x5348_4F55_54u64 + lut_idx as u64);
+                let bitness_oracle = LazyWeightedBitnessOracleSparseTime::new_with_cycle(r_cycle, bit_cols, weights);
+                vec![Box::new(bitness_oracle)]
+            }
         };
 
         shout_oracles.push(RouteAShoutTimeOracles { lanes, bitness });
@@ -1389,12 +1398,34 @@ pub(crate) fn build_route_a_memory_oracles(
                 out
             }),
         );
+        let mut bitness_cols: Vec<SparseIdxVec<K>> = Vec::with_capacity(g.lanes.len() * (ell_addr + 1));
+        let mut bitness_weights_expanded: Vec<K> = Vec::with_capacity(g.lanes.len() * (ell_addr + 1));
+        for (slot, lane_ref) in g.lanes.iter().enumerate() {
+            let decoded = shout_pre
+                .decoded
+                .get(lane_ref.inst_idx)
+                .ok_or_else(|| PiCcsError::ProtocolError("shout gamma bitness inst idx drift".into()))?;
+            let lane = decoded
+                .lanes
+                .get(lane_ref.lane_idx)
+                .ok_or_else(|| PiCcsError::ProtocolError("shout gamma bitness lane idx drift".into()))?;
+            bitness_cols.extend(lane.addr_bits.iter().cloned());
+            bitness_cols.push(lane.has_lookup.clone());
+            let lane_weight = weights[slot];
+            for _ in 0..ell_addr {
+                bitness_weights_expanded.push(lane_weight);
+            }
+            bitness_weights_expanded.push(lane_weight);
+        }
+        let bitness_oracle =
+            LazyWeightedBitnessOracleSparseTime::new_with_cycle(r_cycle, bitness_cols, bitness_weights_expanded);
 
         shout_gamma_groups.push(RouteAShoutGammaGroupOracles {
             value: Box::new(value_oracle),
             value_claim,
             adapter: Box::new(adapter_oracle),
             adapter_claim,
+            bitness: Box::new(bitness_oracle),
         });
     }
 

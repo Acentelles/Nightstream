@@ -88,6 +88,8 @@ mod prover;
 mod rlc_dec;
 #[path = "shard/verifier_and_api.rs"]
 mod verifier_and_api;
+#[path = "shard/verify_consistency.rs"]
+mod verify_consistency;
 
 pub use core_utils::{absorb_step_memory, check_step_linking, CommitMixers, StepLinkingConfig};
 pub use verifier_and_api::*;
@@ -95,3 +97,4 @@ pub use verifier_and_api::*;
 pub(crate) use core_utils::*;
 pub(crate) use prover::*;
 pub(crate) use rlc_dec::*;
+pub(crate) use verify_consistency::*;
