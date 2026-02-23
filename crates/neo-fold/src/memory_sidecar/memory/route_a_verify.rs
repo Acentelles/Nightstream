@@ -14,6 +14,8 @@ pub fn verify_route_a_memory_step(
     batched_claimed_sums: &[K],
     claim_idx_start: usize,
     mem_proof: &MemSidecarProof<Cmt, F, K>,
+    step_time_openings: &[crate::shard_proof_types::TimePointOpening],
+    prev_step_time_openings: Option<&[crate::shard_proof_types::TimePointOpening]>,
     shout_pre: &[ShoutAddrPreVerifyData],
     twist_pre: &[TwistAddrPreVerifyData],
     step_idx: usize,
@@ -26,7 +28,7 @@ pub fn verify_route_a_memory_step(
     }
     let trace_mode = wb_wp_required_for_step_instance(step);
     let cpu_link = if trace_mode {
-        extract_trace_cpu_link_openings(m, core_t, cpu_bus.bus_cols, step, ccs_out0)?
+        extract_trace_cpu_link_openings(m, core_t, cpu_bus.bus_cols, step, ccs_out0, step_time_openings, r_time)?
     } else {
         None
     };
@@ -105,16 +107,50 @@ pub fn verify_route_a_memory_step(
             "shared_cpu_bus layout mismatch for step (instance counts)".into(),
         ));
     }
+    let strict_committed_mode_for_step = |st: &StepInstanceBundle<Cmt, F, K>| -> bool {
+        let cpu_cols_len = st.time_columns.cpu_cols.len();
+        let mem_cols_len = st.time_columns.mem_cols.len();
+        let expected_logical_cols = cpu_cols_len.saturating_add(mem_cols_len);
+        st.time_columns.t == cpu_bus.chunk_size
+            && mem_cols_len == cpu_bus.bus_cols
+            && st.time_columns.col_ids.len() == expected_logical_cols
+            && expected_logical_cols > 0
+    };
+    let strict_committed_mode = strict_committed_mode_for_step(step);
+    if cpu_bus.bus_cols > 0 && !strict_committed_mode {
+        return Err(PiCcsError::ProtocolError(format!(
+            "route-a: canonical committed mode required for bus openings (time_t={}, chunk_size={}, mem_cols={}, bus_cols={}, logical_col_ids={})",
+            step.time_columns.t,
+            cpu_bus.chunk_size,
+            step.time_columns.mem_cols.len(),
+            cpu_bus.bus_cols,
+            step.time_columns.col_ids.len()
+        )));
+    }
 
-    let bus_y_base_time = if cpu_bus.bus_cols > 0 {
-        if ccs_out0.aux_openings.len() < cpu_bus.bus_cols {
-            return Err(PiCcsError::InvalidInput(
-                "CPU aux_openings too short for shared-bus openings".into(),
-            ));
+    let bus_time_open_map = if cpu_bus.bus_cols > 0 {
+        let bus_col_ids = bus_logical_col_ids_for_step_instance(step, cpu_bus, "route-a/time")?;
+        let opening_entry =
+            require_time_opening_entry_for_point(step_time_openings, r_time, &bus_col_ids, "route-a/time")?;
+        if opening_entry.source != crate::shard_proof_types::TimeOpeningSource::CommittedOpening {
+            return Err(PiCcsError::ProtocolError(format!(
+                "route-a/time requires CommittedOpening source (got {:?})",
+                opening_entry.source
+            )));
         }
-        0usize
+        let logical_map = require_time_openings_for_point(step_time_openings, r_time, &bus_col_ids, "route-a/time")?;
+        let mut local_map = BTreeMap::new();
+        for (mem_local_col, &logical_col_id) in bus_col_ids.iter().enumerate() {
+            let v = logical_map.get(&logical_col_id).copied().ok_or_else(|| {
+                PiCcsError::ProtocolError(format!(
+                    "route-a/time: missing logical opening value for mem_local_col={mem_local_col} logical_col_id={logical_col_id}"
+                ))
+            })?;
+            local_map.insert(mem_local_col, v);
+        }
+        local_map
     } else {
-        0usize
+        BTreeMap::new()
     };
     let wb_enabled = wb_wp_required_for_step_instance(step);
     let wp_enabled = wb_wp_required_for_step_instance(step);
@@ -248,28 +284,18 @@ pub fn verify_route_a_memory_step(
 
             let mut addr_bits_open = Vec::with_capacity(ell_addr);
             for (_j, col_id) in shout_cols.addr_bits.clone().enumerate() {
-                addr_bits_open.push(
-                    ccs_out0
-                        .aux_openings
-                        .get(cpu_bus.y_scalar_index(bus_y_base_time, col_id))
-                        .copied()
-                        .ok_or_else(|| {
-                            PiCcsError::ProtocolError("CPU aux_openings missing Shout addr_bits opening".into())
-                        })?,
-                );
+                addr_bits_open.push(named_opening(
+                    &bus_time_open_map,
+                    col_id,
+                    "route-a/time shout addr_bits",
+                )?);
             }
-            let has_lookup_open = ccs_out0
-                .aux_openings
-                .get(cpu_bus.y_scalar_index(bus_y_base_time, shout_cols.has_lookup))
-                .copied()
-                .ok_or_else(|| {
-                    PiCcsError::ProtocolError("CPU aux_openings missing Shout has_lookup opening".into())
-                })?;
-            let val_open = ccs_out0
-                .aux_openings
-                .get(cpu_bus.y_scalar_index(bus_y_base_time, shout_cols.primary_val()))
-                .copied()
-                .ok_or_else(|| PiCcsError::ProtocolError("CPU aux_openings missing Shout val opening".into()))?;
+            let has_lookup_open = named_opening(
+                &bus_time_open_map,
+                shout_cols.has_lookup,
+                "route-a/time shout has_lookup",
+            )?;
+            let val_open = named_opening(&bus_time_open_map, shout_cols.primary_val(), "route-a/time shout val")?;
             let key = (shout_cols.addr_bits.start, shout_cols.addr_bits.end);
             let shared_addr_group_size = shout_addr_range_counts.get(&key).copied().unwrap_or(0);
             let shared_addr_group = shared_addr_group_size > 1;
@@ -304,11 +330,18 @@ pub fn verify_route_a_memory_step(
         // Route A Shout ordering in batched_time:
         // - value (time rounds only) per lane
         // - adapter (time rounds only) per lane
-        // - aggregated bitness for (addr_bits, has_lookup)
-        {
+        // - aggregated bitness for ungrouped lanes only (grouped lanes are checked in gamma groups)
+        if let Some(bitness_idx) = shout_claims.bitness {
             let mut opens: Vec<K> = Vec::new();
             if let Some(op) = packed_opcode {
-                for lane in lane_opens.iter() {
+                for (lane_idx, lane) in lane_opens.iter().enumerate() {
+                    let lane_claims = shout_claims
+                        .lanes
+                        .get(lane_idx)
+                        .ok_or_else(|| PiCcsError::ProtocolError("shout claim schedule lane idx drift".into()))?;
+                    if lane_claims.gamma_group.is_some() {
+                        continue;
+                    }
                     let mut lane_terms = neo_memory::riscv::packed::rv32_collect_packed_bitness_terms(
                         op,
                         lane.addr_bits.as_slice(),
@@ -319,7 +352,14 @@ pub fn verify_route_a_memory_step(
                 }
             } else {
                 opens.reserve(expected_lanes * (ell_addr + 1));
-                for lane in lane_opens.iter() {
+                for (lane_idx, lane) in lane_opens.iter().enumerate() {
+                    let lane_claims = shout_claims
+                        .lanes
+                        .get(lane_idx)
+                        .ok_or_else(|| PiCcsError::ProtocolError("shout claim schedule lane idx drift".into()))?;
+                    if lane_claims.gamma_group.is_some() {
+                        continue;
+                    }
                     opens.extend_from_slice(&lane.addr_bits);
                     opens.push(lane.has_lookup);
                 }
@@ -330,7 +370,7 @@ pub fn verify_route_a_memory_step(
                 acc += *w * *b * (*b - K::ONE);
             }
             let expected = chi_cycle_at_r_time * acc;
-            if expected != batched_final_values[shout_claims.bitness] {
+            if expected != batched_final_values[bitness_idx] {
                 return Err(PiCcsError::ProtocolError(
                     "shout/bitness terminal value mismatch".into(),
                 ));
@@ -484,7 +524,11 @@ pub fn verify_route_a_memory_step(
             .ok_or_else(|| PiCcsError::ProtocolError("missing CPU trace linkage openings in shared-bus mode".into()))?;
         let expected_table_id = if decode_stage_required_for_step_instance(step) {
             Some(expected_trace_shout_table_id_from_openings(
-                core_t, step, mem_proof, r_time,
+                step,
+                cpu_bus,
+                mem_proof,
+                step_time_openings,
+                r_time,
             )?)
         } else {
             None
@@ -498,11 +542,13 @@ pub fn verify_route_a_memory_step(
         let value_final = batched_final_values[group.value];
         let adapter_claim = batched_claimed_sums[group.adapter];
         let adapter_final = batched_final_values[group.adapter];
+        let bitness_final = batched_final_values[group.bitness];
 
         let mut expected_value_claim = K::ZERO;
         let mut expected_value_final = K::ZERO;
         let mut expected_adapter_claim = K::ZERO;
         let mut expected_adapter_final = K::ZERO;
+        let mut expected_bitness_final = K::ZERO;
         for (slot, lane_ref) in group.lanes.iter().enumerate() {
             let lane = shout_gamma_lane_data
                 .get(lane_ref.flat_lane_idx)
@@ -514,9 +560,14 @@ pub fn verify_route_a_memory_step(
             expected_value_final += w * lane.has_lookup * lane.val;
             expected_adapter_claim += w * lane.pre.addr_final;
             expected_adapter_final += w * lane.pre.table_eval_at_r_addr * lane.has_lookup * eq_addr;
+            for b in lane.addr_bits.iter() {
+                expected_bitness_final += w * *b * (*b - K::ONE);
+            }
+            expected_bitness_final += w * lane.has_lookup * (lane.has_lookup - K::ONE);
         }
         expected_value_final *= chi_cycle_at_r_time;
         expected_adapter_final *= chi_cycle_at_r_time;
+        expected_bitness_final *= chi_cycle_at_r_time;
 
         if value_claim != expected_value_claim {
             return Err(PiCcsError::ProtocolError(
@@ -534,6 +585,11 @@ pub fn verify_route_a_memory_step(
         if adapter_final != expected_adapter_final {
             return Err(PiCcsError::ProtocolError(
                 "shout gamma adapter terminal mismatch".into(),
+            ));
+        }
+        if bitness_final != expected_bitness_final {
+            return Err(PiCcsError::ProtocolError(
+                "shout gamma bitness terminal mismatch".into(),
             ));
         }
     }
@@ -590,56 +646,19 @@ pub fn verify_route_a_memory_step(
 
             let mut ra_bits_open = Vec::with_capacity(ell_addr);
             for col_id in twist_cols.ra_bits.clone() {
-                ra_bits_open.push(
-                    ccs_out0
-                        .aux_openings
-                        .get(cpu_bus.y_scalar_index(bus_y_base_time, col_id))
-                        .copied()
-                        .ok_or_else(|| {
-                            PiCcsError::ProtocolError("CPU aux_openings missing Twist ra_bits opening".into())
-                        })?,
-                );
+                ra_bits_open.push(named_opening(&bus_time_open_map, col_id, "route-a/time twist ra_bits")?);
             }
             let mut wa_bits_open = Vec::with_capacity(ell_addr);
             for col_id in twist_cols.wa_bits.clone() {
-                wa_bits_open.push(
-                    ccs_out0
-                        .aux_openings
-                        .get(cpu_bus.y_scalar_index(bus_y_base_time, col_id))
-                        .copied()
-                        .ok_or_else(|| {
-                            PiCcsError::ProtocolError("CPU aux_openings missing Twist wa_bits opening".into())
-                        })?,
-                );
+                wa_bits_open.push(named_opening(&bus_time_open_map, col_id, "route-a/time twist wa_bits")?);
             }
 
-            let has_read_open = ccs_out0
-                .aux_openings
-                .get(cpu_bus.y_scalar_index(bus_y_base_time, twist_cols.has_read))
-                .copied()
-                .ok_or_else(|| PiCcsError::ProtocolError("CPU aux_openings missing Twist has_read opening".into()))?;
-            let has_write_open = ccs_out0
-                .aux_openings
-                .get(cpu_bus.y_scalar_index(bus_y_base_time, twist_cols.has_write))
-                .copied()
-                .ok_or_else(|| {
-                    PiCcsError::ProtocolError("CPU aux_openings missing Twist has_write opening".into())
-                })?;
-            let wv_open = ccs_out0
-                .aux_openings
-                .get(cpu_bus.y_scalar_index(bus_y_base_time, twist_cols.wv))
-                .copied()
-                .ok_or_else(|| PiCcsError::ProtocolError("CPU aux_openings missing Twist wv opening".into()))?;
-            let rv_open = ccs_out0
-                .aux_openings
-                .get(cpu_bus.y_scalar_index(bus_y_base_time, twist_cols.rv))
-                .copied()
-                .ok_or_else(|| PiCcsError::ProtocolError("CPU aux_openings missing Twist rv opening".into()))?;
-            let inc_write_open = ccs_out0
-                .aux_openings
-                .get(cpu_bus.y_scalar_index(bus_y_base_time, twist_cols.inc))
-                .copied()
-                .ok_or_else(|| PiCcsError::ProtocolError("CPU aux_openings missing Twist inc opening".into()))?;
+            let has_read_open = named_opening(&bus_time_open_map, twist_cols.has_read, "route-a/time twist has_read")?;
+            let has_write_open =
+                named_opening(&bus_time_open_map, twist_cols.has_write, "route-a/time twist has_write")?;
+            let wv_open = named_opening(&bus_time_open_map, twist_cols.wv, "route-a/time twist wv")?;
+            let rv_open = named_opening(&bus_time_open_map, twist_cols.rv, "route-a/time twist rv")?;
+            let inc_write_open = named_opening(&bus_time_open_map, twist_cols.inc, "route-a/time twist inc")?;
 
             lane_opens.push(TwistLaneTimeOpen {
                 ra_bits: ra_bits_open,
@@ -867,13 +886,13 @@ pub fn verify_route_a_memory_step(
         lt_eval(&r_val, r_time)
     };
 
-    let (cpu_me_val_cur, cpu_me_val_prev, bus_y_base_val) = if step.mem_insts.is_empty() {
+    let (bus_val_open_cur, bus_val_open_prev, has_prev_val_claim) = if step.mem_insts.is_empty() {
         if !mem_proof.val_me_claims.is_empty() {
             return Err(PiCcsError::InvalidInput(
                 "proof contains val-lane CPU ME claims with no Twist instances".into(),
             ));
         }
-        (None, None, 0usize)
+        (BTreeMap::new(), BTreeMap::new(), false)
     } else {
         let expected = 1usize + usize::from(has_prev);
         if mem_proof.val_me_claims.len() != expected {
@@ -898,7 +917,44 @@ pub fn verify_route_a_memory_step(
                 "CPU ME(val) commitment mismatch (current step)".into(),
             ));
         }
-        let cpu_me_prev = if has_prev {
+        let bus_col_ids = bus_logical_col_ids_for_step_instance(step, cpu_bus, "route-a/val cur")?;
+        let named_cur = require_time_openings_for_point(
+            step_time_openings,
+            r_val.as_slice(),
+            bus_col_ids.as_slice(),
+            "route-a/val cur",
+        )?;
+        let named_cur_entry = require_time_opening_entry_for_point(
+            step_time_openings,
+            r_val.as_slice(),
+            bus_col_ids.as_slice(),
+            "route-a/val cur",
+        )?;
+        if named_cur_entry.source != crate::shard_proof_types::TimeOpeningSource::CommittedOpening {
+            return Err(PiCcsError::ProtocolError(format!(
+                "route-a/val cur requires CommittedOpening source (got {:?})",
+                named_cur_entry.source
+            )));
+        }
+        let logical_to_local_bus_map = |logical_map: &BTreeMap<usize, K>,
+                                        local_bus_col_ids: &[usize],
+                                        label: &str|
+         -> Result<BTreeMap<usize, K>, PiCcsError> {
+            let mut local_map = BTreeMap::new();
+            for (mem_local_col, &logical_col_id) in local_bus_col_ids.iter().enumerate() {
+                let v = logical_map.get(&logical_col_id).copied().ok_or_else(|| {
+                        PiCcsError::ProtocolError(format!(
+                            "{label}: missing logical opening value for mem_local_col={mem_local_col} logical_col_id={logical_col_id}"
+                        ))
+                    })?;
+                local_map.insert(mem_local_col, v);
+            }
+            Ok(local_map)
+        };
+        let bus_open_cur = logical_to_local_bus_map(&named_cur, bus_col_ids.as_slice(), "route-a/val cur")?;
+
+        let enforce_prev_val_openings = has_prev && step.mcs_inst.m_in == 5;
+        let cpu_me_prev = if enforce_prev_val_openings {
             let prev_inst =
                 prev_step.ok_or_else(|| PiCcsError::ProtocolError("prev_step missing with has_prev=true".into()))?;
             let cpu_me_prev = mem_proof
@@ -917,15 +973,65 @@ pub fn verify_route_a_memory_step(
         } else {
             None
         };
+        let bus_open_prev = if let Some(cpu_me_prev) = cpu_me_prev {
+            // Canonical committed path: previous-step val openings at r_val must come from
+            // previous-step committed time openings, never ME tails.
+            let prev_step_ref = prev_step.ok_or_else(|| {
+                PiCcsError::ProtocolError("route-a/val prev: missing prev_step with has_prev=true".into())
+            })?;
+            let prev_bus_col_ids =
+                bus_logical_col_ids_for_step_instance(prev_step_ref, cpu_bus, "route-a/val prev")?;
+            let named_prev = if let Some(prev_openings) = prev_step_time_openings {
+                if let Some(prev_entry) = time_opening_entry_for_point(
+                    prev_openings,
+                    r_val.as_slice(),
+                    prev_bus_col_ids.as_slice(),
+                    "route-a/val prev",
+                )? {
+                    if prev_entry.source != crate::shard_proof_types::TimeOpeningSource::CommittedOpening {
+                        return Err(PiCcsError::ProtocolError(format!(
+                            "route-a/val prev requires CommittedOpening source (got {:?})",
+                            prev_entry.source
+                        )));
+                    }
+                    Some(require_time_openings_for_point(
+                        prev_openings,
+                        r_val.as_slice(),
+                        prev_bus_col_ids.as_slice(),
+                        "route-a/val prev",
+                    )?)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            if let Some(logical_prev) = named_prev {
+                logical_to_local_bus_map(&logical_prev, prev_bus_col_ids.as_slice(), "route-a/val prev")?
+            } else {
+                // Compatibility fallback for chunked-IVC continuity: if previous-step named openings
+                // at current r_val are absent, read the already-bound prev CPU ME tail openings.
+                let need = core_t
+                    .checked_add(cpu_bus.bus_cols)
+                    .ok_or_else(|| PiCcsError::ProtocolError("route-a/val prev: core_t + bus_cols overflow".into()))?;
+                if cpu_me_prev.ct.len() < need {
+                    return Err(PiCcsError::ProtocolError(format!(
+                        "route-a/val prev: missing bus tail openings on prev CPU ME claim (ct.len()={}, need >= {})",
+                        cpu_me_prev.ct.len(),
+                        need
+                    )));
+                }
+                let mut local = BTreeMap::new();
+                for mem_local_col in 0..cpu_bus.bus_cols {
+                    local.insert(mem_local_col, cpu_me_prev.ct[core_t + mem_local_col]);
+                }
+                local
+            }
+        } else {
+            BTreeMap::new()
+        };
 
-        if cpu_me_cur.aux_openings.len() < cpu_bus.bus_cols {
-            return Err(PiCcsError::InvalidInput(
-                "CPU aux_openings too short for bus openings".into(),
-            ));
-        }
-        let bus_y_base_val = 0usize;
-
-        (Some(cpu_me_cur), cpu_me_prev, bus_y_base_val)
+        (bus_open_cur, bus_open_prev, cpu_me_prev.is_some())
     };
 
     for (i_mem, inst) in step.mem_insts.iter().enumerate() {
@@ -943,9 +1049,6 @@ pub fn verify_route_a_memory_step(
             .get(0)
             .ok_or_else(|| PiCcsError::InvalidInput("TwistWitnessLayout has no lanes".into()))?
             .ell_addr;
-
-        let cpu_me_cur =
-            cpu_me_val_cur.ok_or_else(|| PiCcsError::ProtocolError("missing CPU ME claim at r_val".into()))?;
 
         let twist_inst_cols = cpu_bus
             .twist_cols
@@ -975,26 +1078,11 @@ pub fn verify_route_a_memory_step(
 
             let mut wa_bits_val_open = Vec::with_capacity(ell_addr);
             for col_id in twist_cols.wa_bits.clone() {
-                wa_bits_val_open.push(
-                    cpu_me_cur
-                        .aux_openings
-                        .get(cpu_bus.y_scalar_index(bus_y_base_val, col_id))
-                        .copied()
-                        .ok_or_else(|| {
-                            PiCcsError::ProtocolError("CPU aux_openings missing wa_bits(val) opening".into())
-                        })?,
-                );
+                wa_bits_val_open.push(named_opening(&bus_val_open_cur, col_id, "route-a/val cur wa_bits")?);
             }
-            let has_write_val_open = cpu_me_cur
-                .aux_openings
-                .get(cpu_bus.y_scalar_index(bus_y_base_val, twist_cols.has_write))
-                .copied()
-                .ok_or_else(|| PiCcsError::ProtocolError("CPU aux_openings missing has_write(val) opening".into()))?;
-            let inc_at_write_addr_val_open = cpu_me_cur
-                .aux_openings
-                .get(cpu_bus.y_scalar_index(bus_y_base_val, twist_cols.inc))
-                .copied()
-                .ok_or_else(|| PiCcsError::ProtocolError("CPU aux_openings missing inc(val) opening".into()))?;
+            let has_write_val_open =
+                named_opening(&bus_val_open_cur, twist_cols.has_write, "route-a/val cur has_write")?;
+            let inc_at_write_addr_val_open = named_opening(&bus_val_open_cur, twist_cols.inc, "route-a/val cur inc")?;
 
             let eq_wa_val = eq_bits_prod(&wa_bits_val_open, r_addr)?;
             inc_at_r_addr_val += has_write_val_open * inc_at_write_addr_val_open * eq_wa_val;
@@ -1015,15 +1103,13 @@ pub fn verify_route_a_memory_step(
             ));
         }
 
-        if has_prev {
+        if has_prev_val_claim {
             let prev =
                 prev_step.ok_or_else(|| PiCcsError::ProtocolError("prev_step missing with has_prev=true".into()))?;
             let prev_inst = prev
                 .mem_insts
                 .get(i_mem)
                 .ok_or_else(|| PiCcsError::ProtocolError("missing prev mem instance".into()))?;
-            let cpu_me_prev = cpu_me_val_prev
-                .ok_or_else(|| PiCcsError::ProtocolError("missing prev CPU ME claim at r_val".into()))?;
 
             // Terminal check for prev-total: uses previous-step openings at current r_val.
             let mut inc_at_r_addr_prev = K::ZERO;
@@ -1036,28 +1122,11 @@ pub fn verify_route_a_memory_step(
 
                 let mut wa_bits_prev_open = Vec::with_capacity(ell_addr);
                 for col_id in twist_cols.wa_bits.clone() {
-                    wa_bits_prev_open.push(
-                        cpu_me_prev
-                            .aux_openings
-                            .get(cpu_bus.y_scalar_index(bus_y_base_val, col_id))
-                            .copied()
-                            .ok_or_else(|| {
-                                PiCcsError::ProtocolError("CPU aux_openings missing wa_bits(prev) opening".into())
-                            })?,
-                    );
+                    wa_bits_prev_open.push(named_opening(&bus_val_open_prev, col_id, "route-a/val prev wa_bits")?);
                 }
-                let has_write_prev_open = cpu_me_prev
-                    .aux_openings
-                    .get(cpu_bus.y_scalar_index(bus_y_base_val, twist_cols.has_write))
-                    .copied()
-                    .ok_or_else(|| {
-                        PiCcsError::ProtocolError("CPU aux_openings missing has_write(prev) opening".into())
-                    })?;
-                let inc_prev_open = cpu_me_prev
-                    .aux_openings
-                    .get(cpu_bus.y_scalar_index(bus_y_base_val, twist_cols.inc))
-                    .copied()
-                    .ok_or_else(|| PiCcsError::ProtocolError("CPU aux_openings missing inc(prev) opening".into()))?;
+                let has_write_prev_open =
+                    named_opening(&bus_val_open_prev, twist_cols.has_write, "route-a/val prev has_write")?;
+                let inc_prev_open = named_opening(&bus_val_open_prev, twist_cols.inc, "route-a/val prev inc")?;
 
                 let eq_wa_prev = eq_bits_prod(&wa_bits_prev_open, r_addr)?;
                 inc_at_r_addr_prev += has_write_prev_open * inc_prev_open * eq_wa_prev;
@@ -1081,40 +1150,43 @@ pub fn verify_route_a_memory_step(
     }
 
     verify_route_a_wb_wp_terminals(
-        core_t,
         step,
         r_time,
         r_cycle,
         batched_final_values,
         &claim_plan,
         mem_proof,
+        step_time_openings,
     )?;
     verify_route_a_decode_terminals(
-        core_t,
+        cpu_bus,
         step,
         r_time,
         r_cycle,
         batched_final_values,
         &claim_plan,
         mem_proof,
+        step_time_openings,
     )?;
     verify_route_a_width_terminals(
-        core_t,
+        cpu_bus,
         step,
         r_time,
         r_cycle,
         batched_final_values,
         &claim_plan,
         mem_proof,
+        step_time_openings,
     )?;
     verify_route_a_control_terminals(
-        core_t,
+        cpu_bus,
         step,
         r_time,
         r_cycle,
         batched_final_values,
         &claim_plan,
         mem_proof,
+        step_time_openings,
     )?;
 
     Ok(RouteAMemoryVerifyOutput {

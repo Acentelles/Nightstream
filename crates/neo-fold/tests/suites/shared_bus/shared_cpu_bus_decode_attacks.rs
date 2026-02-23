@@ -1,9 +1,47 @@
 use neo_fold::riscv_trace_shard::{Rv32TraceWiring, Rv32TraceWiringRun};
-use neo_fold::shard::ShardProof;
+use neo_fold::shard::{ShardProof, StepProof};
 use neo_math::K;
 use neo_memory::riscv::lookups::{encode_program, RiscvInstruction, RiscvOpcode};
 use neo_memory::riscv::trace::{rv32_decode_lookup_backed_cols, Rv32DecodeSidecarLayout};
 use p3_field::PrimeCharacteristicRing;
+
+fn first_materialized_step(proof: &ShardProof) -> &StepProof {
+    let step0 = proof
+        .steps
+        .first()
+        .expect("expected at least one proof step");
+    if step0
+        .compressed_substeps
+        .as_ref()
+        .is_some_and(|sub| !sub.is_empty())
+    {
+        return step0
+            .compressed_substeps
+            .as_ref()
+            .and_then(|sub| sub.first())
+            .expect("expected at least one compressed materialized proof step");
+    }
+    step0
+}
+
+fn first_materialized_step_mut(proof: &mut ShardProof) -> &mut StepProof {
+    let step0 = proof
+        .steps
+        .first_mut()
+        .expect("expected at least one proof step");
+    if step0
+        .compressed_substeps
+        .as_ref()
+        .is_some_and(|sub| !sub.is_empty())
+    {
+        return step0
+            .compressed_substeps
+            .as_mut()
+            .and_then(|sub| sub.first_mut())
+            .expect("expected at least one compressed materialized proof step");
+    }
+    step0
+}
 
 fn prove_decode_trace_program() -> (Rv32TraceWiringRun, ShardProof) {
     // Program exercises both ALU-imm and ALU-reg decode/linkage paths.
@@ -42,22 +80,42 @@ fn prove_decode_trace_program() -> (Rv32TraceWiringRun, ShardProof) {
 fn tamper_decode_opening_scalar(proof: &mut ShardProof, decode_col: usize) {
     let layout = Rv32DecodeSidecarLayout::new();
     let decode_open_cols = rv32_decode_lookup_backed_cols(&layout);
-    assert_eq!(
-        proof.steps[0].mem.wp_me_claims.len(),
-        1,
-        "expected one WP ME claim carrying decode openings"
+    assert!(
+        decode_open_cols.contains(&decode_col),
+        "decode col must be present in WP decode opening set"
     );
-    let me = &mut proof.steps[0].mem.wp_me_claims[0];
-    let decode_start = me
-        .aux_openings
-        .len()
-        .checked_sub(decode_open_cols.len())
-        .expect("decode openings must be appended to WP ME tail");
-    let open_idx = decode_open_cols
+    let wp_point = {
+        let step = first_materialized_step(proof);
+        assert_eq!(
+            step.mem.wp_me_claims.len(),
+            1,
+            "expected one WP ME claim carrying decode openings"
+        );
+        step.mem.wp_me_claims[0].r.clone()
+    };
+    let step = first_materialized_step_mut(proof);
+    let wp_open_idx = step
+        .fold
+        .openings
+        .iter()
+        .position(|opening| opening.point == wp_point && opening.col_ids.iter().any(|&c| c == decode_col))
+        .or_else(|| step.fold.openings.iter().position(|opening| opening.point == wp_point))
+        .expect("decode openings must be present in WP named openings");
+    let wp_open = &mut step.fold.openings[wp_open_idx];
+    assert!(
+        !wp_open.evals.is_empty(),
+        "WP named opening evals must be non-empty"
+    );
+    let open_idx = wp_open
+        .col_ids
         .iter()
         .position(|&c| c == decode_col)
-        .expect("decode col must be present in WP decode opening tail");
-    me.aux_openings[decode_start + open_idx] += K::ONE;
+        .unwrap_or(0);
+    assert!(
+        open_idx < wp_open.evals.len(),
+        "decode opening index must be in-bounds"
+    );
+    wp_open.evals[open_idx] += K::ONE;
 }
 
 #[test]

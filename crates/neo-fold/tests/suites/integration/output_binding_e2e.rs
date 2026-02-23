@@ -12,10 +12,11 @@ use neo_fold::pi_ccs::FoldingMode;
 use neo_fold::shard::{fold_shard_prove_with_output_binding, fold_shard_verify_with_output_binding, CommitMixers};
 use neo_fold::PiCcsError;
 use neo_math::{F, K};
+use neo_memory::ajtai::encode_vector_for_ccs_m;
 use neo_memory::cpu::build_bus_layout_for_instances;
 use neo_memory::cpu::constraints::{extend_ccs_with_shared_cpu_bus_constraints, TwistCpuBinding};
 use neo_memory::output_check::ProgramIO;
-use neo_memory::witness::{MemInstance, MemWitness, StepInstanceBundle, StepWitnessBundle};
+use neo_memory::witness::{MemInstance, MemWitness, StepInstanceBundle, StepWitnessBundle, TimeColumns};
 use neo_memory::MemInit;
 use neo_params::NeoParams;
 use neo_transcript::{Poseidon2Transcript, Transcript};
@@ -71,7 +72,7 @@ fn empty_identity_first_r1cs_ccs(n: usize) -> CcsStructure<F> {
 }
 
 fn create_mcs_from_z(params: &NeoParams, l: &DummyCommit, m_in: usize, z: Vec<F>) -> (CcsClaim<Cmt, F>, CcsWitness<F>) {
-    let Z = neo_memory::ajtai::encode_vector_balanced_to_mat(params, &z);
+    let Z = encode_vector_for_ccs_m(params, z.len(), &z).expect("encode packed witness");
     let c = l.commit(&Z);
     let x = z[..m_in].to_vec();
     let w = z[m_in..].to_vec();
@@ -176,12 +177,13 @@ fn output_binding_e2e_wrong_claim_fails() -> Result<(), PiCcsError> {
 
     let (mcs_inst, mcs_wit) = create_mcs_from_z(&params, &l, m_in, z);
 
-    let steps_witness: Vec<StepWitnessBundle<Cmt, F, K>> = vec![StepWitnessBundle {
+    let steps_witness: Vec<StepWitnessBundle<Cmt, F, K>> = vec![crate::common_setup::canonicalize_step_time_columns(StepWitnessBundle {
         mcs: (mcs_inst, mcs_wit),
         lut_instances: vec![],
         mem_instances: vec![(mem_inst, mem_wit)],
+        time_columns: crate::common_setup::empty_time_columns(),
         _phantom: PhantomData,
-    }];
+    })];
     let steps_public: Vec<StepInstanceBundle<Cmt, F, K>> = steps_witness.iter().map(StepInstanceBundle::from).collect();
 
     let final_memory_state = vec![F::ZERO, F::ZERO, F::from_u64(7), F::ZERO];
@@ -252,6 +254,7 @@ fn output_binding_rejects_ccs_only_final_segment() {
         mcs: (mcs_inst, mcs_wit),
         lut_instances: vec![],
         mem_instances: vec![],
+        time_columns: TimeColumns::default(),
         _phantom: PhantomData,
     }];
 
