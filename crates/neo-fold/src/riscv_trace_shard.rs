@@ -24,10 +24,11 @@ use neo_ccs::CcsStructure;
 use neo_math::{D, F, K};
 use neo_memory::output_check::ProgramIO;
 use neo_memory::plain::{LutTable, PlainMemLayout};
+use neo_memory::cpu::bus_layout::{
+    build_bus_layout_for_instances_with_shout_shapes_and_twist_lanes, ShoutInstanceShape,
+};
 use neo_memory::riscv::ccs::{
-    build_rv32_trace_wiring_ccs, build_rv32_trace_wiring_ccs_with_reserved_rows,
-    rv32_trace_ccs_witness_from_exec_table, rv32_trace_shared_bus_requirements_with_specs,
-    rv32_trace_shared_cpu_bus_config_with_specs, Rv32TraceCcsLayout, TraceShoutBusSpec,
+    build_rv32_trace_wiring_ccs, rv32_trace_ccs_witness_from_exec_table, Rv32TraceCcsLayout, TraceShoutBusSpec,
 };
 use neo_memory::riscv::exec_table::{Rv32ExecRow, Rv32ExecTable};
 use neo_memory::riscv::lookups::{
@@ -37,8 +38,9 @@ use neo_memory::riscv::packed::{rv32_packed_d, rv32_packed_rollout_opcode};
 use neo_memory::riscv::rom_init::prog_rom_layout_and_init_words;
 use neo_memory::riscv::trace::{
     rv32_decode_lookup_backed_cols, rv32_decode_lookup_backed_row_from_instr_word, rv32_decode_lookup_table_id_for_col,
+    rv32_trace_lookup_addr_group_for_table_id, rv32_trace_lookup_selector_group_for_table_id,
     rv32_width_lookup_backed_cols, rv32_width_lookup_table_id_for_col, rv32_width_sidecar_witness_from_exec_table,
-    Rv32DecodeSidecarLayout, Rv32WidthSidecarLayout,
+    Rv32DecodeSidecarLayout, Rv32WidthSidecarLayout, RV32_TRACE_OPCODE_ADDR_GROUP,
 };
 use neo_memory::{LutTableSpec, MemInit, R1csCpu};
 use neo_params::NeoParams;
@@ -319,6 +321,156 @@ fn program_requires_width_lookup(program: &[RiscvInstruction]) -> bool {
         .any(|instr| matches!(instr, RiscvInstruction::Load { .. } | RiscvInstruction::Store { .. }))
 }
 
+#[inline]
+fn trace_lookup_addr_group_for_table_shape(table_id: u32, ell_addr: usize) -> Option<u64> {
+    let group = rv32_trace_lookup_addr_group_for_table_id(table_id);
+    if group == Some(RV32_TRACE_OPCODE_ADDR_GROUP) && ell_addr != 64 {
+        // Packed opcode lanes use opcode-local widths and must not share the
+        // canonical RV32 opcode (ell_addr=64) address group.
+        None
+    } else {
+        group.map(|v| v as u64)
+    }
+}
+
+fn table_ell_addr_for_shared_bus(
+    table_id: u32,
+    table_specs: &HashMap<u32, LutTableSpec>,
+    lut_tables: &HashMap<u32, LutTable<F>>,
+) -> Result<usize, PiCcsError> {
+    let (d, n_side) = if let Some(spec) = table_specs.get(&table_id) {
+        match spec {
+            LutTableSpec::RiscvOpcode { xlen, .. } => (
+                xlen.checked_mul(2)
+                    .ok_or_else(|| PiCcsError::InvalidInput(format!("2*xlen overflow for table_id={table_id}")))?,
+                2usize,
+            ),
+            LutTableSpec::RiscvOpcodePacked { opcode, xlen } => {
+                if *xlen != 32 {
+                    return Err(PiCcsError::InvalidInput(format!(
+                        "RiscvOpcodePacked requires xlen=32 in RV32 trace mode (table_id={table_id}, xlen={xlen})"
+                    )));
+                }
+                (rv32_packed_d(*opcode)?, 2usize)
+            }
+            LutTableSpec::RiscvOpcodeEventTablePacked { .. } => {
+                return Err(PiCcsError::InvalidInput(
+                    "RiscvOpcodeEventTablePacked is not supported in RV32 trace shared-bus mode".into(),
+                ));
+            }
+            LutTableSpec::IdentityU32 => (32usize, 2usize),
+        }
+    } else {
+        let table = lut_tables
+            .get(&table_id)
+            .ok_or_else(|| PiCcsError::InvalidInput(format!("missing LutTable metadata for table_id={table_id}")))?;
+        (table.d, table.n_side)
+    };
+    if n_side == 0 || !n_side.is_power_of_two() {
+        return Err(PiCcsError::InvalidInput(format!(
+            "table_id={table_id} has non power-of-two n_side={n_side}"
+        )));
+    }
+    let ell = n_side.trailing_zeros() as usize;
+    d.checked_mul(ell)
+        .ok_or_else(|| PiCcsError::InvalidInput("ell_addr overflow".into()))
+}
+
+fn estimate_route_a_bus_cols(
+    chunk_size: usize,
+    table_specs: &HashMap<u32, LutTableSpec>,
+    lut_tables: &HashMap<u32, LutTable<F>>,
+    mem_layouts: &HashMap<u32, PlainMemLayout>,
+    lut_lanes: &HashMap<u32, usize>,
+) -> Result<usize, PiCcsError> {
+    if chunk_size == 0 {
+        return Err(PiCcsError::InvalidInput(
+            "route-a bus estimator requires chunk_size > 0".into(),
+        ));
+    }
+    let mut table_ids: Vec<u32> = table_specs
+        .keys()
+        .copied()
+        .chain(lut_tables.keys().copied())
+        .collect();
+    table_ids.sort_unstable();
+    table_ids.dedup();
+
+    let mut shout_shapes = Vec::<ShoutInstanceShape>::with_capacity(table_ids.len());
+    let mut shout_upper_cols = 0usize;
+    for table_id in table_ids {
+        let ell_addr = table_ell_addr_for_shared_bus(table_id, table_specs, lut_tables)?;
+        let lanes = lut_lanes.get(&table_id).copied().unwrap_or(1).max(1);
+        let shout_lane_cols = ell_addr
+            .checked_add(2)
+            .ok_or_else(|| PiCcsError::InvalidInput("shout lane width overflow".into()))?;
+        shout_upper_cols = shout_upper_cols
+            .checked_add(
+                shout_lane_cols
+                    .checked_mul(lanes)
+                    .ok_or_else(|| PiCcsError::InvalidInput("shout width overflow".into()))?,
+            )
+            .ok_or_else(|| PiCcsError::InvalidInput("bus width overflow".into()))?;
+        shout_shapes.push(ShoutInstanceShape {
+            ell_addr,
+            lanes,
+            n_vals: 1usize,
+            addr_group: trace_lookup_addr_group_for_table_shape(table_id, ell_addr),
+            selector_group: rv32_trace_lookup_selector_group_for_table_id(table_id).map(|v| v as u64),
+        });
+    }
+
+    let mut mem_ids: Vec<u32> = mem_layouts.keys().copied().collect();
+    mem_ids.sort_unstable();
+    let mut twist_shapes = Vec::<(usize, usize)>::with_capacity(mem_ids.len());
+    let mut twist_upper_cols = 0usize;
+    for mem_id in mem_ids {
+        let layout = mem_layouts
+            .get(&mem_id)
+            .ok_or_else(|| PiCcsError::InvalidInput(format!("missing mem layout for mem_id={mem_id}")))?;
+        if layout.n_side == 0 || !layout.n_side.is_power_of_two() {
+            return Err(PiCcsError::InvalidInput(format!(
+                "mem_id={mem_id} has non power-of-two n_side={}",
+                layout.n_side
+            )));
+        }
+        let ell = layout.n_side.trailing_zeros() as usize;
+        let ell_addr = layout
+            .d
+            .checked_mul(ell)
+            .ok_or_else(|| PiCcsError::InvalidInput("twist ell_addr overflow".into()))?;
+        let twist_lane_cols = ell_addr
+            .checked_mul(2)
+            .and_then(|v| v.checked_add(5))
+            .ok_or_else(|| PiCcsError::InvalidInput("twist lane width overflow".into()))?;
+        let lanes = layout.lanes.max(1);
+        twist_upper_cols = twist_upper_cols
+            .checked_add(
+                twist_lane_cols
+                    .checked_mul(lanes)
+                    .ok_or_else(|| PiCcsError::InvalidInput("twist width overflow".into()))?,
+            )
+            .ok_or_else(|| PiCcsError::InvalidInput("bus width overflow".into()))?;
+        twist_shapes.push((ell_addr, lanes));
+    }
+
+    let upper_bus_cols = shout_upper_cols
+        .checked_add(twist_upper_cols)
+        .ok_or_else(|| PiCcsError::InvalidInput("bus width overflow".into()))?;
+    let m_probe = upper_bus_cols
+        .checked_mul(chunk_size)
+        .ok_or_else(|| PiCcsError::InvalidInput("route-a bus estimator m_probe overflow".into()))?;
+    let layout = build_bus_layout_for_instances_with_shout_shapes_and_twist_lanes(
+        m_probe,
+        0usize,
+        chunk_size,
+        shout_shapes,
+        twist_shapes,
+    )
+    .map_err(PiCcsError::InvalidInput)?;
+    Ok(layout.bus_cols)
+}
+
 fn rv32_trace_table_specs(shout_ops: &HashSet<RiscvOpcode>) -> Result<HashMap<u32, LutTableSpec>, PiCcsError> {
     let shout = RiscvShoutTables::new(32);
     let mut table_specs = HashMap::new();
@@ -570,6 +722,14 @@ impl Rv32TraceWiring {
         self
     }
 
+    /// Toggle shared-CPU-bus trace proving mode.
+    ///
+    /// Only `true` is supported. Passing `false` is rejected by [`Rv32TraceWiring::prove`].
+    pub fn shared_cpu_bus(self, enabled: bool) -> Self {
+        assert!(enabled, "legacy no-shared CPU bus mode was removed");
+        self
+    }
+
     /// Bound executed instruction count.
     pub fn max_steps(mut self, max_steps: usize) -> Self {
         self.max_steps = Some(max_steps);
@@ -778,11 +938,14 @@ impl Rv32TraceWiring {
         if requested_chunk_rows == 0 {
             return Err(PiCcsError::InvalidInput("trace chunk_rows must be non-zero".into()));
         }
-        let step_rows = requested_chunk_rows.min(exec.rows.len().max(1));
+        let step_rows_raw = requested_chunk_rows.min(exec.rows.len().max(1));
+        let step_rows = step_rows_raw
+            .checked_next_power_of_two()
+            .ok_or_else(|| PiCcsError::InvalidInput("trace chunk_rows next_power_of_two overflow".into()))?;
         let exec_chunks = split_exec_into_fixed_chunks(&exec, step_rows)?;
 
-        let mut layout = Rv32TraceCcsLayout::new(step_rows)
-            .map_err(|e| PiCcsError::InvalidInput(format!("Rv32TraceCcsLayout::new failed: {e}")))?;
+        let mut layout = Rv32TraceCcsLayout::new_uniform(step_rows)
+            .map_err(|e| PiCcsError::InvalidInput(format!("Rv32TraceCcsLayout::new_uniform failed: {e}")))?;
 
         let prove_start = time_now();
         let setup_start = prove_start;
@@ -931,26 +1094,22 @@ impl Rv32TraceWiring {
             }
         }
 
-        let (bus_region_len, ccs_reserved_rows) = rv32_trace_shared_bus_requirements_with_specs(
-            &layout,
-            &base_shout_table_ids,
-            &all_extra_shout_specs,
-            &mem_layouts,
-        )
-        .map_err(|e| PiCcsError::InvalidInput(format!("rv32_trace_shared_bus_requirements_with_specs failed: {e}")))?;
-        layout.m = layout
-            .m
-            .checked_add(bus_region_len)
-            .ok_or_else(|| PiCcsError::InvalidInput("trace layout m overflow after bus tail reservation".into()))?;
+        let mut lut_tables = decode_lookup_tables.clone();
+        lut_tables.extend(width_lookup_tables.clone());
+        let lut_lanes: HashMap<u32, usize> = HashMap::new();
 
-        let mut ccs = if ccs_reserved_rows == 0 {
-            build_rv32_trace_wiring_ccs(&layout)
-                .map_err(|e| PiCcsError::InvalidInput(format!("build_rv32_trace_wiring_ccs failed: {e}")))?
-        } else {
-            build_rv32_trace_wiring_ccs_with_reserved_rows(&layout, ccs_reserved_rows).map_err(|e| {
-                PiCcsError::InvalidInput(format!("build_rv32_trace_wiring_ccs_with_reserved_rows failed: {e}"))
-            })?
-        };
+        // Route-A in-place uniform kernel: physical CCS width is per-step columns
+        // (m_in + cpu_cols + mem_cols), not row-flattened col*t spans.
+        let bus_cols = estimate_route_a_bus_cols(layout.t, &table_specs, &lut_tables, &mem_layouts, &lut_lanes)?;
+        let uniform_m = layout
+            .m_in
+            .checked_add(layout.trace.cols)
+            .and_then(|v| v.checked_add(bus_cols))
+            .ok_or_else(|| PiCcsError::InvalidInput("uniform m overflow".into()))?;
+        layout.m = uniform_m;
+
+        let ccs = build_rv32_trace_wiring_ccs(&layout)
+            .map_err(|e| PiCcsError::InvalidInput(format!("build_rv32_trace_wiring_ccs failed: {e}")))?;
 
         // Keep params as selected by NeoParams presets during debugging.
         let params = NeoParams::goldilocks_auto_r1cs_ccs(ccs.n.max(ccs.m))
@@ -997,11 +1156,25 @@ impl Rv32TraceWiring {
         let mut chunk_build_commit_duration = Duration::ZERO;
         let chunk_start = time_now();
 
-        let mut lut_tables = decode_lookup_tables.clone();
-        lut_tables.extend(width_lookup_tables.clone());
-        let lut_lanes: HashMap<u32, usize> = HashMap::new();
+        let mut lookup_addr_groups = HashMap::<u32, u64>::new();
+        let mut lookup_selector_groups = HashMap::<u32, u64>::new();
+        let all_table_ids: HashSet<u32> = table_specs
+            .keys()
+            .copied()
+            .chain(lut_tables.keys().copied())
+            .collect();
+        for table_id in all_table_ids {
+            let ell_addr = table_ell_addr_for_shared_bus(table_id, &table_specs, &lut_tables)?;
+            if let Some(g) = trace_lookup_addr_group_for_table_shape(table_id, ell_addr) {
+                lookup_addr_groups.insert(table_id, g);
+            }
+            if let Some(g) = rv32_trace_lookup_selector_group_for_table_id(table_id) {
+                lookup_selector_groups.insert(table_id, g as u64);
+            }
+        }
+        chunk_build_commit_duration += elapsed_duration(chunk_start);
 
-        let mut cpu = R1csCpu::new(
+        let cpu = R1csCpu::new(
             ccs.clone(),
             session.params().clone(),
             session.committer().clone(),
@@ -1010,24 +1183,8 @@ impl Rv32TraceWiring {
             &table_specs,
             rv32_trace_chunk_to_witness(layout.clone()),
         )
-        .map_err(|e| PiCcsError::InvalidInput(format!("R1csCpu::new failed: {e}")))?;
-        cpu = cpu
-            .with_shared_cpu_bus(
-                rv32_trace_shared_cpu_bus_config_with_specs(
-                    &layout,
-                    &base_shout_table_ids,
-                    &all_extra_shout_specs,
-                    mem_layouts.clone(),
-                    initial_mem.clone(),
-                )
-                .map_err(|e| {
-                    PiCcsError::InvalidInput(format!("rv32_trace_shared_cpu_bus_config_with_specs failed: {e}"))
-                })?,
-                layout.t,
-            )
-            .map_err(|e| PiCcsError::InvalidInput(format!("shared bus inject failed: {e}")))?;
-
-        ccs = cpu.ccs.clone();
+        .map_err(|e| PiCcsError::InvalidInput(format!("R1csCpu::new failed: {e}")))?
+        .with_lookup_sharing_groups(lookup_addr_groups, lookup_selector_groups);
 
         session.execute_shard_shared_cpu_bus_from_trace(
             &trace,
@@ -1203,6 +1360,38 @@ impl Rv32TraceWiringRun {
 
     pub fn ccs_num_variables(&self) -> usize {
         self.ccs.m
+    }
+
+    /// Uniform per-step CCS width proxy: public inputs + named CPU/memory columns.
+    ///
+    /// This reflects the in-place migration target where width is column-based and
+    /// independent of shard chunk rows.
+    pub fn uniform_ccs_num_variables(&self) -> usize {
+        let steps = self.steps_public();
+        let Some(step0) = steps.first() else {
+            return self.ccs.m;
+        };
+        if step0.time_columns.t == 0 {
+            return self.ccs.m;
+        }
+        if step0.time_columns.cpu_cols.is_empty() && step0.time_columns.mem_cols.is_empty() {
+            return self.ccs.m;
+        }
+        let stable = steps.iter().all(|step| {
+            step.mcs_inst.m_in == step0.mcs_inst.m_in
+                && step.time_columns.t == step0.time_columns.t
+                && step.time_columns.cpu_cols.len() == step0.time_columns.cpu_cols.len()
+                && step.time_columns.mem_cols.len() == step0.time_columns.mem_cols.len()
+        });
+        if !stable {
+            return self.ccs.m;
+        }
+        step0
+            .mcs_inst
+            .m_in
+            .checked_add(step0.time_columns.cpu_cols.len())
+            .and_then(|v| v.checked_add(step0.time_columns.mem_cols.len()))
+            .unwrap_or(self.ccs.m)
     }
 
     /// Number of real (active) rows in the unpadded trace.
