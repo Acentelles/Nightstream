@@ -347,7 +347,10 @@ pub fn prove_route_a_batched_time(
         claimed_sums: claimed_sums.clone(),
         degree_bounds: degree_bounds.clone(),
         labels: labels.clone(),
-        round_polys: per_claim_results.into_iter().map(|r| r.round_polys).collect(),
+        round_polys: per_claim_results
+            .into_iter()
+            .map(|r| r.round_polys)
+            .collect(),
     };
 
     Ok(RouteABatchedTimeProverOutput { r_time, proof })
@@ -401,7 +404,12 @@ pub fn verify_route_a_batched_time(
             proof.claimed_sums.len()
         )));
     }
-    for (i, (&sum, &dyn_ok)) in proof.claimed_sums.iter().zip(claim_is_dynamic.iter()).enumerate() {
+    for (i, (&sum, &dyn_ok)) in proof
+        .claimed_sums
+        .iter()
+        .zip(claim_is_dynamic.iter())
+        .enumerate()
+    {
         if !dyn_ok && sum != K::ZERO {
             return Err(PiCcsError::ProtocolError(format!(
                 "step {}: batched_time claimed_sums[{}] must be 0 (label {:?})",

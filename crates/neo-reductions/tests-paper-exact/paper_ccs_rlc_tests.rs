@@ -243,15 +243,8 @@ fn paper_exact_rlc_matches_direct_opening_and_eval() {
 
     // ct must match layout-aware CE scalar semantics.
     for j in 0..s.t() {
-        let want = neo_reductions::common::ct_from_y_digits_for_ccs_m(
-            &combined_me.y_ring[j],
-            &params,
-            s.m,
-        );
-        assert_eq!(
-            combined_me.ct[j], want,
-            "RLC ct[j] mismatch"
-        );
+        let want = neo_reductions::common::ct_from_y_digits_for_ccs_m(&combined_me.y_ring[j], &params, s.m);
+        assert_eq!(combined_me.ct[j], want, "RLC ct[j] mismatch");
     }
 }
 

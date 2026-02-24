@@ -45,14 +45,8 @@ fn verify_dec_public_checks_all_y_ct_and_x_entries() {
         y1[j][1] = K::from(F::from_u64((40 + j) as u64));
     }
 
-    let y_scalars0: Vec<K> = y0
-        .iter()
-        .map(|row| row[0])
-        .collect();
-    let y_scalars1: Vec<K> = y1
-        .iter()
-        .map(|row| row[0])
-        .collect();
+    let y_scalars0: Vec<K> = y0.iter().map(|row| row[0]).collect();
+    let y_scalars1: Vec<K> = y1.iter().map(|row| row[0]).collect();
     let aux0 = vec![K::from(F::from_u64(101)), K::from(F::from_u64(103))];
     let aux1 = vec![K::from(F::from_u64(107)), K::from(F::from_u64(109))];
 
@@ -223,14 +217,8 @@ fn verify_dec_public_checks_y_zcol_when_present() {
     y0[0][0] = K::from(F::from_u64(11));
     y1[0][0] = K::from(F::from_u64(13));
 
-    let y_scalars0: Vec<K> = y0
-        .iter()
-        .map(|row| row[0])
-        .collect();
-    let y_scalars1: Vec<K> = y1
-        .iter()
-        .map(|row| row[0])
-        .collect();
+    let y_scalars0: Vec<K> = y0.iter().map(|row| row[0]).collect();
+    let y_scalars1: Vec<K> = y1.iter().map(|row| row[0]).collect();
 
     // Child y_zcol (any consistent values).
     let mut y_zcol0 = vec![K::ZERO; d_pad];

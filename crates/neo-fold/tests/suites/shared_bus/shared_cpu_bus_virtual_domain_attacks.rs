@@ -7,7 +7,10 @@ use neo_memory::riscv::trace::Rv32TraceLayout;
 use p3_field::PrimeCharacteristicRing;
 
 fn first_materialized_step(proof: &ShardProof) -> &StepProof {
-    let step0 = proof.steps.first().expect("expected at least one proof step");
+    let step0 = proof
+        .steps
+        .first()
+        .expect("expected at least one proof step");
     if step0
         .compressed_substeps
         .as_ref()
@@ -74,10 +77,7 @@ fn tamper_reg_domain_bit_opening(run: &Rv32TraceWiringRun, proof: &mut ShardProo
         .position(|inst| inst.mem_id == REG_ID.0)
         .expect("expected REG mem instance");
     let reg_layout = step0.mem_insts[reg_inst_idx].twist_layout();
-    let reg_lane = reg_layout
-        .lanes
-        .get(lane_idx)
-        .expect("expected REG lane");
+    let reg_lane = reg_layout.lanes.get(lane_idx).expect("expected REG lane");
 
     let bit_local_col = if write_bit {
         let len = reg_lane.wa_bits.end - reg_lane.wa_bits.start;
@@ -107,7 +107,11 @@ fn tamper_reg_domain_bit_opening(run: &Rv32TraceWiringRun, proof: &mut ShardProo
         !opening.evals.is_empty(),
         "shared-bus named opening evals must be non-empty"
     );
-    let eval_idx = opening.col_ids.iter().position(|&c| c == bit_col).unwrap_or(0);
+    let eval_idx = opening
+        .col_ids
+        .iter()
+        .position(|&c| c == bit_col)
+        .unwrap_or(0);
     assert!(
         eval_idx < opening.evals.len(),
         "shared-bus opening index must be in-bounds"
@@ -159,15 +163,21 @@ fn tamper_trace_wp_opening_scalar(proof: &mut ShardProof, trace_col: usize) {
         .openings
         .iter()
         .position(|opening| opening.point == wp_point && opening.col_ids.iter().any(|&c| c == trace_col))
-        .or_else(|| step.fold.openings.iter().position(|opening| opening.point == wp_point))
+        .or_else(|| {
+            step.fold
+                .openings
+                .iter()
+                .position(|opening| opening.point == wp_point)
+        })
         .expect("WP openings must be present in named openings");
     let wp_open = &mut step.fold.openings[wp_open_idx];
     assert!(!wp_open.evals.is_empty(), "WP named opening evals must be non-empty");
-    let eval_idx = wp_open.col_ids.iter().position(|&c| c == trace_col).unwrap_or(open_idx);
-    assert!(
-        eval_idx < wp_open.evals.len(),
-        "WP opening index must be in-bounds"
-    );
+    let eval_idx = wp_open
+        .col_ids
+        .iter()
+        .position(|&c| c == trace_col)
+        .unwrap_or(open_idx);
+    assert!(eval_idx < wp_open.evals.len(), "WP opening index must be in-bounds");
     wp_open.evals[eval_idx] += K::ONE;
 }
 
@@ -189,15 +199,21 @@ fn force_trace_wp_opening_scalar_zero(proof: &mut ShardProof, trace_col: usize) 
         .openings
         .iter()
         .position(|opening| opening.point == wp_point && opening.col_ids.iter().any(|&c| c == trace_col))
-        .or_else(|| step.fold.openings.iter().position(|opening| opening.point == wp_point))
+        .or_else(|| {
+            step.fold
+                .openings
+                .iter()
+                .position(|opening| opening.point == wp_point)
+        })
         .expect("WP openings must be present in named openings");
     let wp_open = &mut step.fold.openings[wp_open_idx];
     assert!(!wp_open.evals.is_empty(), "WP named opening evals must be non-empty");
-    let eval_idx = wp_open.col_ids.iter().position(|&c| c == trace_col).unwrap_or(open_idx);
-    assert!(
-        eval_idx < wp_open.evals.len(),
-        "WP opening index must be in-bounds"
-    );
+    let eval_idx = wp_open
+        .col_ids
+        .iter()
+        .position(|&c| c == trace_col)
+        .unwrap_or(open_idx);
+    assert!(eval_idx < wp_open.evals.len(), "WP opening index must be in-bounds");
     wp_open.evals[eval_idx] = K::ZERO;
 }
 

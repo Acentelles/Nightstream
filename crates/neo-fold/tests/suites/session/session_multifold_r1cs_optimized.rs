@@ -131,8 +131,5 @@ fn test_session_rejects_out_of_range_packed_step_witness() {
     let err = session
         .add_step_io(&ccs, &x, &w)
         .expect_err("out-of-range packed witness must be rejected");
-    assert!(
-        err.to_string().contains("not representable"),
-        "unexpected error: {err}"
-    );
+    assert!(err.to_string().contains("not representable"), "unexpected error: {err}");
 }

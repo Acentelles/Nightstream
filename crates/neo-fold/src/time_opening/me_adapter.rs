@@ -27,12 +27,7 @@ fn chi_at(point: &[K], row: usize, chi_table: Option<&[K]>) -> K {
 }
 
 #[inline]
-pub fn cpu_time_row_weights(
-    point: &[K],
-    m_in: usize,
-    t: usize,
-    chi_table: Option<&[K]>,
-) -> Result<Vec<K>, PiCcsError> {
+pub fn cpu_time_row_weights(point: &[K], m_in: usize, t: usize, chi_table: Option<&[K]>) -> Result<Vec<K>, PiCcsError> {
     let n_pad = 1usize
         .checked_shl(point.len() as u32)
         .ok_or_else(|| PiCcsError::InvalidInput("time/opening CPU weights: 2^ell_n overflow".into()))?;
@@ -426,9 +421,8 @@ pub fn claim_commitment_and_eval(
         add_rot_scaled_commitment(&mut claim_commitment, c_ref, &coeffs[i])?;
     }
 
-    let claim_commitment = claim_commitment.ok_or_else(|| {
-        PiCcsError::ProtocolError("time/opening claim: empty opening proof is not allowed".into())
-    })?;
+    let claim_commitment = claim_commitment
+        .ok_or_else(|| PiCcsError::ProtocolError("time/opening claim: empty opening proof is not allowed".into()))?;
     let claim_eval = recompose_digits_to_scalar(claim_digits.as_slice(), b);
     Ok(ClaimCommitEval {
         domain,

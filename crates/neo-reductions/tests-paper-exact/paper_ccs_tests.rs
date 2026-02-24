@@ -20,16 +20,8 @@ fn q_ext_from_witnesses_lit(
     ch: &neo_reductions::Challenges,
     me_inputs_r: Option<&[K]>,
 ) -> K {
-    let (q, _unused_rhs) = refimpl::q_eval_at_ext_point_paper_exact_with_inputs(
-        s,
-        params,
-        mcs_w,
-        me_w,
-        alpha_p,
-        r_p,
-        ch,
-        me_inputs_r,
-    );
+    let (q, _unused_rhs) =
+        refimpl::q_eval_at_ext_point_paper_exact_with_inputs(s, params, mcs_w, me_w, alpha_p, r_p, ch, me_inputs_r);
     q
 }
 

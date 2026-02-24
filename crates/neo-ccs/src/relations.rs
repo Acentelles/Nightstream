@@ -398,9 +398,9 @@ fn witness_layout_for_expected_m<F: Field>(z: &Mat<F>, expected_m: usize) -> Res
             let blk = c / D;
             let off = c % D;
             if z[(off, blk)] != F::ZERO {
-                return Err(CcsError::Relation(format!(
-                    "non-zero padded coefficient at logical index {c} (blk={blk}, off={off})"
-                ).into()));
+                return Err(CcsError::Relation(
+                    format!("non-zero padded coefficient at logical index {c} (blk={blk}, off={off})").into(),
+                ));
             }
         }
         return Ok(WitnessLayout::SuperneoPacked);
@@ -427,11 +427,7 @@ fn witness_get<F: Field + Copy>(z: &Mat<F>, layout: WitnessLayout, rho: usize, c
     }
 }
 
-fn project_x_from_witness_layout<F: Field + Copy>(
-    z: &Mat<F>,
-    layout: WitnessLayout,
-    m_in: usize,
-) -> Mat<F> {
+fn project_x_from_witness_layout<F: Field + Copy>(z: &Mat<F>, layout: WitnessLayout, m_in: usize) -> Mat<F> {
     let mut x = Mat::zero(D, m_in, F::ZERO);
     for rho in 0..D {
         for c in 0..m_in {

@@ -1,5 +1,5 @@
-use crate::PiCcsProof;
 use crate::pi_ccs::RotRho;
+use crate::PiCcsProof;
 use neo_ajtai::Commitment as Cmt;
 use neo_ccs::{matrix::Mat, CeClaim};
 use neo_math::{F, K};

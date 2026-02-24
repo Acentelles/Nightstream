@@ -69,8 +69,7 @@ fn create_mcs_from_z(
     m_in: usize,
     z: Vec<F>,
 ) -> (CcsClaim<Cmt, F>, CcsWitness<F>) {
-    let Z =
-        neo_memory::ajtai::encode_vector_for_ccs_m(params, z.len(), &z).expect("encode witness for CCS width");
+    let Z = neo_memory::ajtai::encode_vector_for_ccs_m(params, z.len(), &z).expect("encode witness for CCS width");
     let c = l.commit(&Z);
     let x = z[..m_in].to_vec();
     let w = z[m_in..].to_vec();

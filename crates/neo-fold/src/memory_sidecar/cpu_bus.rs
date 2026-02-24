@@ -433,7 +433,9 @@ where
     if Z.cols() != expected_cols {
         return Err(PiCcsError::InvalidInput(format!(
             "bus openings require packed witness width (Z.cols()={}, expected ceil(bus.m/D)={} for bus.m={})",
-            Z.cols(), expected_cols, bus.m
+            Z.cols(),
+            expected_cols,
+            bus.m
         )));
     }
 
@@ -560,10 +562,12 @@ where
             let idx = col_base
                 .checked_add(j)
                 .ok_or_else(|| PiCcsError::InvalidInput("bus cell index overflow".into()))?;
-            let v = z_logical
-                .get(idx)
-                .copied()
-                .ok_or_else(|| PiCcsError::InvalidInput(format!("bus openings: logical index out of range (idx={idx}, m={})", z_logical.len())))?;
+            let v = z_logical.get(idx).copied().ok_or_else(|| {
+                PiCcsError::InvalidInput(format!(
+                    "bus openings: logical index out of range (idx={idx}, m={})",
+                    z_logical.len()
+                ))
+            })?;
             y_scalar += w * v;
         }
 
@@ -1354,8 +1358,7 @@ where
     if col_base >= expected_m {
         return Err(PiCcsError::InvalidInput(format!(
             "trace openings require col_base < m (col_base={}, m={})",
-            col_base,
-            expected_m
+            col_base, expected_m
         )));
     }
 
@@ -1451,10 +1454,12 @@ where
             let idx = col_start
                 .checked_add(*j)
                 .ok_or_else(|| PiCcsError::InvalidInput("trace logical index overflow".into()))?;
-            let v = z_logical
-                .get(idx)
-                .copied()
-                .ok_or_else(|| PiCcsError::InvalidInput(format!("trace openings: logical index out of range (idx={idx}, m={})", z_logical.len())))?;
+            let v = z_logical.get(idx).copied().ok_or_else(|| {
+                PiCcsError::InvalidInput(format!(
+                    "trace openings: logical index out of range (idx={idx}, m={})",
+                    z_logical.len()
+                ))
+            })?;
             y_scalar += *w * v;
         }
 

@@ -158,8 +158,7 @@ fn dec_reduction_superneo_shape_optimized_matches_paper_exact() {
     }
 
     let X_parent = neo_reductions::common::project_x_from_witness_mat(&Z_parent, m, m_in).expect("X parent");
-    let (y_parent, ct_parent) =
-        neo_reductions::common::compute_y_from_Z_and_r(&s, &Z_parent, &r, ell_d, params.b);
+    let (y_parent, ct_parent) = neo_reductions::common::compute_y_from_Z_and_r(&s, &Z_parent, &r, ell_d, params.b);
     assert_eq!(y_parent.len(), s.t());
     assert_eq!(y_parent[0].len(), d_pad);
     let y_zcol_parent = eval_zcol(&params, &Z_parent, &s_col, m, ell_d);
@@ -187,5 +186,8 @@ fn dec_reduction_superneo_shape_optimized_matches_paper_exact() {
         neo_reductions::paper_exact_engine::dec_reduction_paper_exact::<F>(&s, &params, &parent, &Z_split, ell_d);
     assert_eq!(ok_y_opt, ok_y_paper, "optimized/paper y-check status mismatch");
     assert_eq!(ok_x_opt, ok_x_paper, "optimized/paper X-check status mismatch");
-    assert_eq!(children_opt, children_paper, "optimized and paper DEC children must match");
+    assert_eq!(
+        children_opt, children_paper,
+        "optimized and paper DEC children must match"
+    );
 }

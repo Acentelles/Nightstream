@@ -44,7 +44,11 @@ fn superneo_packed_decode_rejects_wrong_row_count() {
 #[test]
 fn encode_vector_for_ccs_m_selects_layout_by_width() {
     assert_eq!(commit_cols_for_ccs_m(2 * D), 2, "packed width should compress by D");
-    assert_eq!(commit_cols_for_ccs_m(D + 1), 2, "non-divisible width should use packed ceil(m/D) columns");
+    assert_eq!(
+        commit_cols_for_ccs_m(D + 1),
+        2,
+        "non-divisible width should use packed ceil(m/D) columns"
+    );
 
     let params = NeoParams::goldilocks_127();
 

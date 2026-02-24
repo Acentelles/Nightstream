@@ -6,8 +6,8 @@
 
 use neo_ajtai::Commitment as Cmt;
 use neo_ccs::{CeClaim, Mat};
-use neo_fold::shard::ShardProof as FoldRun;
 use neo_fold::pi_ccs::RotRho;
+use neo_fold::shard::ShardProof as FoldRun;
 use neo_math::{F, K};
 
 /// Public inputs to the FoldRun circuit

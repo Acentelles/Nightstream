@@ -5,7 +5,10 @@ use neo_params::NeoParams;
 use p3_field::PrimeCharacteristicRing;
 
 fn decode_to_k_padded(params: &NeoParams, ccs_m: usize, mat: &Mat<F>, pow2_len: usize) -> Result<Vec<K>, String> {
-    let mut out: Vec<K> = decode_vector_for_ccs_m(params, ccs_m, mat)?.into_iter().map(K::from).collect();
+    let mut out: Vec<K> = decode_vector_for_ccs_m(params, ccs_m, mat)?
+        .into_iter()
+        .map(K::from)
+        .collect();
     out.resize(pow2_len, K::ZERO);
     Ok(out)
 }

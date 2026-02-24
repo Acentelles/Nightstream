@@ -755,16 +755,8 @@ fn report_track_a_w0_w1_snapshot() {
     println!("9. SUMMARY");
     println!("{sep}");
     println!("  {:<36} {:>10}", "Main trace columns", layout.trace.cols);
-    println!(
-        "  {:<36} {:>10}",
-        "CPU base cols (m_in+trace)",
-        cpu_base_m
-    );
-    println!(
-        "  {:<36} {:>10}",
-        "Committed mem/bus cols",
-        committed_mem_bus_cols
-    );
+    println!("  {:<36} {:>10}", "CPU base cols (m_in+trace)", cpu_base_m);
+    println!("  {:<36} {:>10}", "Committed mem/bus cols", committed_mem_bus_cols);
     println!("  {:<36} {:>10}", "Uniform CCS width proxy", total_ccs_m_uniform);
     println!(
         "  {:<36} {:>10}",

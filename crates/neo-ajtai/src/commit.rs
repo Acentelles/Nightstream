@@ -461,7 +461,10 @@ pub fn commit_row_major_seeded_many(
     }
 
     // Fast row slices per matrix.
-    let z_rows_all: Vec<Vec<&[Fq]>> = Zs.iter().map(|z| (0..d).map(|r| z.row(r)).collect()).collect();
+    let z_rows_all: Vec<Vec<&[Fq]>> = Zs
+        .iter()
+        .map(|z| (0..d).map(|r| z.row(r)).collect())
+        .collect();
 
     // Per-(matrix,column) sparsity metadata.
     #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-threads"))]

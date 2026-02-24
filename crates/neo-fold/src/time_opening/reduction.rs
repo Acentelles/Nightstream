@@ -189,10 +189,7 @@ fn group_value(group: &OpeningReductionGroup) -> K {
         OpeningDomain::Mem => 1u64,
     };
     h.append_u64s(b"stage8/reduction/group_value/domain", &[dom]);
-    h.append_u64s(
-        b"stage8/reduction/group_value/point_len",
-        &[group.point.len() as u64],
-    );
+    h.append_u64s(b"stage8/reduction/group_value/point_len", &[group.point.len() as u64]);
     let point_coeffs_per_elem = group
         .point
         .first()
@@ -235,10 +232,7 @@ fn bind_opening_unification_statement(
             OpeningDomain::Mem => 1u64,
         };
         tr.append_u64s(b"stage8/reduction_unify_bind/domain", &[dom]);
-        tr.append_u64s(
-            b"stage8/reduction_unify_bind/point_len",
-            &[group.point.len() as u64],
-        );
+        tr.append_u64s(b"stage8/reduction_unify_bind/point_len", &[group.point.len() as u64]);
         let point_coeffs_per_elem = group
             .point
             .first()
@@ -249,7 +243,11 @@ fn bind_opening_unification_statement(
             group.point.len().saturating_mul(point_coeffs_per_elem),
             group.point.iter().flat_map(|v| v.as_coeffs()),
         );
-        let idx_u64: Vec<u64> = group.claim_indices.iter().map(|&claim_idx| claim_idx as u64).collect();
+        let idx_u64: Vec<u64> = group
+            .claim_indices
+            .iter()
+            .map(|&claim_idx| claim_idx as u64)
+            .collect();
         tr.append_u64s(
             b"stage8/reduction_unify_bind/claim_indices_len",
             &[idx_u64.len() as u64],

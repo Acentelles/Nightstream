@@ -93,7 +93,11 @@ fn rv32_trace_wiring_runner_prove_verify() {
         "layout.t should stay power-of-two chunk aligned (layout.t={})",
         run.layout().t
     );
-    assert_eq!(run.layout().t, 4, "layout.t should reflect padded power-of-two proving length");
+    assert_eq!(
+        run.layout().t,
+        4,
+        "layout.t should reflect padded power-of-two proving length"
+    );
 
     let steps_public = run.steps_public();
     assert_eq!(steps_public.len(), 1, "trace runner should expose one step instance");
@@ -602,7 +606,13 @@ fn rv32_trace_wiring_runner_decode_openings_are_embedded_in_wp_and_required() {
         .openings
         .iter()
         .find(|opening| opening.point == wp_point && opening.col_ids.iter().any(|&c| c == target_col))
-        .or_else(|| step_mut.fold.openings.iter().find(|opening| opening.point == wp_point))
+        .or_else(|| {
+            step_mut
+                .fold
+                .openings
+                .iter()
+                .find(|opening| opening.point == wp_point)
+        })
         .and_then(|opening| {
             step_mut
                 .fold
@@ -658,7 +668,13 @@ fn rv32_trace_wiring_runner_width_openings_on_wp_are_required() {
         .openings
         .iter()
         .find(|opening| opening.point == wp_point && opening.col_ids.iter().any(|&c| c == target_col))
-        .or_else(|| step_mut.fold.openings.iter().find(|opening| opening.point == wp_point))
+        .or_else(|| {
+            step_mut
+                .fold
+                .openings
+                .iter()
+                .find(|opening| opening.point == wp_point)
+        })
         .and_then(|opening| {
             step_mut
                 .fold

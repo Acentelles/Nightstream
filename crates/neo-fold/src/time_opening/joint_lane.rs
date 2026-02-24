@@ -9,8 +9,8 @@ use crate::time_opening::me_adapter::{
 use crate::time_opening::reduction::bind_opening_reduction_and_sample_group_coeffs;
 use crate::PiCcsError;
 use neo_ajtai::Commitment as Cmt;
-use neo_ccs::{CcsMatrix, CcsStructure, CscMat, Mat, CeClaim, SModuleHomomorphism, SparsePoly, Term};
-use neo_math::{KExtensions, F, K, D};
+use neo_ccs::{CcsMatrix, CcsStructure, CeClaim, CscMat, Mat, SModuleHomomorphism, SparsePoly, Term};
+use neo_math::{KExtensions, D, F, K};
 use neo_memory::witness::{StepInstanceBundle, StepWitnessBundle};
 use neo_params::NeoParams;
 use neo_reductions as ccs;
@@ -32,10 +32,7 @@ fn build_claim_witness_from_step(
     let mut out = Mat::zero(D, t, F::ZERO);
     for (i, &col_id) in open_pf.col_ids.iter().enumerate() {
         let abs_pos = logical_col_pos.get(&col_id).copied().ok_or_else(|| {
-            PiCcsError::ProtocolError(format!(
-                "time/opening joint/prove: logical col_id={} missing",
-                col_id
-            ))
+            PiCcsError::ProtocolError(format!("time/opening joint/prove: logical col_id={} missing", col_id))
         })?;
         match domain {
             OpeningDomain::Cpu if abs_pos >= cpu_cols_len => {
@@ -180,10 +177,7 @@ fn bind_and_sample_unified_fold_mixers(
         tr.append_u64s(b"stage8/unified_fold_bind/group_idx", &[idx as u64]);
         tr.append_message(b"stage8/unified_fold_bind/group_digest", &g.group_digest);
     }
-    tr.append_message(
-        b"stage8/unified_fold_bind/digest",
-        &unified_fold_digest(groups),
-    );
+    tr.append_message(b"stage8/unified_fold_bind/digest", &unified_fold_digest(groups));
     tr.append_fields(
         b"stage8/unified_fold_bind/opening_unify_claimed_sum",
         &opening_unification.claimed_sum.as_coeffs(),
@@ -193,10 +187,7 @@ fn bind_and_sample_unified_fold_mixers(
         &[opening_unification.round_polys.len() as u64],
     );
     for (round_idx, coeffs) in opening_unification.round_polys.iter().enumerate() {
-        tr.append_u64s(
-            b"stage8/unified_fold_bind/opening_unify_round_idx",
-            &[round_idx as u64],
-        );
+        tr.append_u64s(b"stage8/unified_fold_bind/opening_unify_round_idx", &[round_idx as u64]);
         let per_elem = coeffs.first().map(|v| v.as_coeffs().len()).unwrap_or(0);
         tr.append_fields_iter(
             b"stage8/unified_fold_bind/opening_unify_round_coeffs",
@@ -215,11 +206,11 @@ fn bind_and_sample_unified_fold_mixers(
         .unwrap_or(0);
     tr.append_fields_iter(
         b"stage8/unified_fold_bind/opening_unify_r",
+        opening_unification.r_unify.len().saturating_mul(r_coeffs),
         opening_unification
             .r_unify
-            .len()
-            .saturating_mul(r_coeffs),
-        opening_unification.r_unify.iter().flat_map(|v| v.as_coeffs()),
+            .iter()
+            .flat_map(|v| v.as_coeffs()),
     );
     let ring = ccs::RotRing::goldilocks();
     ccs::sample_rot_rhos_n(tr, params, &ring, groups.len())
@@ -499,10 +490,7 @@ pub fn prove_joint_opening_lane_with_witnesses(
             }
 
             let expected_commitment = expected_commitment.ok_or_else(|| {
-                PiCcsError::ProtocolError(format!(
-                    "time/opening joint/prove: group {} has no claims",
-                    group_idx
-                ))
+                PiCcsError::ProtocolError(format!("time/opening joint/prove: group {} has no claims", group_idx))
             })?;
             let joint_commitment = committer.commit(&joint_z);
             if joint_commitment != expected_commitment {
@@ -621,10 +609,7 @@ pub fn prove_joint_opening_lane_with_witnesses(
             }
 
             let expected_commitment = expected_commitment.ok_or_else(|| {
-                PiCcsError::ProtocolError(format!(
-                    "time/opening joint/prove: group {} has no claims",
-                    group_idx
-                ))
+                PiCcsError::ProtocolError(format!("time/opening joint/prove: group {} has no claims", group_idx))
             })?;
             let joint_commitment = committer.commit(&joint_z);
             if joint_commitment != expected_commitment {
@@ -694,13 +679,7 @@ pub fn prove_joint_opening_lane_with_witnesses(
         let can_unify = out_groups
             .iter()
             .all(|g| g.point == anchor.point && g.domain == anchor.domain);
-        let mix_rhos = bind_and_sample_unified_fold_mixers(
-            tr,
-            params,
-            step_idx,
-            &out_groups,
-            opening_unification,
-        )?;
+        let mix_rhos = bind_and_sample_unified_fold_mixers(tr, params, step_idx, &out_groups, opening_unification)?;
         if mix_rhos.len() != out_groups.len() {
             return Err(PiCcsError::ProtocolError(format!(
                 "stage8 unified fold: sampled mixer count {} != group count {}",
@@ -712,9 +691,8 @@ pub fn prove_joint_opening_lane_with_witnesses(
         for (rho, group) in mix_rhos.iter().zip(out_groups.iter()) {
             add_rot_scaled_commitment(&mut expected_commitment, &group.joint_commitment, rho)?;
         }
-        let expected_commitment = expected_commitment.ok_or_else(|| {
-            PiCcsError::ProtocolError("stage8 unified fold: missing expected commitment".into())
-        })?;
+        let expected_commitment = expected_commitment
+            .ok_or_else(|| PiCcsError::ProtocolError("stage8 unified fold: missing expected commitment".into()))?;
         let mut expected_claim_digits = vec![K::ZERO; D];
         for (rho, group) in mix_rhos.iter().zip(out_groups.iter()) {
             let rotated = apply_rot_to_digits(rho, group.joint_claim_digits.as_slice())?;
@@ -927,10 +905,7 @@ pub fn verify_joint_opening_lane(
         );
 
         let expected_commitment = expected_commitment.ok_or_else(|| {
-            PiCcsError::ProtocolError(format!(
-                "time/opening joint/verify: group {} has no claims",
-                group_idx
-            ))
+            PiCcsError::ProtocolError(format!("time/opening joint/verify: group {} has no claims", group_idx))
         })?;
         if pf_group.joint_commitment != expected_commitment {
             return Err(PiCcsError::ProtocolError(format!(
@@ -969,9 +944,10 @@ pub fn verify_joint_opening_lane(
         .iter()
         .all(|g| g.point == first_group.point && g.domain == first_group.domain);
 
-    let unified = lane.unified_fold.as_ref().ok_or_else(|| {
-        PiCcsError::ProtocolError("time/opening joint/verify: missing unified_fold claim".into())
-    })?;
+    let unified = lane
+        .unified_fold
+        .as_ref()
+        .ok_or_else(|| PiCcsError::ProtocolError("time/opening joint/verify: missing unified_fold claim".into()))?;
     let expected_indices: Vec<usize> = (0..lane.groups.len()).collect();
     if unified.claim_indices != expected_indices {
         return Err(PiCcsError::ProtocolError(
@@ -1011,13 +987,7 @@ pub fn verify_joint_opening_lane(
             "time/opening joint/verify: unified_fold scalar recomposition mismatch".into(),
         ));
     }
-    let mix_rhos = bind_and_sample_unified_fold_mixers(
-        tr,
-        params,
-        step_idx,
-        &lane.groups,
-        opening_unification,
-    )?;
+    let mix_rhos = bind_and_sample_unified_fold_mixers(tr, params, step_idx, &lane.groups, opening_unification)?;
     if mix_rhos.len() != lane.groups.len() {
         return Err(PiCcsError::ProtocolError(format!(
             "time/opening joint/verify: unified mixer count {} != groups {}",

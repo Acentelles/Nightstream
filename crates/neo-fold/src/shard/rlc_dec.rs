@@ -111,9 +111,9 @@ where
                     step_idx
                 )));
             }
-            let d_pad = 1usize.checked_shl(ell_d as u32).ok_or_else(|| {
-                PiCcsError::InvalidInput(format!("step {}: Π_RLC(k=1): 2^ell_d overflow", step_idx))
-            })?;
+            let d_pad = 1usize
+                .checked_shl(ell_d as u32)
+                .ok_or_else(|| PiCcsError::InvalidInput(format!("step {}: Π_RLC(k=1): 2^ell_d overflow", step_idx)))?;
             if inp.y_zcol.len() != d_pad {
                 return Err(PiCcsError::InvalidInput(format!(
                     "step {}: Π_RLC(k=1): y_zcol.len()={} expected {}",
@@ -328,9 +328,7 @@ where
                 if parent_extra < bus.bus_cols {
                     return Err(PiCcsError::ProtocolError(format!(
                         "step {}: non-physical bus path missing bus suffix coordinates (have {}, expected at least {})",
-                        step_idx,
-                        parent_extra,
-                        bus.bus_cols
+                        step_idx, parent_extra, bus.bus_cols
                     )));
                 }
                 if !matches!(lane, RlcLane::Main) || trace_linkage_t_len.is_none() {
@@ -363,7 +361,9 @@ where
                     // opening mass on child 0 and force all sibling children to zero.
                     for col_id in 0..bus.bus_cols {
                         if child_idx == 0 {
-                            child.y_ring.push(rlc_parent.y_ring[core_t + col_id].clone());
+                            child
+                                .y_ring
+                                .push(rlc_parent.y_ring[core_t + col_id].clone());
                             child.ct.push(rlc_parent.ct[core_t + col_id]);
                         } else {
                             child.y_ring.push(vec![K::ZERO; y_pad]);
@@ -459,9 +459,7 @@ where
                         child
                             .y_ring
                             .push(rlc_parent.y_ring[trace_open_base + open_idx].clone());
-                        child
-                            .ct
-                            .push(rlc_parent.ct[trace_open_base + open_idx]);
+                        child.ct.push(rlc_parent.ct[trace_open_base + open_idx]);
                     } else {
                         // Non-physical trace openings are metadata carried through Π_DEC.
                         // Keep the canonical parent mass on child 0 and force siblings to zero.
@@ -474,9 +472,7 @@ where
                         child.y_ring[trace_open_base..]
                             .iter()
                             .all(|row| row.iter().all(|v| *v == K::ZERO))
-                            && child.ct[trace_open_base..]
-                                .iter()
-                                .all(|v| *v == K::ZERO),
+                            && child.ct[trace_open_base..].iter().all(|v| *v == K::ZERO),
                         "non-primary DEC children must keep propagated trace metadata openings at zero"
                     );
                 }
@@ -595,14 +591,7 @@ where
         }
     }
 
-    let parent_pub = ccs::rlc_public(
-        s,
-        params,
-        rlc_rhos,
-        rlc_inputs,
-        mixers.mix_rhos_commits,
-        ell_d,
-    )?;
+    let parent_pub = ccs::rlc_public(s, params, rlc_rhos, rlc_inputs, mixers.mix_rhos_commits, ell_d)?;
 
     let prefix = match lane {
         RlcLane::Main => "",

@@ -1,7 +1,7 @@
-use neo_ccs::matrix::Mat;
 use neo_ajtai::{decomp_b_row_major, DecompStyle};
-use neo_math::{D, F as BaseField};
+use neo_ccs::matrix::Mat;
 use neo_math::balanced::to_balanced_i128;
+use neo_math::{D, F as BaseField};
 use neo_params::NeoParams;
 use p3_field::{PrimeCharacteristicRing, PrimeField};
 
@@ -30,11 +30,7 @@ pub fn encode_vector_balanced_to_mat(params: &NeoParams, z: &[BaseField]) -> Mat
 
 /// Encode a vector `z ∈ F^m` into its Ajtai digit matrix `Z ∈ F^{d×m}` using **balanced** digits
 /// and an explicit decomposition base.
-pub fn encode_vector_balanced_to_mat_with_base(
-    params: &NeoParams,
-    z: &[BaseField],
-    base: u32,
-) -> Mat<BaseField> {
+pub fn encode_vector_balanced_to_mat_with_base(params: &NeoParams, z: &[BaseField], base: u32) -> Mat<BaseField> {
     let d = params.d as usize;
     debug_assert_eq!(
         d,

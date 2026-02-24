@@ -465,18 +465,13 @@ pub(crate) fn build_route_a_width_time_claims(
         bitness_sparse.push(width_col(col_id)?);
     }
     let bitness_weights = w3_bitness_weight_vector(r_cycle, bitness_cols.len());
-    let bitness_oracle = FormulaOracleSparseTime::new(
-        bitness_sparse,
-        3,
-        r_cycle,
-        move |vals: &[K]| {
-            let mut weighted = K::ZERO;
-            for (b, w) in vals.iter().zip(bitness_weights.iter()) {
-                weighted += *w * *b * (*b - K::ONE);
-            }
-            weighted
-        },
-    );
+    let bitness_oracle = FormulaOracleSparseTime::new(bitness_sparse, 3, r_cycle, move |vals: &[K]| {
+        let mut weighted = K::ZERO;
+        for (b, w) in vals.iter().zip(bitness_weights.iter()) {
+            weighted += *w * *b * (*b - K::ONE);
+        }
+        weighted
+    });
 
     let mut quiescence_sparse = Vec::with_capacity(1 + width.cols);
     quiescence_sparse.push(main_col(trace.active)?);
@@ -484,19 +479,14 @@ pub(crate) fn build_route_a_width_time_claims(
         quiescence_sparse.push(width_col(col_id)?);
     }
     let quiescence_weights = w3_quiescence_weight_vector(r_cycle, width.cols);
-    let quiescence_oracle = FormulaOracleSparseTime::new(
-        quiescence_sparse,
-        3,
-        r_cycle,
-        move |vals: &[K]| {
-            let active = vals[0];
-            let mut weighted = K::ZERO;
-            for (i, w) in quiescence_weights.iter().enumerate() {
-                weighted += *w * vals[1 + i];
-            }
-            (K::ONE - active) * weighted
-        },
-    );
+    let quiescence_oracle = FormulaOracleSparseTime::new(quiescence_sparse, 3, r_cycle, move |vals: &[K]| {
+        let active = vals[0];
+        let mut weighted = K::ZERO;
+        for (i, w) in quiescence_weights.iter().enumerate() {
+            weighted += *w * vals[1 + i];
+        }
+        (K::ONE - active) * weighted
+    });
 
     let mut load_sparse = Vec::with_capacity(31);
     load_sparse.push(main_col(trace.rd_val)?);
@@ -514,47 +504,42 @@ pub(crate) fn build_route_a_width_time_claims(
         load_sparse.push(width_col(col_id)?);
     }
     let load_weights = w3_load_weight_vector(r_cycle, 16);
-    let load_oracle = FormulaOracleSparseTime::new(
-        load_sparse,
-        5,
-        r_cycle,
-        move |vals: &[K]| {
-            let rd_val = vals[0];
-            let ram_rv = vals[1];
-            let rd_has_write = vals[2];
-            let ram_has_read = vals[3];
-            let op_load = vals[4];
-            let funct3_is_0 = vals[5];
-            let funct3_is_1 = vals[6];
-            let funct3_is_2 = vals[7];
-            let funct3_is_4 = vals[8];
-            let funct3_is_5 = vals[9];
-            let ram_rv_q16 = vals[10];
-            let load_flags = [
-                op_load * funct3_is_0,
-                op_load * funct3_is_4,
-                op_load * funct3_is_1,
-                op_load * funct3_is_5,
-                op_load * funct3_is_2,
-            ];
-            let mut ram_rv_low_bits = [K::ZERO; 16];
-            ram_rv_low_bits.copy_from_slice(&vals[11..27]);
-            let residuals = w3_load_semantics_residuals(
-                rd_val,
-                ram_rv,
-                rd_has_write,
-                ram_has_read,
-                load_flags,
-                ram_rv_q16,
-                ram_rv_low_bits,
-            );
-            let mut weighted = K::ZERO;
-            for (r, w) in residuals.iter().zip(load_weights.iter()) {
-                weighted += *w * *r;
-            }
-            weighted
-        },
-    );
+    let load_oracle = FormulaOracleSparseTime::new(load_sparse, 5, r_cycle, move |vals: &[K]| {
+        let rd_val = vals[0];
+        let ram_rv = vals[1];
+        let rd_has_write = vals[2];
+        let ram_has_read = vals[3];
+        let op_load = vals[4];
+        let funct3_is_0 = vals[5];
+        let funct3_is_1 = vals[6];
+        let funct3_is_2 = vals[7];
+        let funct3_is_4 = vals[8];
+        let funct3_is_5 = vals[9];
+        let ram_rv_q16 = vals[10];
+        let load_flags = [
+            op_load * funct3_is_0,
+            op_load * funct3_is_4,
+            op_load * funct3_is_1,
+            op_load * funct3_is_5,
+            op_load * funct3_is_2,
+        ];
+        let mut ram_rv_low_bits = [K::ZERO; 16];
+        ram_rv_low_bits.copy_from_slice(&vals[11..27]);
+        let residuals = w3_load_semantics_residuals(
+            rd_val,
+            ram_rv,
+            rd_has_write,
+            ram_has_read,
+            load_flags,
+            ram_rv_q16,
+            ram_rv_low_bits,
+        );
+        let mut weighted = K::ZERO;
+        for (r, w) in residuals.iter().zip(load_weights.iter()) {
+            weighted += *w * *r;
+        }
+        weighted
+    });
 
     let mut store_sparse = Vec::with_capacity(45);
     store_sparse.push(main_col(trace.ram_wv)?);
@@ -575,46 +560,41 @@ pub(crate) fn build_route_a_width_time_claims(
         store_sparse.push(width_col(col_id)?);
     }
     let store_weights = w3_store_weight_vector(r_cycle, 12);
-    let store_oracle = FormulaOracleSparseTime::new(
-        store_sparse,
-        4,
-        r_cycle,
-        move |vals: &[K]| {
-            let ram_wv = vals[0];
-            let ram_rv = vals[1];
-            let rs2_val = vals[2];
-            let rd_has_write = vals[3];
-            let ram_has_read = vals[4];
-            let ram_has_write = vals[5];
-            let op_store = vals[6];
-            let funct3_is_0 = vals[7];
-            let funct3_is_1 = vals[8];
-            let funct3_is_2 = vals[9];
-            let rs2_q16 = vals[10];
-            let store_flags = [op_store * funct3_is_0, op_store * funct3_is_1, op_store * funct3_is_2];
-            let mut ram_rv_low_bits = [K::ZERO; 16];
-            ram_rv_low_bits.copy_from_slice(&vals[11..27]);
-            let mut rs2_low_bits = [K::ZERO; 16];
-            rs2_low_bits.copy_from_slice(&vals[27..43]);
-            let residuals = w3_store_semantics_residuals(
-                ram_wv,
-                ram_rv,
-                rs2_val,
-                rd_has_write,
-                ram_has_read,
-                ram_has_write,
-                store_flags,
-                rs2_q16,
-                ram_rv_low_bits,
-                rs2_low_bits,
-            );
-            let mut weighted = K::ZERO;
-            for (r, w) in residuals.iter().zip(store_weights.iter()) {
-                weighted += *w * *r;
-            }
-            weighted
-        },
-    );
+    let store_oracle = FormulaOracleSparseTime::new(store_sparse, 4, r_cycle, move |vals: &[K]| {
+        let ram_wv = vals[0];
+        let ram_rv = vals[1];
+        let rs2_val = vals[2];
+        let rd_has_write = vals[3];
+        let ram_has_read = vals[4];
+        let ram_has_write = vals[5];
+        let op_store = vals[6];
+        let funct3_is_0 = vals[7];
+        let funct3_is_1 = vals[8];
+        let funct3_is_2 = vals[9];
+        let rs2_q16 = vals[10];
+        let store_flags = [op_store * funct3_is_0, op_store * funct3_is_1, op_store * funct3_is_2];
+        let mut ram_rv_low_bits = [K::ZERO; 16];
+        ram_rv_low_bits.copy_from_slice(&vals[11..27]);
+        let mut rs2_low_bits = [K::ZERO; 16];
+        rs2_low_bits.copy_from_slice(&vals[27..43]);
+        let residuals = w3_store_semantics_residuals(
+            ram_wv,
+            ram_rv,
+            rs2_val,
+            rd_has_write,
+            ram_has_read,
+            ram_has_write,
+            store_flags,
+            rs2_q16,
+            ram_rv_low_bits,
+            rs2_low_bits,
+        );
+        let mut weighted = K::ZERO;
+        for (r, w) in residuals.iter().zip(store_weights.iter()) {
+            weighted += *w * *r;
+        }
+        weighted
+    });
 
     Ok((
         Some((Box::new(bitness_oracle), K::ZERO)),
@@ -1126,18 +1106,13 @@ pub(crate) fn build_route_a_control_time_claims(
         decode_col(decode.op_amo)?,
     ];
     let linear_weights = control_next_pc_linear_weight_vector(r_cycle, 1);
-    let linear_oracle = FormulaOracleSparseTime::new(
-        linear_sparse,
-        4,
-        r_cycle,
-        move |vals: &[K]| {
-            let residual = control_next_pc_linear_residual(
-                vals[0], vals[1], vals[2], vals[3], vals[4], vals[5], vals[6], vals[7], vals[8], vals[9], vals[10],
-                vals[11],
-            );
-            linear_weights[0] * residual
-        },
-    );
+    let linear_oracle = FormulaOracleSparseTime::new(linear_sparse, 4, r_cycle, move |vals: &[K]| {
+        let residual = control_next_pc_linear_residual(
+            vals[0], vals[1], vals[2], vals[3], vals[4], vals[5], vals[6], vals[7], vals[8], vals[9], vals[10],
+            vals[11],
+        );
+        linear_weights[0] * residual
+    });
 
     let control_sparse = vec![
         main_col(trace.active)?,
@@ -1156,22 +1131,17 @@ pub(crate) fn build_route_a_control_time_claims(
         decode_col(decode.funct7_bit[6])?,
     ];
     let control_weights = control_next_pc_control_weight_vector(r_cycle, 5);
-    let control_oracle = FormulaOracleSparseTime::new(
-        control_sparse,
-        5,
-        r_cycle,
-        move |vals: &[K]| {
-            let residuals = control_next_pc_control_residuals(
-                vals[0], vals[1], vals[2], vals[3], vals[4], vals[10], vals[11], vals[12], vals[13], vals[7], vals[8],
-                vals[9], vals[5], vals[6],
-            );
-            let mut weighted = K::ZERO;
-            for (r, w) in residuals.iter().zip(control_weights.iter()) {
-                weighted += *w * *r;
-            }
-            weighted
-        },
-    );
+    let control_oracle = FormulaOracleSparseTime::new(control_sparse, 5, r_cycle, move |vals: &[K]| {
+        let residuals = control_next_pc_control_residuals(
+            vals[0], vals[1], vals[2], vals[3], vals[4], vals[10], vals[11], vals[12], vals[13], vals[7], vals[8],
+            vals[9], vals[5], vals[6],
+        );
+        let mut weighted = K::ZERO;
+        for (r, w) in residuals.iter().zip(control_weights.iter()) {
+            weighted += *w * *r;
+        }
+        weighted
+    });
 
     let branch_sparse = vec![
         decode_col(decode.op_branch)?,
@@ -1183,20 +1153,15 @@ pub(crate) fn build_route_a_control_time_claims(
         decode_col(decode.funct3_is[7])?,
     ];
     let branch_weights = control_branch_semantics_weight_vector(r_cycle, 3);
-    let branch_oracle = FormulaOracleSparseTime::new(
-        branch_sparse,
-        4,
-        r_cycle,
-        move |vals: &[K]| {
-            let residuals =
-                control_branch_semantics_residuals(vals[0], vals[1], vals[2], vals[3], vals[4], vals[5], vals[6]);
-            let mut weighted = K::ZERO;
-            for (r, w) in residuals.iter().zip(branch_weights.iter()) {
-                weighted += *w * *r;
-            }
-            weighted
-        },
-    );
+    let branch_oracle = FormulaOracleSparseTime::new(branch_sparse, 4, r_cycle, move |vals: &[K]| {
+        let residuals =
+            control_branch_semantics_residuals(vals[0], vals[1], vals[2], vals[3], vals[4], vals[5], vals[6]);
+        let mut weighted = K::ZERO;
+        for (r, w) in residuals.iter().zip(branch_weights.iter()) {
+            weighted += *w * *r;
+        }
+        weighted
+    });
 
     let mut write_sparse = vec![
         main_col(trace.rd_val)?,
@@ -1220,43 +1185,38 @@ pub(crate) fn build_route_a_control_time_claims(
         write_sparse.push(decode_col(col_id)?);
     }
     let write_weights = control_writeback_weight_vector(r_cycle, 4);
-    let write_oracle = FormulaOracleSparseTime::new(
-        write_sparse,
-        5,
-        r_cycle,
-        move |vals: &[K]| {
-            let rd_val = vals[0];
-            let pc_before = vals[1];
-            let op_lui = vals[2];
-            let op_auipc = vals[3];
-            let op_jal = vals[4];
-            let op_jalr = vals[5];
-            let rd_is_zero = vals[6];
-            let op_lui_write = op_lui * (K::ONE - rd_is_zero);
-            let op_auipc_write = op_auipc * (K::ONE - rd_is_zero);
-            let op_jal_write = op_jal * (K::ONE - rd_is_zero);
-            let op_jalr_write = op_jalr * (K::ONE - rd_is_zero);
-            let funct3_bits = [vals[7], vals[8], vals[9]];
-            let rs1_bits = [vals[10], vals[11], vals[12], vals[13], vals[14]];
-            let rs2_bits = [vals[15], vals[16], vals[17], vals[18], vals[19]];
-            let funct7_bits = [vals[20], vals[21], vals[22], vals[23], vals[24], vals[25], vals[26]];
-            let imm_u = control_imm_u_from_bits(funct3_bits, rs1_bits, rs2_bits, funct7_bits);
-            let residuals = control_writeback_residuals(
-                rd_val,
-                pc_before,
-                imm_u,
-                op_lui_write,
-                op_auipc_write,
-                op_jal_write,
-                op_jalr_write,
-            );
-            let mut weighted = K::ZERO;
-            for (r, w) in residuals.iter().zip(write_weights.iter()) {
-                weighted += *w * *r;
-            }
-            weighted
-        },
-    );
+    let write_oracle = FormulaOracleSparseTime::new(write_sparse, 5, r_cycle, move |vals: &[K]| {
+        let rd_val = vals[0];
+        let pc_before = vals[1];
+        let op_lui = vals[2];
+        let op_auipc = vals[3];
+        let op_jal = vals[4];
+        let op_jalr = vals[5];
+        let rd_is_zero = vals[6];
+        let op_lui_write = op_lui * (K::ONE - rd_is_zero);
+        let op_auipc_write = op_auipc * (K::ONE - rd_is_zero);
+        let op_jal_write = op_jal * (K::ONE - rd_is_zero);
+        let op_jalr_write = op_jalr * (K::ONE - rd_is_zero);
+        let funct3_bits = [vals[7], vals[8], vals[9]];
+        let rs1_bits = [vals[10], vals[11], vals[12], vals[13], vals[14]];
+        let rs2_bits = [vals[15], vals[16], vals[17], vals[18], vals[19]];
+        let funct7_bits = [vals[20], vals[21], vals[22], vals[23], vals[24], vals[25], vals[26]];
+        let imm_u = control_imm_u_from_bits(funct3_bits, rs1_bits, rs2_bits, funct7_bits);
+        let residuals = control_writeback_residuals(
+            rd_val,
+            pc_before,
+            imm_u,
+            op_lui_write,
+            op_auipc_write,
+            op_jal_write,
+            op_jalr_write,
+        );
+        let mut weighted = K::ZERO;
+        for (r, w) in residuals.iter().zip(write_weights.iter()) {
+            weighted += *w * *r;
+        }
+        weighted
+    });
 
     Ok((
         Some((Box::new(linear_oracle), K::ZERO)),

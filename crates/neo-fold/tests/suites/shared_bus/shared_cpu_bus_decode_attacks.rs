@@ -99,22 +99,21 @@ fn tamper_decode_opening_scalar(proof: &mut ShardProof, decode_col: usize) {
         .openings
         .iter()
         .position(|opening| opening.point == wp_point && opening.col_ids.iter().any(|&c| c == decode_col))
-        .or_else(|| step.fold.openings.iter().position(|opening| opening.point == wp_point))
+        .or_else(|| {
+            step.fold
+                .openings
+                .iter()
+                .position(|opening| opening.point == wp_point)
+        })
         .expect("decode openings must be present in WP named openings");
     let wp_open = &mut step.fold.openings[wp_open_idx];
-    assert!(
-        !wp_open.evals.is_empty(),
-        "WP named opening evals must be non-empty"
-    );
+    assert!(!wp_open.evals.is_empty(), "WP named opening evals must be non-empty");
     let open_idx = wp_open
         .col_ids
         .iter()
         .position(|&c| c == decode_col)
         .unwrap_or(0);
-    assert!(
-        open_idx < wp_open.evals.len(),
-        "decode opening index must be in-bounds"
-    );
+    assert!(open_idx < wp_open.evals.len(), "decode opening index must be in-bounds");
     wp_open.evals[open_idx] += K::ONE;
 }
 

@@ -225,7 +225,7 @@ where
                     eq_beta_m_x[x_idx] = e0 + e1 * x;
                 }
 
-                    for (wit_idx, tbl) in self.digits_tables.iter().enumerate() {
+                for (wit_idx, tbl) in self.digits_tables.iter().enumerate() {
                     let lo = &tbl[idx];
                     let hi = &tbl[idx + 1];
                     let weights = &self.weights[wit_idx];
@@ -702,7 +702,7 @@ where
         if self.round_idx < self.ell_m {
             self.col_chals.push(r_i);
             Self::fold_table_inplace(&mut self.eq_beta_m_tbl, r_i);
-        for tbl in self.digits_tables.iter_mut() {
+            for tbl in self.digits_tables.iter_mut() {
                 Self::fold_digits_table_inplace(tbl, r_i);
             }
             self.cur_len /= 2;

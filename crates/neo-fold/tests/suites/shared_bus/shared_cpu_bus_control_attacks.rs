@@ -97,13 +97,15 @@ fn tamper_named_wp_opening_scalar(proof: &mut ShardProof, target_col: usize) {
         .openings
         .iter()
         .position(|opening| opening.point == wp_point && opening.col_ids.iter().any(|&c| c == target_col))
-        .or_else(|| step.fold.openings.iter().position(|opening| opening.point == wp_point))
+        .or_else(|| {
+            step.fold
+                .openings
+                .iter()
+                .position(|opening| opening.point == wp_point)
+        })
         .expect("control stage openings must be present in WP named openings");
     let wp_open = &mut step.fold.openings[wp_open_idx];
-    assert!(
-        !wp_open.evals.is_empty(),
-        "WP named opening evals must be non-empty"
-    );
+    assert!(!wp_open.evals.is_empty(), "WP named opening evals must be non-empty");
     let open_idx = wp_open
         .col_ids
         .iter()

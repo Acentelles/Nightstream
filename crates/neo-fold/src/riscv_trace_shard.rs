@@ -22,11 +22,11 @@ use crate::PiCcsError;
 use neo_ajtai::AjtaiSModule;
 use neo_ccs::CcsStructure;
 use neo_math::{D, F, K};
-use neo_memory::output_check::ProgramIO;
-use neo_memory::plain::{LutTable, PlainMemLayout};
 use neo_memory::cpu::bus_layout::{
     build_bus_layout_for_instances_with_shout_shapes_and_twist_lanes, ShoutInstanceShape,
 };
+use neo_memory::output_check::ProgramIO;
+use neo_memory::plain::{LutTable, PlainMemLayout};
 use neo_memory::riscv::ccs::{
     build_rv32_trace_wiring_ccs, rv32_trace_ccs_witness_from_exec_table, Rv32TraceCcsLayout, TraceShoutBusSpec,
 };
@@ -1408,7 +1408,11 @@ impl Rv32TraceWiring {
                     ram_d,
                     final_ram_state_dense(&exec, &ram_init_map, ram_k)?,
                 ),
-                OutputTarget::Reg => (reg_ob_mem_idx, reg_d, final_reg_state_dense(&exec, &reg_init_map, reg_k)?),
+                OutputTarget::Reg => (
+                    reg_ob_mem_idx,
+                    reg_d,
+                    final_reg_state_dense(&exec, &reg_init_map, reg_k)?,
+                ),
             };
             let ob_cfg = OutputBindingConfig::new(ob_num_bits, output_claims).with_mem_idx(ob_mem_idx);
             let proof = session.fold_and_prove_with_output_binding_simple(&ccs, &ob_cfg, &final_memory_state)?;

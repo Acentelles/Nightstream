@@ -24,8 +24,8 @@ pub use crate::engines::optimized_engine::PiCcsProof;
 
 // Re-export common utilities for convenience (single import path for users)
 pub use crate::common::{
-    ct_from_y_ring,
     compute_y_from_Z_and_r,
+    ct_from_y_ring,
     format_ext,
     left_mul_acc,
     rot_rhos_from_mats,
@@ -34,7 +34,7 @@ pub use crate::common::{
     sample_rot_rhos_n_typed,
     split_b_matrix_k,
     split_b_matrix_k_with_nonzero_flags,
-    RotRho, // typed, validated rotation-matrix challenge
+    RotRho,  // typed, validated rotation-matrix challenge
     RotRing, // Ring metadata for rotation matrix sampling
 };
 
@@ -171,11 +171,7 @@ fn validate_ce_claim_shape(label: &str, s: &CcsStructure<F>, ce: &CeClaim<Cmt, F
     Ok(())
 }
 
-fn validate_ce_claims_shape(
-    label: &str,
-    s: &CcsStructure<F>,
-    claims: &[CeClaim<Cmt, F, K>],
-) -> Result<(), PiCcsError> {
+fn validate_ce_claims_shape(label: &str, s: &CcsStructure<F>, claims: &[CeClaim<Cmt, F, K>]) -> Result<(), PiCcsError> {
     for (idx, claim) in claims.iter().enumerate() {
         validate_ce_claim_shape(&format!("{label}[{idx}]"), s, claim)?;
     }
@@ -201,17 +197,10 @@ fn validate_dec_boundary_inputs(
         )));
     }
     if 1usize.checked_shl(ell_d as u32).is_none() {
-        return Err(PiCcsError::InvalidInput(format!(
-            "DEC ell_d overflow: ell_d={ell_d}"
-        )));
+        return Err(PiCcsError::InvalidInput(format!("DEC ell_d overflow: ell_d={ell_d}")));
     }
     for (idx, z) in z_split.iter().enumerate() {
-        crate::common::validate_packed_witness_nc_range(
-            params,
-            z,
-            s.m,
-            &format!("dec: Z_split[{idx}]"),
-        )?;
+        crate::common::validate_packed_witness_nc_range(params, z, s.m, &format!("dec: Z_split[{idx}]"))?;
     }
     Ok(())
 }
@@ -276,12 +265,7 @@ pub fn prove<L: neo_ccs::traits::SModuleHomomorphism<F, Cmt>>(
         )?;
     }
     for (idx, z) in me_witnesses.iter().enumerate() {
-        crate::common::validate_packed_witness_nc_range(
-            params,
-            z,
-            s.m,
-            &format!("prove: me_witnesses[{idx}]"),
-        )?;
+        crate::common::validate_packed_witness_nc_range(params, z, s.m, &format!("prove: me_witnesses[{idx}]"))?;
     }
     match mode {
         FoldingMode::Optimized => {
@@ -902,10 +886,7 @@ where
     }
 
     if s.m == 0 {
-        return fail(format!(
-            "SuperNeo-only mode requires m > 0 (got m={})",
-            s.m
-        ));
+        return fail(format!("SuperNeo-only mode requires m > 0 (got m={})", s.m));
     }
     let k = children.len();
     if k == 0 {
@@ -928,10 +909,7 @@ where
     }
 
     if parent.m_in > s.m {
-        return fail(format!(
-            "parent m_in={} exceeds CCS width m={}",
-            parent.m_in, s.m
-        ));
+        return fail(format!("parent m_in={} exceeds CCS width m={}", parent.m_in, s.m));
     }
     if parent.X.rows() != D || parent.X.cols() != parent.m_in {
         eprintln!(

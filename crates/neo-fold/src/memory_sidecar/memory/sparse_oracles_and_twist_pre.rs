@@ -224,12 +224,7 @@ impl<EF> FormulaOracleSparseTime<EF>
 where
     EF: Fn(&[K]) -> K,
 {
-    pub(crate) fn new(
-        cols: Vec<SparseIdxVec<K>>,
-        degree_bound: usize,
-        r_cycle: &[K],
-        eval_fn: EF,
-    ) -> Self {
+    pub(crate) fn new(cols: Vec<SparseIdxVec<K>>, degree_bound: usize, r_cycle: &[K], eval_fn: EF) -> Self {
         let col_count = cols.len();
         let support = sparse_union_support(&cols);
         Self {

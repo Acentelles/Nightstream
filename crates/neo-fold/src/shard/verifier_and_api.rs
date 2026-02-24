@@ -664,20 +664,19 @@ where
         let crate::memory_sidecar::route_a_time::RouteABatchedTimeVerifyOutput {
             r_time: route_r_time,
             final_values,
-        } =
-            crate::memory_sidecar::route_a_time::verify_route_a_batched_time(
-                tr,
-                step_idx,
-                ell_t,
-                step,
-                &step_proof.batched_time,
-                wb_enabled,
-                wp_enabled,
-                decode_stage_enabled,
-                width_stage_enabled,
-                control_stage_enabled,
-                ob_inc_total_degree_bound,
-            )?;
+        } = crate::memory_sidecar::route_a_time::verify_route_a_batched_time(
+            tr,
+            step_idx,
+            ell_t,
+            step,
+            &step_proof.batched_time,
+            wb_enabled,
+            wp_enabled,
+            decode_stage_enabled,
+            width_stage_enabled,
+            control_stage_enabled,
+            ob_inc_total_degree_bound,
+        )?;
         if route_r_time.len() != ell_t {
             return Err(PiCcsError::ProtocolError(format!(
                 "step {}: Route-A r_time length mismatch (got {}, expected ell_t={ell_t})",
@@ -718,13 +717,7 @@ where
             )));
         }
 
-        validate_time_sumcheck_metadata(
-            step_idx,
-            step_proof,
-            &ccs_r_time,
-            &route_r_time,
-            control_stage_enabled,
-        )?;
+        validate_time_sumcheck_metadata(step_idx, step_proof, &ccs_r_time, &route_r_time, control_stage_enabled)?;
 
         let expected_k = accumulator.len() + 1;
         if step_proof.fold.ccs_out.len() != expected_k {
@@ -1308,9 +1301,10 @@ where
             let stage8_params = stage8_time_decomp_params(params)?;
             tr.append_message(b"fold/stage8_lane_start", &(step_idx as u64).to_le_bytes());
             tr.append_message(b"fold/stage8_lane_group_idx", &0u64.to_le_bytes());
-            let proof_stage8 = step_proof.stage8_fold.first().ok_or_else(|| {
-                PiCcsError::ProtocolError(format!("step {}: missing Stage-8 fold proof", idx))
-            })?;
+            let proof_stage8 = step_proof
+                .stage8_fold
+                .first()
+                .ok_or_else(|| PiCcsError::ProtocolError(format!("step {}: missing Stage-8 fold proof", idx)))?;
             verify_rlc_dec_lane(
                 RlcLane::Val,
                 tr,
@@ -1325,9 +1319,7 @@ where
                 &proof_stage8.rlc_parent,
                 &proof_stage8.dec_children,
             )
-            .map_err(|e| {
-                PiCcsError::ProtocolError(format!("step {} stage8_fold verify failed: {e:?}", idx))
-            })?;
+            .map_err(|e| PiCcsError::ProtocolError(format!("step {} stage8_fold verify failed: {e:?}", idx)))?;
             val_lane_obligations.extend_from_slice(&proof_stage8.dec_children);
         }
 

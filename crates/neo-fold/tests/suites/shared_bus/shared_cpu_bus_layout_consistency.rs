@@ -36,10 +36,7 @@ fn opening_eval_and_point_for_col(step: &StepProof, logical_col: usize) -> (K, V
         .iter()
         .find(|opening| opening.col_ids.iter().any(|&c| c == logical_col))
         .expect("expected named opening carrying requested logical bus col");
-    assert!(
-        !opening.evals.is_empty(),
-        "named opening evals must be non-empty"
-    );
+    assert!(!opening.evals.is_empty(), "named opening evals must be non-empty");
     let idx = opening
         .col_ids
         .iter()

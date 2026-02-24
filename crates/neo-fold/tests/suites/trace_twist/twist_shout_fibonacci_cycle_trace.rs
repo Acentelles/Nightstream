@@ -327,12 +327,13 @@ fn twist_shout_fibonacci_cycle_trace() {
     let logical_fold_steps: usize = run
         .steps
         .iter()
-        .map(|step| step.compressed_substeps.as_ref().map_or(1, |subs| subs.len()))
+        .map(|step| {
+            step.compressed_substeps
+                .as_ref()
+                .map_or(1, |subs| subs.len())
+        })
         .sum();
-    assert!(
-        logical_fold_steps >= 1,
-        "expected at least one logical folding step"
-    );
+    assert!(logical_fold_steps >= 1, "expected at least one logical folding step");
 
     if timing_enabled() {
         println!(

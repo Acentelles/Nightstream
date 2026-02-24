@@ -1039,9 +1039,9 @@ where
                 // val lane so we don't pay an extra full split+commit.
                 if claim_idx == 0 {
                     if let Some(child_cs) = shared_val_lane_child_cs.as_ref() {
-                        let n_lane = 1usize.checked_shl(me.r.len() as u32).ok_or_else(|| {
-                            PiCcsError::InvalidInput("val-lane r dimension overflow".into())
-                        })?;
+                        let n_lane = 1usize
+                            .checked_shl(me.r.len() as u32)
+                            .ok_or_else(|| PiCcsError::InvalidInput("val-lane r dimension overflow".into()))?;
                         let mut s_lane = s.clone();
                         s_lane.n = n_lane;
                         bind_rlc_inputs(tr, RlcLane::Val, step_idx, core::slice::from_ref(me))?;
@@ -1159,7 +1159,9 @@ where
                                     // metadata-only: carry them on child 0 and keep sibling children zero.
                                     for col_id in 0..cpu_bus.bus_cols {
                                         if child_idx == 0 {
-                                            child.y_ring.push(rlc_parent.y_ring[core_t + col_id].clone());
+                                            child
+                                                .y_ring
+                                                .push(rlc_parent.y_ring[core_t + col_id].clone());
                                             child.ct.push(rlc_parent.ct[core_t + col_id]);
                                         } else {
                                             child.y_ring.push(vec![K::ZERO; y_pad]);
@@ -1273,9 +1275,9 @@ where
                 .ok_or_else(|| PiCcsError::ProtocolError("WB fold missing shared DEC commitments".into()))?;
             tr.append_message(b"fold/wb_lane_start", &(step_idx as u64).to_le_bytes());
             for (claim_idx, me) in mem_proof.wb_me_claims.iter().enumerate() {
-                let n_lane = 1usize.checked_shl(me.r.len() as u32).ok_or_else(|| {
-                    PiCcsError::InvalidInput("wb-lane r dimension overflow".into())
-                })?;
+                let n_lane = 1usize
+                    .checked_shl(me.r.len() as u32)
+                    .ok_or_else(|| PiCcsError::InvalidInput("wb-lane r dimension overflow".into()))?;
                 let mut s_lane = s.clone();
                 s_lane.n = n_lane;
                 tr.append_message(b"fold/wb_lane_claim_idx", &(claim_idx as u64).to_le_bytes());
@@ -1348,10 +1350,10 @@ where
                     child.ct.truncate(core_t);
                     for open_idx in 0..wb_cols.len() {
                         if child_idx == 0 {
-                            child.y_ring.push(rlc_parent.y_ring[core_t + open_idx].clone());
                             child
-                                .ct
-                                .push(rlc_parent.ct[core_t + open_idx]);
+                                .y_ring
+                                .push(rlc_parent.y_ring[core_t + open_idx].clone());
+                            child.ct.push(rlc_parent.ct[core_t + open_idx]);
                         } else {
                             child.y_ring.push(vec![K::ZERO; y_pad]);
                             child.ct.push(K::ZERO);
@@ -1465,9 +1467,9 @@ where
                 .ok_or_else(|| PiCcsError::ProtocolError("WP fold missing shared DEC commitments".into()))?;
             tr.append_message(b"fold/wp_lane_start", &(step_idx as u64).to_le_bytes());
             for (claim_idx, me) in mem_proof.wp_me_claims.iter().enumerate() {
-                let n_lane = 1usize.checked_shl(me.r.len() as u32).ok_or_else(|| {
-                    PiCcsError::InvalidInput("wp-lane r dimension overflow".into())
-                })?;
+                let n_lane = 1usize
+                    .checked_shl(me.r.len() as u32)
+                    .ok_or_else(|| PiCcsError::InvalidInput("wp-lane r dimension overflow".into()))?;
                 let mut s_lane = s.clone();
                 s_lane.n = n_lane;
                 tr.append_message(b"fold/wp_lane_claim_idx", &(claim_idx as u64).to_le_bytes());
@@ -1540,10 +1542,10 @@ where
                     child.ct.truncate(core_t);
                     for open_idx in 0..wp_open_cols.len() {
                         if child_idx == 0 {
-                            child.y_ring.push(rlc_parent.y_ring[core_t + open_idx].clone());
                             child
-                                .ct
-                                .push(rlc_parent.ct[core_t + open_idx]);
+                                .y_ring
+                                .push(rlc_parent.y_ring[core_t + open_idx].clone());
+                            child.ct.push(rlc_parent.ct[core_t + open_idx]);
                         } else {
                             child.y_ring.push(vec![K::ZERO; y_pad]);
                             child.ct.push(K::ZERO);
@@ -1932,112 +1934,116 @@ where
             }
             out
         };
-        let (opening_manifest, opening_reduction, opening_unification, joint_opening_lane, stage8_fold) = if opening_proofs.is_empty() {
-            if !fold_openings.is_empty() {
-                return Err(PiCcsError::ProtocolError(
-                    "time/opening: missing opening proofs for non-empty named openings".into(),
-                ));
-            }
-            (
-                crate::shard_proof_types::OpeningClaimManifest::default(),
-                crate::shard_proof_types::OpeningReductionProof::default(),
-                crate::shard_proof_types::OpeningUnificationProof::default(),
-                crate::shard_proof_types::JointOpeningLaneProof::default(),
-                Vec::new(),
-            )
-        } else {
-            let opening_manifest = crate::time_opening::manifest::build_opening_claim_manifest(
-                &fold_openings,
-                &opening_proofs,
-                &step.time_columns.col_ids,
-                time_cpu_commitments.len(),
-            )?;
-            crate::time_opening::manifest::bind_opening_claim_manifest(tr, step_idx, &opening_manifest);
-            let opening_batch_coeffs =
-                bind_time_opening_batches_and_sample_coeffs(tr, params, step_idx, &opening_proofs)?;
-            let opening_reduction = crate::time_opening::reduction::build_opening_reduction(&opening_manifest)?;
-            let opening_unification =
-                crate::time_opening::reduction::prove_opening_unification_sumcheck(tr, step_idx, &opening_reduction)?;
-            let (joint_opening_lane, stage8_joint_wits) =
-                crate::time_opening::joint_lane::prove_joint_opening_lane_with_witnesses(
-                    tr,
-                    params,
-                    step_idx,
-                    step,
-                    &cpu_bus,
-                    &time_cpu_commitments,
-                    &time_mem_commitments,
-                    &step.time_columns.col_ids,
-                    &opening_proofs,
-                    &opening_manifest.digest,
-                    &opening_reduction,
-                    &opening_unification,
-                    &opening_batch_coeffs,
-                )?;
-            let mut stage8_fold: Vec<RlcDecProof> = Vec::with_capacity(1);
-            let stage8_params = stage8_time_decomp_params(params)?;
-            let stage8_plan = crate::time_opening::joint_lane::build_stage8_fold_lane_plan(
-                &joint_opening_lane,
-                &opening_unification,
-                step.time_columns.t,
-            )?;
-            if let Some(plan) = stage8_plan {
-                if stage8_joint_wits.len() != plan.claims.len() {
-                    return Err(PiCcsError::ProtocolError(format!(
-                        "stage8 fold: witness/claim count mismatch (wits={}, claims={})",
-                        stage8_joint_wits.len(),
-                        plan.claims.len()
-                    )));
+        let (opening_manifest, opening_reduction, opening_unification, joint_opening_lane, stage8_fold) =
+            if opening_proofs.is_empty() {
+                if !fold_openings.is_empty() {
+                    return Err(PiCcsError::ProtocolError(
+                        "time/opening: missing opening proofs for non-empty named openings".into(),
+                    ));
                 }
-                if !has_global_pp_for_dims(D, plan.ccs.m) {
-                    return Err(PiCcsError::InvalidInput(format!(
+                (
+                    crate::shard_proof_types::OpeningClaimManifest::default(),
+                    crate::shard_proof_types::OpeningReductionProof::default(),
+                    crate::shard_proof_types::OpeningUnificationProof::default(),
+                    crate::shard_proof_types::JointOpeningLaneProof::default(),
+                    Vec::new(),
+                )
+            } else {
+                let opening_manifest = crate::time_opening::manifest::build_opening_claim_manifest(
+                    &fold_openings,
+                    &opening_proofs,
+                    &step.time_columns.col_ids,
+                    time_cpu_commitments.len(),
+                )?;
+                crate::time_opening::manifest::bind_opening_claim_manifest(tr, step_idx, &opening_manifest);
+                let opening_batch_coeffs =
+                    bind_time_opening_batches_and_sample_coeffs(tr, params, step_idx, &opening_proofs)?;
+                let opening_reduction = crate::time_opening::reduction::build_opening_reduction(&opening_manifest)?;
+                let opening_unification = crate::time_opening::reduction::prove_opening_unification_sumcheck(
+                    tr,
+                    step_idx,
+                    &opening_reduction,
+                )?;
+                let (joint_opening_lane, stage8_joint_wits) =
+                    crate::time_opening::joint_lane::prove_joint_opening_lane_with_witnesses(
+                        tr,
+                        params,
+                        step_idx,
+                        step,
+                        &cpu_bus,
+                        &time_cpu_commitments,
+                        &time_mem_commitments,
+                        &step.time_columns.col_ids,
+                        &opening_proofs,
+                        &opening_manifest.digest,
+                        &opening_reduction,
+                        &opening_unification,
+                        &opening_batch_coeffs,
+                    )?;
+                let mut stage8_fold: Vec<RlcDecProof> = Vec::with_capacity(1);
+                let stage8_params = stage8_time_decomp_params(params)?;
+                let stage8_plan = crate::time_opening::joint_lane::build_stage8_fold_lane_plan(
+                    &joint_opening_lane,
+                    &opening_unification,
+                    step.time_columns.t,
+                )?;
+                if let Some(plan) = stage8_plan {
+                    if stage8_joint_wits.len() != plan.claims.len() {
+                        return Err(PiCcsError::ProtocolError(format!(
+                            "stage8 fold: witness/claim count mismatch (wits={}, claims={})",
+                            stage8_joint_wits.len(),
+                            plan.claims.len()
+                        )));
+                    }
+                    if !has_global_pp_for_dims(D, plan.ccs.m) {
+                        return Err(PiCcsError::InvalidInput(format!(
                         "stage8 fold: missing global PP for (D,m)=({D},{}); PP must be pre-registered with canonical seed",
                         plan.ccs.m
                     )));
+                    }
+                    let stage8_committer =
+                        neo_ajtai::AjtaiSModule::from_global_for_dims(D, plan.ccs.m).map_err(|e| {
+                            PiCcsError::InvalidInput(format!(
+                                "stage8 fold: missing global committer for (D,m)=({D},{}): {e}",
+                                plan.ccs.m
+                            ))
+                        })?;
+                    tr.append_message(b"fold/stage8_lane_start", &(step_idx as u64).to_le_bytes());
+                    tr.append_message(b"fold/stage8_lane_group_idx", &0u64.to_le_bytes());
+                    let wit_refs: Vec<&Mat<F>> = stage8_joint_wits.iter().collect();
+                    let (stage8_proof, _stage8_wits) = prove_rlc_dec_lane(
+                        &mode,
+                        RlcLane::Val,
+                        tr,
+                        &stage8_params,
+                        &plan.ccs,
+                        None,
+                        None,
+                        &ring,
+                        ell_d,
+                        k_dec,
+                        step_idx,
+                        None,
+                        plan.claims.as_slice(),
+                        wit_refs.as_slice(),
+                        false,
+                        &stage8_committer,
+                        mixers,
+                    )?;
+                    stage8_fold.push(stage8_proof);
+                } else if !stage8_joint_wits.is_empty() {
+                    return Err(PiCcsError::ProtocolError(
+                        "stage8 fold: missing lane plan for non-empty stage8 witnesses".into(),
+                    ));
                 }
-                let stage8_committer =
-                    neo_ajtai::AjtaiSModule::from_global_for_dims(D, plan.ccs.m).map_err(|e| {
-                        PiCcsError::InvalidInput(format!(
-                            "stage8 fold: missing global committer for (D,m)=({D},{}): {e}",
-                            plan.ccs.m
-                        ))
-                    })?;
-                tr.append_message(b"fold/stage8_lane_start", &(step_idx as u64).to_le_bytes());
-                tr.append_message(b"fold/stage8_lane_group_idx", &0u64.to_le_bytes());
-                let wit_refs: Vec<&Mat<F>> = stage8_joint_wits.iter().collect();
-                let (stage8_proof, _stage8_wits) = prove_rlc_dec_lane(
-                    &mode,
-                    RlcLane::Val,
-                    tr,
-                    &stage8_params,
-                    &plan.ccs,
-                    None,
-                    None,
-                    &ring,
-                    ell_d,
-                    k_dec,
-                    step_idx,
-                    None,
-                    plan.claims.as_slice(),
-                    wit_refs.as_slice(),
-                    false,
-                    &stage8_committer,
-                    mixers,
-                )?;
-                stage8_fold.push(stage8_proof);
-            } else if !stage8_joint_wits.is_empty() {
-                return Err(PiCcsError::ProtocolError(
-                    "stage8 fold: missing lane plan for non-empty stage8 witnesses".into(),
-                ));
-            }
-            (
-                opening_manifest,
-                opening_reduction,
-                opening_unification,
-                joint_opening_lane,
-                stage8_fold,
-            )
-        };
+                (
+                    opening_manifest,
+                    opening_reduction,
+                    opening_unification,
+                    joint_opening_lane,
+                    stage8_fold,
+                )
+            };
         let cpu_sumcheck = cpu_sumcheck_from_ccs(ccs_initial_sum, ccs_time_rounds_meta, &ccs_time_chals_meta);
         let shift_sumcheck = shift_sumcheck_from_batched_time(&batched_time, &r_time, control_required)?;
 

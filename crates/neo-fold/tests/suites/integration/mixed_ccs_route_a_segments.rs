@@ -26,8 +26,7 @@ fn build_ccs_only_step(fx: &fixtures::ShardFixture, salt: u64) -> StepWitnessBun
         .collect();
     let x = z[..m_in].to_vec();
     let w = z[m_in..].to_vec();
-    let Z = neo_memory::ajtai::encode_vector_for_ccs_m(&fx.params, z.len(), &z)
-        .expect("encode witness for CCS width");
+    let Z = neo_memory::ajtai::encode_vector_for_ccs_m(&fx.params, z.len(), &z).expect("encode witness for CCS width");
     let c = fx.l.commit(&Z);
     StepWitnessBundle::from((CcsClaim { c, x, m_in }, CcsWitness { w, Z }))
 }
@@ -188,10 +187,7 @@ fn mixed_verify_rejects_tampered_route_a_kind_in_segment_meta() {
     )
     .expect_err("tampered route-a kind must fail");
 
-    assert!(
-        err.to_string().contains("marked CcsOnly"),
-        "unexpected error: {err}"
-    );
+    assert!(err.to_string().contains("marked CcsOnly"), "unexpected error: {err}");
 }
 
 #[test]
@@ -234,10 +230,7 @@ fn mixed_verify_rejects_truncated_segment_meta() {
     )
     .expect_err("truncated segment_meta must fail");
 
-    assert!(
-        err.to_string().contains("consumed"),
-        "unexpected error: {err}"
-    );
+    assert!(err.to_string().contains("consumed"), "unexpected error: {err}");
 }
 
 #[test]
@@ -285,7 +278,8 @@ fn mixed_verify_rejects_tampered_route_a_proof_steps() {
     .expect_err("tampered route-a proof_steps must fail");
 
     assert!(
-        err.to_string().contains("proof too short for segment_meta entry"),
+        err.to_string()
+            .contains("proof too short for segment_meta entry"),
         "unexpected error: {err}"
     );
 }

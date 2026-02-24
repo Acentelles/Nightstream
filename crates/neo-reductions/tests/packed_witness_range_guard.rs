@@ -32,13 +32,7 @@ fn prove_rejects_out_of_range_packed_witness_early() {
     let params = NeoParams::goldilocks_auto_r1cs_ccs(n).expect("params");
 
     let mut rng = ChaCha8Rng::seed_from_u64(77);
-    let pp = ajtai_setup(
-        &mut rng,
-        D,
-        params.kappa as usize,
-        ccs.m / D,
-    )
-    .expect("Ajtai setup");
+    let pp = ajtai_setup(&mut rng, D, params.kappa as usize, ccs.m / D).expect("Ajtai setup");
     let l = AjtaiSModule::new(Arc::new(pp));
 
     // Packed layout is D x (m/D); fill with values outside the DEC-compatible bound |x| < b^k_rho.
@@ -49,11 +43,7 @@ fn prove_rejects_out_of_range_packed_witness_early() {
     let w: Vec<F> = (0..ccs.m).map(|c| Z[(c % D, c / D)]).collect();
 
     let c = l.commit(&Z);
-    let mcs_list = vec![CcsClaim {
-        c,
-        x: vec![],
-        m_in: 0,
-    }];
+    let mcs_list = vec![CcsClaim { c, x: vec![], m_in: 0 }];
     let mcs_witnesses = vec![CcsWitness { w, Z }];
 
     let mut tr = Poseidon2Transcript::new(b"neo.reductions/packed_range_guard");
@@ -70,10 +60,7 @@ fn prove_rejects_out_of_range_packed_witness_early() {
     )
     .expect_err("prove must reject packed witnesses that violate NC range");
 
-    assert!(
-        err.to_string().contains("not representable"),
-        "unexpected error: {err}"
-    );
+    assert!(err.to_string().contains("not representable"), "unexpected error: {err}");
 }
 
 #[test]
@@ -95,11 +82,7 @@ fn prove_accepts_representable_packed_witness_values() {
     let w: Vec<F> = (0..ccs.m).map(|c| Z[(c % D, c / D)]).collect();
 
     let c = l.commit(&Z);
-    let mcs_list = vec![CcsClaim {
-        c,
-        x: vec![],
-        m_in: 0,
-    }];
+    let mcs_list = vec![CcsClaim { c, x: vec![], m_in: 0 }];
     let mcs_witnesses = vec![CcsWitness { w, Z }];
 
     let mut tr_p = Poseidon2Transcript::new(b"neo.reductions/packed_range_accept");

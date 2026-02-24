@@ -420,8 +420,7 @@ pub fn phi_coeffs_from_params(params: &NeoParams) -> Result<&'static [i32], PiCc
     match params.eta {
         81 => Ok(&PHI_GL),
         128 => Err(PiCcsError::InvalidInput(
-            "Π_RLC: eta=128 (Almost-Goldilocks) is disabled while D=54; enable only with a full D=64 migration"
-                .into(),
+            "Π_RLC: eta=128 (Almost-Goldilocks) is disabled while D=54; enable only with a full D=64 migration".into(),
         )),
         _ => Err(PiCcsError::InvalidInput(format!(
             "Π_RLC: unsupported cyclotomic eta={} for strict rotation-matrix validation",
@@ -436,11 +435,7 @@ pub fn phi_coeffs_from_params(params: &NeoParams) -> Result<&'static [i32], PiCc
 /// - col_{j+1}[0] = col_j[d-1] * (-c_0)
 /// - col_{j+1}[r] = col_j[r-1] + col_j[d-1] * (-c_r), r >= 1
 /// where `phi_coeffs = [c_0, ..., c_{d-1}]`.
-pub fn validate_rho_is_rotation_matrix<Ff>(
-    rho: &Mat<Ff>,
-    phi_coeffs: &[i32],
-    label: &str,
-) -> Result<(), PiCcsError>
+pub fn validate_rho_is_rotation_matrix<Ff>(rho: &Mat<Ff>, phi_coeffs: &[i32], label: &str) -> Result<(), PiCcsError>
 where
     Ff: Field + PrimeCharacteristicRing + Copy,
 {
@@ -804,13 +799,7 @@ where
 
 /// Layout-aware `Z[rho, col]` access in the logical `D×expected_m` view.
 #[inline]
-pub fn witness_mat_get_f<Ff>(
-    Z: &Mat<Ff>,
-    layout: WitnessMatLayout,
-    expected_m: usize,
-    rho: usize,
-    col: usize,
-) -> Ff
+pub fn witness_mat_get_f<Ff>(Z: &Mat<Ff>, layout: WitnessMatLayout, expected_m: usize, rho: usize, col: usize) -> Ff
 where
     Ff: Field + PrimeCharacteristicRing + Copy,
 {
@@ -833,13 +822,7 @@ where
 
 /// Layout-aware `Z[rho, col]` lifted to `K`.
 #[inline]
-pub fn witness_mat_get_k<Ff>(
-    Z: &Mat<Ff>,
-    layout: WitnessMatLayout,
-    expected_m: usize,
-    rho: usize,
-    col: usize,
-) -> K
+pub fn witness_mat_get_k<Ff>(Z: &Mat<Ff>, layout: WitnessMatLayout, expected_m: usize, rho: usize, col: usize) -> K
 where
     Ff: Field + PrimeCharacteristicRing + Copy,
     K: From<Ff>,
@@ -848,11 +831,7 @@ where
 }
 
 /// Layout-aware projection of the first `m_in` logical columns of `Z` into `X ∈ F^{D×m_in}`.
-pub fn project_x_from_witness_mat<Ff>(
-    Z: &Mat<Ff>,
-    expected_m: usize,
-    m_in: usize,
-) -> Result<Mat<Ff>, PiCcsError>
+pub fn project_x_from_witness_mat<Ff>(Z: &Mat<Ff>, expected_m: usize, m_in: usize) -> Result<Mat<Ff>, PiCcsError>
 where
     Ff: Field + PrimeCharacteristicRing + Copy,
 {
@@ -890,11 +869,7 @@ where
 ///
 /// SuperNeo-only layout:
 /// - packed layout `Z ∈ F^{D×(m/D)}` where `m == expected_m`.
-pub fn decode_z_from_witness_mat<Ff>(
-    _params: &NeoParams,
-    Z: &Mat<Ff>,
-    expected_m: usize,
-) -> Result<Vec<K>, PiCcsError>
+pub fn decode_z_from_witness_mat<Ff>(_params: &NeoParams, Z: &Mat<Ff>, expected_m: usize) -> Result<Vec<K>, PiCcsError>
 where
     Ff: Field + PrimeCharacteristicRing + Copy,
     K: From<Ff>,
@@ -1151,17 +1126,15 @@ where
     use neo_ccs::CcsMatrix;
     let d_pad = 1usize << ell_d;
     let mut y_new: Vec<Vec<K>> = Vec::with_capacity(s.t());
-    let z_layout = witness_mat_layout(Z, s.m).unwrap_or_else(|e| {
-        panic!("compute_y_from_Z_and_r: invalid witness shape for m={}: {e}", s.m)
-    });
+    let z_layout = witness_mat_layout(Z, s.m)
+        .unwrap_or_else(|e| panic!("compute_y_from_Z_and_r: invalid witness shape for m={}: {e}", s.m));
     // Build r^b over rows
     let rb = neo_ccs::utils::tensor_point::<K>(r);
     if let Some(cache) = crate::superneo_eval::build_superneo_eval_cache(s) {
         // SuperNeo fast path: evaluate cached transformed rows against decoded packed witness.
         let n_eff = core::cmp::min(s.n, rb.len());
-        let z_vec = decode_superneo_coeffs_from_witness_mat(Z, s.m).unwrap_or_else(|e| {
-            panic!("compute_y_from_Z_and_r: failed to decode packed witness coefficients: {e}")
-        });
+        let z_vec = decode_superneo_coeffs_from_witness_mat(Z, s.m)
+            .unwrap_or_else(|e| panic!("compute_y_from_Z_and_r: failed to decode packed witness coefficients: {e}"));
         let y_ring = crate::superneo_eval::eval_all_mats_ring_cached(&cache, &z_vec, &rb, n_eff);
         for coeffs in y_ring.into_iter().take(s.t()) {
             let mut yj_pad = coeffs.to_vec();

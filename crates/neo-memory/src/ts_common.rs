@@ -112,11 +112,13 @@ where
 
     // X = L_x(Z) over logical witness columns.
     let x_mat = neo_reductions::common::project_x_from_witness_mat(&z_padded, s.m, m_in).map_err(|e| {
-        PiCcsError::InvalidInput(format!("mk_me_opening_with_ccs: X projection failed for m={}, m_in={}: {e}", s.m, m_in))
+        PiCcsError::InvalidInput(format!(
+            "mk_me_opening_with_ccs: X projection failed for m={}, m_in={}: {e}",
+            s.m, m_in
+        ))
     })?;
 
-    let (mut y_ring_k, mut ct_k) =
-        neo_reductions::common::compute_y_from_Z_and_r(s, &z_padded, r, ell_d, params.b);
+    let (mut y_ring_k, mut ct_k) = neo_reductions::common::compute_y_from_Z_and_r(s, &z_padded, r, ell_d, params.b);
     y_ring_k.resize_with(t, || vec![KElem::ZERO; y_pad]);
     ct_k.resize(t, KElem::ZERO);
     let y_ring: Vec<Vec<KOut>> = y_ring_k
@@ -175,11 +177,9 @@ pub fn decode_addrs_from_bits<F: PrimeField>(
                 .ok_or_else(|| PiCcsError::InvalidInput("decode_addrs_from_bits: bit_weight overflow".into()))?;
             for j in 0..steps.min(col.len()) {
                 if col[j] == F::ONE {
-                    let delta = bit_weight
-                        .checked_mul(stride)
-                        .ok_or_else(|| {
-                            PiCcsError::InvalidInput("decode_addrs_from_bits: address contribution overflow".into())
-                        })?;
+                    let delta = bit_weight.checked_mul(stride).ok_or_else(|| {
+                        PiCcsError::InvalidInput("decode_addrs_from_bits: address contribution overflow".into())
+                    })?;
                     addrs[j] = addrs[j]
                         .checked_add(delta)
                         .ok_or_else(|| PiCcsError::InvalidInput("decode_addrs_from_bits: address overflow".into()))?;

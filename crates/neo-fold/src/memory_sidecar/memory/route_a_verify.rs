@@ -208,7 +208,11 @@ pub fn verify_route_a_memory_step(
                 wp_entry.source
             )));
         }
-        named_opening(&wp_openings, trace_layout.is_virtual, "virtual-domain check: is_virtual")?
+        named_opening(
+            &wp_openings,
+            trace_layout.is_virtual,
+            "virtual-domain check: is_virtual",
+        )?
     } else {
         K::ZERO
     };
@@ -457,7 +461,10 @@ pub fn verify_route_a_memory_step(
                 ));
             }
         } else if !shout_claims.transport_only {
-            let has_non_grouped_lane = shout_claims.lanes.iter().any(|lane| lane.gamma_group.is_none());
+            let has_non_grouped_lane = shout_claims
+                .lanes
+                .iter()
+                .any(|lane| lane.gamma_group.is_none());
             if has_non_grouped_lane {
                 return Err(PiCcsError::ProtocolError(format!(
                     "missing shout bitness claim for non-grouped lanes at lut_idx={proof_idx}"
@@ -1149,8 +1156,7 @@ pub fn verify_route_a_memory_step(
             let prev_step_ref = prev_step.ok_or_else(|| {
                 PiCcsError::ProtocolError("route-a/val prev: missing prev_step with has_prev=true".into())
             })?;
-            let prev_bus_col_ids =
-                bus_logical_col_ids_for_step_instance(prev_step_ref, cpu_bus, "route-a/val prev")?;
+            let prev_bus_col_ids = bus_logical_col_ids_for_step_instance(prev_step_ref, cpu_bus, "route-a/val prev")?;
             let named_prev = if let Some(prev_openings) = prev_step_time_openings {
                 if let Some(prev_entry) = time_opening_entry_for_point(
                     prev_openings,

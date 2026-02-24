@@ -177,13 +177,14 @@ fn output_binding_e2e_wrong_claim_fails() -> Result<(), PiCcsError> {
 
     let (mcs_inst, mcs_wit) = create_mcs_from_z(&params, &l, m_in, z);
 
-    let steps_witness: Vec<StepWitnessBundle<Cmt, F, K>> = vec![crate::common_setup::canonicalize_step_time_columns(StepWitnessBundle {
-        mcs: (mcs_inst, mcs_wit),
-        lut_instances: vec![],
-        mem_instances: vec![(mem_inst, mem_wit)],
-        time_columns: crate::common_setup::empty_time_columns(),
-        _phantom: PhantomData,
-    })];
+    let steps_witness: Vec<StepWitnessBundle<Cmt, F, K>> =
+        vec![crate::common_setup::canonicalize_step_time_columns(StepWitnessBundle {
+            mcs: (mcs_inst, mcs_wit),
+            lut_instances: vec![],
+            mem_instances: vec![(mem_inst, mem_wit)],
+            time_columns: crate::common_setup::empty_time_columns(),
+            _phantom: PhantomData,
+        })];
     let steps_public: Vec<StepInstanceBundle<Cmt, F, K>> = steps_witness.iter().map(StepInstanceBundle::from).collect();
 
     let final_memory_state = vec![F::ZERO, F::ZERO, F::from_u64(7), F::ZERO];

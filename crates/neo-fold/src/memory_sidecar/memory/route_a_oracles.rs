@@ -1497,7 +1497,10 @@ pub(crate) fn build_route_a_memory_oracles(
             let mut adapter_cols: Vec<SparseIdxVec<K>> = Vec::with_capacity(1 + ell_addr);
             adapter_cols.push(shared_has_col.clone());
             adapter_cols.extend(shared_addr_cols.iter().cloned());
-            let coeff_sum = adapter_coeffs.iter().copied().fold(K::ZERO, |acc, c| acc + c);
+            let coeff_sum = adapter_coeffs
+                .iter()
+                .copied()
+                .fold(K::ZERO, |acc, c| acc + c);
             let adapter_width = 1 + ell_addr;
             Box::new(FormulaOracleSparseTime::new(
                 adapter_cols,

@@ -1422,7 +1422,10 @@ pub(crate) fn require_time_openings_covering_point<'a>(
     }
 
     let mut matched: Option<(&crate::shard_proof_types::TimePointOpening, BTreeMap<usize, K>)> = None;
-    for opening in openings.iter().filter(|opening| opening.point.as_slice() == point) {
+    for opening in openings
+        .iter()
+        .filter(|opening| opening.point.as_slice() == point)
+    {
         if opening.col_ids.len() != opening.evals.len() {
             return Err(PiCcsError::ProtocolError(format!(
                 "{label}: malformed time opening (col_ids={}, evals={})",

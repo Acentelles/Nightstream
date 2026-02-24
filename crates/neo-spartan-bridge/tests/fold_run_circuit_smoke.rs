@@ -102,8 +102,9 @@ fn build_trivial_fold_run_and_instance() -> (FoldRunInstance, FoldRunWitness) {
 
     // RLC: trivial identity mix – parent == child, ρ = I_D.
     let params = NeoParams::goldilocks_127();
-    let rlc_rhos_step = neo_fold::pi_ccs::rot_rhos_from_mats(&params, &[Mat::identity(D)], "fold_run_circuit_smoke:rhos")
-        .expect("typed identity rho");
+    let rlc_rhos_step =
+        neo_fold::pi_ccs::rot_rhos_from_mats(&params, &[Mat::identity(D)], "fold_run_circuit_smoke:rhos")
+            .expect("typed identity rho");
     let rlc_parent = me_out.clone();
 
     // DEC: trivial k=1 decomposition – parent == only child.

@@ -398,7 +398,13 @@ fn shared_cpu_bus_tamper_bus_opening_fails() {
                 .iter()
                 .position(|opening| opening.col_ids.iter().any(|&c| c == bus_logical_col))
         })
-        .or_else(|| step0.fold.openings.iter().position(|opening| opening.point == r_time))
+        .or_else(|| {
+            step0
+                .fold
+                .openings
+                .iter()
+                .position(|opening| opening.point == r_time)
+        })
         .expect("expected r_time opening carrying shared-bus columns");
     let opening = &mut step0.fold.openings[open_idx];
     assert!(
@@ -544,7 +550,11 @@ fn shared_cpu_bus_stage8_tamper_matrix_fails() {
     // Baseline must pass.
     let _ = verify(&proof).expect("baseline verify");
     assert!(
-        proof.steps[0].fold.joint_opening_lane.unified_fold.is_some(),
+        proof.steps[0]
+            .fold
+            .joint_opening_lane
+            .unified_fold
+            .is_some(),
         "canonical Stage-8 must always emit unified_fold when groups are present"
     );
     let expected_stage8_fold_len = if proof.steps[0].fold.joint_opening_lane.groups.is_empty() {
@@ -592,7 +602,10 @@ fn shared_cpu_bus_stage8_tamper_matrix_fails() {
             .is_empty(),
         "fixture must have non-empty opening unification rounds"
     );
-    tampered_unification.steps[0].fold.opening_unification.round_polys[0][0] += K::ONE;
+    tampered_unification.steps[0]
+        .fold
+        .opening_unification
+        .round_polys[0][0] += K::ONE;
     assert!(
         verify(&tampered_unification).is_err(),
         "tampering opening unification sumcheck proof must fail verification"

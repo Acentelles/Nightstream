@@ -80,7 +80,10 @@ fn compute_y_from_Z_and_r_superneo_compatible_matches_manual() {
     )
     .expect("valid CCS");
 
-    assert!(build_superneo_eval_cache(&s).is_some(), "expected SuperNeo cache for compatible width");
+    assert!(
+        build_superneo_eval_cache(&s).is_some(),
+        "expected SuperNeo cache for compatible width"
+    );
 
     let Z = make_z(300, m);
     let r = vec![

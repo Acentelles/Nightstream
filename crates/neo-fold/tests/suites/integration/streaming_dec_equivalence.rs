@@ -193,7 +193,11 @@ fn streaming_dec_matches_materialized_dec_with_loaded_pp_superneo_packed() {
     params.k_rho = 8; // must satisfy count·T·(b−1) < b^k_rho even for count=1
 
     let m_commit = commit_cols_for_ccs_m(ccs.m);
-    assert_eq!(m_commit * D, ccs.m, "expected packed commit width for SuperNeo-compatible m");
+    assert_eq!(
+        m_commit * D,
+        ccs.m,
+        "expected packed commit width for SuperNeo-compatible m"
+    );
     if try_get_loaded_global_pp_for_dims(D, m_commit).is_none() {
         let mut rng = ChaCha8Rng::seed_from_u64(17);
         let pp = setup_par(&mut rng, D, params.kappa as usize, m_commit).expect("setup_par");

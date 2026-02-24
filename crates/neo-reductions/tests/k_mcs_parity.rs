@@ -361,8 +361,5 @@ fn ct_constant_term_guard_rejects_mismatch() {
     out.ct[0] += K::ONE; // tamper
 
     let err = neo_reductions::engines::utils::validate_ct_constant_term(&s, &params, &[out]).unwrap_err();
-    assert!(
-        err.to_string().contains("does not match"),
-        "unexpected error: {err}"
-    );
+    assert!(err.to_string().contains("does not match"), "unexpected error: {err}");
 }

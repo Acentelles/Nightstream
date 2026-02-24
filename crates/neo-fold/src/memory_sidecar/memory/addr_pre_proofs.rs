@@ -141,7 +141,10 @@ pub(crate) fn prove_shout_addr_pre_time(
             let cache_key = (shout_cols.has_lookup, lut_inst.steps);
             if !has_lookup_cache.contains_key(&cache_key) {
                 let has_lookup = decode_full_col(shout_cols.has_lookup, lut_inst.steps)?;
-                let has_any_lookup = has_lookup.entries().iter().any(|&(_t, gate)| gate != K::ZERO);
+                let has_any_lookup = has_lookup
+                    .entries()
+                    .iter()
+                    .any(|&(_t, gate)| gate != K::ZERO);
                 let active_js: Vec<usize> = if has_any_lookup {
                     let m_in = bus.m_in;
                     let mut out: Vec<usize> = Vec::with_capacity(has_lookup.entries().len());
@@ -171,9 +174,7 @@ pub(crate) fn prove_shout_addr_pre_time(
             let (has_lookup, active_js, has_any_lookup) = has_lookup_cache
                 .get(&cache_key)
                 .map(|(cached_has, cached_js, cached_any)| (cached_has.clone(), cached_js.as_slice(), *cached_any))
-                .ok_or_else(|| {
-                    PiCcsError::ProtocolError("Shout(Route A): missing has_lookup cache entry".into())
-                })?;
+                .ok_or_else(|| PiCcsError::ProtocolError("Shout(Route A): missing has_lookup cache entry".into()))?;
 
             let addr_bits: Vec<SparseIdxVec<K>> = if shared_addr_group {
                 let mut out = Vec::with_capacity(inst_ell_addr);
@@ -331,7 +332,10 @@ pub(crate) fn prove_shout_addr_pre_time(
 
             let (r_addr, per_claim_results) =
                 run_batched_sumcheck_prover_ds(tr, b"shout/addr_pre_time", step_idx, claims.as_mut_slice())?;
-            let round_polys = per_claim_results.into_iter().map(|r| r.round_polys).collect::<Vec<_>>();
+            let round_polys = per_claim_results
+                .into_iter()
+                .map(|r| r.round_polys)
+                .collect::<Vec<_>>();
             (r_addr, round_polys)
         };
 

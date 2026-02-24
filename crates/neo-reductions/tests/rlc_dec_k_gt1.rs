@@ -185,9 +185,8 @@ fn rlc_with_commit_k4_matches_public_recompute_and_detects_rho_tamper() {
     )
     .expect("rlc_with_commit optimized");
 
-    let parent_public =
-        rlc_public(&s, &params, &rhos_typed, &me_inputs, mix_commitments_from_rhos, ell_d)
-            .expect("rlc_public recompute");
+    let parent_public = rlc_public(&s, &params, &rhos_typed, &me_inputs, mix_commitments_from_rhos, ell_d)
+        .expect("rlc_public recompute");
     assert_eq!(parent, parent_public, "public RLC recompute must match engine output");
 
     let want_Z_mix = combine_z_with_rhos(&rhos, &Zs);

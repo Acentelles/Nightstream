@@ -81,8 +81,8 @@ fn optimized_oracle_outputs_match_paper_exact_builder() {
 
     let dims = neo_reductions::engines::utils::build_dims_and_policy(&params, &s).unwrap();
     let mut rng = ChaCha8Rng::seed_from_u64(7);
-    let pp = ajtai_setup(&mut rng, D, params.kappa as usize, commit_cols_for_ccs_m(m))
-        .expect("Ajtai setup should succeed");
+    let pp =
+        ajtai_setup(&mut rng, D, params.kappa as usize, commit_cols_for_ccs_m(m)).expect("Ajtai setup should succeed");
     let l = AjtaiSModule::new(Arc::new(pp));
 
     // One MCS + one ME witness, to exercise both output cases.
@@ -204,8 +204,8 @@ fn optimized_oracle_outputs_match_paper_exact_builder_superneo_shape() {
 
     let dims = neo_reductions::engines::utils::build_dims_and_policy(&params, &s).unwrap();
     let mut rng = ChaCha8Rng::seed_from_u64(77);
-    let pp = ajtai_setup(&mut rng, D, params.kappa as usize, commit_cols_for_ccs_m(m))
-        .expect("Ajtai setup should succeed");
+    let pp =
+        ajtai_setup(&mut rng, D, params.kappa as usize, commit_cols_for_ccs_m(m)).expect("Ajtai setup should succeed");
     let l = AjtaiSModule::new(Arc::new(pp));
 
     // Two MCS + two ME witnesses to exercise K>1 slot partitioning.

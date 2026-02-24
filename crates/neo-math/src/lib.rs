@@ -7,8 +7,8 @@
 //! **Normative language:** "MUST", "SHOULD" are used as in BCP‑14 (RFC 2119 / RFC 8174).
 //! Violations of **MUST** return errors; **SHOULD** are surfaced as warnings (or errors in strict mode).
 
-pub mod field;
 pub mod balanced;
+pub mod field;
 pub mod norms;
 pub mod ring;
 pub mod s_action;

@@ -103,22 +103,21 @@ fn tamper_width_opening_scalar(proof: &mut ShardProof, width_col: usize) {
         .openings
         .iter()
         .position(|opening| opening.point == wp_point && opening.col_ids.iter().any(|&c| c == width_col))
-        .or_else(|| step.fold.openings.iter().position(|opening| opening.point == wp_point))
+        .or_else(|| {
+            step.fold
+                .openings
+                .iter()
+                .position(|opening| opening.point == wp_point)
+        })
         .expect("width openings must be present in WP named openings");
     let wp_open = &mut step.fold.openings[wp_open_idx];
-    assert!(
-        !wp_open.evals.is_empty(),
-        "WP named opening evals must be non-empty"
-    );
+    assert!(!wp_open.evals.is_empty(), "WP named opening evals must be non-empty");
     let width_idx = wp_open
         .col_ids
         .iter()
         .position(|&c| c == width_col)
         .unwrap_or(0);
-    assert!(
-        width_idx < wp_open.evals.len(),
-        "width opening index must be in-bounds"
-    );
+    assert!(width_idx < wp_open.evals.len(), "width opening index must be in-bounds");
     wp_open.evals[width_idx] += K::ONE;
 }
 

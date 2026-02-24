@@ -154,7 +154,13 @@ fn tamper_divu_packed_diff_bit_opening(run: &Rv32TraceWiringRun, proof: &mut Sha
                 .iter()
                 .position(|opening| opening.col_ids.iter().any(|&c| c == diff_bit0_logical_col))
         })
-        .or_else(|| step0.fold.openings.iter().position(|opening| opening.point == r_time))
+        .or_else(|| {
+            step0
+                .fold
+                .openings
+                .iter()
+                .position(|opening| opening.point == r_time)
+        })
         .expect("expected named opening carrying packed diff-bit column");
     let opening = &mut step0.fold.openings[open_idx];
     assert!(
@@ -166,10 +172,7 @@ fn tamper_divu_packed_diff_bit_opening(run: &Rv32TraceWiringRun, proof: &mut Sha
         .iter()
         .position(|&c| c == diff_bit0_logical_col)
         .unwrap_or(0);
-    assert!(
-        eval_idx < opening.evals.len(),
-        "packed opening index must be in-bounds"
-    );
+    assert!(eval_idx < opening.evals.len(), "packed opening index must be in-bounds");
     opening.evals[eval_idx] += K::ONE;
 }
 

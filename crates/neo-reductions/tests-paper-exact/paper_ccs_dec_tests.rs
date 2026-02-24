@@ -136,16 +136,8 @@ fn paper_exact_dec_reconstruction_and_checks_hold() {
         }
         // ct should match layout-aware CE scalar semantics.
         for j in 0..s.t() {
-            let want = neo_reductions::common::ct_from_y_digits_for_ccs_m(
-                &children[i].y_ring[j],
-                &params,
-                s.m,
-            );
-            assert_eq!(
-                children[i].ct[j], want,
-                "DEC child ct mismatch for i={}, j={}",
-                i, j
-            );
+            let want = neo_reductions::common::ct_from_y_digits_for_ccs_m(&children[i].y_ring[j], &params, s.m);
+            assert_eq!(children[i].ct[j], want, "DEC child ct mismatch for i={}, j={}", i, j);
         }
     }
 }

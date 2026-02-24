@@ -128,13 +128,16 @@ fn derive_time_columns_from_step_witness<Cmt, K>(step: &StepWitnessBundle<Cmt, F
     );
 
     let chunk_size = infer_test_chunk_size(step);
-    let shout_shapes = step.lut_instances.iter().map(|(inst, _)| ShoutInstanceShape {
-        ell_addr: inst.d * inst.ell,
-        lanes: inst.lanes,
-        n_vals: 1usize,
-        addr_group: inst.addr_group,
-        selector_group: inst.selector_group,
-    });
+    let shout_shapes = step
+        .lut_instances
+        .iter()
+        .map(|(inst, _)| ShoutInstanceShape {
+            ell_addr: inst.d * inst.ell,
+            lanes: inst.lanes,
+            n_vals: 1usize,
+            addr_group: inst.addr_group,
+            selector_group: inst.selector_group,
+        });
     let twist_shapes = step
         .mem_instances
         .iter()
