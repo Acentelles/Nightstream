@@ -419,7 +419,7 @@ where
         let step_idx = step_idx_offset
             .checked_add(idx)
             .ok_or_else(|| PiCcsError::InvalidInput("step index overflow".into()))?;
-        let has_prev = idx > 0;
+        let has_prev = idx > 0 || initial_prev_step.is_some();
         absorb_step_memory(tr, step);
 
         let include_ob = ob_cfg.is_some() && (idx + 1 == steps.len());

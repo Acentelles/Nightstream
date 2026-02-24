@@ -14,7 +14,6 @@ use neo_reductions::engines::CrosscheckCfg;
 use p3_field::PrimeCharacteristicRing;
 
 #[test]
-#[ignore = "crosscheck smoke pending uniform-kernel DEC parity; run manually when debugging"]
 fn test_riscv_program_crosscheck_tiny_trace() {
     let program = vec![
         // x1 = 7
