@@ -310,8 +310,9 @@ pub(crate) fn extract_trace_cpu_link_openings(
         trace.ram_wv,
         trace.shout_has_lookup,
         trace.shout_val,
-        trace.shout_lhs,
-        trace.shout_rhs,
+        trace.shout_link_lhs,
+        trace.shout_link_rhs,
+        trace.shout_add_sub_key,
     ];
 
     let t_len = step.time_columns.t;
@@ -332,20 +333,21 @@ pub(crate) fn extract_trace_cpu_link_openings(
     Ok(Some(TraceCpuLinkOpenings {
         shout_has_lookup: named_opening(&trace_open_map, trace.shout_has_lookup, "trace linkage")?,
         shout_val: named_opening(&trace_open_map, trace.shout_val, "trace linkage")?,
-        shout_lhs: named_opening(&trace_open_map, trace.shout_lhs, "trace linkage")?,
-        shout_rhs: named_opening(&trace_open_map, trace.shout_rhs, "trace linkage")?,
+        shout_link_lhs: named_opening(&trace_open_map, trace.shout_link_lhs, "trace linkage")?,
+        shout_link_rhs: named_opening(&trace_open_map, trace.shout_link_rhs, "trace linkage")?,
+        shout_add_sub_key: named_opening(&trace_open_map, trace.shout_add_sub_key, "trace linkage")?,
     }))
 }
 
 pub(crate) fn expected_trace_shout_table_id_from_openings(
     step: &StepInstanceBundle<Cmt, F, K>,
-    cpu_bus: &BusLayout,
+    _cpu_bus: &BusLayout,
     mem_proof: &MemSidecarProof<Cmt, F, K>,
     step_time_openings: &[crate::shard_proof_types::TimePointOpening],
     r_time: &[K],
-) -> Result<K, PiCcsError> {
+) -> Result<Option<K>, PiCcsError> {
     if !decode_stage_required_for_step_instance(step) {
-        return Ok(K::ZERO);
+        return Ok(None);
     }
 
     if mem_proof.wp_me_claims.len() != 1 {
@@ -370,20 +372,26 @@ pub(crate) fn expected_trace_shout_table_id_from_openings(
         ));
     }
 
-    let decode_layout = Rv32DecodeSidecarLayout::new();
-    let decode_open_map = decode_lookup_open_map_from_committed_openings(
-        step,
-        cpu_bus,
-        r_time,
+    let trace_layout = Rv32TraceLayout::new();
+    let wp_cols = rv32_trace_wp_opening_columns(&trace_layout);
+    let (wp_entry, wp_open_map) = require_time_openings_covering_point(
         step_time_openings,
+        r_time,
+        &wp_cols,
+        "decode-linked Shout table_id check/WP",
+    )?;
+    if wp_entry.source != crate::shard_proof_types::TimeOpeningSource::CommittedOpening {
+        return Err(PiCcsError::ProtocolError(format!(
+            "decode-linked Shout table_id check/WP requires CommittedOpening source (got {:?})",
+            wp_entry.source
+        )));
+    }
+    let shout_table_id = named_opening(
+        &wp_open_map,
+        trace_layout.shout_table_id,
         "decode-linked Shout table_id check",
     )?;
-
-    named_opening(
-        &decode_open_map,
-        decode_layout.shout_table_id,
-        "decode-linked Shout table_id check",
-    )
+    Ok(Some(shout_table_id))
 }
 
 pub(crate) fn prove_twist_addr_pre_time(

@@ -651,6 +651,7 @@ pub(crate) fn build_route_a_control_time_claims(
 
     let main_col_ids = vec![
         trace.active,
+        trace.is_virtual,
         trace.instr_word,
         trace.pc_before,
         trace.pc_after,
@@ -755,6 +756,94 @@ pub(crate) fn build_route_a_control_time_claims(
         }
         decoded
     };
+
+    for j in 0..t_len {
+        let is_virtual = *main_decoded
+            .get(&trace.is_virtual)
+            .and_then(|v| v.get(j))
+            .ok_or_else(|| {
+                PiCcsError::ProtocolError("control(shared): missing is_virtual row while validating".into())
+            })?;
+        let pc_before = *main_decoded
+            .get(&trace.pc_before)
+            .and_then(|v| v.get(j))
+            .ok_or_else(|| {
+                PiCcsError::ProtocolError("control(shared): missing pc_before row while validating".into())
+            })?;
+        let pc_after = *main_decoded
+            .get(&trace.pc_after)
+            .and_then(|v| v.get(j))
+            .ok_or_else(|| {
+                PiCcsError::ProtocolError("control(shared): missing pc_after row while validating".into())
+            })?;
+        let op_lui = *decode_decoded
+            .get(&decode.op_lui)
+            .and_then(|v| v.get(j))
+            .ok_or_else(|| PiCcsError::ProtocolError("control(shared): missing op_lui row while validating".into()))?;
+        let op_auipc = *decode_decoded
+            .get(&decode.op_auipc)
+            .and_then(|v| v.get(j))
+            .ok_or_else(|| {
+                PiCcsError::ProtocolError("control(shared): missing op_auipc row while validating".into())
+            })?;
+        let op_load = *decode_decoded
+            .get(&decode.op_load)
+            .and_then(|v| v.get(j))
+            .ok_or_else(|| PiCcsError::ProtocolError("control(shared): missing op_load row while validating".into()))?;
+        let op_store = *decode_decoded
+            .get(&decode.op_store)
+            .and_then(|v| v.get(j))
+            .ok_or_else(|| {
+                PiCcsError::ProtocolError("control(shared): missing op_store row while validating".into())
+            })?;
+        let op_alu_imm = *decode_decoded
+            .get(&decode.op_alu_imm)
+            .and_then(|v| v.get(j))
+            .ok_or_else(|| {
+                PiCcsError::ProtocolError("control(shared): missing op_alu_imm row while validating".into())
+            })?;
+        let op_alu_reg = *decode_decoded
+            .get(&decode.op_alu_reg)
+            .and_then(|v| v.get(j))
+            .ok_or_else(|| {
+                PiCcsError::ProtocolError("control(shared): missing op_alu_reg row while validating".into())
+            })?;
+        let op_misc_mem = *decode_decoded
+            .get(&decode.op_misc_mem)
+            .and_then(|v| v.get(j))
+            .ok_or_else(|| {
+                PiCcsError::ProtocolError("control(shared): missing op_misc_mem row while validating".into())
+            })?;
+        let op_system = *decode_decoded
+            .get(&decode.op_system)
+            .and_then(|v| v.get(j))
+            .ok_or_else(|| {
+                PiCcsError::ProtocolError("control(shared): missing op_system row while validating".into())
+            })?;
+        let op_amo = *decode_decoded
+            .get(&decode.op_amo)
+            .and_then(|v| v.get(j))
+            .ok_or_else(|| PiCcsError::ProtocolError("control(shared): missing op_amo row while validating".into()))?;
+        let residual = control_next_pc_linear_residual(
+            pc_before,
+            pc_after,
+            is_virtual,
+            op_lui,
+            op_auipc,
+            op_load,
+            op_store,
+            op_alu_imm,
+            op_alu_reg,
+            op_misc_mem,
+            op_system,
+            op_amo,
+        );
+        if residual != K::ZERO {
+            return Err(PiCcsError::ProtocolError(format!(
+                "control/next_pc_linear residual non-zero at row={j}, residual={residual}, is_virtual={is_virtual}, pc_before={pc_before}, pc_after={pc_after}, op_lui={op_lui}, op_auipc={op_auipc}, op_load={op_load}, op_store={op_store}, op_alu_imm={op_alu_imm}, op_alu_reg={op_alu_reg}, op_misc_mem={op_misc_mem}, op_system={op_system}, op_amo={op_amo}"
+            )));
+        }
+    }
 
     for j in 0..t_len {
         let active = *main_decoded
@@ -1025,6 +1114,7 @@ pub(crate) fn build_route_a_control_time_claims(
     let linear_sparse = vec![
         main_col(trace.pc_before)?,
         main_col(trace.pc_after)?,
+        main_col(trace.is_virtual)?,
         decode_col(decode.op_lui)?,
         decode_col(decode.op_auipc)?,
         decode_col(decode.op_load)?,
@@ -1038,11 +1128,12 @@ pub(crate) fn build_route_a_control_time_claims(
     let linear_weights = control_next_pc_linear_weight_vector(r_cycle, 1);
     let linear_oracle = FormulaOracleSparseTime::new(
         linear_sparse,
-        3,
+        4,
         r_cycle,
         Box::new(move |vals: &[K]| {
             let residual = control_next_pc_linear_residual(
                 vals[0], vals[1], vals[2], vals[3], vals[4], vals[5], vals[6], vals[7], vals[8], vals[9], vals[10],
+                vals[11],
             );
             linear_weights[0] * residual
         }),

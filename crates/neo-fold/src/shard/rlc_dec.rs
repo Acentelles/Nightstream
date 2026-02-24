@@ -422,8 +422,9 @@ where
             trace.ram_wv,
             trace.shout_has_lookup,
             trace.shout_val,
-            trace.shout_lhs,
-            trace.shout_rhs,
+            trace.shout_link_lhs,
+            trace.shout_link_rhs,
+            trace.shout_add_sub_key,
         ];
 
         if rlc_parent.y_ring.len() >= trace_open_base && rlc_parent.ct.len() >= trace_open_base {
@@ -977,8 +978,9 @@ where
                 trace.ram_wv,
                 trace.shout_has_lookup,
                 trace.shout_val,
-                trace.shout_lhs,
-                trace.shout_rhs,
+                trace.shout_link_lhs,
+                trace.shout_link_rhs,
+                trace.shout_add_sub_key,
             ];
             let want_with_trace = cpu_bus.bus_cols + trace_cols_to_open.len();
             if ccs_out

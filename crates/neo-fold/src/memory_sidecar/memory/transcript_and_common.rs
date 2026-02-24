@@ -616,6 +616,8 @@ pub struct RouteATwistTimeOracles {
     pub read_check: Box<dyn RoundOracle>,
     pub write_check: Box<dyn RoundOracle>,
     pub bitness: Vec<Box<dyn RoundOracle>>,
+    pub virtual_write_domain: Option<Box<dyn RoundOracle>>,
+    pub nonvirtual_arch_domain: Option<Box<dyn RoundOracle>>,
 }
 
 pub struct RouteAMemoryOracles {
@@ -693,16 +695,18 @@ pub struct RouteAMemoryVerifyOutput {
 pub(crate) struct TraceCpuLinkOpenings {
     pub(crate) shout_has_lookup: K,
     pub(crate) shout_val: K,
-    pub(crate) shout_lhs: K,
-    pub(crate) shout_rhs: K,
+    pub(crate) shout_link_lhs: K,
+    pub(crate) shout_link_rhs: K,
+    pub(crate) shout_add_sub_key: K,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct ShoutTraceLinkSums {
     pub(crate) has_lookup: K,
     pub(crate) val: K,
-    pub(crate) lhs: K,
-    pub(crate) rhs: K,
+    pub(crate) link_lhs: K,
+    pub(crate) link_rhs: K,
+    pub(crate) add_sub_key: K,
     pub(crate) table_id: K,
 }
 
@@ -722,15 +726,23 @@ pub(crate) fn verify_non_event_trace_shout_linkage(
             "trace linkage failed: Shout val mismatch".into(),
         ));
     }
-    if sums.lhs != cpu.shout_lhs {
-        return Err(PiCcsError::ProtocolError(
-            "trace linkage failed: Shout lhs mismatch".into(),
-        ));
+    if sums.link_lhs != cpu.shout_link_lhs {
+        return Err(PiCcsError::ProtocolError(format!(
+            "trace linkage failed: Shout lhs mismatch (sums={}, cpu={})",
+            sums.link_lhs, cpu.shout_link_lhs
+        )));
     }
-    if sums.rhs != cpu.shout_rhs {
-        return Err(PiCcsError::ProtocolError(
-            "trace linkage failed: Shout rhs mismatch".into(),
-        ));
+    if sums.link_rhs != cpu.shout_link_rhs {
+        return Err(PiCcsError::ProtocolError(format!(
+            "trace linkage failed: Shout rhs mismatch (sums={}, cpu={})",
+            sums.link_rhs, cpu.shout_link_rhs
+        )));
+    }
+    if sums.add_sub_key != cpu.shout_add_sub_key {
+        return Err(PiCcsError::ProtocolError(format!(
+            "trace linkage failed: Shout add/sub key mismatch (sums={}, cpu={})",
+            sums.add_sub_key, cpu.shout_add_sub_key
+        )));
     }
     if let Some(expected_table_id) = expected_table_id {
         if sums.table_id != expected_table_id {
@@ -829,12 +841,24 @@ pub(crate) fn rv32_trace_wb_columns(layout: &Rv32TraceLayout) -> Vec<usize> {
     vec![layout.active, layout.halted, layout.shout_has_lookup]
 }
 
-pub(crate) const W2_FIELDS_RESIDUAL_COUNT: usize = 70;
+// Selector(8) + bitness(20) + ALU/branch/decomposition(682).
+pub(crate) const W2_FIELDS_RESIDUAL_COUNT: usize = 710;
+// Virtual DIV/REM stage selectors (up to rem=19) raise decode/fields multiplicative degree.
+pub(crate) const W2_FIELDS_DEGREE_BOUND: usize = 25;
 pub(crate) const W2_IMM_RESIDUAL_COUNT: usize = 4;
 
 #[inline]
 pub(crate) fn w2_bool01(v: K) -> K {
     v * (v - K::ONE)
+}
+
+#[inline]
+pub(crate) fn w2_reg_addr_from_bits(bits: [K; 5]) -> K {
+    bits[0]
+        + K::from(F::from_u64(2)) * bits[1]
+        + K::from(F::from_u64(4)) * bits[2]
+        + K::from(F::from_u64(8)) * bits[3]
+        + K::from(F::from_u64(16)) * bits[4]
 }
 
 #[inline]
@@ -921,124 +945,6 @@ pub(crate) fn w2_alu_reg_table_delta_from_bits(funct7_bits: [K; 7], funct3_is: [
         + K::from(F::from_u64(19)) * funct3_is[7];
 
     (K::ONE - is_rv32m) * base_delta + is_rv32m * rv32m_delta
-}
-
-#[inline]
-pub(crate) fn w2_alu_branch_lookup_residuals(
-    active: K,
-    halted: K,
-    shout_has_lookup: K,
-    shout_lhs: K,
-    shout_rhs: K,
-    shout_table_id: K,
-    rs1_val: K,
-    rs2_val: K,
-    rd_has_write: K,
-    rd_is_zero: K,
-    rd_val: K,
-    ram_has_read: K,
-    ram_has_write: K,
-    ram_addr: K,
-    shout_val: K,
-    funct3_bits: [K; 3],
-    funct7_bits: [K; 7],
-    opcode_flags: [K; 12],
-    op_write_flags: [K; 6],
-    funct3_is: [K; 8],
-    alu_reg_table_delta: K,
-    alu_imm_table_delta: K,
-    alu_imm_shift_rhs_delta: K,
-    rs2_decode: K,
-    imm_i: K,
-    imm_s: K,
-) -> [K; 42] {
-    let op_lui = opcode_flags[0];
-    let op_auipc = opcode_flags[1];
-    let op_jal = opcode_flags[2];
-    let op_jalr = opcode_flags[3];
-    let op_branch = opcode_flags[4];
-    let op_load = opcode_flags[5];
-    let op_store = opcode_flags[6];
-    let op_alu_imm = opcode_flags[7];
-    let op_alu_reg = opcode_flags[8];
-    let op_misc_mem = opcode_flags[9];
-    let op_system = opcode_flags[10];
-
-    let op_lui_write = op_write_flags[0];
-    let op_auipc_write = op_write_flags[1];
-    let op_jal_write = op_write_flags[2];
-    let op_jalr_write = op_write_flags[3];
-    let op_alu_imm_write = op_write_flags[4];
-    let op_alu_reg_write = op_write_flags[5];
-
-    let non_mem_ops =
-        op_lui + op_auipc + op_jal + op_jalr + op_branch + op_alu_imm + op_alu_reg + op_misc_mem + op_system;
-    let mem_lookup_ops = op_load + op_store;
-    let add_lookup_ops = op_load + op_store + op_jalr;
-    let add_table_id = K::from(F::from_u64(3));
-
-    let alu_table_base = K::from(F::from_u64(3)) * funct3_is[0]
-        + K::from(F::from_u64(7)) * funct3_is[1]
-        + K::from(F::from_u64(5)) * funct3_is[2]
-        + K::from(F::from_u64(6)) * funct3_is[3]
-        + K::from(F::from_u64(1)) * funct3_is[4]
-        + K::from(F::from_u64(8)) * funct3_is[5]
-        + K::from(F::from_u64(2)) * funct3_is[6];
-    let branch_table_expected =
-        K::from(F::from_u64(10)) - K::from(F::from_u64(5)) * funct3_bits[2] + (funct3_bits[1] * funct3_bits[2]);
-    let shift_selector = funct3_is[1] + funct3_is[5];
-    let funct7_m_tail =
-        funct7_bits[1] + funct7_bits[2] + funct7_bits[3] + funct7_bits[4] + funct7_bits[5] + funct7_bits[6];
-    let alu_reg_table_delta_expected = w2_alu_reg_table_delta_from_bits(funct7_bits, funct3_is);
-
-    [
-        (op_alu_imm + op_load + op_jalr) * (shout_has_lookup - K::ONE),
-        (op_alu_reg + op_store) * (shout_has_lookup - K::ONE),
-        op_branch * (shout_has_lookup - K::ONE),
-        (K::ONE - shout_has_lookup) * shout_table_id,
-        (op_alu_imm + op_alu_reg + op_branch + mem_lookup_ops + op_jalr) * (shout_lhs - rs1_val),
-        alu_imm_shift_rhs_delta - shift_selector * (rs2_decode - imm_i),
-        op_alu_imm * (shout_rhs - imm_i - alu_imm_shift_rhs_delta) + (op_load + op_jalr) * (shout_rhs - imm_i),
-        op_alu_reg * (shout_rhs - rs2_val) + op_store * (shout_rhs - imm_s),
-        op_branch * (shout_rhs - rs2_val),
-        op_alu_imm_write * (rd_val - shout_val),
-        op_alu_reg_write * (rd_val - shout_val),
-        op_alu_reg * (shout_table_id - alu_table_base - alu_reg_table_delta)
-            + op_store * (shout_table_id - add_table_id),
-        op_alu_imm * (shout_table_id - alu_table_base - alu_imm_table_delta)
-            + add_lookup_ops * (shout_table_id - add_table_id),
-        op_branch * (shout_table_id - branch_table_expected),
-        op_alu_reg * funct7_bits[0] * funct7_m_tail,
-        alu_reg_table_delta - alu_reg_table_delta_expected,
-        alu_imm_table_delta - funct7_bits[5] * funct3_is[5],
-        op_lui * rd_has_write - op_lui_write,
-        op_auipc * rd_has_write - op_auipc_write,
-        op_jal * rd_has_write - op_jal_write,
-        op_jalr * rd_has_write - op_jalr_write,
-        op_alu_imm * rd_has_write - op_alu_imm_write,
-        op_alu_reg * rd_has_write - op_alu_reg_write,
-        op_lui * (rd_has_write + rd_is_zero - K::ONE),
-        op_auipc * (rd_has_write + rd_is_zero - K::ONE),
-        op_jal * (rd_has_write + rd_is_zero - K::ONE),
-        op_jalr * (rd_has_write + rd_is_zero - K::ONE),
-        opcode_flags[5] * (rd_has_write + rd_is_zero - K::ONE),
-        op_alu_imm * (rd_has_write + rd_is_zero - K::ONE),
-        op_alu_reg * (rd_has_write + rd_is_zero - K::ONE),
-        op_branch * rd_has_write,
-        opcode_flags[6] * rd_has_write,
-        op_misc_mem * rd_has_write,
-        op_system * rd_has_write,
-        active * (halted - op_system),
-        opcode_flags[5] * (ram_has_read - K::ONE),
-        opcode_flags[6] * (ram_has_write - K::ONE),
-        non_mem_ops * ram_has_read,
-        non_mem_ops * ram_has_write,
-        non_mem_ops * ram_addr,
-        // RV32 effective addresses are modular (u32 wraparound). We therefore bind RAM addr to
-        // ADD lookup output (`shout_val`) instead of raw field addition `rs1 + imm`.
-        op_load * (ram_addr - shout_val),
-        op_store * (ram_addr - shout_val),
-    ]
 }
 
 #[inline]
@@ -1270,6 +1176,7 @@ pub(crate) fn control_imm_u_from_bits(
 pub(crate) fn control_next_pc_linear_residual(
     pc_before: K,
     pc_after: K,
+    is_virtual: K,
     op_lui: K,
     op_auipc: K,
     op_load: K,
@@ -1281,7 +1188,8 @@ pub(crate) fn control_next_pc_linear_residual(
     op_amo: K,
 ) -> K {
     let op_linear = op_lui + op_auipc + op_load + op_store + op_alu_imm + op_alu_reg + op_misc_mem + op_system + op_amo;
-    op_linear * (pc_after - pc_before - K::from(F::from_u64(4)))
+    let non_virtual = K::ONE - is_virtual;
+    non_virtual * op_linear * (pc_after - pc_before - K::from(F::from_u64(4)))
 }
 
 #[inline]
@@ -1358,6 +1266,8 @@ pub(crate) fn control_writeback_residuals(
 
 pub(crate) fn rv32_trace_wp_columns(layout: &Rv32TraceLayout) -> Vec<usize> {
     vec![
+        layout.is_virtual,
+        layout.virtual_sequence_remaining,
         layout.instr_word,
         layout.rs1_addr,
         layout.rs1_val,
@@ -1365,13 +1275,16 @@ pub(crate) fn rv32_trace_wp_columns(layout: &Rv32TraceLayout) -> Vec<usize> {
         layout.rs2_val,
         layout.rd_addr,
         layout.rd_val,
+        layout.rd_has_write,
         layout.ram_addr,
         layout.ram_rv,
         layout.ram_wv,
         layout.shout_has_lookup,
+        layout.shout_table_id,
         layout.shout_val,
         layout.shout_lhs,
         layout.shout_rhs,
+        layout.shout_add_sub_key,
         layout.jalr_drop_bit,
     ]
 }
