@@ -78,6 +78,7 @@ fn range_product_symmetric(val: K, b: u32) -> K {
 
 fn sum_q_nc_over_hypercube(
     params: &NeoParams,
+    expected_m: usize,
     mcs_witnesses: &[CcsWitness<F>],
     me_witnesses: &[Mat<F>],
     ch: &neo_reductions::Challenges,
@@ -87,13 +88,18 @@ fn sum_q_nc_over_hypercube(
     assert_eq!(ch.beta_a.len(), ell_d, "beta_a length mismatch");
     assert_eq!(ch.beta_m.len(), ell_m, "beta_m length mismatch");
 
-    let mut all_witnesses: Vec<&Mat<F>> = Vec::with_capacity(mcs_witnesses.len() + me_witnesses.len());
-    for w in mcs_witnesses {
-        all_witnesses.push(&w.Z);
-    }
-    for z in me_witnesses {
-        all_witnesses.push(z);
-    }
+    let all_witnesses: Vec<&Mat<F>> = mcs_witnesses
+        .iter()
+        .map(|w| &w.Z)
+        .chain(me_witnesses.iter())
+        .collect();
+    let digits_tables: Vec<Vec<[K; D]>> = all_witnesses
+        .iter()
+        .map(|z| {
+            neo_reductions::common::build_witness_nc_digit_table(params, z, expected_m)
+                .expect("NC test fixture must decompose witness digits")
+        })
+        .collect();
 
     let m_sz = 1usize << ell_m;
     let d_sz = 1usize << ell_d;
@@ -104,9 +110,9 @@ fn sum_q_nc_over_hypercube(
             let w_a = bool_mle_weight(am, &ch.beta_a);
             let mut g = ch.gamma;
             let mut nc = K::ZERO;
-            for z in all_witnesses.iter() {
-                let y = if am < z.rows() && sm < z.cols() {
-                    K::from(z[(am, sm)])
+            for digits in digits_tables.iter() {
+                let y = if sm < expected_m && am < D {
+                    digits[sm][am]
                 } else {
                     K::ZERO
                 };
@@ -200,7 +206,7 @@ fn round0_sum_matches_hypercube_sum_k1() {
 
     // Challenges sized to the round dimensions
     let ell_n = 1usize; // since n=2
-    let ell_d = 1usize; // use 1 Ajtai bit for the sum-check domain in this test
+    let ell_d = ceil_log2_usize(D);
     let ch = neo_reductions::Challenges {
         alpha: vec![K::from(F::from_u64(3)); ell_d],
         beta_a: vec![K::from(F::from_u64(5)); ell_d],
@@ -238,7 +244,7 @@ fn round0_sum_matches_hypercube_sum_k2_with_eval() {
     let me_w = [z1];
 
     let ell_n = 1usize; // n=2
-    let ell_d = 1usize; // keep Ajtai domain tiny
+    let ell_d = ceil_log2_usize(D);
     let ch = neo_reductions::Challenges {
         alpha: vec![K::from(F::from_u64(13)); ell_d],
         beta_a: vec![K::from(F::from_u64(17)); ell_d],
@@ -298,7 +304,7 @@ fn nc_sum_engine_matches_paper_nc_when_m1_not_identity() {
         gamma: K::from(F::from_u64(11)),
     };
 
-    let paper_nc = sum_q_nc_over_hypercube(&params, &mcs_w, &me_w, &ch, ell_d, ell_m);
+    let paper_nc = sum_q_nc_over_hypercube(&params, s.m, &mcs_w, &me_w, &ch, ell_d, ell_m);
     let engine_nc = nc_round0_sum_from_optimized_oracle(&s, &params, &mcs_w, &me_w, &ch, ell_d, ell_m, 4);
     assert_eq!(
         engine_nc, paper_nc,
@@ -341,7 +347,7 @@ fn nc_sum_engine_vs_paper_drift_with_custom_m1_and_Z() {
         gamma: K::from(F::from_u64(23)),
     };
 
-    let paper_nc = sum_q_nc_over_hypercube(&params, &mcs_w, &me_w, &ch, ell_d, ell_m);
+    let paper_nc = sum_q_nc_over_hypercube(&params, s.m, &mcs_w, &me_w, &ch, ell_d, ell_m);
     let engine_nc = nc_round0_sum_from_optimized_oracle(&s, &params, &mcs_w, &me_w, &ch, ell_d, ell_m, 4);
     assert_eq!(engine_nc, paper_nc, "NC round-0 sum mismatch on custom fixture");
 }

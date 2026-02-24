@@ -207,26 +207,14 @@ where
                 .enumerate()
                 .skip(k_mcs)
             {
-                let zi_layout = crate::common::witness_mat_layout(Zi, self.s.m).unwrap_or_else(|e| {
+                let z_i = crate::common::decode_superneo_coeffs_from_witness_mat(Zi, self.s.m).unwrap_or_else(|e| {
                     panic!(
                         "PaperExactOracle::eval_q_ext: invalid witness shape for m={}: {e}",
                         self.s.m
                     )
                 });
-                // z_i(α') := Σ_ρ χ_a[ρ] · Z_i[ρ,·]
-                let mut z_alpha = vec![K::ZERO; self.s.m];
-                for rho in 0..D {
-                    let w = chi_a[rho];
-                    if w == K::ZERO {
-                        continue;
-                    }
-                    for c in 0..self.s.m {
-                        z_alpha[c] += crate::common::witness_mat_get_k(Zi, zi_layout, self.s.m, rho, c) * w;
-                    }
-                }
-
-                // y_(i,j)'(α', r') = Ẽ(M_j · z_i(α'))(r')
-                let y_by_j = self.eval_all_mats_ct_only(&z_alpha, &chi_r);
+                let y_by_j_ring =
+                    crate::superneo_eval::eval_all_mats_ring_cached(&self.superneo_cache, &z_i, &chi_r, self.s.n);
 
                 // inner weight = γ^{i-1} · (γ^k)^j  (0-based j)
                 let mut gamma_i = K::ONE;
@@ -234,8 +222,12 @@ where
                     gamma_i *= self.ch.gamma;
                 }
                 let mut gamma_k_pow_j = K::ONE;
-                for y_eval in y_by_j.iter().take(self.s.t()) {
-                    eval_inner_sum += (gamma_i * gamma_k_pow_j) * *y_eval;
+                for yj in y_by_j_ring.iter().take(self.s.t()) {
+                    let mut y_eval = K::ZERO;
+                    for rho in 0..core::cmp::min(D, d_sz) {
+                        y_eval += yj[rho] * chi_a[rho];
+                    }
+                    eval_inner_sum += (gamma_i * gamma_k_pow_j) * y_eval;
                     gamma_k_pow_j *= gamma_to_k;
                 }
             }

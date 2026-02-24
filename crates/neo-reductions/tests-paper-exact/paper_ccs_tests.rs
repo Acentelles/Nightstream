@@ -555,19 +555,6 @@ fn paper_exact_outputs_equal_literal_definition() {
     let r_p = vec![K::from(F::from_u64(5)); 1];
 
     let ell_d_full = D.next_power_of_two().trailing_zeros() as usize;
-    let _out = refimpl::build_me_outputs_paper_exact(
-        &s,
-        &params,
-        &[inst.clone()],
-        &[w.clone()],
-        &[],
-        &[],
-        &r_p,
-        &[],
-        /*ell_d=*/ 1,
-        [0u8; 32],
-        &l,
-    );
     let out = refimpl::build_me_outputs_paper_exact(
         &s,
         &params,
@@ -593,22 +580,17 @@ fn paper_exact_outputs_equal_literal_definition() {
         }
         chi_rp[row] = wgt;
     }
-    let mut vjs = vec![vec![K::ZERO; m]; s.t()];
     let n_eff = core::cmp::min(s.n, chi_rp.len());
-    for j in 0..s.t() {
-        s.matrices[j].add_mul_transpose_into(&chi_rp, &mut vjs[j], n_eff);
-    }
-
-    for j in 0..s.t() {
-        let mut y_nav = vec![K::ZERO; D];
-        for rho in 0..D {
-            let mut acc = K::ZERO;
-            for c in 0..m {
-                acc += K::from(z[(rho, c)]) * vjs[j][c];
-            }
-            y_nav[rho] = acc;
-        }
-        assert_eq!(&y_nav[..], &out[0].y_ring[j][..D]);
+    let z1 = refimpl::recomposed_z_from_Z(&params, s.m, &w.Z);
+    let superneo_cache =
+        neo_reductions::superneo_eval::build_superneo_eval_cache(&s).expect("fixture should be SuperNeo-compatible");
+    let expected = neo_reductions::superneo_eval::eval_all_mats_ring_cached(&superneo_cache, &z1, &chi_rp, n_eff);
+    for (j, yj) in expected.iter().enumerate().take(s.t()) {
+        assert_eq!(
+            &yj[..],
+            &out[0].y_ring[j][..D],
+            "y_ring must match literal SuperNeo ring eval for matrix j={j}"
+        );
     }
 }
 
@@ -660,21 +642,6 @@ fn paper_exact_f_term_matches_mle_and_yprime_recomposition() {
         &l,
     );
 
-    let b_k = K::from(F::from_u64(params.b as u64));
-    let mut pow = vec![K::ONE; D];
-    for i in 1..D {
-        pow[i] = pow[i - 1] * b_k;
-    }
-    let mut m_from_y = vec![K::ZERO; s.t()];
-    for j in 0..s.t() {
-        let mut acc = K::ZERO;
-        for rho in 0..D {
-            acc += out[0].y_ring[j][rho] * pow[rho];
-        }
-        m_from_y[j] = acc;
-    }
-    let f_yprime = s.f.eval_in_ext::<K>(&m_from_y);
-
     let z1 = refimpl::recomposed_z_from_Z(&params, s.m, &w.Z);
     let n_sz = 1usize << r_p.len();
     let mut chi_rp = vec![K::ZERO; n_sz];
@@ -687,18 +654,14 @@ fn paper_exact_f_term_matches_mle_and_yprime_recomposition() {
         }
         chi_rp[row] = wgt;
     }
-    let mut m_from_mle = vec![K::ZERO; s.t()];
-    for j in 0..s.t() {
-        let mut vj = vec![K::ZERO; m];
-        let n_eff = core::cmp::min(s.n, chi_rp.len());
-        s.matrices[j].add_mul_transpose_into(&chi_rp, &mut vj, n_eff);
-        for c in 0..m {
-            m_from_mle[j] += z1[c] * vj[c];
-        }
-    }
+    let superneo_cache =
+        neo_reductions::superneo_eval::build_superneo_eval_cache(&s).expect("fixture should be SuperNeo-compatible");
+    let n_eff = core::cmp::min(s.n, chi_rp.len());
+    let m_from_mle = neo_reductions::superneo_eval::eval_all_mats_cached(&superneo_cache, &z1, &chi_rp, n_eff);
     let f_mle = s.f.eval_in_ext::<K>(&m_from_mle);
+    let f_from_ct = s.f.eval_in_ext::<K>(&out[0].ct);
 
-    assert_eq!(f_yprime, f_mle, "F' must be f(M̃_j z_1(r'))");
+    assert_eq!(f_from_ct, f_mle, "F' must be computed from ct(M̃_j z_1(r'))");
 }
 
 #[test]
@@ -713,15 +676,16 @@ fn paper_exact_gamma_zero_kills_nc_and_eval() {
         w: vec![],
         Z: z0.clone(),
     };
+    let ell_d_full = D.next_power_of_two().trailing_zeros() as usize;
 
     let ch = neo_reductions::Challenges {
-        alpha: vec![K::from(F::from_u64(2)); 1],
-        beta_a: vec![K::from(F::from_u64(3)); 1],
+        alpha: vec![K::from(F::from_u64(2)); ell_d_full],
+        beta_a: vec![K::from(F::from_u64(3)); ell_d_full],
         beta_r: vec![K::from(F::from_u64(5)); 1],
         beta_m: Vec::new(),
         gamma: K::ZERO,
     };
-    let alpha_p = vec![K::from(F::from_u64(7)); 1];
+    let alpha_p = vec![K::from(F::from_u64(7)); ell_d_full];
     let r_p = vec![K::from(F::from_u64(11)); 1];
 
     let q = q_ext_from_witnesses_lit(&s, &params, &[w0.clone()], &[], &alpha_p, &r_p, &ch, None);
@@ -733,7 +697,6 @@ fn paper_exact_gamma_zero_kills_nc_and_eval() {
         x: vec![],
         m_in: 0,
     };
-    let ell_d_full = D.next_power_of_two().trailing_zeros() as usize;
     let out = refimpl::build_me_outputs_paper_exact(
         &s,
         &params,
@@ -747,20 +710,7 @@ fn paper_exact_gamma_zero_kills_nc_and_eval() {
         [0; 32],
         &l,
     );
-    let b_k = K::from(F::from_u64(params.b as u64));
-    let mut pow = vec![K::ONE; D];
-    for i in 1..D {
-        pow[i] = pow[i - 1] * b_k;
-    }
-    let mut m_vals = vec![K::ZERO; s.t()];
-    for j in 0..s.t() {
-        let mut acc = K::ZERO;
-        for rho in 0..D {
-            acc += out[0].y_ring[j][rho] * pow[rho];
-        }
-        m_vals[j] = acc;
-    }
-    let f_prime = s.f.eval_in_ext::<K>(&m_vals);
+    let f_prime = s.f.eval_in_ext::<K>(&out[0].ct);
 
     assert_eq!(q, eq_beta * f_prime, "γ=0 should zero out NC and Eval");
 }

@@ -92,14 +92,17 @@ fn mat_eq<Ff: Field + PrimeCharacteristicRing + Copy>(a: &Mat<Ff>, b: &Mat<Ff>) 
     true
 }
 
-fn project_x_first_cols<Ff: Field + PrimeCharacteristicRing + Copy>(Z: &Mat<Ff>, m_in: usize) -> Mat<Ff> {
-    let mut X: Mat<Ff> = Mat::zero(D, m_in, Ff::ZERO);
-    for r in 0..D {
-        for c in 0..m_in {
-            X.set(r, c, Z[(r, c)]);
-        }
-    }
-    X
+fn public_inputs_from_witness(Z: &Mat<F>, expected_m: usize, m_in: usize) -> Vec<F> {
+    let layout =
+        neo_reductions::common::witness_mat_layout(Z, expected_m).expect("fixture witness must have a valid layout");
+    (0..m_in)
+        .map(|c| neo_reductions::common::witness_mat_get_f(Z, layout, expected_m, c % D, c))
+        .collect()
+}
+
+fn project_x_first_cols(Z: &Mat<F>, expected_m: usize, m_in: usize) -> Mat<F> {
+    let x = public_inputs_from_witness(Z, expected_m, m_in);
+    neo_reductions::common::project_x_from_public_inputs(&x, m_in).expect("fixture x projection should succeed")
 }
 
 fn tiny_ccs_t2(n: usize, m: usize) -> CcsStructure<F> {
@@ -153,12 +156,12 @@ fn paper_exact_rlc_matches_direct_opening_and_eval() {
     // choose m_in=1 so X is non-trivial
     let inst1 = CcsClaim {
         c: l.commit(&z1),
-        x: vec![],
+        x: public_inputs_from_witness(&z1, m, 1),
         m_in: 1,
     };
     let inst2 = CcsClaim {
         c: l.commit(&z2),
-        x: vec![],
+        x: public_inputs_from_witness(&z2, m, 1),
         m_in: 1,
     };
 
@@ -218,28 +221,42 @@ fn paper_exact_rlc_matches_direct_opening_and_eval() {
 
     assert!(mat_eq(&combined_Z, &Z_exp), "RLC combined Z must be Σ ρ_i Z_i");
     // X must be projection of combined Z
-    let X_exp = project_x_first_cols(&Z_exp, /*m_in=*/ 1);
+    let X_exp = project_x_first_cols(&Z_exp, m, /*m_in=*/ 1);
     assert!(
         mat_eq(&combined_me.X, &X_exp),
         "RLC combined X must equal projection of combined Z"
     );
 
-    // y_j must equal (combined Z)·(M_j^T χ_r)
-    let vjs = build_vjs(&s, &r);
+    // y_j/ct must match a direct literal rebuild from the combined witness.
+    let inst_exp = CcsClaim {
+        c: l.commit(&Z_exp),
+        x: public_inputs_from_witness(&Z_exp, m, 1),
+        m_in: 1,
+    };
+    let w_exp = CcsWitness {
+        w: vec![],
+        Z: Z_exp.clone(),
+    };
+    let out_exp = refimpl::build_me_outputs_paper_exact(
+        &s,
+        &params,
+        &[inst_exp],
+        &[w_exp],
+        &[],
+        &[],
+        &r,
+        &[],
+        ell_d,
+        [0; 32],
+        &l,
+    );
     for j in 0..s.t() {
-        let y_from_Z = mul_Z_vec_digits(&Z_exp, &vjs[j]);
         assert_eq!(
-            &combined_me.y_ring[j][..D],
-            &y_from_Z[..],
-            "RLC y_j must equal combined-Z eval for j={}",
-            j
-        );
-        // padding tail must be zero
-        assert!(
-            combined_me.y_ring[j][D..].iter().all(|&v| v == K::ZERO),
-            "padding tail must be zero"
+            combined_me.y_ring[j], out_exp[0].y_ring[j],
+            "RLC y_ring mismatch for j={j}"
         );
     }
+    assert_eq!(combined_me.ct, out_exp[0].ct, "RLC ct mismatch");
 
     // ct must match layout-aware CE scalar semantics.
     for j in 0..s.t() {
@@ -270,7 +287,7 @@ fn paper_exact_full_loop_k2_one_step_roundtrip() {
     };
     let inst_mcs = CcsClaim {
         c: l.commit(&Z_mcs),
-        x: vec![],
+        x: public_inputs_from_witness(&Z_mcs, m, 1),
         m_in: 1,
     };
 
@@ -401,7 +418,7 @@ fn paper_exact_full_loop_k2_two_steps_chain() {
     };
     let inst_mcs0 = CcsClaim {
         c: l.commit(&Z_mcs0),
-        x: vec![],
+        x: public_inputs_from_witness(&Z_mcs0, m, 1),
         m_in: 1,
     };
 
@@ -471,7 +488,7 @@ fn paper_exact_full_loop_k2_two_steps_chain() {
     };
     let inst_mcs1 = CcsClaim {
         c: l.commit(&Z_mcs1),
-        x: vec![],
+        x: public_inputs_from_witness(&Z_mcs1, m, 1),
         m_in: 1,
     };
 
@@ -580,12 +597,12 @@ fn paper_exact_rlc_tampered_input_y_breaks_consistency() {
     };
     let inst1 = CcsClaim {
         c: l.commit(&z1),
-        x: vec![],
+        x: public_inputs_from_witness(&z1, m, 1),
         m_in: 1,
     };
     let inst2 = CcsClaim {
         c: l.commit(&z2),
-        x: vec![],
+        x: public_inputs_from_witness(&z2, m, 1),
         m_in: 1,
     };
 

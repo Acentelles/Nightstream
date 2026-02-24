@@ -893,14 +893,24 @@ where
     Ff: Field + PrimeCharacteristicRing + Copy,
     K: From<Ff>,
 {
-    let _layout = witness_mat_layout(Z, expected_m)?;
+    let layout = witness_mat_layout(Z, expected_m)?;
     let m_eff = expected_m.div_ceil(D) * D;
     let mut z = vec![K::ZERO; m_eff];
-    for c in 0..m_eff {
-        let blk = c / D;
-        let off = c % D;
-        if blk < Z.cols() {
-            z[c] = K::from(Z[(off, blk)]);
+    match layout {
+        WitnessMatLayout::SuperneoPacked => {
+            // Keep all packed lanes (including padded tail) so RLC/DEC remain closed in block space.
+            for (c, zc) in z.iter_mut().enumerate() {
+                let blk = c / D;
+                let off = c % D;
+                if blk < Z.cols() {
+                    *zc = K::from(Z[(off, blk)]);
+                }
+            }
+        }
+        WitnessMatLayout::DenseUnpacked => {
+            for (c, zc) in z.iter_mut().enumerate().take(expected_m) {
+                *zc = witness_mat_get_k(Z, layout, expected_m, c % D, c);
+            }
         }
     }
     Ok(z)
@@ -968,17 +978,12 @@ where
     Ff: PrimeField64 + PrimeCharacteristicRing + Copy,
     K: From<Ff>,
 {
-    let _layout = witness_mat_layout(Z, expected_m)?;
+    let layout = witness_mat_layout(Z, expected_m)?;
     let mut out = vec![[K::ZERO; D]; expected_m];
     for (col, dst) in out.iter_mut().enumerate().take(expected_m) {
-        let blk = col / D;
-        let off = col % D;
-        let raw = Z[(off, blk)];
-        *dst = decompose_balanced_fixed_d_digits_k(raw, params.b).map_err(|e| {
-            PiCcsError::InvalidInput(format!(
-                "packed witness logical_col={col} (blk={blk}, off={off}) decomposition failed: {e}"
-            ))
-        })?;
+        let raw = witness_mat_get_f(Z, layout, expected_m, col % D, col);
+        *dst = decompose_balanced_fixed_d_digits_k(raw, params.b)
+            .map_err(|e| PiCcsError::InvalidInput(format!("witness logical_col={col} decomposition failed: {e}")))?;
     }
 
     Ok(out)
@@ -1027,16 +1032,15 @@ where
     Ff: PrimeField64 + PrimeCharacteristicRing + Copy,
     K: From<Ff>,
 {
-    let _layout = witness_mat_layout(Z, expected_m)?;
+    let layout = witness_mat_layout(Z, expected_m)?;
     let mut yz = vec![K::ZERO; d_pad.max(D)];
     for col in 0..expected_m {
         let w = chi_s.get(col).copied().unwrap_or(K::ZERO);
         if w == K::ZERO {
             continue;
         }
-        let blk = col / D;
         let off = col % D;
-        yz[off] += K::from(Z[(off, blk)]) * w;
+        yz[off] += witness_mat_get_k(Z, layout, expected_m, off, col) * w;
     }
     yz.truncate(d_pad);
     Ok(yz)
@@ -1053,7 +1057,7 @@ where
     Ff: PrimeField64 + PrimeCharacteristicRing + Copy,
     K: From<Ff>,
 {
-    let _layout = witness_mat_layout(Z, expected_m)?;
+    let layout = witness_mat_layout(Z, expected_m)?;
     if params.b < 2 {
         return Err(PiCcsError::InvalidInput(format!(
             "{label}: invalid b={} (must be >= 2)",
@@ -1061,13 +1065,12 @@ where
         )));
     }
     for col in 0..expected_m {
-        let blk = col / D;
         let off = col % D;
-        let v = Z[(off, blk)];
+        let v = witness_mat_get_f(Z, layout, expected_m, off, col);
         if let Err(e) = decompose_balanced_fixed_d_digits_k(v, params.b) {
             let x = to_balanced_i128(v);
             return Err(PiCcsError::InvalidInput(format!(
-                "{label}: packed witness logical_col={col} (blk={blk}, off={off}) is not representable in D={} balanced base-{} digits (centered value {}). cause: {}",
+                "{label}: witness logical_col={col} is not representable in D={} balanced base-{} digits (centered value {}). cause: {}",
                 D,
                 params.b,
                 x,
