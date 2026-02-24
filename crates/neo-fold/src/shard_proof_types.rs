@@ -8,139 +8,6 @@ use neo_memory::output_check::OutputBindingProof;
 pub type TwistProofK = neo_memory::twist::TwistProof<K>;
 pub type ShoutProofK = neo_memory::shout::ShoutProof<K>;
 
-#[derive(Clone, Debug, Default)]
-pub struct CpuTimeSumcheckProof {
-    pub claimed_sum: K,
-    pub round_polys: Vec<Vec<K>>,
-    pub r_time: Vec<K>,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct ShiftTimeSumcheckProof {
-    pub claimed_sum: K,
-    pub round_polys: Vec<Vec<K>>,
-    pub r_time: Vec<K>,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum TimeOpeningSource {
-    /// Invalid placeholder; prover must never emit this in canonical proofs.
-    #[default]
-    Unknown,
-    /// Opening value comes from a verified committed-column opening proof.
-    CommittedOpening,
-    /// Opening value comes from a verified virtual-to-committed reduction chain.
-    VirtualReducedOpening,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct TimePointOpening {
-    pub point: Vec<K>,
-    pub col_ids: Vec<usize>,
-    pub evals: Vec<K>,
-    pub source: TimeOpeningSource,
-}
-
-/// Proof that a batch of named openings at one point is bound to the committed time columns.
-#[derive(Clone, Debug, Default)]
-pub struct TimeOpeningProof {
-    pub point: Vec<K>,
-    pub col_ids: Vec<usize>,
-    pub evals: Vec<K>,
-    /// Per-column vector-partial evaluations (length D each) at `point`.
-    ///
-    /// `digit_evals[i][rho]` corresponds to the rho-th digit-row evaluation for
-    /// `col_ids[i]`. Scalar `evals[i]` must equal base-`b` recomposition of this row.
-    pub digit_evals: Vec<Vec<K>>,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
-pub enum OpeningDomain {
-    #[default]
-    Cpu,
-    Mem,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct OpeningClaimEntry {
-    pub point: Vec<K>,
-    pub col_ids: Vec<usize>,
-    pub source: TimeOpeningSource,
-    pub domain: OpeningDomain,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct OpeningClaimManifest {
-    pub entries: Vec<OpeningClaimEntry>,
-    pub digest: [u8; 32],
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct OpeningReductionGroup {
-    pub point: Vec<K>,
-    pub domain: OpeningDomain,
-    pub claim_indices: Vec<usize>,
-    /// Canonical digest of `(domain, point, claim_indices)` under Stage-8 v1 encoding.
-    pub group_digest: [u8; 32],
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct OpeningReductionProof {
-    pub groups: Vec<OpeningReductionGroup>,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct OpeningUnificationProof {
-    /// Claimed total sum over the deterministic reduction-group table.
-    pub claimed_sum: K,
-    /// Sumcheck rounds for the group-selector unification reduction.
-    pub round_polys: Vec<Vec<K>>,
-    /// Transcript-derived unified selector point.
-    pub r_unify: Vec<K>,
-}
-
-#[derive(Clone, Debug)]
-pub struct JointOpeningGroupProof {
-    pub point: Vec<K>,
-    pub domain: OpeningDomain,
-    pub claim_indices: Vec<usize>,
-    pub group_digest: [u8; 32],
-    /// Vector-partial joint claim (ME-native) at `point`.
-    pub joint_claim_digits: Vec<K>,
-    /// Scalar recomposition of `joint_claim_digits` under base `b`.
-    pub joint_claim: K,
-    pub joint_commitment: Cmt,
-    /// Optional Π_CCS proof that this joint commitment opens at `point` to
-    /// `joint_claim_digits` / `joint_claim`.
-    ///
-    /// Present for per-group opening claims, absent for transcript-mixed
-    /// synthetic aggregates such as `unified_fold`.
-    pub opening_ccs_proof: Option<crate::PiCcsProof>,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum JointClaimKind {
-    #[default]
-    VectorPartial,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct JointOpeningLaneProof {
-    pub claim_kind: JointClaimKind,
-    pub groups: Vec<JointOpeningGroupProof>,
-    /// Optional unified Stage-8 fold claim derived from `groups` under transcript-bound mixers.
-    pub unified_fold: Option<JointOpeningGroupProof>,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct FoldingLanes {
-    pub main_children: usize,
-    pub val_children: usize,
-    pub wb_children: usize,
-    pub wp_children: usize,
-    pub stage8_children: usize,
-}
-
 /// Route A Shout address pre-time proof metadata, grouped by `ell_addr`.
 ///
 /// Shout addr-pre is an address-domain sumcheck, and the number of rounds equals
@@ -193,7 +60,7 @@ impl<KK> Default for ShoutAddrPreProof<KK> {
 
 /// One fold step’s artifacts (Π_CCS → Π_RLC → Π_DEC).
 #[derive(Clone, Debug)]
-pub struct TimeFoldStep {
+pub struct FoldStep {
     /// Π_CCS outputs (k ME(b,L) instances)
     pub ccs_out: Vec<CeClaim<Cmt, F, K>>,
     /// Π_CCS proof (engine-agnostic re-export)
@@ -204,39 +71,7 @@ pub struct TimeFoldStep {
     pub rlc_parent: CeClaim<Cmt, F, K>,
     /// DEC children: k ME(b,L) after decomposition of the parent
     pub dec_children: Vec<CeClaim<Cmt, F, K>>,
-    /// Time-domain CPU outer sumcheck metadata (new path).
-    pub cpu_sumcheck: CpuTimeSumcheckProof,
-    /// Time-domain shift/linkage sumcheck metadata (new path).
-    pub shift_sumcheck: ShiftTimeSumcheckProof,
-    /// Ajtai commitments to canonical per-step CPU time columns (`cols[col][j]` over time).
-    pub time_cpu_commitments: Vec<Cmt>,
-    /// Ajtai commitments to canonical per-step MEM/bus time columns (`cols[col][j]` over time).
-    pub time_mem_commitments: Vec<Cmt>,
-    /// Canonical time-domain length for the proof-carried time columns.
-    pub time_t: usize,
-    /// Declared active-row count for this shard step (must satisfy 0 <= len <= time_t).
-    pub time_declared_len: usize,
-    /// Logical column ids in the same order as `time_cpu_commitments || time_mem_commitments`.
-    pub time_col_ids: Vec<usize>,
-    /// Memory time-proof labels for this step (new path).
-    pub memory_time_proofs: Vec<&'static [u8]>,
-    /// Named column openings grouped by evaluation point (new path).
-    pub openings: Vec<TimePointOpening>,
-    /// Commitment-bound opening proofs for named time openings.
-    pub opening_proofs: Vec<TimeOpeningProof>,
-    /// Canonical claim manifest for time openings (strictly ordered, transcript-bound).
-    pub opening_manifest: OpeningClaimManifest,
-    /// Deterministic grouping of opening claims for Stage-8 reduction.
-    pub opening_reduction: OpeningReductionProof,
-    /// Sumcheck proof that binds point/domain reduction groups into one transcript-derived selector point.
-    pub opening_unification: OpeningUnificationProof,
-    /// Stage-8 Neo-native joint opening lane proof.
-    pub joint_opening_lane: JointOpeningLaneProof,
-    /// Folding-lane summary for this step (new path).
-    pub folding_lanes: FoldingLanes,
 }
-
-pub type FoldStep = TimeFoldStep;
 
 #[derive(Clone, Debug)]
 #[must_use]
@@ -357,8 +192,6 @@ pub struct StepProof {
     /// When present, this `StepProof` acts as a container and verification should
     /// expand and check the nested steps against the corresponding public segment.
     pub compressed_substeps: Option<Vec<StepProof>>,
-    /// Stage-8 joint-opening folding lane(s) (canonical mode uses exactly one unified lane).
-    pub stage8_fold: Vec<RlcDecProof>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -414,9 +247,6 @@ impl ShardProof {
             out.extend_from_slice(&p.dec_children);
         }
         for p in &step.wp_fold {
-            out.extend_from_slice(&p.dec_children);
-        }
-        for p in &step.stage8_fold {
             out.extend_from_slice(&p.dec_children);
         }
     }

@@ -1,5 +1,4 @@
 use neo_ccs::matrix::Mat;
-use neo_ajtai::{decomp_b_row_major, DecompStyle};
 use neo_math::{D, F as BaseField};
 use neo_math::balanced::to_balanced_i128;
 use neo_params::NeoParams;
@@ -25,29 +24,8 @@ fn balanced_divrem(v: i128, b: i128) -> (i128, i128) {
 ///
 /// This convenience helper enforces SuperNeo packed layout `D×ceil(m/D)`.
 pub fn encode_vector_balanced_to_mat(params: &NeoParams, z: &[BaseField]) -> Mat<BaseField> {
-    encode_vector_for_ccs_m(params, z.len(), z).expect("encode_vector_balanced_to_mat: packed witness encoding")
-}
-
-/// Encode a vector `z ∈ F^m` into its Ajtai digit matrix `Z ∈ F^{d×m}` using **balanced** digits
-/// and an explicit decomposition base.
-pub fn encode_vector_balanced_to_mat_with_base(
-    params: &NeoParams,
-    z: &[BaseField],
-    base: u32,
-) -> Mat<BaseField> {
-    let d = params.d as usize;
-    debug_assert_eq!(
-        d,
-        neo_math::D,
-        "Ajtai d mismatch: params.d={}, neo_math::D={}",
-        params.d,
-        neo_math::D
-    );
-    let m = z.len();
-
-    // Row-major digits of shape d×m, balanced so recomposition equals z mod p.
-    let row_major = decomp_b_row_major(z, base, d, DecompStyle::Balanced);
-    Mat::from_row_major(d, m, row_major)
+    encode_vector_for_ccs_m(params, z.len(), z)
+        .unwrap_or_else(|e| panic!("encode_vector_balanced_to_mat (SuperNeo packed) failed: {e}"))
 }
 
 /// Returns true when the CCS width can be represented in SuperNeo packed layout.

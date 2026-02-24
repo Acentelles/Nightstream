@@ -12,17 +12,15 @@
 //! - no compressed (RVC) instructions
 //! - 4-byte aligned PC and control-flow targets
 //!
-//! Note: Shout operand keys are `u64` and use operand-mode encoding:
-//! - interleaved `(lhs, rhs)` for interleaved-key opcodes
-//! - combined keys for ADD/SUB/MUL/MULHU rollout paths
-//! RV64 proving still requires wider-key rollout work for combined multiply domains.
+//! Note: Shout operand keys are encoded via bit interleaving into a `u64` key
+//! (2×32-bit → 64-bit), which is sufficient for RV32. RV64 proving requires a wider key.
 //!
 //! # Architecture
 //!
 //! ## Lookup Tables (Shout)
 //!
 //! ALU operations are proven using Neo's Shout (read-only memory) protocol:
-//! - The **index/key** encodes operands via opcode operand mode
+//! - The **index** encodes operands via bit interleaving
 //! - The **value** is the operation result
 //! - MLEs enable efficient sumcheck verification
 //!

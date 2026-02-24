@@ -4,8 +4,7 @@ use p3_field::PrimeCharacteristicRing;
 use p3_goldilocks::Goldilocks as F;
 
 use crate::riscv::exec_table::Rv32ExecTable;
-use crate::riscv::instruction::{encode_lookup_key, operand_mode_keys_enabled, try_decode_lookup_operands};
-use crate::riscv::lookups::{RiscvOpcode, RiscvShoutTables};
+use crate::riscv::lookups::{interleave_bits, uninterleave_bits, RiscvOpcode, RiscvShoutTables};
 
 #[derive(Clone, Debug)]
 pub struct TwistLaneOverTime {
@@ -74,14 +73,15 @@ pub fn extract_twist_lanes_over_time(
     let t = exec.rows.len();
 
     // Build REG state for `inc_at_write_addr`.
-    let mut regs: HashMap<u64, u64> = HashMap::new();
+    let mut regs = [0u64; 32];
     for (&addr, &value) in init_regs {
+        if addr >= 32 {
+            return Err(format!("trace extract: reg init addr out of range: addr={addr}"));
+        }
         if addr == 0 && value != 0 {
             return Err("trace extract: reg init must keep x0 == 0".into());
         }
-        if value != 0 {
-            regs.insert(addr, value);
-        }
+        regs[addr as usize] = value;
     }
 
     // Build RAM state for `inc_at_write_addr` and read-value checks.
@@ -152,13 +152,15 @@ pub fn extract_twist_lanes_over_time(
             if wr.addr == 0 {
                 return Err(format!("trace extract: unexpected x0 write at cycle {}", r.cycle));
             }
-            let prev = regs.get(&wr.addr).copied().unwrap_or(0);
-            if wr.value == 0 {
-                regs.remove(&wr.addr);
-            } else {
-                regs.insert(wr.addr, wr.value);
+            if wr.addr >= 32 {
+                return Err(format!(
+                    "trace extract: reg write addr out of range at cycle {}: addr={}",
+                    r.cycle, wr.addr
+                ));
             }
-            regs.remove(&0);
+            let prev = regs[wr.addr as usize];
+            regs[wr.addr as usize] = wr.value;
+            regs[0] = 0;
 
             reg0.has_write[row_idx] = true;
             reg0.wa[row_idx] = wr.addr;
@@ -305,12 +307,9 @@ pub fn extract_shout_lanes_over_time(
                     // Canonicalize shift keys: RISC-V shifts use only the low 5 bits of `rhs`.
                     // This shrinks the key space and keeps trace/sidecar linkage stable across packed / bit-addressed encodings.
                     if matches!(op, RiscvOpcode::Sll | RiscvOpcode::Srl | RiscvOpcode::Sra) {
-                        let fallback_lhs = r.reg_read_lane0.as_ref().map(|io| io.value).unwrap_or(0);
-                        let fallback_rhs = r.reg_read_lane1.as_ref().map(|io| io.value).unwrap_or(0);
-                        let (lhs, rhs) = try_decode_lookup_operands(op, key, operand_mode_keys_enabled())
-                            .unwrap_or((fallback_lhs, fallback_rhs));
+                        let (lhs, rhs) = uninterleave_bits(key as u128);
                         let rhs_masked = rhs & 0x1F;
-                        key = encode_lookup_key(op, lhs, rhs_masked, /*xlen=*/ 32);
+                        key = interleave_bits(lhs, rhs_masked) as u64;
                     }
                 }
                 lanes[idx].key[row_idx] = key;

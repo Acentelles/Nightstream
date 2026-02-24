@@ -368,20 +368,18 @@ fn build_twist_shout_2step_fixture_inner(seed: u64, bad_lookup_step1: bool) -> S
     );
     let (mcs1, mcs_wit1) = create_mcs_from_z(&params, &l, m_in, z1);
 
-    let step0 = crate::common_setup::canonicalize_step_time_columns(StepWitnessBundle {
+    let step0 = StepWitnessBundle {
         mcs: (mcs0, mcs_wit0),
         lut_instances: vec![(lut_inst0, lut_wit0)],
         mem_instances: vec![(mem_inst0, mem_wit0)],
-        time_columns: crate::common_setup::empty_time_columns(),
         _phantom: PhantomData::<K>,
-    });
-    let step1 = crate::common_setup::canonicalize_step_time_columns(StepWitnessBundle {
+    };
+    let step1 = StepWitnessBundle {
         mcs: (mcs1, mcs_wit1),
         lut_instances: vec![(lut_inst1, lut_wit1)],
         mem_instances: vec![(mem_inst1, mem_wit1)],
-        time_columns: crate::common_setup::empty_time_columns(),
         _phantom: PhantomData::<K>,
-    });
+    };
 
     let steps_witness = vec![step0, step1];
     let steps_instance = steps_witness.iter().map(StepInstanceBundle::from).collect();

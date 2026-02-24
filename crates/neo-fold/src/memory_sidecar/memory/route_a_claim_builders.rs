@@ -1,81 +1,5 @@
 use super::*;
 
-#[inline]
-fn time_mem_logical_col_id_for_step(
-    step: &StepWitnessBundle<Cmt, F, K>,
-    mem_local_col: usize,
-    label: &str,
-) -> Result<usize, PiCcsError> {
-    let cpu_cols_len = step.time_columns.cpu_cols.len();
-    let mem_cols_len = step.time_columns.mem_cols.len();
-    let total_cols = cpu_cols_len
-        .checked_add(mem_cols_len)
-        .ok_or_else(|| PiCcsError::InvalidInput(format!("{label}: cpu_cols + mem_cols overflow")))?;
-    if step.time_columns.col_ids.len() != total_cols {
-        return Err(PiCcsError::ProtocolError(format!(
-            "{label}: time column id table mismatch (col_ids={}, cpu_cols={}, mem_cols={})",
-            step.time_columns.col_ids.len(),
-            cpu_cols_len,
-            mem_cols_len
-        )));
-    }
-    let idx = cpu_cols_len
-        .checked_add(mem_local_col)
-        .ok_or_else(|| PiCcsError::InvalidInput(format!("{label}: cpu_cols + mem_local_col overflow")))?;
-    step.time_columns.col_ids.get(idx).copied().ok_or_else(|| {
-        PiCcsError::ProtocolError(format!(
-            "{label}: missing logical id for mem local col {} (cpu_cols={}, mem_cols={})",
-            mem_local_col, cpu_cols_len, mem_cols_len
-        ))
-    })
-}
-
-#[inline]
-fn time_mem_local_col_for_step(
-    step: &StepWitnessBundle<Cmt, F, K>,
-    logical_col_id: usize,
-    label: &str,
-) -> Result<usize, PiCcsError> {
-    let cpu_cols_len = step.time_columns.cpu_cols.len();
-    let mem_cols_len = step.time_columns.mem_cols.len();
-    let total_cols = cpu_cols_len
-        .checked_add(mem_cols_len)
-        .ok_or_else(|| PiCcsError::InvalidInput(format!("{label}: cpu_cols + mem_cols overflow")))?;
-    if step.time_columns.col_ids.len() != total_cols {
-        return Err(PiCcsError::ProtocolError(format!(
-            "{label}: time column id table mismatch (col_ids={}, cpu_cols={}, mem_cols={})",
-            step.time_columns.col_ids.len(),
-            cpu_cols_len,
-            mem_cols_len
-        )));
-    }
-    let abs_pos = step
-        .time_columns
-        .col_ids
-        .iter()
-        .position(|&id| id == logical_col_id)
-        .ok_or_else(|| {
-            PiCcsError::ProtocolError(format!(
-                "{label}: logical col_id={} is not present in step.time_columns.col_ids",
-                logical_col_id
-            ))
-        })?;
-    if abs_pos < cpu_cols_len {
-        return Err(PiCcsError::ProtocolError(format!(
-            "{label}: logical col_id={} resolved to CPU column position {} (expected mem column)",
-            logical_col_id, abs_pos
-        )));
-    }
-    let mem_local = abs_pos - cpu_cols_len;
-    if mem_local >= mem_cols_len {
-        return Err(PiCcsError::ProtocolError(format!(
-            "{label}: logical col_id={} resolved out of mem column range (mem_local={}, mem_cols={})",
-            logical_col_id, mem_local, mem_cols_len
-        )));
-    }
-    Ok(mem_local)
-}
-
 pub(crate) fn width_lookup_bus_val_cols_witness(
     step: &StepWitnessBundle<Cmt, F, K>,
     t_len: usize,
@@ -83,19 +7,23 @@ pub(crate) fn width_lookup_bus_val_cols_witness(
     let width = Rv32WidthSidecarLayout::new();
     let width_cols = rv32_width_lookup_backed_cols(&width);
     let mut width_bus_col_by_col: BTreeMap<usize, usize> = BTreeMap::new();
-    if step.time_columns.t != t_len || step.time_columns.cpu_cols.is_empty() {
-        return Err(PiCcsError::ProtocolError(format!(
-            "W3(shared): canonical time columns required for width lookup openings (time_t={}, cpu_cols={}, expected_t={t_len})",
-            step.time_columns.t,
-            step.time_columns.cpu_cols.len()
-        )));
-    }
+    let m_in = step.mcs.0.m_in;
     let bus = build_bus_layout_for_step_witness(step, t_len)?;
     if bus.shout_cols.len() != step.lut_instances.len() {
         return Err(PiCcsError::ProtocolError(
             "W3(shared): bus shout lane count drift while resolving width lookup columns".into(),
         ));
     }
+    let bus_base_delta = bus
+        .bus_base
+        .checked_sub(m_in)
+        .ok_or_else(|| PiCcsError::ProtocolError("W3(shared): bus_base underflow".into()))?;
+    if bus_base_delta % t_len != 0 {
+        return Err(PiCcsError::ProtocolError(format!(
+            "W3(shared): bus_base alignment mismatch (bus_base_delta={bus_base_delta}, t_len={t_len})"
+        )));
+    }
+    let bus_col_offset = bus_base_delta / t_len;
     for (lut_idx, (inst, _)) in step.lut_instances.iter().enumerate() {
         if !rv32_is_width_lookup_table_id(inst.table_id) {
             continue;
@@ -117,8 +45,7 @@ pub(crate) fn width_lookup_bus_val_cols_witness(
         let lane0 = inst_cols.lanes.get(0).ok_or_else(|| {
             PiCcsError::ProtocolError("W3(shared): expected one shout lane for width lookup table".into())
         })?;
-        let logical_bus_col = time_mem_logical_col_id_for_step(step, lane0.primary_val(), "W3(shared)")?;
-        width_bus_col_by_col.insert(width_col_id, logical_bus_col);
+        width_bus_col_by_col.insert(width_col_id, bus_col_offset + lane0.primary_val());
     }
     let mut out = Vec::with_capacity(width_cols.len());
     for &col_id in width_cols.iter() {
@@ -163,9 +90,23 @@ pub(crate) fn build_route_a_width_time_claims(
     let width_decoded: BTreeMap<usize, Vec<K>> = {
         let width_bus_abs_cols = width_lookup_bus_val_cols_witness(step, t_len)?;
         let bus = build_bus_layout_for_step_witness(step, t_len)?;
+        let bus_base_delta = bus
+            .bus_base
+            .checked_sub(m_in)
+            .ok_or_else(|| PiCcsError::ProtocolError("W3(shared): bus_base underflow".into()))?;
+        if bus_base_delta % t_len != 0 {
+            return Err(PiCcsError::ProtocolError(format!(
+                "W3(shared): bus_base alignment mismatch (bus_base_delta={bus_base_delta}, t_len={t_len})"
+            )));
+        }
+        let bus_col_offset = bus_base_delta / t_len;
         let mut width_bus_val_cols = Vec::with_capacity(width_bus_abs_cols.len());
         for abs_col in width_bus_abs_cols.iter().copied() {
-            let local_col = time_mem_local_col_for_step(step, abs_col, "W3(shared)")?;
+            let local_col = abs_col.checked_sub(bus_col_offset).ok_or_else(|| {
+                PiCcsError::ProtocolError(format!(
+                    "W3(shared): width lookup bus column underflow (abs_col={abs_col}, bus_col_offset={bus_col_offset})"
+                ))
+            })?;
             if local_col >= bus.bus_cols {
                 return Err(PiCcsError::ProtocolError(format!(
                     "W3(shared): width lookup bus column out of range (local_col={local_col}, bus_cols={})",
@@ -175,9 +116,17 @@ pub(crate) fn build_route_a_width_time_claims(
             width_bus_val_cols.push(local_col);
         }
         let lookup_vals = decode_lookup_backed_col_values_batch(
+            params,
+            bus.bus_base,
             t_len,
+            &step.mcs.1.Z,
+            step
+                .mcs
+                .0
+                .m_in
+                .checked_add(step.mcs.1.w.len())
+                .ok_or_else(|| PiCcsError::InvalidInput("W3(shared): witness width overflow".into()))?,
             bus.bus_cols,
-            Some(&step.time_columns.mem_cols),
             &width_bus_val_cols,
         )?;
         let mut by_col = BTreeMap::<usize, Vec<K>>::new();
@@ -651,7 +600,6 @@ pub(crate) fn build_route_a_control_time_claims(
 
     let main_col_ids = vec![
         trace.active,
-        trace.is_virtual,
         trace.instr_word,
         trace.pc_before,
         trace.pc_after,
@@ -756,94 +704,6 @@ pub(crate) fn build_route_a_control_time_claims(
         }
         decoded
     };
-
-    for j in 0..t_len {
-        let is_virtual = *main_decoded
-            .get(&trace.is_virtual)
-            .and_then(|v| v.get(j))
-            .ok_or_else(|| {
-                PiCcsError::ProtocolError("control(shared): missing is_virtual row while validating".into())
-            })?;
-        let pc_before = *main_decoded
-            .get(&trace.pc_before)
-            .and_then(|v| v.get(j))
-            .ok_or_else(|| {
-                PiCcsError::ProtocolError("control(shared): missing pc_before row while validating".into())
-            })?;
-        let pc_after = *main_decoded
-            .get(&trace.pc_after)
-            .and_then(|v| v.get(j))
-            .ok_or_else(|| {
-                PiCcsError::ProtocolError("control(shared): missing pc_after row while validating".into())
-            })?;
-        let op_lui = *decode_decoded
-            .get(&decode.op_lui)
-            .and_then(|v| v.get(j))
-            .ok_or_else(|| PiCcsError::ProtocolError("control(shared): missing op_lui row while validating".into()))?;
-        let op_auipc = *decode_decoded
-            .get(&decode.op_auipc)
-            .and_then(|v| v.get(j))
-            .ok_or_else(|| {
-                PiCcsError::ProtocolError("control(shared): missing op_auipc row while validating".into())
-            })?;
-        let op_load = *decode_decoded
-            .get(&decode.op_load)
-            .and_then(|v| v.get(j))
-            .ok_or_else(|| PiCcsError::ProtocolError("control(shared): missing op_load row while validating".into()))?;
-        let op_store = *decode_decoded
-            .get(&decode.op_store)
-            .and_then(|v| v.get(j))
-            .ok_or_else(|| {
-                PiCcsError::ProtocolError("control(shared): missing op_store row while validating".into())
-            })?;
-        let op_alu_imm = *decode_decoded
-            .get(&decode.op_alu_imm)
-            .and_then(|v| v.get(j))
-            .ok_or_else(|| {
-                PiCcsError::ProtocolError("control(shared): missing op_alu_imm row while validating".into())
-            })?;
-        let op_alu_reg = *decode_decoded
-            .get(&decode.op_alu_reg)
-            .and_then(|v| v.get(j))
-            .ok_or_else(|| {
-                PiCcsError::ProtocolError("control(shared): missing op_alu_reg row while validating".into())
-            })?;
-        let op_misc_mem = *decode_decoded
-            .get(&decode.op_misc_mem)
-            .and_then(|v| v.get(j))
-            .ok_or_else(|| {
-                PiCcsError::ProtocolError("control(shared): missing op_misc_mem row while validating".into())
-            })?;
-        let op_system = *decode_decoded
-            .get(&decode.op_system)
-            .and_then(|v| v.get(j))
-            .ok_or_else(|| {
-                PiCcsError::ProtocolError("control(shared): missing op_system row while validating".into())
-            })?;
-        let op_amo = *decode_decoded
-            .get(&decode.op_amo)
-            .and_then(|v| v.get(j))
-            .ok_or_else(|| PiCcsError::ProtocolError("control(shared): missing op_amo row while validating".into()))?;
-        let residual = control_next_pc_linear_residual(
-            pc_before,
-            pc_after,
-            is_virtual,
-            op_lui,
-            op_auipc,
-            op_load,
-            op_store,
-            op_alu_imm,
-            op_alu_reg,
-            op_misc_mem,
-            op_system,
-            op_amo,
-        );
-        if residual != K::ZERO {
-            return Err(PiCcsError::ProtocolError(format!(
-                "control/next_pc_linear residual non-zero at row={j}, residual={residual}, is_virtual={is_virtual}, pc_before={pc_before}, pc_after={pc_after}, op_lui={op_lui}, op_auipc={op_auipc}, op_load={op_load}, op_store={op_store}, op_alu_imm={op_alu_imm}, op_alu_reg={op_alu_reg}, op_misc_mem={op_misc_mem}, op_system={op_system}, op_amo={op_amo}"
-            )));
-        }
-    }
 
     for j in 0..t_len {
         let active = *main_decoded
@@ -1114,7 +974,6 @@ pub(crate) fn build_route_a_control_time_claims(
     let linear_sparse = vec![
         main_col(trace.pc_before)?,
         main_col(trace.pc_after)?,
-        main_col(trace.is_virtual)?,
         decode_col(decode.op_lui)?,
         decode_col(decode.op_auipc)?,
         decode_col(decode.op_load)?,
@@ -1128,12 +987,11 @@ pub(crate) fn build_route_a_control_time_claims(
     let linear_weights = control_next_pc_linear_weight_vector(r_cycle, 1);
     let linear_oracle = FormulaOracleSparseTime::new(
         linear_sparse,
-        4,
+        3,
         r_cycle,
         Box::new(move |vals: &[K]| {
             let residual = control_next_pc_linear_residual(
                 vals[0], vals[1], vals[2], vals[3], vals[4], vals[5], vals[6], vals[7], vals[8], vals[9], vals[10],
-                vals[11],
             );
             linear_weights[0] * residual
         }),
@@ -1300,25 +1158,15 @@ pub(crate) fn emit_route_a_wb_wp_me_claims(
             wb_claims.len()
         )));
     }
-    let wb_use_time_cols = step.time_columns.t == t_len
-        && !step.time_columns.cpu_cols.is_empty()
-        && wb_cols
-            .iter()
-            .all(|&col_id| col_id < step.time_columns.cpu_cols.len());
-    if !wb_use_time_cols {
-        return Err(PiCcsError::ProtocolError(format!(
-            "WB(shared): canonical time CPU columns are required (time_t={}, cpu_cols={}, expected_t={t_len})",
-            step.time_columns.t,
-            step.time_columns.cpu_cols.len()
-        )));
-    }
-    crate::memory_sidecar::cpu_bus::append_time_columns_openings_to_me_instance(
+    crate::memory_sidecar::cpu_bus::append_col_major_time_openings_to_me_instance(
         params,
         m_in,
         t_len,
-        &step.time_columns.cpu_cols,
+        m_in,
         &wb_cols,
         core_t,
+        s.m,
+        &mcs_wit.Z,
         &mut wb_claims[0],
     )?;
 
@@ -1335,6 +1183,17 @@ pub(crate) fn emit_route_a_wb_wp_me_claims(
                 "W2(shared): bus layout shout lane count drift".into(),
             ));
         }
+        let bus_base_delta = bus
+            .bus_base
+            .checked_sub(m_in)
+            .ok_or_else(|| PiCcsError::ProtocolError("W2(shared): bus_base underflow".into()))?;
+        if bus_base_delta % t_len != 0 {
+            return Err(PiCcsError::ProtocolError(format!(
+                "W2(shared): bus_base alignment mismatch (bus_base_delta={}, t_len={t_len})",
+                bus_base_delta
+            )));
+        }
+        let bus_col_offset = bus_base_delta / t_len;
         for &lut_idx in decode_lut_indices.iter() {
             let inst_cols = bus.shout_cols.get(lut_idx).ok_or_else(|| {
                 PiCcsError::ProtocolError("W2(shared): missing shout cols for decode lookup table".into())
@@ -1342,8 +1201,7 @@ pub(crate) fn emit_route_a_wb_wp_me_claims(
             let lane0 = inst_cols.lanes.get(0).ok_or_else(|| {
                 PiCcsError::ProtocolError("W2(shared): expected one shout lane for decode lookup table".into())
             })?;
-            let logical_bus_col = time_mem_logical_col_id_for_step(step, lane0.primary_val(), "W2(shared)")?;
-            wp_cols.push(logical_bus_col);
+            wp_cols.push(bus_col_offset + lane0.primary_val());
         }
     }
     if width_stage_required_for_step_witness(step) {
@@ -1365,65 +1223,30 @@ pub(crate) fn emit_route_a_wb_wp_me_claims(
             wp_claims.len()
         )));
     }
-    let wp_use_time_cols = step.time_columns.t == t_len
-        && !step.time_columns.cpu_cols.is_empty()
-        && !step.time_columns.mem_cols.is_empty();
-    if !wp_use_time_cols {
-        return Err(PiCcsError::ProtocolError(format!(
-            "WP(shared): canonical time CPU/MEM columns are required (time_t={}, cpu_cols={}, mem_cols={}, expected_t={t_len})",
-            step.time_columns.t,
-            step.time_columns.cpu_cols.len(),
-            step.time_columns.mem_cols.len()
-        )));
-    }
-    crate::memory_sidecar::cpu_bus::append_mixed_time_columns_openings_to_me_instance(
+    crate::memory_sidecar::cpu_bus::append_col_major_time_openings_to_me_instance(
         params,
         m_in,
         t_len,
-        &step.time_columns.cpu_cols,
-        &step.time_columns.mem_cols,
-        &step.time_columns.col_ids,
+        m_in,
         &wp_cols,
         core_t,
+        s.m,
+        &mcs_wit.Z,
         &mut wp_claims[0],
     )?;
     Ok((wb_claims, wp_claims))
 }
 
 pub(crate) fn verify_route_a_wb_wp_terminals(
+    _core_t: usize,
     step: &StepInstanceBundle<Cmt, F, K>,
     r_time: &[K],
     r_cycle: &[K],
     batched_final_values: &[K],
     claim_plan: &RouteATimeClaimPlan,
     mem_proof: &MemSidecarProof<Cmt, F, K>,
-    step_time_openings: &[crate::shard_proof_types::TimePointOpening],
 ) -> Result<(), PiCcsError> {
-    // WB/WP terminal checks are RV32 trace-layout specific.
-    if step.mcs_inst.m_in != 5 {
-        return Ok(());
-    }
-
     let trace = Rv32TraceLayout::new();
-    let requires_wb_wp = claim_plan.wb_bool.is_some()
-        || claim_plan.wp_quiescence.is_some()
-        || !mem_proof.wb_me_claims.is_empty()
-        || !mem_proof.wp_me_claims.is_empty();
-    if !requires_wb_wp {
-        return Ok(());
-    }
-    let cpu_cols_len = step.time_columns.cpu_cols.len();
-    let mem_cols_len = step.time_columns.mem_cols.len();
-    let expected_logical_cols = cpu_cols_len.saturating_add(mem_cols_len);
-    let strict_committed_mode = step.mcs_inst.m_in == 5
-        && step.time_columns.t > 0
-        && cpu_cols_len > 0
-        && step.time_columns.col_ids.len() == expected_logical_cols;
-    if !strict_committed_mode {
-        return Err(PiCcsError::ProtocolError(
-            "WB/WP terminals require canonical committed time-column mode".into(),
-        ));
-    }
 
     if let Some(claim_idx) = claim_plan.wb_bool {
         if claim_idx >= batched_final_values.len() {
@@ -1451,18 +1274,18 @@ pub(crate) fn verify_route_a_wb_wp_terminals(
         }
 
         let wb_bool_cols = rv32_trace_wb_columns(&trace);
-        let (wb_open_entry, wb_open_map) =
-            require_time_openings_covering_point(step_time_openings, r_time, &wb_bool_cols, "WB")?;
-        if wb_open_entry.source != crate::shard_proof_types::TimeOpeningSource::CommittedOpening {
+        let need = wb_bool_cols.len();
+        if me.aux_openings.len() != need {
             return Err(PiCcsError::ProtocolError(format!(
-                "WB requires CommittedOpening source (got {:?})",
-                wb_open_entry.source
+                "WB ME opening length mismatch (got {}, expected {need})",
+                me.aux_openings.len()
             )));
         }
+
+        let wb_bool_open = &me.aux_openings[..need];
         let wb_weights = wb_weight_vector(r_cycle, wb_bool_cols.len());
         let mut wb_weighted_bitness = K::ZERO;
-        for (&col_id, &w) in wb_bool_cols.iter().zip(wb_weights.iter()) {
-            let b = named_opening(&wb_open_map, col_id, "WB")?;
+        for (&b, &w) in wb_bool_open.iter().zip(wb_weights.iter()) {
             wb_weighted_bitness += w * b * (b - K::ONE);
         }
 
@@ -1505,20 +1328,24 @@ pub(crate) fn verify_route_a_wb_wp_terminals(
         }
 
         let wp_open_cols = rv32_trace_wp_opening_columns(&trace);
-        let (wp_open_entry, wp_open_map) =
-            require_time_openings_covering_point(step_time_openings, r_time, &wp_open_cols, "WP")?;
-        if wp_open_entry.source != crate::shard_proof_types::TimeOpeningSource::CommittedOpening {
+        let need_min = wp_open_cols.len();
+        if me.aux_openings.len() < need_min {
             return Err(PiCcsError::ProtocolError(format!(
-                "WP requires CommittedOpening source (got {:?})",
-                wp_open_entry.source
+                "WP ME opening length mismatch (got {}, expected at least {need_min})",
+                me.aux_openings.len()
             )));
         }
-        let active_open = named_opening(&wp_open_map, trace.active, "WP")?;
-        let wp_cols_no_active = &wp_open_cols[1..];
-        let wp_weights = wp_weight_vector(r_cycle, wp_cols_no_active.len());
+
+        let active_open = me
+            .aux_openings
+            .first()
+            .copied()
+            .ok_or_else(|| PiCcsError::ProtocolError("WP missing active opening".into()))?;
+        let wp_open_end = wp_open_cols.len();
+        let wp_open = &me.aux_openings[1..wp_open_end];
+        let wp_weights = wp_weight_vector(r_cycle, wp_open.len());
         let mut wp_weighted_sum = K::ZERO;
-        for (&col_id, &w) in wp_cols_no_active.iter().zip(wp_weights.iter()) {
-            let v = named_opening(&wp_open_map, col_id, "WP")?;
+        for (&v, &w) in wp_open.iter().zip(wp_weights.iter()) {
             wp_weighted_sum += w * v;
         }
         let expected_terminal = eq_points(r_time, r_cycle) * (K::ONE - active_open) * wp_weighted_sum;

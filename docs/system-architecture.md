@@ -238,20 +238,6 @@ In all cases, the verifier also checks the **context digest** binding to $(\text
 
 ---
 
-## Uniform CCS Migration (In-Place)
-
-The refactor path in this repository is **in-place**:
-
-1. Keep existing `FoldingSession`, shard prover/verifier APIs, and `Rv32TraceWiring` entrypoints.
-2. Attach a per-step `TimeColumns` payload to `StepWitnessBundle` / `StepInstanceBundle`.
-3. Move time-domain consumers to read named per-step columns first (fallback to flattened witness only where needed during transition).
-4. Introduce a uniform time-independent constraint key (`build_rv32_uniform_constraint_key`) keyed by per-step column ids.
-5. Preserve `Π_RLC/Π_DEC` folding discipline while replacing flattened-index assumptions with point/opening-oriented data.
-
-This avoids maintaining a second “parallel” proving system during migration.
-
----
-
 ## Glossary
 
 * **CCS** — Customizable Constraint System

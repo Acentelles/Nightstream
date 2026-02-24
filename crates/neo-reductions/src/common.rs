@@ -761,8 +761,6 @@ pub fn min_k_rho_for_rlc_count(params: &NeoParams, ring: &RotRing, count: usize)
 pub enum WitnessMatLayout {
     /// SuperNeo packed layout: `Z ∈ F^{D×(m/D)}`.
     SuperneoPacked,
-    /// Compatibility layout: `Z ∈ F^{D×m}` (one logical column per matrix column).
-    DenseUnpacked,
 }
 
 /// Classify a witness matrix shape against the expected CCS width.
@@ -788,15 +786,10 @@ where
         // padded tail lanes. We therefore classify layout by shape only here.
         return Ok(WitnessMatLayout::SuperneoPacked);
     }
-    if Z.cols() == expected_m {
-        return Ok(WitnessMatLayout::DenseUnpacked);
-    }
     Err(PiCcsError::InvalidInput(format!(
-        "witness_mat_layout: expected packed {}x{} or dense {}x{} witness for expected_m={expected_m}, got {}x{}",
+        "witness_mat_layout: expected packed SuperNeo witness shape {}x{} for expected_m={expected_m}, got {}x{}",
         D,
         want_cols,
-        D,
-        expected_m,
         Z.rows(),
         Z.cols(),
     )))
@@ -827,7 +820,6 @@ where
                 Ff::ZERO
             }
         }
-        WitnessMatLayout::DenseUnpacked => Z[(rho, col)],
     }
 }
 

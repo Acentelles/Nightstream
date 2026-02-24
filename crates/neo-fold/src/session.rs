@@ -1149,10 +1149,10 @@ where
             ));
         }
 
-        // Use witness-side steps for CCS preparation so Route-A time-column mode can be inferred
-        // before proof generation. `StepInstanceBundle` intentionally drops time_columns.
+        let steps_public: Vec<StepInstanceBundle<Cmt, F, K>> =
+            self.steps.iter().map(StepInstanceBundle::from).collect();
         let (s_prepared, _cpu_bus) =
-            crate::memory_sidecar::cpu_bus::prepare_ccs_for_shared_cpu_bus_steps(s, &self.steps)?;
+            crate::memory_sidecar::cpu_bus::prepare_ccs_for_shared_cpu_bus_steps(s, &steps_public)?;
         Ok(s_prepared)
     }
 
@@ -1713,7 +1713,6 @@ where
                 || !step.mem.wp_me_claims.is_empty()
                 || !step.wb_fold.is_empty()
                 || !step.wp_fold.is_empty()
-                || !step.stage8_fold.is_empty()
         });
         if !(has_twist_or_shout || has_wb_or_wp) && !outputs.obligations.val.is_empty() {
             return Err(PiCcsError::ProtocolError(
@@ -1886,7 +1885,6 @@ where
                 || !step.mem.wp_me_claims.is_empty()
                 || !step.wb_fold.is_empty()
                 || !step.wp_fold.is_empty()
-                || !step.stage8_fold.is_empty()
         });
         if !(has_twist_or_shout || has_wb_or_wp) && !outputs.obligations.val.is_empty() {
             return Err(PiCcsError::ProtocolError(

@@ -276,60 +276,6 @@ where
 // Shard Verification
 // ============================================================================
 
-fn merge_step_time_columns_from_proof(
-    step: &StepInstanceBundle<Cmt, F, K>,
-    step_proof: &StepProof,
-) -> Result<StepInstanceBundle<Cmt, F, K>, PiCcsError> {
-    let mut out = step.clone();
-    let proof_t = step_proof.fold.time_t;
-    let proof_col_ids = &step_proof.fold.time_col_ids;
-    let cpu_cols_len = step_proof.fold.time_cpu_commitments.len();
-    let mem_cols_len = step_proof.fold.time_mem_commitments.len();
-    let expected_col_ids_len = cpu_cols_len
-        .checked_add(mem_cols_len)
-        .ok_or_else(|| PiCcsError::InvalidInput("step proof time col_id length overflow".into()))?;
-    if proof_col_ids.len() != expected_col_ids_len {
-        return Err(PiCcsError::ProtocolError(format!(
-            "step proof time_col_ids length mismatch: got {}, expected {} (=cpu_commitments+mem_commitments)",
-            proof_col_ids.len(),
-            expected_col_ids_len
-        )));
-    }
-    if proof_col_ids
-        .iter()
-        .copied()
-        .collect::<std::collections::BTreeSet<_>>()
-        .len()
-        != proof_col_ids.len()
-    {
-        return Err(PiCcsError::ProtocolError(
-            "step proof time_col_ids contains duplicates".into(),
-        ));
-    }
-    for (idx, &col_id) in proof_col_ids.iter().enumerate() {
-        if col_id != idx {
-            return Err(PiCcsError::ProtocolError(format!(
-                "step proof time_col_ids must be canonical contiguous ids (time_col_ids[{idx}]={col_id}, expected {idx})"
-            )));
-        }
-    }
-
-    if proof_t == 0 && expected_col_ids_len > 0 {
-        return Err(PiCcsError::ProtocolError(
-            "step proof time columns are malformed: time_t=0 with non-empty time commitments".into(),
-        ));
-    }
-
-    // Verifier-side acceptance must not depend on statement-local time column payload.
-    // Replace statement payload with proof metadata only (t + logical ids + committed counts).
-    out.time_columns.t = proof_t;
-    out.time_columns.cpu_cols = vec![Vec::new(); cpu_cols_len];
-    out.time_columns.mem_cols = vec![Vec::new(); mem_cols_len];
-    out.time_columns.col_ids = proof_col_ids.clone();
-
-    Ok(out)
-}
-
 pub(crate) fn fold_shard_verify_impl<MR, MB>(
     mode: FoldingMode,
     tr: &mut Poseidon2Transcript,
@@ -348,20 +294,7 @@ where
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {
-    if steps.len() != proof.steps.len() {
-        return Err(PiCcsError::InvalidInput(format!(
-            "step count mismatch: public {} vs proof {}",
-            steps.len(),
-            proof.steps.len()
-        )));
-    }
-
-    let mut effective_steps = Vec::with_capacity(steps.len());
-    for (step, step_proof) in steps.iter().zip(proof.steps.iter()) {
-        effective_steps.push(merge_step_time_columns_from_proof(step, step_proof)?);
-    }
-
-    for (step_idx, step) in effective_steps.iter().enumerate() {
+    for (step_idx, step) in steps.iter().enumerate() {
         if step.lut_insts.is_empty() && step.mem_insts.is_empty() {
             continue;
         }
@@ -374,7 +307,7 @@ where
         }
     }
     tr.append_message(b"shard/cpu_bus_mode", &[1u8]);
-    let (s, cpu_bus) = crate::memory_sidecar::cpu_bus::prepare_ccs_for_shared_cpu_bus_steps(s_me, &effective_steps)?;
+    let (s, cpu_bus) = crate::memory_sidecar::cpu_bus::prepare_ccs_for_shared_cpu_bus_steps(s_me, steps)?;
     let dims = utils::build_dims_and_policy(params, s)?;
     let utils::Dims {
         ell_d,
@@ -386,6 +319,13 @@ where
     } = dims;
     let ring = ccs::RotRing::goldilocks();
 
+    if steps.len() != proof.steps.len() {
+        return Err(PiCcsError::InvalidInput(format!(
+            "step count mismatch: public {} vs proof {}",
+            steps.len(),
+            proof.steps.len()
+        )));
+    }
     if ob_cfg.is_some() && steps.is_empty() {
         return Err(PiCcsError::InvalidInput("output binding requires >= 1 step".into()));
     }
@@ -415,11 +355,11 @@ where
         .map(|ctx| ctx.ccs_mat_digest.clone())
         .unwrap_or_else(|| utils::digest_ccs_matrices_with_sparse_cache(s, ccs_sparse_cache.as_deref()));
 
-    for (idx, (step, step_proof)) in effective_steps.iter().zip(proof.steps.iter()).enumerate() {
+    for (idx, (step, step_proof)) in steps.iter().zip(proof.steps.iter()).enumerate() {
         let step_idx = step_idx_offset
             .checked_add(idx)
             .ok_or_else(|| PiCcsError::InvalidInput("step index overflow".into()))?;
-        let has_prev = idx > 0 || initial_prev_step.is_some();
+        let has_prev = idx > 0;
         absorb_step_memory(tr, step);
 
         let include_ob = ob_cfg.is_some() && (idx + 1 == steps.len());
@@ -490,106 +430,6 @@ where
             &ccs_mat_digest,
         )?;
         utils::bind_me_inputs(tr, &accumulator)?;
-        let expected_time_col_ids = step_proof
-            .fold
-            .time_cpu_commitments
-            .len()
-            .checked_add(step_proof.fold.time_mem_commitments.len())
-            .ok_or_else(|| PiCcsError::InvalidInput("verify/time_columns: commitment count overflow".into()))?;
-        if step_proof.fold.time_col_ids.len() != expected_time_col_ids {
-            return Err(PiCcsError::ProtocolError(format!(
-                "step {}: verify/time_columns col_ids mismatch: proof has {}, commitments imply {}",
-                idx,
-                step_proof.fold.time_col_ids.len(),
-                expected_time_col_ids
-            )));
-        }
-        if step_proof.fold.time_declared_len > step_proof.fold.time_t {
-            return Err(PiCcsError::ProtocolError(format!(
-                "step {}: verify/time_columns declared len {} exceeds time_t {}",
-                idx, step_proof.fold.time_declared_len, step_proof.fold.time_t
-            )));
-        }
-        let has_stage8_artifacts = !step_proof.fold.openings.is_empty()
-            || !step_proof.fold.opening_proofs.is_empty()
-            || !step_proof.fold.opening_unification.round_polys.is_empty()
-            || !step_proof.fold.joint_opening_lane.groups.is_empty()
-            || step_proof.fold.joint_opening_lane.unified_fold.is_some()
-            || !step_proof.stage8_fold.is_empty()
-            || !step_proof.fold.opening_manifest.entries.is_empty()
-            || !step_proof.fold.opening_reduction.groups.is_empty();
-        let requires_stage8_openings = cpu_bus.bus_cols > 0
-            || !step.mem_insts.is_empty()
-            || !step.lut_insts.is_empty()
-            || !step_proof.mem.wb_me_claims.is_empty()
-            || !step_proof.mem.wp_me_claims.is_empty();
-        if requires_stage8_openings && !has_stage8_artifacts {
-            return Err(PiCcsError::ProtocolError(format!(
-                "step {}: missing Stage-8 artifacts for load-bearing named openings",
-                idx
-            )));
-        }
-        if has_stage8_artifacts {
-            if step_proof.fold.openings.is_empty()
-                || step_proof.fold.opening_proofs.is_empty()
-                || step_proof.fold.opening_manifest.entries.is_empty()
-                || step_proof.fold.opening_reduction.groups.is_empty()
-                || step_proof.fold.opening_unification.round_polys.is_empty()
-                || step_proof.fold.joint_opening_lane.groups.is_empty()
-            {
-                return Err(PiCcsError::ProtocolError(format!(
-                    "step {}: malformed Stage-8 artifact set (canonical mode requires openings/proofs/manifest/reduction/unification/groups)",
-                    idx
-                )));
-            }
-            let expected_stage8_fold_len = if step_proof.fold.joint_opening_lane.groups.is_empty() {
-                0usize
-            } else {
-                1usize
-            };
-            if step_proof.stage8_fold.len() != expected_stage8_fold_len {
-                return Err(PiCcsError::ProtocolError(format!(
-                    "step {}: malformed Stage-8 artifact set (stage8_fold proofs={}, expected {})",
-                    idx,
-                    step_proof.stage8_fold.len(),
-                    expected_stage8_fold_len
-                )));
-            }
-        }
-        if has_stage8_artifacts {
-            if step_proof.fold.time_t == 0 {
-                return Err(PiCcsError::ProtocolError(format!(
-                    "step {}: verify/time_columns time_t must be > 0 in Stage-8 committed mode",
-                    idx
-                )));
-            }
-            if !step_proof.fold.time_t.is_power_of_two() {
-                return Err(PiCcsError::ProtocolError(format!(
-                    "step {}: verify/time_columns time_t {} must be a power of two",
-                    idx, step_proof.fold.time_t
-                )));
-            }
-            let observed_declared_len = validate_time_active_mask_and_count(
-                step.time_columns.active_col.as_slice(),
-                step_proof.fold.time_t,
-                "verify/time_columns",
-            )?;
-            if observed_declared_len != step_proof.fold.time_declared_len {
-                return Err(PiCcsError::ProtocolError(format!(
-                    "step {}: verify/time_columns declared len mismatch (proof={}, observed={})",
-                    idx, step_proof.fold.time_declared_len, observed_declared_len
-                )));
-            }
-        }
-        bind_time_column_commitments(
-            tr,
-            step_idx,
-            step_proof.fold.time_t,
-            step_proof.fold.time_declared_len,
-            &step_proof.fold.time_col_ids,
-            &step_proof.fold.time_cpu_commitments,
-            &step_proof.fold.time_mem_commitments,
-        );
         let mut ch = utils::sample_challenges(tr, ell_d, ell)?;
         if step_proof.fold.ccs_proof.variant == crate::optimized_engine::PiCcsProofVariant::SplitNcV1 {
             ch.beta_m = utils::sample_beta_m(tr, ell_m)?;
@@ -658,7 +498,6 @@ where
                 control_stage_enabled,
                 ob_inc_total_degree_bound,
             )?;
-        validate_time_sumcheck_metadata(step_idx, step_proof, &r_time, control_stage_enabled)?;
 
         // CCS proof structure consistency with batched time proof.
         let want_rounds_total = ell_n + ell_d;
@@ -959,30 +798,11 @@ where
             }
         }
 
-        let has_stage8_artifacts = !step_proof.fold.openings.is_empty()
-            || !step_proof.fold.opening_proofs.is_empty()
-            || !step_proof.fold.opening_unification.round_polys.is_empty()
-            || !step_proof.fold.joint_opening_lane.groups.is_empty()
-            || step_proof.fold.joint_opening_lane.unified_fold.is_some()
-            || !step_proof.stage8_fold.is_empty();
-        // Full-column commitment replay is intentionally skipped in verifier hot path.
-        // Soundness for load-bearing values is enforced via committed named openings
-        // (`validate_step_time_opening_proofs` + batched transcript checks).
-        // Commitment binding is enforced via transcript-bound batched opening checks below.
-        if has_stage8_artifacts || requires_stage8_openings {
-            validate_step_time_openings_consistency(step, step_proof, &cpu_bus, &r_time)?;
-        }
-
         // Verify mem proofs (shared CPU bus only).
         let prev_step = if idx > 0 {
-            Some(&effective_steps[idx - 1])
+            Some(&steps[idx - 1])
         } else {
             initial_prev_step
-        };
-        let prev_step_openings = if idx > 0 {
-            Some(proof.steps[idx - 1].fold.openings.as_slice())
-        } else {
-            None
         };
         let mem_out = crate::memory_sidecar::memory::verify_route_a_memory_step(
             tr,
@@ -998,8 +818,6 @@ where
             &step_proof.batched_time.claimed_sums,
             1, // claim 0 is CCS/time
             &step_proof.mem,
-            &step_proof.fold.openings,
-            prev_step_openings,
             &shout_pre,
             &twist_pre,
             step_idx,
@@ -1262,50 +1080,6 @@ where
                 })?;
                 val_lane_obligations.extend_from_slice(&proof.dec_children);
             }
-        }
-
-        if has_stage8_artifacts || requires_stage8_openings {
-            validate_step_time_opening_batches_with_transcript(tr, params, step_idx, step, step_proof, &cpu_bus)?;
-        }
-        let stage8_plan = crate::time_opening::joint_lane::build_stage8_fold_lane_plan(
-            &step_proof.fold.joint_opening_lane,
-            &step_proof.fold.opening_unification,
-            step_proof.fold.time_t,
-        )?;
-        let expected_stage8_proofs = if stage8_plan.is_some() { 1usize } else { 0usize };
-        if step_proof.stage8_fold.len() != expected_stage8_proofs {
-            return Err(PiCcsError::ProtocolError(format!(
-                "step {}: expected stage8_fold proofs to match Stage-8 lane plan (proofs={}, expected={})",
-                idx,
-                step_proof.stage8_fold.len(),
-                expected_stage8_proofs
-            )));
-        }
-        if let Some(plan) = stage8_plan {
-            let stage8_params = stage8_time_decomp_params(params)?;
-            tr.append_message(b"fold/stage8_lane_start", &(step_idx as u64).to_le_bytes());
-            tr.append_message(b"fold/stage8_lane_group_idx", &0u64.to_le_bytes());
-            let proof_stage8 = step_proof.stage8_fold.first().ok_or_else(|| {
-                PiCcsError::ProtocolError(format!("step {}: missing Stage-8 fold proof", idx))
-            })?;
-            verify_rlc_dec_lane(
-                RlcLane::Val,
-                tr,
-                &stage8_params,
-                &plan.ccs,
-                &ring,
-                ell_d,
-                mixers,
-                step_idx,
-                plan.claims.as_slice(),
-                &proof_stage8.rlc_rhos,
-                &proof_stage8.rlc_parent,
-                &proof_stage8.dec_children,
-            )
-            .map_err(|e| {
-                PiCcsError::ProtocolError(format!("step {} stage8_fold verify failed: {e:?}", idx))
-            })?;
-            val_lane_obligations.extend_from_slice(&proof_stage8.dec_children);
         }
 
         tr.append_message(b"fold/step_done", &(step_idx as u64).to_le_bytes());
