@@ -977,7 +977,6 @@ fn report_trace_vs_chunked_medians() {
 }
 
 #[test]
-#[ignore = "post-refactor acceptance: cargo test -p neo-fold --release --test perf -- --ignored --nocapture acceptance_uniform_ccs_width_independent_of_chunk_rows"]
 fn acceptance_uniform_ccs_width_independent_of_chunk_rows() {
     let program = build_mixed_program(64);
     let steps = program.len();
