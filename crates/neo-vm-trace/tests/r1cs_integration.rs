@@ -124,8 +124,6 @@ impl VmCpu<u64, u64> for FibonacciCpu {
         Ok(StepMeta {
             pc_after: self.step,
             opcode: 1, // FIB opcode
-            is_virtual: false,
-            virtual_sequence_remaining: None,
         })
     }
 }
@@ -239,8 +237,6 @@ impl VmCpu<u64, u64> for AluCpu {
             return Ok(StepMeta {
                 pc_after: self.pc,
                 opcode: alu_ops::HALT,
-                is_virtual: false,
-                virtual_sequence_remaining: None,
             });
         }
 
@@ -270,8 +266,6 @@ impl VmCpu<u64, u64> for AluCpu {
         Ok(StepMeta {
             pc_after: self.pc,
             opcode,
-            is_virtual: false,
-            virtual_sequence_remaining: None,
         })
     }
 }

@@ -297,13 +297,12 @@ fn ccs_must_reference_bus_columns_guardrail() {
 
     let (mem_inst, mem_wit) = metadata_only_mem_instance(0, &mem_layout, MemInit::Zero, mem_trace.steps);
 
-    let steps_witness = vec![crate::common_setup::canonicalize_step_time_columns(StepWitnessBundle {
+    let steps_witness = vec![StepWitnessBundle {
         mcs,
         lut_instances: vec![],
         mem_instances: vec![(mem_inst, mem_wit)],
-        time_columns: crate::common_setup::empty_time_columns(),
         _phantom: PhantomData::<K>,
-    })];
+    }];
 
     let mut tr = Poseidon2Transcript::new(b"ccs-no-bus-ref");
     let prove_res = fold_shard_prove_shared_cpu_bus(
@@ -413,13 +412,12 @@ fn address_bit_tampering_attack_should_be_rejected() {
 
     let (mem_inst, mem_wit) = metadata_only_mem_instance(0, &mem_layout, mem_init, mem_trace.steps);
 
-    let steps_witness = vec![crate::common_setup::canonicalize_step_time_columns(StepWitnessBundle {
+    let steps_witness = vec![StepWitnessBundle {
         mcs,
         lut_instances: vec![],
         mem_instances: vec![(mem_inst, mem_wit)],
-        time_columns: crate::common_setup::empty_time_columns(),
         _phantom: PhantomData::<K>,
-    })];
+    }];
     let steps_instance: Vec<StepInstanceBundle<Cmt, F, K>> =
         steps_witness.iter().map(StepInstanceBundle::from).collect();
 
@@ -543,13 +541,12 @@ fn has_read_flag_mismatch_attack_should_be_rejected() {
 
     let (mem_inst, mem_wit) = metadata_only_mem_instance(0, &mem_layout, mem_init, mem_trace.steps);
 
-    let steps_witness = vec![crate::common_setup::canonicalize_step_time_columns(StepWitnessBundle {
+    let steps_witness = vec![StepWitnessBundle {
         mcs,
         lut_instances: vec![],
         mem_instances: vec![(mem_inst, mem_wit)],
-        time_columns: crate::common_setup::empty_time_columns(),
         _phantom: PhantomData::<K>,
-    })];
+    }];
     let steps_instance: Vec<StepInstanceBundle<Cmt, F, K>> =
         steps_witness.iter().map(StepInstanceBundle::from).collect();
 
@@ -674,13 +671,12 @@ fn increment_value_tampering_attack_should_be_rejected() {
 
     let (mem_inst, mem_wit) = metadata_only_mem_instance(0, &mem_layout, mem_init, mem_trace.steps);
 
-    let steps_witness = vec![crate::common_setup::canonicalize_step_time_columns(StepWitnessBundle {
+    let steps_witness = vec![StepWitnessBundle {
         mcs,
         lut_instances: vec![],
         mem_instances: vec![(mem_inst, mem_wit)],
-        time_columns: crate::common_setup::empty_time_columns(),
         _phantom: PhantomData::<K>,
-    })];
+    }];
     let steps_instance: Vec<StepInstanceBundle<Cmt, F, K>> =
         steps_witness.iter().map(StepInstanceBundle::from).collect();
 
@@ -830,13 +826,12 @@ fn lookup_value_tampering_attack_should_be_rejected() {
     };
     let (mem_inst, mem_wit) = metadata_only_mem_instance(0, &mem_layout, mem_init, mem_trace.steps);
 
-    let steps_witness = vec![crate::common_setup::canonicalize_step_time_columns(StepWitnessBundle {
+    let steps_witness = vec![StepWitnessBundle {
         mcs,
         lut_instances: vec![(lut_inst, lut_wit)],
         mem_instances: vec![(mem_inst, mem_wit)],
-        time_columns: crate::common_setup::empty_time_columns(),
         _phantom: PhantomData::<K>,
-    })];
+    }];
     let steps_instance: Vec<StepInstanceBundle<Cmt, F, K>> =
         steps_witness.iter().map(StepInstanceBundle::from).collect();
 
@@ -960,13 +955,12 @@ fn bus_region_mismatch_with_twist_trace_should_be_rejected() {
 
     let (mem_inst, mem_wit) = metadata_only_mem_instance(0, &mem_layout, mem_init, mem_trace.steps);
 
-    let steps_witness = vec![crate::common_setup::canonicalize_step_time_columns(StepWitnessBundle {
+    let steps_witness = vec![StepWitnessBundle {
         mcs,
         lut_instances: vec![],
         mem_instances: vec![(mem_inst, mem_wit)],
-        time_columns: crate::common_setup::empty_time_columns(),
         _phantom: PhantomData::<K>,
-    })];
+    }];
     let steps_instance: Vec<StepInstanceBundle<Cmt, F, K>> =
         steps_witness.iter().map(StepInstanceBundle::from).collect();
 
@@ -1128,20 +1122,18 @@ fn write_then_read_consistency_attack_should_be_rejected() {
     let (mem_inst2, mem_wit2) = metadata_only_mem_instance(0, &mem_layout, mem_init_step2, mem_trace_step2.steps);
 
     let steps_witness = vec![
-        crate::common_setup::canonicalize_step_time_columns(StepWitnessBundle {
+        StepWitnessBundle {
             mcs: mcs1,
             lut_instances: vec![],
             mem_instances: vec![(mem_inst1, mem_wit1)],
-            time_columns: crate::common_setup::empty_time_columns(),
             _phantom: PhantomData::<K>,
-        }),
-        crate::common_setup::canonicalize_step_time_columns(StepWitnessBundle {
+        },
+        StepWitnessBundle {
             mcs: mcs2,
             lut_instances: vec![],
             mem_instances: vec![(mem_inst2, mem_wit2)],
-            time_columns: crate::common_setup::empty_time_columns(),
             _phantom: PhantomData::<K>,
-        }),
+        },
     ];
     let steps_instance: Vec<StepInstanceBundle<Cmt, F, K>> =
         steps_witness.iter().map(StepInstanceBundle::from).collect();
@@ -1266,13 +1258,12 @@ fn correct_witness_should_verify() {
 
     let (mem_inst, mem_wit) = metadata_only_mem_instance(0, &mem_layout, mem_init, mem_trace.steps);
 
-    let steps_witness = vec![crate::common_setup::canonicalize_step_time_columns(StepWitnessBundle {
+    let steps_witness = vec![StepWitnessBundle {
         mcs,
         lut_instances: vec![],
         mem_instances: vec![(mem_inst, mem_wit)],
-        time_columns: crate::common_setup::empty_time_columns(),
         _phantom: PhantomData::<K>,
-    })];
+    }];
     let steps_instance: Vec<StepInstanceBundle<Cmt, F, K>> =
         steps_witness.iter().map(StepInstanceBundle::from).collect();
 

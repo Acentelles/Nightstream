@@ -415,20 +415,11 @@ pub(crate) fn finalize_route_a_memory_prover(
             )));
         }
         let mut cpu_claims_cur = cpu_claims_cur;
-        if step.time_columns.t != cpu_bus.chunk_size || step.time_columns.mem_cols.len() != cpu_bus.bus_cols {
-            return Err(PiCcsError::InvalidInput(format!(
-                "uniform Route-A requires canonical time mem columns for val-lane openings (t={}, chunk_size={}, mem_cols={}, bus_cols={})",
-                step.time_columns.t,
-                cpu_bus.chunk_size,
-                step.time_columns.mem_cols.len(),
-                cpu_bus.bus_cols
-            )));
-        }
-        crate::memory_sidecar::cpu_bus::append_bus_openings_to_me_instance_from_time_columns(
+        crate::memory_sidecar::cpu_bus::append_bus_openings_to_me_instance(
             params,
             cpu_bus,
             core_t,
-            &step.time_columns.mem_cols,
+            &mcs_wit.Z,
             &mut cpu_claims_cur[0],
         )?;
         val_me_claims.extend(cpu_claims_cur);
@@ -452,23 +443,11 @@ pub(crate) fn finalize_route_a_memory_prover(
                 )));
             }
             let mut cpu_claims_prev = cpu_claims_prev;
-            // Val-lane continuity consumes previous-step bus openings at r_val.
-            // In canonical mode those openings are sourced from prev step time mem columns,
-            // so the shape must match the current bus layout exactly.
-            if prev.time_columns.t != cpu_bus.chunk_size || prev.time_columns.mem_cols.len() != cpu_bus.bus_cols {
-                return Err(PiCcsError::InvalidInput(format!(
-                    "uniform Route-A requires canonical prev time mem columns for val-lane openings (t={}, chunk_size={}, mem_cols={}, bus_cols={})",
-                    prev.time_columns.t,
-                    cpu_bus.chunk_size,
-                    prev.time_columns.mem_cols.len(),
-                    cpu_bus.bus_cols
-                )));
-            }
-            crate::memory_sidecar::cpu_bus::append_bus_openings_to_me_instance_from_time_columns(
+            crate::memory_sidecar::cpu_bus::append_bus_openings_to_me_instance(
                 params,
                 cpu_bus,
                 core_t,
-                &prev.time_columns.mem_cols,
+                &prev_mcs_wit.Z,
                 &mut cpu_claims_prev[0],
             )?;
             val_me_claims.extend(cpu_claims_prev);

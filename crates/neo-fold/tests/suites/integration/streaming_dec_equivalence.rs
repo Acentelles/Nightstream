@@ -84,37 +84,18 @@ fn assert_step_fold_eq(a: &neo_fold::shard::FoldStep, b: &neo_fold::shard::FoldS
 
 #[test]
 fn streaming_dec_matches_materialized_dec_with_loaded_pp() {
-    let mut selected: Option<(usize, NeoParams, CcsStructure<F>)> = None;
-    for n in 32usize..256usize {
-        let params = NeoParams::goldilocks_auto_r1cs_ccs(n).expect("params");
-        let ccs = create_identity_ccs(n);
-        let m_commit = commit_cols_for_ccs_m(ccs.m);
-        if try_get_loaded_global_pp_for_dims(D, m_commit).is_some() {
-            selected = Some((n, params, ccs));
-            break;
-        }
-
-        let mut rng = ChaCha8Rng::seed_from_u64(7 ^ (n as u64));
-        let pp = setup_par(&mut rng, D, params.kappa as usize, m_commit).expect("setup_par");
-        match set_global_pp(pp) {
-            Ok(()) => {
-                selected = Some((n, params, ccs));
-                break;
-            }
-            Err(e) if e.to_string().contains("seed is already registered") => {
-                // This dimension has a seeded-only registry entry in this test process; try another n.
-                continue;
-            }
-            Err(e) => panic!("set_global_pp: {e}"),
-        }
-    }
-    let (n, mut params, ccs) = selected.expect("failed to find a dimension with loaded global PP");
+    let n = 16usize;
+    let ccs = create_identity_ccs(n);
+    let mut params = NeoParams::goldilocks_auto_r1cs_ccs(n).expect("params");
     params.k_rho = 8; // must satisfy count·T·(b−1) < b^k_rho even for count=1
 
     let m_commit = commit_cols_for_ccs_m(ccs.m);
+    let mut rng = ChaCha8Rng::seed_from_u64(7);
+    let pp = setup_par(&mut rng, D, params.kappa as usize, m_commit).expect("setup_par");
+    set_global_pp(pp).expect("set_global_pp");
     assert!(
         try_get_loaded_global_pp_for_dims(D, m_commit).is_some(),
-        "expected loaded PP for n={n}, m_commit={m_commit}",
+        "expected loaded PP"
     );
     let l = AjtaiSModule::from_global_for_dims(D, m_commit).expect("from_global_for_dims");
 
@@ -194,17 +175,15 @@ fn streaming_dec_matches_materialized_dec_with_loaded_pp_superneo_packed() {
 
     let m_commit = commit_cols_for_ccs_m(ccs.m);
     assert_eq!(m_commit * D, ccs.m, "expected packed commit width for SuperNeo-compatible m");
-    if try_get_loaded_global_pp_for_dims(D, m_commit).is_none() {
-        let mut rng = ChaCha8Rng::seed_from_u64(17);
-        let pp = setup_par(&mut rng, D, params.kappa as usize, m_commit).expect("setup_par");
-        if let Err(e) = set_global_pp(pp) {
-            let msg = e.to_string();
-            if !msg.contains("already loaded") && !msg.contains("already registered") {
-                panic!("set_global_pp: {e}");
-            }
-        }
-    }
+    let mut rng = ChaCha8Rng::seed_from_u64(17);
+    let pp = setup_par(&mut rng, D, params.kappa as usize, m_commit).expect("setup_par");
+    set_global_pp(pp).expect("set_global_pp");
+    assert!(
+        try_get_loaded_global_pp_for_dims(D, m_commit).is_some(),
+        "expected loaded PP"
+    );
     let l = AjtaiSModule::from_global_for_dims(D, m_commit).expect("from_global_for_dims");
+
     // In packed embedding mode the NC relation currently enforces small coefficients directly.
     // Use range-safe witness values here so this test isolates streaming-vs-materialized DEC parity.
     let step = build_single_step_bundle_small_coeffs(&params, &l, ccs.m, 17);
@@ -277,36 +256,18 @@ fn streaming_dec_matches_materialized_dec_with_loaded_pp_superneo_packed() {
 
 #[test]
 fn streaming_dec_matches_materialized_dec_with_seeded_pp() {
-    let mut selected: Option<(usize, NeoParams, CcsStructure<F>, [u8; 32])> = None;
-    for n in 17usize..256usize {
-        let params = NeoParams::goldilocks_auto_r1cs_ccs(n).expect("params");
-        let ccs = create_identity_ccs(n);
-        let m_commit = commit_cols_for_ccs_m(ccs.m);
-        if try_get_loaded_global_pp_for_dims(D, m_commit).is_some() {
-            continue;
-        }
-        let mut seed = [7u8; 32];
-        seed[0] = (n & 0xff) as u8;
-        match set_global_pp_seeded(D, params.kappa as usize, m_commit, seed) {
-            Ok(()) => {
-                selected = Some((n, params, ccs, seed));
-                break;
-            }
-            Err(e) => {
-                let msg = e.to_string();
-                if msg.contains("already loaded") || msg.contains("already registered") {
-                    continue;
-                }
-                panic!("set_global_pp_seeded: {e}");
-            }
-        }
-    }
-    let (n, mut params, ccs, _seed) = selected.expect("failed to find a dimension for seeded global PP");
+    // Use a distinct commit width so this test does not collide with loaded-PP cache entries.
+    let n = 110usize;
+    let ccs = create_identity_ccs(n);
+    let mut params = NeoParams::goldilocks_auto_r1cs_ccs(n).expect("params");
     params.k_rho = 8; // must satisfy count·T·(b−1) < b^k_rho even for count=1
+
+    let seed = [7u8; 32];
     let m_commit = commit_cols_for_ccs_m(ccs.m);
+    set_global_pp_seeded(D, params.kappa as usize, m_commit, seed).expect("set_global_pp_seeded");
     assert!(
         try_get_loaded_global_pp_for_dims(D, m_commit).is_none(),
-        "expected PP to remain unloaded for seeded entry (n={n}, m_commit={m_commit})",
+        "expected PP to remain unloaded for seeded entry"
     );
     let l = AjtaiSModule::from_global_for_dims(D, m_commit).expect("from_global_for_dims");
 
@@ -385,16 +346,9 @@ fn streaming_dec_matches_materialized_dec_multi_step_ccs_only() {
     params.k_rho = 10;
 
     let m_commit = commit_cols_for_ccs_m(ccs.m);
-    if try_get_loaded_global_pp_for_dims(D, m_commit).is_none() {
-        let mut rng = ChaCha8Rng::seed_from_u64(9);
-        let pp = setup_par(&mut rng, D, params.kappa as usize, m_commit).expect("setup_par");
-        if let Err(e) = set_global_pp(pp) {
-            let msg = e.to_string();
-            if !msg.contains("already loaded") && !msg.contains("already registered") {
-                panic!("set_global_pp: {e}");
-            }
-        }
-    }
+    let mut rng = ChaCha8Rng::seed_from_u64(9);
+    let pp = setup_par(&mut rng, D, params.kappa as usize, m_commit).expect("setup_par");
+    set_global_pp(pp).expect("set_global_pp");
     let l = AjtaiSModule::from_global_for_dims(D, m_commit).expect("from_global_for_dims");
 
     let step0 = build_single_step_bundle_with_salt(&params, &l, ccs.m, 1);

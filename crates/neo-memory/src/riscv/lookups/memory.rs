@@ -34,8 +34,6 @@ pub struct RiscvMemory {
     ///
     /// This is stored separately from `data` because registers are not byte-addressed.
     regs: [u64; 32],
-    /// Virtual register file contents (addresses >= 32), word-addressed.
-    virt_regs: HashMap<u64, u64>,
     /// Word size in bits (32 or 64).
     pub xlen: usize,
 }
@@ -46,7 +44,6 @@ impl RiscvMemory {
         Self {
             data: HashMap::new(),
             regs: [0u64; 32],
-            virt_regs: HashMap::new(),
             xlen,
         }
     }
@@ -132,13 +129,12 @@ impl RiscvMemory {
 impl Twist<u64, u64> for RiscvMemory {
     fn load(&mut self, twist_id: TwistId, addr: u64) -> u64 {
         if twist_id == super::REG_ID {
-            if addr == 0 {
+            let idx = addr as usize;
+            debug_assert!(idx < 32, "REG_ID addr out of range: {}", idx);
+            if idx == 0 {
                 return 0;
             }
-            if addr < 32 {
-                return self.regs[addr as usize];
-            }
-            return self.virt_regs.get(&addr).copied().unwrap_or(0);
+            return self.regs.get(idx).copied().unwrap_or(0);
         }
 
         if twist_id == super::RAM_ID {
@@ -162,16 +158,14 @@ impl Twist<u64, u64> for RiscvMemory {
 
     fn store(&mut self, twist_id: TwistId, addr: u64, value: u64) {
         if twist_id == super::REG_ID {
-            if addr == 0 {
+            let idx = addr as usize;
+            debug_assert!(idx < 32, "REG_ID addr out of range: {}", idx);
+            if idx == 0 {
                 return;
             }
             let masked = if self.xlen == 32 { value as u32 as u64 } else { value };
-            if addr < 32 {
-                self.regs[addr as usize] = masked;
-            } else if masked == 0 {
-                self.virt_regs.remove(&addr);
-            } else {
-                self.virt_regs.insert(addr, masked);
+            if let Some(dst) = self.regs.get_mut(idx) {
+                *dst = masked;
             }
             return;
         }

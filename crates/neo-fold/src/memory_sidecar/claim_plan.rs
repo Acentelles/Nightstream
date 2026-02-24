@@ -1,9 +1,8 @@
 use neo_ajtai::Commitment as Cmt;
 use neo_math::{F, K};
-use neo_memory::riscv::lookups::{RiscvOpcode, REG_ID};
+use neo_memory::riscv::lookups::RiscvOpcode;
 use neo_memory::witness::{LutInstance, LutTableSpec, MemInstance, StepInstanceBundle};
 
-use crate::memory_sidecar::memory::W2_FIELDS_DEGREE_BOUND;
 use crate::PiCcsError;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -24,7 +23,7 @@ pub struct ShoutLaneTimeClaimIdx {
 #[derive(Clone, Debug)]
 pub struct ShoutTimeClaimIdx {
     pub lanes: Vec<ShoutLaneTimeClaimIdx>,
-    pub bitness: Option<usize>,
+    pub bitness: usize,
     pub ell_addr: usize,
 }
 
@@ -49,7 +48,6 @@ pub struct ShoutGammaGroupTimeClaimIdx {
     pub lanes: Vec<ShoutGammaGroupLaneRef>,
     pub value: usize,
     pub adapter: usize,
-    pub bitness: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -57,8 +55,6 @@ pub struct TwistTimeClaimIdx {
     pub read_check: usize,
     pub write_check: usize,
     pub bitness: usize,
-    pub virtual_write_domain: Option<usize>,
-    pub nonvirtual_arch_domain: Option<usize>,
     pub ell_addr: usize,
 }
 
@@ -213,13 +209,11 @@ impl RouteATimeClaimPlan {
                 _ => (3, 2 + ell_addr),
             };
 
-            let mut has_ungrouped_lane = false;
             for lane_idx in 0..lanes {
                 if let Some(&g_idx) = lane_gamma_map.get(&(inst_idx, lane_idx)) {
                     gamma_value_degree_bounds[g_idx] = gamma_value_degree_bounds[g_idx].max(value_degree_bound);
                     gamma_adapter_degree_bounds[g_idx] = gamma_adapter_degree_bounds[g_idx].max(adapter_degree_bound);
                 } else {
-                    has_ungrouped_lane = true;
                     out.push(TimeClaimMeta {
                         label: b"shout/value",
                         degree_bound: value_degree_bound,
@@ -240,13 +234,11 @@ impl RouteATimeClaimPlan {
                 }
             }
 
-            if has_ungrouped_lane {
-                out.push(TimeClaimMeta {
-                    label: b"shout/bitness",
-                    degree_bound: 3,
-                    is_dynamic: false,
-                });
-            }
+            out.push(TimeClaimMeta {
+                label: b"shout/bitness",
+                degree_bound: 3,
+                is_dynamic: false,
+            });
         }
 
         for (g_idx, _) in shout_gamma_groups.iter().enumerate() {
@@ -259,11 +251,6 @@ impl RouteATimeClaimPlan {
                 label: b"shout/adapter",
                 degree_bound: gamma_adapter_degree_bounds[g_idx],
                 is_dynamic: true,
-            });
-            out.push(TimeClaimMeta {
-                label: b"shout/bitness",
-                degree_bound: 3,
-                is_dynamic: false,
             });
         }
 
@@ -294,18 +281,6 @@ impl RouteATimeClaimPlan {
                 degree_bound: 3,
                 is_dynamic: false,
             });
-            if decode_stage_enabled && mem_inst.mem_id == REG_ID.0 {
-                out.push(TimeClaimMeta {
-                    label: b"twist/virtual_write_domain",
-                    degree_bound: 4,
-                    is_dynamic: false,
-                });
-                out.push(TimeClaimMeta {
-                    label: b"twist/nonvirtual_arch_domain",
-                    degree_bound: 4,
-                    is_dynamic: false,
-                });
-            }
         }
 
         if wb_enabled {
@@ -327,7 +302,7 @@ impl RouteATimeClaimPlan {
         if decode_stage_enabled {
             out.push(TimeClaimMeta {
                 label: b"decode/fields",
-                degree_bound: W2_FIELDS_DEGREE_BOUND,
+                degree_bound: 5,
                 is_dynamic: false,
             });
             out.push(TimeClaimMeta {
@@ -363,7 +338,7 @@ impl RouteATimeClaimPlan {
         if control_stage_enabled {
             out.push(TimeClaimMeta {
                 label: b"control/next_pc_linear",
-                degree_bound: 4,
+                degree_bound: 3,
                 is_dynamic: false,
             });
             out.push(TimeClaimMeta {
@@ -454,13 +429,11 @@ impl RouteATimeClaimPlan {
                 Some(LutTableSpec::RiscvOpcodeEventTablePacked { .. })
             );
             let mut lane_claims: Vec<ShoutLaneTimeClaimIdx> = Vec::with_capacity(lanes);
-            let mut has_ungrouped_lane = false;
             for lane_idx in 0..lanes {
                 let gamma_group = lane_gamma_map.get(&(inst_idx, lane_idx)).copied();
                 let (value, adapter) = if gamma_group.is_some() {
                     (None, None)
                 } else {
-                    has_ungrouped_lane = true;
                     let value = idx;
                     idx += 1;
                     let adapter = idx;
@@ -481,13 +454,8 @@ impl RouteATimeClaimPlan {
                     gamma_group,
                 });
             }
-            let bitness = if has_ungrouped_lane {
-                let out = idx;
-                idx += 1;
-                Some(out)
-            } else {
-                None
-            };
+            let bitness = idx;
+            idx += 1;
 
             shout.push(ShoutTimeClaimIdx {
                 lanes: lane_claims,
@@ -502,15 +470,12 @@ impl RouteATimeClaimPlan {
             idx += 1;
             let adapter = idx;
             idx += 1;
-            let bitness = idx;
-            idx += 1;
             shout_gamma_groups.push(ShoutGammaGroupTimeClaimIdx {
                 key: spec.key,
                 ell_addr: spec.ell_addr,
                 lanes: spec.lanes,
                 value,
                 adapter,
-                bitness,
             });
         }
 
@@ -531,27 +496,11 @@ impl RouteATimeClaimPlan {
 
             let bitness = idx;
             idx += 1;
-            let virtual_write_domain = if decode_stage_enabled && mem_inst.mem_id == REG_ID.0 {
-                let out = idx;
-                idx += 1;
-                Some(out)
-            } else {
-                None
-            };
-            let nonvirtual_arch_domain = if decode_stage_enabled && mem_inst.mem_id == REG_ID.0 {
-                let out = idx;
-                idx += 1;
-                Some(out)
-            } else {
-                None
-            };
 
             twist.push(TwistTimeClaimIdx {
                 read_check,
                 write_check,
                 bitness,
-                virtual_write_domain,
-                nonvirtual_arch_domain,
                 ell_addr,
             });
         }

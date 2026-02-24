@@ -105,10 +105,6 @@ where
     /// When present, we overwrite a reserved tail segment of `z_vec` with Twist/Shout access rows
     /// (in deterministic id order) before Ajtai decomposition + commitment.
     shared_cpu_bus: Option<SharedCpuBusState<F>>,
-    /// Optional lookup-family sharing metadata used by Route-A claim planning in uniform mode.
-    /// This is intentionally independent from physical shared-bus constraint injection.
-    lookup_shout_addr_groups: HashMap<u32, u64>,
-    lookup_shout_selector_groups: HashMap<u32, u64>,
 
     /// Function to map a trace chunk (up to `chunk_size` steps) to the full witness z = (x, w).
     /// The witness MUST satisfy the CCS relation.
@@ -181,22 +177,9 @@ where
             shout_meta,
             shout_specs,
             shared_cpu_bus: None,
-            lookup_shout_addr_groups: HashMap::new(),
-            lookup_shout_selector_groups: HashMap::new(),
             chunk_to_witness,
             _phantom: PhantomData,
         })
-    }
-
-    /// Attach lookup-family sharing metadata without enabling physical shared-bus tail injection.
-    pub fn with_lookup_sharing_groups(
-        mut self,
-        shout_addr_groups: HashMap<u32, u64>,
-        shout_selector_groups: HashMap<u32, u64>,
-    ) -> Self {
-        self.lookup_shout_addr_groups = shout_addr_groups;
-        self.lookup_shout_selector_groups = shout_selector_groups;
-        self
     }
 
     fn shared_bus_schema(
@@ -726,23 +709,6 @@ where
                         }
                     }
 
-                    let reg_read_pair_u32 = shared
-                        .mem_ids
-                        .binary_search(&crate::riscv::lookups::REG_ID.0)
-                        .ok()
-                        .and_then(|reg_idx| {
-                            let lanes = twist_reads.get(reg_idx)?;
-                            let lhs = lanes
-                                .get(0)
-                                .and_then(|slot| *slot)
-                                .map(|(_, v)| v.as_canonical_u64() as u32)?;
-                            let rhs = lanes
-                                .get(1)
-                                .and_then(|slot| *slot)
-                                .map(|(_, v)| v.as_canonical_u64() as u32)?;
-                            Some((lhs, rhs))
-                        });
-
                     // Shout lanes: addr_bits, has_lookup, vals[0].
                     for (i, table_id) in shared.table_ids.iter().enumerate() {
                         let inst_cols = &shared.layout.shout_cols[i];
@@ -762,12 +728,9 @@ where
                                                 "packed shout table_id={table_id} requires xlen=32 (got xlen={xlen})"
                                             ));
                                         }
-                                        // Packed lanes should be derived from architectural operands, not key encoding.
-                                        // This keeps packed synthesis correct when some opcodes migrate to combined keys.
-                                        let (lhs, rhs) = reg_read_pair_u32.unwrap_or_else(|| {
-                                            let (lhs_raw, rhs_raw) = uninterleave_bits(key as u128);
-                                            (lhs_raw as u32, rhs_raw as u32)
-                                        });
+                                        let (lhs_raw, rhs_raw) = uninterleave_bits(key as u128);
+                                        let lhs = lhs_raw as u32;
+                                        let rhs = rhs_raw as u32;
                                         let val_u64 = val.as_canonical_u64();
                                         if val_u64 > u32::MAX as u64 {
                                             return Err(format!(
@@ -939,19 +902,23 @@ where
     }
 
     fn shout_addr_groups(&self) -> &HashMap<u32, u64> {
-        if let Some(shared) = self.shared_cpu_bus.as_ref() {
-            &shared.cfg.shout_addr_groups
-        } else {
-            &self.lookup_shout_addr_groups
-        }
+        self.shared_cpu_bus
+            .as_ref()
+            .map(|s| &s.cfg.shout_addr_groups)
+            .unwrap_or_else(|| {
+                static EMPTY: std::sync::LazyLock<HashMap<u32, u64>> = std::sync::LazyLock::new(HashMap::new);
+                &EMPTY
+            })
     }
 
     fn shout_selector_groups(&self) -> &HashMap<u32, u64> {
-        if let Some(shared) = self.shared_cpu_bus.as_ref() {
-            &shared.cfg.shout_selector_groups
-        } else {
-            &self.lookup_shout_selector_groups
-        }
+        self.shared_cpu_bus
+            .as_ref()
+            .map(|s| &s.cfg.shout_selector_groups)
+            .unwrap_or_else(|| {
+                static EMPTY: std::sync::LazyLock<HashMap<u32, u64>> = std::sync::LazyLock::new(HashMap::new);
+                &EMPTY
+            })
     }
 
     type Error = String;

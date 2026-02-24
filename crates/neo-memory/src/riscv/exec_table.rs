@@ -1,9 +1,8 @@
 use neo_vm_trace::{ShoutEvent, StepTrace, TwistEvent, TwistOpKind, VmTrace};
 
-use crate::riscv::decomposition_semantics::{expected_virtual_decomposed_op, validate_virtual_row_semantics};
-use crate::riscv::instruction::{encode_lookup_key, operand_mode_keys_enabled, try_decode_lookup_operands};
 use crate::riscv::lookups::{
-    compute_op, decode_instruction, RiscvInstruction, RiscvOpcode, RiscvShoutTables, PROG_ID, RAM_ID, REG_ID,
+    compute_op, decode_instruction, interleave_bits, uninterleave_bits, RiscvInstruction, RiscvOpcode,
+    RiscvShoutTables, PROG_ID, RAM_ID, REG_ID,
 };
 use std::collections::HashMap;
 
@@ -41,16 +40,6 @@ pub struct Rv32ExecRow {
     /// True for real trace rows; false for padded/inactive rows.
     pub active: bool,
 
-    /// True when this row is a virtual/decomposed instruction step.
-    ///
-    /// Step 2 scaffold: currently always `false` until decomposition is wired in.
-    pub is_virtual: bool,
-
-    /// Remaining virtual sequence length (inclusive countdown), if any.
-    ///
-    /// Step 2 scaffold: currently always `None` until decomposition is wired in.
-    pub virtual_sequence_remaining: Option<u32>,
-
     pub cycle: u64,
     pub pc_before: u64,
     pub pc_after: u64,
@@ -83,10 +72,6 @@ pub struct Rv32ExecRow {
 #[derive(Clone, Debug)]
 pub struct Rv32ExecColumns {
     pub active: Vec<bool>,
-    pub is_virtual: Vec<bool>,
-    pub virtual_sequence_remaining: Vec<u64>,
-    pub virtual_transition: Vec<bool>,
-    pub virtual_commit_link: Vec<bool>,
     pub cycle: Vec<u64>,
     pub pc_before: Vec<u64>,
     pub pc_after: Vec<u64>,
@@ -126,9 +111,7 @@ impl Rv32ExecTable {
         for step in &trace.steps {
             rows.push(Rv32ExecRow::from_step(step)?);
         }
-        let out = Self { rows };
-        out.validate_virtual_decomposition_semantics()?;
-        Ok(out)
+        Ok(Self { rows })
     }
 
     pub fn from_trace_padded(trace: &VmTrace<u64, u64>, padded_len: usize) -> Result<Self, String> {
@@ -163,9 +146,7 @@ impl Rv32ExecTable {
             rows.push(Rv32ExecRow::inactive(cycle, pad_pc, pad_halted));
         }
 
-        let out = Self { rows };
-        out.validate_virtual_decomposition_semantics()?;
-        Ok(out)
+        Ok(Self { rows })
     }
 
     pub fn from_trace_padded_pow2(trace: &VmTrace<u64, u64>, min_len: usize) -> Result<Self, String> {
@@ -258,48 +239,6 @@ impl Rv32ExecTable {
         Ok(())
     }
 
-    /// Validate virtual decomposition micro-op semantics row-by-row.
-    ///
-    /// This is a trace extraction hardening check and mirrors the virtual-op
-    /// semantics enforced by `Rv32TraceAir`.
-    pub fn validate_virtual_decomposition_semantics(&self) -> Result<(), String> {
-        for (row_idx, r) in self.rows.iter().enumerate() {
-            if !r.active || !r.is_virtual {
-                continue;
-            }
-            let remaining = r
-                .virtual_sequence_remaining
-                .ok_or_else(|| format!("row {row_idx}: virtual row missing virtual_sequence_remaining"))?;
-            let op =
-                expected_virtual_decomposed_op(r.instr_word, remaining).map_err(|e| format!("row {row_idx}: {e}"))?;
-            let rs1 = r
-                .reg_read_lane0
-                .as_ref()
-                .ok_or_else(|| format!("row {row_idx}: virtual row missing REG lane0 read"))?;
-            let rs2 = r
-                .reg_read_lane1
-                .as_ref()
-                .ok_or_else(|| format!("row {row_idx}: virtual row missing REG lane1 read"))?;
-            let (rd_has_write, rd_addr, rd_val) = if let Some(wr) = &r.reg_write_lane0 {
-                (true, wr.addr, wr.value)
-            } else {
-                (false, 0, 0)
-            };
-            validate_virtual_row_semantics(
-                op,
-                rs1.addr,
-                rs1.value,
-                rs2.addr,
-                rs2.value,
-                rd_has_write,
-                rd_addr,
-                rd_val,
-            )
-            .map_err(|e| format!("row {row_idx}: {e}"))?;
-        }
-        Ok(())
-    }
-
     /// Validate strict JALR next-PC policy used by trace-wiring control claims.
     ///
     /// Current trace-wiring control stage enforces `pc_after = rs1_val + imm_i` for JALR rows
@@ -332,14 +271,15 @@ impl Rv32ExecTable {
     /// - Unspecified registers default to 0.
     /// - Reads happen before the optional lane0 write in each cycle.
     pub fn validate_regfile_semantics(&self, init_regs: &HashMap<u64, u64>) -> Result<(), String> {
-        let mut regs: HashMap<u64, u64> = HashMap::new();
+        let mut regs = [0u64; 32];
         for (&addr, &value) in init_regs {
+            if addr >= 32 {
+                return Err(format!("reg init addr out of range: addr={addr}"));
+            }
             if addr == 0 && value != 0 {
                 return Err("reg init must keep x0 == 0".into());
             }
-            if value != 0 {
-                regs.insert(addr, value);
-            }
+            regs[addr as usize] = value;
         }
 
         for r in &self.rows {
@@ -353,8 +293,15 @@ impl Rv32ExecTable {
             let Some(rs2) = &r.reg_read_lane1 else {
                 return Err(format!("missing REG lane1 read at cycle {}", r.cycle));
             };
-            let exp_rs1 = regs.get(&rs1.addr).copied().unwrap_or(0);
-            let exp_rs2 = regs.get(&rs2.addr).copied().unwrap_or(0);
+            if rs1.addr >= 32 || rs2.addr >= 32 {
+                return Err(format!(
+                    "REG read addr out of range at cycle {}: lane0={} lane1={}",
+                    r.cycle, rs1.addr, rs2.addr
+                ));
+            }
+
+            let exp_rs1 = regs[rs1.addr as usize];
+            let exp_rs2 = regs[rs2.addr as usize];
             if rs1.value != exp_rs1 {
                 return Err(format!(
                     "REG lane0 read value mismatch at cycle {} pc={:#x}: addr={} got={:#x} expected={:#x}",
@@ -369,21 +316,23 @@ impl Rv32ExecTable {
             }
 
             if let Some(w) = &r.reg_write_lane0 {
+                if w.addr >= 32 {
+                    return Err(format!(
+                        "REG write addr out of range at cycle {}: addr={}",
+                        r.cycle, w.addr
+                    ));
+                }
                 if w.addr == 0 {
                     return Err(format!(
                         "unexpected x0 write at cycle {} pc={:#x}",
                         r.cycle, r.pc_before
                     ));
                 }
-                if w.value == 0 {
-                    regs.remove(&w.addr);
-                } else {
-                    regs.insert(w.addr, w.value);
-                }
+                regs[w.addr as usize] = w.value;
             }
 
             // x0 is always 0.
-            regs.remove(&0);
+            regs[0] = 0;
         }
 
         Ok(())
@@ -438,10 +387,6 @@ impl Rv32ExecTable {
 
         let mut out = Rv32ExecColumns {
             active: Vec::with_capacity(n),
-            is_virtual: Vec::with_capacity(n),
-            virtual_sequence_remaining: Vec::with_capacity(n),
-            virtual_transition: Vec::with_capacity(n),
-            virtual_commit_link: Vec::with_capacity(n),
             cycle: Vec::with_capacity(n),
             pc_before: Vec::with_capacity(n),
             pc_after: Vec::with_capacity(n),
@@ -466,9 +411,6 @@ impl Rv32ExecTable {
 
         for r in &self.rows {
             out.active.push(r.active);
-            out.is_virtual.push(r.is_virtual);
-            out.virtual_sequence_remaining
-                .push(r.virtual_sequence_remaining.map(u64::from).unwrap_or(0));
             out.cycle.push(r.cycle);
             out.pc_before.push(r.pc_before);
             out.pc_after.push(r.pc_after);
@@ -526,15 +468,6 @@ impl Rv32ExecTable {
                     out.rd_val.push(0);
                 }
             }
-        }
-
-        for i in 0..n {
-            let next_active = if i + 1 < n { out.active[i + 1] } else { false };
-            let next_is_virtual = if i + 1 < n { out.is_virtual[i + 1] } else { false };
-            let transition = out.active[i] && out.is_virtual[i] && next_active && !next_is_virtual;
-            out.virtual_transition.push(transition);
-            let next_has_write = if i + 1 < n { out.rd_has_write[i + 1] } else { false };
-            out.virtual_commit_link.push(transition && next_has_write);
         }
 
         out
@@ -664,44 +597,14 @@ impl Rv32ExecRow {
                 step.cycle, step.pc_before
             )
         })?;
-        let has_virtual_reg_addr = reg_read_lane0.addr >= 32
-            || reg_read_lane1.addr >= 32
-            || reg_write_lane0
-                .as_ref()
-                .map(|w| w.addr >= 32)
-                .unwrap_or(false);
-        if has_virtual_reg_addr && !step.is_virtual {
-            return Err(format!(
-                "non-virtual row uses virtual register address at cycle {} pc={:#x}",
-                step.cycle, step.pc_before
-            ));
-        }
-        if step.is_virtual
-            && reg_write_lane0
-                .as_ref()
-                .map(|w| w.addr < 32)
-                .unwrap_or(false)
-        {
-            return Err(format!(
-                "virtual row attempted architectural register write at cycle {} pc={:#x}",
-                step.cycle, step.pc_before
-            ));
-        }
-        let relax_reg_field_checks = step.is_virtual;
         if let Some(w) = &reg_write_lane0 {
-            if w.addr == 0 {
+            if fields.rd == 0 {
                 return Err(format!(
                     "unexpected REG_ID lane 0 write to x0 at cycle {} pc={:#x}",
                     step.cycle, step.pc_before
                 ));
             }
-            if !relax_reg_field_checks && fields.rd == 0 {
-                return Err(format!(
-                    "unexpected REG_ID lane 0 write to x0 at cycle {} pc={:#x}",
-                    step.cycle, step.pc_before
-                ));
-            }
-            if !relax_reg_field_checks && w.addr != fields.rd as u64 {
+            if w.addr != fields.rd as u64 {
                 return Err(format!(
                     "REG lane0 write addr mismatch at cycle {} pc={:#x}: got={} expected rd_field={}",
                     step.cycle, step.pc_before, w.addr, fields.rd
@@ -713,20 +616,18 @@ impl Rv32ExecRow {
         //
         // - lane0 reads rs1_field always
         // - lane1 reads rs2_field
-        if !relax_reg_field_checks {
-            let rs2_expected = fields.rs2 as u64;
-            if reg_read_lane0.addr != fields.rs1 as u64 {
-                return Err(format!(
-                    "REG lane0 read addr mismatch at cycle {} pc={:#x}: got={} expected rs1_field={}",
-                    step.cycle, step.pc_before, reg_read_lane0.addr, fields.rs1
-                ));
-            }
-            if reg_read_lane1.addr != rs2_expected {
-                return Err(format!(
-                    "REG lane1 read addr mismatch at cycle {} pc={:#x}: got={} expected={}",
-                    step.cycle, step.pc_before, reg_read_lane1.addr, rs2_expected
-                ));
-            }
+        let rs2_expected = fields.rs2 as u64;
+        if reg_read_lane0.addr != fields.rs1 as u64 {
+            return Err(format!(
+                "REG lane0 read addr mismatch at cycle {} pc={:#x}: got={} expected rs1_field={}",
+                step.cycle, step.pc_before, reg_read_lane0.addr, fields.rs1
+            ));
+        }
+        if reg_read_lane1.addr != rs2_expected {
+            return Err(format!(
+                "REG lane1 read addr mismatch at cycle {} pc={:#x}: got={} expected={}",
+                step.cycle, step.pc_before, reg_read_lane1.addr, rs2_expected
+            ));
         }
 
         // RAM events
@@ -739,7 +640,7 @@ impl Rv32ExecRow {
 
         // Shout events
         let mut shout_events = step.shout_events.clone();
-        if shout_events.is_empty() && !relax_reg_field_checks {
+        if shout_events.is_empty() {
             // Backfill RV32M shout events for trace/event-table consumers.
             //
             // Some trace builders currently omit explicit Shout events for RV32M rows even when
@@ -761,7 +662,7 @@ impl Rv32ExecRow {
                     let rs1_val = reg_read_lane0.value;
                     let rs2_val = reg_read_lane1.value;
                     let shout_id = RiscvShoutTables::new(/*xlen=*/ 32).opcode_to_id(*op);
-                    let key = encode_lookup_key(*op, rs1_val, rs2_val, /*xlen=*/ 32);
+                    let key = interleave_bits(rs1_val, rs2_val) as u64;
                     let value = compute_op(*op, rs1_val, rs2_val, /*xlen=*/ 32);
                     shout_events.push(ShoutEvent { shout_id, key, value });
                 }
@@ -770,8 +671,6 @@ impl Rv32ExecRow {
 
         Ok(Self {
             active: true,
-            is_virtual: step.is_virtual,
-            virtual_sequence_remaining: step.virtual_sequence_remaining,
             cycle: step.cycle,
             pc_before: step.pc_before,
             pc_after: step.pc_after,
@@ -791,8 +690,6 @@ impl Rv32ExecRow {
     pub fn inactive(cycle: u64, pc: u64, halted: bool) -> Self {
         Self {
             active: false,
-            is_virtual: false,
-            virtual_sequence_remaining: None,
             cycle,
             pc_before: pc,
             pc_after: pc,
@@ -807,6 +704,101 @@ impl Rv32ExecRow {
             ram_events: Vec::new(),
             shout_events: Vec::new(),
         }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Rv32MEventRow {
+    pub cycle: u64,
+    pub pc: u64,
+    pub opcode: RiscvOpcode,
+    pub rs1: u8,
+    pub rs2: u8,
+    pub rd: u8,
+    pub rs1_val: u64,
+    pub rs2_val: u64,
+    pub rd_write_val: Option<u64>,
+    pub expected_rd_val: u64,
+}
+
+#[derive(Clone, Debug)]
+pub struct Rv32MEventTable {
+    pub rows: Vec<Rv32MEventRow>,
+}
+
+impl Rv32MEventTable {
+    pub fn from_exec_table(exec: &Rv32ExecTable) -> Result<Self, String> {
+        let mut rows = Vec::new();
+
+        for r in &exec.rows {
+            if !r.active {
+                continue;
+            }
+            let Some(decoded) = &r.decoded else {
+                continue;
+            };
+            let (op, rd, rs1, rs2) = match decoded {
+                RiscvInstruction::RAlu { op, rd, rs1, rs2 } => (*op, *rd, *rs1, *rs2),
+                _ => continue,
+            };
+
+            let is_rv32m = matches!(
+                op,
+                RiscvOpcode::Mul
+                    | RiscvOpcode::Mulh
+                    | RiscvOpcode::Mulhu
+                    | RiscvOpcode::Mulhsu
+                    | RiscvOpcode::Div
+                    | RiscvOpcode::Divu
+                    | RiscvOpcode::Rem
+                    | RiscvOpcode::Remu
+            );
+            if !is_rv32m {
+                continue;
+            }
+
+            let rs1_val = r
+                .reg_read_lane0
+                .as_ref()
+                .ok_or_else(|| format!("missing REG lane0 read on RV32M row at cycle {}", r.cycle))?
+                .value;
+            let rs2_val = r
+                .reg_read_lane1
+                .as_ref()
+                .ok_or_else(|| format!("missing REG lane1 read on RV32M row at cycle {}", r.cycle))?
+                .value;
+            let expected = compute_op(op, rs1_val, rs2_val, /*xlen=*/ 32);
+            let rd_write_val = r.reg_write_lane0.as_ref().map(|w| w.value);
+
+            // The trace should not write to x0; keep the event row but require no write event.
+            if rd == 0 && rd_write_val.is_some() {
+                return Err(format!(
+                    "unexpected x0 write event on RV32M row at cycle {} pc={:#x}",
+                    r.cycle, r.pc_before
+                ));
+            }
+            if rd != 0 && rd_write_val.is_none() {
+                return Err(format!(
+                    "missing rd write event on RV32M row at cycle {} pc={:#x} (rd={rd})",
+                    r.cycle, r.pc_before
+                ));
+            }
+
+            rows.push(Rv32MEventRow {
+                cycle: r.cycle,
+                pc: r.pc_before,
+                opcode: op,
+                rs1,
+                rs2,
+                rd,
+                rs1_val,
+                rs2_val,
+                rd_write_val,
+                expected_rd_val: expected,
+            });
+        }
+
+        Ok(Self { rows })
     }
 }
 
@@ -841,25 +833,14 @@ impl Rv32ShoutEventTable {
             }
             for ev in r.shout_events.iter() {
                 let opcode = shout_tables.id_to_opcode(ev.shout_id);
-                let fallback_lhs = r.reg_read_lane0.as_ref().map(|io| io.value).unwrap_or(0);
-                let fallback_rhs = r.reg_read_lane1.as_ref().map(|io| io.value).unwrap_or(0);
-                let (lhs, rhs_raw) = if let Some(op) = opcode {
-                    try_decode_lookup_operands(op, ev.key, operand_mode_keys_enabled())
-                        .unwrap_or((fallback_lhs, fallback_rhs))
-                } else {
-                    (fallback_lhs, fallback_rhs)
-                };
+                let (lhs, rhs_raw) = uninterleave_bits(ev.key as u128);
                 let rhs = if matches!(opcode, Some(RiscvOpcode::Sll | RiscvOpcode::Srl | RiscvOpcode::Sra)) {
                     rhs_raw & 0x1F
                 } else {
                     rhs_raw
                 };
                 let key = if rhs != rhs_raw {
-                    if let Some(op) = opcode {
-                        encode_lookup_key(op, lhs, rhs, /*xlen=*/ 32)
-                    } else {
-                        ev.key
-                    }
+                    interleave_bits(lhs, rhs) as u64
                 } else {
                     ev.key
                 };
@@ -906,14 +887,15 @@ pub struct Rv32RegEventTable {
 
 impl Rv32RegEventTable {
     pub fn from_exec_table(exec: &Rv32ExecTable, init_regs: &HashMap<u64, u64>) -> Result<Self, String> {
-        let mut regs: HashMap<u64, u64> = HashMap::new();
+        let mut regs = [0u64; 32];
         for (&addr, &value) in init_regs {
+            if addr >= 32 {
+                return Err(format!("reg init addr out of range: addr={addr}"));
+            }
             if addr == 0 && value != 0 {
                 return Err("reg init must keep x0 == 0".into());
             }
-            if value != 0 {
-                regs.insert(addr, value);
-            }
+            regs[addr as usize] = value;
         }
 
         let mut rows: Vec<Rv32RegEventRow> = Vec::new();
@@ -928,10 +910,16 @@ impl Rv32RegEventTable {
             let Some(rs2) = &r.reg_read_lane1 else {
                 return Err(format!("missing REG lane1 read at cycle {}", r.cycle));
             };
+            if rs1.addr >= 32 || rs2.addr >= 32 {
+                return Err(format!(
+                    "REG read addr out of range at cycle {}: lane0={} lane1={}",
+                    r.cycle, rs1.addr, rs2.addr
+                ));
+            }
 
             // Reads happen before the optional write.
-            let rs1_prev = regs.get(&rs1.addr).copied().unwrap_or(0);
-            let rs2_prev = regs.get(&rs2.addr).copied().unwrap_or(0);
+            let rs1_prev = regs[rs1.addr as usize];
+            let rs2_prev = regs[rs2.addr as usize];
             if rs1.value != rs1_prev {
                 return Err(format!(
                     "REG lane0 read value mismatch at cycle {} pc={:#x}: addr={} got={:#x} expected={:#x}",
@@ -944,16 +932,12 @@ impl Rv32RegEventTable {
                     r.cycle, r.pc_before, rs2.addr, rs2.value, rs2_prev
                 ));
             }
-            let rs1_addr = u8::try_from(rs1.addr)
-                .map_err(|_| format!("REG lane0 addr does not fit u8 at cycle {}: {}", r.cycle, rs1.addr))?;
-            let rs2_addr = u8::try_from(rs2.addr)
-                .map_err(|_| format!("REG lane1 addr does not fit u8 at cycle {}: {}", r.cycle, rs2.addr))?;
 
             rows.push(Rv32RegEventRow {
                 cycle: r.cycle,
                 pc: r.pc_before,
                 kind: Rv32RegEventKind::ReadLane0,
-                addr: rs1_addr,
+                addr: rs1.addr as u8,
                 prev_val: rs1_prev,
                 next_val: rs1_prev,
             });
@@ -961,12 +945,18 @@ impl Rv32RegEventTable {
                 cycle: r.cycle,
                 pc: r.pc_before,
                 kind: Rv32RegEventKind::ReadLane1,
-                addr: rs2_addr,
+                addr: rs2.addr as u8,
                 prev_val: rs2_prev,
                 next_val: rs2_prev,
             });
 
             if let Some(w) = &r.reg_write_lane0 {
+                if w.addr >= 32 {
+                    return Err(format!(
+                        "REG write addr out of range at cycle {}: addr={}",
+                        r.cycle, w.addr
+                    ));
+                }
                 if w.addr == 0 {
                     return Err(format!(
                         "unexpected x0 write at cycle {} pc={:#x}",
@@ -974,22 +964,16 @@ impl Rv32RegEventTable {
                     ));
                 }
 
-                let prev = regs.get(&w.addr).copied().unwrap_or(0);
+                let prev = regs[w.addr as usize];
                 let next = w.value;
-                if next == 0 {
-                    regs.remove(&w.addr);
-                } else {
-                    regs.insert(w.addr, next);
-                }
-                regs.remove(&0);
-                let w_addr = u8::try_from(w.addr)
-                    .map_err(|_| format!("REG write addr does not fit u8 at cycle {}: {}", r.cycle, w.addr))?;
+                regs[w.addr as usize] = next;
+                regs[0] = 0;
 
                 rows.push(Rv32RegEventRow {
                     cycle: r.cycle,
                     pc: r.pc_before,
                     kind: Rv32RegEventKind::WriteLane0,
-                    addr: w_addr,
+                    addr: w.addr as u8,
                     prev_val: prev,
                     next_val: next,
                 });

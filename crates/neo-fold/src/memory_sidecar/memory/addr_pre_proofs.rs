@@ -38,18 +38,7 @@ pub(crate) fn prove_shout_addr_pre_time(
 
     let mut flat_lane_idx: usize = 0;
     let bus = cpu_bus;
-    let use_time_mem_cols = step.time_columns.t == bus.chunk_size && step.time_columns.mem_cols.len() == bus.bus_cols;
-    let expected_m = step
-        .mcs
-        .0
-        .m_in
-        .checked_add(step.mcs.1.w.len())
-        .ok_or_else(|| PiCcsError::InvalidInput("shared_cpu_bus witness width overflow".into()))?;
-    let cpu_z_k = if use_time_mem_cols {
-        Vec::new()
-    } else {
-        crate::memory_sidecar::cpu_bus::decode_cpu_z_to_k(params, &step.mcs.1.Z, expected_m)?
-    };
+    let cpu_z_k = crate::memory_sidecar::cpu_bus::decode_cpu_z_to_k(params, &step.mcs.1.Z, cpu_bus.m)?;
     if bus.shout_cols.len() != step.lut_instances.len() || bus.twist_cols.len() != step.mem_instances.len() {
         return Err(PiCcsError::InvalidInput(
             "shared_cpu_bus layout mismatch for step (instance counts)".into(),
@@ -74,17 +63,8 @@ pub(crate) fn prove_shout_addr_pre_time(
         if let Some(cached) = full_col_sparse_cache.get(&(col_id, steps)) {
             return Ok(cached.clone());
         }
-        let decoded = if use_time_mem_cols {
-            crate::memory_sidecar::cpu_bus::build_time_sparse_from_mem_cols(
-                &step.time_columns.mem_cols,
-                bus,
-                col_id,
-                steps,
-                pow2_cycle,
-            )?
-        } else {
-            crate::memory_sidecar::cpu_bus::build_time_sparse_from_bus_col(&cpu_z_k, bus, col_id, steps, pow2_cycle)?
-        };
+        let decoded =
+            crate::memory_sidecar::cpu_bus::build_time_sparse_from_bus_col(&cpu_z_k, bus, col_id, steps, pow2_cycle)?;
         full_col_sparse_cache.insert((col_id, steps), decoded.clone());
         Ok(decoded)
     };
@@ -188,19 +168,9 @@ pub(crate) fn prove_shout_addr_pre_time(
             } else if has_any_lookup {
                 let mut out = Vec::with_capacity(inst_ell_addr);
                 for col_id in shout_cols.addr_bits.clone() {
-                    out.push(if use_time_mem_cols {
-                        crate::memory_sidecar::cpu_bus::build_time_sparse_from_mem_cols_at_js(
-                            &step.time_columns.mem_cols,
-                            bus,
-                            col_id,
-                            &active_js,
-                            pow2_cycle,
-                        )?
-                    } else {
-                        crate::memory_sidecar::cpu_bus::build_time_sparse_from_bus_col_at_js(
-                            z, bus, col_id, &active_js, pow2_cycle,
-                        )?
-                    });
+                    out.push(crate::memory_sidecar::cpu_bus::build_time_sparse_from_bus_col_at_js(
+                        z, bus, col_id, &active_js, pow2_cycle,
+                    )?);
                 }
                 out
             } else {
@@ -208,23 +178,13 @@ pub(crate) fn prove_shout_addr_pre_time(
             };
 
             let val = if has_any_lookup {
-                if use_time_mem_cols {
-                    crate::memory_sidecar::cpu_bus::build_time_sparse_from_mem_cols_at_js(
-                        &step.time_columns.mem_cols,
-                        bus,
-                        shout_cols.primary_val(),
-                        &active_js,
-                        pow2_cycle,
-                    )?
-                } else {
-                    crate::memory_sidecar::cpu_bus::build_time_sparse_from_bus_col_at_js(
-                        z,
-                        bus,
-                        shout_cols.primary_val(),
-                        &active_js,
-                        pow2_cycle,
-                    )?
-                }
+                crate::memory_sidecar::cpu_bus::build_time_sparse_from_bus_col_at_js(
+                    z,
+                    bus,
+                    shout_cols.primary_val(),
+                    &active_js,
+                    pow2_cycle,
+                )?
             } else {
                 SparseIdxVec::new(pow2_cycle)
             };

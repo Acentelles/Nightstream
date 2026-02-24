@@ -8,7 +8,6 @@ use neo_ccs::poly::{SparsePoly, Term};
 use neo_ccs::relations::CcsStructure;
 use neo_ccs::Mat;
 use neo_math::{D, F, K};
-use neo_memory::ajtai::encode_vector_for_ccs_m;
 use neo_memory::cpu::build_bus_layout_for_instances;
 use neo_memory::cpu::constraints::{
     CpuConstraint, CpuConstraintBuilder, CpuConstraintLabel, ShoutCpuBinding, TwistCpuBinding,
@@ -38,9 +37,11 @@ fn append_bus_openings_matches_manual_for_chunk_size_2() {
     let bus = build_bus_layout_for_instances(m, m_in, chunk_size, [2usize], []).expect("bus layout should build");
     assert!(bus.bus_cols > 0);
 
-    // SuperNeo packed witness decomposition Z ∈ F^{D×ceil(m/D)} over logical width bus.m.
-    let z_logical_seed: Vec<F> = (0..bus.m).map(|i| F::from_u64((i as u64) + 1)).collect();
-    let Z = encode_vector_for_ccs_m(&params, bus.m, &z_logical_seed).expect("encode witness");
+    // SuperNeo packed witness decomposition Z ∈ F^{D×(m/D)}.
+    let mut Z = Mat::zero(D, m / D, F::ZERO);
+    for rho in 0..D {
+        Z[(rho, 0)] = F::from_u64((rho as u64) + 1);
+    }
 
     // Start with a core ME instance of length core_t=1.
     let y_pad = (params.d as usize).next_power_of_two();
