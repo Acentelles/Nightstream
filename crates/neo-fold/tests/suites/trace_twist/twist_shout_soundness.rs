@@ -16,7 +16,6 @@ use neo_math::K;
 use neo_memory::witness::{StepInstanceBundle, StepWitnessBundle};
 use neo_params::NeoParams;
 use neo_reductions::api::FoldingMode;
-use neo_reductions::engines::utils;
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::PrimeCharacteristicRing;
 use p3_goldilocks::Goldilocks as F;
@@ -414,10 +413,8 @@ fn tamper_batched_time_static_claim_sum_nonzero_fails() {
     )
     .expect("prove should succeed");
 
-    let dims = utils::build_dims_and_policy(&params, &ccs).expect("dims");
     let step_inst = StepInstanceBundle::from(&step_bundle);
-    let metas =
-        RouteATimeClaimPlan::time_claim_metas_for_step(&step_inst, dims.d_sc, false, false, false, false, false, None);
+    let metas = RouteATimeClaimPlan::time_claim_metas_for_step(&step_inst, false, false, false, false, false, None);
     let static_idx = metas
         .iter()
         .enumerate()

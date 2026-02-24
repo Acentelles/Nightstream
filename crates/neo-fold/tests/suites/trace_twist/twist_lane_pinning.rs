@@ -180,6 +180,8 @@ impl VmCpu<u64, u64> for PinnedLaneVm {
         Ok(StepMeta {
             pc_after: self.pc,
             opcode: 0,
+            is_virtual: false,
+            virtual_sequence_remaining: None,
         })
     }
 }

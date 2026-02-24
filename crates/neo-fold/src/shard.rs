@@ -94,6 +94,8 @@ mod rlc_dec;
 mod route_a_segment;
 #[path = "shard/verifier_and_api.rs"]
 mod verifier_and_api;
+#[path = "shard/verify_consistency.rs"]
+mod verify_consistency;
 
 pub use ccs_only_batched::{fold_shard_prove_ccs_only_batched, fold_shard_verify_ccs_only_batched};
 pub use core_utils::{absorb_step_memory, check_step_linking, CommitMixers, StepLinkingConfig};
@@ -104,3 +106,4 @@ pub(crate) use mixed_batched::*;
 pub(crate) use prover::*;
 pub(crate) use rlc_dec::*;
 pub(crate) use route_a_segment::*;
+pub(crate) use verify_consistency::*;

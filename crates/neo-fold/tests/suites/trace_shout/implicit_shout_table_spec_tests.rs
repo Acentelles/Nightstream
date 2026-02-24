@@ -11,7 +11,8 @@ use neo_fold::pi_ccs::FoldingMode;
 use neo_fold::shard::CommitMixers;
 use neo_fold::shard::{absorb_step_memory, fold_shard_prove, fold_shard_verify};
 use neo_math::{D, F, K};
-use neo_memory::riscv::lookups::{compute_op, interleave_bits, RiscvOpcode};
+use neo_memory::riscv::instruction::encode_lookup_key;
+use neo_memory::riscv::lookups::{compute_op, RiscvOpcode};
 use neo_memory::witness::{LutInstance, LutTableSpec, LutWitness, StepInstanceBundle, StepWitnessBundle};
 use neo_params::NeoParams;
 use neo_transcript::{Poseidon2Transcript, Transcript};
@@ -123,6 +124,7 @@ fn absorb_step_memory_binds_table_spec() {
             selector_group: None,
         }],
         mem_insts: vec![],
+        time_columns: crate::common_setup::empty_time_columns(),
         _phantom: PhantomData,
     };
 
@@ -150,7 +152,7 @@ fn route_a_shout_implicit_table_spec_verifies() {
     let xlen = 32usize;
     let rs1 = 0x1234_5678u64;
     let rs2 = 0x9abc_def0u64;
-    let addr = interleave_bits(rs1, rs2) as u64;
+    let addr = encode_lookup_key(opcode, rs1, rs2, xlen);
     let out = compute_op(opcode, rs1, rs2, xlen);
 
     let inst = LutInstance::<Cmt, F> {
@@ -175,12 +177,13 @@ fn route_a_shout_implicit_table_spec_verifies() {
     write_shout_bus_row(&mut z, bus_base, 1, 0, &inst, addr, F::from_u64(out), F::ONE);
 
     let (mcs, mcs_wit) = create_mcs_from_z(&params, &l, M_IN, z);
-    let step_bundle = StepWitnessBundle {
+    let step_bundle = crate::common_setup::canonicalize_step_time_columns(StepWitnessBundle {
         mcs: (mcs, mcs_wit),
         lut_instances: vec![(inst, wit)],
         mem_instances: vec![],
+        time_columns: crate::common_setup::empty_time_columns(),
         _phantom: PhantomData::<K>,
-    };
+    });
 
     let acc_init: Vec<CeClaim<Cmt, F, K>> = Vec::new();
     let acc_wit_init: Vec<Mat<F>> = Vec::new();
@@ -268,12 +271,13 @@ fn route_a_shout_implicit_identity_u32_table_spec_verifies() {
     write_shout_bus_row(&mut z, bus_base, 1, 0, &inst, addr, F::from_u64(out), F::ONE);
 
     let (mcs, mcs_wit) = create_mcs_from_z(&params, &l, M_IN, z);
-    let step_bundle = StepWitnessBundle {
+    let step_bundle = crate::common_setup::canonicalize_step_time_columns(StepWitnessBundle {
         mcs: (mcs, mcs_wit),
         lut_instances: vec![(inst, wit)],
         mem_instances: vec![],
+        time_columns: crate::common_setup::empty_time_columns(),
         _phantom: PhantomData::<K>,
-    };
+    });
 
     let acc_init: Vec<CeClaim<Cmt, F, K>> = Vec::new();
     let acc_wit_init: Vec<Mat<F>> = Vec::new();

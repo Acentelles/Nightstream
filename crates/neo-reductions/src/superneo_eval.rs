@@ -573,11 +573,11 @@ pub fn eval_all_mats_cached_with_blocks(
     chi_r: &[K],
     n_eff: usize,
 ) -> Vec<K> {
-    cache
-        .mats
-        .iter()
-        .map(|m| m.eval_mle_with_blocks(z_blocks, chi_r, n_eff))
-        .collect()
+    let mut out = Vec::with_capacity(cache.mats.len());
+    for m in &cache.mats {
+        out.push(m.eval_mle_with_blocks(z_blocks, chi_r, n_eff));
+    }
+    out
 }
 
 /// Evaluate `\tilde{(M_j z)}(r)` for all matrices using cached SuperNeo rows.
@@ -593,11 +593,11 @@ pub fn eval_all_mats_ring_cached_with_blocks(
     chi_r: &[K],
     n_eff: usize,
 ) -> Vec<[K; D]> {
-    cache
-        .mats
-        .iter()
-        .map(|m| m.eval_mle_ring_with_blocks(z_blocks, chi_r, n_eff))
-        .collect()
+    let mut out = Vec::with_capacity(cache.mats.len());
+    for m in &cache.mats {
+        out.push(m.eval_mle_ring_with_blocks(z_blocks, chi_r, n_eff));
+    }
+    out
 }
 
 /// Evaluate `\widetilde{(M_j z)}(r)` for all matrices in ring-coefficient form.
@@ -724,11 +724,11 @@ pub fn should_enable_superneo_cache_default<Ff>(s: &CcsStructure<Ff>, _b: u32) -
 
 /// Evaluate all transformed matrices in `s_bar` at `(z, r)`.
 pub fn eval_all_mats_transformed(s_bar: &CcsStructure<F>, z: &[K], chi_r: &[K], n_eff: usize) -> Vec<K> {
-    s_bar
-        .matrices
-        .iter()
-        .map(|m| eval_mle_transformed_matrix(m, z, chi_r, n_eff))
-        .collect()
+    let mut out = Vec::with_capacity(s_bar.matrices.len());
+    for m in &s_bar.matrices {
+        out.push(eval_mle_transformed_matrix(m, z, chi_r, n_eff));
+    }
+    out
 }
 
 /// Evaluate all original matrices in `s` at `(z, r)` (baseline path).
@@ -737,10 +737,11 @@ where
     Ff: Field + PrimeCharacteristicRing + Copy + Send + Sync,
     K: From<Ff>,
 {
-    s.matrices
-        .iter()
-        .map(|m| eval_mle_direct_matrix(m, z, chi_r, n_eff))
-        .collect()
+    let mut out = Vec::with_capacity(s.matrices.len());
+    for m in &s.matrices {
+        out.push(eval_mle_direct_matrix(m, z, chi_r, n_eff));
+    }
+    out
 }
 
 /// Evaluate all matrices in `s` at `(z, r)` using SuperNeo row lifting.
@@ -749,8 +750,9 @@ where
     Ff: Field + PrimeCharacteristicRing + Copy + Send + Sync,
     K: From<Ff>,
 {
-    s.matrices
-        .iter()
-        .map(|m| eval_mle_superneo_from_original(m, z, chi_r, n_eff))
-        .collect()
+    let mut out = Vec::with_capacity(s.matrices.len());
+    for m in &s.matrices {
+        out.push(eval_mle_superneo_from_original(m, z, chi_r, n_eff));
+    }
+    out
 }
