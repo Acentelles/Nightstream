@@ -227,12 +227,13 @@ fn cpu_semantic_shadow_fork_attack_should_be_rejected() {
     };
     let mem_wit = MemWitness { mats: Vec::new() };
 
-    let steps_witness = vec![StepWitnessBundle {
+    let steps_witness = vec![crate::common_setup::canonicalize_step_time_columns(StepWitnessBundle {
         mcs,
         lut_instances: vec![],
         mem_instances: vec![(mem_inst, mem_wit)],
+        time_columns: crate::common_setup::empty_time_columns(),
         _phantom: PhantomData::<K>,
-    }];
+    })];
     let steps_instance: Vec<StepInstanceBundle<Cmt, F, K>> =
         steps_witness.iter().map(StepInstanceBundle::from).collect();
 
@@ -426,12 +427,13 @@ fn cpu_semantic_fork_splice_attack_should_be_rejected() {
     };
     let mem_wit = MemWitness { mats: Vec::new() };
 
-    let steps_witness = vec![StepWitnessBundle {
+    let steps_witness = vec![crate::common_setup::canonicalize_step_time_columns(StepWitnessBundle {
         mcs,
         lut_instances: vec![],
         mem_instances: vec![(mem_inst, mem_wit)],
+        time_columns: crate::common_setup::empty_time_columns(),
         _phantom: PhantomData::<K>,
-    }];
+    })];
     let steps_instance: Vec<StepInstanceBundle<Cmt, F, K>> =
         steps_witness.iter().map(StepInstanceBundle::from).collect();
 
@@ -640,12 +642,13 @@ fn cpu_lookup_shadow_fork_attack_should_be_rejected() {
     };
     let mem_wit = MemWitness { mats: Vec::new() };
 
-    let steps_witness = vec![StepWitnessBundle {
+    let steps_witness = vec![crate::common_setup::canonicalize_step_time_columns(StepWitnessBundle {
         mcs,
         lut_instances: vec![(lut_inst, lut_wit)],
         mem_instances: vec![(mem_inst, mem_wit)],
+        time_columns: crate::common_setup::empty_time_columns(),
         _phantom: PhantomData::<K>,
-    }];
+    })];
     let steps_instance: Vec<StepInstanceBundle<Cmt, F, K>> =
         steps_witness.iter().map(StepInstanceBundle::from).collect();
 

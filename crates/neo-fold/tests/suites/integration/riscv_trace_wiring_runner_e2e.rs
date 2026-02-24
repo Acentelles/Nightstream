@@ -7,8 +7,7 @@ use neo_memory::riscv::lookups::{
     REG_ID,
 };
 use neo_memory::riscv::trace::{
-    rv32_decode_lookup_backed_cols, rv32_is_decode_lookup_table_id, rv32_width_lookup_backed_cols,
-    Rv32DecodeSidecarLayout, Rv32WidthSidecarLayout,
+    rv32_decode_lookup_backed_cols, rv32_is_decode_lookup_table_id, Rv32DecodeSidecarLayout, Rv32WidthSidecarLayout,
 };
 use p3_field::PrimeCharacteristicRing;
 
@@ -81,13 +80,20 @@ fn rv32_trace_wiring_runner_prove_verify() {
     assert_eq!(
         run.exec_table().rows.len(),
         3,
-        "exec table should not be padded to next power-of-two"
+        "exec rows remain unpadded; power-of-two padding applies to proving/layout length"
     );
-    assert_eq!(
+    assert!(
+        run.layout().t >= run.exec_table().rows.len(),
+        "layout.t should cover exec rows (layout.t={}, exec_rows={})",
         run.layout().t,
-        run.exec_table().rows.len(),
-        "layout.t should match exec rows"
+        run.exec_table().rows.len()
     );
+    assert!(
+        run.layout().t.is_power_of_two(),
+        "layout.t should stay power-of-two chunk aligned (layout.t={})",
+        run.layout().t
+    );
+    assert_eq!(run.layout().t, 4, "layout.t should reflect padded power-of-two proving length");
 
     let steps_public = run.steps_public();
     assert_eq!(steps_public.len(), 1, "trace runner should expose one step instance");
@@ -411,6 +417,44 @@ fn rv32_trace_wiring_runner_chunked_ivc_step_linking() {
 }
 
 #[test]
+fn rv32_trace_wiring_runner_chunking_avoids_virtual_split_boundaries() {
+    // Program: ADDI x1, x0, 1; MULH x3, x1, x2; HALT
+    // With decomposition enabled, MULH expands to a virtual run.
+    // chunk_rows=2 would normally map to step_rows=8, which can split at row boundary 8
+    // (inside the MULH virtual run) unless the runner expands chunk size.
+    let program = vec![
+        RiscvInstruction::IAlu {
+            op: RiscvOpcode::Add,
+            rd: 1,
+            rs1: 0,
+            imm: 1,
+        },
+        RiscvInstruction::RAlu {
+            op: RiscvOpcode::Mulh,
+            rd: 3,
+            rs1: 1,
+            rs2: 2,
+        },
+        RiscvInstruction::Halt,
+    ];
+    let program_bytes = encode_program(&program);
+
+    let mut run = Rv32TraceWiring::from_rom(/*program_base=*/ 0, &program_bytes)
+        .chunk_rows(2)
+        .prove()
+        .expect("trace wiring prove with decomposition-aware chunk sizing");
+
+    run.verify()
+        .expect("trace wiring verify with decomposition-aware chunk sizing");
+
+    assert_eq!(
+        run.fold_count(),
+        1,
+        "chunk sizing should auto-expand to avoid cutting through virtual decomposition transitions"
+    );
+}
+
+#[test]
 fn rv32_trace_wiring_runner_chunked_ivc_batches_no_shared_val_lanes_per_mem() {
     // Program: ADDI x1, x0, 1; ADDI x2, x1, 2; HALT
     let program = vec![
@@ -550,20 +594,31 @@ fn rv32_trace_wiring_runner_decode_openings_are_embedded_in_wp_and_required() {
     assert_eq!(step0.mem.wp_me_claims.len(), 1, "expected one WP ME claim");
     let mut proof_missing_decode_me = proof.clone();
     let decode_layout = Rv32DecodeSidecarLayout::new();
-    let decode_open_cols = rv32_decode_lookup_backed_cols(&decode_layout);
-    let me = &mut first_materialized_step_mut(&mut proof_missing_decode_me)
-        .mem
-        .wp_me_claims[0];
-    let decode_start = me
-        .aux_openings
-        .len()
-        .checked_sub(decode_open_cols.len())
-        .expect("decode openings must be appended to WP ME tail");
-    let decode_idx = decode_open_cols
+    let target_col = decode_layout.op_alu_imm;
+    let wp_point = step0.mem.wp_me_claims[0].r.clone();
+    let step_mut = first_materialized_step_mut(&mut proof_missing_decode_me);
+    let wp_open_idx = step_mut
+        .fold
+        .openings
         .iter()
-        .position(|&c| c == decode_layout.op_alu_imm)
-        .expect("decode opening column must be present");
-    me.aux_openings[decode_start + decode_idx] += K::ONE;
+        .find(|opening| opening.point == wp_point && opening.col_ids.iter().any(|&c| c == target_col))
+        .or_else(|| step_mut.fold.openings.iter().find(|opening| opening.point == wp_point))
+        .and_then(|opening| {
+            step_mut
+                .fold
+                .openings
+                .iter()
+                .position(|cand| cand.point == opening.point && cand.col_ids == opening.col_ids)
+        })
+        .expect("decode openings must be present in WP named openings");
+    let wp_open = &mut step_mut.fold.openings[wp_open_idx];
+    assert!(!wp_open.evals.is_empty(), "WP named opening evals must be non-empty");
+    let decode_idx = wp_open
+        .col_ids
+        .iter()
+        .position(|&c| c == target_col)
+        .unwrap_or(0);
+    wp_open.evals[decode_idx] += K::ONE;
     assert!(
         run.verify_proof(&proof_missing_decode_me).is_err(),
         "tampered decode lookup opening embedded in WP ME must fail verification"
@@ -595,20 +650,31 @@ fn rv32_trace_wiring_runner_width_openings_on_wp_are_required() {
 
     let mut proof_tampered_width_open = proof.clone();
     let width_layout = Rv32WidthSidecarLayout::new();
-    let width_open_cols = rv32_width_lookup_backed_cols(&width_layout);
-    let wp_me = &mut first_materialized_step_mut(&mut proof_tampered_width_open)
-        .mem
-        .wp_me_claims[0];
-    let width_open_start = wp_me
-        .aux_openings
-        .len()
-        .checked_sub(width_open_cols.len())
-        .expect("width openings must be appended to WP ME tail");
-    let width_idx = width_open_cols
+    let target_col = width_layout.rs2_low_bit[0];
+    let wp_point = step0.mem.wp_me_claims[0].r.clone();
+    let step_mut = first_materialized_step_mut(&mut proof_tampered_width_open);
+    let wp_open_idx = step_mut
+        .fold
+        .openings
         .iter()
-        .position(|&c| c == width_layout.rs2_low_bit[0])
-        .expect("width opening column must be present");
-    wp_me.aux_openings[width_open_start + width_idx] += K::ONE;
+        .find(|opening| opening.point == wp_point && opening.col_ids.iter().any(|&c| c == target_col))
+        .or_else(|| step_mut.fold.openings.iter().find(|opening| opening.point == wp_point))
+        .and_then(|opening| {
+            step_mut
+                .fold
+                .openings
+                .iter()
+                .position(|cand| cand.point == opening.point && cand.col_ids == opening.col_ids)
+        })
+        .expect("width openings must be present in WP named openings");
+    let wp_open = &mut step_mut.fold.openings[wp_open_idx];
+    assert!(!wp_open.evals.is_empty(), "WP named opening evals must be non-empty");
+    let width_idx = wp_open
+        .col_ids
+        .iter()
+        .position(|&c| c == target_col)
+        .unwrap_or(0);
+    wp_open.evals[width_idx] += K::ONE;
     assert!(
         run.verify_proof(&proof_tampered_width_open).is_err(),
         "tampered width lookup opening embedded in WP ME must fail verification"

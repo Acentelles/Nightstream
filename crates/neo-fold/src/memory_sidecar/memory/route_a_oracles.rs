@@ -28,6 +28,17 @@ pub(crate) fn build_route_a_memory_oracles(
             twist_pre.len()
         )));
     }
+    let trace_is_virtual_sparse = if decode_stage_required_for_step_witness(step) {
+        let trace = Rv32TraceLayout::new();
+        let t_len = infer_rv32_trace_t_len_for_wb_wp(step, &trace)?;
+        let decoded = decode_trace_col_values_batch(params, step, t_len, &[trace.is_virtual])?;
+        let is_virtual_vals = decoded.get(&trace.is_virtual).ok_or_else(|| {
+            PiCcsError::ProtocolError("virtual-domain oracle: missing is_virtual trace column".into())
+        })?;
+        Some(sparse_trace_col_from_values(step.mcs.0.m_in, ell_n, is_virtual_vals)?)
+    } else {
+        None
+    };
 
     let (event_alpha, event_beta, event_gamma, shout_event_trace_hash) =
         build_event_table_shout_context(params, step, ell_n, r_cycle)?;
@@ -73,6 +84,26 @@ pub(crate) fn build_route_a_memory_oracles(
 
         let lane_count = decoded.lanes.len();
         let mut lanes: Vec<RouteAShoutTimeLaneOracles> = Vec::with_capacity(lane_count);
+        let transport_only = RouteATimeClaimPlan::route_a_transport_only_shout_table(lut_inst.table_id);
+        if transport_only {
+            for _lane_idx in 0..lane_count {
+                lanes.push(RouteAShoutTimeLaneOracles {
+                    value: Box::new(ZeroOracleSparseTime::new(r_cycle.len(), 1)),
+                    value_claim: K::ZERO,
+                    adapter: Box::new(ZeroOracleSparseTime::new(r_cycle.len(), 1)),
+                    adapter_claim: K::ZERO,
+                    event_table_hash: None,
+                    event_table_hash_claim: None,
+                    gamma_group: None,
+                    transport_only: true,
+                });
+            }
+            shout_oracles.push(RouteAShoutTimeOracles {
+                lanes,
+                bitness: Vec::new(),
+            });
+            continue;
+        }
 
         let packed_layout = rv32_packed_shout_layout(&lut_inst.table_spec)?;
         let packed_op = packed_layout.map(|(op, _time_bits)| op);
@@ -927,6 +958,7 @@ pub(crate) fn build_route_a_memory_oracles(
                     event_table_hash,
                     event_table_hash_claim,
                     gamma_group: None,
+                    transport_only: false,
                 });
             } else {
                 let (value_oracle, value_claim) =
@@ -947,6 +979,7 @@ pub(crate) fn build_route_a_memory_oracles(
                     event_table_hash: None,
                     event_table_hash_claim: None,
                     gamma_group,
+                    transport_only: false,
                 });
             }
         }
@@ -1249,13 +1282,22 @@ pub(crate) fn build_route_a_memory_oracles(
             vec![Box::new(bitness_oracle)]
         } else {
             let mut bit_cols: Vec<SparseIdxVec<K>> = Vec::with_capacity(lane_count * (ell_addr + 1));
-            for lane in decoded.lanes.iter() {
+            for (lane_idx, lane) in decoded.lanes.iter().enumerate() {
+                // Gamma-grouped lanes emit bitness through grouped claims, so the
+                // per-instance bitness claim only covers ungrouped lanes.
+                if shout_lane_to_gamma.contains_key(&(lut_idx, lane_idx)) {
+                    continue;
+                }
                 bit_cols.extend(lane.addr_bits.iter().cloned());
                 bit_cols.push(lane.has_lookup.clone());
             }
-            let weights = bitness_weights(r_cycle, bit_cols.len(), 0x5348_4F55_54u64 + lut_idx as u64);
-            let bitness_oracle = LazyWeightedBitnessOracleSparseTime::new_with_cycle(r_cycle, bit_cols, weights);
-            vec![Box::new(bitness_oracle)]
+            if bit_cols.is_empty() {
+                Vec::new()
+            } else {
+                let weights = bitness_weights(r_cycle, bit_cols.len(), 0x5348_4F55_54u64 + lut_idx as u64);
+                let bitness_oracle = LazyWeightedBitnessOracleSparseTime::new_with_cycle(r_cycle, bit_cols, weights);
+                vec![Box::new(bitness_oracle)]
+            }
         };
 
         shout_oracles.push(RouteAShoutTimeOracles { lanes, bitness });
@@ -1263,13 +1305,17 @@ pub(crate) fn build_route_a_memory_oracles(
 
     let mut shout_gamma_groups = Vec::with_capacity(shout_gamma_specs.len());
     for (g_idx, g) in shout_gamma_specs.iter().enumerate() {
-        let mut value_cols: Vec<SparseIdxVec<K>> = Vec::with_capacity(g.lanes.len() * 2);
-        let mut adapter_cols: Vec<SparseIdxVec<K>> = Vec::with_capacity(g.lanes.len() * (1 + g.ell_addr));
+        let mut value_has_cols: Vec<SparseIdxVec<K>> = Vec::with_capacity(g.lanes.len());
+        let mut value_val_cols: Vec<SparseIdxVec<K>> = Vec::with_capacity(g.lanes.len());
         let weights = bitness_weights(r_cycle, g.lanes.len(), 0x5348_5F47_414D_4Du64 ^ g.key);
         let mut weighted_table: Vec<K> = Vec::with_capacity(g.lanes.len());
         let mut group_r_addr: Option<Vec<K>> = None;
         let mut value_claim = K::ZERO;
         let mut adapter_claim = K::ZERO;
+        let mut shared_addr_cols: Option<Vec<SparseIdxVec<K>>> = None;
+        let mut shared_selector_group: Option<Option<u64>> = None;
+        let mut shared_has_col: Option<SparseIdxVec<K>> = None;
+        let mut all_has_cols_equal = true;
 
         for (slot, lane_ref) in g.lanes.iter().enumerate() {
             let (lut_inst, _lut_wit) = step
@@ -1297,6 +1343,17 @@ pub(crate) fn build_route_a_memory_oracles(
             if ell_addr != g.ell_addr {
                 return Err(PiCcsError::ProtocolError("shout gamma group ell_addr mismatch".into()));
             }
+            match shared_selector_group {
+                None => {
+                    shared_selector_group = Some(lut_inst.selector_group);
+                }
+                Some(prev) => {
+                    if prev != lut_inst.selector_group {
+                        shared_selector_group = Some(None);
+                        all_has_cols_equal = false;
+                    }
+                }
+            }
             let ell_addr_u32 = u32::try_from(ell_addr)
                 .map_err(|_| PiCcsError::InvalidInput("shout gamma ell_addr overflows u32".into()))?;
             let r_addr = *r_addr_by_ell
@@ -1310,6 +1367,29 @@ pub(crate) fn build_route_a_memory_oracles(
                 }
             } else {
                 group_r_addr = Some(r_addr.to_vec());
+            }
+            if let Some(prev_addr_cols) = shared_addr_cols.as_ref() {
+                if prev_addr_cols.len() != lane.addr_bits.len() {
+                    return Err(PiCcsError::ProtocolError(
+                        "shout gamma group addr_bits width mismatch across lanes".into(),
+                    ));
+                }
+                for (bit_idx, (prev, cur)) in prev_addr_cols.iter().zip(lane.addr_bits.iter()).enumerate() {
+                    if prev.len() != cur.len() || prev.entries() != cur.entries() {
+                        return Err(PiCcsError::ProtocolError(format!(
+                            "shout gamma group addr_bits mismatch across lanes at bit_idx={bit_idx}"
+                        )));
+                    }
+                }
+            } else {
+                shared_addr_cols = Some(lane.addr_bits.clone());
+            }
+            if let Some(prev_has) = shared_has_col.as_ref() {
+                if prev_has.len() != lane.has_lookup.len() || prev_has.entries() != lane.has_lookup.entries() {
+                    all_has_cols_equal = false;
+                }
+            } else {
+                shared_has_col = Some(lane.has_lookup.clone());
             }
 
             let table_eval_at_r_addr = match &lut_inst.table_spec {
@@ -1338,63 +1418,162 @@ pub(crate) fn build_route_a_memory_oracles(
             adapter_claim += w * table_eval_at_r_addr * lane_oracles.adapter_claim;
             weighted_table.push(w * table_eval_at_r_addr);
 
-            value_cols.push(lane.has_lookup.clone());
-            value_cols.push(lane.val.clone());
-
-            adapter_cols.push(lane.has_lookup.clone());
-            adapter_cols.extend(lane.addr_bits.iter().cloned());
+            value_has_cols.push(lane.has_lookup.clone());
+            value_val_cols.push(lane.val.clone());
         }
 
-        let value_weights = weights.clone();
-        let value_oracle = FormulaOracleSparseTime::new(
-            value_cols,
-            3,
-            r_cycle,
-            Box::new(move |vals: &[K]| {
-                let mut out = K::ZERO;
-                let mut idx = 0usize;
-                for w in value_weights.iter() {
-                    let has = vals[idx];
-                    idx += 1;
-                    let val = vals[idx];
-                    idx += 1;
-                    out += *w * has * val;
-                }
-                debug_assert_eq!(idx, vals.len());
-                out
-            }),
-        );
+        let selector_group = shared_selector_group.flatten();
+        if selector_group.is_some() && !all_has_cols_equal {
+            return Err(PiCcsError::ProtocolError(
+                "shout gamma group selector-sharing mismatch across lanes".into(),
+            ));
+        }
+        let has_shared = selector_group.is_some() && all_has_cols_equal;
+        let shared_has_col =
+            shared_has_col.ok_or_else(|| PiCcsError::ProtocolError("empty shout gamma group".into()))?;
+        let shared_addr_cols =
+            shared_addr_cols.ok_or_else(|| PiCcsError::ProtocolError("empty shout gamma group".into()))?;
 
-        let adapter_coeffs = weighted_table.clone();
+        let value_oracle: Box<dyn RoundOracle> = if has_shared {
+            let mut value_cols: Vec<SparseIdxVec<K>> = Vec::with_capacity(1 + value_val_cols.len());
+            value_cols.push(shared_has_col.clone());
+            value_cols.extend(value_val_cols.iter().cloned());
+            let value_weights = weights.clone();
+            let value_width = 1 + value_weights.len();
+            Box::new(FormulaOracleSparseTime::new(
+                value_cols,
+                3,
+                r_cycle,
+                move |vals: &[K]| {
+                    let has = vals[0];
+                    if has == K::ZERO {
+                        return K::ZERO;
+                    }
+                    let mut out = K::ZERO;
+                    for (&val, w) in vals[1..].iter().zip(value_weights.iter()) {
+                        if val == K::ZERO {
+                            continue;
+                        }
+                        out += *w * has * val;
+                    }
+                    debug_assert_eq!(vals.len(), value_width);
+                    out
+                },
+            ))
+        } else {
+            let mut value_cols: Vec<SparseIdxVec<K>> = Vec::with_capacity(value_val_cols.len() * 2);
+            for (has, val) in value_has_cols.iter().zip(value_val_cols.iter()) {
+                value_cols.push(has.clone());
+                value_cols.push(val.clone());
+            }
+            let value_weights = weights.clone();
+            let value_width = value_weights.len() * 2;
+            Box::new(FormulaOracleSparseTime::new(
+                value_cols,
+                3,
+                r_cycle,
+                move |vals: &[K]| {
+                    let mut out = K::ZERO;
+                    for (chunk, w) in vals.chunks_exact(2).zip(value_weights.iter()) {
+                        let has = chunk[0];
+                        let val = chunk[1];
+                        if has == K::ZERO || val == K::ZERO {
+                            continue;
+                        }
+                        out += *w * has * val;
+                    }
+                    debug_assert_eq!(vals.len(), value_width);
+                    out
+                },
+            ))
+        };
+
+        let adapter_coeffs = weighted_table;
         let adapter_r_addr = group_r_addr.ok_or_else(|| PiCcsError::ProtocolError("empty shout gamma group".into()))?;
         let ell_addr = g.ell_addr;
-        let adapter_oracle = FormulaOracleSparseTime::new(
-            adapter_cols,
-            2 + ell_addr,
-            r_cycle,
-            Box::new(move |vals: &[K]| {
-                let mut out = K::ZERO;
-                let mut idx = 0usize;
-                for coeff in adapter_coeffs.iter() {
-                    let has = vals[idx];
-                    idx += 1;
-                    let mut eq = K::ONE;
-                    for bit_idx in 0..ell_addr {
-                        eq *= eq_bit_affine(vals[idx], adapter_r_addr[bit_idx]);
-                        idx += 1;
+        let adapter_eq_alpha: Vec<K> = adapter_r_addr.iter().map(|&u| u + u - K::ONE).collect();
+        let adapter_eq_beta: Vec<K> = adapter_r_addr.iter().map(|&u| K::ONE - u).collect();
+        let adapter_oracle: Box<dyn RoundOracle> = if has_shared {
+            let mut adapter_cols: Vec<SparseIdxVec<K>> = Vec::with_capacity(1 + ell_addr);
+            adapter_cols.push(shared_has_col.clone());
+            adapter_cols.extend(shared_addr_cols.iter().cloned());
+            let coeff_sum = adapter_coeffs.iter().copied().fold(K::ZERO, |acc, c| acc + c);
+            let adapter_width = 1 + ell_addr;
+            Box::new(FormulaOracleSparseTime::new(
+                adapter_cols,
+                2 + ell_addr,
+                r_cycle,
+                move |vals: &[K]| {
+                    let has = vals[0];
+                    if has == K::ZERO {
+                        return K::ZERO;
                     }
-                    out += *coeff * has * eq;
-                }
-                debug_assert_eq!(idx, vals.len());
-                out
-            }),
-        );
+                    let mut eq = K::ONE;
+                    for (i, &bit) in vals[1..].iter().enumerate() {
+                        let alpha = adapter_eq_alpha[i];
+                        let beta = adapter_eq_beta[i];
+                        eq *= bit * alpha + beta;
+                    }
+                    debug_assert_eq!(vals.len(), adapter_width);
+                    coeff_sum * has * eq
+                },
+            ))
+        } else {
+            let mut adapter_cols: Vec<SparseIdxVec<K>> = Vec::with_capacity(ell_addr + value_has_cols.len());
+            adapter_cols.extend(shared_addr_cols.iter().cloned());
+            adapter_cols.extend(value_has_cols.iter().cloned());
+            let adapter_width = ell_addr + adapter_coeffs.len();
+            Box::new(FormulaOracleSparseTime::new(
+                adapter_cols,
+                2 + ell_addr,
+                r_cycle,
+                move |vals: &[K]| {
+                    let mut eq = K::ONE;
+                    for (i, &bit) in vals[..ell_addr].iter().enumerate() {
+                        let alpha = adapter_eq_alpha[i];
+                        let beta = adapter_eq_beta[i];
+                        eq *= bit * alpha + beta;
+                    }
+                    if eq == K::ZERO {
+                        return K::ZERO;
+                    }
+                    let mut out = K::ZERO;
+                    for (&has, coeff) in vals[ell_addr..].iter().zip(adapter_coeffs.iter()) {
+                        if has == K::ZERO {
+                            continue;
+                        }
+                        out += *coeff * has * eq;
+                    }
+                    debug_assert_eq!(vals.len(), adapter_width);
+                    out
+                },
+            ))
+        };
+        let mut bitness_cols: Vec<SparseIdxVec<K>> = Vec::with_capacity(ell_addr + value_has_cols.len());
+        let mut bitness_weights_expanded: Vec<K> = Vec::with_capacity(ell_addr + value_has_cols.len());
+        let addr_weight_sum = weights.iter().copied().fold(K::ZERO, |acc, w| acc + w);
+        for bit_col in shared_addr_cols.iter() {
+            bitness_cols.push(bit_col.clone());
+            bitness_weights_expanded.push(addr_weight_sum);
+        }
+        if has_shared {
+            bitness_cols.push(shared_has_col.clone());
+            bitness_weights_expanded.push(addr_weight_sum);
+        } else {
+            for (lane_weight, has_col) in weights.iter().copied().zip(value_has_cols.iter()) {
+                bitness_cols.push(has_col.clone());
+                bitness_weights_expanded.push(lane_weight);
+            }
+        }
+        let bitness_oracle =
+            LazyWeightedBitnessOracleSparseTime::new_with_cycle(r_cycle, bitness_cols, bitness_weights_expanded);
 
         shout_gamma_groups.push(RouteAShoutGammaGroupOracles {
-            value: Box::new(value_oracle),
+            value: value_oracle,
             value_claim,
-            adapter: Box::new(adapter_oracle),
+            adapter: adapter_oracle,
             adapter_claim,
+            bitness: Box::new(bitness_oracle),
         });
     }
 
@@ -1455,11 +1634,60 @@ pub(crate) fn build_route_a_memory_oracles(
         let weights = bitness_weights(r_cycle, bit_cols.len(), 0x5457_4953_54u64 + mem_idx as u64);
         let bitness_oracle = LazyWeightedBitnessOracleSparseTime::new_with_cycle(r_cycle, bit_cols, weights);
         let bitness: Vec<Box<dyn RoundOracle>> = vec![Box::new(bitness_oracle)];
+        let (virtual_write_domain, nonvirtual_arch_domain) = if mem_inst.mem_id == neo_memory::riscv::lookups::REG_ID.0
+        {
+            if let Some(is_virtual) = trace_is_virtual_sparse.as_ref() {
+                let mut vd_oracles: Vec<Box<dyn RoundOracle>> = Vec::with_capacity(pre.decoded.lanes.len());
+                let mut nvd_oracles: Vec<Box<dyn RoundOracle>> = Vec::with_capacity(pre.decoded.lanes.len() * 2);
+                for lane in pre.decoded.lanes.iter() {
+                    let wa_bit5 = lane
+                        .wa_bits
+                        .get(5)
+                        .cloned()
+                        .unwrap_or_else(|| SparseIdxVec::new(lane.has_write.len()));
+                    let ra_bit5 = lane
+                        .ra_bits
+                        .get(5)
+                        .cloned()
+                        .unwrap_or_else(|| SparseIdxVec::new(lane.has_read.len()));
+                    vd_oracles.push(Box::new(Rv32VirtualWriteDomainOracleSparseTime::new(
+                        r_cycle,
+                        is_virtual.clone(),
+                        lane.has_write.clone(),
+                        wa_bit5.clone(),
+                    )));
+                    nvd_oracles.push(Box::new(Rv32NonVirtualArchDomainOracleSparseTime::new(
+                        r_cycle,
+                        lane.has_read.clone(),
+                        is_virtual.clone(),
+                        ra_bit5,
+                    )));
+                    nvd_oracles.push(Box::new(Rv32NonVirtualArchDomainOracleSparseTime::new(
+                        r_cycle,
+                        lane.has_write.clone(),
+                        is_virtual.clone(),
+                        wa_bit5,
+                    )));
+                }
+                let vd_sum = SumRoundOracle::new(vd_oracles)?;
+                let nvd_sum = SumRoundOracle::new(nvd_oracles)?;
+                (
+                    Some(Box::new(vd_sum) as Box<dyn RoundOracle>),
+                    Some(Box::new(nvd_sum) as Box<dyn RoundOracle>),
+                )
+            } else {
+                (None, None)
+            }
+        } else {
+            (None, None)
+        };
 
         twist_oracles.push(RouteATwistTimeOracles {
             read_check,
             write_check,
             bitness,
+            virtual_write_domain,
+            nonvirtual_arch_domain,
         });
     }
 

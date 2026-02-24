@@ -326,7 +326,7 @@ pub(crate) fn finalize_route_a_memory_prover(
             })
             .collect();
 
-        let (r_val_out, per_claim_results) =
+        let (r_val_out, mut per_claim_results) =
             run_batched_sumcheck_prover_ds(tr, b"twist/val_eval_batch", step_idx, claims.as_mut_slice())?;
 
         if per_claim_results.len() != claim_count {
@@ -349,11 +349,11 @@ pub(crate) fn finalize_route_a_memory_prover(
             let base = claims_per_mem * i;
             twist_val_eval_proofs.push(twist::TwistValEvalProof {
                 claimed_inc_sum_lt: claimed_inc_sums_lt[i],
-                rounds_lt: per_claim_results[base].round_polys.clone(),
+                rounds_lt: std::mem::take(&mut per_claim_results[base].round_polys),
                 claimed_inc_sum_total: claimed_inc_sums_total[i],
-                rounds_total: per_claim_results[base + 1].round_polys.clone(),
+                rounds_total: std::mem::take(&mut per_claim_results[base + 1].round_polys),
                 claimed_prev_inc_sum_total: claimed_prev_inc_sums_total[i],
-                rounds_prev_total: has_prev.then(|| per_claim_results[base + 2].round_polys.clone()),
+                rounds_prev_total: has_prev.then(|| std::mem::take(&mut per_claim_results[base + 2].round_polys)),
             });
         }
 
@@ -415,11 +415,20 @@ pub(crate) fn finalize_route_a_memory_prover(
             )));
         }
         let mut cpu_claims_cur = cpu_claims_cur;
-        crate::memory_sidecar::cpu_bus::append_bus_openings_to_me_instance(
+        if step.time_columns.t != cpu_bus.chunk_size || step.time_columns.mem_cols.len() != cpu_bus.bus_cols {
+            return Err(PiCcsError::InvalidInput(format!(
+                "uniform Route-A requires canonical time mem columns for val-lane openings (t={}, chunk_size={}, mem_cols={}, bus_cols={})",
+                step.time_columns.t,
+                cpu_bus.chunk_size,
+                step.time_columns.mem_cols.len(),
+                cpu_bus.bus_cols
+            )));
+        }
+        crate::memory_sidecar::cpu_bus::append_bus_openings_to_me_instance_from_time_columns(
             params,
             cpu_bus,
             core_t,
-            &mcs_wit.Z,
+            &step.time_columns.mem_cols,
             &mut cpu_claims_cur[0],
         )?;
         val_me_claims.extend(cpu_claims_cur);
@@ -443,11 +452,23 @@ pub(crate) fn finalize_route_a_memory_prover(
                 )));
             }
             let mut cpu_claims_prev = cpu_claims_prev;
-            crate::memory_sidecar::cpu_bus::append_bus_openings_to_me_instance(
+            // Val-lane continuity consumes previous-step bus openings at r_val.
+            // In canonical mode those openings are sourced from prev step time mem columns,
+            // so the shape must match the current bus layout exactly.
+            if prev.time_columns.t != cpu_bus.chunk_size || prev.time_columns.mem_cols.len() != cpu_bus.bus_cols {
+                return Err(PiCcsError::InvalidInput(format!(
+                    "uniform Route-A requires canonical prev time mem columns for val-lane openings (t={}, chunk_size={}, mem_cols={}, bus_cols={})",
+                    prev.time_columns.t,
+                    cpu_bus.chunk_size,
+                    prev.time_columns.mem_cols.len(),
+                    cpu_bus.bus_cols
+                )));
+            }
+            crate::memory_sidecar::cpu_bus::append_bus_openings_to_me_instance_from_time_columns(
                 params,
                 cpu_bus,
                 core_t,
-                &prev_mcs_wit.Z,
+                &prev.time_columns.mem_cols,
                 &mut cpu_claims_prev[0],
             )?;
             val_me_claims.extend(cpu_claims_prev);
