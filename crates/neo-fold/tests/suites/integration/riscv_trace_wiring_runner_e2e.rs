@@ -82,6 +82,17 @@ fn rv32_trace_wiring_runner_prove_verify() {
         3,
         "exec rows remain unpadded; power-of-two padding applies to proving/layout length"
     );
+    assert!(
+        run.layout().t >= run.exec_table().rows.len(),
+        "layout.t should cover exec rows (layout.t={}, exec_rows={})",
+        run.layout().t,
+        run.exec_table().rows.len()
+    );
+    assert!(
+        run.layout().t.is_power_of_two(),
+        "layout.t should stay power-of-two chunk aligned (layout.t={})",
+        run.layout().t
+    );
     assert_eq!(run.layout().t, 4, "layout.t should reflect padded power-of-two proving length");
 
     let steps_public = run.steps_public();
@@ -402,6 +413,44 @@ fn rv32_trace_wiring_runner_chunked_ivc_step_linking() {
     assert_eq!(
         prev[layout.pc_final], cur[layout.pc0],
         "trace step linking must enforce pc_final -> pc0 across steps"
+    );
+}
+
+#[test]
+fn rv32_trace_wiring_runner_chunking_avoids_virtual_split_boundaries() {
+    // Program: ADDI x1, x0, 1; MULH x3, x1, x2; HALT
+    // With decomposition enabled, MULH expands to a virtual run.
+    // chunk_rows=2 would normally map to step_rows=8, which can split at row boundary 8
+    // (inside the MULH virtual run) unless the runner expands chunk size.
+    let program = vec![
+        RiscvInstruction::IAlu {
+            op: RiscvOpcode::Add,
+            rd: 1,
+            rs1: 0,
+            imm: 1,
+        },
+        RiscvInstruction::RAlu {
+            op: RiscvOpcode::Mulh,
+            rd: 3,
+            rs1: 1,
+            rs2: 2,
+        },
+        RiscvInstruction::Halt,
+    ];
+    let program_bytes = encode_program(&program);
+
+    let mut run = Rv32TraceWiring::from_rom(/*program_base=*/ 0, &program_bytes)
+        .chunk_rows(2)
+        .prove()
+        .expect("trace wiring prove with decomposition-aware chunk sizing");
+
+    run.verify()
+        .expect("trace wiring verify with decomposition-aware chunk sizing");
+
+    assert_eq!(
+        run.fold_count(),
+        1,
+        "chunk sizing should auto-expand to avoid cutting through virtual decomposition transitions"
     );
 }
 

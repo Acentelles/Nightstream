@@ -748,7 +748,7 @@ where
 
         // For RV32 trace wiring CCS, append time-combined openings for trace columns needed to
         // link Twist/Shout sidecars at r_time. In shared-bus mode this is appended after bus openings.
-        if (!step.mem_instances.is_empty() || !step.lut_instances.is_empty()) && mcs_inst.m_in == 5 {
+        if crate::memory_sidecar::memory::wb_wp_required_for_step_witness(step) && mcs_inst.m_in == 5 {
             // Infer that the CPU witness is the RV32 trace column-major layout:
             // z = [x (m_in) | trace_cols * t_len]
             let m_in = mcs_inst.m_in;
@@ -807,8 +807,9 @@ where
             let trace_cols_to_open_shout: Vec<usize> = vec![
                 trace.shout_has_lookup,
                 trace.shout_val,
-                trace.shout_lhs,
-                trace.shout_rhs,
+                trace.shout_link_lhs,
+                trace.shout_link_rhs,
+                trace.shout_add_sub_key,
             ];
             let trace_cols_to_open_all: Vec<usize> = trace_cols_to_open_dense
                 .iter()

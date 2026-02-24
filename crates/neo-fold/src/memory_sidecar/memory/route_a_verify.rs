@@ -180,6 +180,43 @@ pub fn verify_route_a_memory_step(
             batched_claimed_sums.len()
         )));
     }
+    let is_virtual_open = if trace_mode {
+        if mem_proof.wp_me_claims.len() != 1 {
+            return Err(PiCcsError::ProtocolError(format!(
+                "virtual-domain check requires one WP ME claim (got {})",
+                mem_proof.wp_me_claims.len()
+            )));
+        }
+        let wp_me = &mem_proof.wp_me_claims[0];
+        if wp_me.r.as_slice() != r_time {
+            return Err(PiCcsError::ProtocolError(
+                "virtual-domain check: WP ME r mismatch".into(),
+            ));
+        }
+        if wp_me.c != step.mcs_inst.c {
+            return Err(PiCcsError::ProtocolError(
+                "virtual-domain check: WP ME commitment mismatch".into(),
+            ));
+        }
+        if wp_me.m_in != step.mcs_inst.m_in {
+            return Err(PiCcsError::ProtocolError(
+                "virtual-domain check: WP ME m_in mismatch".into(),
+            ));
+        }
+        let trace_layout = Rv32TraceLayout::new();
+        let wp_cols = rv32_trace_wp_opening_columns(&trace_layout);
+        let (wp_entry, wp_openings) =
+            require_time_openings_covering_point(step_time_openings, r_time, &wp_cols, "virtual-domain check/WP")?;
+        if wp_entry.source != crate::shard_proof_types::TimeOpeningSource::CommittedOpening {
+            return Err(PiCcsError::ProtocolError(format!(
+                "virtual-domain check/WP requires CommittedOpening source (got {:?})",
+                wp_entry.source
+            )));
+        }
+        named_opening(&wp_openings, trace_layout.is_virtual, "virtual-domain check: is_virtual")?
+    } else {
+        K::ZERO
+    };
 
     let expected_proofs = step.lut_insts.len() + step.mem_insts.len();
     if proofs_mem.len() != expected_proofs {
@@ -217,11 +254,24 @@ pub fn verify_route_a_memory_step(
         addr_bits: Vec<K>,
         pre: ShoutAddrPreVerifyData,
     }
-    let mut shout_addr_range_counts = std::collections::HashMap::<(usize, usize), usize>::new();
-    for inst_cols in cpu_bus.shout_cols.iter() {
-        for lane_cols in inst_cols.lanes.iter() {
-            let key = (lane_cols.addr_bits.start, lane_cols.addr_bits.end);
-            *shout_addr_range_counts.entry(key).or_insert(0) += 1;
+    let mut shout_addr_range_counts_interleaved = std::collections::HashMap::<(usize, usize), usize>::new();
+    let mut shout_addr_range_counts_combined = std::collections::HashMap::<(usize, usize), usize>::new();
+    if enforce_trace_shout_linkage {
+        for (inst, inst_cols) in step.lut_insts.iter().zip(cpu_bus.shout_cols.iter()) {
+            let table_id = rv32_trace_link_table_id_from_spec(&inst.table_spec)?;
+            let is_combined_lane = table_id
+                .map(neo_memory::riscv::trace::rv32_trace_uses_combined_operand_key_table_id)
+                .unwrap_or(false);
+            for lane_cols in inst_cols.lanes.iter() {
+                let key = (lane_cols.addr_bits.start, lane_cols.addr_bits.end);
+                if table_id.is_some() {
+                    if is_combined_lane {
+                        *shout_addr_range_counts_combined.entry(key).or_insert(0) += 1;
+                    } else {
+                        *shout_addr_range_counts_interleaved.entry(key).or_insert(0) += 1;
+                    }
+                }
+            }
         }
     }
     let mut shout_gamma_lane_data: Vec<Option<ShoutGammaLaneVerifyData>> = vec![None; total_shout_lanes];
@@ -250,8 +300,13 @@ pub fn verify_route_a_memory_step(
 
         let ell_addr = inst.d * inst.ell;
         let expected_lanes = inst.lanes.max(1);
-        let lane_table_id = if enforce_trace_shout_linkage {
-            rv32_trace_link_table_id_from_spec(&inst.table_spec)?.map(|table_id| K::from(F::from_u64(table_id as u64)))
+        let lane_table_id_u32 = if enforce_trace_shout_linkage {
+            rv32_trace_link_table_id_from_spec(&inst.table_spec)?
+        } else {
+            None
+        };
+        let lane_table_id = if let Some(table_id) = lane_table_id_u32 {
+            Some(K::from(F::from_u64(table_id as u64)))
         } else {
             None
         };
@@ -271,8 +326,7 @@ pub fn verify_route_a_memory_step(
             addr_bits: Vec<K>,
             has_lookup: K,
             val: K,
-            shared_addr_group: bool,
-            shared_addr_group_size: usize,
+            addr_key: (usize, usize),
         }
         let mut lane_opens: Vec<ShoutLaneOpen> = Vec::with_capacity(expected_lanes);
         for (lane_idx, shout_cols) in inst_cols.lanes.iter().enumerate() {
@@ -297,15 +351,11 @@ pub fn verify_route_a_memory_step(
             )?;
             let val_open = named_opening(&bus_time_open_map, shout_cols.primary_val(), "route-a/time shout val")?;
             let key = (shout_cols.addr_bits.start, shout_cols.addr_bits.end);
-            let shared_addr_group_size = shout_addr_range_counts.get(&key).copied().unwrap_or(0);
-            let shared_addr_group = shared_addr_group_size > 1;
-
             lane_opens.push(ShoutLaneOpen {
                 addr_bits: addr_bits_open,
                 has_lookup: has_lookup_open,
                 val: val_open,
-                shared_addr_group,
-                shared_addr_group_size,
+                addr_key: key,
             });
         }
 
@@ -382,24 +432,75 @@ pub fn verify_route_a_memory_step(
                 shout_trace_sums.has_lookup += lane.has_lookup;
                 shout_trace_sums.val += lane.val;
                 shout_trace_sums.table_id += lane.has_lookup * lane_table_id;
-                let (lhs, rhs) = if packed_opcode.is_some() {
-                    let lhs = *lane.addr_bits.first().ok_or_else(|| {
-                        PiCcsError::InvalidInput("packed Shout trace linkage requires lhs in addr_bits[0]".into())
-                    })?;
-                    let rhs = *lane.addr_bits.get(1).ok_or_else(|| {
-                        PiCcsError::InvalidInput("packed Shout trace linkage requires rhs in addr_bits[1]".into())
-                    })?;
-                    (lhs, rhs)
+                let is_combined_lane = lane_table_id_u32
+                    .map(neo_memory::riscv::trace::rv32_trace_uses_combined_operand_key_table_id)
+                    .unwrap_or(false);
+                if is_combined_lane {
+                    let bits_to_scalar = |bits: &[K]| {
+                        let two = K::from(F::from_u64(2));
+                        let mut pow = K::ONE;
+                        let mut acc = K::ZERO;
+                        for bit in bits.iter() {
+                            acc += pow * *bit;
+                            pow *= two;
+                        }
+                        acc
+                    };
+                    let key = match packed_opcode {
+                        Some(neo_memory::riscv::lookups::RiscvOpcode::Mul) => {
+                            let hi_bits = lane.addr_bits.get(2..34).ok_or_else(|| {
+                                PiCcsError::InvalidInput(
+                                    "packed MUL combined-key linkage requires addr_bits[2..34]".into(),
+                                )
+                            })?;
+                            let hi = bits_to_scalar(hi_bits);
+                            lane.val + K::from(F::from_u64(1u64 << 32)) * hi
+                        }
+                        Some(neo_memory::riscv::lookups::RiscvOpcode::Mulhu) => {
+                            let lo_bits = lane.addr_bits.get(2..34).ok_or_else(|| {
+                                PiCcsError::InvalidInput(
+                                    "packed MULHU combined-key linkage requires addr_bits[2..34]".into(),
+                                )
+                            })?;
+                            let lo = bits_to_scalar(lo_bits);
+                            lo + K::from(F::from_u64(1u64 << 32)) * lane.val
+                        }
+                        _ => bits_to_scalar(lane.addr_bits.as_slice()),
+                    };
+                    let group_size = shout_addr_range_counts_combined
+                        .get(&lane.addr_key)
+                        .copied()
+                        .unwrap_or(1);
+                    if group_size > 1 {
+                        let inv_count = K::from_u64(group_size as u64).inverse();
+                        shout_trace_sums.add_sub_key += key * inv_count;
+                    } else {
+                        shout_trace_sums.add_sub_key += key;
+                    }
                 } else {
-                    unpack_interleaved_halves_lsb(&lane.addr_bits)?
-                };
-                if lane.shared_addr_group {
-                    let inv_count = K::from_u64(lane.shared_addr_group_size as u64).inverse();
-                    shout_trace_sums.lhs += lhs * inv_count;
-                    shout_trace_sums.rhs += rhs * inv_count;
-                } else {
-                    shout_trace_sums.lhs += lhs;
-                    shout_trace_sums.rhs += rhs;
+                    let (lhs, rhs) = if packed_opcode.is_some() {
+                        let lhs = *lane.addr_bits.first().ok_or_else(|| {
+                            PiCcsError::InvalidInput("packed Shout trace linkage requires lhs in addr_bits[0]".into())
+                        })?;
+                        let rhs = *lane.addr_bits.get(1).ok_or_else(|| {
+                            PiCcsError::InvalidInput("packed Shout trace linkage requires rhs in addr_bits[1]".into())
+                        })?;
+                        (lhs, rhs)
+                    } else {
+                        unpack_interleaved_halves_lsb(&lane.addr_bits)?
+                    };
+                    let group_size = shout_addr_range_counts_interleaved
+                        .get(&lane.addr_key)
+                        .copied()
+                        .unwrap_or(1);
+                    if group_size > 1 {
+                        let inv_count = K::from_u64(group_size as u64).inverse();
+                        shout_trace_sums.link_lhs += lhs * inv_count;
+                        shout_trace_sums.link_rhs += rhs * inv_count;
+                    } else {
+                        shout_trace_sums.link_lhs += lhs;
+                        shout_trace_sums.link_rhs += rhs;
+                    }
                 }
             }
 
@@ -522,17 +623,8 @@ pub fn verify_route_a_memory_step(
     if !step.lut_insts.is_empty() && enforce_trace_shout_linkage {
         let cpu = cpu_link
             .ok_or_else(|| PiCcsError::ProtocolError("missing CPU trace linkage openings in shared-bus mode".into()))?;
-        let expected_table_id = if decode_stage_required_for_step_instance(step) {
-            Some(expected_trace_shout_table_id_from_openings(
-                step,
-                cpu_bus,
-                mem_proof,
-                step_time_openings,
-                r_time,
-            )?)
-        } else {
-            None
-        };
+        let expected_table_id =
+            expected_trace_shout_table_id_from_openings(step, cpu_bus, mem_proof, step_time_openings, r_time)?;
         verify_non_event_trace_shout_linkage(cpu, shout_trace_sums, expected_table_id)?;
     }
 
@@ -670,7 +762,6 @@ pub fn verify_route_a_memory_step(
                 inc: inc_write_open,
             });
         }
-
         let pre = twist_pre
             .get(i_mem)
             .ok_or_else(|| PiCcsError::InvalidInput(format!("missing Twist pre-time data at index {}", i_mem)))?;
@@ -759,6 +850,44 @@ pub fn verify_route_a_memory_step(
             return Err(PiCcsError::ProtocolError(
                 "twist/write_check terminal value mismatch".into(),
             ));
+        }
+        if let Some(claim_idx) = twist_claims.virtual_write_domain {
+            if claim_idx >= batched_final_values.len() {
+                return Err(PiCcsError::ProtocolError(
+                    "twist/virtual_write_domain claim index out of range".into(),
+                ));
+            }
+            let mut residual = K::ZERO;
+            for lane in lane_opens.iter() {
+                let wa_bit5 = lane.wa_bits.get(5).copied().unwrap_or(K::ZERO);
+                residual += is_virtual_open * lane.has_write * (K::ONE - wa_bit5);
+            }
+            let expected = chi_cycle_at_r_time * residual;
+            if expected != batched_final_values[claim_idx] {
+                return Err(PiCcsError::ProtocolError(
+                    "twist/virtual_write_domain terminal value mismatch".into(),
+                ));
+            }
+        }
+        if let Some(claim_idx) = twist_claims.nonvirtual_arch_domain {
+            if claim_idx >= batched_final_values.len() {
+                return Err(PiCcsError::ProtocolError(
+                    "twist/nonvirtual_arch_domain claim index out of range".into(),
+                ));
+            }
+            let mut residual = K::ZERO;
+            for lane in lane_opens.iter() {
+                let ra_bit5 = lane.ra_bits.get(5).copied().unwrap_or(K::ZERO);
+                let wa_bit5 = lane.wa_bits.get(5).copied().unwrap_or(K::ZERO);
+                residual += (K::ONE - is_virtual_open) * lane.has_read * ra_bit5;
+                residual += (K::ONE - is_virtual_open) * lane.has_write * wa_bit5;
+            }
+            let expected = chi_cycle_at_r_time * residual;
+            if expected != batched_final_values[claim_idx] {
+                return Err(PiCcsError::ProtocolError(
+                    "twist/nonvirtual_arch_domain terminal value mismatch".into(),
+                ));
+            }
         }
 
         twist_time_openings.push(TwistTimeLaneOpenings {

@@ -300,7 +300,7 @@ pub(crate) fn validate_step_time_openings_consistency(
         }
     }
 
-    if (!step.mem_insts.is_empty() || !step.lut_insts.is_empty()) && step.mcs_inst.m_in == 5 {
+    if crate::memory_sidecar::memory::wb_wp_required_for_step_instance(step) && step.mcs_inst.m_in == 5 {
         let trace = neo_memory::riscv::trace::Rv32TraceLayout::new();
         let trace_cols: Vec<usize> = vec![
             trace.active,
@@ -318,8 +318,9 @@ pub(crate) fn validate_step_time_openings_consistency(
             trace.ram_wv,
             trace.shout_has_lookup,
             trace.shout_val,
-            trace.shout_lhs,
-            trace.shout_rhs,
+            trace.shout_link_lhs,
+            trace.shout_link_rhs,
+            trace.shout_add_sub_key,
         ];
         let opening_entry = crate::memory_sidecar::memory::require_time_opening_entry_for_point(
             openings,

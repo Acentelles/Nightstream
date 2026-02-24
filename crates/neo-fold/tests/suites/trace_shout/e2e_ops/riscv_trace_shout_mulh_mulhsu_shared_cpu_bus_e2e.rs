@@ -51,7 +51,7 @@ fn riscv_trace_wiring_ccs_shared_cpu_bus_shout_mulh_mulhsu_packed_prove_verify()
 
     let mut run = Rv32TraceWiring::from_rom(/*program_base=*/ 0, &program_bytes)
         .chunk_rows(1)
-        .max_steps(program.len())
+        .max_steps(program.len() * 8)
         .reg_output_claim(/*reg=*/ 3, F::from_u64(0))
         .reg_output_claim(/*reg=*/ 6, F::from_u64(0xffff_ffff))
         .prove()

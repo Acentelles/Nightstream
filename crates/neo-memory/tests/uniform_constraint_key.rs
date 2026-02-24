@@ -1,12 +1,13 @@
 use neo_memory::riscv::ccs::build_rv32_uniform_constraint_key;
+use neo_memory::riscv::trace::Rv32TraceLayout;
 use p3_field::PrimeCharacteristicRing;
 use p3_goldilocks::Goldilocks as F;
 
 #[test]
 fn uniform_key_has_fixed_step_width() {
     let key = build_rv32_uniform_constraint_key();
-    // m_in=5 plus RV32 trace width (21).
-    assert_eq!(key.m_cols, 26);
+    // m_in=5 plus the canonical RV32 trace width.
+    assert_eq!(key.m_cols, 5 + Rv32TraceLayout::new().cols);
     assert!(!key.local_rows.is_empty());
     assert!(!key.shift_rows.is_empty());
     assert!(!key.boundary_rows.is_empty());

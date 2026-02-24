@@ -28,6 +28,17 @@ pub(crate) fn build_route_a_memory_oracles(
             twist_pre.len()
         )));
     }
+    let trace_is_virtual_sparse = if decode_stage_required_for_step_witness(step) {
+        let trace = Rv32TraceLayout::new();
+        let t_len = infer_rv32_trace_t_len_for_wb_wp(step, &trace)?;
+        let decoded = decode_trace_col_values_batch(params, step, t_len, &[trace.is_virtual])?;
+        let is_virtual_vals = decoded.get(&trace.is_virtual).ok_or_else(|| {
+            PiCcsError::ProtocolError("virtual-domain oracle: missing is_virtual trace column".into())
+        })?;
+        Some(sparse_trace_col_from_values(step.mcs.0.m_in, ell_n, is_virtual_vals)?)
+    } else {
+        None
+    };
 
     let (event_alpha, event_beta, event_gamma, shout_event_trace_hash) =
         build_event_table_shout_context(params, step, ell_n, r_cycle)?;
@@ -1486,11 +1497,60 @@ pub(crate) fn build_route_a_memory_oracles(
         let weights = bitness_weights(r_cycle, bit_cols.len(), 0x5457_4953_54u64 + mem_idx as u64);
         let bitness_oracle = LazyWeightedBitnessOracleSparseTime::new_with_cycle(r_cycle, bit_cols, weights);
         let bitness: Vec<Box<dyn RoundOracle>> = vec![Box::new(bitness_oracle)];
+        let (virtual_write_domain, nonvirtual_arch_domain) = if mem_inst.mem_id == neo_memory::riscv::lookups::REG_ID.0
+        {
+            if let Some(is_virtual) = trace_is_virtual_sparse.as_ref() {
+                let mut vd_oracles: Vec<Box<dyn RoundOracle>> = Vec::with_capacity(pre.decoded.lanes.len());
+                let mut nvd_oracles: Vec<Box<dyn RoundOracle>> = Vec::with_capacity(pre.decoded.lanes.len() * 2);
+                for lane in pre.decoded.lanes.iter() {
+                    let wa_bit5 = lane
+                        .wa_bits
+                        .get(5)
+                        .cloned()
+                        .unwrap_or_else(|| SparseIdxVec::new(lane.has_write.len()));
+                    let ra_bit5 = lane
+                        .ra_bits
+                        .get(5)
+                        .cloned()
+                        .unwrap_or_else(|| SparseIdxVec::new(lane.has_read.len()));
+                    vd_oracles.push(Box::new(Rv32VirtualWriteDomainOracleSparseTime::new(
+                        r_cycle,
+                        is_virtual.clone(),
+                        lane.has_write.clone(),
+                        wa_bit5.clone(),
+                    )));
+                    nvd_oracles.push(Box::new(Rv32NonVirtualArchDomainOracleSparseTime::new(
+                        r_cycle,
+                        lane.has_read.clone(),
+                        is_virtual.clone(),
+                        ra_bit5,
+                    )));
+                    nvd_oracles.push(Box::new(Rv32NonVirtualArchDomainOracleSparseTime::new(
+                        r_cycle,
+                        lane.has_write.clone(),
+                        is_virtual.clone(),
+                        wa_bit5,
+                    )));
+                }
+                let vd_sum = SumRoundOracle::new(vd_oracles)?;
+                let nvd_sum = SumRoundOracle::new(nvd_oracles)?;
+                (
+                    Some(Box::new(vd_sum) as Box<dyn RoundOracle>),
+                    Some(Box::new(nvd_sum) as Box<dyn RoundOracle>),
+                )
+            } else {
+                (None, None)
+            }
+        } else {
+            (None, None)
+        };
 
         twist_oracles.push(RouteATwistTimeOracles {
             read_check,
             write_check,
             bitness,
+            virtual_write_domain,
+            nonvirtual_arch_domain,
         });
     }
 
