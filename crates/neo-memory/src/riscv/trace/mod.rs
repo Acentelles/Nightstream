@@ -42,7 +42,7 @@ pub const RV32_TRACE_WIDTH_SELECTOR_GROUP: u32 = 0x5256_5B00;
 
 #[inline]
 pub fn rv32_trace_uses_combined_operand_key_table_id(table_id: u32) -> bool {
-    operand_mode_keys_enabled() && matches!(table_id, 3 | 4 | 12 | 14)
+    operand_mode_keys_enabled() && matches!(table_id, 3 | 4)
 }
 
 #[inline]
