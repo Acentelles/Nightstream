@@ -9,11 +9,10 @@ use neo_memory::riscv::ccs::{
 use neo_memory::riscv::instruction::operand_mode_keys_enabled;
 use neo_memory::riscv::lookups::{RiscvOpcode, RiscvShoutTables, PROG_ID, RAM_ID, REG_ID};
 use neo_memory::riscv::trace::{
-    rv32_decode_lookup_backed_cols, rv32_decode_lookup_table_id_for_col,
-    rv32_is_decode_lookup_grouped_table_id, rv32_is_width_lookup_grouped_table_id,
-    rv32_trace_lookup_addr_group_for_table_id, rv32_trace_lookup_n_vals_for_table_id,
-    rv32_trace_lookup_selector_group_for_table_id, rv32_trace_uses_combined_operand_key_table_id,
-    rv32_width_lookup_backed_cols, rv32_width_lookup_table_id_for_col,
+    rv32_decode_lookup_backed_cols, rv32_decode_lookup_table_id_for_col, rv32_is_decode_lookup_grouped_table_id,
+    rv32_is_width_lookup_grouped_table_id, rv32_trace_lookup_addr_group_for_table_id,
+    rv32_trace_lookup_n_vals_for_table_id, rv32_trace_lookup_selector_group_for_table_id,
+    rv32_trace_uses_combined_operand_key_table_id, rv32_width_lookup_backed_cols, rv32_width_lookup_table_id_for_col,
     Rv32DecodeSidecarLayout, Rv32WidthSidecarLayout,
 };
 use p3_goldilocks::Goldilocks as F;
