@@ -370,8 +370,6 @@ fn rv32_canonical_shout_opcode_families() -> &'static [RiscvOpcode] {
         RiscvOpcode::Sra,
         RiscvOpcode::Eq,
         RiscvOpcode::Neq,
-        RiscvOpcode::Mul,
-        RiscvOpcode::Mulhu,
     ]
 }
 

@@ -9,10 +9,12 @@ use neo_memory::riscv::ccs::{
 use neo_memory::riscv::instruction::operand_mode_keys_enabled;
 use neo_memory::riscv::lookups::{RiscvOpcode, RiscvShoutTables, PROG_ID, RAM_ID, REG_ID};
 use neo_memory::riscv::trace::{
-    rv32_decode_lookup_backed_cols, rv32_decode_lookup_table_id_for_col, rv32_is_decode_lookup_grouped_table_id,
-    rv32_is_width_lookup_grouped_table_id, rv32_trace_lookup_addr_group_for_table_id,
-    rv32_trace_lookup_n_vals_for_table_id, rv32_trace_lookup_selector_group_for_table_id,
-    rv32_width_lookup_backed_cols, rv32_width_lookup_table_id_for_col, Rv32DecodeSidecarLayout, Rv32WidthSidecarLayout,
+    rv32_decode_lookup_backed_cols, rv32_decode_lookup_table_id_for_col,
+    rv32_is_decode_lookup_grouped_table_id, rv32_is_width_lookup_grouped_table_id,
+    rv32_trace_lookup_addr_group_for_table_id, rv32_trace_lookup_n_vals_for_table_id,
+    rv32_trace_lookup_selector_group_for_table_id, rv32_trace_uses_combined_operand_key_table_id,
+    rv32_width_lookup_backed_cols, rv32_width_lookup_table_id_for_col,
+    Rv32DecodeSidecarLayout, Rv32WidthSidecarLayout,
 };
 use p3_goldilocks::Goldilocks as F;
 
@@ -375,6 +377,10 @@ fn rv32_trace_lookup_addr_group_splits_add_sub_from_interleaved_opcodes_when_ope
     let add_group = rv32_trace_lookup_addr_group_for_table_id(shout.opcode_to_id(RiscvOpcode::Add).0);
     let sub_group = rv32_trace_lookup_addr_group_for_table_id(shout.opcode_to_id(RiscvOpcode::Sub).0);
     let and_group = rv32_trace_lookup_addr_group_for_table_id(shout.opcode_to_id(RiscvOpcode::And).0);
+    let mul_id = shout.opcode_to_id(RiscvOpcode::Mul).0;
+    let mulhu_id = shout.opcode_to_id(RiscvOpcode::Mulhu).0;
+    let mul_group = rv32_trace_lookup_addr_group_for_table_id(mul_id);
+    let mulhu_group = rv32_trace_lookup_addr_group_for_table_id(mulhu_id);
 
     assert!(add_group.is_some() && sub_group.is_some() && and_group.is_some());
     assert_eq!(
@@ -384,6 +390,22 @@ fn rv32_trace_lookup_addr_group_splits_add_sub_from_interleaved_opcodes_when_ope
     assert_ne!(
         add_group, and_group,
         "ADD/SUB addr group must be distinct from interleaved-key opcode addr group"
+    );
+    assert_eq!(
+        mul_group, and_group,
+        "MUL must remain in the interleaved-key opcode addr group"
+    );
+    assert_eq!(
+        mulhu_group, and_group,
+        "MULHU must remain in the interleaved-key opcode addr group"
+    );
+    assert!(
+        !rv32_trace_uses_combined_operand_key_table_id(mul_id),
+        "MUL table id must not be marked combined-key"
+    );
+    assert!(
+        !rv32_trace_uses_combined_operand_key_table_id(mulhu_id),
+        "MULHU table id must not be marked combined-key"
     );
 }
 
