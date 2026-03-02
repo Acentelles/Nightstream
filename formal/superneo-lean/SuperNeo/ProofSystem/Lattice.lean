@@ -21,15 +21,11 @@ What is intentionally still missing (for full paper-faithful closure):
    - Replace abstract `breakAt : Nat -> Prop` shells with sampled game semantics
      (challenger/adversary interaction and event probabilities).
 
-3. Discharge boundary axioms:
-   - Core subtraction/linearity and norm helper surfaces used by extractors are
-     still axiomatized here and should be proved from the Ring/Norm layers.
-
-4. Boundary consistency hardening:
+3. Boundary consistency hardening:
    - Boundary packages are canonicalized by deriving hardness from aligned
      `(eps, bound, negligible)` fields; constructor privacy can be tightened later.
 
-5. Parameter side-conditions:
+4. Parameter side-conditions:
    - Side-condition bundles exist (`AjtaiParams.SideConditions` / `Nontrivial`),
      but only the required subset is threaded through current reduction theorems.
 -/
@@ -85,13 +81,16 @@ structure Opening where
 def normInfVec (v : Array Coeffs) : Nat :=
   v.foldl (fun acc x => Nat.max acc (normInfCoeffs x)) 0
 
+/-- Every ring element in the vector has canonical ring-degree shape. -/
+def allRingDegreeShape (v : Array Coeffs) : Prop :=
+  ∀ i : Fin v.size, hasRingDegreeShape v[i]
+
 /-- Ring-vector dot product, truncating to the shorter side if sizes differ. -/
 def dotRq (xs ys : Array Coeffs) : Coeffs :=
-  let rec go (xs ys : List Coeffs) (acc : Coeffs) : Coeffs :=
-    match xs, ys with
-    | x :: xs', y :: ys' => go xs' ys' (vecAdd acc (mulRq x y))
-    | _, _ => acc
-  go xs.toList ys.toList zeroRq
+  let n := Nat.min xs.size ys.size
+  (List.range n).foldl
+    (fun acc i => vecAdd acc (mulRq (xs.getD i zeroRq) (ys.getD i zeroRq)))
+    zeroRq
 
 /-- Extract row `r` (length `cols`) from flattened matrix data. -/
 def matRow (cols : Nat) (flat : Array Coeffs) (r : Nat) : Array Coeffs :=
@@ -111,12 +110,15 @@ def smulVec (delta : Coeffs) (v : Array Coeffs) : Array Coeffs :=
 /-! ### Extractor-facing vector subtraction + linearity surfaces
 
 This theorem-facing file needs subtraction/linearity/norm transfer lemmas to
-connect Ajtai collisions to homogeneous MSIS witnesses. These are declared as
-axioms at the boundary layer and should be discharged by ring/norm modules.
+connect Ajtai collisions to homogeneous MSIS witnesses.
 -/
 
-/-- Ring subtraction placeholder at theorem boundary. -/
-axiom subRq : Coeffs → Coeffs → Coeffs
+/-- Ring subtraction on `Coeffs`, coefficient-wise on the first `d` coordinates. -/
+def subRq (x y : Coeffs) : Coeffs :=
+  Array.ofFn (fun i : Fin d => coeffAt x i.1 - coeffAt y i.1)
+
+private theorem f_sub_self (a : F) : a - a = (0 : F) := by
+  exact (F.sub_eq_zero_iff a a).2 rfl
 
 /-- Zero ring-vector of length `n`. -/
 def zeroVec (n : Nat) : Array Coeffs :=
@@ -127,7 +129,11 @@ noncomputable def subVec (n : Nat) (xs ys : Array Coeffs) : Array Coeffs :=
   Array.ofFn (fun i : Fin n => subRq (xs.getD i.1 zeroRq) (ys.getD i.1 zeroRq))
 
 /-- Subtraction cancels on equal inputs. -/
-axiom subRq_self (x : Coeffs) : subRq x x = zeroRq
+theorem subRq_self (x : Coeffs) : subRq x x = zeroRq := by
+  apply Array.ext
+  · simp [subRq, zeroRq]
+  · intro i hi₁ hi₂
+    simp [subRq, zeroRq, coeffAt, f_sub_self]
 
 @[simp] theorem subVec_size (n : Nat) (xs ys : Array Coeffs) :
   (subVec n xs ys).size = n := by
@@ -140,45 +146,6 @@ theorem subVec_self (n : Nat) (v : Array Coeffs) :
   · simp [subVec, zeroVec]
   · intro i hi₁ hi₂
     simpa [subVec, zeroVec] using (subRq_self (v.getD i zeroRq))
-
-/-- Matrix multiplication respects subtraction of witnesses. -/
-axiom matVecMul_subVec
-  (params : AjtaiParams)
-  (matrixFlat : Array Coeffs)
-  (v1 v2 : Array Coeffs) :
-    matVecMul params matrixFlat (subVec params.msgLen v1 v2) =
-      subVec params.kappa
-        (matVecMul params matrixFlat v1)
-        (matVecMul params matrixFlat v2)
-
-/-- Matrix multiplication commutes with left-scaling. -/
-axiom matVecMul_smulVec
-  (params : AjtaiParams)
-  (matrixFlat : Array Coeffs)
-  (delta : Coeffs)
-  (v : Array Coeffs) :
-    matVecMul params matrixFlat (smulVec delta v) =
-      smulVec delta (matVecMul params matrixFlat v)
-
-/-- Left-scaling commutes on vectors. -/
-axiom smulVec_comm (delta1 delta2 : Coeffs) (v : Array Coeffs) :
-  smulVec delta1 (smulVec delta2 v) = smulVec delta2 (smulVec delta1 v)
-
-/-- Non-zero difference witness when inputs are distinct and size-matched. -/
-axiom subVec_ne_zero_of_ne
-  (n : Nat) (v1 v2 : Array Coeffs) :
-    v1.size = n →
-    v2.size = n →
-    v1 ≠ v2 →
-    subVec n v1 v2 ≠ zeroVec n
-
-/-- `ℓ∞` norm subadditivity for subtraction. -/
-axiom normInfVec_subVec_le (n : Nat) (v1 v2 : Array Coeffs) :
-  normInfVec (subVec n v1 v2) ≤ normInfVec v1 + normInfVec v2
-
-/-- `ℓ∞` scaling bound at vector level. -/
-axiom normInfVec_smulVec_le (delta : Coeffs) (v : Array Coeffs) :
-  normInfVec (smulVec delta v) ≤ normInfCoeffs delta * normInfVec v
 
 /-- Payload well-formedness for `(M || c)` encoding. -/
 def Commitment.WellFormed (params : AjtaiParams) (commitment : Commitment) : Prop :=
@@ -194,7 +161,7 @@ def Commitment.valueVec (params : AjtaiParams) (commitment : Commitment) : Array
 
 /-- Witness shape requirement. -/
 def Opening.WellFormed (params : AjtaiParams) (opening : Opening) : Prop :=
-  opening.witness.size = params.msgLen
+  opening.witness.size = params.msgLen ∧ allRingDegreeShape opening.witness
 
 /-- Declared norm bound is sound for the witness. -/
 def Opening.NormSound (opening : Opening) : Prop :=

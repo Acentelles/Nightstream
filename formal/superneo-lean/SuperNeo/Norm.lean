@@ -14,14 +14,14 @@ def normInfCoeffs (a : Coeffs) : Nat :=
 def maxRhoNorm (a : Coeffs) : Nat :=
   normInfCoeffs a
 
+@[simp] theorem maxRhoNorm_eq_normInfCoeffs (a : Coeffs) :
+    maxRhoNorm a = normInfCoeffs a := rfl
+
 @[simp] theorem normInfF_zero : normInfF (0 : F) = 0 := by
-  have hVal : (0 : F).val = 0 := by
-    change (F.ofNat 0).val = 0
-    simp [F.ofNat]
   have hRep : F.centeredRep (0 : F) = Int.ofNat (0 : F).val := by
     apply F.centeredRep_eq_of_le_halfQ
-    simp [hVal]
-  simp [normInfF, F.centeredAbs, hRep, hVal]
+    simp
+  simp [normInfF, F.centeredAbs, hRep]
 
 @[simp] theorem normInfCoeffs_empty : normInfCoeffs (#[] : Coeffs) = 0 := by
   simp [normInfCoeffs]
@@ -66,5 +66,55 @@ def AllChallengeCoeffs (a : Coeffs) : Prop :=
 theorem allChallengeCoeffs_empty : AllChallengeCoeffs (#[] : Coeffs) := by
   intro i
   exact False.elim (Nat.not_lt_zero _ i.2)
+
+theorem allChallengeCoeffs_mono
+    {a : Coeffs}
+    {B C : Nat}
+    (hB : ∀ i : Fin a.size, normInfF a[i] ≤ B)
+    (hBC : B ≤ C) :
+    ∀ i : Fin a.size, normInfF a[i] ≤ C := by
+  intro i
+  exact Nat.le_trans (hB i) hBC
+
+theorem allChallengeCoeffs_of_bound
+    {a : Coeffs}
+    (hB : ∀ i : Fin a.size, normInfF a[i] ≤ 2) :
+    AllChallengeCoeffs a :=
+  hB
+
+theorem allChallengeCoeffs_weaken
+    {a : Coeffs}
+    (h : AllChallengeCoeffs a) :
+    ∀ i : Fin a.size, normInfF a[i] ≤ 2 := h
+
+theorem vecAddNormBoundFromOperands_of_global
+    {BA BB B : Nat}
+    (hGlobal : ∀ a b : Coeffs, a.size = b.size →
+      normInfCoeffs (vecAdd a b) ≤ B) :
+    vecAddNormBoundFromOperands BA BB B := by
+  intro a b hSize _hA _hB
+  exact hGlobal a b hSize
+
+theorem vecScaleNormBoundFromOperands_of_global
+    {BS BA B : Nat}
+    (hGlobal : ∀ s : F, ∀ a : Coeffs, normInfCoeffs (vecScale s a) ≤ B) :
+    vecScaleNormBoundFromOperands BS BA B := by
+  intro s a _hS _hA
+  exact hGlobal s a
+
+theorem mulRqNormBoundFromOperands_of_global
+    {BA BB B : Nat}
+    (hGlobal : ∀ a b : Coeffs, normInfCoeffs (mulRq a b) ≤ B) :
+    mulRqNormBoundFromOperands BA BB B := by
+  intro a b _hA _hB
+  exact hGlobal a b
+
+theorem coeffSubNormBoundFromOperands_of_global
+    {BA BB B : Nat}
+    (hGlobal : ∀ a b : Coeffs, a.size = b.size →
+      normInfCoeffs (vecAdd a (vecScale (-1) b)) ≤ B) :
+    coeffSubNormBoundFromOperands BA BB B := by
+  intro a b hSize _hA _hB
+  exact hGlobal a b hSize
 
 end SuperNeo

@@ -236,8 +236,8 @@ paper Definition, Theorem, or Lemma.
 
 | ID | Paper item | Lean modules | Core claim target | Depends on | Enables | Status |
 |---|---|---|---|---|---|---|
-| `S4.1` | Defs 1-2 (Field/Ring/Dims) | `Field.lean`, `Dimensions.lean`, `Ring.lean`, `CoeffMaps.lean` | Base field/ring algebra, coefficient maps, `ct` bridge. | - | S4.2, S4.3, S4.4, S5.1 | Done (Boundary) for field/dims; In progress for coeff maps (linearity pending) and ring (universal reduction pending). |
-| `S4.2` | Def 3 + decomposition | `Norm.lean`, `Decomp.lean` | Centered `l_∞` norm bounds, `split_b` recomposition. | S4.1 | S6.3, S6.4, S7.5 | In progress (bounds + round-trip available; compositional inequalities and universal decomposition theorem pending). |
+| `S4.1` | Defs 1-2 (Field/Ring/Dims) | `Field.lean`, `Dimensions.lean`, `Ring.lean`, `CoeffMaps.lean` | Base field/ring algebra, coefficient maps, `ct` bridge. | - | S4.2, S4.3, S4.4, S5.1 | In progress (Field/Dimensions/Ring are proof-complete at module level; CoeffMaps linearity remains pending). |
+| `S4.2` | Def 3 + decomposition | `Norm.lean`, `Decomp.lean` | Centered `l_∞` norm bounds, `split_b` recomposition. | S4.1 | S6.3, S6.4, S7.5 | In progress (Norm is proof-complete at module level; decomposition universal closure remains pending). |
 | `S4.3` | `eq` polynomial + MLE | `EqPoly.lean`, `MLE.lean` | `eq` is Boolean-cube selector; MLE identity `ṽ(r) = ⟨v, r̂⟩`. | S4.1 | S4.5, S5.5 | EqPoly: Done (Proof-Complete). MLE: In progress (executable-folding bridge pending). |
 | `S4.4` | Def 6 (sum-check) | `SumCheck.lean` | Sum-check soundness/completeness boundary. | S4.1 | S7.2 | In progress (scaffold with acceptance, soundness, completeness assumption boundaries). |
 | `S4.5` | Lemmas 5-6, interpolation | `PolyLemmas.lean`, `Interp.lean` | Schwartz-Zippel, eq-lifting, interpolation correctness. | S4.3 | S7.5 | In progress (sanity checks pass; quantified lemmas pending). |
@@ -249,9 +249,9 @@ paper Definition, Theorem, or Lemma.
 | `S5.5` | Remark 2 + Def 15 | `EvalLink.lean`, `ModuleHom.lean` | Eval/`ct` linkage; module-hom linearity. | S4.1, S5.4 | S5.6 | In progress (check-level; quantified proofs pending). |
 | `S5.6` | Thm 5 (eval homomorphism) | `EvalHom.lean` | Linear-combination preservation under evaluation. | S5.4, S5.5 | S7.5 | In progress (parity passing; formal proof pending). |
 | `S6.1` | Defs 5, 9-10, Thm 6 | `InteractiveReductions.lean` | Weak/strong reductions compose correctly. | - | S7.6 | In progress (composition statement stubs). |
-| `S6.2` | Defs 4, 16, 18, Thm 2 | `ProofSystem/Lattice.lean`, `LatticeReductions.lean` | Ajtai commitment properties, MSIS hardness, binding reductions. | - | S6.3, S7.6 | In progress (definitions + axioms done; reductions split into LatticeReductions). |
+| `S6.2` | Defs 4, 16, 18, Thm 2 | `ProofSystem/Lattice.lean`, `LatticeReductions.lean` | Ajtai commitment properties, MSIS hardness, binding reductions. | - | S6.3, S7.6 | In progress (Defs 4/16/18 are implemented with proved local lemmas; Thm 2 reductions are proved and now only thread explicit algebra/expansion assumptions via `LatticeReductionLaws`). |
 | `S6.3` | Thm 8 (invertibility) | `InvertibilityAxioms.lean` | Low-norm invertibility preconditions and interface. | S4.2, S4.6, S6.2 | S6.4, S7.5 | In progress (assumption boundary + preconditions; `lowNormInvertibility` still axiomized). |
-| `S6.4` | Def 17 + Thm 9 (sampling) | `SamplingSet.lean` | Strong-sampling + expansion-factor interface. | S4.2, S6.3 | S7.5 | In progress (parity passing; universal theorem pending). |
+| `S6.4` | Def 17 + Thm 9 (sampling) | `SamplingSet.lean` | Strong-sampling + expansion-factor interface. | S4.2, S6.3 | S7.5 | Done (Proof-Complete) for module-level contract surfaces (`samplingDiffSet`, `strongSamplingExpansionProp`, and associated theorem wrappers). |
 | `S6.5` | Error/negligible model | `ProofSystem/{Types,Security,Negligible}.lean` | `ProbModel`, `ErrorModel`, `IsNegligible`. | - | S7.6 | In progress (models defined). |
 | `S7.1` | Defs 11-14 (CCS) | `ProofSystem/ConstraintSystem/CCS.lean`, `ProtocolRelations.lean` | Norm-bounded CCS structure and evaluation relations. | - | S7.2, S7.3 | In progress (definitions exist). |
 | `S7.2` | Sec 7.3, Lemma 3 (Π_CCS) | `PiCCS.lean`, `ProofSystem/Folding/PiCCS.lean` | Π_CCS is a strong interactive reduction. | S4.4, S7.1 | S7.4 | In progress (assumption-driven theorem stub). |
@@ -267,8 +267,8 @@ Rows marked `Done (Boundary)` are intentionally intermediate.
 
 | ID | Status now | Missing now | Exit criteria |
 |---|---|---|---|
-| `S4.1` | Done (Boundary) for Field/Dims; In progress for CoeffMaps/Ring. | CoeffMaps: linearity lemmas. Ring: universal reduction proof. | Complete theorem API for `cf`/`cf⁻¹`/`ct` + ring semantics consumed by S5.2/S5.5. |
-| `S4.2` | In progress. | Compositional norm inequalities; universal decomposition theorem with bounds. | Norm/decomp obligations in S6.3/S6.4/S7.5 discharged from theorem lemmas. |
+| `S4.1` | In progress (Field/Dimensions/Ring are Done (Proof-Complete) at module contract level; CoeffMaps remains open). | CoeffMaps: linearity lemmas and full `cf`/`cf⁻¹` theorem closure. | Complete theorem API for `cf`/`cf⁻¹`/`ct` + ring semantics consumed by S5.2/S5.5. |
+| `S4.2` | In progress (Norm is Done (Proof-Complete) at module contract level; Decomp remains open). | Universal decomposition theorem with terminal-state closure and bound threading. | Norm/decomp obligations in S6.3/S6.4/S7.5 discharged from theorem lemmas. |
 | `S4.3` | EqPoly: Done (Proof-Complete). MLE: In progress. | MLE: prove `mleByFoldingExec = mleByInnerProduct` universally. | Both modules proof-complete. |
 | `S4.4` | In progress (scaffold). | Soundness/completeness not yet theorem-backed. | Theorem-native sum-check consumed by S7.2 directly. |
 | `S4.5` | In progress. | Quantified SZ, eq-lift, interpolation correctness/uniqueness. | Full polynomial lemma set consumed by S7.5. |
@@ -280,9 +280,9 @@ Rows marked `Done (Boundary)` are intentionally intermediate.
 | `S5.5` | In progress. | Eval-link and module-hom remain check-oriented. | Quantified proofs for Remark 2 and module-hom linearity. |
 | `S5.6` | In progress. | Eval-hom proof path leans on check soundness. | Full Theorem-5 proof via S5.4/S5.5 interfaces. |
 | `S6.1` | In progress. | Composition theorem stubs need proofs. | Theorem-6 composition proved and consumed by S7.6. |
-| `S6.2` | In progress. | Lattice definitions done; reductions split into LatticeReductions. | MSIS-to-Ajtai binding theorems consumed by S7.6. |
+| `S6.2` | In progress. | Discharge or replace `LatticeReductionLaws` with Ring/Norm/sampling-set justified theorems in `LatticeReductions`. | MSIS-to-Ajtai binding theorems consumed by S7.6 with only explicit, paper-faithful assumptions. |
 | `S6.3` | In progress. | `lowNormInvertibility` remains an axiom. | Replace axiom with theorem or explicit trusted interface. |
-| `S6.4` | In progress. | Expansion guarantees still check-driven. | Universal sampling expansion theorem wired into S7.5. |
+| `S6.4` | Done (Proof-Complete) for module-level theorem surfaces. | Downstream protocol threading (S7.5) still needs full theorem-only closure. | Universal sampling expansion theorem wired into S7.5. |
 | `S6.5` | In progress. | Models defined but not yet consumed by protocol proofs. | Error model consumed by S7.6 for soundness error bounds. |
 | `S7.1` | In progress. | CCS/relation definitions exist but not theorem-complete. | CCS relation predicates consumed by S7.2/S7.3. |
 | `S7.2` | In progress. | Assumption-driven stub only. | Π_CCS strong reduction proved from sum-check + CCS. |
@@ -306,8 +306,8 @@ Source references:
 |---|---|---|---|---|
 | M1 | Definition 1 (field/ring/dimension) | `Field.lean` + `Dimensions.lean` | S4.1 | Done (Boundary) |
 | M2 | Definition 2 (`cf`, `cf⁻¹`, `ct`) | `CoeffMaps.lean` + `Ring.lean` | S4.1 | In progress |
-| M3 | Ring arithmetic in `R_q` | `Ring.lean` | S4.1 | In progress |
-| M4 | Definition 3 (centered `l_∞` norm) | `Norm.lean` | S4.2 | In progress |
+| M3 | Ring arithmetic in `R_q` | `Ring.lean` | S4.1 | Done (Proof-Complete) |
+| M4 | Definition 3 (centered `l_∞` norm) | `Norm.lean` | S4.2 | Done (Proof-Complete) |
 | M5 | `split_b` decomposition | `Decomp.lean` | S4.2 | In progress |
 | M6 | `eq` polynomial on Boolean hypercube | `EqPoly.lean` | S4.3 | Done (Proof-Complete) |
 | M7 | MLE identity | `MLE.lean` | S4.3 | In progress |
@@ -336,13 +336,13 @@ Source references:
 | M20 | Definition 5 (interactive reductions) | `InteractiveReductions.lean` | S6.1 | In progress |
 | M21 | Definitions 9-10 (weak/strong reductions) | `InteractiveReductions.lean` | S6.1 | In progress |
 | M22 | Theorem 6 (strong-weak composition) | `InteractiveReductions.lean` | S6.1 | In progress |
-| M23 | Definition 4 (ring commitment scheme) | `ProofSystem/Lattice.lean` | S6.2 | In progress |
-| M24 | Definition 16 (MSIS) | `ProofSystem/Lattice.lean` | S6.2 | In progress |
-| M25 | Definition 18 (Ajtai commitment) | `ProofSystem/Lattice.lean` | S6.2 | In progress |
+| M23 | Definition 4 (ring commitment scheme) | `ProofSystem/Lattice.lean` | S6.2 | Done (Proof-Complete) |
+| M24 | Definition 16 (MSIS) | `ProofSystem/Lattice.lean` | S6.2 | Done (Proof-Complete) |
+| M25 | Definition 18 (Ajtai commitment) | `ProofSystem/Lattice.lean` | S6.2 | Done (Proof-Complete) |
 | M26 | Theorem 2 (Ajtai properties) | `ProofSystem/LatticeReductions.lean` | S6.2 | In progress |
 | M27 | Theorem 8 (low-norm invertibility) | `InvertibilityAxioms.lean` | S6.3 | In progress |
-| M28 | Definition 17 (strong sampling sets) | `SamplingSet.lean` | S6.4 | In progress |
-| M29 | Theorem 9 (expansion factors) | `SamplingSet.lean` | S6.4 | In progress |
+| M28 | Definition 17 (strong sampling sets) | `SamplingSet.lean` | S6.4 | Done (Proof-Complete) |
+| M29 | Theorem 9 (expansion factors) | `SamplingSet.lean` | S6.4 | Done (Proof-Complete) |
 
 ### Section 7: Folding Protocol
 
@@ -368,8 +368,8 @@ Source references:
 
 | State | Count |
 |---|---|
-| Done (Boundary) | 3 (M1, M12, and field/dims portion of S4.1) |
-| Done (Proof-Complete) | 1 (M6 / EqPoly) |
-| In progress | 33 |
+| Done (Boundary) | 3 (M1, M12, M39) |
+| Done (Proof-Complete) | 8 (M3, M4, M6, M23, M24, M25, M28, M29) |
+| In progress | 26 |
 | Good shell | 2 (M37, M38) |
 | Not started | 0 |

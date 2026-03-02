@@ -43,22 +43,76 @@ abbrev mulRq := SuperNeo.mulRq
 /-! ## Key Theorems -/
 
 /-- [Status: Proved] Curated theorem surface `d_pos`. -/
-abbrev d_pos := SuperNeo.d_pos
+theorem d_pos : 0 < d := SuperNeo.d_pos
 
 /-- [Status: Proved] Curated theorem surface `vecScale_size`. -/
-abbrev vecScale_size := SuperNeo.vecScale_size
+theorem vecScale_size (s : F) (a : Array F) :
+    (vecScale s a).size = a.size := SuperNeo.vecScale_size s a
 
 /-- [Status: Proved] Curated theorem surface `vecAdd_size_of_eq`. -/
-abbrev vecAdd_size_of_eq := SuperNeo.vecAdd_size_of_eq
+theorem vecAdd_size_of_eq {a b : Array F} (h : a.size = b.size) :
+    (vecAdd a b).size = a.size := SuperNeo.vecAdd_size_of_eq h
 
 /-- [Status: Proved] Curated theorem surface `vecAdd_size_of_ne`. -/
-abbrev vecAdd_size_of_ne := SuperNeo.vecAdd_size_of_ne
+theorem vecAdd_size_of_ne {a b : Array F} (h : a.size ≠ b.size) :
+    (vecAdd a b).size = 0 := SuperNeo.vecAdd_size_of_ne h
 
 /-- [Status: Proved] Curated theorem surface `linComb2Vec_size_of_eq`. -/
-abbrev linComb2Vec_size_of_eq := SuperNeo.linComb2Vec_size_of_eq
+theorem linComb2Vec_size_of_eq
+    {ρ1 ρ2 : F} {z1 z2 : Array F} (h : z1.size = z2.size) :
+    (linComb2Vec ρ1 ρ2 z1 z2).size = z1.size :=
+  SuperNeo.linComb2Vec_size_of_eq h
 
 /-- [Status: Proved] Curated theorem surface `mulRq_size`. -/
-abbrev mulRq_size := SuperNeo.mulRq_size
+theorem mulRq_size (a b : Coeffs) : (mulRq a b).size = d := SuperNeo.mulRq_size a b
+
+/-- [Status: Proved] Curated theorem surface `mulRq_comm`. -/
+theorem mulRq_comm (a b : Coeffs) : mulRq a b = mulRq b a := SuperNeo.mulRq_comm a b
+
+/-- [Status: Proved] Curated theorem surface `mulRq_assoc`. -/
+theorem mulRq_assoc (a b c : Coeffs) : mulRq (mulRq a b) c = mulRq a (mulRq b c) :=
+  SuperNeo.mulRq_assoc a b c
+
+/-- [Status: Proved] Curated theorem surface `hasRingDegreeShape_zeroRq`. -/
+theorem hasRingDegreeShape_zeroRq : SuperNeo.hasRingDegreeShape SuperNeo.zeroRq :=
+  SuperNeo.hasRingDegreeShape_zeroRq
+
+/-- [Status: Proved] Curated theorem surface `hasRingDegreeShape_oneRq`. -/
+theorem hasRingDegreeShape_oneRq : SuperNeo.hasRingDegreeShape SuperNeo.oneRq :=
+  SuperNeo.hasRingDegreeShape_oneRq
+
+/-- [Status: Proved] Curated theorem surface `hasRingDegreeShape_mulRq`. -/
+theorem hasRingDegreeShape_mulRq (a b : Coeffs) :
+    SuperNeo.hasRingDegreeShape (mulRq a b) := SuperNeo.hasRingDegreeShape_mulRq a b
+
+/-- [Status: Proved] Curated theorem surface `ct_zeroRq`. -/
+theorem ct_zeroRq : ct SuperNeo.zeroRq = 0 := SuperNeo.ct_zeroRq
+
+/-- [Status: Proved] Curated theorem surface `ct_oneRq`. -/
+theorem ct_oneRq : ct SuperNeo.oneRq = 1 := SuperNeo.ct_oneRq
+
+/-- [Status: Proved] Curated theorem surface `coeffAt_zeroRq`. -/
+theorem coeffAt_zeroRq (i : Nat) : coeffAt SuperNeo.zeroRq i = 0 := SuperNeo.coeffAt_zeroRq i
+
+/-- [Status: Proved] Curated theorem surface `ringMulShapeProp_of_shapes`. -/
+theorem ringMulShapeProp_of_shapes
+    {a b : Coeffs}
+    (ha : SuperNeo.hasRingDegreeShape a)
+    (hb : SuperNeo.hasRingDegreeShape b) :
+    SuperNeo.ringMulShapeProp a b :=
+  SuperNeo.ringMulShapeProp_of_shapes ha hb
+
+/-- [Status: Proved] Curated theorem surface `ringMulShapeProp_left`. -/
+theorem ringMulShapeProp_left
+    {a b : Coeffs}
+    (h : SuperNeo.ringMulShapeProp a b) :
+    SuperNeo.hasRingDegreeShape a := SuperNeo.ringMulShapeProp_left h
+
+/-- [Status: Proved] Curated theorem surface `ringMulShapeProp_right`. -/
+theorem ringMulShapeProp_right
+    {a b : Coeffs}
+    (h : SuperNeo.ringMulShapeProp a b) :
+    SuperNeo.hasRingDegreeShape b := SuperNeo.ringMulShapeProp_right h
 
 end RingInterface
 

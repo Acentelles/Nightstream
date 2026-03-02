@@ -17,10 +17,6 @@ def one : F := ofNat 1
 
 instance : Zero F := ⟨zero⟩
 instance : One F := ⟨one⟩
-instance : Add F := ⟨fun a b => ofNat (a.val + b.val)⟩
-instance : Sub F := ⟨fun a b => ofNat (a.val + Goldilocks.q - b.val)⟩
-instance : Mul F := ⟨fun a b => ofNat (a.val * b.val)⟩
-instance : Neg F := ⟨fun a => ofNat (Goldilocks.q - a.val)⟩
 
 def pow (a : F) (n : Nat) : F :=
   Id.run do
@@ -178,7 +174,16 @@ theorem centeredRep_cover (a : F) :
     (a + b).val = (a.val + b.val) % Goldilocks.q := rfl
 
 @[simp] theorem val_sub (a b : F) :
-    (a - b).val = (a.val + Goldilocks.q - b.val) % Goldilocks.q := rfl
+    (a - b).val = (a.val + Goldilocks.q - b.val) % Goldilocks.q := by
+  have hEq : Goldilocks.q + a.val - b.val = a.val + (Goldilocks.q - b.val) := by
+    omega
+  calc
+    (a - b).val = (a.val + (Goldilocks.q - b.val)) % Goldilocks.q := by
+      simpa [Nat.add_assoc, Nat.add_left_comm, Nat.add_comm] using (Fin.val_sub a b)
+    _ = (Goldilocks.q + a.val - b.val) % Goldilocks.q := by
+      simp [hEq]
+    _ = (a.val + Goldilocks.q - b.val) % Goldilocks.q := by
+      simp [Nat.add_assoc, Nat.add_left_comm, Nat.add_comm]
 
 @[simp] theorem val_mul (a b : F) :
     (a * b).val = (a.val * b.val) % Goldilocks.q := rfl
@@ -200,6 +205,56 @@ theorem canonicalRep_neg (a : F) :
     canonicalRep (-a) = (Goldilocks.q - a.val) % Goldilocks.q := by
   show (-a).val = (Goldilocks.q - a.val) % Goldilocks.q
   exact val_neg a
+
+private theorem eq_of_qmul_pos_lt2q (k : Nat)
+    (hpos : 0 < Goldilocks.q * k)
+    (hlt : Goldilocks.q * k < 2 * Goldilocks.q) : k = 1 := by
+  have hkpos : 0 < k := by
+    by_cases hk0 : k = 0
+    · subst hk0
+      simp at hpos
+    · exact Nat.pos_of_ne_zero hk0
+  have hklt2 : k < 2 := by
+    have hmul : k * Goldilocks.q < 2 * Goldilocks.q := by
+      simpa [Nat.mul_comm, Nat.mul_left_comm, Nat.mul_assoc] using hlt
+    exact Nat.lt_of_mul_lt_mul_right hmul
+  have hkge1 : 1 ≤ k := Nat.succ_le_of_lt hkpos
+  have hkle1 : k ≤ 1 := Nat.lt_succ_iff.mp hklt2
+  exact Nat.le_antisymm hkle1 hkge1
+
+/-- Field subtraction cancellation in `F_q`. -/
+theorem sub_eq_zero_iff (a b : F) : a - b = 0 ↔ a = b := by
+  constructor
+  · intro h
+    apply Fin.ext
+    let x := a.val + Goldilocks.q - b.val
+    have hmod : x % Goldilocks.q = 0 := by
+      have hv : (a - b).val = 0 := by simpa [h] using (val_zero)
+      simpa [x, val_sub] using hv
+    have hdiv : Goldilocks.q ∣ x := Nat.dvd_of_mod_eq_zero hmod
+    rcases hdiv with ⟨k, hk⟩
+    have hlt2q : Goldilocks.q * k < 2 * Goldilocks.q := by
+      have ha : a.val < Goldilocks.q := a.isLt
+      have hb : b.val < Goldilocks.q := b.isLt
+      have hxlt : x < 2 * Goldilocks.q := by
+        dsimp [x]
+        omega
+      simpa [hk] using hxlt
+    have hpos : 0 < Goldilocks.q * k := by
+      have hb : b.val < Goldilocks.q := b.isLt
+      have hxpos : 0 < x := by
+        dsimp [x]
+        omega
+      simpa [hk] using hxpos
+    have hk1 : k = 1 := eq_of_qmul_pos_lt2q k hpos hlt2q
+    have hx : x = Goldilocks.q := by
+      simpa [hk1] using hk
+    dsimp [x] at hx
+    omega
+  · intro h
+    subst h
+    apply Fin.ext
+    simp [val_sub]
 
 end F
 

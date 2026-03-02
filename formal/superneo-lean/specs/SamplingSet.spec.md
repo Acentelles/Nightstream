@@ -10,6 +10,8 @@
 
 - `samplingNormBoundProp cset samples B ↔ (∀ i, normInfCoeffs cset[i] ≤ B) ∧ (∀ j, normInfCoeffs samples[j] ≤ B)`
 - `samplingExpansionProp cset samples ↔ ∃ B, samplingNormBoundProp cset samples B`
+- `samplingDiffSet C = {δ | ∃ c₁,c₂∈C, δ = c₁ - c₂}`
+- `strongSamplingExpansionProp C T`: `∀ δ ∈ C-C, ∀ z, ‖δ * z‖∞ ≤ 4*T*B` whenever `‖z‖∞ ≤ B`
 - `samplingSetBoundCheck cset samples = true ↔ samplingExpansionProp cset samples`
 - `samplingExpansionProp_of_bounds` : bounds → `samplingExpansionProp`
 
@@ -31,14 +33,23 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 |---|---|---|---|---|
 | Predicates | `samplingNormBoundProp` | def | Definitional | Per-entry norm bounds |
 | Predicates | `samplingExpansionProp` | def | Definitional | ∃ B with bounds |
+| Predicates | `samplingDiffSet` | def | Definitional | Difference-set surface `C-C` |
+| Predicates | `strongSamplingExpansionProp` | def | Definitional | Theorem-9-style expansion contract |
 | Check | `samplingSetBoundCheck` | def | Definitional | Executable bound check |
+| Theorems | `samplingNormBoundProp_left/right` | theorem | Proved | Projection helpers for bound components |
+| Theorems | `samplingNormBoundProp_mono` | theorem | Proved | Bound monotonicity in `B` |
 | Theorems | `samplingExpansionProp_of_bounds` | theorem | Proved | Bounds → expansion prop |
+| Theorems | `samplingExpansionProp_mono` | theorem | Proved | Lift monotone bounds into expansion prop |
+| Theorems | `samplingExpansionProp_empty` | theorem | Proved | Empty sets satisfy expansion trivially |
 | Theorems | `samplingSetBoundCheck_sound` | theorem | Proved | true → prop |
 | Theorems | `samplingSetBoundCheck_complete` | theorem | Proved | prop → true |
+| Theorems | `samplingSetBoundCheck_iff` | theorem | Proved | Boolean check iff proposition |
+| Theorems | `strongSamplingExpansionProp_mono` | theorem | Proved | Expansion contract monotone in `T` |
+| Theorems | `expansionFactor_of_strongSampling` | theorem | Proved | Direct extractor-facing expansion theorem from strong-sampling contract |
 
 ## Proof Obligations and Closure Plan
 
-All obligations closed. `samplingExpansionProp_of_bounds`, `samplingSetBoundCheck_sound`, and `samplingSetBoundCheck_complete` are proved.
+All obligations closed for the module contract, including monotonicity and boolean-prop equivalence (`samplingSetBoundCheck_iff`).
 
 ## Assumption Ledger
 

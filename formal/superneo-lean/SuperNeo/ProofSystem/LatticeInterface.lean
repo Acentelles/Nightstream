@@ -1,39 +1,102 @@
 import SuperNeo.ProofSystem.Lattice
 
 /-!
-Interface for `SuperNeo.ProofSystem.Lattice` and `LatticeReductions`.
+Contract interface for `SuperNeo.ProofSystem.Lattice`.
 
-Spec: `specs/ProofSystem/Lattice.spec.md`, `specs/ProofSystem/LatticeReductions.spec.md`
+Spec: `specs/ProofSystem/Lattice.spec.md`
 Paper: `./formal/superneo-lean/SuperNeo.pdf.md`
-Anchors: Definition 16 (MSIS), lines 743–744; Definition 18 (Ajtai commitment), lines 753–756; Theorem 2 (Properties), lines 319–321.
-MSIS-to-Ajtai binding reduction (LatticeReductions).
+Anchors:
+- Definition 4 (binding / relaxed binding), lines 305-315.
+- Definition 16 (MSIS), lines 743-744.
+- Definition 18 (Ajtai commitment), lines 753-756.
+- Theorem 2 boundary package shape, lines 319-321.
 -/
 
 namespace SuperNeo
-
 namespace ProofSystem.LatticeInterface
 
-/-- Canonical implementation module name for this interface. -/
-def implementationModule : String := "SuperNeo.ProofSystem.Lattice"
+noncomputable section
 
-/-- Canonical paper source used for this module-level interface/spec pair. -/
-def paperSource : String := "/Users/nicolasarqueros/starstream/SuperNeo.pdf.md"
+/-! ## Core Parameters and Shapes -/
 
-/-- Paper sections used to ground this module boundary. -/
-def paperAnchors : List String := ["§1.2 Ajtai commitments and embedding challenges", "§6 security composition context", "Appendix B parameter context"]
+abbrev AjtaiParams := SuperNeo.ProofSystem.AjtaiParams
+abbrev AjtaiParams_kappa := SuperNeo.ProofSystem.AjtaiParams.kappa
+abbrev AjtaiParams_msgLen := SuperNeo.ProofSystem.AjtaiParams.msgLen
+abbrev AjtaiParams_matrixFlatLen := SuperNeo.ProofSystem.AjtaiParams.matrixFlatLen
+abbrev AjtaiParams_commitmentLen := SuperNeo.ProofSystem.AjtaiParams.commitmentLen
+abbrev AjtaiParams_payloadLen := SuperNeo.ProofSystem.AjtaiParams.payloadLen
+abbrev AjtaiParams_msisNormBound := SuperNeo.ProofSystem.AjtaiParams.msisNormBound
+abbrev AjtaiParams_SideConditions := SuperNeo.ProofSystem.AjtaiParams.SideConditions
 
-/-- Public symbol inventory extracted from the implementation module. -/
-def exportedSymbolNames : List String := ["AjtaiParams", "AjtaiParams.kappa", "AjtaiParams.msgLen", "AjtaiParams.matrixFlatLen", "AjtaiParams.commitmentLen", "AjtaiParams.payloadLen", "AjtaiParams.msisNormBound", "AjtaiParams.SideConditions", "Commitment", "Opening", "normInfVec", "dotRq", "matRow", "matVecMul", "smulVec", "zeroVec", "subVec_self", "Commitment.WellFormed", "Commitment.ppMatrixFlat", "Commitment.valueVec", "Opening.WellFormed", "Opening.NormSound", "opensTo", "opensToRelaxed", "BindingCollision", "RelaxedBindingCollision", "MSISChallenge", "MSISChallenge.WellFormed", "MSISSolution", "MSISBreakEvent", "MSISGame", "canonicalMSISGame", "MSISAdvantage", "MSISAdvantageBound", "MSISHardnessAssumption", "MSISHardnessBoundary", "MSISHardnessBoundary.hardness", "MSISHardnessBoundary.hardnessFromFields", "matrixFlatLen_le_payloadLen", "commitmentLen_le_payloadLen", "Nontrivial", "msisNormBound_pos", "ppMatrixFlat_size", "valueVec_size", "ppMatrixFlat_size_of_wf", "valueVec_size_of_wf", "NormSound_mono", "CommitmentWF", "OpeningWF", "MSISChallengeWF", "ppMatrixFlat", "valueVec", "ofFields", "normalize", "normalize_hardnessFromFields", "smulVec_size", "matVecMul_size", "AjtaiBindingAssumption", "AjtaiRelaxedBindingAssumption", "AjtaiBindingGame", "canonicalAjtaiBindingGame", "AjtaiBindingAdvantage", "AjtaiBindingAdvantageBound", "AjtaiRelaxedBindingGame", "canonicalAjtaiRelaxedBindingGame", "AjtaiRelaxedBindingAdvantage", "AjtaiRelaxedBindingAdvantageBound", "AjtaiBindingBoundary", "AjtaiRelaxedBindingBoundary", "bindingCollision_subWitness_norm_lt_msisNormBound", "relaxedBindingCollision_subWitness_norm_lt_msisNormBound", "msisBreakEvent_of_bindingCollision", "msisBreakEvent_of_relaxedBindingCollision", "no_msisBreakEvent_of_hardness", "no_ajtaiBindingCollision_of_advantageBound", "no_ajtaiRelaxedBindingCollision_of_advantageBound", "hardness", "hardnessFromFields", "MSISToAjtaiReductions", "toBinding", "toRelaxedBinding", "ajtaiBinding_of_msis", "ajtaiRelaxedBinding_of_msis", "ajtaiBoundaries_of_msis", "ajtaiBindingBoundary_of_msis", "ajtaiRelaxedBindingBoundary_of_msis"]
+abbrev Commitment := SuperNeo.ProofSystem.Commitment
+abbrev Opening := SuperNeo.ProofSystem.Opening
+abbrev BindingCollision := SuperNeo.ProofSystem.BindingCollision
+abbrev RelaxedBindingCollision := SuperNeo.ProofSystem.RelaxedBindingCollision
 
-/-- Assumption/boundary-oriented symbols extracted by naming convention. -/
-def boundarySymbolNames : List String := ["MSISHardnessAssumption", "MSISHardnessBoundary", "MSISHardnessBoundary.hardness", "MSISHardnessBoundary.hardnessFromFields", "AjtaiBindingAssumption", "AjtaiRelaxedBindingAssumption", "AjtaiBindingBoundary", "AjtaiRelaxedBindingBoundary", "ajtaiBindingBoundary_of_msis", "ajtaiRelaxedBindingBoundary_of_msis"]
+/-! ## Ring/Vector Surfaces -/
 
-/-- Interface scaffold marker; replace with concrete typed wrappers as closure progresses. -/
-def interfaceScaffoldReady : Prop := True
+abbrev normInfVec := SuperNeo.ProofSystem.normInfVec
+abbrev dotRq := SuperNeo.ProofSystem.dotRq
+abbrev matRow := SuperNeo.ProofSystem.matRow
+abbrev matVecMul := SuperNeo.ProofSystem.matVecMul
+abbrev smulVec := SuperNeo.ProofSystem.smulVec
+abbrev subRq := SuperNeo.ProofSystem.subRq
+abbrev zeroVec := SuperNeo.ProofSystem.zeroVec
+abbrev subVec := SuperNeo.ProofSystem.subVec
 
-theorem interfaceScaffoldReady_true : interfaceScaffoldReady := by
-  trivial
+abbrev subRq_self := SuperNeo.ProofSystem.subRq_self
+abbrev subVec_size := SuperNeo.ProofSystem.subVec_size
+abbrev subVec_self := SuperNeo.ProofSystem.subVec_self
+abbrev smulVec_size := SuperNeo.ProofSystem.smulVec_size
+abbrev matVecMul_size := SuperNeo.ProofSystem.matVecMul_size
 
+/-! ## Commitment/Openings and MSIS -/
+
+abbrev Commitment_WellFormed := SuperNeo.ProofSystem.Commitment.WellFormed
+abbrev Commitment_ppMatrixFlat := SuperNeo.ProofSystem.Commitment.ppMatrixFlat
+abbrev Commitment_valueVec := SuperNeo.ProofSystem.Commitment.valueVec
+abbrev Opening_WellFormed := SuperNeo.ProofSystem.Opening.WellFormed
+abbrev Opening_NormSound := SuperNeo.ProofSystem.Opening.NormSound
+
+abbrev opensTo := SuperNeo.ProofSystem.opensTo
+abbrev opensToRelaxed := SuperNeo.ProofSystem.opensToRelaxed
+
+abbrev MSISChallenge := SuperNeo.ProofSystem.MSISChallenge
+abbrev MSISChallenge_WellFormed := SuperNeo.ProofSystem.MSISChallenge.WellFormed
+abbrev MSISSolution := SuperNeo.ProofSystem.MSISSolution
+abbrev MSISBreakEvent := SuperNeo.ProofSystem.MSISBreakEvent
+abbrev MSISGame := SuperNeo.ProofSystem.MSISGame
+abbrev canonicalMSISGame := SuperNeo.ProofSystem.canonicalMSISGame
+abbrev MSISAdvantage {params : AjtaiParams} := SuperNeo.ProofSystem.MSISAdvantage (params := params)
+abbrev MSISAdvantageBound := SuperNeo.ProofSystem.MSISAdvantageBound
+abbrev MSISHardnessAssumption := SuperNeo.ProofSystem.MSISHardnessAssumption
+abbrev MSISHardnessBoundary := SuperNeo.ProofSystem.MSISHardnessBoundary
+def MSISHardnessBoundary_hardness
+  {params : AjtaiParams}
+  (h : MSISHardnessBoundary params) : MSISHardnessAssumption params :=
+  h.hardness
+
+def MSISHardnessBoundary_hardnessFromFields
+  {params : AjtaiParams}
+  (h : MSISHardnessBoundary params) : MSISHardnessAssumption params :=
+  h.hardnessFromFields
+
+/-! ## Ajtai Security Boundary Surfaces -/
+
+abbrev AjtaiBindingAssumption := SuperNeo.ProofSystem.AjtaiBindingAssumption
+abbrev AjtaiRelaxedBindingAssumption := SuperNeo.ProofSystem.AjtaiRelaxedBindingAssumption
+abbrev AjtaiBindingGame := SuperNeo.ProofSystem.AjtaiBindingGame
+abbrev canonicalAjtaiBindingGame := SuperNeo.ProofSystem.canonicalAjtaiBindingGame
+abbrev AjtaiBindingAdvantage {params : AjtaiParams} := SuperNeo.ProofSystem.AjtaiBindingAdvantage (params := params)
+abbrev AjtaiBindingAdvantageBound := SuperNeo.ProofSystem.AjtaiBindingAdvantageBound
+abbrev AjtaiRelaxedBindingGame := SuperNeo.ProofSystem.AjtaiRelaxedBindingGame
+abbrev canonicalAjtaiRelaxedBindingGame := SuperNeo.ProofSystem.canonicalAjtaiRelaxedBindingGame
+abbrev AjtaiRelaxedBindingAdvantage {params : AjtaiParams} :=
+  SuperNeo.ProofSystem.AjtaiRelaxedBindingAdvantage (params := params)
+abbrev AjtaiRelaxedBindingAdvantageBound := SuperNeo.ProofSystem.AjtaiRelaxedBindingAdvantageBound
+abbrev AjtaiBindingBoundary := SuperNeo.ProofSystem.AjtaiBindingBoundary
+abbrev AjtaiRelaxedBindingBoundary := SuperNeo.ProofSystem.AjtaiRelaxedBindingBoundary
+
+end
 end ProofSystem.LatticeInterface
-
 end SuperNeo

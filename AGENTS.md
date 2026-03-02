@@ -44,6 +44,7 @@
     auditing assumptions/consumers against `./formal/superneo-lean/SuperNeo.pdf.md`.
 - Keep interface files colocated with implementations (Objective-C style), not in a separate top-level folder.
 - `*.spec.md` is the external/human-facing specification; `*Interface.lean` is the machine-checked boundary.
+- Specs must be **stateless**: they describe the timeless mathematical target (what the module must achieve), never the current implementation progress. Do not use language like "currently proved", "not yet implemented", "scaffold", "pending", or "in progress" in specs. A spec should read identically whether the module is 0% or 100% complete.
 - Avoid naming Lean boundary files as `*Spec.lean` or `*Contract.lean` to prevent confusion with prose specs and crypto terminology.
 - Interfaces should expose theorem/definition shapes and boundary assumptions clearly; implementations should satisfy or instantiate those interfaces.
 - Prefer thin/stable interfaces and keep implementation details out of `*Interface.lean`.
