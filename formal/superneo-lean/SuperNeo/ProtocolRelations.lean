@@ -1,148 +1,107 @@
-import SuperNeo.P21
+import SuperNeo.ProtocolTarget
+import SuperNeo.SumCheck
+
+/-!
+CCS/CE relation layer.
+
+This module defines paper-facing relation predicates on top of the protocol
+context and ties them to the protocol-target and SumCheck boundaries.
+-/
 
 namespace SuperNeo
 
-open F
+/-- Build a SumCheck instance from protocol-target context fields. -/
+def sumcheckInstanceOfContext (ctx : ProtocolTargetContext) : SumCheckInstance :=
+  { rounds := ctx.kSplit
+    maxDegree := ctx.m.size
+    domainSize := ctx.cset.size
+    claimedValue := ct ctx.invDelta }
 
-/--
-Math-level protocol context. This is intentionally lightweight and only carries
-the parameters needed to state CE/Eval relations in Lean.
--/
-structure ProtocolCtx where
-  bar : Array (Array F)
-  bSplit : Nat
-  kSplit : Nat
-  ceNormBound : Nat
-  ell : Nat
-  totalDegree : Nat
-  setSize : Nat
-  hVec : VecModuleHom
-  hScal : ScalarModuleHom
+/-- Explicit SumCheck witness carrying the transition facts used by reductions. -/
+structure SumCheckTransitionWitness (ctx : ProtocolTargetContext) where
+  transcript : SumCheckTranscript
+  accepted : SumCheckAccepted (sumcheckInstanceOfContext ctx) transcript
+  initialRound :
+    sumcheckInitialRoundConsistent (sumcheckInstanceOfContext ctx) transcript
+  roundSumStep :
+    ∀ i : Nat,
+      i + 1 < transcript.roundPolys.size →
+        sumcheckEvalPoly (transcript.roundPolys[i + 1]!) 0 +
+            sumcheckEvalPoly (transcript.roundPolys[i + 1]!) 1 =
+          sumcheckEvalPoly (transcript.roundPolys[i]!) (transcript.challenges[i]!)
 
-structure CEClaim where
-  a : Array F
-  b : Array F
-  m : Array (Array F)
-  z : Array F
-  z1 : Array F
-  z2 : Array F
-  zDecomp : Array F
-  r : Array F
-  rho1 : F
-  rho2 : F
-  cset : Array Coeffs
-  samples : Array Coeffs
-  qVals : Array F
-  xs : Array F
-  ys : Array F
-  expectedCoeffs : Array F
-  evalPoint : F
-  expectedEval : F
+theorem SumCheckTransitionWitness.accepted_exists
+  {ctx : ProtocolTargetContext}
+  (h : SumCheckTransitionWitness ctx) :
+  ∃ tr : SumCheckTranscript,
+    SumCheckAccepted (sumcheckInstanceOfContext ctx) tr := by
+  exact ⟨h.transcript, h.accepted⟩
 
-structure CEWitness where
-  z : Array F
+/-- CCS relation: protocol target holds. -/
+def ccsRelation (ctx : ProtocolTargetContext) : Prop :=
+  protocolTargetProp ctx
 
-def ClaimShapeValid (claim : CEClaim) : Prop :=
-  claim.z1.size = claim.z2.size ∧
-    MatrixRowsCompatible claim.m claim.z ∧
-    claim.xs.size = claim.ys.size
+/-- CE relation: CCS relation plus an accepted SumCheck transcript witness. -/
+def ceRelation (ctx : ProtocolTargetContext) : Prop :=
+  ccsRelation ctx ∧
+  ∃ tr : SumCheckTranscript,
+    SumCheckAccepted (sumcheckInstanceOfContext ctx) tr
 
-def ClaimArithmeticValid (ctx : ProtocolCtx) (claim : CEClaim) : Prop :=
-  p20DecompProp claim.zDecomp ctx.bSplit ctx.kSplit ∧
-    MatrixRowsCompatible claim.m claim.z ∧
-    matrixVecDirect claim.m claim.z = matrixVecCtBar ctx.bar claim.m claim.z ∧
-    p20EvalHomProp ctx.bar claim.m claim.z1 claim.z2 claim.r claim.rho1 claim.rho2 ∧
-    invertibilityPreconditionsProp ∧
-    p20SamplingProp claim.cset claim.samples ∧
-    p20PolyProp claim.qVals ctx.ell ctx.totalDegree ctx.setSize ∧
-    p20InterpProp claim.xs claim.ys claim.expectedCoeffs claim.evalPoint claim.expectedEval
+/-- Relaxed CE relation: keep only CCS relation (claim-truth may be deferred). -/
+def ceRelaxedRelation (ctx : ProtocolTargetContext) : Prop :=
+  ccsRelation ctx
 
-def EvalClaimValid (ctx : ProtocolCtx) (claim : CEClaim) : Prop :=
-  ClaimShapeValid claim ∧ ClaimArithmeticValid ctx claim
+/-- Assumptions needed to derive relation-level statements. -/
+structure ProtocolRelationsAssumptions (ctx : ProtocolTargetContext) where
+  target : ProtocolTargetAssumptions ctx
+  sumcheckSoundness : SumcheckSoundnessAssumption
+  sumcheckCompleteness : SumcheckCompletenessAssumption
 
-def CEValid (ctx : ProtocolCtx) (claim : CEClaim) (witness : CEWitness) : Prop :=
-  EvalClaimValid ctx claim ∧
-    IsDBarMatrix ctx.bar ∧
-    IsDVec claim.a ∧
-    IsDVec claim.b ∧
-    p10CoreProp ctx.bar claim.a claim.b ∧
-    witness.z = claim.z ∧
-    normInfCoeffs witness.z < ctx.ceNormBound
+/-- Derive CCS relation from target assumptions. -/
+theorem ccsRelation_of_assumptions
+  {ctx : ProtocolTargetContext}
+  (h : ProtocolRelationsAssumptions ctx) :
+  ccsRelation ctx := by
+  exact protocolTargetProp_of_assumptions h.target
 
-theorem p21ProtocolTarget_to_ClaimArithmeticValid
-  {ctx : ProtocolCtx} {claim : CEClaim}
-  (hP21 : p21ProtocolTarget
-    ctx.bar
-    claim.m
-    claim.z claim.z1 claim.z2 claim.zDecomp claim.r
-    claim.rho1 claim.rho2
-    ctx.bSplit ctx.kSplit
-    claim.cset claim.samples claim.qVals
-    claim.xs claim.ys claim.expectedCoeffs
-    claim.evalPoint claim.expectedEval
-    ctx.ell ctx.totalDegree ctx.setSize) :
-  ClaimArithmeticValid ctx claim := by
-  simpa [ClaimArithmeticValid] using hP21
+/-- Derive CE relation from explicit transcript acceptance witness. -/
+theorem ceRelation_of_assumptions
+  {ctx : ProtocolTargetContext}
+  (h : ProtocolRelationsAssumptions ctx)
+  (hWitness : SumCheckTransitionWitness ctx) :
+  ceRelation ctx := by
+  exact ⟨ccsRelation_of_assumptions h, hWitness.accepted_exists⟩
 
-theorem p21ProtocolTarget_to_EvalClaimValid
-  {ctx : ProtocolCtx} {claim : CEClaim}
-  (hShape : ClaimShapeValid claim)
-  (hP21 : p21ProtocolTarget
-    ctx.bar
-    claim.m
-    claim.z claim.z1 claim.z2 claim.zDecomp claim.r
-    claim.rho1 claim.rho2
-    ctx.bSplit ctx.kSplit
-    claim.cset claim.samples claim.qVals
-    claim.xs claim.ys claim.expectedCoeffs
-    claim.evalPoint claim.expectedEval
-    ctx.ell ctx.totalDegree ctx.setSize) :
-  EvalClaimValid ctx claim := by
-  exact ⟨hShape, p21ProtocolTarget_to_ClaimArithmeticValid hP21⟩
+/-- Derive CE relation from claim-truth via SumCheck completeness boundary. -/
+theorem ceRelation_of_claimTrue
+  {ctx : ProtocolTargetContext}
+  (h : ProtocolRelationsAssumptions ctx)
+  (hClaimTrue : SumCheckClaimTrue (sumcheckInstanceOfContext ctx)) :
+  ceRelation ctx := by
+  rcases h.sumcheckCompleteness _ hClaimTrue with ⟨tr, hAcc⟩
+  refine ceRelation_of_assumptions h ?_
+  refine
+    { transcript := tr
+      accepted := hAcc
+      initialRound := sumcheckAccepted_initial_round hAcc
+      roundSumStep := ?_ }
+  intro i hi
+  exact sumcheckAccepted_round_sum_step hAcc hi
 
-theorem p21ProtocolTarget_to_CEValid
-  {ctx : ProtocolCtx} {claim : CEClaim} {witness : CEWitness}
-  (hShape : ClaimShapeValid claim)
-  (hBar : IsDBarMatrix ctx.bar)
-  (hA : IsDVec claim.a)
-  (hB : IsDVec claim.b)
-  (hP21 : p21ProtocolTarget
-    ctx.bar
-    claim.m
-    claim.z claim.z1 claim.z2 claim.zDecomp claim.r
-    claim.rho1 claim.rho2
-    ctx.bSplit ctx.kSplit
-    claim.cset claim.samples claim.qVals
-    claim.xs claim.ys claim.expectedCoeffs
-    claim.evalPoint claim.expectedEval
-    ctx.ell ctx.totalDegree ctx.setSize)
-  (hP10 : p10CoreProp ctx.bar claim.a claim.b)
-  (hWitness : witness.z = claim.z)
-  (hNorm : normInfCoeffs witness.z < ctx.ceNormBound) :
-  CEValid ctx claim witness := by
-  exact ⟨p21ProtocolTarget_to_EvalClaimValid hShape hP21, hBar, hA, hB, hP10, hWitness, hNorm⟩
+/-- Soundness lift: any CE witness yields SumCheck claim truth. -/
+theorem ceClaimTrue_of_ce
+  {ctx : ProtocolTargetContext}
+  (h : ProtocolRelationsAssumptions ctx)
+  (hCE : ceRelation ctx) :
+  SumCheckClaimTrue (sumcheckInstanceOfContext ctx) := by
+  rcases hCE.2 with ⟨tr, hAcc⟩
+  exact h.sumcheckSoundness _ _ hAcc
 
-theorem p21FullMathTarget_to_CEValid
-  {ctx : ProtocolCtx} {claim : CEClaim} {witness : CEWitness}
-  (hShape : ClaimShapeValid claim)
-  (hBar : IsDBarMatrix ctx.bar)
-  (hA : IsDVec claim.a)
-  (hB : IsDVec claim.b)
-  (hFull : p21FullMathTarget
-    ctx.bar
-    claim.a claim.b
-    claim.m
-    claim.z claim.z1 claim.z2 claim.zDecomp claim.r
-    claim.rho1 claim.rho2
-    ctx.bSplit ctx.kSplit
-    claim.cset claim.samples claim.qVals
-    claim.xs claim.ys claim.expectedCoeffs
-    claim.evalPoint claim.expectedEval
-    ctx.ell ctx.totalDegree ctx.setSize)
-  (hWitness : witness.z = claim.z)
-  (hNorm : normInfCoeffs witness.z < ctx.ceNormBound) :
-  CEValid ctx claim witness := by
-  rcases hFull with ⟨hP10, hP21⟩
-  exact p21ProtocolTarget_to_CEValid hShape hBar hA hB hP21 hP10 hWitness hNorm
+/-- CE implies relaxed CE. -/
+theorem ceRelaxedRelation_of_ce
+  {ctx : ProtocolTargetContext}
+  (hCE : ceRelation ctx) :
+  ceRelaxedRelation ctx := by
+  exact hCE.1
 
 end SuperNeo

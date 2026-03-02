@@ -12,49 +12,49 @@ namespace SuperNeo
 open F
 
 /-- P14 consequence packaged as a proposition (evaluation homomorphism equality). -/
-def p20EvalHomProp
+def arithmeticEvalHomProp
   (bar : Array (Array F))
   (m : Array (Array F))
   (z1 z2 r : Array F)
   (ρ1 ρ2 : F) : Prop :=
-  let y1 := evalBarMzAt bar m z1 r
-  let y2 := evalBarMzAt bar m z2 r
-  let yLin := vecAdd (vecScale ρ1 y1) (vecScale ρ2 y2)
-  let yDirect := evalBarMzAt bar m (linComb2Vec ρ1 ρ2 z1 z2) r
-  yLin = yDirect ∧ ct yLin = ρ1 * ct y1 + ρ2 * ct y2
+  evalHom2Prop bar m z1 z2 r ρ1 ρ2
 
 /-- P15 consequence packaged as vector-module linearity obligations. -/
-def p20VecModuleProp (h : VecModuleHom) (s : F) (x y : Array F) : Prop :=
+def arithmeticVecModuleProp (h : VecModuleHom) (s : F) (x y : Array F) : Prop :=
   h.map (vecAdd x y) = vecAdd (h.map x) (h.map y) ∧
     h.map (vecScale s x) = vecScale s (h.map x)
 
 /-- P15 consequence packaged as scalar-module linearity obligations. -/
-def p20ScalarModuleProp (h : ScalarModuleHom) (s : F) (x y : Array F) : Prop :=
+def arithmeticScalarModuleProp (h : ScalarModuleHom) (s : F) (x y : Array F) : Prop :=
   h.map (vecAdd x y) = h.map x + h.map y ∧
     h.map (vecScale s x) = s * h.map x
 
-def p20SamplingProp (cset samples : Array Coeffs) : Prop :=
-  empiricalExpansionFactor cset samples <= theorem9UpperBound (maxRhoNorm cset)
+def arithmeticSamplingProp (cset samples : Array Coeffs) : Prop :=
+  samplingExpansionProp cset samples
 
-def p20PolyProp (qVals : Array F) (ell totalDegree setSize : Nat) : Prop :=
+def arithmeticPolyProp (qVals : Array F) (ell totalDegree setSize : Nat) : Prop :=
   eqLiftAllBoolean qVals ell = true ∧ setSize ≠ 0 ∧ totalDegree <= setSize
 
-def p20DecompProp (z : Array F) (b k : Nat) : Prop :=
-  b ≥ 2 ∧
-    let digits := splitBalancedVec z b k
-    recomposeSplitDigits digits b = z ∧ digitsWithinBase digits b = true
+def arithmeticDecompProp (z : Array F) (b k : Nat) : Prop :=
+  splitBalancedRoundTripProp z b k
 
-def p20InterpProp
+/-- Canonical equivalence between the proposition surface and executable P6 check. -/
+theorem arithmeticDecompProp_iff_splitRoundTrip_true
+  {z : Array F} {b k : Nat} :
+  arithmeticDecompProp z b k ↔ splitRoundTrip z b k = true := by
+  unfold arithmeticDecompProp
+  exact Iff.symm splitRoundTrip_eq_true_iff_prop
+
+def arithmeticInterpProp
   (xs ys expectedCoeffs : Array F)
   (evalPoint expectedEval : F) : Prop :=
-  let coeffs := interpolateFromEvals xs ys
-  coeffs = expectedCoeffs ∧ polyEval coeffs evalPoint = expectedEval
+  interpolationProp xs ys expectedCoeffs evalPoint expectedEval
 
 /--
-P20 arithmetic bundle: composition obligations for P6/P12/P14/P15 plus
-invertibility/sampling/polynomial/interpolation side conditions (P16/P17/P18/P19).
+Arithmetic bundle: composition obligations for split/matrix/eval/module plus
+invertibility/sampling/polynomial/interpolation side conditions.
 -/
-def p20ArithmeticBundle
+def arithmeticBundleProp
   (bar : Array (Array F))
   (m : Array (Array F))
   (z z1 z2 zDecomp r : Array F)
@@ -67,21 +67,21 @@ def p20ArithmeticBundle
   (xs ys expectedCoeffs : Array F)
   (evalPoint expectedEval : F)
   (ell totalDegree setSize : Nat) : Prop :=
-  p20DecompProp zDecomp b k ∧
+  arithmeticDecompProp zDecomp b k ∧
     MatrixRowsCompatible m z ∧
     matrixVecDirect m z = matrixVecCtBar bar m z ∧
-    p20EvalHomProp bar m z1 z2 r ρ1 ρ2 ∧
-    p20VecModuleProp hVec ρ1 z1 z2 ∧
-    p20ScalarModuleProp hScal ρ1 z1 z2 ∧
+    arithmeticEvalHomProp bar m z1 z2 r ρ1 ρ2 ∧
+    arithmeticVecModuleProp hVec ρ1 z1 z2 ∧
+    arithmeticScalarModuleProp hScal ρ1 z1 z2 ∧
     invertibilityPreconditionsProp ∧
-    p20SamplingProp cset samples ∧
-    p20PolyProp qVals ell totalDegree setSize ∧
-    p20InterpProp xs ys expectedCoeffs evalPoint expectedEval
+    arithmeticSamplingProp cset samples ∧
+    arithmeticPolyProp qVals ell totalDegree setSize ∧
+    arithmeticInterpProp xs ys expectedCoeffs evalPoint expectedEval
 
 /--
-Proposition-native constructor for the P20 bundle.
+Proposition-native constructor for the arithmetic bundle.
 -/
-theorem p20ArithmeticBundle_of_props
+theorem arithmeticBundleProp_of_props
   {bar : Array (Array F)}
   {m : Array (Array F)}
   {z z1 z2 zDecomp r : Array F}
@@ -94,23 +94,78 @@ theorem p20ArithmeticBundle_of_props
   {xs ys expectedCoeffs : Array F}
   {evalPoint expectedEval : F}
   {ell totalDegree setSize : Nat}
-  (hP6 : p20DecompProp zDecomp b k)
+  (hP6 : arithmeticDecompProp zDecomp b k)
   (hP12Rows : MatrixRowsCompatible m z)
   (hP12Eq : matrixVecDirect m z = matrixVecCtBar bar m z)
-  (hP14 : p20EvalHomProp bar m z1 z2 r ρ1 ρ2)
-  (hP15Vec : p20VecModuleProp hVec ρ1 z1 z2)
-  (hP15Scal : p20ScalarModuleProp hScal ρ1 z1 z2)
+  (hP14 : arithmeticEvalHomProp bar m z1 z2 r ρ1 ρ2)
+  (hP15Vec : arithmeticVecModuleProp hVec ρ1 z1 z2)
+  (hP15Scal : arithmeticScalarModuleProp hScal ρ1 z1 z2)
   (hP16 : invertibilityPreconditionsProp)
-  (hP17 : p20SamplingProp cset samples)
-  (hP18 : p20PolyProp qVals ell totalDegree setSize)
-  (hP19 : p20InterpProp xs ys expectedCoeffs evalPoint expectedEval) :
-  p20ArithmeticBundle bar m z z1 z2 zDecomp r ρ1 ρ2 b k hVec hScal cset samples qVals xs ys expectedCoeffs evalPoint expectedEval ell totalDegree setSize := by
+  (hP17 : arithmeticSamplingProp cset samples)
+  (hP18 : arithmeticPolyProp qVals ell totalDegree setSize)
+  (hP19 : arithmeticInterpProp xs ys expectedCoeffs evalPoint expectedEval) :
+  arithmeticBundleProp bar m z z1 z2 zDecomp r ρ1 ρ2 b k hVec hScal cset samples qVals xs ys expectedCoeffs evalPoint expectedEval ell totalDegree setSize := by
   exact ⟨hP6, hP12Rows, hP12Eq, hP14, hP15Vec, hP15Scal, hP16, hP17, hP18, hP19⟩
 
 /--
-Bridge theorem: executable checks imply the proposition-native P20 bundle.
+Theorem-native constructor for `P20` from `(P10 + P11)` plus theorem boundaries.
+
+This avoids check-driven plumbing for the P12/P13/P14 path:
+- derive P12 from `thm3CoreAssumption` + bar-lift linearity,
+- derive P13 from P12,
+- derive P14 from P13 + module-hom assumptions,
+then assemble the arithmetic bundle proposition.
 -/
-theorem p20ArithmeticBundle_checks_imply_props
+theorem arithmeticBundleProp_of_theorem_stack
+  {bar : Array (Array F)}
+  {m : Array (Array F)}
+  {z z1 z2 zDecomp r : Array F}
+  {ρ1 ρ2 : F}
+  {b k : Nat}
+  {hVec : VecModuleHom}
+  {hScal : ScalarModuleHom}
+  {cset samples : Array Coeffs}
+  {qVals : Array F}
+  {xs ys expectedCoeffs : Array F}
+  {evalPoint expectedEval : F}
+  {ell totalDegree setSize : Nat}
+  (hP6 : arithmeticDecompProp zDecomp b k)
+  (hRowsZ : MatrixRowsCompatible m z)
+  (hRowsZ1 : MatrixRowsCompatible m z1)
+  (hSize12 : z1.size = z2.size)
+  (hThm3 : thm3CoreAssumption bar)
+  (hLift : barLiftLinearityAssumption bar)
+  (hVecAssm : vecModuleAssumption hVec)
+  (hScalAssm : scalarModuleAssumption hScal)
+  (hP16 : invertibilityPreconditionsProp)
+  (hP17 : arithmeticSamplingProp cset samples)
+  (hP18 : arithmeticPolyProp qVals ell totalDegree setSize)
+  (hP19 : arithmeticInterpProp xs ys expectedCoeffs evalPoint expectedEval) :
+  arithmeticBundleProp bar m z z1 z2 zDecomp r ρ1 ρ2 b k hVec hScal cset samples qVals xs ys expectedCoeffs evalPoint expectedEval ell totalDegree setSize := by
+  have hP12Eq : matrixVecDirect m z = matrixVecCtBar bar m z :=
+    (matrixTransformAssumption_of_p10_p11 hThm3 hLift) z hRowsZ
+  have hEvalHomAssm : evalHomAssumption bar m r ρ1 ρ2 :=
+    evalHomAssumption_of_p10_p11_and_moduleAssumptions
+      (hThm3 := hThm3) (hLift := hLift)
+      (hVecAssm := hVecAssm) (hScalAssm := hScalAssm)
+  have hP14 : arithmeticEvalHomProp bar m z1 z2 r ρ1 ρ2 :=
+    hEvalHomAssm z1 z2 hSize12 hRowsZ1
+  exact arithmeticBundleProp_of_props
+    (hP6 := hP6)
+    (hP12Rows := hRowsZ)
+    (hP12Eq := hP12Eq)
+    (hP14 := hP14)
+    (hP15Vec := ⟨hVecAssm.1 z1 z2, hVecAssm.2 ρ1 z1⟩)
+    (hP15Scal := ⟨hScalAssm.1 z1 z2, hScalAssm.2 ρ1 z1⟩)
+    (hP16 := hP16)
+    (hP17 := hP17)
+    (hP18 := hP18)
+    (hP19 := hP19)
+
+/--
+Bridge theorem: executable checks imply the proposition-native arithmetic bundle.
+-/
+theorem arithmeticBundleProp_checks_imply_props
   {bar : Array (Array F)}
   {m : Array (Array F)}
   {z z1 z2 zDecomp r : Array F}
@@ -134,11 +189,11 @@ theorem p20ArithmeticBundle_checks_imply_props
   (hP18Eq : eqLiftAllBoolean qVals ell = true)
   (hP18SZ : schwartzZippelBoundLeOne totalDegree setSize = true)
   (hP19 : interpolationCase xs ys expectedCoeffs evalPoint expectedEval = true) :
-  p20ArithmeticBundle bar m z z1 z2 zDecomp r ρ1 ρ2 b k hVec hScal cset samples qVals xs ys expectedCoeffs evalPoint expectedEval ell totalDegree setSize := by
+  arithmeticBundleProp bar m z z1 z2 zDecomp r ρ1 ρ2 b k hVec hScal cset samples qVals xs ys expectedCoeffs evalPoint expectedEval ell totalDegree setSize := by
   have hP12Full : MatrixRowsCompatible m z ∧ matrixVecDirect m z = matrixVecCtBar bar m z :=
     matrixTransformIdentity_sound_full hP12
-  exact p20ArithmeticBundle_of_props
-    (hP6 := splitRoundTrip_sound hP6)
+  exact arithmeticBundleProp_of_props
+    (hP6 := splitRoundTrip_sound_prop hP6)
     (hP12Rows := hP12Full.1)
     (hP12Eq := hP12Full.2)
     (hP14 := evalHom2_sound hP14)
@@ -150,10 +205,10 @@ theorem p20ArithmeticBundle_checks_imply_props
     (hP19 := interpolationCase_sound hP19)
 
 /--
-Subset bridge in the opposite direction: proposition-level P20 assumptions imply
-check-level obligations for P6/P17/P18/P19.
+Subset bridge in the opposite direction: proposition-level arithmetic assumptions
+imply check-level obligations for split/sampling/polynomial/interpolation checks.
 -/
-theorem p20ArithmeticBundle_props_imply_check_subset
+theorem arithmeticBundleProp_props_imply_check_subset
   {bar : Array (Array F)}
   {m : Array (Array F)}
   {z z1 z2 zDecomp r : Array F}
@@ -166,7 +221,7 @@ theorem p20ArithmeticBundle_props_imply_check_subset
   {xs ys expectedCoeffs : Array F}
   {evalPoint expectedEval : F}
   {ell totalDegree setSize : Nat}
-  (hP20 : p20ArithmeticBundle bar m z z1 z2 zDecomp r ρ1 ρ2 b k hVec hScal cset samples qVals xs ys expectedCoeffs evalPoint expectedEval ell totalDegree setSize) :
+  (hP20 : arithmeticBundleProp bar m z z1 z2 zDecomp r ρ1 ρ2 b k hVec hScal cset samples qVals xs ys expectedCoeffs evalPoint expectedEval ell totalDegree setSize) :
   splitRoundTrip zDecomp b k = true ∧
     matrixTransformIdentity bar m z = true ∧
     samplingSetBoundCheck cset samples = true ∧
@@ -175,7 +230,7 @@ theorem p20ArithmeticBundle_props_imply_check_subset
     interpolationCase xs ys expectedCoeffs evalPoint expectedEval = true := by
   rcases hP20 with ⟨hP6, hP12Rows, hP12Eq, _hP14, _hP15Vec, _hP15Scal, _hP16, hP17, hP18, hP19⟩
   rcases hP18 with ⟨hP18Eq, hSetNonzero, hDegBound⟩
-  refine ⟨splitRoundTrip_complete hP6, ?_, ?_, hP18Eq, ?_, ?_⟩
+  refine ⟨splitRoundTrip_complete_prop hP6, ?_, ?_, hP18Eq, ?_, ?_⟩
   · exact matrixTransformIdentity_complete_of_rowsCompatible hP12Rows hP12Eq
   · exact samplingSetBoundCheck_complete hP17
   · exact schwartzZippelBoundLeOne_complete hSetNonzero hDegBound
@@ -185,7 +240,7 @@ theorem p20ArithmeticBundle_props_imply_check_subset
 Additional proposition -> check bridge for P15 obligations, requiring the
 size guard used by additivity checks.
 -/
-theorem p20ArithmeticBundle_props_imply_module_checks
+theorem arithmeticBundleProp_props_imply_module_checks
   {bar : Array (Array F)}
   {m : Array (Array F)}
   {z z1 z2 zDecomp r : Array F}
@@ -199,7 +254,7 @@ theorem p20ArithmeticBundle_props_imply_module_checks
   {evalPoint expectedEval : F}
   {ell totalDegree setSize : Nat}
   (hSize : z1.size = z2.size)
-  (hP20 : p20ArithmeticBundle bar m z z1 z2 zDecomp r ρ1 ρ2 b k hVec hScal cset samples qVals xs ys expectedCoeffs evalPoint expectedEval ell totalDegree setSize) :
+  (hP20 : arithmeticBundleProp bar m z z1 z2 zDecomp r ρ1 ρ2 b k hVec hScal cset samples qVals xs ys expectedCoeffs evalPoint expectedEval ell totalDegree setSize) :
   preservesAddVec hVec z1 z2 = true ∧
     preservesScaleVec hVec ρ1 z1 = true ∧
     preservesAddScalar hScal z1 z2 = true ∧
@@ -213,9 +268,9 @@ theorem p20ArithmeticBundle_props_imply_module_checks
   ⟩
 
 /--
-Backward-compatible check-driven constructor for P20.
+Check-driven constructor for the arithmetic bundle.
 -/
-theorem p20ArithmeticBundle_of_checks
+theorem arithmeticBundleProp_of_checks
   {bar : Array (Array F)}
   {m : Array (Array F)}
   {z z1 z2 zDecomp r : Array F}
@@ -239,8 +294,8 @@ theorem p20ArithmeticBundle_of_checks
   (hP18Eq : eqLiftAllBoolean qVals ell = true)
   (hP18SZ : schwartzZippelBoundLeOne totalDegree setSize = true)
   (hP19 : interpolationCase xs ys expectedCoeffs evalPoint expectedEval = true) :
-  p20ArithmeticBundle bar m z z1 z2 zDecomp r ρ1 ρ2 b k hVec hScal cset samples qVals xs ys expectedCoeffs evalPoint expectedEval ell totalDegree setSize := by
-  exact p20ArithmeticBundle_checks_imply_props
+  arithmeticBundleProp bar m z z1 z2 zDecomp r ρ1 ρ2 b k hVec hScal cset samples qVals xs ys expectedCoeffs evalPoint expectedEval ell totalDegree setSize := by
+  exact arithmeticBundleProp_checks_imply_props
     hP6 hP12 hP14 hVecAdd hVecScale hScalAdd hScalScale hP17 hP18Eq hP18SZ hP19
 
 end SuperNeo

@@ -1,4 +1,4 @@
-import SuperNeo.P20
+import SuperNeo.ArithmeticBundle
 import SuperNeo.Thm3Core
 
 namespace SuperNeo
@@ -6,11 +6,11 @@ namespace SuperNeo
 open F
 
 /--
-First protocol-facing target extracted from the arithmetic P20 bundle.
+First protocol-facing target extracted from the arithmetic bundle.
 This is not the full SuperNeo theorem yet; it is the bridge interface that
 the eventual protocol proof can consume.
 -/
-def p21ProtocolTarget
+def protocolMathTargetProp
   (bar : Array (Array F))
   (m : Array (Array F))
   (z z1 z2 zDecomp r : Array F)
@@ -21,16 +21,16 @@ def p21ProtocolTarget
   (xs ys expectedCoeffs : Array F)
   (evalPoint expectedEval : F)
   (ell totalDegree setSize : Nat) : Prop :=
-  p20DecompProp zDecomp b k ∧
+  arithmeticDecompProp zDecomp b k ∧
     MatrixRowsCompatible m z ∧
     matrixVecDirect m z = matrixVecCtBar bar m z ∧
-    p20EvalHomProp bar m z1 z2 r ρ1 ρ2 ∧
+    arithmeticEvalHomProp bar m z1 z2 r ρ1 ρ2 ∧
     invertibilityPreconditionsProp ∧
-    p20SamplingProp cset samples ∧
-    p20PolyProp qVals ell totalDegree setSize ∧
-    p20InterpProp xs ys expectedCoeffs evalPoint expectedEval
+    arithmeticSamplingProp cset samples ∧
+    arithmeticPolyProp qVals ell totalDegree setSize ∧
+    arithmeticInterpProp xs ys expectedCoeffs evalPoint expectedEval
 
-def p21FullMathTarget
+def protocolMathTargetWithThm3Prop
   (bar : Array (Array F))
   (a b : Array F)
   (m : Array (Array F))
@@ -43,9 +43,9 @@ def p21FullMathTarget
   (evalPoint expectedEval : F)
   (ell totalDegree setSize : Nat) : Prop :=
   p10CoreProp bar a b ∧
-    p21ProtocolTarget bar m z z1 z2 zDecomp r ρ1 ρ2 bSplit kSplit cset samples qVals xs ys expectedCoeffs evalPoint expectedEval ell totalDegree setSize
+    protocolMathTargetProp bar m z z1 z2 zDecomp r ρ1 ρ2 bSplit kSplit cset samples qVals xs ys expectedCoeffs evalPoint expectedEval ell totalDegree setSize
 
-theorem p21ProtocolTarget_of_p20
+theorem protocolMathTargetProp_of_arithmeticBundle
   {bar : Array (Array F)}
   {m : Array (Array F)}
   {z z1 z2 zDecomp r : Array F}
@@ -58,12 +58,12 @@ theorem p21ProtocolTarget_of_p20
   {xs ys expectedCoeffs : Array F}
   {evalPoint expectedEval : F}
   {ell totalDegree setSize : Nat}
-  (hP20 : p20ArithmeticBundle bar m z z1 z2 zDecomp r ρ1 ρ2 b k hVec hScal cset samples qVals xs ys expectedCoeffs evalPoint expectedEval ell totalDegree setSize) :
-  p21ProtocolTarget bar m z z1 z2 zDecomp r ρ1 ρ2 b k cset samples qVals xs ys expectedCoeffs evalPoint expectedEval ell totalDegree setSize := by
+  (hP20 : arithmeticBundleProp bar m z z1 z2 zDecomp r ρ1 ρ2 b k hVec hScal cset samples qVals xs ys expectedCoeffs evalPoint expectedEval ell totalDegree setSize) :
+  protocolMathTargetProp bar m z z1 z2 zDecomp r ρ1 ρ2 b k cset samples qVals xs ys expectedCoeffs evalPoint expectedEval ell totalDegree setSize := by
   rcases hP20 with ⟨hDecomp, hRows, hMat, hEval, _hVec, _hScal, hInv, hSamp, hPoly, hInterp⟩
   exact ⟨hDecomp, hRows, hMat, hEval, hInv, hSamp, hPoly, hInterp⟩
 
-theorem p21FullMathTarget_of_p10_p20
+theorem protocolMathTargetWithThm3Prop_of_p10_arithmeticBundle
   {bar : Array (Array F)}
   {a b : Array F}
   {m : Array (Array F)}
@@ -78,11 +78,11 @@ theorem p21FullMathTarget_of_p10_p20
   {evalPoint expectedEval : F}
   {ell totalDegree setSize : Nat}
   (hP10 : p10CoreProp bar a b)
-  (hP20 : p20ArithmeticBundle bar m z z1 z2 zDecomp r ρ1 ρ2 bSplit kSplit hVec hScal cset samples qVals xs ys expectedCoeffs evalPoint expectedEval ell totalDegree setSize) :
-  p21FullMathTarget bar a b m z z1 z2 zDecomp r ρ1 ρ2 bSplit kSplit cset samples qVals xs ys expectedCoeffs evalPoint expectedEval ell totalDegree setSize := by
-  exact ⟨hP10, p21ProtocolTarget_of_p20 hP20⟩
+  (hP20 : arithmeticBundleProp bar m z z1 z2 zDecomp r ρ1 ρ2 bSplit kSplit hVec hScal cset samples qVals xs ys expectedCoeffs evalPoint expectedEval ell totalDegree setSize) :
+  protocolMathTargetWithThm3Prop bar a b m z z1 z2 zDecomp r ρ1 ρ2 bSplit kSplit cset samples qVals xs ys expectedCoeffs evalPoint expectedEval ell totalDegree setSize := by
+  exact ⟨hP10, protocolMathTargetProp_of_arithmeticBundle hP20⟩
 
-theorem p21FullMathTarget_of_thm3_preconditions
+theorem protocolMathTargetWithThm3Prop_of_thm3_preconditions
   {bar : Array (Array F)}
   {a b : Array F}
   {m : Array (Array F)}
@@ -100,11 +100,11 @@ theorem p21FullMathTarget_of_thm3_preconditions
   (ha : IsDVec a)
   (hb : IsDVec b)
   (hP10Check : p10CoreCheck bar a b = true)
-  (hP20 : p20ArithmeticBundle bar m z z1 z2 zDecomp r ρ1 ρ2 bSplit kSplit hVec hScal cset samples qVals xs ys expectedCoeffs evalPoint expectedEval ell totalDegree setSize) :
-  p21FullMathTarget bar a b m z z1 z2 zDecomp r ρ1 ρ2 bSplit kSplit cset samples qVals xs ys expectedCoeffs evalPoint expectedEval ell totalDegree setSize := by
-  exact p21FullMathTarget_of_p10_p20 (p10Core_of_preconditions hBar ha hb hP10Check) hP20
+  (hP20 : arithmeticBundleProp bar m z z1 z2 zDecomp r ρ1 ρ2 bSplit kSplit hVec hScal cset samples qVals xs ys expectedCoeffs evalPoint expectedEval ell totalDegree setSize) :
+  protocolMathTargetWithThm3Prop bar a b m z z1 z2 zDecomp r ρ1 ρ2 bSplit kSplit cset samples qVals xs ys expectedCoeffs evalPoint expectedEval ell totalDegree setSize := by
+  exact protocolMathTargetWithThm3Prop_of_p10_arithmeticBundle (p10Core_of_preconditions hBar ha hb hP10Check) hP20
 
-theorem p21FullMathTarget_of_thm3_assumption
+theorem protocolMathTargetWithThm3Prop_of_thm3_assumption
   {bar : Array (Array F)}
   {a b : Array F}
   {m : Array (Array F)}
@@ -122,11 +122,11 @@ theorem p21FullMathTarget_of_thm3_assumption
   (ha : IsDVec a)
   (hb : IsDVec b)
   (hThm3 : thm3CoreAssumption bar)
-  (hP20 : p20ArithmeticBundle bar m z z1 z2 zDecomp r ρ1 ρ2 bSplit kSplit hVec hScal cset samples qVals xs ys expectedCoeffs evalPoint expectedEval ell totalDegree setSize) :
-  p21FullMathTarget bar a b m z z1 z2 zDecomp r ρ1 ρ2 bSplit kSplit cset samples qVals xs ys expectedCoeffs evalPoint expectedEval ell totalDegree setSize := by
-  exact p21FullMathTarget_of_p10_p20 (p10Core_of_preconditions_props hBar ha hb hThm3) hP20
+  (hP20 : arithmeticBundleProp bar m z z1 z2 zDecomp r ρ1 ρ2 bSplit kSplit hVec hScal cset samples qVals xs ys expectedCoeffs evalPoint expectedEval ell totalDegree setSize) :
+  protocolMathTargetWithThm3Prop bar a b m z z1 z2 zDecomp r ρ1 ρ2 bSplit kSplit cset samples qVals xs ys expectedCoeffs evalPoint expectedEval ell totalDegree setSize := by
+  exact protocolMathTargetWithThm3Prop_of_p10_arithmeticBundle (p10Core_of_preconditions_props hBar ha hb hThm3) hP20
 
-theorem p21ProtocolTarget_of_checks
+theorem protocolMathTargetProp_of_checks
   {bar : Array (Array F)}
   {m : Array (Array F)}
   {z z1 z2 zDecomp r : Array F}
@@ -150,9 +150,9 @@ theorem p21ProtocolTarget_of_checks
   (hP18Eq : eqLiftAllBoolean qVals ell = true)
   (hP18SZ : schwartzZippelBoundLeOne totalDegree setSize = true)
   (hP19 : interpolationCase xs ys expectedCoeffs evalPoint expectedEval = true) :
-  p21ProtocolTarget bar m z z1 z2 zDecomp r ρ1 ρ2 b k cset samples qVals xs ys expectedCoeffs evalPoint expectedEval ell totalDegree setSize := by
-  exact p21ProtocolTarget_of_p20
-    (p20ArithmeticBundle_of_checks
+  protocolMathTargetProp bar m z z1 z2 zDecomp r ρ1 ρ2 b k cset samples qVals xs ys expectedCoeffs evalPoint expectedEval ell totalDegree setSize := by
+  exact protocolMathTargetProp_of_arithmeticBundle
+    (arithmeticBundleProp_of_checks
       (bar := bar) (m := m)
       (z := z) (z1 := z1) (z2 := z2) (zDecomp := zDecomp) (r := r)
       (ρ1 := ρ1) (ρ2 := ρ2)
@@ -165,7 +165,7 @@ theorem p21ProtocolTarget_of_checks
       (ell := ell) (totalDegree := totalDegree) (setSize := setSize)
       hP6 hP12 hP14 hVecAdd hVecScale hScalAdd hScalScale hP17 hP18Eq hP18SZ hP19)
 
-theorem p21FullMathTarget_of_checks
+theorem protocolMathTargetWithThm3Prop_of_checks
   {bar : Array (Array F)}
   {a b : Array F}
   {m : Array (Array F)}
@@ -191,9 +191,9 @@ theorem p21FullMathTarget_of_checks
   (hP18Eq : eqLiftAllBoolean qVals ell = true)
   (hP18SZ : schwartzZippelBoundLeOne totalDegree setSize = true)
   (hP19 : interpolationCase xs ys expectedCoeffs evalPoint expectedEval = true) :
-  p21FullMathTarget bar a b m z z1 z2 zDecomp r ρ1 ρ2 bSplit kSplit cset samples qVals xs ys expectedCoeffs evalPoint expectedEval ell totalDegree setSize := by
+  protocolMathTargetWithThm3Prop bar a b m z z1 z2 zDecomp r ρ1 ρ2 bSplit kSplit cset samples qVals xs ys expectedCoeffs evalPoint expectedEval ell totalDegree setSize := by
   refine ⟨p10CoreCheck_sound hP10, ?_⟩
-  exact p21ProtocolTarget_of_checks
+  exact protocolMathTargetProp_of_checks
     (bar := bar) (m := m)
     (z := z) (z1 := z1) (z2 := z2) (zDecomp := zDecomp) (r := r)
     (ρ1 := ρ1) (ρ2 := ρ2)

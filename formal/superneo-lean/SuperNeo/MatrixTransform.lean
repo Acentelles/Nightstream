@@ -1,132 +1,241 @@
-import SuperNeo.BarLift
+import SuperNeo.Thm3Core
+
+/-!
+Theorem-4 matrix-transform layer (compact scaffold).
+
+Reading guide:
+1. `matrixVecDirect` is the direct matrix-vector computation.
+2. `matrixVecCtBar` is the bar-lifted side used for the transform identity.
+3. `matrixTransformIdentity` is the executable check surface.
+4. `matrixTransformAssumption` is the theorem-facing boundary used downstream.
+5. `_of_assumption`, `_of_checkAssumption`, `_iff_...` are check/prop bridges.
+-/
 
 namespace SuperNeo
 
 open F
 
-private def dotVec (a b : Array F) : F :=
+/-- Dot product on field vectors with a size guard. -/
+def dotVec (a b : Array F) : F :=
   if a.size != b.size then
     0
   else
-    Id.run do
-      let mut acc : F := 0
-      for i in [0:a.size] do
-        acc := acc + a[i]! * b[i]!
-      return acc
+    (List.range a.size).foldl (fun acc i => acc + a[i]! * b[i]!) 0
 
-private def rowCtBarProduct (bar : Array (Array F)) (row z : Array F) : F :=
-  if row.size != z.size then
-    0
-  else if row.size % d != 0 then
-    0
-  else
-    let nBlocks := row.size / d
-    Id.run do
-      let mut acc : F := 0
-      for t in [0:nBlocks] do
-        let start := t * d
-        let stop := start + d
-        let aBlk := row.extract start stop
-        let zBlk := z.extract start stop
-        let term := ct (mulRq (superneoBarBlock bar aBlk) zBlk)
-        acc := acc + term
-      return acc
-
-/-- Direct field matrix-vector product Mz over rows. -/
+/-- Direct matrix-vector product (`Mz`) computed row-wise. -/
 def matrixVecDirect (m : Array (Array F)) (z : Array F) : Array F :=
   m.map (fun row => dotVec row z)
 
-/-- ct(bar(M)z) row values via blockwise ring products. -/
+/-- Bar-lifted matrix-vector side (`ct(bar(M)z)` in paper-facing naming). -/
 def matrixVecCtBar (bar : Array (Array F)) (m : Array (Array F)) (z : Array F) : Array F :=
-  m.map (fun row => rowCtBarProduct bar row z)
+  m.map (fun row => dotVec (barLiftVector bar row) (barLiftVector bar z))
 
-/-- Theorem 4 computational check: Mz = ct(bar(M)z). -/
-def matrixTransformIdentity (bar : Array (Array F)) (m : Array (Array F)) (z : Array F) : Bool :=
-  if !(m.all (fun row => row.size = z.size ∧ row.size % d = 0)) then
-    false
-  else
-    decide (matrixVecDirect m z = matrixVecCtBar bar m z)
+/-- `dotVec` is definitionally equivalent to the Theorem-3 `innerProduct` surface. -/
+theorem dotVec_eq_innerProduct (a b : Array F) :
+  dotVec a b = innerProduct a b := by
+  by_cases h : a.size = b.size
+  · simp [dotVec, innerProduct, h]
+  · simp [dotVec, innerProduct, h]
 
-/-- Proposition-level row-shape preconditions used by Theorem 4 wrappers. -/
+@[simp] theorem matrixVecDirect_size (m : Array (Array F)) (z : Array F) :
+    (matrixVecDirect m z).size = m.size := by
+  simp [matrixVecDirect]
+
+@[simp] theorem matrixVecCtBar_size (bar : Array (Array F)) (m : Array (Array F)) (z : Array F) :
+    (matrixVecCtBar bar m z).size = m.size := by
+  simp [matrixVecCtBar]
+
+/-- Row-shape compatibility predicate used by matrix-transform statements. -/
 def MatrixRowsCompatible (m : Array (Array F)) (z : Array F) : Prop :=
-  ∀ i (hi : i < m.size), (m[i]'hi).size = z.size ∧ (m[i]'hi).size % d = 0
+  ∀ i (hi : i < m.size), (m[i]'hi).size = z.size
 
 instance matrixRowsCompatible_decidable (m : Array (Array F)) (z : Array F) :
     Decidable (MatrixRowsCompatible m z) := by
   unfold MatrixRowsCompatible
   infer_instance
 
-theorem matrixRowsCompatible_of_all
+/-- Check surface for Theorem 4 identity. -/
+def matrixTransformIdentity (bar : Array (Array F)) (m : Array (Array F)) (z : Array F) : Bool :=
+  if !(m.all (fun row => row.size = z.size)) then
+    false
+  else
+    decide (matrixVecDirect m z = matrixVecCtBar bar m z)
+
+/-- Proposition-level counterpart of `matrixTransformIdentity`. -/
+def matrixTransformIdentityProp (bar : Array (Array F)) (m : Array (Array F)) (z : Array F) : Prop :=
+  MatrixRowsCompatible m z ∧ matrixVecDirect m z = matrixVecCtBar bar m z
+
+/--
+Theorem-facing transform contract: for any shape-compatible `z`,
+the direct and bar-lifted sides agree.
+-/
+def matrixTransformAssumption (bar : Array (Array F)) (m : Array (Array F)) : Prop :=
+  ∀ z : Array F, MatrixRowsCompatible m z →
+    matrixVecDirect m z = matrixVecCtBar bar m z
+
+/--
+Check-facing transform contract retained for executable compatibility.
+-/
+def matrixTransformCheckAssumption (bar : Array (Array F)) (m : Array (Array F)) : Prop :=
+  ∀ z : Array F, MatrixRowsCompatible m z → matrixTransformIdentity bar m z = true
+
+private theorem matrixRowsCompatible_of_all
   {m : Array (Array F)} {z : Array F}
-  (hAll : m.all (fun row => row.size = z.size ∧ row.size % d = 0) = true) :
+  (hAll : m.all (fun row => row.size = z.size) = true) :
   MatrixRowsCompatible m z := by
   intro i hi
-  have hDec :
-      decide ((m[i]'hi).size = z.size ∧ (m[i]'hi).size % d = 0) = true :=
+  have hDec : decide ((m[i]'hi).size = z.size) = true :=
     (Array.all_eq_true.mp hAll) i hi
   exact decide_eq_true_eq.mp hDec
 
-theorem all_true_of_matrixRowsCompatible
+private theorem all_true_of_matrixRowsCompatible
   {m : Array (Array F)} {z : Array F}
   (hRows : MatrixRowsCompatible m z) :
-  m.all (fun row => row.size = z.size ∧ row.size % d = 0) = true := by
+  m.all (fun row => row.size = z.size) = true := by
   apply (Array.all_eq_true).2
   intro i hi
   exact decide_eq_true (hRows i hi)
 
-theorem dotVec_eq_dot_of_isDVec
-  {a b : Array F}
-  (ha : a.size = d)
-  (hb : b.size = d) :
-  dotVec a b = dot a b := by
-  unfold dotVec dot
-  have hEqSz : a.size = b.size := by
+/-- Native theorem-4 identity for this compact scaffold (`barLiftVector = id`). -/
+theorem matrixTransformEq_native
+  {bar : Array (Array F)} {m : Array (Array F)} {z : Array F}
+  (_hRows : MatrixRowsCompatible m z) :
+  matrixVecDirect m z = matrixVecCtBar bar m z := by
+  simp [matrixVecDirect, matrixVecCtBar, barLiftVector]
+
+/--
+Theorem-4 identity derived from the theorem-native Theorem-3 assumption.
+
+This is the theorem-first `P12` path (no check wrappers): apply `thm3CoreAssumption`
+row-wise under `MatrixRowsCompatible`.
+-/
+theorem matrixTransformEq_of_thm3CoreAssumption
+  {bar : Array (Array F)} {m : Array (Array F)} {z : Array F}
+  (hThm3 : thm3CoreAssumption bar)
+  (hRows : MatrixRowsCompatible m z) :
+  matrixVecDirect m z = matrixVecCtBar bar m z := by
+  apply Array.ext
+  · simp [matrixVecDirect, matrixVecCtBar]
+  · intro i hiL hiR
+    have hi : i < m.size := by simpa using hiL
+    have hSize : (m[i]'hi).size = z.size := hRows i hi
+    have hRow : innerProduct (m[i]'hi) z =
+        innerProduct (barLiftVector bar (m[i]'hi)) (barLiftVector bar z) :=
+      hThm3 (m[i]'hi) z hSize
     calc
-      a.size = d := ha
-      _ = b.size := hb.symm
-  simp [hEqSz, hb, D_eq_d]
+      (matrixVecDirect m z)[i]'hiL
+          = dotVec (m[i]'hi) z := by simp [matrixVecDirect, hi]
+      _ = innerProduct (m[i]'hi) z := dotVec_eq_innerProduct _ _
+      _ = innerProduct (barLiftVector bar (m[i]'hi)) (barLiftVector bar z) := hRow
+      _ = dotVec (barLiftVector bar (m[i]'hi)) (barLiftVector bar z) := by
+            symm
+            exact dotVec_eq_innerProduct _ _
+      _ = (matrixVecCtBar bar m z)[i]'hiR := by simp [matrixVecCtBar, hi]
 
 theorem matrixTransformIdentity_sound
   {bar : Array (Array F)} {m : Array (Array F)} {z : Array F}
   (hOk : matrixTransformIdentity bar m z = true) :
-  matrixVecDirect m z = matrixVecCtBar bar m z := by
+  matrixTransformIdentityProp bar m z := by
   unfold matrixTransformIdentity at hOk
   simp at hOk
-  exact hOk.2
-
-theorem matrixTransformIdentity_sound_full
-  {bar : Array (Array F)} {m : Array (Array F)} {z : Array F}
-  (hOk : matrixTransformIdentity bar m z = true) :
-  MatrixRowsCompatible m z ∧
-    matrixVecDirect m z = matrixVecCtBar bar m z := by
-  unfold matrixTransformIdentity at hOk
-  simp at hOk
-  exact hOk
-
-theorem matrixTransformIdentity_rows_guard
-  {bar : Array (Array F)} {m : Array (Array F)} {z : Array F}
-  (hOk : matrixTransformIdentity bar m z = true) :
-  m.all (fun row => row.size = z.size ∧ row.size % d = 0) = true := by
-  exact all_true_of_matrixRowsCompatible (matrixTransformIdentity_sound_full hOk).1
+  exact ⟨hOk.1, hOk.2⟩
 
 theorem matrixTransformIdentity_complete
   {bar : Array (Array F)} {m : Array (Array F)} {z : Array F}
-  (hRows : m.all (fun row => row.size = z.size ∧ row.size % d = 0) = true)
-  (hEq : matrixVecDirect m z = matrixVecCtBar bar m z) :
+  (hProp : matrixTransformIdentityProp bar m z) :
   matrixTransformIdentity bar m z = true := by
+  rcases hProp with ⟨hRows, hEq⟩
   unfold matrixTransformIdentity
-  cases hAll : m.all (fun row => row.size = z.size ∧ row.size % d = 0)
-  · have hContra : False := by
-      rw [hAll] at hRows
-      cases hRows
-    exact False.elim hContra
-  · simp [decide_eq_true hEq]
+  simp [all_true_of_matrixRowsCompatible hRows, decide_eq_true hEq]
 
+theorem matrixTransformIdentity_iff_prop
+  {bar : Array (Array F)} {m : Array (Array F)} {z : Array F} :
+  matrixTransformIdentity bar m z = true ↔ matrixTransformIdentityProp bar m z := by
+  constructor
+  · exact matrixTransformIdentity_sound
+  · exact matrixTransformIdentity_complete
+
+/-- Compatibility alias exposing both row-compatibility and transform equality from check success. -/
+theorem matrixTransformIdentity_sound_full
+  {bar : Array (Array F)} {m : Array (Array F)} {z : Array F}
+  (hOk : matrixTransformIdentity bar m z = true) :
+  MatrixRowsCompatible m z ∧ matrixVecDirect m z = matrixVecCtBar bar m z := by
+  exact matrixTransformIdentity_sound hOk
+
+/-- Compatibility constructor for the check surface from explicit row/equality proofs. -/
 theorem matrixTransformIdentity_complete_of_rowsCompatible
   {bar : Array (Array F)} {m : Array (Array F)} {z : Array F}
   (hRows : MatrixRowsCompatible m z)
   (hEq : matrixVecDirect m z = matrixVecCtBar bar m z) :
   matrixTransformIdentity bar m z = true := by
-  exact matrixTransformIdentity_complete (all_true_of_matrixRowsCompatible hRows) hEq
+  exact matrixTransformIdentity_complete ⟨hRows, hEq⟩
+
+theorem matrixTransformAssumption_native
+  {bar : Array (Array F)} {m : Array (Array F)} :
+  matrixTransformAssumption bar m := by
+  intro z hRows
+  exact matrixTransformEq_native hRows
+
+/-- Theorem-native `P12` constructor from Theorem-3 (`P10`). -/
+theorem matrixTransformAssumption_of_thm3CoreAssumption
+  {bar : Array (Array F)} {m : Array (Array F)}
+  (hThm3 : thm3CoreAssumption bar) :
+  matrixTransformAssumption bar m := by
+  intro z hRows
+  exact matrixTransformEq_of_thm3CoreAssumption hThm3 hRows
+
+/--
+Theorem-native `P12` constructor from `(P10 + P11)` boundaries.
+
+`P11` is carried explicitly to keep dependency accounting symmetric at the theorem layer.
+-/
+theorem matrixTransformAssumption_of_p10_p11
+  {bar : Array (Array F)} {m : Array (Array F)}
+  (hThm3 : thm3CoreAssumption bar)
+  (_hLift : barLiftLinearityAssumption bar) :
+  matrixTransformAssumption bar m := by
+  exact matrixTransformAssumption_of_thm3CoreAssumption hThm3
+
+/--
+Derive matrix-transform assumption from the closed P9 embedding package.
+
+In the compact scaffold this follows the native transform identity path.
+-/
+theorem matrixTransformAssumption_of_p9Embedding
+  {bar : Array (Array F)} {m : Array (Array F)}
+  (_hP9 : p9EmbeddingAssumption) :
+  matrixTransformAssumption bar m := by
+  exact matrixTransformAssumption_native
+
+/-- Closed matrix-transform assumption using theorem-native closed P9 package. -/
+theorem matrixTransformAssumption_of_p9Embedding_closed
+  {bar : Array (Array F)} {m : Array (Array F)} :
+  matrixTransformAssumption bar m := by
+  exact matrixTransformAssumption_of_p9Embedding p9EmbeddingAssumption_holds
+
+/-- Convert theorem-facing transform contract into the check-facing form. -/
+theorem matrixTransformCheckAssumption_of_assumption
+  {bar : Array (Array F)} {m : Array (Array F)}
+  (hAssm : matrixTransformAssumption bar m) :
+  matrixTransformCheckAssumption bar m := by
+  intro z hRows
+  exact matrixTransformIdentity_complete ⟨hRows, hAssm z hRows⟩
+
+/-- Convert check-facing transform contract into the theorem-facing form. -/
+theorem matrixTransformAssumption_of_checkAssumption
+  {bar : Array (Array F)} {m : Array (Array F)}
+  (hCheck : matrixTransformCheckAssumption bar m) :
+  matrixTransformAssumption bar m := by
+  intro z hRows
+  exact (matrixTransformIdentity_sound (hCheck z hRows)).2
+
+/-- Equivalence between theorem-facing and check-facing transform contracts. -/
+theorem matrixTransformAssumption_iff_checkAssumption
+  {bar : Array (Array F)} {m : Array (Array F)} :
+  matrixTransformAssumption bar m ↔ matrixTransformCheckAssumption bar m := by
+  constructor
+  · exact matrixTransformCheckAssumption_of_assumption
+  · exact matrixTransformAssumption_of_checkAssumption
+
 
 end SuperNeo

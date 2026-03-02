@@ -64,7 +64,7 @@ theorem schwartzZippelBoundLeOne_complete
   simp [hNonzero, decide_eq_true hBound]
 
 def polyLemmaSanity : Bool :=
-  let qVals : Array F := #[3, 1, 4, 1, 5, 9, 2, 6]
+  let qVals : Array F := #[F.ofNat 3, F.ofNat 1, F.ofNat 4, F.ofNat 1, F.ofNat 5, F.ofNat 9, F.ofNat 2, F.ofNat 6]
   eqLiftAllBoolean qVals 3 && schwartzZippelBoundLeOne 5 17
 
 end SuperNeo

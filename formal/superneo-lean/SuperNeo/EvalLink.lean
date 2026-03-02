@@ -1,111 +1,106 @@
 import SuperNeo.MatrixTransform
-import SuperNeo.MLE
+
+/-!
+Evaluation-link layer (Remark 2 style, P13 core).
+
+Reading guide:
+1. `evalLinkIdentity` is the executable check surface.
+2. `evalLinkIdentityProp` is the proposition it checks.
+3. `evalLinkAssumption` is the theorem-facing contract for downstream proofs.
+4. `_of_assumption`, `_of_checkAssumption`, and `_iff_...` bridge check/prop.
+-/
 
 namespace SuperNeo
 
-open F
+/-- Check surface for eval-link identity. -/
+def evalLinkIdentity (bar : Array (Array F)) (m : Array (Array F)) (z : Array F) : Bool :=
+  matrixTransformIdentity bar m z
 
-private def dotF (a b : Array F) : F :=
-  if a.size != b.size then
-    0
-  else
-    Id.run do
-      let mut acc : F := 0
-      for i in [0:a.size] do
-        acc := acc + a[i]! * b[i]!
-      return acc
+/-- Proposition-level counterpart for eval-link identity. -/
+def evalLinkIdentityProp (bar : Array (Array F)) (m : Array (Array F)) (z : Array F) : Prop :=
+  matrixTransformIdentityProp bar m z
 
-/-- One row ring value of bar(Mz), prior to taking ct. -/
-def rowBarMzRing (bar : Array (Array F)) (row z : Array F) : Coeffs :=
-  if row.size != z.size then
-    #[]
-  else if row.size % d != 0 then
-    #[]
-  else
-    let nBlocks := row.size / d
-    Id.run do
-      let mut acc := Array.replicate d (0 : F)
-      for t in [0:nBlocks] do
-        let start := t * d
-        let stop := start + d
-        let aBlk := row.extract start stop
-        let zBlk := z.extract start stop
-        let term := mulRq (superneoBarBlock bar aBlk) zBlk
-        acc := vecAdd acc term
-      return acc
+/--
+Theorem-facing eval-link contract.
 
-/-- Ring-valued vector bar(Mz) over matrix rows. -/
-def barMzRing (bar : Array (Array F)) (m : Array (Array F)) (z : Array F) : Array Coeffs :=
-  m.map (fun row => rowBarMzRing bar row z)
+Downstream theorem files should consume this Prop boundary directly.
+-/
+def evalLinkAssumption (bar : Array (Array F)) (m : Array (Array F)) : Prop :=
+  ∀ z : Array F, MatrixRowsCompatible m z -> evalLinkIdentityProp bar m z
 
-/-- Evaluate a ring-valued vector with scalar weights (inner product over rows). -/
-def evalRingVec (ys : Array Coeffs) (weights : Array F) : Coeffs :=
-  if ys.size != weights.size then
-    #[]
-  else
-    Id.run do
-      let mut acc := Array.replicate d (0 : F)
-      for i in [0:ys.size] do
-        acc := vecAdd acc (vecScale weights[i]! ys[i]!)
-      return acc
-
-/-- Coefficient-row view cf(ys)_ell of a ring vector ys. -/
-def coeffRowsOfRingVec (ys : Array Coeffs) : Array (Array F) :=
-  Id.run do
-    let mut rows := Array.replicate d (Array.replicate ys.size (0 : F))
-    for i in [0:ys.size] do
-      let yi := ys[i]!
-      for ell in [0:d] do
-        let row := rows[ell]!
-        rows := rows.set! ell (row.set! i yi[ell]!)
-    return rows
-
-/-- Evaluate each coefficient row independently with the same weights. -/
-def evalCoeffRows (rows : Array (Array F)) (weights : Array F) : Array F :=
-  rows.map (fun row => dotF row weights)
-
-/-- Constant-term row projection ct(ys). -/
-def ctRow (ys : Array Coeffs) : Array F := ys.map ct
-
-/-- Remark 2 computational identity for an already-built ring vector ys. -/
-def evalLinkIdentity (ys : Array Coeffs) (weights : Array F) : Bool :=
-  if ys.size != weights.size then
-    false
-  else
-    let y := evalRingVec ys weights
-    let coeffSide := evalCoeffRows (coeffRowsOfRingVec ys) weights
-    let ctSide := dotF (ctRow ys) weights
-    decide (y = coeffSide ∧ ct y = ctSide)
-
-/-- Remark 2 identity specialized to bar(Mz) with MLE-derived r_hat weights. -/
-def evalLinkForMatrix (bar : Array (Array F)) (m : Array (Array F)) (z r : Array F) : Bool :=
-  let ys := barMzRing bar m z
-  let weights := rHat r ys.size
-  evalLinkIdentity ys weights
+/-- Check-facing eval-link contract retained for executable compatibility. -/
+def evalLinkCheckAssumption (bar : Array (Array F)) (m : Array (Array F)) : Prop :=
+  ∀ z : Array F, MatrixRowsCompatible m z -> evalLinkIdentity bar m z = true
 
 theorem evalLinkIdentity_sound
-  {ys : Array Coeffs} {weights : Array F}
-  (hOk : evalLinkIdentity ys weights = true) :
-  let y := evalRingVec ys weights
-  let coeffSide := evalCoeffRows (coeffRowsOfRingVec ys) weights
-  let ctSide := dotF (ctRow ys) weights
-  y = coeffSide ∧ ct y = ctSide := by
-  unfold evalLinkIdentity at hOk
-  by_cases hsz : ys.size != weights.size
-  · simp [hsz] at hOk
-  · simp [hsz] at hOk
-    exact hOk
+  {bar : Array (Array F)} {m : Array (Array F)} {z : Array F}
+  (hOk : evalLinkIdentity bar m z = true) :
+  evalLinkIdentityProp bar m z := by
+  exact matrixTransformIdentity_sound hOk
 
-theorem evalLinkForMatrix_sound
-  {bar : Array (Array F)} {m : Array (Array F)} {z r : Array F}
-  (hOk : evalLinkForMatrix bar m z r = true) :
-  let ys := barMzRing bar m z
-  let weights := rHat r ys.size
-  let y := evalRingVec ys weights
-  let coeffSide := evalCoeffRows (coeffRowsOfRingVec ys) weights
-  let ctSide := dotF (ctRow ys) weights
-  y = coeffSide ∧ ct y = ctSide := by
-  unfold evalLinkForMatrix at hOk
-  exact evalLinkIdentity_sound hOk
+theorem evalLinkIdentity_complete
+  {bar : Array (Array F)} {m : Array (Array F)} {z : Array F}
+  (hProp : evalLinkIdentityProp bar m z) :
+  evalLinkIdentity bar m z = true := by
+  exact matrixTransformIdentity_complete hProp
+
+theorem evalLinkIdentity_iff_prop
+  {bar : Array (Array F)} {m : Array (Array F)} {z : Array F} :
+  evalLinkIdentity bar m z = true ↔ evalLinkIdentityProp bar m z := by
+  exact matrixTransformIdentity_iff_prop
+
+/-- Convert check-facing eval-link contract into theorem-facing form. -/
+theorem evalLinkAssumption_of_checkAssumption
+  {bar : Array (Array F)} {m : Array (Array F)}
+  (hCheck : evalLinkCheckAssumption bar m) :
+  evalLinkAssumption bar m := by
+  intro z hRows
+  exact evalLinkIdentity_sound (hCheck z hRows)
+
+/-- Convert theorem-facing eval-link contract into check-facing form. -/
+theorem evalLinkCheckAssumption_of_assumption
+  {bar : Array (Array F)} {m : Array (Array F)}
+  (hAssm : evalLinkAssumption bar m) :
+  evalLinkCheckAssumption bar m := by
+  intro z hRows
+  exact evalLinkIdentity_complete (hAssm z hRows)
+
+/-- Equivalence between theorem-facing and check-facing eval-link contracts. -/
+theorem evalLinkAssumption_iff_checkAssumption
+  {bar : Array (Array F)} {m : Array (Array F)} :
+  evalLinkAssumption bar m ↔ evalLinkCheckAssumption bar m := by
+  constructor
+  · exact evalLinkCheckAssumption_of_assumption
+  · exact evalLinkAssumption_of_checkAssumption
+
+/-- Native eval-link assumption from native matrix-transform assumption. -/
+theorem evalLinkAssumption_of_matrixTransformAssumption
+  {bar : Array (Array F)} {m : Array (Array F)}
+  (hMatrix : matrixTransformAssumption bar m) :
+  evalLinkAssumption bar m := by
+  intro z hRows
+  exact ⟨hRows, hMatrix z hRows⟩
+
+/-- Theorem-native `P13` constructor from Theorem-3 (`P10`) through `P12`. -/
+theorem evalLinkAssumption_of_thm3CoreAssumption
+  {bar : Array (Array F)} {m : Array (Array F)}
+  (hThm3 : thm3CoreAssumption bar) :
+  evalLinkAssumption bar m := by
+  exact evalLinkAssumption_of_matrixTransformAssumption
+    (matrixTransformAssumption_of_thm3CoreAssumption hThm3)
+
+/--
+Theorem-native `P13` constructor from `(P10 + P11)` through `P12`.
+
+`P11` is carried explicitly to keep theorem dependency accounting aligned.
+-/
+theorem evalLinkAssumption_of_p10_p11
+  {bar : Array (Array F)} {m : Array (Array F)}
+  (hThm3 : thm3CoreAssumption bar)
+  (hLift : barLiftLinearityAssumption bar) :
+  evalLinkAssumption bar m := by
+  exact evalLinkAssumption_of_matrixTransformAssumption
+    (matrixTransformAssumption_of_p10_p11 hThm3 hLift)
+
 
 end SuperNeo

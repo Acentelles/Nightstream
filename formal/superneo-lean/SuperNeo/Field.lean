@@ -1,176 +1,205 @@
-import Std
+import SuperNeo.Goldilocks
 
 namespace SuperNeo
 
-def q : Nat := 18446744069414584321
-
-theorem q_pos : 0 < q := by
-  decide
-
-structure F where
-  val : Nat
-  deriving Repr, DecidableEq, BEq, Inhabited
+/-- Base field carrier for SuperNeo (`F_q`). -/
+abbrev F : Type := Fin Goldilocks.q
 
 namespace F
 
-def ofNat (x : Nat) : F := ⟨x % q⟩
+instance : Inhabited F := ⟨⟨0, Goldilocks.q_pos⟩⟩
 
-def ofInt (x : Int) : F :=
-  let qi := Int.ofNat q
-  let xr := ((x % qi) + qi) % qi
-  ofNat xr.toNat
+def ofNat (n : Nat) : F :=
+  ⟨n % Goldilocks.q, Nat.mod_lt _ Goldilocks.q_pos⟩
 
 def zero : F := ofNat 0
-
 def one : F := ofNat 1
 
-instance : OfNat F n where
-  ofNat := ofNat n
+instance : Zero F := ⟨zero⟩
+instance : One F := ⟨one⟩
+instance : Add F := ⟨fun a b => ofNat (a.val + b.val)⟩
+instance : Sub F := ⟨fun a b => ofNat (a.val + Goldilocks.q - b.val)⟩
+instance : Mul F := ⟨fun a b => ofNat (a.val * b.val)⟩
+instance : Neg F := ⟨fun a => ofNat (Goldilocks.q - a.val)⟩
 
-instance : Add F where
-  add a b := ofNat (a.val + b.val)
+def pow (a : F) (n : Nat) : F :=
+  Id.run do
+    let mut acc : F := 1
+    let mut base := a
+    let mut exp := n
+    while exp > 0 do
+      if exp % 2 = 1 then
+        acc := acc * base
+      base := base * base
+      exp := exp / 2
+    return acc
 
-instance : Sub F where
-  sub a b := ofNat (a.val + q - b.val)
-
-instance : Mul F where
-  mul a b := ofNat (a.val * b.val)
-
-instance : Neg F where
-  neg a :=
-    if a.val = 0 then
-      zero
-    else
-      ⟨q - a.val⟩
-
-partial def egcd (a b : Int) : Int × Int × Int :=
-  if b = 0 then
-    (a, 1, 0)
-  else
-    let (g, x1, y1) := egcd b (a % b)
-    (g, y1, x1 - (a / b) * y1)
-
-/-- Multiplicative inverse in Goldilocks (returns 0 for 0). -/
 def inv (a : F) : F :=
   if a.val = 0 then
-    zero
+    0
   else
-    let ai := Int.ofNat a.val
-    let qi := Int.ofNat q
-    let (g, x, _) := egcd ai qi
-    if g = 1 ∨ g = -1 then
-      let x' := ((x % qi) + qi) % qi
-      ofNat x'.toNat
-    else
-      zero
+    pow a (Goldilocks.q - 2)
 
-instance : Inv F where
-  inv := inv
+/-- Canonical representative in `[0, q)`. -/
+def canonicalRep (a : F) : Nat := a.val
 
-def ofNatArray (xs : Array Nat) : Array F :=
-  xs.map ofNat
+/-- Canonicality predicate (always true for the `Fin` encoding). -/
+def isCanonical (a : F) : Prop := canonicalRep a < Goldilocks.q
 
-def Canonical (a : F) : Prop := a.val < q
-
-instance canonical_decidable (a : F) : Decidable (Canonical a) := by
-  unfold Canonical
+instance (a : F) : Decidable (isCanonical a) := by
+  unfold isCanonical canonicalRep
   infer_instance
 
-theorem ofNat_val_mod (x : Nat) : (ofNat x).val = x % q := rfl
+theorem canonical (a : F) : isCanonical a :=
+  a.isLt
 
-theorem ofNat_val_lt_q (x : Nat) : (ofNat x).val < q := by
-  unfold ofNat
-  exact Nat.mod_lt _ q_pos
+def canonicalCheck (a : F) : Bool :=
+  decide (isCanonical a)
 
-theorem canonical_ofNat (x : Nat) : Canonical (ofNat x) := by
-  unfold Canonical
-  exact ofNat_val_lt_q x
+theorem canonicalCheck_true (a : F) : canonicalCheck a = true := by
+  unfold canonicalCheck
+  exact decide_eq_true (canonical a)
 
-theorem canonical_zero : Canonical zero := by
-  unfold zero
-  exact canonical_ofNat 0
+/-- Centered integer representative in `[-q/2, q/2]` shape. -/
+def centeredRep (a : F) : Int :=
+  if _h : a.val ≤ Goldilocks.halfQ then
+    Int.ofNat a.val
+  else
+    Int.ofNat a.val - Int.ofNat Goldilocks.q
 
-theorem canonical_one : Canonical one := by
-  unfold one
-  exact canonical_ofNat 1
+def centeredAbs (a : F) : Nat :=
+  Int.natAbs (centeredRep a)
 
-theorem canonical_default : Canonical (default : F) := by
-  change (default : F).val < q
-  change 0 < q
-  exact q_pos
+theorem centeredRep_eq_of_le_halfQ {a : F} (h : a.val ≤ Goldilocks.halfQ) :
+    centeredRep a = Int.ofNat a.val := by
+  simp [centeredRep, h]
 
-theorem ofNat_val_eq_of_canonical {a : F} (ha : Canonical a) : ofNat a.val = a := by
-  cases a with
-  | mk v =>
-      unfold Canonical at ha
-      simp [ofNat, Nat.mod_eq_of_lt ha]
+theorem centeredRep_eq_sub_q_of_halfQ_lt {a : F} (h : Goldilocks.halfQ < a.val) :
+    centeredRep a = Int.ofNat a.val - Int.ofNat Goldilocks.q := by
+  have hNot : ¬ a.val ≤ Goldilocks.halfQ := Nat.not_le_of_lt h
+  simp [centeredRep, hNot]
 
-theorem canonical_add (a b : F) : Canonical (a + b) := by
-  unfold Canonical
-  change (ofNat (a.val + b.val)).val < q
-  exact ofNat_val_lt_q (a.val + b.val)
+@[simp] theorem ofNat_zero : ofNat 0 = (0 : F) := rfl
 
-theorem canonical_sub (a b : F) : Canonical (a - b) := by
-  unfold Canonical
-  change (ofNat (a.val + q - b.val)).val < q
-  exact ofNat_val_lt_q (a.val + q - b.val)
+@[simp] theorem ofNat_one : ofNat 1 = (1 : F) := rfl
 
-theorem canonical_mul (a b : F) : Canonical (a * b) := by
-  unfold Canonical
-  change (ofNat (a.val * b.val)).val < q
-  exact ofNat_val_lt_q (a.val * b.val)
+@[simp] theorem val_zero : (0 : F).val = 0 := by
+  change 0 % Goldilocks.q = 0
+  exact Nat.mod_eq_of_lt Goldilocks.q_pos
 
-theorem add_comm (a b : F) : a + b = b + a := by
-  cases a with
-  | mk av =>
-      cases b with
-      | mk bv =>
-          show ofNat (av + bv) = ofNat (bv + av)
-          rw [Nat.add_comm]
+@[simp] theorem val_one : (1 : F).val = 1 := by
+  change 1 % Goldilocks.q = 1
+  exact Nat.mod_eq_of_lt Goldilocks.q_gt_one
 
-theorem mul_comm (a b : F) : a * b = b * a := by
-  cases a with
-  | mk av =>
-      cases b with
-      | mk bv =>
-          show ofNat (av * bv) = ofNat (bv * av)
-          rw [Nat.mul_comm]
+@[simp] theorem ofNat_val (a : F) : ofNat a.val = a := by
+  apply Fin.ext
+  simp [ofNat, Nat.mod_eq_of_lt a.isLt]
 
-theorem zero_val : zero.val = 0 := by
-  unfold zero ofNat
-  simp [q]
+@[simp] theorem canonicalRep_ofNat (n : Nat) :
+    canonicalRep (ofNat n) = n % Goldilocks.q := rfl
 
-theorem one_val : one.val = 1 := by
-  unfold one ofNat
-  have hq : 1 < q := by decide
-  exact Nat.mod_eq_of_lt hq
+@[simp] theorem val_lt_q (a : F) : a.val < Goldilocks.q :=
+  a.isLt
 
-theorem zero_add_of_canonical {a : F} (ha : Canonical a) : zero + a = a := by
-  change ofNat (0 + a.val) = a
-  simpa using (ofNat_val_eq_of_canonical (a := a) ha)
+@[simp] theorem canonicalRep_eq_val (a : F) :
+    canonicalRep a = a.val := rfl
 
-theorem add_zero_of_canonical {a : F} (ha : Canonical a) : a + zero = a := by
-  change ofNat (a.val + 0) = a
-  simpa using (ofNat_val_eq_of_canonical (a := a) ha)
+theorem ofNat_canonicalRep (a : F) :
+    ofNat (canonicalRep a) = a := by
+  simp [canonicalRep]
 
-theorem one_mul_of_canonical {a : F} (ha : Canonical a) : one * a = a := by
-  change ofNat (1 * a.val) = a
-  simpa using (ofNat_val_eq_of_canonical (a := a) ha)
+theorem ofNat_val_eq_of_canonical
+    {n : Nat}
+    (h : n < Goldilocks.q) :
+    (ofNat n).val = n := by
+  simp [ofNat, Nat.mod_eq_of_lt h]
 
-theorem mul_one_of_canonical {a : F} (ha : Canonical a) : a * one = a := by
-  change ofNat (a.val * 1) = a
-  simpa using (ofNat_val_eq_of_canonical (a := a) ha)
+theorem canonicalRep_ofNat_eq_of_lt
+    {n : Nat}
+    (h : n < Goldilocks.q) :
+    canonicalRep (ofNat n) = n := by
+  simpa [canonicalRep] using ofNat_val_eq_of_canonical h
 
-theorem canonical_getElem!_of_all
-  {arr : Array F}
-  (hArr : arr.all (fun x => decide (Canonical x)) = true)
-  (i : Nat) :
-  Canonical (arr[i]!) := by
-  by_cases hi : i < arr.size
-  · have hIDec : decide (Canonical arr[i]) = true := (Array.all_eq_true.mp hArr) i hi
-    have hI : Canonical arr[i] := decide_eq_true_eq.mp hIDec
-    simpa [hi] using hI
-  · simpa [hi] using canonical_default
+@[simp] theorem isCanonical_true (a : F) :
+    isCanonical a := canonical a
+
+theorem canonicalCheck_iff (a : F) :
+    canonicalCheck a = true ↔ isCanonical a := by
+  unfold canonicalCheck
+  constructor
+  · exact decide_eq_true_eq.mp
+  · exact decide_eq_true
+
+@[simp] theorem canonicalRep_zero : canonicalRep (0 : F) = 0 := by
+  simp [canonicalRep]
+
+@[simp] theorem canonicalRep_one : canonicalRep (1 : F) = 1 := by
+  simp [canonicalRep]
+
+theorem isCanonical_zero : isCanonical (0 : F) := by
+  exact canonical (0 : F)
+
+theorem isCanonical_one : isCanonical (1 : F) := by
+  exact canonical (1 : F)
+
+@[simp] theorem centeredRep_zero : centeredRep (0 : F) = 0 := by
+  have h : ((0 : F).val) ≤ Goldilocks.halfQ := by
+    simp
+  simpa [h] using centeredRep_eq_of_le_halfQ h
+
+@[simp] theorem centeredRep_one : centeredRep (1 : F) = 1 := by
+  have h : ((1 : F).val) ≤ Goldilocks.halfQ := by
+    exact Goldilocks.one_le_halfQ
+  calc
+    centeredRep (1 : F) = Int.ofNat ((1 : F).val) := centeredRep_eq_of_le_halfQ h
+    _ = 1 := by simp
+
+/--
+Total case split for centered representatives: every canonical field value
+falls in exactly one of the two centered-representation branches.
+-/
+theorem centeredRep_cases (a : F) :
+    (a.val ≤ Goldilocks.halfQ ∧ centeredRep a = Int.ofNat a.val) ∨
+    (Goldilocks.halfQ < a.val ∧ centeredRep a = Int.ofNat a.val - Int.ofNat Goldilocks.q) := by
+  by_cases h : a.val ≤ Goldilocks.halfQ
+  · exact Or.inl ⟨h, centeredRep_eq_of_le_halfQ h⟩
+  · have hlt : Goldilocks.halfQ < a.val := Nat.lt_of_not_ge h
+    exact Or.inr ⟨hlt, centeredRep_eq_sub_q_of_halfQ_lt hlt⟩
+
+/-- Non-dependent branch-erased centered-representation form. -/
+theorem centeredRep_cover (a : F) :
+    centeredRep a = Int.ofNat a.val ∨
+      centeredRep a = Int.ofNat a.val - Int.ofNat Goldilocks.q := by
+  rcases centeredRep_cases a with hL | hR
+  · exact Or.inl hL.2
+  · exact Or.inr hR.2
+
+@[simp] theorem val_add (a b : F) :
+    (a + b).val = (a.val + b.val) % Goldilocks.q := rfl
+
+@[simp] theorem val_sub (a b : F) :
+    (a - b).val = (a.val + Goldilocks.q - b.val) % Goldilocks.q := rfl
+
+@[simp] theorem val_mul (a b : F) :
+    (a * b).val = (a.val * b.val) % Goldilocks.q := rfl
+
+@[simp] theorem val_neg (a : F) :
+    (-a).val = (Goldilocks.q - a.val) % Goldilocks.q := rfl
+
+theorem canonicalRep_add (a b : F) :
+    canonicalRep (a + b) = (a.val + b.val) % Goldilocks.q := by
+  show (a + b).val = (a.val + b.val) % Goldilocks.q
+  exact val_add a b
+
+theorem canonicalRep_mul (a b : F) :
+    canonicalRep (a * b) = (a.val * b.val) % Goldilocks.q := by
+  show (a * b).val = (a.val * b.val) % Goldilocks.q
+  exact val_mul a b
+
+theorem canonicalRep_neg (a : F) :
+    canonicalRep (-a) = (Goldilocks.q - a.val) % Goldilocks.q := by
+  show (-a).val = (Goldilocks.q - a.val) % Goldilocks.q
+  exact val_neg a
 
 end F
 

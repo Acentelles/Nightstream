@@ -1,5 +1,5 @@
 name = "superneo_lean"
-defaultTargets = ["SuperNeo"]
+defaultTargets = ["SuperNeo", "check"]
 
 [[lean_lib]]
 name = "SuperNeo"
@@ -7,3 +7,7 @@ name = "SuperNeo"
 [[lean_exe]]
 name = "check"
 root = "Main"
+
+[[lean_exe]]
+name = "goldilocks-golden"
+root = "SuperNeo.Golden.GoldilocksGolden"

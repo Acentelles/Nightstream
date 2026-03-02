@@ -27,31 +27,75 @@ against vectors generated directly from Rust (`neo-math`).
 
 ## Layout
 
+The module structure mirrors the paper's four main sections.
+
+### Barrel files (top-level re-exports)
+
+| Barrel | Paper section | Re-exports |
+|---|---|---|
+| `SuperNeo/Primitives.lean` | Section 4 (Preliminaries) | Goldilocks, Field, Dimensions, Ring, CoeffMaps, Norm, Decomp, EqPoly, MLE, SumCheck, PolyLemmas, Interp, Parameters |
+| `SuperNeo/EmbeddingTheory.lean` | Section 5 (Embedding + Eval Hom) | Embedding, Thm3Core, BarLift, MatrixTransform, EvalLink, ModuleHom, EvalHom |
+| `SuperNeo/SecurityModel.lean` | Section 6 + Appendix C security | InteractiveReductions, ProofSystem/{Types,Security,Negligible,Lattice,LatticeReductions}, InvertibilityAxioms, SamplingSet |
+| `SuperNeo/FoldingProtocol.lean` | Section 7 (Folding scheme) | ProofSystem/{ConstraintSystem,SumCheck,Folding}, ProtocolRelations, PiCCS, PiRLC, PiDEC, ArithmeticBundle, ArithmeticObligations, ProtocolTarget, ProtocolMathTarget, ProtocolTheorem, ProofSystem/Protocol |
+
+### Section 4: Primitives (Definitions 1-6, polynomial tools)
+
+- `SuperNeo/Goldilocks.lean`: Goldilocks field constants
 - `SuperNeo/Field.lean`: Goldilocks modular arithmetic implementation
-- `SuperNeo/Dimensions.lean`: concrete `eta`, `d`, and shape helpers
-- `SuperNeo/Parameters.lean`: Appendix B.2 concrete parameter constants/sanity checks
+- `SuperNeo/Dimensions.lean`: concrete `η`, `d`, and shape helpers
 - `SuperNeo/Ring.lean`: ring multiplication/reduction, `ct`, bar-block mat-vec
-- `SuperNeo/CoeffMaps.lean`: `cf` / `cf^-1` map definitions and round-trips
+- `SuperNeo/CoeffMaps.lean`: `cf` / `cf⁻¹` map definitions and round-trips
 - `SuperNeo/Norm.lean`: centered-representative norms
 - `SuperNeo/Decomp.lean`: balanced base-`b` decomposition (`split_b`) helpers
 - `SuperNeo/EqPoly.lean`: `eq` polynomial helpers
 - `SuperNeo/MLE.lean`: multilinear-extension identities (`r_hat`, folding)
+- `SuperNeo/SumCheck.lean`: sum-check protocol scaffold (Definition 6)
+- `SuperNeo/PolyLemmas.lean`: reusable polynomial helpers for Lemma 5/6
+- `SuperNeo/Interp.lean`: polynomial eval + interpolation
+- `SuperNeo/Parameters.lean`: Appendix B.2 concrete parameter constants
+
+### Section 5: Embedding Theory (Definitions 7-8, Theorems 3-5)
+
 - `SuperNeo/Embedding.lean`: Definition 7 element/vector/matrix embeddings
+- `SuperNeo/Thm3Core.lean`: Theorem 3 core proposition + dimensional preconditions
 - `SuperNeo/BarLift.lean`: Definition 8 blockwise lifting transform
 - `SuperNeo/MatrixTransform.lean`: Theorem 4 computational transform identity
 - `SuperNeo/EvalLink.lean`: Remark 2 coefficientwise evaluation linkage
+- `SuperNeo/ModuleHom.lean`: Definition 15 module-hom interfaces + linearity
 - `SuperNeo/EvalHom.lean`: Theorem 5 computational evaluation homomorphism
-- `SuperNeo/ModuleHom.lean`: module-hom interfaces + linearity sanity checks
-- `SuperNeo/Thm3Core.lean`: P10/Theorem 3 core proposition + dimensional preconditions
+
+### Section 6: Security Model (Definitions 9-10, 16-18, Theorems 2, 6, 8-9)
+
+- `SuperNeo/InteractiveReductions.lean`: Definitions 9-10 weak/strong reductions, Theorem 6 composition
+- `SuperNeo/ProofSystem/Types.lean`: proof-system facade types (Context, Claim, Witness)
+- `SuperNeo/ProofSystem/Security.lean`: probability/error model
+- `SuperNeo/ProofSystem/Negligible.lean`: `ErrorFn`, `IsNegligible`
+- `SuperNeo/ProofSystem/Lattice.lean`: Definition 16 (MSIS), Definition 18 (Ajtai), Theorem 2
+- `SuperNeo/ProofSystem/LatticeReductions.lean`: MSIS-to-Ajtai security reductions
 - `SuperNeo/InvertibilityAxioms.lean`: Theorem 8 assumption boundary and concrete checks
 - `SuperNeo/SamplingSet.lean`: Definition 17/Theorem 9 sampling-set and expansion checks
-- `SuperNeo/PolyLemmas.lean`: reusable polynomial helpers for Lemma 5/6 style checks
-- `SuperNeo/Interp.lean`: polynomial eval + interpolation
-- `SuperNeo/P20.lean`: first P20 arithmetic-obligation composition skeleton theorem
-- `SuperNeo/P21.lean`: first protocol-target theorem shell derived from P20
-- `SuperNeo/ProtocolRelations.lean`: protocol context/claim/witness relation predicates
-- `SuperNeo/ProtocolReduction.lean`: final medium-term theorem skeletons (`..._of_props`, `..._of_checks`)
+
+### Section 7: Folding Protocol (Definitions 11-14, Lemmas 3-4, Theorem 7)
+
+- `SuperNeo/ProofSystem/ConstraintSystem/CCS.lean`: Definitions 11-13 (CCS structure)
+- `SuperNeo/ProofSystem/SumCheck/`: proof-system-level sum-check facade
+- `SuperNeo/ProtocolRelations.lean`: Section 7.1 relation predicates
+- `SuperNeo/PiCCS.lean`: Section 7.3 Π_CCS, Lemma 3
+- `SuperNeo/PiRLC.lean`: Section 7.4 Π_RLC, Lemma 4
+- `SuperNeo/PiDEC.lean`: Section 7.5 Π_DEC, Theorem 7
+- `SuperNeo/ArithmeticBundle.lean`: bundled arithmetic prerequisites
+- `SuperNeo/ArithmeticObligations.lean`: arithmetic side-conditions for protocol reduction
+- `SuperNeo/ProtocolTarget.lean`: protocol-target bridge (Thm 3 + obligations)
+- `SuperNeo/ProtocolMathTarget.lean`: protocol math-target from arithmetic bundle
+- `SuperNeo/ProtocolTheorem.lean`: final theorem shape (completeness + knowledge-soundness)
+- `SuperNeo/ProofSystem/Protocol.lean`: proof-system entrypoint (final theorem wiring)
+- `SuperNeo/ProofSystem/Folding/`: proof-system folding wrappers
+
+### Infrastructure
+
+- `SuperNeo/ProtocolReduction.lean`: medium-term theorem skeletons
 - `SuperNeo/Checks.lean`: cross-check predicates against generated vectors
+- `SuperNeo/Regression.lean`: regression harness
 - `SuperNeo/Generated/Vectors.lean`: Rust-generated constants (bar matrix + cases)
 - `rust-vectors/`: standalone Rust generator crate
 
@@ -106,90 +150,146 @@ This is stronger than unit smoke tests, but weaker than full universal theorem p
 | `interp_cases` | Interpolation coefficients and evaluation at a test point match expected values for all generated interpolation cases. | Rust-generated vectors | Prove interpolation correctness/uniqueness generally. |
 | `all_checks` | Logical conjunction of every check above is `true`. | Aggregate gate | No new math content; only reports that all current executable checks passed. |
 
-## Proof Dependency Map (`P1..P21`)
+## Paper-Faithful Proof-Complete Goal (Project Policy)
 
-`P1..P21` are planning milestones (not paper numbering) to make dependency flow explicit.
+The target for this project is **paper-faithful proof-complete closure** of the protocol and its subparts.
+This means:
+
+1. Final protocol goal:
+   - `S7.6` (Protocol Theorem) is proved from theorem-native dependencies (not only executable checks/skeleton wrappers).
+2. Subpart goal:
+   - each required milestone on the critical path is closed with quantified theorem surfaces.
+3. Boundary policy:
+   - `Done (Boundary)` is an intermediate milestone (interface/assumption boundary closed),
+     **not** the final project state.
+4. Check policy:
+   - `lake exe check` must remain green, but checks are regression evidence, not substitutes for universal proofs.
+5. Paper-faithfulness policy:
+   - completion requires proving the same mathematical construction stated in the paper,
+     not only an equivalent-by-definition interface surface.
+   - if an executable construction exists (e.g. folding evaluator), the theorem-facing claim must include
+     a proved bridge from that executable construction to the paper formula.
+6. Trusted assumptions:
+   - any remaining trusted assumption must be explicit, minimized, and documented with closure intent.
+
+## Status Labels
+
+| Label | Meaning | Final for project? |
+|---|---|---|
+| `Done (Boundary)` | Boundary/interface closure is complete and consumable; deeper theorem chain may still be open. | No |
+| `In progress` | Some theorem surfaces exist, but proof obligations remain open. | No |
+| `Good shell` | Composition skeleton exists; full derivation is not complete. | No |
+| `Done (Proof-Complete)` | Paper-faithful universal theorem closure achieved for that milestone with explicit assumptions only. | Yes |
+
+## Proof Dependency Map (Section-Aligned)
+
+Milestones are aligned to paper sections. Each ID `S<section>.<item>` maps to a specific
+paper Definition, Theorem, or Lemma.
 
 ```text
-                    ALGEBRA TRACK                NORM TRACK             POLY TRACK
-               ------------------           -----------------       ------------------
+    SECTION 4: PRIMITIVES                SECTION 5: EMBEDDING THEORY
+    ========================             ============================
 
-               P1 --> P3  Coeff maps        P1 --> P5  Norm        P1 --> P7  Eq poly
-               P1 --> P4  Ring arith                |                      |
-               P3 --> P9  Embedding                 v                      v
-                       |                   P5 --> P6  split_b       P7 --> P8  MLE
-                       v                                                    |
-               P10 Theorem 3 core <-- P2      P2,P5 -> P16  Theorem 8      v
-                       |                              |             P8 --> P18  SZ
-                       v                              v                      |
-                  P11  Def 8 lift             P16 --> P17  Theorem 9         v
-                       |                                             P18 --> P19  Interp
-                       v
-                  P12  Theorem 4 identity
-                       |
-                       v                     +---- P3 --> P15  Module hom
-                  P13  Remark 2 <--- P3      |
-                       |                     |
-                       +-------- + P15 --> P14  Theorem 5 eval hom
+    S4.1 Field/Ring/Dims                 S5.1 Embedding (Def 7)
+      |                                    |
+      +---> S4.2 Norm/Decomp              v
+      |       |                          S5.2 Thm 3 core <--- S4.6
+      +---> S4.3 EqPoly/MLE               |
+      |       |                            v
+      |       +---> S4.5 PolyLemmas      S5.3 BarLift (Def 8)
+      |                Interp              |
+      |                                    v
+      +---> S4.4 SumCheck               S5.4 MatrixTransform (Thm 4)
+      |                                    |
+      +---> S4.6 Parameters               +---> S5.5 EvalLink + ModuleHom
+                                           |       |
+                                           |       v
+                                           +---> S5.6 EvalHom (Thm 5)
 
 
-               =====================================================================
-                P20  Arithmetic obligations  <-- P6, P12, P14, P16, P17, P18, P19
-                 |
-                 v
-                P21  Protocol theorem target <-- P10, P12, P14, P16, P17, P18, P19, P20
-               =====================================================================
+    SECTION 6: SECURITY MODEL           SECTION 7: FOLDING PROTOCOL
+    ==========================           ============================
+
+    S6.1 InteractiveReductions           S7.1 CCS Relations (Defs 11-14)
+         (Defs 9-10, Thm 6)               |
+                                           v
+    S6.2 Lattice/MSIS/Ajtai             S7.2 Π_CCS  (Lemma 3) <--- S4.4
+         (Defs 4, 16, 18, Thm 2)          |
+      |                                    v
+      +---> S6.3 Invertibility           S7.3 Π_RLC  (Lemma 4)
+      |      (Thm 8) <--- S4.2            |
+      |       |                            v
+      +---> S6.4 Sampling               S7.4 Π_DEC  (Thm 7)
+             (Def 17, Thm 9)              |
+                                           v
+    S6.5 Error/Negligible Model          S7.5 Arithmetic Obligations
+                                              <--- S4.2, S4.5, S5.4, S5.6,
+                                                   S6.3, S6.4
+                                           |
+                                           v
+                                         S7.6 Protocol Theorem (Thm 1)
+                                              <--- S5.2, S6.1, S6.2, S6.5,
+                                                   S7.2, S7.3, S7.4, S7.5
 ```
 
-| Proof ID | Lean modules | Core claim target | Depends on | Enables | Current evidence |
-|---|---|---|---|---|---|
-| `P1` | `Field.lean`, `Dimensions.lean` | Concrete base field/ring dimensions are correctly instantiated. | - | `P3`, `P4`, `P5`, `P7` | Implemented + used by all checks. |
-| `P2` | `Parameters.lean` | Appendix B.2 constants and inequalities are fixed concretely. | - | `P10`, `P16` | Parameter sanity checks pass. |
-| `P3` | `CoeffMaps.lean`, `Ring.lean` (`ct`) | Coefficient maps and constant-term bridge are algebraically sound. | `P1` | `P9`, `P10`, `P13`, `P15` | Round-trip/sanity checks pass; theorem API now includes explicit shape/`ct`/`mulRq` compatibility under `cf`/`cfInv`; full linearity layer still pending. |
-| `P4` | `Ring.lean` | Quotient-ring multiplication semantics are correct. | `P1` | `P10` | Rust parity checks pass; size/shape and extraction semantics strengthened; universal reduction proof pending. |
-| `P5` | `Norm.lean` | Centered `l_inf` norm definition and bounds behave as required. | `P1` | `P6`, `P16`, `P17` | Rust parity + sanity pass; theorem layer now includes reusable entry/row bound constructors plus challenge-coefficient subtraction bounds (`coeffSub`, `normInfCoeffs_le_four_of_allChallenge_sub`). |
-| `P6` | `Decomp.lean` | `split_b` recomposes exactly with per-digit bounds. | `P5` | `P20` | Rust parity + invariants pass; quantified theorem pending. |
-| `P7` | `EqPoly.lean` | `eq` behaves as Boolean selector on hypercube points. | `P1` | `P8`, `P18`, `P19` | Rust parity + indicator checks pass; full theorem pending. |
-| `P8` | `MLE.lean` | `\tilde v(r)=<v,\hat r>` and folding form are equivalent. | `P7` | `P18` | Rust parity + identity checks pass; quantified theorem pending. |
-| `P9` | `Embedding.lean` | Definition 7 embedding is a vector/matrix bridge with round-trip properties. | `P3` | `P10`, `P11` | Rust parity + round-trip checks pass; proof layer pending. |
-| `P10` | `Thm3Core.lean`, `Ring.lean`, `Checks.lean` (`superneo_cases`) | Theorem 3 core inner-product transform identity. | `P1`, `P2`, `P3`, `P4`, `P9` | `P11`, `P12`, `P21` | In progress (check/prop equivalence plus theorem-native `thm3CoreAssumption` interface added; full universal proof pending). |
-| `P11` | `BarLift.lean` | Definition 8 lifted transform is correct and linear. | `P9`, `P10` | `P12` | Rust parity + linearity checks pass; proposition-level linearity wrappers and explicit theorem-native additivity/homogeneity assumption interfaces are now added (`p11AdditivityAssumption`, `p11HomogeneityAssumption`), plus structural lemmas (`chunkBlocks_size`, `barLiftVec_singleBlock`). |
-| `P12` | `MatrixTransform.lean` | Theorem 4 matrix-vector transform identity. | `P10`, `P11` | `P13`, `P14`, `P20`, `P21` | Rust parity + identity checks pass; theorem proof pending. |
-| `P13` | `EvalLink.lean` | Remark 2 coefficientwise evaluation/`ct` linkage holds. | `P3`, `P12` | `P14` | Rust parity + identity checks pass; quantified proof pending. |
-| `P14` | `EvalHom.lean` | Theorem 5 evaluation homomorphism for linear combinations. | `P12`, `P13`, `P15` | `P20`, `P21` | Rust parity + homomorphism checks pass; theorem proof pending. |
-| `P15` | `ModuleHom.lean` | Abstract module-hom linearity obligations are available. | `P3` | `P14` | Witness sanity checks pass; abstract theorem layer pending. |
-| `P16` | `InvertibilityAxioms.lean` | Theorem 8 invertibility preconditions and interface boundary. | `P2`, `P5` | `P17`, `P20`, `P21` | Preconditions proven computationally; theorem-native challenge-subtraction window/invertibility bridges added; core invertibility still axiomized. |
-| `P17` | `SamplingSet.lean` | Definition 17 + Theorem 9 expansion-factor interface. | `P5`, `P16` | `P20`, `P21` | Rust parity + bound checks pass; universal theorem pending. |
-| `P18` | `PolyLemmas.lean` | Eq-lifting and Schwartz-Zippel helper lemmas. | `P7`, `P8` | `P19`, `P20`, `P21` | Sanity and table checks pass; full general lemmas pending. |
-| `P19` | `Interp.lean` | Interpolation/evaluation correctness and consistency. | `P7`, `P18` | `P20`, `P21` | Rust parity checks pass; uniqueness/proof lemmas pending. |
-| `P20` | `P20.lean` + `Checks.lean` | Arithmetic side-conditions needed by protocol-level reduction compose cleanly. | `P6`, `P12`, `P14`, `P16`, `P17`, `P18`, `P19` | `P21` | In progress (both proposition-native and check-driven constructors are implemented; theorem-native matrix row-compatibility (`MatrixRowsCompatible`) is now included and bridged to/from checks). |
-| `P21` | `P21.lean`, `ProtocolRelations.lean`, `ProtocolReduction.lean` | End-to-end SuperNeo protocol theorem from completed math stack. | `P10`, `P12`, `P14`, `P16`, `P17`, `P18`, `P19`, `P20` | Final claim | In progress (hardened protocol relation layer completed: shape/arithmetic split now uses theorem-native row compatibility, CE witness/norm obligations, and `..._of_props`/`..._of_checks` skeleton composition; full reduction theorem still pending). |
+## Milestone Table
+
+| ID | Paper item | Lean modules | Core claim target | Depends on | Enables | Status |
+|---|---|---|---|---|---|---|
+| `S4.1` | Defs 1-2 (Field/Ring/Dims) | `Field.lean`, `Dimensions.lean`, `Ring.lean`, `CoeffMaps.lean` | Base field/ring algebra, coefficient maps, `ct` bridge. | - | S4.2, S4.3, S4.4, S5.1 | Done (Boundary) for field/dims; In progress for coeff maps (linearity pending) and ring (universal reduction pending). |
+| `S4.2` | Def 3 + decomposition | `Norm.lean`, `Decomp.lean` | Centered `l_∞` norm bounds, `split_b` recomposition. | S4.1 | S6.3, S6.4, S7.5 | In progress (bounds + round-trip available; compositional inequalities and universal decomposition theorem pending). |
+| `S4.3` | `eq` polynomial + MLE | `EqPoly.lean`, `MLE.lean` | `eq` is Boolean-cube selector; MLE identity `ṽ(r) = ⟨v, r̂⟩`. | S4.1 | S4.5, S5.5 | EqPoly: Done (Proof-Complete). MLE: In progress (executable-folding bridge pending). |
+| `S4.4` | Def 6 (sum-check) | `SumCheck.lean` | Sum-check soundness/completeness boundary. | S4.1 | S7.2 | In progress (scaffold with acceptance, soundness, completeness assumption boundaries). |
+| `S4.5` | Lemmas 5-6, interpolation | `PolyLemmas.lean`, `Interp.lean` | Schwartz-Zippel, eq-lifting, interpolation correctness. | S4.3 | S7.5 | In progress (sanity checks pass; quantified lemmas pending). |
+| `S4.6` | App B.2 parameters | `Parameters.lean`, `Goldilocks.lean` | Concrete constants and bound checks. | - | S5.2, S6.3 | Done (Boundary). |
+| `S5.1` | Def 7 (embedding) | `Embedding.lean` | Element/vector/matrix embedding bijection + linearity. | S4.1 | S5.2 | In progress (parity passing; proof layer pending). |
+| `S5.2` | Thm 3 (inner-product transform) | `Thm3Core.lean` | `ct(cf⁻¹(bar(a)) · cf⁻¹(b)) = ⟨a, b⟩`. | S4.1, S4.6, S5.1 | S5.3, S7.6 | In progress (check/prop equivalence + assumption interface; universal proof pending). |
+| `S5.3` | Def 8 (bar-lift) | `BarLift.lean` | Blockwise lifting is correct and linear. | S5.1, S5.2 | S5.4 | In progress (prop-level linearity interfaces + structural lemmas; core proof pending). |
+| `S5.4` | Thm 4 (matrix-vector transform) | `MatrixTransform.lean` | `Mz = ct(bar(M)z)` for all valid M, z. | S5.2, S5.3 | S5.5, S5.6, S7.5 | In progress (row-shape interfaces; full proof pending). |
+| `S5.5` | Remark 2 + Def 15 | `EvalLink.lean`, `ModuleHom.lean` | Eval/`ct` linkage; module-hom linearity. | S4.1, S5.4 | S5.6 | In progress (check-level; quantified proofs pending). |
+| `S5.6` | Thm 5 (eval homomorphism) | `EvalHom.lean` | Linear-combination preservation under evaluation. | S5.4, S5.5 | S7.5 | In progress (parity passing; formal proof pending). |
+| `S6.1` | Defs 5, 9-10, Thm 6 | `InteractiveReductions.lean` | Weak/strong reductions compose correctly. | - | S7.6 | In progress (composition statement stubs). |
+| `S6.2` | Defs 4, 16, 18, Thm 2 | `ProofSystem/Lattice.lean`, `LatticeReductions.lean` | Ajtai commitment properties, MSIS hardness, binding reductions. | - | S6.3, S7.6 | In progress (definitions + axioms done; reductions split into LatticeReductions). |
+| `S6.3` | Thm 8 (invertibility) | `InvertibilityAxioms.lean` | Low-norm invertibility preconditions and interface. | S4.2, S4.6, S6.2 | S6.4, S7.5 | In progress (assumption boundary + preconditions; `lowNormInvertibility` still axiomized). |
+| `S6.4` | Def 17 + Thm 9 (sampling) | `SamplingSet.lean` | Strong-sampling + expansion-factor interface. | S4.2, S6.3 | S7.5 | In progress (parity passing; universal theorem pending). |
+| `S6.5` | Error/negligible model | `ProofSystem/{Types,Security,Negligible}.lean` | `ProbModel`, `ErrorModel`, `IsNegligible`. | - | S7.6 | In progress (models defined). |
+| `S7.1` | Defs 11-14 (CCS) | `ProofSystem/ConstraintSystem/CCS.lean`, `ProtocolRelations.lean` | Norm-bounded CCS structure and evaluation relations. | - | S7.2, S7.3 | In progress (definitions exist). |
+| `S7.2` | Sec 7.3, Lemma 3 (Π_CCS) | `PiCCS.lean`, `ProofSystem/Folding/PiCCS.lean` | Π_CCS is a strong interactive reduction. | S4.4, S7.1 | S7.4 | In progress (assumption-driven theorem stub). |
+| `S7.3` | Sec 7.4, Lemma 4 (Π_RLC) | `PiRLC.lean`, `ProofSystem/Folding/PiRLC.lean` | Π_RLC is a weak interactive reduction. | S7.2 | S7.4 | In progress (assumption-driven theorem stub). |
+| `S7.4` | Sec 7.5, Thm 7 (Π_DEC) | `PiDEC.lean`, `ProofSystem/Folding/PiDEC.lean` | Π_DEC is a reduction of knowledge. | S7.3 | S7.6 | In progress (assumption-driven theorem stub). |
+| `S7.5` | Arithmetic obligations | `ArithmeticBundle.lean`, `ArithmeticObligations.lean`, `ProtocolTarget.lean`, `ProtocolMathTarget.lean` | Side-conditions compose cleanly for protocol reduction. | S4.2, S4.5, S5.4, S5.6, S6.3, S6.4 | S7.6 | Good shell (dual prop/check APIs; theorem-native constructor pending). |
+| `S7.6` | Thm 1 (protocol theorem) | `ProtocolTheorem.lean`, `ProofSystem/Protocol.lean` | End-to-end completeness + knowledge-soundness. | S5.2, S6.1, S6.2, S6.5, S7.2, S7.3, S7.4, S7.5 | Final claim | Good shell (theorem shape defined; full reduction pending). |
 
 ### Tracked Status and Exit Criteria
 
-| Proof ID | Status now | Missing now | Exit criteria |
+Completion policy reminder: every row below targets `Done (Proof-Complete)` as the terminal state.
+Rows marked `Done (Boundary)` are intentionally intermediate.
+
+| ID | Status now | Missing now | Exit criteria |
 |---|---|---|---|
-| `P1` | In progress (dimension/shape now has proposition, soundness, canonical equalities, and field-level canonical-value lemmas such as `Canonical`, `ofNat_val_eq_of_canonical`, and canonical identities for `0/1`). | Missing richer algebraic rewrite lemmas across matrix/vector ops. | Downstream modules consume theorem-native shape and field canonicality lemmas directly (minimal ad-hoc shape hypotheses). |
-| `P2` | In progress (added direct theorem-native concrete parameter witness, not only check soundness). | Some downstream arguments still rely on composite assumptions rather than extracted theorem APIs. | Parameter inequalities used by P10/P16/P20 come from theorem constants, not check-derived bridges. |
-| `P3` | In progress (round-trip theorem now available directly, plus bool bridge and explicit shape/`ct`/`mulRq` compatibility lemmas for `cf`/`cfInv`). | Missing explicit linearity lemmas on map composition used in evaluation proofs. | Complete theorem API for inverse + linearity + `ct` interaction used by P10/P13/P15. |
-| `P4` | In progress (`mulRq_size`, `hasRingDegreeShape_mulRq`, shape-check completeness, `schoolbookRaw_size`, `superneoBarBlock_size`, and canonicality-preservation lemmas for `set!/addAt/subAt/ct/takeFirstD` are theorem-native; check bridge kept only for regression). | Missing universal algebraic correctness proof of reduction semantics itself. | Theorem-level ring semantics (not only shape/size) sufficient for P10/P12 derivations. |
-| `P5` | In progress (added theorem-native bounds `normInf* <= q`, `normInf* <= halfQ`, challenge-coefficient predicates, reusable entry/row bound combinators, and vector/matrix + subtraction bounds `<= 4` for all-challenge inputs via `coeffSub`). | Need broader compositional inequalities (e.g. add/scale/product-sensitive bounds) beyond challenge-coefficient regimes. | Norm obligations in P16/P17 discharged from theorem lemmas rather than check-only side conditions. |
-| `P6` | In progress (both `splitRoundTrip_sound` and `splitRoundTrip_complete` are now available). | Reconstruction/bound statements still need richer decomposition lemmas beyond round-trip/check equivalence. | Universal decomposition theorem with bound guarantees and direct reuse in P20/P21 without check wrappers. |
-| `P7` | In progress | Hypercube-indicator theorem still check-backed. | Full theorem for Boolean selector behavior of `eq` over `{0,1}^ell`. |
-| `P8` | In progress | MLE equivalence still from executable checks/sanity predicates. | Quantified theorem equating inner-product and folding MLE formulations. |
-| `P9` | In progress | Embedding correctness not fully theorem-native. | General embedding/unembedding bijection + linearity theorem suite. |
-| `P10` | In progress (`p10CoreCheck_sound` + `p10CoreCheck_complete` give check/prop equivalence and `thm3CoreAssumption` + theorem-native precondition constructor are now available). | Universal derivation of the assumption from P1-P4/P9 lemmas is still missing. | Prove Theorem-3 core directly from P1-P4/P9 lemmas, keep checks only as regression path. |
-| `P11` | In progress (added proposition-level linearity/matrix interfaces, bidirectional check/prop bridges, assumption-driven theorem APIs `..._of_assumption(s)` for add/scale/combined lift linearity, structural decomposition lemmas for chunking/single-block reduction, and universal check-assumption -> theorem-assumption conversion bridges). | Core linearity equalities are still not yet derived from lower algebraic lemmas. | Prove lift linearity/correctness directly from embedding/ring lemmas and keep checks as regression only. |
-| `P12` | In progress (`dotVec_eq_dot_of_isDVec` is available; `MatrixRowsCompatible` and sound/complete bridges are now theorem-native so row guards can be consumed as props). | Matrix identity proof not yet fully derived from theorem stack. | Full theorem proof from P10/P11 lemmas without case assumptions. |
-| `P13` | In progress | Eval-link remains check-oriented. | Quantified Remark-2 linkage theorem for all valid inputs. |
-| `P14` | In progress | Eval-hom proof path still leans on check soundness. | Full Theorem-5 proof via P12/P13/P15 theorem interfaces. |
-| `P15` | In progress (sound + complete bridges now exist for add/scale checks on vec/scalar homs). | Still missing richer abstract algebra lemmas beyond direct check equivalence. | Complete module-hom theorem API used directly by P14. |
-| `P16` | In progress (critical boundary identified; precondition bridge in P20 now uses theorem constants directly, invertibility-window bool has sound/complete theorem bridges, direct invertibility extraction lemmas are available, and challenge-coefficient norm bounds now imply `withinInvertibilityWindow` for both direct vectors and `coeffSub` differences). | `lowNormInvertibility` remains an axiom. | Replace/justify axiom boundary with theorem or explicit trusted interface plus documented assumptions. |
-| `P17` | In progress | Expansion guarantees still check-driven. | Universal sampling expansion theorem wired into P20/P21 proof path. |
-| `P18` | In progress | SZ/eq-lift results are partial helper checks. | Quantified polynomial lemma set (SZ + eq-lift) used directly by P19/P20. |
-| `P19` | In progress | Interpolation correctness/uniqueness not fully formalized. | Full interpolation theorem package used in P20 without check-only assumptions. |
-| `P20` | Good shell | Lower obligations still mixed theorem/check-backed (invertibility is theorem-native; proposition→check subset bridges now include P6/P12/P15/P17/P18/P19 + P10-core at protocol reduction smoke level). | Keep dual APIs, but establish proposition-native constructor from theorem-only premises and keep check APIs as regression wrappers. |
-| `P21` | Good shell | Final reduction still a shell over unresolved lower-level gaps. | End-to-end protocol-facing CE theorem with explicit assumptions and theorem-native dependencies (including row-shape compatibility carried as `MatrixRowsCompatible`). |
+| `S4.1` | Done (Boundary) for Field/Dims; In progress for CoeffMaps/Ring. | CoeffMaps: linearity lemmas. Ring: universal reduction proof. | Complete theorem API for `cf`/`cf⁻¹`/`ct` + ring semantics consumed by S5.2/S5.5. |
+| `S4.2` | In progress. | Compositional norm inequalities; universal decomposition theorem with bounds. | Norm/decomp obligations in S6.3/S6.4/S7.5 discharged from theorem lemmas. |
+| `S4.3` | EqPoly: Done (Proof-Complete). MLE: In progress. | MLE: prove `mleByFoldingExec = mleByInnerProduct` universally. | Both modules proof-complete. |
+| `S4.4` | In progress (scaffold). | Soundness/completeness not yet theorem-backed. | Theorem-native sum-check consumed by S7.2 directly. |
+| `S4.5` | In progress. | Quantified SZ, eq-lift, interpolation correctness/uniqueness. | Full polynomial lemma set consumed by S7.5. |
+| `S4.6` | Done (Boundary). | None for boundary closure. | Parameter inequalities used by S5.2/S6.3 come from theorem constants. |
+| `S5.1` | In progress. | Embedding bijection + linearity not theorem-native. | General embedding/unembedding theorem suite. |
+| `S5.2` | In progress. | Universal derivation from S4.1/S4.6/S5.1 lemmas. | Theorem-3 core proved directly from algebraic stack. |
+| `S5.3` | In progress. | Core linearity equalities not derived from lower lemmas. | Lift linearity proved from embedding/ring lemmas. |
+| `S5.4` | In progress. | Matrix identity not fully derived from theorem stack. | Full Theorem-4 proof from S5.2/S5.3 lemmas. |
+| `S5.5` | In progress. | Eval-link and module-hom remain check-oriented. | Quantified proofs for Remark 2 and module-hom linearity. |
+| `S5.6` | In progress. | Eval-hom proof path leans on check soundness. | Full Theorem-5 proof via S5.4/S5.5 interfaces. |
+| `S6.1` | In progress. | Composition theorem stubs need proofs. | Theorem-6 composition proved and consumed by S7.6. |
+| `S6.2` | In progress. | Lattice definitions done; reductions split into LatticeReductions. | MSIS-to-Ajtai binding theorems consumed by S7.6. |
+| `S6.3` | In progress. | `lowNormInvertibility` remains an axiom. | Replace axiom with theorem or explicit trusted interface. |
+| `S6.4` | In progress. | Expansion guarantees still check-driven. | Universal sampling expansion theorem wired into S7.5. |
+| `S6.5` | In progress. | Models defined but not yet consumed by protocol proofs. | Error model consumed by S7.6 for soundness error bounds. |
+| `S7.1` | In progress. | CCS/relation definitions exist but not theorem-complete. | CCS relation predicates consumed by S7.2/S7.3. |
+| `S7.2` | In progress. | Assumption-driven stub only. | Π_CCS strong reduction proved from sum-check + CCS. |
+| `S7.3` | In progress. | Assumption-driven stub only. | Π_RLC weak reduction proved. |
+| `S7.4` | In progress. | Assumption-driven stub only. | Π_DEC reduction of knowledge proved (Theorem 7). |
+| `S7.5` | Good shell. | Lower obligations mixed theorem/check-backed. | Proposition-native constructor from theorem-only premises. |
+| `S7.6` | Good shell. | Final reduction still a shell. | End-to-end protocol theorem with explicit assumptions only. |
 
 ## Math Breakdown (Current Status)
 
@@ -200,34 +300,76 @@ Source references:
 - `docs/superneo-paper/12_C_Additional_Background.md`
 - `docs/superneo-paper/13_D_Deferred_theorems_and_proofs.md`
 
-| ID | Math item (paper) | Lean target file | Lean work item | Rust parity hook | Connection to SuperNeo | Current status |
-|---|---|---|---|---|---|---|
-| M1 | Definition 1 (field/ring/dimension setup) | `SuperNeo/Field.lean` + `SuperNeo/Dimensions.lean` | Fix concrete instantiation and basic structural lemmas | `neo-math` field/ring constants + generated shape checks | Base algebra and shapes used by every SuperNeo identity and theorem statement. | In progress (concrete setup implemented; formal lemmas pending) |
-| M2 | Appendix B.2 concrete Goldilocks parameters | `SuperNeo/Parameters.lean` | Encode exact constants and bound checks | generated parameter sanity checks | Pins SuperNeo to the exact concrete parameter regime claimed in the paper. | In progress (constants/sanity implemented; proof layer pending) |
-| M3 | Definition 2 (`cf`, `cf^-1`, `ct`) | `SuperNeo/CoeffMaps.lean` + `SuperNeo/Ring.lean` | Prove inverse/linearity properties for maps | `neo_math::cf`, `cf_inv`, `ct` | These maps bridge coefficient and ring views that SuperNeo repeatedly switches between. | In progress (round-trip + shape/`ct`/`mulRq` compatibility implemented; linearity lemmas pending) |
-| M4 | Ring arithmetic in `F[X]/(X^54 + X^27 + 1)` | `SuperNeo/Ring.lean` | Prove reduction semantics and arithmetic sanity lemmas | `neo_math::Rq::mul` | Core multiplication law behind bar-transform, lift, and matrix-product equalities. | In progress (implemented + parity passing) |
-| M5 | Definition 3 (centered `l_inf` norm) | `SuperNeo/Norm.lean` | Define centered representatives and prove basic norm bounds | `neo_math::inf_norm` + generated norm vectors | Norm bounds are prerequisites for low-norm assumptions and soundness-side constraints. | In progress (implementation + parity passing; base bounds, reusable entry/row bound combinators, and challenge-coefficient subtraction bounds now implemented) |
-| M6 | `split_b` decomposition math | `SuperNeo/Decomp.lean` | Prove reconstruction and per-digit bound | generated Rust `splitCases` vectors | Needed for bounded digit decompositions used in SuperNeo’s concrete arithmetic arguments. | In progress (implementation + parity passing; proofs pending) |
-| M7 | `eq` polynomial on Boolean hypercube | `SuperNeo/EqPoly.lean` | Prove indicator behavior on `{0,1}^ell` | generated Rust `eqCases` vectors | Supplies the selector polynomial used by MLE and sumcheck-style reasoning in SuperNeo. | In progress (implementation + parity passing; formal theorem pending) |
-| M8 | MLE identity `tilde_v(r) = <v, r_hat>` | `SuperNeo/MLE.lean` | Prove equivalence of two MLE formulations | generated Rust `mleCases` vectors | Connects table view and folded view of evaluations used in SuperNeo reductions. | In progress (implementation + parity passing; proof pending) |
-| M9 | Definition 7 coefficient embedding | `SuperNeo/Embedding.lean` | Prove element/vector/matrix embedding bijection | generated Rust embedding vectors/matrices | Embedding is the structural bridge from field objects to ring objects in SuperNeo. | In progress (implementation + parity passing; proof pending) |
-| M10 | Theorem 3 inner-product transform | `SuperNeo/Ring.lean` + `SuperNeo/Checks.lean` | Prove `ct(bar(a)*bar(b))=<a,b>` for concrete bar matrix | `neo_math::superneo_bar_matrix`, `superneo_bar_block` | Key algebraic equivalence that powers efficient ring-domain product computations in SuperNeo. | In progress (numeric checks passing; formal theorem pending) |
-| M11 | Definition 8 lifting transform | `SuperNeo/BarLift.lean` | Prove blockwise lift properties and linearity | generated Rust `barLiftVecCases` / `barLiftMatrixCases` | Lifting composes embeddings with bar-transform to map full vectors/matrices into ring form. | In progress (implementation + parity passing; proposition-level linearity/matrix interfaces, check/prop bridges, assumption-driven theorem interfaces, single-block structural reduction lemma, and check-assumption->theorem-assumption conversion layer added; core proof pending) |
-| M12 | Theorem 4 + App D.1 (`Mz = ct(bar(M)z)`) | `SuperNeo/MatrixTransform.lean` | Row/block proof from Theorem 3 | generated Rust `matrixTransformCases` | Establishes matrix-vector equivalence that underlies SuperNeo’s computational shortcut. | In progress (implementation + parity passing; proposition-level row-shape interfaces and sound/complete bridges added; full proof pending) |
-| M13 | Remark 2 evaluation/ct linkage | `SuperNeo/EvalLink.lean` | Prove coefficientwise scaling and ct-eval link | generated Rust `evalLinkCases` | Connects coefficient evaluation with ct, enabling later evaluation-homomorphism proofs. | In progress (implementation + parity passing; formal proof pending) |
-| M14 | Theorem 5 + App D.2 evaluation homomorphism | `SuperNeo/EvalHom.lean` | Prove linear-combination preservation under evaluation | generated Rust `evalHomCases` | Gives the homomorphic evaluation property used to justify transformed linear algebra steps. | In progress (implementation + parity passing; formal proof pending) |
-| M15 | Definition 15 module homomorphisms | `SuperNeo/ModuleHom.lean` | Abstract module-hom lemmas reused by M14 | module-hom linearity sanity checks | Provides the abstract linearity framework that Theorem 5 instantiates. | In progress (interfaces + sanity checks implemented; theorem layer pending) |
-| M16 | Theorem 8 low-norm invertibility | `SuperNeo/InvertibilityAxioms.lean` | Add assumption/axiom boundary and concrete precondition checks | Appendix B.2 constants + D.7 bound interface | Captures the invertibility condition required by SuperNeo’s soundness-critical reduction step. | In progress (assumption boundary + preconditions implemented; theorem bridges from all-challenge direct and subtraction norms to window/invertibility added) |
-| M17 | Definition 17 + Theorem 9 (`C`, expansion factor) | `SuperNeo/SamplingSet.lean` | Formalize set conditions and expansion-factor theorem interface | generated Rust `samplingCases` | Formalizes sampling guarantees that control error amplification in SuperNeo analysis. | In progress (implementation + parity passing; formal theorem pending) |
-| M18 | Appendix C Lemma 5/6 (Schwartz-Zippel and eq-lifting) | `SuperNeo/PolyLemmas.lean` | Add reusable polynomial lemmas for later proofs | generated Rust `eqLiftCases` + SZ interface sanity | Supplies probabilistic polynomial tools used in SuperNeo’s deferred proof chain. | In progress (implementation + parity passing; proof layer pending) |
-| M19 | Polynomial interpolation/evaluation math | `SuperNeo/Interp.lean` | Prove interpolation correctness against sampled points | local Rust generator interpolation vectors | Supports recovery/consistency arguments for polynomial objects used in SuperNeo checks. | In progress (implementation + parity passing; proof lemmas pending) |
-| M20 | Executable cross-check harness | `Main.lean` + `SuperNeo/Checks.lean` | Keep deterministic Rust-vs-Lean checks green | `rust-vectors/src/main.rs` generated vectors | Acts as the executable witness that Lean computations match SuperNeo Rust math instances. | Done (all checks currently pass) |
+### Section 4: Preliminaries
+
+| ID | Math item (paper) | Lean target | Milestone | Status |
+|---|---|---|---|---|
+| M1 | Definition 1 (field/ring/dimension) | `Field.lean` + `Dimensions.lean` | S4.1 | Done (Boundary) |
+| M2 | Definition 2 (`cf`, `cf⁻¹`, `ct`) | `CoeffMaps.lean` + `Ring.lean` | S4.1 | In progress |
+| M3 | Ring arithmetic in `R_q` | `Ring.lean` | S4.1 | In progress |
+| M4 | Definition 3 (centered `l_∞` norm) | `Norm.lean` | S4.2 | In progress |
+| M5 | `split_b` decomposition | `Decomp.lean` | S4.2 | In progress |
+| M6 | `eq` polynomial on Boolean hypercube | `EqPoly.lean` | S4.3 | Done (Proof-Complete) |
+| M7 | MLE identity | `MLE.lean` | S4.3 | In progress |
+| M8 | Definition 6 (sum-check protocol) | `SumCheck.lean` | S4.4 | In progress |
+| M9 | Lemma 5 (Schwartz-Zippel) | `PolyLemmas.lean` | S4.5 | In progress |
+| M10 | Lemma 6 (eq-lifting) | `PolyLemmas.lean` | S4.5 | In progress |
+| M11 | Polynomial interpolation/evaluation | `Interp.lean` | S4.5 | In progress |
+| M12 | Appendix B.2 concrete parameters | `Parameters.lean` + `Goldilocks.lean` | S4.6 | Done (Boundary) |
+
+### Section 5: Embedding Products with Evaluation Homomorphism
+
+| ID | Math item (paper) | Lean target | Milestone | Status |
+|---|---|---|---|---|
+| M13 | Definition 7 (coefficient embedding) | `Embedding.lean` | S5.1 | In progress |
+| M14 | Theorem 3 (inner-product transform) | `Thm3Core.lean` | S5.2 | In progress |
+| M15 | Definition 8 (lifting transform) | `BarLift.lean` | S5.3 | In progress |
+| M16 | Theorem 4 (matrix-vector product transform) | `MatrixTransform.lean` | S5.4 | In progress |
+| M17 | Remark 2 (evaluation/ct linkage) | `EvalLink.lean` | S5.5 | In progress |
+| M18 | Definition 15 (module homomorphisms) | `ModuleHom.lean` | S5.5 | In progress |
+| M19 | Theorem 5 (evaluation homomorphism) | `EvalHom.lean` | S5.6 | In progress |
+
+### Section 6: Security Model
+
+| ID | Math item (paper) | Lean target | Milestone | Status |
+|---|---|---|---|---|
+| M20 | Definition 5 (interactive reductions) | `InteractiveReductions.lean` | S6.1 | In progress |
+| M21 | Definitions 9-10 (weak/strong reductions) | `InteractiveReductions.lean` | S6.1 | In progress |
+| M22 | Theorem 6 (strong-weak composition) | `InteractiveReductions.lean` | S6.1 | In progress |
+| M23 | Definition 4 (ring commitment scheme) | `ProofSystem/Lattice.lean` | S6.2 | In progress |
+| M24 | Definition 16 (MSIS) | `ProofSystem/Lattice.lean` | S6.2 | In progress |
+| M25 | Definition 18 (Ajtai commitment) | `ProofSystem/Lattice.lean` | S6.2 | In progress |
+| M26 | Theorem 2 (Ajtai properties) | `ProofSystem/LatticeReductions.lean` | S6.2 | In progress |
+| M27 | Theorem 8 (low-norm invertibility) | `InvertibilityAxioms.lean` | S6.3 | In progress |
+| M28 | Definition 17 (strong sampling sets) | `SamplingSet.lean` | S6.4 | In progress |
+| M29 | Theorem 9 (expansion factors) | `SamplingSet.lean` | S6.4 | In progress |
+
+### Section 7: Folding Protocol
+
+| ID | Math item (paper) | Lean target | Milestone | Status |
+|---|---|---|---|---|
+| M30 | Definition 11 (structure) | `ProofSystem/ConstraintSystem/CCS.lean` | S7.1 | In progress |
+| M31 | Definition 12 (norm-bounded CCS) | `ProofSystem/ConstraintSystem/CCS.lean` | S7.1 | In progress |
+| M32 | Definition 13 (CCS evaluation relation) | `ProtocolRelations.lean` | S7.1 | In progress |
+| M33 | Definition 14 (global parameters) | `ProtocolRelations.lean` | S7.1 | In progress |
+| M34 | Lemma 3 (Π_CCS is strong) | `PiCCS.lean` | S7.2 | In progress |
+| M35 | Lemma 4 (Π_RLC is weak) | `PiRLC.lean` | S7.3 | In progress |
+| M36 | Theorem 7 (Π_DEC reduction of knowledge) | `PiDEC.lean` | S7.4 | In progress |
+| M37 | Arithmetic obligations | `ArithmeticBundle.lean`, `ArithmeticObligations.lean` | S7.5 | Good shell |
+| M38 | Theorem 1 (full composition) | `ProtocolTheorem.lean`, `ProofSystem/Protocol.lean` | S7.6 | Good shell |
+
+### Infrastructure
+
+| ID | Item | Lean target | Status |
+|---|---|---|---|
+| M39 | Executable cross-check harness | `Main.lean` + `Checks.lean` | Done (all checks pass) |
 
 ### Status Summary
 
 | State | Count |
 |---|---|
-| Done | 1 |
-| In progress | 19 |
-| Partial | 0 |
+| Done (Boundary) | 3 (M1, M12, and field/dims portion of S4.1) |
+| Done (Proof-Complete) | 1 (M6 / EqPoly) |
+| In progress | 33 |
+| Good shell | 2 (M37, M38) |
 | Not started | 0 |

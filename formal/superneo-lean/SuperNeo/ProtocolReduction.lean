@@ -5,8 +5,8 @@ namespace SuperNeo
 def p10ForClaim (ctx : ProtocolCtx) (claim : CEClaim) : Prop :=
   p10CoreProp ctx.bar claim.a claim.b
 
-def p20ForClaim (ctx : ProtocolCtx) (claim : CEClaim) : Prop :=
-  p20ArithmeticBundle
+def arithmeticBundleForClaim (ctx : ProtocolCtx) (claim : CEClaim) : Prop :=
+  arithmeticBundleProp
     ctx.bar
     claim.m
     claim.z claim.z1 claim.z2 claim.zDecomp claim.r
@@ -25,11 +25,11 @@ theorem superneoMathProtocolSkeleton_of_props
   (hA : IsDVec claim.a)
   (hB : IsDVec claim.b)
   (hP10 : p10ForClaim ctx claim)
-  (hP20 : p20ForClaim ctx claim)
+  (hP20 : arithmeticBundleForClaim ctx claim)
   (hWitness : witness.z = claim.z)
   (hNorm : normInfCoeffs witness.z < ctx.ceNormBound) :
   CEValid ctx claim witness := by
-  have hP21 : p21ProtocolTarget
+  have hP21 : protocolMathTargetProp
       ctx.bar
       claim.m
       claim.z claim.z1 claim.z2 claim.zDecomp claim.r
@@ -39,8 +39,8 @@ theorem superneoMathProtocolSkeleton_of_props
       claim.xs claim.ys claim.expectedCoeffs
       claim.evalPoint claim.expectedEval
       ctx.ell ctx.totalDegree ctx.setSize := by
-    exact p21ProtocolTarget_of_p20 hP20
-  exact p21ProtocolTarget_to_CEValid hShape hBar hA hB hP21 hP10 hWitness hNorm
+    exact protocolMathTargetProp_of_arithmeticBundle hP20
+  exact protocolMathTargetProp_to_CEValid hShape hBar hA hB hP21 hP10 hWitness hNorm
 
 theorem superneoMathProtocolSkeleton_of_thm3_assumption
   {ctx : ProtocolCtx} {claim : CEClaim} {witness : CEWitness}
@@ -49,7 +49,7 @@ theorem superneoMathProtocolSkeleton_of_thm3_assumption
   (hA : IsDVec claim.a)
   (hB : IsDVec claim.b)
   (hThm3 : thm3CoreAssumption ctx.bar)
-  (hP20 : p20ForClaim ctx claim)
+  (hP20 : arithmeticBundleForClaim ctx claim)
   (hWitness : witness.z = claim.z)
   (hNorm : normInfCoeffs witness.z < ctx.ceNormBound) :
   CEValid ctx claim witness := by
@@ -77,7 +77,7 @@ theorem superneoMathProtocolSkeleton_of_checks
   (hWitness : witness.z = claim.z)
   (hNorm : normInfCoeffs witness.z < ctx.ceNormBound) :
   CEValid ctx claim witness := by
-  have hFull : p21FullMathTarget
+  have hFull : protocolMathTargetWithThm3Prop
       ctx.bar
       claim.a claim.b
       claim.m
@@ -88,12 +88,12 @@ theorem superneoMathProtocolSkeleton_of_checks
       claim.xs claim.ys claim.expectedCoeffs
       claim.evalPoint claim.expectedEval
       ctx.ell ctx.totalDegree ctx.setSize := by
-    exact p21FullMathTarget_of_checks
+    exact protocolMathTargetWithThm3Prop_of_checks
       (hP10 := hP10) (hP6 := hP6) (hP12 := hP12) (hP14 := hP14)
       (hVecAdd := hVecAdd) (hVecScale := hVecScale)
       (hScalAdd := hScalAdd) (hScalScale := hScalScale)
       (hP17 := hP17) (hP18Eq := hP18Eq) (hP18SZ := hP18SZ) (hP19 := hP19)
-  exact p21FullMathTarget_to_CEValid hShape hBar hA hB hFull hWitness hNorm
+  exact protocolMathTargetWithThm3Prop_to_CEValid hShape hBar hA hB hFull hWitness hNorm
 
 /-- Compile-only smoke theorem: check-driven assumptions imply proposition-driven assumptions. -/
 theorem smoke_checks_imply_props
@@ -110,9 +110,9 @@ theorem smoke_checks_imply_props
   (hP18Eq : eqLiftAllBoolean claim.qVals ctx.ell = true)
   (hP18SZ : schwartzZippelBoundLeOne ctx.totalDegree ctx.setSize = true)
   (hP19 : interpolationCase claim.xs claim.ys claim.expectedCoeffs claim.evalPoint claim.expectedEval = true) :
-  p10ForClaim ctx claim ∧ p20ForClaim ctx claim := by
+  p10ForClaim ctx claim ∧ arithmeticBundleForClaim ctx claim := by
   refine ⟨p10CoreCheck_sound hP10, ?_⟩
-  exact p20ArithmeticBundle_of_checks
+  exact arithmeticBundleProp_of_checks
     (hP6 := hP6) (hP12 := hP12) (hP14 := hP14)
     (hVecAdd := hVecAdd) (hVecScale := hVecScale)
     (hScalAdd := hScalAdd) (hScalScale := hScalScale)
@@ -125,7 +125,7 @@ of regression checks (P10/P6/P15/P17/P18/P19).
 theorem smoke_props_imply_check_subset
   {ctx : ProtocolCtx} {claim : CEClaim}
   (hShape : ClaimShapeValid claim)
-  (hProps : p10ForClaim ctx claim ∧ p20ForClaim ctx claim) :
+  (hProps : p10ForClaim ctx claim ∧ arithmeticBundleForClaim ctx claim) :
   p10CoreCheck ctx.bar claim.a claim.b = true ∧
     splitRoundTrip claim.zDecomp ctx.bSplit ctx.kSplit = true ∧
     matrixTransformIdentity ctx.bar claim.m claim.z = true ∧
@@ -146,13 +146,13 @@ theorem smoke_props_imply_check_subset
       eqLiftAllBoolean claim.qVals ctx.ell = true ∧
       schwartzZippelBoundLeOne ctx.totalDegree ctx.setSize = true ∧
       interpolationCase claim.xs claim.ys claim.expectedCoeffs claim.evalPoint claim.expectedEval = true := by
-    exact p20ArithmeticBundle_props_imply_check_subset hP20
+    exact arithmeticBundleProp_props_imply_check_subset hP20
   have hModule :
       preservesAddVec ctx.hVec claim.z1 claim.z2 = true ∧
       preservesScaleVec ctx.hVec claim.rho1 claim.z1 = true ∧
       preservesAddScalar ctx.hScal claim.z1 claim.z2 = true ∧
       preservesScaleScalar ctx.hScal claim.rho1 claim.z1 = true := by
-    exact p20ArithmeticBundle_props_imply_module_checks hShape.1 hP20
+    exact arithmeticBundleProp_props_imply_module_checks hShape.1 hP20
   exact ⟨
     hP10Check,
     hSubset.1,
@@ -168,16 +168,16 @@ theorem smoke_props_imply_check_subset
   ⟩
 
 /--
-Compile-only smoke theorem: `p21ProtocolTarget_to_CEValid` composes with
+Compile-only smoke theorem: `protocolMathTargetProp_to_CEValid` composes with
 `superneoMathProtocolSkeleton_of_props`.
 -/
-theorem smoke_p21_compose
+theorem smoke_protocolMathTarget_compose
   {ctx : ProtocolCtx} {claim : CEClaim} {witness : CEWitness}
   (hShape : ClaimShapeValid claim)
   (hBar : IsDBarMatrix ctx.bar)
   (hA : IsDVec claim.a)
   (hB : IsDVec claim.b)
-  (hProps : p10ForClaim ctx claim ∧ p20ForClaim ctx claim)
+  (hProps : p10ForClaim ctx claim ∧ arithmeticBundleForClaim ctx claim)
   (hWitness : witness.z = claim.z)
   (hNorm : normInfCoeffs witness.z < ctx.ceNormBound) :
   CEValid ctx claim witness := by

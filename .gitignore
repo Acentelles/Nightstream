@@ -12,3 +12,4 @@ dist
 demos/ios-demo/TestingWasm.xcodeproj/project.xcworkspace/xcuserdata/nicolasarqueros.xcuserdatad/UserInterfaceState.xcuserstate
 formal/superneo-lean/.lake
 formal/external
+formal/superneo-lean/deprecated
