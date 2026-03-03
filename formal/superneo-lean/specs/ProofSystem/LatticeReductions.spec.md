@@ -8,17 +8,20 @@
 
 ## Target Formulas
 
-- `‖subVec n w₁ w₂‖∞ < msisNormBound` = norm transfer from binding collision witnesses.
-- `MSISBreakEvent → ¬BindingCollision` = standard binding from MSIS.
-- `MSISBreakEvent → ¬RelaxedBindingCollision(params, C)` = relaxed binding from MSIS.
+- `‖subVec n w₁ w₂‖∞ < msisNormBound` = norm transfer from binding collision witnesses (standard: 2B, relaxed: 4TB per Theorem 2).
+- `MSISBreakEvent → ¬BindingCollision` = standard B-binding from MSIS_{m,2B} hardness.
+- `MSISBreakEvent → ¬RelaxedBindingCollision(params, C)` = (B,C)-relaxed binding from MSIS_{m,4TB} hardness + C being a strong sampling set with expansion T (Theorem 9).
 - `MSISHardnessAssumption → AjtaiBindingAssumption(params) ∧ AjtaiRelaxedBindingAssumption(params, C)` = `ajtaiBoundaries_of_msis`.
 
 ## Paper Anchors
 
 Source: ./formal/superneo-lean/SuperNeo.pdf.md
 
-- Theorem 2 (Ajtai Properties), lines 319-321.
+- Theorem 2 (Ajtai Properties), lines 319-321: B-binding from MSIS_{m,2B}, (B,C)-relaxed binding from MSIS_{m,4TB} + strong sampling.
+- Definition 4 (Ring commitment), lines 304-315: B-binding and (B,C)-relaxed binding collision definitions; Δ₁, Δ₂ ∈ (C-C) for relaxed.
 - Definition 16 (MSIS), lines 743-744.
+- Definition 17 (Strong sampling sets), lines 747-749: C ⊆ R_F with ‖a-b‖∞ < b_inv for distinct a,b ∈ C.
+- Theorem 9 (Expansion factors), line 751: expansion factor of C ≤ 2·φ(η)·max_{ρ∈C} ‖ρ‖∞.
 - Definition 18 (Ajtai commitment), lines 753-756.
 
 ## Module Mapping

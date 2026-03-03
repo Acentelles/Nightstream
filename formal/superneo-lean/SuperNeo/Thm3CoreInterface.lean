@@ -15,19 +15,19 @@ namespace Thm3CoreInterface
 
 /-! ## Core Surfaces -/
 
-/-- [Role: Theorem-Target] Curated re-export of `innerProduct`. -/
+/-- [Role: Definitional] Curated re-export of `innerProduct`. -/
 abbrev innerProduct := SuperNeo.innerProduct
 
-/-- [Role: Theorem-Target] Curated re-export of `IsDVec`. -/
+/-- [Role: Definitional] Curated re-export of `IsDVec`. -/
 abbrev IsDVec := SuperNeo.IsDVec
 
-/-- [Role: Theorem-Target] Curated re-export of `IsDBarMatrix`. -/
+/-- [Role: Definitional] Curated re-export of `IsDBarMatrix`. -/
 abbrev IsDBarMatrix := SuperNeo.IsDBarMatrix
 
-/-- [Role: Theorem-Target] Curated re-export of `p10CoreProp`. -/
+/-- [Role: Definitional] Curated re-export of `p10CoreProp`. -/
 abbrev p10CoreProp := SuperNeo.p10CoreProp
 
-/-- [Role: Theorem-Target] Curated re-export of `p10CoreCheck`. -/
+/-- [Role: Definitional] Curated re-export of `p10CoreCheck`. -/
 abbrev p10CoreCheck := SuperNeo.p10CoreCheck
 
 /-! ## Key Theorems -/
@@ -68,26 +68,10 @@ theorem p10Core_of_preconditions_props
 
 /-! ## Boundary Surfaces -/
 
-/-- [Role: Boundary] Boundary surface `thm3CoreAssumption` requiring closure. -/
+/-- [Role: Boundary] Theorem-3 boundary: ct(mulRq(bar(a), bar(b))) = ⟨a, b⟩ for d-sized blocks. -/
 abbrev thm3CoreAssumption := SuperNeo.thm3CoreAssumption
 
-/-- [Role: Boundary] Chunked real-bar-lift isometry boundary for Theorem-3 closure. -/
-abbrev barLiftChunkedIsometryAssumption := SuperNeo.barLiftChunkedIsometryAssumption
-
-/-- [Role: Boundary] Closure of Theorem-3 from chunked real-bar-lift isometry. -/
-abbrev thm3CoreAssumption_of_chunkedIsometry := SuperNeo.thm3CoreAssumption_of_chunkedIsometry
-
-/-- [Role: Boundary] Compatibility closure from bar-block identity. -/
-abbrev thm3CoreAssumption_of_barBlockIdentity := SuperNeo.thm3CoreAssumption_of_barBlockIdentity
-
-/-- [Role: Boundary] Compatibility bridge from bar-block identity to chunked isometry. -/
-abbrev barLiftChunkedIsometryAssumption_of_barBlockIdentity :=
-  SuperNeo.barLiftChunkedIsometryAssumption_of_barBlockIdentity
-
-/-- [Role: Boundary] Boundary surface `thm3CoreAssumption_native` requiring closure. -/
-abbrev thm3CoreAssumption_native := SuperNeo.thm3CoreAssumption_native
-
-/-- [Role: Boundary] Boundary surface `p10Core_of_assumption` requiring closure. -/
+/-- [Role: Theorem-Target] Derive P10 from Theorem-3 boundary and vector shape. -/
 theorem p10Core_of_assumption
     {bar : Array (Array F)} {a b : Array F}
     (hThm3 : thm3CoreAssumption bar)

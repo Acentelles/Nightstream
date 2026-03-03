@@ -7,6 +7,7 @@ Spec: `specs/MatrixTransform.spec.md`
 
 Paper anchors:
 - Theorem 4 (Matrix-Vector Product Transform), Section 5, lines 384-386.
+- Appendix D.1: proof via block decomposition of Theorem 3.
 -/
 
 namespace SuperNeo
@@ -15,22 +16,31 @@ namespace MatrixTransformInterface
 
 /-! ## Core Surfaces -/
 
-/-- [Role: Theorem-Target] Curated re-export of `dotVec`. -/
+/-- [Role: Definitional] Curated re-export of `dotVec`. -/
 abbrev dotVec := SuperNeo.dotVec
 
-/-- [Role: Theorem-Target] Curated re-export of `matrixVecDirect`. -/
+/-- [Role: Definitional] Curated re-export of `matrixVecDirect`. -/
 abbrev matrixVecDirect := SuperNeo.matrixVecDirect
 
-/-- [Role: Theorem-Target] Curated re-export of `matrixVecCtBar`. -/
+/-- [Role: Definitional] Curated re-export of `ctBarDot`. -/
+abbrev ctBarDot := SuperNeo.ctBarDot
+
+/-- [Role: Definitional] Curated re-export of `extractBlock`. -/
+abbrev extractBlock := SuperNeo.extractBlock
+
+/-- [Role: Definitional] Curated re-export of `ringBlockDot`. -/
+abbrev ringBlockDot := SuperNeo.ringBlockDot
+
+/-- [Role: Definitional] Curated re-export of `matrixVecCtBar`. -/
 abbrev matrixVecCtBar := SuperNeo.matrixVecCtBar
 
-/-- [Role: Theorem-Target] Curated re-export of `MatrixRowsCompatible`. -/
+/-- [Role: Definitional] Curated re-export of `MatrixRowsCompatible`. -/
 abbrev MatrixRowsCompatible := SuperNeo.MatrixRowsCompatible
 
-/-- [Role: Theorem-Target] Curated re-export of `matrixTransformIdentity`. -/
+/-- [Role: Definitional] Curated re-export of `matrixTransformIdentity`. -/
 abbrev matrixTransformIdentity := SuperNeo.matrixTransformIdentity
 
-/-- [Role: Theorem-Target] Curated re-export of `matrixTransformIdentityProp`. -/
+/-- [Role: Definitional] Curated re-export of `matrixTransformIdentityProp`. -/
 abbrev matrixTransformIdentityProp := SuperNeo.matrixTransformIdentityProp
 
 /-! ## Key Theorems -/
@@ -43,14 +53,6 @@ abbrev matrixVecCtBar_size := SuperNeo.matrixVecCtBar_size
 
 /-- [Role: Theorem-Target] Dot/inner-product equivalence used by theorem-native P12 derivation. -/
 abbrev dotVec_eq_innerProduct := SuperNeo.dotVec_eq_innerProduct
-
-/-- [Role: Theorem-Target] Curated theorem surface `matrixTransformEq_native`. -/
-theorem matrixTransformEq_native
-  {bar : Array (Array F)} {m : Array (Array F)} {z : Array F}
-  (hId : barBlockIdentityAssumption bar)
-  (hRows : MatrixRowsCompatible m z) :
-  matrixVecDirect m z = matrixVecCtBar bar m z :=
-  SuperNeo.matrixTransformEq_native hId hRows
 
 /-- [Role: Theorem-Target] Theorem-native P12 derivation from Theorem-3. -/
 theorem matrixTransformEq_of_thm3CoreAssumption
@@ -95,17 +97,11 @@ theorem matrixTransformIdentity_complete_of_rowsCompatible
 
 /-! ## Boundary Surfaces -/
 
-/-- [Role: Theorem-Target] Theorem-facing matrix-transform boundary surface. -/
+/-- [Role: Boundary] Theorem-facing matrix-transform boundary surface. -/
 abbrev matrixTransformAssumption := SuperNeo.matrixTransformAssumption
 
-/-- [Role: Theorem-Target] Check-facing matrix-transform boundary surface. -/
+/-- [Role: Boundary] Check-facing matrix-transform boundary surface. -/
 abbrev matrixTransformCheckAssumption := SuperNeo.matrixTransformCheckAssumption
-
-/-- [Role: Theorem-Target] Native closure of theorem-facing matrix-transform boundary. -/
-theorem matrixTransformAssumption_native
-  {bar : Array (Array F)} {m : Array (Array F)} :
-  barBlockIdentityAssumption bar → matrixTransformAssumption bar m :=
-  SuperNeo.matrixTransformAssumption_native
 
 /-- [Role: Theorem-Target] Theorem-native P12 boundary constructor from Theorem-3. -/
 theorem matrixTransformAssumption_of_thm3CoreAssumption
@@ -121,21 +117,6 @@ theorem matrixTransformAssumption_of_p10_p11
   (hLift : barLiftLinearityAssumption bar) :
   matrixTransformAssumption bar m :=
   SuperNeo.matrixTransformAssumption_of_p10_p11 hThm3 hLift
-
-/-- [Role: Theorem-Target] P9-threaded closure of theorem-facing matrix-transform boundary. -/
-theorem matrixTransformAssumption_of_p9Embedding
-  {bar : Array (Array F)} {m : Array (Array F)}
-  (hP9 : p9EmbeddingAssumption)
-  (hId : barBlockIdentityAssumption bar) :
-  matrixTransformAssumption bar m :=
-  SuperNeo.matrixTransformAssumption_of_p9Embedding hP9 hId
-
-/-- [Role: Theorem-Target] Closed P9 theorem-native matrix-transform boundary. -/
-theorem matrixTransformAssumption_of_p9Embedding_closed
-  {bar : Array (Array F)} {m : Array (Array F)}
-  (hId : barBlockIdentityAssumption bar) :
-  matrixTransformAssumption bar m :=
-  SuperNeo.matrixTransformAssumption_of_p9Embedding_closed hId
 
 /-- [Role: Theorem-Target] Conversion from theorem-facing to check-facing boundary. -/
 theorem matrixTransformCheckAssumption_of_assumption

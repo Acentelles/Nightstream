@@ -42,7 +42,7 @@
 | Eval-hom prop | `evalHom2Prop`, `evalHom2` | `z1.size = z2.size`, row compatibility | Theorem-5 linearity equation over `matrixVecCtBar` images | Theorem-Target | `ArithmeticBundle.lean` |
 | Theorem-facing boundary | `evalHomAssumption bar m r ρ1 ρ2` | None | `∀ z1 z2, ... → evalHom2Prop ...` | Theorem-Target | `ProtocolMathTarget` |
 | Check-facing boundary | `evalHomCheckAssumption bar m r ρ1 ρ2` | None | `∀ z1 z2, ... → evalHom2 = true` | Theorem-Target | — |
-| Native closure | `evalHomAssumption_native` | None | `evalHomAssumption bar m r ρ1 ρ2` (identity bar-lift) | Theorem-Target | — |
+| Native closure | `evalHomAssumption_native` | None | `evalHomAssumption bar m r ρ1 ρ2` (MLE linearity, independent of bar-lift) | Theorem-Target | — |
 | Sound/complete | `evalHom2_sound`, `evalHom2_complete`, `evalHom2_iff_prop` | Check true / Prop holds | Bidirectional bridge | Theorem-Target | — |
 | From eval-link + module | `evalHomAssumption_of_evalLink_and_moduleAssumptions` | `evalLinkAssumption`, `vecModuleAssumption`, `scalarModuleAssumption` | `evalHomAssumption` | Theorem-Target | — |
 | From Thm3 + module | `evalHomAssumption_of_thm3_and_moduleAssumptions` | `thm3CoreAssumption`, module assumptions | `evalHomAssumption` | Theorem-Target | — |

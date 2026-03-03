@@ -40,6 +40,10 @@ abbrev barLiftMatrix_eq := SuperNeo.barLiftMatrix_eq
 /-- [Role: Boundary] Bar-block identity boundary needed for identity-style closures. -/
 abbrev barBlockIdentityAssumption := SuperNeo.barBlockIdentityAssumption
 
+/-- [Role: Boundary] Shape-driven bar-block identity closure (`bar.size ≠ d`). -/
+abbrev barBlockIdentityAssumption_of_bar_size_ne_d :=
+  SuperNeo.barBlockIdentityAssumption_of_bar_size_ne_d
+
 /-- [Role: Theorem-Target] Curated theorem surface `barLiftVector_add`. -/
 abbrev barLiftVector_add := SuperNeo.barLiftVector_add
 

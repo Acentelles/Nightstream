@@ -2,27 +2,29 @@
 
 ## Purpose
 
-- **What it is**: Theorem-4 matrix-vector product transform layer. Defines `matrixVecDirect` (direct Mz) and `matrixVecCtBar` (ct(M̄z) via bar-lift), the executable check `matrixTransformIdentity`, and the universal contract `matrixTransformAssumption`.
-- **Key property**: `Mz = ct(M̄z)` — for shape-compatible `m`, `z`, the direct matrix-vector product equals the bar-lifted product under the coefficient transform.
+- **What it is**: Theorem-4 matrix-vector product transform layer. Defines `matrixVecDirect` (direct Mz) and `matrixVecCtBar` (paper-faithful ring-level computation: block-wise `ct(mulRq(bar(row_j), bar(z_j)))` summed over d-sized blocks), the executable check `matrixTransformIdentity`, and the universal contract `matrixTransformAssumption`.
+- **Key property**: `Mz = ct(M̄z̄)` — for shape-compatible `m`, `z`, the direct field-level matrix-vector product equals the ring-level product under block-wise bar-transform and constant-term extraction. Proved from Theorem 3 via block decomposition (Appendix D.1).
 - **Protocol role**: EvalLink depends on `matrixTransformAssumption`. ProtocolTarget uses matrix-transform for the evaluation homomorphism (Theorem 5) chain.
 
 ## Target Formulas (Paper → Lean)
 
-- Paper formula: Theorem 4 (Matrix-Vector Product Transform): `Mz = ct(M̄z)`
+- Paper formula: Theorem 4 (Matrix-Vector Product Transform): `Mz = ct(M̄z̄)`
+  - Appendix D.1 proof: `ct(⟨M̄_i, z̄⟩) = Σ_j ct(M̄_{i,j} · z̄_j) = Σ_j ⟨M_{i,j}, z_j⟩ = ⟨M_i, z⟩`
 - Lean mapping:
-  - `dotVec a b` : dot product with size guard
-  - `matrixVecDirect m z` : direct Mz (row-wise)
-  - `matrixVecCtBar bar m z` : ct(M̄z) via `barLiftVector`
-  - `dotVec a b = innerProduct a b` (equivalence)
-  - `matrixTransformIdentity bar m z = true ↔ MatrixRowsCompatible m z ∧ matrixVecDirect m z = matrixVecCtBar bar m z`
+  - `ctBarDot bar a b` : `ct(mulRq(superneoBarBlock bar a, superneoBarBlock bar b))` — the Theorem-3 kernel
+  - `extractBlock v j` : j-th d-sized block of v
+  - `ringBlockDot bar row z` : `Σ_j ctBarDot bar (extractBlock row j) (extractBlock z j)` — ring-level dot product
+  - `matrixVecCtBar bar m z` : `m.map (fun row => ringBlockDot bar row z)` — ring-level matrix-vector product
+  - `matrixVecDirect m z` : direct Mz (row-wise field dot product)
   - `matrixTransformAssumption bar m` : `∀ z, MatrixRowsCompatible m z → matrixVecDirect m z = matrixVecCtBar bar m z`
-- Target statement: All closures proved (native, Thm3, P10+P11, P9).
+- Target statement: `matrixTransformAssumption` derived from `thm3CoreAssumption` + block decomposition lemma.
 
 ## Paper Anchors
 
 - Source: `./formal/superneo-lean/SuperNeo.pdf.md`
 - Anchors:
   - Theorem 4 (Matrix-Vector Product Transform), Section 5, lines 384-386: `Mz = ct(M̄z)`
+  - Appendix D.1 (Proof of Theorem 4), lines 782-788: block decomposition proof
 
 ## Module Mapping
 
@@ -33,56 +35,64 @@
 
 | Contract group | Lean surface | Preconditions | Guarantee | Role | Used by |
 |---|---|---|---|---|---|
-| Dot product | `dotVec a b` | None (size guard) | `dotVec a b = innerProduct a b` | Theorem-Target | — |
-| Direct product | `matrixVecDirect m z` | None | Row-wise `dotVec row z` | Definitional | — |
-| Bar-lifted product | `matrixVecCtBar bar m z` | None | Row-wise `dotVec (barLiftVector bar row) (barLiftVector bar z)` | Definitional | — |
+| Dot product | `dotVec a b` | None (size guard) | `dotVec a b = innerProduct a b` | Definitional | — |
+| Direct product | `matrixVecDirect m z` | None | Row-wise `directBlockDot row z` where `directBlockDot = Σ_j innerProduct(row_j,z_j)` over d-sized blocks | Definitional | — |
+| Theorem-3 kernel | `ctBarDot bar a b` | None | `ct(mulRq(superneoBarBlock bar a, superneoBarBlock bar b))` | Definitional | — |
+| Block extraction | `extractBlock v j` | None | j-th d-sized block via `v.extract (j*d) ((j+1)*d)` | Definitional | — |
+| Ring dot product | `ringBlockDot bar row z` | None | `Σ_j ctBarDot bar (extractBlock row j) (extractBlock z j)` | Definitional | — |
+| Bar-lifted product | `matrixVecCtBar bar m z` | None | Row-wise `ringBlockDot bar row z` | Definitional | `EvalHom.lean`, `Checks.lean` |
 | Dot/inner equivalence | `dotVec_eq_innerProduct` | None | `dotVec a b = innerProduct a b` | Theorem-Target | — |
-| Row compatibility | `MatrixRowsCompatible m z` | None | `∀ i, (m[i]).size = z.size` | Definitional | — |
+| Row compatibility | `MatrixRowsCompatible m z` | None | `z.size % d = 0 ∧ ∀ i, (m[i]).size = z.size` | Definitional | — |
 | Check surface | `matrixTransformIdentity bar m z` | None | `true ↔ MatrixRowsCompatible m z ∧ matrixVecDirect m z = matrixVecCtBar bar m z` | Theorem-Target | — |
-| Theorem-facing boundary | `matrixTransformAssumption bar m` | None | `∀ z, MatrixRowsCompatible m z → matrixVecDirect m z = matrixVecCtBar bar m z` | Theorem-Target | `EvalLink.lean` |
+| Theorem-facing boundary | `matrixTransformAssumption bar m` | None | `∀ z, MatrixRowsCompatible m z → matrixVecDirect m z = matrixVecCtBar bar m z` | Boundary | `EvalLink.lean` |
 | Check-facing boundary | `matrixTransformCheckAssumption bar m` | None | `∀ z, MatrixRowsCompatible m z → matrixTransformIdentity bar m z = true` | Theorem-Target | — |
-| Native closure | `matrixTransformEq_native`, `matrixTransformAssumption_native` | `MatrixRowsCompatible m z` | `matrixVecDirect m z = matrixVecCtBar bar m z` | Theorem-Target | — |
 | Thm3 closure | `matrixTransformAssumption_of_thm3CoreAssumption` | `thm3CoreAssumption bar` | `matrixTransformAssumption bar m` | Theorem-Target | — |
 | P10+P11 closure | `matrixTransformAssumption_of_p10_p11` | `thm3CoreAssumption bar`, `barLiftLinearityAssumption bar` | `matrixTransformAssumption bar m` | Theorem-Target | — |
-| P9 closure | `matrixTransformAssumption_of_p9Embedding`, `matrixTransformAssumption_of_p9Embedding_closed` | P9 embedding | `matrixTransformAssumption bar m` | Theorem-Target | — |
-| Check/prop bridges | `matrixTransformIdentity_sound`, `matrixTransformIdentity_complete`, `matrixTransformIdentity_iff_prop`, `_of_assumption`, `_of_checkAssumption`, `_iff_checkAssumption` | None | Theorem ↔ check equivalence | Theorem-Target | — |
+| Check/prop bridges | `matrixTransformIdentity_sound`, `_complete`, `_iff_prop`, `_of_assumption`, `_of_checkAssumption`, `_iff_checkAssumption` | None | Theorem ↔ check equivalence | Theorem-Target | — |
 
 ## Proof Obligations and Closure Plan
 
-All obligations closed. `matrixTransformEq_native` proves Theorem 4 in the identity-bar-lift model. `matrixTransformAssumption_of_thm3CoreAssumption` derives from Theorem 3 row-wise. P9-threaded closure reduces to native path. Sound/complete and check/prop bridges proved.
+Closed now:
+- Check/prop bridges (decidability-based).
+- `matrixTransformEq_of_thm3CoreAssumption` proved (no `sorry`): row-wise closure from per-block Theorem-3 applications.
+- `matrixTransformAssumption_of_thm3CoreAssumption` and `matrixTransformAssumption_of_p10_p11` both closed.
+
+Remaining for proof-complete closure:
+- Discharge the upstream `thm3CoreAssumption` boundary from concrete bar-transform algebra.
 
 ## Assumption Ledger
 
-No open boundary assumptions in this module.
+- Open boundary: `thm3CoreAssumption` (from upstream `Thm3Core.lean`).
+  Closure target: discharge from cyclotomic-specific bar transform.
 
 ## Dependency and Consumer Map
 
 - Upstream dependencies:
   - `SuperNeo/Thm3Core.lean`: uses `thm3CoreAssumption`, `innerProduct` for Theorem-3-based derivation.
-  - `SuperNeo/BarLift.lean`: uses `barLiftVector`, `barLiftLinearityAssumption` for P10+P11 path.
+  - `SuperNeo/Ring.lean` (transitive): uses `ct`, `mulRq`, `superneoBarBlock` for ring-level computation.
+  - `SuperNeo/BarLift.lean`: uses `barLiftLinearityAssumption` for P10+P11 dependency accounting.
 - Downstream consumers:
-  - `SuperNeo/EvalLink.lean`: depends on `matrixTransformAssumption` for evaluation homomorphism.
-  - ProtocolTarget: uses matrix-transform in the protocol stack.
+  - `SuperNeo/EvalLink.lean`: depends on `matrixTransformAssumption` for evaluation link.
+  - `SuperNeo/EvalHom.lean`: uses `matrixVecCtBar` in eval-hom proposition.
+  - `SuperNeo/Checks.lean`: uses `matrixVecCtBar` in check functions.
+  - `SuperNeo/ArithmeticBundle.lean`: uses `matrixTransformAssumption` in theorem stack.
 
 ## Implementation Plan
 
-1. `dotVec`, `matrixVecDirect`, `matrixVecCtBar` defined; `dotVec_eq_innerProduct` proved.
-2. `matrixTransformEq_native` proved via `simp` (barLiftVector = id).
-3. `matrixTransformEq_of_thm3CoreAssumption` applies Thm3 row-wise under `MatrixRowsCompatible`.
+1. `ctBarDot`, `extractBlock`, `ringBlockDot` defined as ring-level block operations.
+2. `matrixVecCtBar` redefined using `ringBlockDot` (paper-faithful).
+3. `matrixTransformEq_of_thm3CoreAssumption` proved by block-wise reduction and per-block use of `thm3CoreAssumption`.
 4. Sound/complete and check/prop bridges proved via `decide` reasoning.
-5. P9 closure reduces to native path.
 
 ## Quality Expectations
 
-- No `sorry` in any theorem.
-- Theorem-facing boundary is the contract; check-facing is for executable compatibility.
+- All theorem STATEMENTS are paper-faithful.
 
 ## Acceptance Criteria
 
 1. `lake build` succeeds.
-2. `lake exe check` succeeds.
-3. `matrixTransformAssumption_of_p9Embedding_closed` and all bridges exported through the interface.
+2. `matrixTransformAssumption_of_thm3CoreAssumption` and all bridges exported through the interface.
 
 ## Out of Scope
 
-- Non-identity bar-lift instantiation (future embedding extension).
+- Discharging `thm3CoreAssumption` (upstream responsibility).

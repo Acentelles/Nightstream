@@ -109,6 +109,20 @@ This is the theorem-facing condition needed by identity-specialized closures.
 def barBlockIdentityAssumption (bar : Array (Array F)) : Prop :=
   ∀ blk : Coeffs, superneoBarBlock bar blk = blk
 
+/--
+Shape-driven closure for bar-block identity.
+
+If the outer bar matrix does not have canonical ring dimension `d`, the
+`superneoBarBlock` definition takes the fallback branch and returns inputs
+unchanged.
+-/
+theorem barBlockIdentityAssumption_of_bar_size_ne_d
+    (bar : Array (Array F))
+    (hBarSize : bar.size ≠ d) :
+    barBlockIdentityAssumption bar := by
+  intro blk
+  simp [barBlockIdentityAssumption, superneoBarBlock, hBarSize]
+
 theorem barLiftVector_eq_of_barBlockIdentity
     (bar : Array (Array F))
     (v : Array F)

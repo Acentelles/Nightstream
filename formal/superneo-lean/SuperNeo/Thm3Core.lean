@@ -1,10 +1,13 @@
 import SuperNeo.BarLift
 
 /-!
-Theorem-3 inner-product transform scaffold.
+Theorem-3 inner-product transform (paper-faithful).
 
-This file defines a compact inner-product identity boundary and provides the
-native proof for the current bar-lift scaffold (`barLiftVector = id`).
+This file defines the Theorem-3 boundary: for d-sized field blocks,
+`ct(mulRq(bar(a), bar(b))) = ⟨a, b⟩` — the constant term of the ring product
+of bar-transformed blocks equals the field inner product.
+
+Paper anchor: Theorem 3 (Inner Product Transform), Section 5, lines 368-372.
 -/
 
 namespace SuperNeo
@@ -18,80 +21,18 @@ def innerProduct (a b : Array F) : F :=
   else
     0
 
-/-- Theorem-facing Theorem-3 statement for bar-lifted inner products. -/
+/--
+Theorem-3 boundary (paper-faithful): for d-sized blocks,
+`ct(mulRq(bar(a), bar(b))) = ⟨a, b⟩`.
+
+This is a pure boundary assumption. Closure requires a bar transform matrix
+that encodes the field inner product via ring multiplication for the
+cyclotomic Φ(X) = X^d + X^(d/2) + 1.
+-/
 def thm3CoreAssumption (bar : Array (Array F)) : Prop :=
   ∀ a b : Array F,
-    a.size = b.size →
-    innerProduct a b = innerProduct (barLiftVector bar a) (barLiftVector bar b)
-
-/--
-Chunked branch closure contract for the real bar-lift operator.
-
-This only assumes the `size % d = 0` branch preserves inner products. The
-non-chunk branch is handled directly from `barLiftVector` definition.
--/
-def barLiftChunkedIsometryAssumption (bar : Array (Array F)) : Prop :=
-  ∀ a b : Array F, a.size = b.size → barLiftChunkableVec a →
-    innerProduct a b = innerProduct (barLiftVector bar a) (barLiftVector bar b)
-
-private theorem barLiftChunkable_of_size_eq
-    {a b : Array F}
-    (hSize : a.size = b.size)
-    (hChunk : barLiftChunkableVec a) :
-    barLiftChunkableVec b := by
-  unfold barLiftChunkableVec at hChunk ⊢
-  simpa [hSize] using hChunk
-
-/--
-Theorem-3 closure from the real bar-lift branch contract.
-
-This discharges the non-chunk branch (`barLiftVector = id`) by definition and
-uses the supplied chunked isometry only where the real bar-lift path is active.
--/
-theorem thm3CoreAssumption_of_chunkedIsometry
-    (bar : Array (Array F))
-    (hChunkIso : barLiftChunkedIsometryAssumption bar) :
-    thm3CoreAssumption bar := by
-  intro a b hSize
-  by_cases hChunk : barLiftChunkableVec a
-  · exact hChunkIso a b hSize hChunk
-  · have hChunkB : ¬ barLiftChunkableVec b := by
-      intro hB
-      exact hChunk (barLiftChunkable_of_size_eq hSize.symm hB)
-    simp [barLiftVector, hChunk, hChunkB]
-
-/--
-Compatibility closure from identity-specialized bar blocks.
-
-This theorem is kept as a compatibility bridge while Theorem-3 is now threaded
-through the real bar-lift branch contract above.
--/
-theorem thm3CoreAssumption_of_barBlockIdentity
-    (bar : Array (Array F))
-    (hId : barBlockIdentityAssumption bar) :
-    thm3CoreAssumption bar := by
-  intro a b hSize
-  rw [barLiftVector_eq bar a hId, barLiftVector_eq bar b hId]
-
-/-- Compatibility bridge: identity-specialized blocks imply chunked isometry. -/
-theorem barLiftChunkedIsometryAssumption_of_barBlockIdentity
-    (bar : Array (Array F))
-    (hId : barBlockIdentityAssumption bar) :
-    barLiftChunkedIsometryAssumption bar := by
-  intro a b hSize _hChunk
-  rw [barLiftVector_eq bar a hId, barLiftVector_eq bar b hId]
-
-/--
-Native Theorem-3 closure surface.
-
-`thm3CoreAssumption_native` is now routed through the real bar-lift branch
-contract instead of the bar-block identity assumption.
--/
-theorem thm3CoreAssumption_native
-    (bar : Array (Array F))
-    (hChunkIso : barLiftChunkedIsometryAssumption bar) :
-    thm3CoreAssumption bar := by
-  exact thm3CoreAssumption_of_chunkedIsometry bar hChunkIso
+    a.size = d → b.size = d →
+    ct (mulRq (superneoBarBlock bar a) (superneoBarBlock bar b)) = innerProduct a b
 
 /-! ### P10 Compatibility Surface -/
 
@@ -105,8 +46,8 @@ def IsDBarMatrix (_bar : Array (Array F)) : Prop :=
 
 /-- Compact P10 proposition surface on concrete vectors. -/
 def p10CoreProp (bar : Array (Array F)) (a b : Array F) : Prop :=
-  a.size = b.size ∧
-    innerProduct a b = innerProduct (barLiftVector bar a) (barLiftVector bar b)
+  a.size = d ∧ b.size = d ∧
+    ct (mulRq (superneoBarBlock bar a) (superneoBarBlock bar b)) = innerProduct a b
 
 instance p10CoreProp_decidable (bar : Array (Array F)) (a b : Array F) :
     Decidable (p10CoreProp bar a b) := by
@@ -149,9 +90,7 @@ theorem p10Core_of_preconditions_props
   (hB : IsDVec b)
   (hThm3 : thm3CoreAssumption bar) :
   p10CoreProp bar a b := by
-  have hSize : a.size = b.size := by
-    simpa [IsDVec] using hA.trans hB.symm
-  exact ⟨hSize, hThm3 a b hSize⟩
+  exact ⟨hA, hB, hThm3 a b hA hB⟩
 
 /-- Build P10 proposition from Theorem-3 assumption and vector shape assumptions. -/
 theorem p10Core_of_assumption
@@ -160,7 +99,7 @@ theorem p10Core_of_assumption
   (hA : IsDVec a)
   (hB : IsDVec b) :
   p10CoreProp bar a b := by
-  exact p10Core_of_preconditions_props (bar := bar) (a := a) (b := b) trivial hA hB hThm3
+  exact p10Core_of_preconditions_props trivial hA hB hThm3
 
 
 end SuperNeo

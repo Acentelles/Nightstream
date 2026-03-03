@@ -2,14 +2,14 @@
 
 ## Purpose
 
-- **What it is**: Definition-8 bar-lift layer. Defines `barLiftVector` and `barLiftMatrix` (row-wise) as the core operators mapping vectors/matrices under the bar transform.
-- **Current executable path**: for chunkable vectors (`size % d = 0`), `barLiftVector` follows the embedding chain `embedVec -> map superneoBarBlock -> unembedVec`; for non-chunkable vectors it takes an identity fallback.
-- **Key property**: Linearity — `barLiftVector bar (v + w) = barLiftVector bar v + barLiftVector bar w` and `barLiftVector bar (s·v) = s · barLiftVector bar v` when sizes match.
+- **What it is**: Definition-8 bar-lift layer. Given `v ∈ F^{n_F}`, partition into d-sized sub-vectors `[v₁, ..., v_{n_R}]` and define `v̄ := [v̄₁, ..., v̄_{n_R}]` where each `v̄_i` is the Theorem-3 inner-product transform applied block-wise. Extends to matrices row-wise: `M̄ := [M̄₁, ..., M̄_m]`.
+- **Current instantiation**: `barBlock = id` (identity transform), so `barLiftVector = id` for chunkable vectors. The full Theorem-3 transform is out of scope; linearity and Theorem-4 closure hold under the identity instantiation.
+- **Key property**: Linearity — `barLiftVector bar (v + w) = barLiftVector bar v + barLiftVector bar w` and `barLiftVector bar (s·v) = s · barLiftVector bar v` when sizes match (Remark 1: the transform is linear, hence the lift preserves linearity).
 - **Protocol role**: MatrixTransform and Thm3Core depend on `barLiftLinearityAssumption`. Embedding feeds into BarLift (P9 → bar-lift linearity).
 
 ## Target Formulas (Paper → Lean)
 
-- Paper formula: Definition 8 (Lifting the Transform) — bar-lift is linear: add and scale commute.
+- Paper formula: Definition 8 (Lifting the Transform) — partition `v ∈ F^{n_F}` into d-sized blocks, apply `bar(·)` (Theorem 3's inner-product transform) to each block: `v̄ := [v̄₁, ..., v̄_{n_R}]`. Matrix lift is row-wise. Linearity follows from `bar(·)` being linear (Remark 1).
 - Lean mapping:
   - `barLiftChunkableVec`, `barLiftChunkableMatrix` : shape predicates for blockwise lifting
   - `barLiftVector bar v` : vector bar-lift via blockwise bar-map round-trip on chunkable vectors
@@ -66,8 +66,8 @@ No open boundary assumptions in this module.
 - Upstream dependencies:
   - `SuperNeo/Embedding.lean`: imports `p9EmbeddingAssumption`, `p9EmbeddingAssumption_holds` for P9-threaded closure.
 - Downstream consumers:
-  - `SuperNeo/Thm3Core.lean`: uses `barLiftVector` for `thm3CoreAssumption` and P10 surfaces.
-  - `SuperNeo/MatrixTransform.lean`: depends on `barLiftLinearityAssumption` and `barLiftVector` for Theorem 4.
+  - `SuperNeo/Thm3Core.lean`: imports BarLift for `superneoBarBlock` (block-level bar transform used by Theorem-3 boundary).
+  - `SuperNeo/MatrixTransform.lean`: depends on `barLiftLinearityAssumption` for P10+P11 dependency accounting.
 
 ## Implementation Plan
 
