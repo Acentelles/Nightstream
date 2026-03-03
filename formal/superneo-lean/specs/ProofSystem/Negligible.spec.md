@@ -21,23 +21,23 @@
 
 ## Module Mapping
 
-| Paper concept | Lean symbol | Status |
+| Paper concept | Lean symbol | Role |
 |---------------|-------------|--------|
 | Error function | `ErrorFn` (= `Nat → Nat`) | Definitional |
 | Negligible predicate | `IsNegligible` | Definitional |
-| Zero is negligible | `isNegligible_zero` | Proved |
-| Identically zero ⇒ negligible | `isNegligible_of_zero` | Proved |
-| Iff characterization | `isNegligible_iff` | Proved |
+| Zero is negligible | `isNegligible_zero` | Theorem-Target |
+| Identically zero ⇒ negligible | `isNegligible_of_zero` | Theorem-Target |
+| Iff characterization | `isNegligible_iff` | Theorem-Target |
 
 ## Contract Surface
 
-| Group | Symbol | Guarantee | Status |
+| Group | Symbol | Guarantee | Role |
 |-------|--------|-----------|--------|
 | Error functions | `ErrorFn` | `Nat → Nat` | Definitional |
 | Negligible predicate | `IsNegligible` | \(\forall c, \exists N, \forall n \ge N, f(n) = 0\) | Definitional |
-| Basic lemmas | `isNegligible_iff` | \(\text{IsNegligible}(f) \leftrightarrow \forall c, \exists N, \forall n \ge N, f(n) = 0\) | Proved |
-| | `isNegligible_zero` | \(\text{IsNegligible}(\lambda n. 0)\) | Proved |
-| | `isNegligible_of_zero` | \((\forall n, f(n) = 0) \to \text{IsNegligible}(f)\) | Proved |
+| Basic lemmas | `isNegligible_iff` | \(\text{IsNegligible}(f) \leftrightarrow \forall c, \exists N, \forall n \ge N, f(n) = 0\) | Theorem-Target |
+| | `isNegligible_zero` | \(\text{IsNegligible}(\lambda n. 0)\) | Theorem-Target |
+| | `isNegligible_of_zero` | \((\forall n, f(n) = 0) \to \text{IsNegligible}(f)\) | Theorem-Target |
 
 ## Proof Obligations and Closure Plan
 

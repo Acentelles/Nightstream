@@ -28,15 +28,15 @@
 
 ## Contract Surface
 
-| Contract group | Lean surface | Preconditions | Guarantee | Status | Used by |
+| Contract group | Lean surface | Preconditions | Guarantee | Role | Used by |
 |---|---|---|---|---|---|
 | Math target | `protocolMathTargetProp` | None | Conjunction of arithmetic decomp, matrix, eval hom, invertibility, sampling, poly, interp | Definitional | ProtocolReduction |
 | With Thm3 | `protocolMathTargetWithThm3Prop` | None | `p10CoreProp ∧ protocolMathTargetProp` | Definitional | ProtocolReduction |
-| From bundle | `protocolMathTargetProp_of_arithmeticBundle` | `arithmeticBundleProp` | `protocolMathTargetProp` | Proved | — |
-| From P10+bundle | `protocolMathTargetWithThm3Prop_of_p10_arithmeticBundle` | `p10CoreProp`, `arithmeticBundleProp` | `protocolMathTargetWithThm3Prop` | Proved | — |
-| From preconditions | `protocolMathTargetWithThm3Prop_of_thm3_preconditions` | IsDBarMatrix, IsDVec, p10CoreCheck, arithmeticBundleProp | `protocolMathTargetWithThm3Prop` | Proved | — |
-| From Thm3 assumption | `protocolMathTargetWithThm3Prop_of_thm3_assumption` | IsDBarMatrix, IsDVec, thm3CoreAssumption, arithmeticBundleProp | `protocolMathTargetWithThm3Prop` | Proved | ProtocolReduction |
-| From checks | `protocolMathTargetProp_of_checks`. `protocolMathTargetWithThm3Prop_of_checks` | Check-driven assumptions (P6, P12, P14, module, P17, P18, P19) | `protocolMathTargetProp` / `protocolMathTargetWithThm3Prop` | Proved | — |
+| From bundle | `protocolMathTargetProp_of_arithmeticBundle` | `arithmeticBundleProp` | `protocolMathTargetProp` | Theorem-Target | — |
+| From P10+bundle | `protocolMathTargetWithThm3Prop_of_p10_arithmeticBundle` | `p10CoreProp`, `arithmeticBundleProp` | `protocolMathTargetWithThm3Prop` | Theorem-Target | — |
+| From preconditions | `protocolMathTargetWithThm3Prop_of_thm3_preconditions` | IsDBarMatrix, IsDVec, p10CoreCheck, arithmeticBundleProp | `protocolMathTargetWithThm3Prop` | Theorem-Target | — |
+| From Thm3 assumption | `protocolMathTargetWithThm3Prop_of_thm3_assumption` | IsDBarMatrix, IsDVec, thm3CoreAssumption, arithmeticBundleProp | `protocolMathTargetWithThm3Prop` | Theorem-Target | ProtocolReduction |
+| From checks | `protocolMathTargetProp_of_checks`. `protocolMathTargetWithThm3Prop_of_checks` | Check-driven assumptions (P6, P12, P14, module, P17, P18, P19) | `protocolMathTargetProp` / `protocolMathTargetWithThm3Prop` | Theorem-Target | — |
 
 ## Proof Obligations and Closure Plan
 

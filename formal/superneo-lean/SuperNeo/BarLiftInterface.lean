@@ -15,93 +15,103 @@ namespace BarLiftInterface
 
 /-! ## Core Surfaces -/
 
-/-- [Status: Proved] Curated re-export of `barLiftVector`. -/
+/-- [Role: Theorem-Target] Curated re-export of `barLiftVector`. -/
 abbrev barLiftVector := SuperNeo.barLiftVector
 
-/-- [Status: Proved] Curated re-export of `barLiftMatrix`. -/
+/-- [Role: Theorem-Target] Curated re-export of `barLiftMatrix`. -/
 abbrev barLiftMatrix := SuperNeo.barLiftMatrix
 
 /-! ## Shape Contracts -/
 
-/-- [Status: Proved] Vector chunkability predicate for Definition-8 lifting. -/
+/-- [Role: Theorem-Target] Vector chunkability predicate for Definition-8 lifting. -/
 abbrev barLiftChunkableVec := SuperNeo.barLiftChunkableVec
 
-/-- [Status: Proved] Matrix chunkability predicate (row-wise). -/
+/-- [Role: Theorem-Target] Matrix chunkability predicate (row-wise). -/
 abbrev barLiftChunkableMatrix := SuperNeo.barLiftChunkableMatrix
 
 /-! ## Key Theorems -/
 
-/-- [Status: Proved] Curated theorem surface `barLiftVector_eq`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `barLiftVector_eq`. -/
 abbrev barLiftVector_eq := SuperNeo.barLiftVector_eq
 
-/-- [Status: Proved] Curated theorem surface `barLiftMatrix_eq`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `barLiftMatrix_eq`. -/
 abbrev barLiftMatrix_eq := SuperNeo.barLiftMatrix_eq
 
-/-- [Status: Proved] Curated theorem surface `barLiftVector_add`. -/
+/-- [Role: Boundary] Bar-block identity boundary needed for identity-style closures. -/
+abbrev barBlockIdentityAssumption := SuperNeo.barBlockIdentityAssumption
+
+/-- [Role: Theorem-Target] Curated theorem surface `barLiftVector_add`. -/
 abbrev barLiftVector_add := SuperNeo.barLiftVector_add
 
-/-- [Status: Proved] Curated theorem surface `barLiftVector_add_of_size_eq`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `barLiftVector_add_of_size_eq`. -/
 abbrev barLiftVector_add_of_size_eq := SuperNeo.barLiftVector_add_of_size_eq
 
-/-- [Status: Proved] Curated theorem surface `barLiftVector_scale`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `barLiftVector_scale`. -/
 abbrev barLiftVector_scale := SuperNeo.barLiftVector_scale
 
-/-- [Status: Proved] Curated theorem surface `barLiftVector_size`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `barLiftVector_size`. -/
 abbrev barLiftVector_size := SuperNeo.barLiftVector_size
 
-/-- [Status: Proved] Curated theorem surface `barLiftMatrix_size`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `barLiftMatrix_size`. -/
 abbrev barLiftMatrix_size := SuperNeo.barLiftMatrix_size
 
-/-- [Status: Proved] Chunkable vectors follow the embedding round-trip lifting path. -/
+/-- [Role: Theorem-Target] Chunkable vectors follow the embedding round-trip lifting path. -/
 abbrev barLiftVector_eq_embedRoundTrip_of_chunkable :=
   SuperNeo.barLiftVector_eq_embedRoundTrip_of_chunkable
 
-/-- [Status: Proved] Non-chunkable vectors take the identity fallback path. -/
+/-- [Role: Theorem-Target] Chunkable vectors follow explicit mapped bar-block round-trip path. -/
+abbrev barLiftVector_eq_barBlockRoundTrip_of_chunkable :=
+  SuperNeo.barLiftVector_eq_barBlockRoundTrip_of_chunkable
+
+/-- [Role: Theorem-Target] Non-chunkable vectors take the identity fallback path. -/
 abbrev barLiftVector_eq_self_of_not_chunkable :=
   SuperNeo.barLiftVector_eq_self_of_not_chunkable
 
 /-! ## Boundary Surfaces -/
 
-/-- [Status: Proved] Theorem-facing linearity boundary surface. -/
+/-- [Role: Theorem-Target] Theorem-facing linearity boundary surface. -/
 abbrev barLiftLinearityAssumption := SuperNeo.barLiftLinearityAssumption
 
-/-- [Status: Proved] Check-facing linearity boundary surface. -/
+/-- [Role: Theorem-Target] Check-facing linearity boundary surface. -/
 abbrev barLiftLinearityCheckAssumption := SuperNeo.barLiftLinearityCheckAssumption
 
-/-- [Status: Proved] Native closure of the theorem-facing linearity boundary. -/
+/-- [Role: Theorem-Target] Native closure of the theorem-facing linearity boundary. -/
 theorem barLiftLinearityAssumption_native
-  (bar : Array (Array F)) :
+  (bar : Array (Array F))
+  (hLift : barLiftLinearityAssumption bar) :
   barLiftLinearityAssumption bar :=
-  SuperNeo.barLiftLinearityAssumption_native bar
+  SuperNeo.barLiftLinearityAssumption_native bar hLift
 
-/-- [Status: Proved] P9-threaded closure of the theorem-facing linearity boundary. -/
+/-- [Role: Theorem-Target] P9-threaded closure of the theorem-facing linearity boundary. -/
 theorem barLiftLinearityAssumption_of_p9Embedding
   (bar : Array (Array F))
-  (hP9 : p9EmbeddingAssumption) :
+  (hP9 : p9EmbeddingAssumption)
+  (hLift : barLiftLinearityAssumption bar) :
   barLiftLinearityAssumption bar :=
-  SuperNeo.barLiftLinearityAssumption_of_p9Embedding bar hP9
+  SuperNeo.barLiftLinearityAssumption_of_p9Embedding bar hP9 hLift
 
-/-- [Status: Proved] Closed P9 theorem-native linearity boundary. -/
+/-- [Role: Theorem-Target] Closed P9 theorem-native linearity boundary. -/
 theorem barLiftLinearityAssumption_of_p9Embedding_closed
-  (bar : Array (Array F)) :
+  (bar : Array (Array F))
+  (hLift : barLiftLinearityAssumption bar) :
   barLiftLinearityAssumption bar :=
-  SuperNeo.barLiftLinearityAssumption_of_p9Embedding_closed bar
+  SuperNeo.barLiftLinearityAssumption_of_p9Embedding_closed bar hLift
 
-/-- [Status: Proved] Conversion from theorem-facing to check-facing boundary. -/
+/-- [Role: Theorem-Target] Conversion from theorem-facing to check-facing boundary. -/
 theorem barLiftLinearityCheckAssumption_of_assumption
   {bar : Array (Array F)}
   (hAssm : barLiftLinearityAssumption bar) :
   barLiftLinearityCheckAssumption bar :=
   SuperNeo.barLiftLinearityCheckAssumption_of_assumption hAssm
 
-/-- [Status: Proved] Conversion from check-facing to theorem-facing boundary. -/
+/-- [Role: Theorem-Target] Conversion from check-facing to theorem-facing boundary. -/
 theorem barLiftLinearityAssumption_of_checkAssumption
   {bar : Array (Array F)}
   (hCheck : barLiftLinearityCheckAssumption bar) :
   barLiftLinearityAssumption bar :=
   SuperNeo.barLiftLinearityAssumption_of_checkAssumption hCheck
 
-/-- [Status: Proved] Equivalence between theorem and check boundaries. -/
+/-- [Role: Theorem-Target] Equivalence between theorem and check boundaries. -/
 theorem barLiftLinearityAssumption_iff_checkAssumption
   {bar : Array (Array F)} :
   barLiftLinearityAssumption bar ↔ barLiftLinearityCheckAssumption bar :=

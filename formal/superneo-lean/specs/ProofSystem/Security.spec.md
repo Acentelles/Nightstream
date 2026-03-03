@@ -21,15 +21,15 @@
 
 ## Module Mapping
 
-| Paper concept | Lean symbol | Status |
+| Paper concept | Lean symbol | Role |
 |---------------|-------------|--------|
 | Probability measure | `ProbModel`, `ProbModel.Pr` | Definitional |
 | Error decomposition | `ErrorModel` | Definitional |
-| Zero-error scaffold | `zeroErrorModel` | Definitional |
+| Zero-error model | `zeroErrorModel` | Definitional |
 
 ## Contract Surface
 
-| Group | Symbol | Guarantee | Status |
+| Group | Symbol | Guarantee | Role |
 |-------|--------|-----------|--------|
 | Probability | `ProbModel` | \(\Pr : \text{Prop} \to \mathbb{Q}\), \(0 \le \Pr(P) \le 1\) | Definitional |
 | Error accounting | `ErrorModel` | Decomposition + all components negligible | Definitional |

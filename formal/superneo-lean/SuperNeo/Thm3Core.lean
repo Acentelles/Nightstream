@@ -24,11 +24,74 @@ def thm3CoreAssumption (bar : Array (Array F)) : Prop :=
     a.size = b.size →
     innerProduct a b = innerProduct (barLiftVector bar a) (barLiftVector bar b)
 
-/-- Native Theorem-3 proof for the compact scaffold (`barLiftVector = id`). -/
-theorem thm3CoreAssumption_native (bar : Array (Array F)) :
-  thm3CoreAssumption bar := by
+/--
+Chunked branch closure contract for the real bar-lift operator.
+
+This only assumes the `size % d = 0` branch preserves inner products. The
+non-chunk branch is handled directly from `barLiftVector` definition.
+-/
+def barLiftChunkedIsometryAssumption (bar : Array (Array F)) : Prop :=
+  ∀ a b : Array F, a.size = b.size → barLiftChunkableVec a →
+    innerProduct a b = innerProduct (barLiftVector bar a) (barLiftVector bar b)
+
+private theorem barLiftChunkable_of_size_eq
+    {a b : Array F}
+    (hSize : a.size = b.size)
+    (hChunk : barLiftChunkableVec a) :
+    barLiftChunkableVec b := by
+  unfold barLiftChunkableVec at hChunk ⊢
+  simpa [hSize] using hChunk
+
+/--
+Theorem-3 closure from the real bar-lift branch contract.
+
+This discharges the non-chunk branch (`barLiftVector = id`) by definition and
+uses the supplied chunked isometry only where the real bar-lift path is active.
+-/
+theorem thm3CoreAssumption_of_chunkedIsometry
+    (bar : Array (Array F))
+    (hChunkIso : barLiftChunkedIsometryAssumption bar) :
+    thm3CoreAssumption bar := by
   intro a b hSize
-  rw [barLiftVector_eq bar a, barLiftVector_eq bar b]
+  by_cases hChunk : barLiftChunkableVec a
+  · exact hChunkIso a b hSize hChunk
+  · have hChunkB : ¬ barLiftChunkableVec b := by
+      intro hB
+      exact hChunk (barLiftChunkable_of_size_eq hSize.symm hB)
+    simp [barLiftVector, hChunk, hChunkB]
+
+/--
+Compatibility closure from identity-specialized bar blocks.
+
+This theorem is kept as a compatibility bridge while Theorem-3 is now threaded
+through the real bar-lift branch contract above.
+-/
+theorem thm3CoreAssumption_of_barBlockIdentity
+    (bar : Array (Array F))
+    (hId : barBlockIdentityAssumption bar) :
+    thm3CoreAssumption bar := by
+  intro a b hSize
+  rw [barLiftVector_eq bar a hId, barLiftVector_eq bar b hId]
+
+/-- Compatibility bridge: identity-specialized blocks imply chunked isometry. -/
+theorem barLiftChunkedIsometryAssumption_of_barBlockIdentity
+    (bar : Array (Array F))
+    (hId : barBlockIdentityAssumption bar) :
+    barLiftChunkedIsometryAssumption bar := by
+  intro a b hSize _hChunk
+  rw [barLiftVector_eq bar a hId, barLiftVector_eq bar b hId]
+
+/--
+Native Theorem-3 closure surface.
+
+`thm3CoreAssumption_native` is now routed through the real bar-lift branch
+contract instead of the bar-block identity assumption.
+-/
+theorem thm3CoreAssumption_native
+    (bar : Array (Array F))
+    (hChunkIso : barLiftChunkedIsometryAssumption bar) :
+    thm3CoreAssumption bar := by
+  exact thm3CoreAssumption_of_chunkedIsometry bar hChunkIso
 
 /-! ### P10 Compatibility Surface -/
 

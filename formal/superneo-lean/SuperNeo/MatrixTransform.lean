@@ -96,9 +96,10 @@ private theorem all_true_of_matrixRowsCompatible
   intro i hi
   exact decide_eq_true (hRows i hi)
 
-/-- Native theorem-4 identity for this compact scaffold (`barLiftVector = id`). -/
+/-- Identity-specialized theorem-4 identity from bar-block identity boundary. -/
 theorem matrixTransformEq_native
   {bar : Array (Array F)} {m : Array (Array F)} {z : Array F}
+  (hId : barBlockIdentityAssumption bar)
   (_hRows : MatrixRowsCompatible m z) :
   matrixVecDirect m z = matrixVecCtBar bar m z := by
   apply Array.ext
@@ -109,7 +110,7 @@ theorem matrixTransformEq_native
       (matrixVecDirect m z)[i]'hiL
           = dotVec (m[i]'hi) z := by simp [matrixVecDirect, hi]
       _ = dotVec (barLiftVector bar (m[i]'hi)) (barLiftVector bar z) := by
-            rw [barLiftVector_eq bar (m[i]'hi), barLiftVector_eq bar z]
+            rw [barLiftVector_eq bar (m[i]'hi) hId, barLiftVector_eq bar z hId]
       _ = (matrixVecCtBar bar m z)[i]'hiR := by simp [matrixVecCtBar, hi]
 
 /--
@@ -181,9 +182,10 @@ theorem matrixTransformIdentity_complete_of_rowsCompatible
 
 theorem matrixTransformAssumption_native
   {bar : Array (Array F)} {m : Array (Array F)} :
-  matrixTransformAssumption bar m := by
+  barBlockIdentityAssumption bar → matrixTransformAssumption bar m := by
+  intro hId
   intro z hRows
-  exact matrixTransformEq_native hRows
+  exact matrixTransformEq_native hId hRows
 
 /-- Theorem-native `P12` constructor from Theorem-3 (`P10`). -/
 theorem matrixTransformAssumption_of_thm3CoreAssumption
@@ -212,15 +214,17 @@ In the compact scaffold this follows the native transform identity path.
 -/
 theorem matrixTransformAssumption_of_p9Embedding
   {bar : Array (Array F)} {m : Array (Array F)}
-  (_hP9 : p9EmbeddingAssumption) :
+  (_hP9 : p9EmbeddingAssumption)
+  (hId : barBlockIdentityAssumption bar) :
   matrixTransformAssumption bar m := by
-  exact matrixTransformAssumption_native
+  exact matrixTransformAssumption_native hId
 
 /-- Closed matrix-transform assumption using theorem-native closed P9 package. -/
 theorem matrixTransformAssumption_of_p9Embedding_closed
-  {bar : Array (Array F)} {m : Array (Array F)} :
+  {bar : Array (Array F)} {m : Array (Array F)}
+  (hId : barBlockIdentityAssumption bar) :
   matrixTransformAssumption bar m := by
-  exact matrixTransformAssumption_of_p9Embedding p9EmbeddingAssumption_holds
+  exact matrixTransformAssumption_of_p9Embedding p9EmbeddingAssumption_holds hId
 
 /-- Convert theorem-facing transform contract into the check-facing form. -/
 theorem matrixTransformCheckAssumption_of_assumption

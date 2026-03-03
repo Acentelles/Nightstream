@@ -33,17 +33,17 @@
 
 ## Contract Surface
 
-| Contract group | Lean surface | Preconditions | Guarantee | Status | Used by |
+| Contract group | Lean surface | Preconditions | Guarantee | Role | Used by |
 |---|---|---|---|---|---|
 | Structures | `VecModuleHom`, `ScalarModuleHom` | None | Map signatures `Array F → Array F` / `Array F → F` | Definitional | `EvalHom.lean` |
 | One-point prop | `vecModulePropPair`, `scalarModulePropPair` | None | Additivity ∧ scaling at one point | Definitional | — |
-| One-point check | `vecModuleCheckPair`, `scalarModuleCheckPair` | None | `checkPair = true ↔ propPair` | Proved | `ArithmeticBundle.lean` |
-| Compatibility checks | `preservesAddVec`, `preservesScaleVec`, `preservesAddScalar`, `preservesScaleScalar` | Size equality for add | Executable linearity checks | Proved | — |
-| Sound/complete | `preservesAdd*_sound/complete`, `preservesScale*_sound/complete` | Check true / Prop holds | Bidirectional bridge | Proved | — |
-| Prop/check bridges | `vecModulePropPair_of_checkPair`, `vecModuleCheckPair_of_propPair`, scalar analogues | — | One-point ↔ check | Proved | — |
+| One-point check | `vecModuleCheckPair`, `scalarModuleCheckPair` | None | `checkPair = true ↔ propPair` | Theorem-Target | `ArithmeticBundle.lean` |
+| Compatibility checks | `preservesAddVec`, `preservesScaleVec`, `preservesAddScalar`, `preservesScaleScalar` | Size equality for add | Executable linearity checks | Theorem-Target | — |
+| Sound/complete | `preservesAdd*_sound/complete`, `preservesScale*_sound/complete` | Check true / Prop holds | Bidirectional bridge | Theorem-Target | — |
+| Prop/check bridges | `vecModulePropPair_of_checkPair`, `vecModuleCheckPair_of_propPair`, scalar analogues | — | One-point ↔ check | Theorem-Target | — |
 | Universal theorem | `vecModuleAssumption`, `scalarModuleAssumption` | None | `∀` linearity | Definitional | `EvalHom.lean` |
 | Universal check | `vecModuleCheckAssumption`, `scalarModuleCheckAssumption` | None | `∀ s x y, checkPair = true` | Definitional | — |
-| Assumption bridges | `vecModuleAssumption_of_checkAssumption`, `vecModuleCheckAssumption_of_assumption`, scalar analogues | — | Theorem ↔ check universal | Proved | — |
+| Assumption bridges | `vecModuleAssumption_of_checkAssumption`, `vecModuleCheckAssumption_of_assumption`, scalar analogues | — | Theorem ↔ check universal | Theorem-Target | — |
 
 ## Proof Obligations and Closure Plan
 

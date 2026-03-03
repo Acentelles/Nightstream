@@ -19,15 +19,15 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 
 ## Module Mapping
 
-| Paper concept | Lean symbol | Status |
+| Paper concept | Lean symbol | Role |
 |---------------|-------------|--------|
 | (barrel) | re-exports from sub-modules | Definitional |
 
 ## Contract Surface
 
-| Group | Symbol | Guarantee | Status |
+| Group | Symbol | Guarantee | Role |
 |-------|--------|-----------|--------|
-| Barrel | `moduleContractPending` | Placeholder pending curated re-exports | Pending |
+| Barrel | `moduleContractPending` | Curated re-exports of sub-module surfaces | Theorem-Target |
 
 ## Proof Obligations and Closure Plan
 
@@ -47,7 +47,7 @@ No open boundary assumptions in this module.
 
 ## Implementation Plan
 
-- Replace `moduleContractPending` with curated `abbrev` re-exports as sub-module interfaces stabilize.
+- Replace `moduleContractPending` with curated `abbrev` re-exports of sub-module surfaces.
 
 ## Quality Expectations
 

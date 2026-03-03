@@ -12,7 +12,7 @@
 - \(\text{Commit}(\text{pp}, z) = Mz\) ↔ `opensTo`: \(M \cdot z = c\) with \(\|z\|_\infty < B\).
 - Relaxed: \(\Delta \cdot c = Mz\) ↔ `opensToRelaxed`.
 - \(B\)-binding collision: \(z_1 \neq z_2\), \(Mz_1 = Mz_2 = c\), \(\|z_i\|_\infty < B\) ↔ `BindingCollision`.
-- \((B,\mathcal{C})\)-relaxed: \(\Delta_1 z_2 \neq \Delta_2 z_1\), \(\Delta_i c = Mz_i\) ↔ `RelaxedBindingCollision`.
+- \((B,\mathcal{C})\)-relaxed: \(\Delta_1 z_2 \neq \Delta_2 z_1\), \(\Delta_i c = Mz_i\), \(\Delta_i \in \mathcal{C}-\mathcal{C}\) ↔ `RelaxedBindingCollision params C`.
 - \(\text{Adv}_{\text{MSIS}} \le \varepsilon(n)\), \(\text{IsNegligible}(\varepsilon)\) ↔ `MSISAdvantageBound`, `MSISHardnessAssumption`.
 
 ## Paper Anchors
@@ -25,74 +25,65 @@
 
 ## Module Mapping
 
-| Paper concept | Lean symbol | Status |
+| Paper concept | Lean symbol | Role |
 |---------------|-------------|--------|
 | Ajtai params | `AjtaiParams` | Definitional |
 | Commitment / opening | `Commitment`, `Opening` | Definitional |
 | opensTo | `opensTo` | Definitional |
 | opensToRelaxed | `opensToRelaxed` | Definitional |
 | Binding collision | `BindingCollision` | Definitional |
-| Relaxed binding collision | `RelaxedBindingCollision` | Definitional |
+| Relaxed binding collision | `RelaxedBindingCollision params C` | Definitional |
 | MSIS challenge/solution | `MSISChallenge`, `MSISSolution` | Definitional |
 | MSIS break event | `MSISBreakEvent` | Definitional |
 | MSIS hardness | `MSISHardnessAssumption`, `MSISHardnessBoundary` | Definitional |
-| Ajtai binding assumptions | `AjtaiBindingAssumption`, `AjtaiRelaxedBindingAssumption` | Definitional |
-| subVec, matVecMul, smulVec | `subVec`, `matVecMul`, `smulVec` | Definitional |
-| subVec_self | `subVec_self` | Proved |
-| Ring/norm axioms | `subRq`, `subRq_self`, `matVecMul_subVec`, etc. | Boundary-Assumed |
+| Ajtai binding assumptions | `AjtaiBindingAssumption params`, `AjtaiRelaxedBindingAssumption params C` | Definitional |
+| subRq/subVec/matVecMul/smulVec | `subRq`, `subVec`, `matVecMul`, `smulVec` | Definitional |
+| subRq/subVec cancellation | `subRq_self`, `subVec_self` | Theorem-Target |
+| Linearity/norm boundary package | moved to `LatticeReductions` | N/A in this module |
 
 ## Contract Surface
 
-| Group | Symbol | Guarantee | Status |
+| Group | Symbol | Guarantee | Role |
 |-------|--------|-----------|--------|
 | Parameters | `AjtaiParams` | \(\kappa, m, B, T\) | Definitional |
 | Commitment relations | `opensTo`, `opensToRelaxed` | \(Mz = c\), \(Mz = \Delta \cdot c\) | Definitional |
-| Collisions | `BindingCollision`, `RelaxedBindingCollision` | Paper-faithful distinctness | Definitional |
+| Collisions | `BindingCollision`, `RelaxedBindingCollision params C` | Paper-faithful distinctness and carrier-membership threading | Definitional |
 | MSIS | `MSISBreakEvent`, `MSISSolution`, `MSISChallenge` | Homogeneous MSIS, \(Mz = 0\) | Definitional |
 | Hardness | `MSISHardnessAssumption`, `MSISHardnessBoundary` | \(\exists \varepsilon, \text{IsNegligible}(\varepsilon) \wedge \text{Adv} \le \varepsilon\) | Definitional |
-| Ajtai assumptions | `AjtaiBindingAssumption`, `AjtaiRelaxedBindingAssumption` | \(\neg \text{BindingCollision}\), \(\neg \text{RelaxedBindingCollision}\) | Definitional |
-| Vector ops | `subVec_self` | \(\text{subVec}\,n\,v\,v = \text{zeroVec}\,n\) | Proved |
-| Ring axioms | 8 axioms (see Assumption Ledger) | Ring arithmetic identities | Boundary-Assumed |
+| Ajtai assumptions | `AjtaiBindingAssumption`, `AjtaiRelaxedBindingAssumption params C` | \(\neg \text{BindingCollision}\), \(\neg \text{RelaxedBindingCollision}\) | Definitional |
+| Vector ops | `subRq_self`, `subVec_self` | \(\text{subRq}\,x\,x = 0\), \(\text{subVec}\,n\,v\,v = \text{zeroVec}\,n\) | Theorem-Target |
 
 ## Proof Obligations and Closure Plan
 
-- **Proved**: `subVec_self`, size lemmas, `matrixFlatLen_le_payloadLen`, `commitmentLen_le_payloadLen`, `msisNormBound_pos`, `ppMatrixFlat_size_of_wf`, `valueVec_size_of_wf`, `NormSound_mono`, `smulVec_size`, `matVecMul_size`.
-- **Pending**: Discharge 8 boundary axioms from Ring/Norm layers (see Assumption Ledger).
+- **Theorem-Targets**: `subRq`, `subRq_self`, `subVec_self`, size lemmas, `matrixFlatLen_le_payloadLen`, `commitmentLen_le_payloadLen`, `msisNormBound_pos`, `ppMatrixFlat_size_of_wf`, `valueVec_size_of_wf`, `NormSound_mono`, `smulVec_size`, `matVecMul_size`.
+- Extractor linearity/norm boundary obligations live in `LatticeReductions`.
 
 ## Assumption Ledger
 
-| Assumption | Closure target: |
-|------------|----------------|
-| `subRq` | Define ring subtraction in `SuperNeo.Ring` (or equivalent) and prove it matches `subRq` behavior. |
-| `subRq_self` | Prove \(x - x = 0\) from ring axioms in `SuperNeo.Ring`. |
-| `matVecMul_subVec` | Prove \(M(v_1 - v_2) = Mv_1 - Mv_2\) from linearity in `SuperNeo.Ring` / matrix module. |
-| `matVecMul_smulVec` | Prove \(M(\delta \cdot v) = \delta \cdot (Mv)\) from module homomorphism. |
-| `smulVec_comm` | Prove \(\delta_1 \cdot (\delta_2 \cdot v) = \delta_2 \cdot (\delta_1 \cdot v)\) from ring commutativity. |
-| `subVec_ne_zero_of_ne` | Prove \(v_1 \neq v_2 \to \text{subVec}\,n\,v_1\,v_2 \neq \text{zeroVec}\,n\) when sizes match. |
-| `normInfVec_subVec_le` | Prove \(\|\text{subVec}\,n\,v_1\,v_2\|_\infty \le \|v_1\|_\infty + \|v_2\|_\infty\) from `SuperNeo.Norm`. |
-| `normInfVec_smulVec_le` | Prove \(\|\delta \cdot v\|_\infty \le \|\delta\|_\infty \cdot \|v\|_\infty\) from `SuperNeo.Norm`. |
+No open boundary assumptions in this module. Reduction-layer assumptions are tracked in `specs/ProofSystem/LatticeReductions.spec.md`.
 
 ## Dependency and Consumer Map
 
 - **Dependencies**: `SuperNeo.Ring`, `SuperNeo.Norm`, `SuperNeo.ProofSystem.Negligible`, `SuperNeo.ProofSystem.Security`.
 - **Consumers**:
-  - `SuperNeo.ProofSystem.LatticeReductions`: uses `BindingCollision`, `RelaxedBindingCollision`, `MSISBreakEvent`, `MSISHardnessAssumption`, `AjtaiBindingAssumption`, `AjtaiRelaxedBindingAssumption`, `subVec`, `matVecMul`, `smulVec`, and the 8 axioms for extractor and reduction theorems.
+  - `SuperNeo.ProofSystem.LatticeReductions`: uses `BindingCollision`, `RelaxedBindingCollision`, `MSISBreakEvent`, `MSISHardnessAssumption`, `AjtaiBindingAssumption`, `AjtaiRelaxedBindingAssumption`, `subVec`, `matVecMul`, `smulVec`.
 
 ## Implementation Plan
 
-- Discharge each axiom in order: `subRq`/`subRq_self` first, then linearity (`matVecMul_subVec`, `matVecMul_smulVec`), then `smulVec_comm`, then `subVec_ne_zero_of_ne`, then norm lemmas from `Norm`.
-- Keep boundary packages coherent; avoid constructor privacy changes that break reduction wiring.
+- Keep this module definition-complete and assumption-minimal.
+- `RelaxedBindingCollision` carries explicit `inDiff1 : samplingDiffSet C delta1` and `inDiff2 : samplingDiffSet C delta2` witnesses per Definition 4 (line 315). Norm bounds on deltas are derivable from C-C membership, not primary data.
+- All relaxed-binding types (`AjtaiRelaxedBindingAssumption`, `AjtaiRelaxedBindingGame`, `AjtaiRelaxedBindingAdvantage`, `AjtaiRelaxedBindingAdvantageBound`, `AjtaiRelaxedBindingBoundary`) are parameterized by `C : SamplingCarrier`.
+- Route extractor/ring-linearity assumptions through `LatticeReductions` only.
 
 ## Quality Expectations
 
-- All 8 axioms documented with explicit closure targets.
 - Spec states Theorem 2 and Definitions 16, 18 with line ranges.
-- Interface exposes core structures and boundary symbols.
+- Interface exposes core structures and theorem-facing game/boundary symbols.
 
 ## Acceptance Criteria
 
 - `lake build` succeeds.
-- Assumption Ledger lists all 8 axioms with closure targets.
+- No open module-local assumptions are listed.
 - Paper anchors include Definition 16, 18, Theorem 2 and line ranges.
 
 ## Out of Scope

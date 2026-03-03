@@ -2,7 +2,7 @@
 
 ## Purpose
 
-- **What it is**: The canonical final theorem shape for the SuperNeo scaffold. Provides an explicit assumption registry (`FinalTheoremAssumptions`), completeness and knowledge-soundness statement shapes, and a canonical theorem constructor from assumptions.
+- **What it is**: The canonical final theorem shape for the SuperNeo formalization. Provides an explicit assumption registry (`FinalTheoremAssumptions`), completeness and knowledge-soundness statement shapes, and a canonical theorem constructor from assumptions.
 - **Key property**: `FinalTheoremAssumptions ctx → FinalTheoremShape ctx` (completeness + knowledge-soundness); all error boundaries (SumCheck, Schwartz-Zippel, MSIS, Ajtai binding) are aligned and negligible.
 - **Protocol role**: CAPSTONE theorem. Combines all reductions from Sections 5–7 with lattice security from Appendix C.
 
@@ -12,7 +12,7 @@
 - `FinalTheoremAssumptions ctx → FinalTheoremShape ctx`
 - `finalTheoremShape_of_assumptions hA` proves the above
 - `SchwartzZippelAdvantageBound eps ↔ ∀ prob n, SchwartzZippelAdvantage prob n ≤ (eps n : Rat)`
-- `msisHardnessAssumption params`, `ajtaiBindingAssumption params`, `ajtaiRelaxedBindingAssumption params` (typed boundaries)
+- `msisHardnessAssumption params`, `ajtaiBindingAssumption params`, `ajtaiRelaxedBindingAssumption params C` (typed boundaries; relaxed binding is parameterized by sampling carrier `C`)
 - `totalErrorAligned`: `epsTotal = epsSumcheck + epsMSIS + epsSchwartzZippel + epsBinding + epsRelaxedBinding`
 
 ## Paper Anchors
@@ -30,15 +30,15 @@
 
 ## Contract Surface
 
-| Contract group | Lean surface | Preconditions | Guarantee | Status | Used by |
+| Contract group | Lean surface | Preconditions | Guarantee | Role | Used by |
 |---|---|---|---|---|---|
 | Schwartz-Zippel | `schwartzZippelFailureEvent`, `SchwartzZippelAdvantage`, `SchwartzZippelAdvantageBound`, `SchwartzZippelBoundary` | None | Theorem-facing SZ surfaces | Definitional | — |
-| Lattice | `LatticeParams`, `msisHardnessAssumption`, `ajtaiBindingAssumption`, `ajtaiRelaxedBindingAssumption` | None | Typed boundaries for MSIS/Ajtai | Definitional | — |
+| Lattice | `LatticeParams`, `msisHardnessAssumption`, `ajtaiBindingAssumption`, `ajtaiRelaxedBindingAssumption params C` | None | Typed boundaries for MSIS/Ajtai; relaxed binding parameterized by `C : SamplingCarrier` | Definitional | — |
 | Reduction boundaries | `reductionSumcheckSoundnessBoundary`, `reductionSumcheckCompletenessBoundary` | `InteractiveReductionAssumptions` | Extracted SumCheck boundaries | Definitional | — |
 | Final assumptions | `FinalTheoremAssumptions ctx` | None | Bundles reduction, sumcheck, SZ, error model, lattice, alignments | Definitional | — |
-| Accessors | `FinalTheoremAssumptions.sumcheckSoundnessBoundary`, `schwartzZippelBoundaryAssumption`, `msisHardnessBoundary`, etc. | `FinalTheoremAssumptions` | Projected boundaries | Proved | — |
-| Error negligibility | `sumcheckErrorNegligible`, `schwartzZippelErrorNegligible`, `msisErrorNegligible`, `bindingErrorNegligible`, `totalErrorNegligible` | `FinalTheoremAssumptions` | Aligned negligibility | Proved | — |
-| Final theorem | `FinalTheoremShape`, `finalTheoremShape_of_assumptions` | `FinalTheoremAssumptions` | Completeness + knowledge-soundness | Proved | ProofSystem.Protocol |
+| Accessors | `FinalTheoremAssumptions.sumcheckSoundnessBoundary`, `schwartzZippelBoundaryAssumption`, `msisHardnessBoundary`, etc. | `FinalTheoremAssumptions` | Projected boundaries | Theorem-Target | — |
+| Error negligibility | `sumcheckErrorNegligible`, `schwartzZippelErrorNegligible`, `msisErrorNegligible`, `bindingErrorNegligible`, `totalErrorNegligible` | `FinalTheoremAssumptions` | Aligned negligibility | Theorem-Target | — |
+| Final theorem | `FinalTheoremShape`, `finalTheoremShape_of_assumptions` | `FinalTheoremAssumptions` | Completeness + knowledge-soundness | Theorem-Target | ProofSystem.Protocol |
 
 ## Proof Obligations and Closure Plan
 

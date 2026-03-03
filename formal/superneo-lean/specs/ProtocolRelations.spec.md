@@ -31,20 +31,20 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 
 ## Contract Surface
 
-| Group | Lean symbol | Kind | Status | Guarantee |
+| Group | Lean symbol | Kind | Role | Guarantee |
 |---|---|---|---|---|
 | Instance | `sumcheckInstanceOfContext` | def | Definitional | Builds SumCheckInstance from ctx |
 | Witness | `SumCheckTransitionWitness` | structure | Definitional | transcript, accepted, initialRound, roundSumStep |
 | Relations | `ccsRelation` | def | Definitional | protocolTargetProp ctx |
 | Relations | `ceRelation` | def | Definitional | ccsRelation ∧ ∃ tr, SumCheckAccepted |
 | Relations | `ceRelaxedRelation` | def | Definitional | ccsRelation ctx |
-| Assumptions | `ProtocolRelationsAssumptions` | structure | Boundary-Assumed | Bundles target, sumcheckSoundness, sumcheckCompleteness |
-| Theorems | `ccsRelation_of_assumptions` | theorem | Proved | Assumptions → ccsRelation |
-| Theorems | `ceRelation_of_assumptions` | theorem | Proved | Assumptions + witness → ceRelation |
-| Theorems | `ceRelation_of_claimTrue` | theorem | Proved | Assumptions + claimTrue → ceRelation |
-| Theorems | `ceClaimTrue_of_ce` | theorem | Proved | Assumptions + ceRelation → claimTrue |
-| Theorems | `ceRelaxedRelation_of_ce` | theorem | Proved | ceRelation → ceRelaxedRelation |
-| Witness | `SumCheckTransitionWitness.accepted_exists` | theorem | Proved | Witness → ∃ tr, accepted |
+| Assumptions | `ProtocolRelationsAssumptions` | structure | Boundary | Bundles target, sumcheckSoundness, sumcheckCompleteness |
+| Theorems | `ccsRelation_of_assumptions` | theorem | Theorem-Target | Assumptions → ccsRelation |
+| Theorems | `ceRelation_of_assumptions` | theorem | Theorem-Target | Assumptions + witness → ceRelation |
+| Theorems | `ceRelation_of_claimTrue` | theorem | Theorem-Target | Assumptions + claimTrue → ceRelation |
+| Theorems | `ceClaimTrue_of_ce` | theorem | Theorem-Target | Assumptions + ceRelation → claimTrue |
+| Theorems | `ceRelaxedRelation_of_ce` | theorem | Theorem-Target | ceRelation → ceRelaxedRelation |
+| Witness | `SumCheckTransitionWitness.accepted_exists` | theorem | Theorem-Target | Witness → ∃ tr, accepted |
 
 ## Proof Obligations and Closure Plan
 

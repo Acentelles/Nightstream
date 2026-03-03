@@ -3,7 +3,7 @@
 ## Purpose
 
 - **What it is**: Generic proof-system type carriers `Context`, `Claim`, and `Witness` that parameterize public parameters, instance space, and witness space for interactive reductions.
-- **Key property**: These structures form the ambient type-level scaffolding for relations \(\mathcal{R}_1, \mathcal{R}_2\) over \((\text{pp}, \mathbf{s}, u, w)\) tuples in Definitions 9–10.
+- **Key property**: These structures form the ambient type-level carriers for relations \(\mathcal{R}_1, \mathcal{R}_2\) over \((\text{pp}, \mathbf{s}, u, w)\) tuples in Definitions 9–10.
 - **Protocol role**: `ProofSystem` facade and protocol theorem modules use these types to state weak/strong interactive reduction interfaces and security compositions.
 
 ## Target Formulas
@@ -21,7 +21,7 @@
 
 ## Module Mapping
 
-| Paper concept | Lean symbol | Status |
+| Paper concept | Lean symbol | Role |
 |---------------|-------------|--------|
 | Public parameters / security param | `Context`, `Context.securityParam` | Definitional |
 | Instance / claim | `Claim`, `Claim.id` | Definitional |
@@ -29,7 +29,7 @@
 
 ## Contract Surface
 
-| Group | Symbol | Guarantee | Status |
+| Group | Symbol | Guarantee | Role |
 |-------|--------|-----------|--------|
 | Type carriers | `Context` | Structure with `securityParam : Nat` | Definitional |
 | | `Claim` | Structure with `id : Nat` | Definitional |
@@ -37,7 +37,7 @@
 
 ## Proof Obligations and Closure Plan
 
-All obligations closed. Types are definitional scaffolding; no theorem-level proof obligations.
+All obligations closed. Types are definitional; no theorem-level proof obligations.
 
 ## Assumption Ledger
 

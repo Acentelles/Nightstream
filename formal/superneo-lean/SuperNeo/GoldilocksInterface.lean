@@ -16,30 +16,30 @@ namespace GoldilocksInterface
 
 /-! ## Core Surfaces -/
 
-/-- [Status: Proved] Curated re-export of `Goldilocks.q`. -/
+/-- [Role: Theorem-Target] Curated re-export of `Goldilocks.q`. -/
 abbrev Goldilocks_q := SuperNeo.Goldilocks.q
 
-/-- [Status: Proved] Curated re-export of `Goldilocks.halfQ`. -/
+/-- [Role: Theorem-Target] Curated re-export of `Goldilocks.halfQ`. -/
 abbrev Goldilocks_halfQ := SuperNeo.Goldilocks.halfQ
 
 /-! ## Key Theorems -/
 
-/-- [Status: Proved] Curated theorem surface `Goldilocks.q_pos`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `Goldilocks.q_pos`. -/
 abbrev Goldilocks_q_pos := SuperNeo.Goldilocks.q_pos
 
-/-- [Status: Proved] Curated theorem surface `Goldilocks.q_ne_zero`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `Goldilocks.q_ne_zero`. -/
 abbrev Goldilocks_q_ne_zero := SuperNeo.Goldilocks.q_ne_zero
 
-/-- [Status: Proved] Curated theorem surface `Goldilocks.q_gt_one`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `Goldilocks.q_gt_one`. -/
 abbrev Goldilocks_q_gt_one := SuperNeo.Goldilocks.q_gt_one
 
-/-- [Status: Proved] Curated theorem surface `Goldilocks.halfQ_lt_q`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `Goldilocks.halfQ_lt_q`. -/
 abbrev Goldilocks_halfQ_lt_q := SuperNeo.Goldilocks.halfQ_lt_q
 
-/-- [Status: Proved] Curated theorem surface `Goldilocks.halfQ_le_q`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `Goldilocks.halfQ_le_q`. -/
 abbrev Goldilocks_halfQ_le_q := SuperNeo.Goldilocks.halfQ_le_q
 
-/-- [Status: Proved] Curated theorem surface `Goldilocks.one_le_halfQ`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `Goldilocks.one_le_halfQ`. -/
 abbrev Goldilocks_one_le_halfQ := SuperNeo.Goldilocks.one_le_halfQ
 
 end GoldilocksInterface

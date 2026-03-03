@@ -16,15 +16,15 @@ namespace PiCCSInterface
 
 /-! ## Core Surfaces -/
 
-/-- [Status: Proved] Curated re-export of `piCCSStrongStatement`. -/
+/-- [Role: Theorem-Target] Curated re-export of `piCCSStrongStatement`. -/
 abbrev piCCSStrongStatement := SuperNeo.piCCSStrongStatement
 
 /-! ## Boundary Surfaces -/
 
-/-- [Status: Boundary-Assumed] Boundary surface `PiCCSAssumptions` requiring closure. -/
+/-- [Role: Boundary] Boundary surface `PiCCSAssumptions` requiring closure. -/
 abbrev PiCCSAssumptions := SuperNeo.PiCCSAssumptions
 
-/-- [Status: Boundary-Assumed] Boundary surface `piCCSStrong_of_assumptions` requiring closure. -/
+/-- [Role: Boundary] Boundary surface `piCCSStrong_of_assumptions` requiring closure. -/
 abbrev piCCSStrong_of_assumptions := SuperNeo.piCCSStrong_of_assumptions
 
 end PiCCSInterface

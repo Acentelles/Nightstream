@@ -27,21 +27,21 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 
 ## Contract Surface
 
-| Group | Lean symbol | Kind | Status | Guarantee |
+| Group | Lean symbol | Kind | Role | Guarantee |
 |---|---|---|---|---|
 | Maps | `cf` | def | Definitional | Identity on `Array F` |
 | Maps | `cfInv` | def | Definitional | Identity on `Array F` |
-| Round-trip | `cfInv_cf` | theorem | Proved | `cfInv (cf a) = a` |
-| Round-trip | `cf_cfInv` | theorem | Proved | `cf (cfInv v) = v` |
-| Size | `cf_size` | theorem | Proved | `(cf a).size = a.size` |
-| Size | `cfInv_size` | theorem | Proved | `(cfInv v).size = v.size` |
-| Compatibility | `ct_cf` | theorem | Proved | `ct (cf a) = ct a` |
-| Compatibility | `ct_cfInv` | theorem | Proved | `ct (cfInv v) = ct v` |
-| Shape | `hasRingDegreeShape_cf_iff` | theorem | Proved | Shape preserved by `cf` |
-| Shape | `hasRingDegreeShape_cfInv_iff` | theorem | Proved | Shape iff `v.size = D` |
-| Shape | `ringMulShapeProp_cf_iff` | theorem | Proved | Multiplication shape preserved |
+| Round-trip | `cfInv_cf` | theorem | Theorem-Target | `cfInv (cf a) = a` |
+| Round-trip | `cf_cfInv` | theorem | Theorem-Target | `cf (cfInv v) = v` |
+| Size | `cf_size` | theorem | Theorem-Target | `(cf a).size = a.size` |
+| Size | `cfInv_size` | theorem | Theorem-Target | `(cfInv v).size = v.size` |
+| Compatibility | `ct_cf` | theorem | Theorem-Target | `ct (cf a) = ct a` |
+| Compatibility | `ct_cfInv` | theorem | Theorem-Target | `ct (cfInv v) = ct v` |
+| Shape | `hasRingDegreeShape_cf_iff` | theorem | Theorem-Target | Shape preserved by `cf` |
+| Shape | `hasRingDegreeShape_cfInv_iff` | theorem | Theorem-Target | Shape iff `v.size = D` |
+| Shape | `ringMulShapeProp_cf_iff` | theorem | Theorem-Target | Multiplication shape preserved |
 | Bundle | `coeffMapRoundTripProp` | def | Definitional | Conjunction of both round-trips |
-| Bundle | `coeffMapRoundTrip_theorem` | theorem | Proved | `coeffMapRoundTripProp v` for all `v` |
+| Bundle | `coeffMapRoundTrip_theorem` | theorem | Theorem-Target | `coeffMapRoundTripProp v` for all `v` |
 
 ## Proof Obligations and Closure Plan
 

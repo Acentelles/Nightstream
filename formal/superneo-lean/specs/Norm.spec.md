@@ -27,25 +27,27 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 
 ## Contract Surface
 
-| Group | Lean symbol | Kind | Status | Guarantee |
+| Group | Lean symbol | Kind | Role | Guarantee |
 |---|---|---|---|---|
 | Norms | `normInfF` | def | Definitional | `centeredAbs` of field element |
 | Norms | `normInfCoeffs` | def | Definitional | Max of element norms |
 | Alias | `maxRhoNorm` | def | Definitional | `= normInfCoeffs` |
-| Zeroes | `normInfF_zero` | theorem | Proved | `normInfF 0 = 0` |
-| Zeroes | `normInfCoeffs_empty` | theorem | Proved | `normInfCoeffs #[] = 0` |
-| Non-negativity | `normInfCoeffs_nonneg` | theorem | Proved | `0 ≤ normInfCoeffs a` |
+| Zeroes | `normInfF_zero` | theorem | Theorem-Target | `normInfF 0 = 0` |
+| Zeroes | `normInfCoeffs_empty` | theorem | Theorem-Target | `normInfCoeffs #[] = 0` |
+| Non-negativity | `normInfCoeffs_nonneg` | theorem | Theorem-Target | `0 ≤ normInfCoeffs a` |
 | Bound bundles | `vecAddNormBoundFromOperands` | def | Definitional | Addition norm bound shape |
 | Bound bundles | `vecScaleNormBoundFromOperands` | def | Definitional | Scaling norm bound shape |
 | Bound bundles | `mulRqNormBoundFromOperands` | def | Definitional | Multiplication norm bound shape |
 | Bound bundles | `coeffSubNormBoundFromOperands` | def | Definitional | Subtraction norm bound shape |
 | Challenge | `AllChallengeCoeffs` | def | Definitional | `∀ i, normInfF a[i] ≤ 2` |
-| Challenge | `allChallengeCoeffs_empty` | theorem | Proved | Vacuously true for `#[]` |
+| Challenge | `allChallengeCoeffs_empty` | theorem | Theorem-Target | Vacuously true for `#[]` |
+| Challenge | `allChallengeCoeffs_mono` | theorem | Theorem-Target | Monotonicity under larger challenge bounds |
+| Challenge | `allChallengeCoeffs_of_bound`, `allChallengeCoeffs_weaken` | theorem | Theorem-Target | Introduction/elimination helpers for challenge bounds |
+| Bundle constructors | `*_of_global` family | theorem | Theorem-Target | Lift global operation bounds into bundle shapes |
 
 ## Proof Obligations and Closure Plan
 
-Current obligations closed. Future work:
-- Prove concrete instances of each bound bundle (e.g., `vecAddNormBoundFromOperands BA BB (BA + BB)`) — currently stated as assumption shapes, not instantiated.
+All module-scope obligations closed. Bundle definitions remain theorem contracts; constructor theorems now provide direct lifting from globally-proved operation bounds.
 
 ## Assumption Ledger
 
@@ -64,7 +66,7 @@ Downstream consumers:
 
 ## Implementation Plan
 
-No further work required for current scope. Concrete bound instantiations are tracked as separate proof obligations.
+Stable for module scope; downstream modules can instantiate bound bundles via the new `*_of_global` theorems.
 
 ## Quality Expectations
 

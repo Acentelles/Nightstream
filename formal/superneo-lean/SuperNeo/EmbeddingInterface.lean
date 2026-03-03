@@ -15,51 +15,51 @@ namespace EmbeddingInterface
 
 /-! ## Element Embedding -/
 
-/-- [Status: Proved] Element embedding: `F^d → Coeffs` (identity on coefficient type). -/
+/-- [Role: Theorem-Target] Element embedding: `F^d → Coeffs` (identity on coefficient type). -/
 abbrev embedElem := SuperNeo.embedElem
 
-/-- [Status: Proved] Element unembedding: `Coeffs → F^d` (identity on coefficient type). -/
+/-- [Role: Theorem-Target] Element unembedding: `Coeffs → F^d` (identity on coefficient type). -/
 abbrev unembedElem := SuperNeo.unembedElem
 
-/-- [Status: Proved] `unembedElem(embedElem(v)) = v`. -/
+/-- [Role: Theorem-Target] `unembedElem(embedElem(v)) = v`. -/
 abbrev unembedElem_embedElem := SuperNeo.unembedElem_embedElem
 
-/-- [Status: Proved] `embedElem(unembedElem(a)) = a`. -/
+/-- [Role: Theorem-Target] `embedElem(unembedElem(a)) = a`. -/
 abbrev embedElem_unembedElem := SuperNeo.embedElem_unembedElem
 
-/-- [Status: Proved] `embedElem(v + w) = embedElem(v) + embedElem(w)`. -/
+/-- [Role: Theorem-Target] `embedElem(v + w) = embedElem(v) + embedElem(w)`. -/
 abbrev embedElem_vecAdd := SuperNeo.embedElem_vecAdd
 
-/-- [Status: Proved] `embedElem(s·v) = s·embedElem(v)`. -/
+/-- [Role: Theorem-Target] `embedElem(s·v) = s·embedElem(v)`. -/
 abbrev embedElem_vecScale := SuperNeo.embedElem_vecScale
 
 /-! ## Block Algebra -/
 
-/-- [Status: Proved] Blockwise addition on coefficient-block vectors. -/
+/-- [Role: Theorem-Target] Blockwise addition on coefficient-block vectors. -/
 abbrev vecAddBlocks := SuperNeo.vecAddBlocks
 
-/-- [Status: Proved] Blockwise scalar multiplication on coefficient-block vectors. -/
+/-- [Role: Theorem-Target] Blockwise scalar multiplication on coefficient-block vectors. -/
 abbrev vecScaleBlocks := SuperNeo.vecScaleBlocks
 
-/-- [Status: Proved] `(vecAddBlocks a b).size = a.size` when `a.size = b.size`. -/
+/-- [Role: Theorem-Target] `(vecAddBlocks a b).size = a.size` when `a.size = b.size`. -/
 theorem vecAddBlocks_size_of_eq
   {a b : Array Coeffs}
   (hSize : a.size = b.size) :
   (vecAddBlocks a b).size = a.size :=
   SuperNeo.vecAddBlocks_size_of_eq hSize
 
-/-- [Status: Proved] `(vecScaleBlocks s a).size = a.size`. -/
+/-- [Role: Theorem-Target] `(vecScaleBlocks s a).size = a.size`. -/
 abbrev vecScaleBlocks_size := SuperNeo.vecScaleBlocks_size
 
 /-! ## Vector Embedding & Linearity -/
 
-/-- [Status: Proved] Vector embedding: partition `F^{d·n_R}` into d-chunks, embed each as ring element. -/
+/-- [Role: Theorem-Target] Vector embedding: partition `F^{d·n_R}` into d-chunks, embed each as ring element. -/
 abbrev embedVec := SuperNeo.embedVec
 
-/-- [Status: Proved] Vector unembedding: flatten coefficient blocks back to field vector. -/
+/-- [Role: Theorem-Target] Vector unembedding: flatten coefficient blocks back to field vector. -/
 abbrev unembedVec := SuperNeo.unembedVec
 
-/-- [Status: Proved] Scale linearity: `embedVec(s·z) = vecScaleBlocks s (embedVec z)` when `z.size % d = 0`. -/
+/-- [Role: Theorem-Target] Scale linearity: `embedVec(s·z) = vecScaleBlocks s (embedVec z)` when `z.size % d = 0`. -/
 theorem embedVec_vecScale_of_mod_eq_zero
   {z : Array F}
   (hMod : z.size % d = 0)
@@ -67,7 +67,7 @@ theorem embedVec_vecScale_of_mod_eq_zero
   embedVec (vecScale s z) = vecScaleBlocks s (embedVec z) :=
   SuperNeo.embedVec_vecScale_of_mod_eq_zero hMod s
 
-/-- [Status: Proved] Add linearity: `embedVec(v+w) = vecAddBlocks (embedVec v) (embedVec w)` when sizes match and `v.size % d = 0`. -/
+/-- [Role: Theorem-Target] Add linearity: `embedVec(v+w) = vecAddBlocks (embedVec v) (embedVec w)` when sizes match and `v.size % d = 0`. -/
 theorem embedVec_vecAdd_of_size_mod_eq_zero
   {v w : Array F}
   (hSize : v.size = w.size)
@@ -75,7 +75,7 @@ theorem embedVec_vecAdd_of_size_mod_eq_zero
   embedVec (vecAdd v w) = vecAddBlocks (embedVec v) (embedVec w) :=
   SuperNeo.embedVec_vecAdd_of_size_mod_eq_zero hSize hMod
 
-/-- [Status: Proved] Round-trip: `unembedVec(embedVec z) = z` when `z.size % d = 0`. -/
+/-- [Role: Theorem-Target] Round-trip: `unembedVec(embedVec z) = z` when `z.size % d = 0`. -/
 theorem unembedVec_embedVec_of_mod_eq_zero
   {z : Array F}
   (hMod : z.size % d = 0) :
@@ -84,13 +84,13 @@ theorem unembedVec_embedVec_of_mod_eq_zero
 
 /-! ## Matrix Embedding & Linearity -/
 
-/-- [Status: Proved] Matrix embedding: row-wise application of `embedVec`. -/
+/-- [Role: Theorem-Target] Matrix embedding: row-wise application of `embedVec`. -/
 abbrev embedMatrix := SuperNeo.embedMatrix
 
-/-- [Status: Proved] Matrix unembedding: row-wise application of `unembedVec`. -/
+/-- [Role: Theorem-Target] Matrix unembedding: row-wise application of `unembedVec`. -/
 abbrev unembedMatrix := SuperNeo.unembedMatrix
 
-/-- [Status: Proved] Matrix scale linearity (row-wise) when all rows satisfy `size % d = 0`. -/
+/-- [Role: Theorem-Target] Matrix scale linearity (row-wise) when all rows satisfy `size % d = 0`. -/
 theorem embedMatrix_rowwise_vecScale_of_rows_mod_eq_zero
   {m : Array (Array F)}
   (hRowsMod : ∀ i : Fin m.size, (m[i.1]'i.2).size % d = 0)
@@ -99,7 +99,7 @@ theorem embedMatrix_rowwise_vecScale_of_rows_mod_eq_zero
     matrixScaleRowsBlocks s (embedMatrix m) :=
   SuperNeo.embedMatrix_rowwise_vecScale_of_rows_mod_eq_zero hRowsMod s
 
-/-- [Status: Proved] Matrix add linearity (row-wise) when row counts match, per-row sizes match, and `size % d = 0`. -/
+/-- [Role: Theorem-Target] Matrix add linearity (row-wise) when row counts match, per-row sizes match, and `size % d = 0`. -/
 theorem embedMatrix_rowwise_vecAdd_of_rows_size_mod_eq_zero
   {m n : Array (Array F)}
   (hRowsSize : m.size = n.size)
@@ -110,7 +110,7 @@ theorem embedMatrix_rowwise_vecAdd_of_rows_size_mod_eq_zero
     matrixAddRowsBlocks (embedMatrix m) (embedMatrix n) :=
   SuperNeo.embedMatrix_rowwise_vecAdd_of_rows_size_mod_eq_zero hRowsSize hRowEq hRowsMod
 
-/-- [Status: Proved] Matrix round-trip: `unembedMatrix(embedMatrix m) = m` when all rows satisfy `size % d = 0`. -/
+/-- [Role: Theorem-Target] Matrix round-trip: `unembedMatrix(embedMatrix m) = m` when all rows satisfy `size % d = 0`. -/
 theorem unembedMatrix_embedMatrix_of_rows_mod_eq_zero
   {m : Array (Array F)}
   (hRowsMod : ∀ i : Fin m.size, (m[i.1]'i.2).size % d = 0) :
@@ -119,13 +119,13 @@ theorem unembedMatrix_embedMatrix_of_rows_mod_eq_zero
 
 /-! ## Round-Trip Check/Prop Bridges -/
 
-/-- [Status: Proved] `embeddingVecRoundTrip z = true ↔ embeddingVecRoundTripProp z`. -/
+/-- [Role: Theorem-Target] `embeddingVecRoundTrip z = true ↔ embeddingVecRoundTripProp z`. -/
 theorem embeddingVecRoundTrip_iff_prop
   {z : Array F} :
   embeddingVecRoundTrip z = true ↔ embeddingVecRoundTripProp z :=
   SuperNeo.embeddingVecRoundTrip_iff_prop
 
-/-- [Status: Proved] `embeddingMatrixRoundTrip m = true ↔ embeddingMatrixRoundTripProp m`. -/
+/-- [Role: Theorem-Target] `embeddingMatrixRoundTrip m = true ↔ embeddingMatrixRoundTripProp m`. -/
 theorem embeddingMatrixRoundTrip_iff_prop
   {m : Array (Array F)} :
   embeddingMatrixRoundTrip m = true ↔ embeddingMatrixRoundTripProp m :=
@@ -133,10 +133,10 @@ theorem embeddingMatrixRoundTrip_iff_prop
 
 /-! ## Combined Package Closure -/
 
-/-- [Status: Proved] Combined embedding package: element bijectivity + linearity, vector round-trip + linearity, matrix round-trip + linearity. -/
+/-- [Role: Theorem-Target] Combined embedding package: element bijectivity + linearity, vector round-trip + linearity, matrix round-trip + linearity. -/
 abbrev p9EmbeddingAssumption := SuperNeo.p9EmbeddingAssumption
 
-/-- [Status: Proved] Discharges the combined embedding package from proved component theorems. -/
+/-- [Role: Theorem-Target] Discharges the combined embedding package from proved component theorems. -/
 abbrev p9EmbeddingAssumption_holds := SuperNeo.p9EmbeddingAssumption_holds
 
 end EmbeddingInterface

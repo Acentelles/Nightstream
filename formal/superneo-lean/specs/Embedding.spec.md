@@ -40,15 +40,15 @@
 - Interface: `SuperNeo.EmbeddingInterface`
 
 ## Contract Surface
-| Contract group | Lean surface (interface) | Preconditions | Guarantee | Status | Used by |
+| Contract group | Lean surface (interface) | Preconditions | Guarantee | Role | Used by |
 |---|---|---|---|---|---|
-| Element embedding | `embedElem`, `unembedElem`, `unembedElem_embedElem`, `embedElem_unembedElem` | None | Bijective: `unembedElem(embedElem(v)) = v` and `embedElem(unembedElem(a)) = a` | Proved | `BarLift.lean` |
-| Element linearity | `embedElem_vecAdd`, `embedElem_vecScale` | None | `embedElem(v+w) = embedElem(v) + embedElem(w)` and `embedElem(s·v) = s·embedElem(v)` | Proved | `BarLift.lean` |
-| Block algebra | `vecAddBlocks`, `vecScaleBlocks`, `vecAddBlocks_size_of_eq`, `vecScaleBlocks_size` | For add: `a.size = b.size` | Blockwise add/scale with size preservation | Proved | `BarLift.lean`, `Checks.lean` |
-| Vector linearity | `embedVec_vecScale_of_mod_eq_zero`, `embedVec_vecAdd_of_size_mod_eq_zero`, `unembedVec_embedVec_of_mod_eq_zero` | Scale: `z.size % d = 0`; Add: `v.size = w.size ∧ v.size % d = 0` | Embedding commutes with scale/add; round-trip is identity | Proved | `BarLift.lean`, `MatrixTransform.lean` |
-| Matrix linearity | `embedMatrix_rowwise_vecScale_of_rows_mod_eq_zero`, `embedMatrix_rowwise_vecAdd_of_rows_size_mod_eq_zero`, `unembedMatrix_embedMatrix_of_rows_mod_eq_zero` | Per-row `size % d = 0`; for add: equal row counts and per-row equal sizes | Row-wise matrix embedding preserves scale/add; round-trip is identity | Proved | `MatrixTransform.lean` |
-| Round-trip bridges | `embeddingVecRoundTrip_iff_prop`, `embeddingMatrixRoundTrip_iff_prop` | None | Bidirectional: `embeddingVecRoundTrip z = true ↔ embeddingVecRoundTripProp z` | Proved | `Checks.lean` |
-| Combined package closure | `p9EmbeddingAssumption`, `p9EmbeddingAssumption_holds` | Shape guards carried in package statement | All element/vector/matrix round-trip and linearity properties bundled; fully discharged | Proved | `BarLift.lean`, `MatrixTransform.lean` |
+| Element embedding | `embedElem`, `unembedElem`, `unembedElem_embedElem`, `embedElem_unembedElem` | None | Bijective: `unembedElem(embedElem(v)) = v` and `embedElem(unembedElem(a)) = a` | Theorem-Target | `BarLift.lean` |
+| Element linearity | `embedElem_vecAdd`, `embedElem_vecScale` | None | `embedElem(v+w) = embedElem(v) + embedElem(w)` and `embedElem(s·v) = s·embedElem(v)` | Theorem-Target | `BarLift.lean` |
+| Block algebra | `vecAddBlocks`, `vecScaleBlocks`, `vecAddBlocks_size_of_eq`, `vecScaleBlocks_size` | For add: `a.size = b.size` | Blockwise add/scale with size preservation | Theorem-Target | `BarLift.lean`, `Checks.lean` |
+| Vector linearity | `embedVec_vecScale_of_mod_eq_zero`, `embedVec_vecAdd_of_size_mod_eq_zero`, `unembedVec_embedVec_of_mod_eq_zero` | Scale: `z.size % d = 0`; Add: `v.size = w.size ∧ v.size % d = 0` | Embedding commutes with scale/add; round-trip is identity | Theorem-Target | `BarLift.lean`, `MatrixTransform.lean` |
+| Matrix linearity | `embedMatrix_rowwise_vecScale_of_rows_mod_eq_zero`, `embedMatrix_rowwise_vecAdd_of_rows_size_mod_eq_zero`, `unembedMatrix_embedMatrix_of_rows_mod_eq_zero` | Per-row `size % d = 0`; for add: equal row counts and per-row equal sizes | Row-wise matrix embedding preserves scale/add; round-trip is identity | Theorem-Target | `MatrixTransform.lean` |
+| Round-trip bridges | `embeddingVecRoundTrip_iff_prop`, `embeddingMatrixRoundTrip_iff_prop` | None | Bidirectional: `embeddingVecRoundTrip z = true ↔ embeddingVecRoundTripProp z` | Theorem-Target | `Checks.lean` |
+| Combined package closure | `p9EmbeddingAssumption`, `p9EmbeddingAssumption_holds` | Shape guards carried in package statement | All element/vector/matrix round-trip and linearity properties bundled; fully discharged | Theorem-Target | `BarLift.lean`, `MatrixTransform.lean` |
 
 ## Proof Obligations and Closure Plan
 All obligations closed. Vector round-trip proved via `chunkExact`/`flatten` inverse lemmas; matrix lifted row-wise. Combined `p9EmbeddingAssumption_holds` discharges the full package.

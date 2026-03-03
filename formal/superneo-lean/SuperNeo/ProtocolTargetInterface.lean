@@ -16,21 +16,21 @@ namespace ProtocolTargetInterface
 
 /-! ## Core Surfaces -/
 
-/-- [Status: Proved] Curated re-export of `ProtocolTargetContext`. -/
+/-- [Role: Theorem-Target] Curated re-export of `ProtocolTargetContext`. -/
 abbrev ProtocolTargetContext := SuperNeo.ProtocolTargetContext
 
-/-- [Status: Proved] Curated re-export of `protocolTargetProp`. -/
+/-- [Role: Theorem-Target] Curated re-export of `protocolTargetProp`. -/
 abbrev protocolTargetProp := SuperNeo.protocolTargetProp
 
 /-! ## Boundary Surfaces -/
 
-/-- [Status: Boundary-Assumed] Boundary surface `ProtocolTargetAssumptions` requiring closure. -/
+/-- [Role: Boundary] Boundary surface `ProtocolTargetAssumptions` requiring closure. -/
 abbrev ProtocolTargetAssumptions := SuperNeo.ProtocolTargetAssumptions
 
-/-- [Status: Boundary-Assumed] Boundary surface `matrixTransformAssumption_of_thm3CoreAssumption` requiring closure. -/
+/-- [Role: Boundary] Boundary surface `matrixTransformAssumption_of_thm3CoreAssumption` requiring closure. -/
 abbrev matrixTransformAssumption_of_thm3CoreAssumption := SuperNeo.matrixTransformAssumption_of_thm3CoreAssumption
 
-/-- [Status: Boundary-Assumed] Boundary surface `protocolTargetProp_of_assumptions` requiring closure. -/
+/-- [Role: Boundary] Boundary surface `protocolTargetProp_of_assumptions` requiring closure. -/
 abbrev protocolTargetProp_of_assumptions := SuperNeo.protocolTargetProp_of_assumptions
 
 end ProtocolTargetInterface

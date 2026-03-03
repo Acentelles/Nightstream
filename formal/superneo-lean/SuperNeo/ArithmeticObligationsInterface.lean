@@ -16,26 +16,26 @@ namespace ArithmeticObligationsInterface
 
 /-! ## Core Surfaces -/
 
-/-- [Status: Proved] Curated re-export of `ArithmeticObligations`. -/
+/-- [Role: Theorem-Target] Curated re-export of `ArithmeticObligations`. -/
 abbrev ArithmeticObligations := SuperNeo.ArithmeticObligations
 
 /-! ## Key Theorems -/
 
-/-- [Status: Proved] Curated theorem surface `ArithmeticObligations.splitTerminalZero`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `ArithmeticObligations.splitTerminalZero`. -/
 abbrev ArithmeticObligations_splitTerminalZero := @SuperNeo.ArithmeticObligations.splitTerminalZero
 
-/-- [Status: Proved] Theorem-native constructor deriving `evalHom` from `(P10 + P11)`. -/
+/-- [Role: Theorem-Target] Theorem-native constructor deriving `evalHom` from `(P10 + P11)`. -/
 abbrev ArithmeticObligations_of_p10_p11 := @SuperNeo.ArithmeticObligations.of_p10_p11
 
-/-- [Status: Proved] Curated theorem surface `splitDecompositionNat_of_obligations`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `splitDecompositionNat_of_obligations`. -/
 abbrev splitDecompositionNat_of_obligations := @SuperNeo.splitDecompositionNat_of_obligations
 
 /-! ## Boundary Surfaces -/
 
-/-- [Status: Proved] Optional MLE boundary constructor from global MLE assumption. -/
+/-- [Role: Theorem-Target] Optional MLE boundary constructor from global MLE assumption. -/
 abbrev mleIdentityAtR_of_assumption := @SuperNeo.mleIdentityAtR_of_assumption
 
-/-- [Status: Proved] Preferred theorem-native local MLE identity from table-size precondition. -/
+/-- [Role: Theorem-Target] Preferred theorem-native local MLE identity from table-size precondition. -/
 abbrev mleIdentityAtR_of_size := @SuperNeo.mleIdentityAtR_of_size
 
 end ArithmeticObligationsInterface

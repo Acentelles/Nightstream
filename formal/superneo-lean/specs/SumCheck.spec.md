@@ -2,7 +2,7 @@
 
 ## Purpose
 
-- **What it is**: The interactive sum-check protocol scaffold, defining `SumCheckInstance` (claimed value, rounds, max degree), `SumCheckTranscript` (challenges, round polynomials), and the verifier's acceptance predicate `sumcheckAccepted` combining round consistency, polynomial shapes, initial-round sum, fold consistency, and final-claim checks.
+- **What it is**: The interactive sum-check protocol formalization, defining `SumCheckInstance` (claimed value, rounds, max degree), `SumCheckTranscript` (challenges, round polynomials), and the verifier's acceptance predicate `sumcheckAccepted` combining round consistency, polynomial shapes, initial-round sum, fold consistency, and final-claim checks.
 - **Key property**: `sumcheckAccepted inst tr` implies structural properties: `tr.roundPolys.size = inst.rounds`, `tr.challenges.size = tr.roundPolys.size`, and each round's `p(0) + p(1) = eval(p_{prev}, r_{prev})`.
 - **Protocol role**: Sum-check is the interactive reduction backbone of SuperNeo. Section 7.3 (Π_CCS) and Section 7.4 (Π_RLC) both invoke sum-check to reduce multivariate polynomial claims to point-evaluation queries, which are then handled by MLE evaluation.
 
@@ -29,7 +29,7 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 
 ## Contract Surface
 
-| Group | Lean symbol | Kind | Status | Guarantee |
+| Group | Lean symbol | Kind | Role | Guarantee |
 |---|---|---|---|---|
 | Structures | `SumCheckInstance` | structure | Definitional | `rounds`, `maxDegree`, `domainSize`, `claimedValue` |
 | Structures | `SumCheckTranscript` | structure | Definitional | `challenges`, `roundPolys` |
@@ -42,20 +42,20 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 | Predicates | `sumcheckFinalClaimConsistent` | def | Definitional | Final claim check |
 | Acceptance | `sumcheckAccepted` | def | Definitional | Conjunction of all checks |
 | Claim | `sumcheckClaimTrue` | def | Definitional | `maxDegree ≤ domainSize` |
-| Extraction | `sumcheckAccepted_rounds_eq` | theorem | Proved | `|roundPolys| = rounds` |
-| Extraction | `sumcheckAccepted_challenges_eq` | theorem | Proved | `|challenges| = |roundPolys|` |
-| Extraction | `sumcheckAccepted_fold_step` | theorem | Proved | Fold-step identity |
-| Extraction | `sumcheckAccepted_initial_round` | theorem | Proved | Initial round check |
-| Extraction | `sumcheckAccepted_round_sum_step` | theorem | Proved | Round-sum transition |
-| Rejection | `sumcheckAccepted_not_of_challenge_size_ne` | theorem | Proved | Reject bad challenge count |
-| Rejection | `sumcheckAccepted_not_of_roundpoly_size_ne` | theorem | Proved | Reject bad poly count |
-| Rejection | `sumcheckAccepted_not_of_bad_round_shape` | theorem | Proved | Reject bad poly shape |
-| Rejection | `sumcheckAccepted_not_of_bad_final_claim` | theorem | Proved | Reject bad final claim |
-| Rejection | `sumcheckAccepted_not_of_bad_initial_round` | theorem | Proved | Reject bad initial round |
-| Boundary | `SumcheckSoundnessAssumption` | def | Boundary-Assumed | `accepted → claimTrue` |
-| Boundary | `SumcheckCompletenessAssumption` | def | Boundary-Assumed | `claimTrue → ∃ tr, accepted` |
-| Boundary | `SumCheckAssumptions` | structure | Boundary-Assumed | Bundle of both |
-| Bridge | `sumcheckClaimTrue_of_soundness` | theorem | Proved | Conditional soundness |
+| Extraction | `sumcheckAccepted_rounds_eq` | theorem | Theorem-Target | `|roundPolys| = rounds` |
+| Extraction | `sumcheckAccepted_challenges_eq` | theorem | Theorem-Target | `|challenges| = |roundPolys|` |
+| Extraction | `sumcheckAccepted_fold_step` | theorem | Theorem-Target | Fold-step identity |
+| Extraction | `sumcheckAccepted_initial_round` | theorem | Theorem-Target | Initial round check |
+| Extraction | `sumcheckAccepted_round_sum_step` | theorem | Theorem-Target | Round-sum transition |
+| Rejection | `sumcheckAccepted_not_of_challenge_size_ne` | theorem | Theorem-Target | Reject bad challenge count |
+| Rejection | `sumcheckAccepted_not_of_roundpoly_size_ne` | theorem | Theorem-Target | Reject bad poly count |
+| Rejection | `sumcheckAccepted_not_of_bad_round_shape` | theorem | Theorem-Target | Reject bad poly shape |
+| Rejection | `sumcheckAccepted_not_of_bad_final_claim` | theorem | Theorem-Target | Reject bad final claim |
+| Rejection | `sumcheckAccepted_not_of_bad_initial_round` | theorem | Theorem-Target | Reject bad initial round |
+| Boundary | `SumcheckSoundnessAssumption` | def | Boundary | `accepted → claimTrue` |
+| Boundary | `SumcheckCompletenessAssumption` | def | Boundary | `claimTrue → ∃ tr, accepted` |
+| Boundary | `SumCheckAssumptions` | structure | Boundary | Bundle of both |
+| Bridge | `sumcheckClaimTrue_of_soundness` | theorem | Theorem-Target | Conditional soundness |
 
 ## Proof Obligations and Closure Plan
 

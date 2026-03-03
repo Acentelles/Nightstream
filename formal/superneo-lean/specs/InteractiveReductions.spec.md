@@ -29,13 +29,13 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 
 ## Contract Surface
 
-| Group | Lean symbol | Kind | Status | Guarantee |
+| Group | Lean symbol | Kind | Role | Guarantee |
 |---|---|---|---|---|
-| Assumptions | `InteractiveReductionAssumptions` | structure | Boundary-Assumed | Bundles PiCCS, PiRLC, PiDEC |
+| Assumptions | `InteractiveReductionAssumptions` | structure | Boundary | Bundles PiCCS, PiRLC, PiDEC |
 | Statements | `strongCompositionStatement` | def | Definitional | Π_RLC ∘ Π_CCS strong |
 | Statements | `weakCompositionStatement` | def | Definitional | Π_DEC ∘ Π_RLC ∘ Π_CCS weak |
-| Theorems | `strongComposition_of_assumptions` | theorem | Proved | Assumptions → strong |
-| Theorems | `weakComposition_of_assumptions` | theorem | Proved | Assumptions → weak |
+| Theorems | `strongComposition_of_assumptions` | theorem | Theorem-Target | Assumptions → strong |
+| Theorems | `weakComposition_of_assumptions` | theorem | Theorem-Target | Assumptions → weak |
 
 ## Proof Obligations and Closure Plan
 

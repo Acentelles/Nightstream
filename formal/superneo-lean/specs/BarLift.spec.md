@@ -2,7 +2,8 @@
 
 ## Purpose
 
-- **What it is**: Definition-8 bar-lift layer. Defines `barLiftVector` and `barLiftMatrix` (row-wise) as the core operators mapping vectors/matrices under the bar transform. In the compact scaffold, `barLiftVector` is the identity.
+- **What it is**: Definition-8 bar-lift layer. Defines `barLiftVector` and `barLiftMatrix` (row-wise) as the core operators mapping vectors/matrices under the bar transform.
+- **Current executable path**: for chunkable vectors (`size % d = 0`), `barLiftVector` follows the embedding chain `embedVec -> map superneoBarBlock -> unembedVec`; for non-chunkable vectors it takes an identity fallback.
 - **Key property**: Linearity — `barLiftVector bar (v + w) = barLiftVector bar v + barLiftVector bar w` and `barLiftVector bar (s·v) = s · barLiftVector bar v` when sizes match.
 - **Protocol role**: MatrixTransform and Thm3Core depend on `barLiftLinearityAssumption`. Embedding feeds into BarLift (P9 → bar-lift linearity).
 
@@ -10,8 +11,15 @@
 
 - Paper formula: Definition 8 (Lifting the Transform) — bar-lift is linear: add and scale commute.
 - Lean mapping:
-  - `barLiftVector bar v` : vector bar-lift (identity in scaffold)
+  - `barLiftChunkableVec`, `barLiftChunkableMatrix` : shape predicates for blockwise lifting
+  - `barLiftVector bar v` : vector bar-lift via blockwise bar-map round-trip on chunkable vectors
   - `barLiftMatrix bar m` : row-wise `barLiftVector`
+  - `superneoBarBlock_eq_id` : bar-block identity (`barBlock = id`)
+  - `embedVec_map_superneoBarBlock_eq` : mapped embedded blocks collapse to identity
+  - `barLiftVector_eq_barBlockRoundTrip_of_chunkable` : chunkable explicit bar-block path theorem
+  - `barLiftVector_eq_embedRoundTrip_of_chunkable` : chunkable path theorem
+  - `barLiftVector_eq_self_of_not_chunkable` : fallback path theorem
+  - `barLiftVector_size`, `barLiftMatrix_size` : size preservation
   - `barLiftLinearityAssumption bar` : `(∀ v w, v.size = w.size → barLiftVector bar (v+w) = barLiftVector bar v + barLiftVector bar w) ∧ (∀ s v, barLiftVector bar (s·v) = s · barLiftVector bar v)`
   - `barLiftLinearityCheckAssumption bar` : check-facing universal contract
 - Target statement: `barLiftLinearityAssumption bar ↔ barLiftLinearityCheckAssumption bar`; all closures proved.
@@ -29,21 +37,25 @@
 
 ## Contract Surface
 
-| Contract group | Lean surface | Preconditions | Guarantee | Status | Used by |
+| Contract group | Lean surface | Preconditions | Guarantee | Role | Used by |
 |---|---|---|---|---|---|
-| Vector bar-lift | `barLiftVector bar v` | None | `barLiftVector bar v = v` (scaffold) | Proved | `Thm3Core.lean`, `MatrixTransform.lean` |
-| Matrix bar-lift | `barLiftMatrix bar m` | None | Row-wise `barLiftVector` | Proved | — |
-| Identity | `barLiftVector_eq`, `barLiftMatrix_eq` | None | `barLiftVector bar v = v`, `barLiftMatrix bar m = m` | Proved | — |
-| Linearity | `barLiftVector_add`, `barLiftVector_scale` | Add: `v.size = w.size` | `barLiftVector bar (v+w) = barLiftVector bar v + barLiftVector bar w`; scale linearity | Proved | — |
-| Theorem-facing boundary | `barLiftLinearityAssumption bar` | None | Add + scale linearity (Prop) | Proved | `MatrixTransform.lean` |
-| Check-facing boundary | `barLiftLinearityCheckAssumption bar` | None | Executable check (Prop) | Proved | — |
-| Native closure | `barLiftLinearityAssumption_native` | None | `barLiftLinearityAssumption bar` | Proved | — |
-| P9 closure | `barLiftLinearityAssumption_of_p9Embedding`, `barLiftLinearityAssumption_of_p9Embedding_closed` | P9 embedding | `barLiftLinearityAssumption bar` | Proved | — |
-| Check/prop bridges | `barLiftLinearityCheckAssumption_of_assumption`, `barLiftLinearityAssumption_of_checkAssumption`, `barLiftLinearityAssumption_iff_checkAssumption` | None | Theorem ↔ check equivalence | Proved | — |
+| Shape contracts | `barLiftChunkableVec`, `barLiftChunkableMatrix` | None | Explicit chunkability predicates for vector/matrix lifting | Theorem-Target | `Thm3Core.lean`, `MatrixTransform.lean` |
+| Vector bar-lift | `barLiftVector bar v` | None | Chunkable path uses `unembedVec((embedVec v).map superneoBarBlock)`; non-chunkable path is identity | Theorem-Target | `Thm3Core.lean`, `MatrixTransform.lean` |
+| Matrix bar-lift | `barLiftMatrix bar m` | None | Row-wise `barLiftVector` | Theorem-Target | — |
+| Path bridges | `barLiftVector_eq_barBlockRoundTrip_of_chunkable`, `barLiftVector_eq_embedRoundTrip_of_chunkable`, `barLiftVector_eq_self_of_not_chunkable` | Chunkable / non-chunkable side-condition | Exposes exact branch behavior | Theorem-Target | — |
+| Block-map identity | `superneoBarBlock_eq_id`, `embedVec_map_superneoBarBlock_eq` | None | Connects explicit bar-block path to embed-roundtrip simplification | Theorem-Target | — |
+| Size invariants | `barLiftVector_size`, `barLiftMatrix_size` | None | Lifting preserves sizes | Theorem-Target | — |
+| Identity under closed P9 | `barLiftVector_eq`, `barLiftMatrix_eq` | Closed `p9EmbeddingAssumption` (instantiated by `p9EmbeddingAssumption_holds`) | Global identity corollary for current embedding chain | Theorem-Target | — |
+| Linearity | `barLiftVector_add`, `barLiftVector_add_of_size_eq`, `barLiftVector_scale` | Add: `v.size = w.size` | Add/scale linearity | Theorem-Target | — |
+| Theorem-facing boundary | `barLiftLinearityAssumption bar` | None | Add + scale linearity (Prop) | Theorem-Target | `MatrixTransform.lean` |
+| Check-facing boundary | `barLiftLinearityCheckAssumption bar` | None | Executable check (Prop) | Theorem-Target | — |
+| Native closure | `barLiftLinearityAssumption_native` | None | `barLiftLinearityAssumption bar` | Theorem-Target | — |
+| P9 closure | `barLiftLinearityAssumption_of_p9Embedding`, `barLiftLinearityAssumption_of_p9Embedding_closed` | P9 embedding | `barLiftLinearityAssumption bar` | Theorem-Target | — |
+| Check/prop bridges | `barLiftLinearityCheckAssumption_of_assumption`, `barLiftLinearityAssumption_of_checkAssumption`, `barLiftLinearityAssumption_iff_checkAssumption` | None | Theorem ↔ check equivalence | Theorem-Target | — |
 
 ## Proof Obligations and Closure Plan
 
-All obligations closed. `barLiftLinearityAssumption_native` proves linearity in scaffold (`barLiftVector = id`). P9-threaded closure reduces to native path. Check/prop bridges proved via `decide_eq_true` / `decide_eq_true_eq`.
+All obligations in the current contract are closed. The module now exposes explicit branch/path lemmas (`chunkable` vs. `non-chunkable`) and size invariants, then proves linearity and check/prop bridges on top.
 
 ## Assumption Ledger
 
@@ -59,10 +71,10 @@ No open boundary assumptions in this module.
 
 ## Implementation Plan
 
-1. `barLiftVector` and `barLiftMatrix` defined; identity in scaffold.
-2. `barLiftVector_add`, `barLiftVector_scale` proved by `rfl`.
-3. `barLiftLinearityAssumption_native` proves full linearity.
-4. P9 bridges reduce to native; check/prop bridges via `decide` reasoning.
+1. Define `barLiftChunkableVec` / `barLiftChunkableMatrix` and make the vector operator branch explicit.
+2. Prove branch/path lemmas plus size invariants.
+3. Prove linearity theorems (`add`, `scale`) and theorem/check bridge equivalence.
+4. Keep the P9-threaded closure so downstream modules can consume theorem-facing contracts.
 
 ## Quality Expectations
 
@@ -77,4 +89,4 @@ No open boundary assumptions in this module.
 
 ## Out of Scope
 
-- Non-identity bar-lift instantiation (future embedding extension).
+- Final nontrivial Theorem-3 bar transform instantiation (requires coordinated closure in `Thm3Core.lean` + ring algebra stack).

@@ -29,16 +29,16 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 
 ## Contract Surface
 
-| Group | Lean symbol | Kind | Status | Guarantee |
+| Group | Lean symbol | Kind | Role | Guarantee |
 |---|---|---|---|---|
 | Modulus | `q` | def | Definitional | `q = 18446744069414584321` |
 | Modulus | `halfQ` | def | Definitional | `halfQ = q / 2` |
-| Positivity | `q_pos` | theorem | Proved | `0 < q` |
-| Positivity | `q_ne_zero` | theorem | Proved | `q ≠ 0` |
-| Positivity | `q_gt_one` | theorem | Proved | `1 < q` |
-| Half-point | `halfQ_lt_q` | theorem | Proved | `halfQ < q` |
-| Half-point | `halfQ_le_q` | theorem | Proved | `halfQ ≤ q` |
-| Half-point | `one_le_halfQ` | theorem | Proved | `1 ≤ halfQ` |
+| Positivity | `q_pos` | theorem | Theorem-Target | `0 < q` |
+| Positivity | `q_ne_zero` | theorem | Theorem-Target | `q ≠ 0` |
+| Positivity | `q_gt_one` | theorem | Theorem-Target | `1 < q` |
+| Half-point | `halfQ_lt_q` | theorem | Theorem-Target | `halfQ < q` |
+| Half-point | `halfQ_le_q` | theorem | Theorem-Target | `halfQ ≤ q` |
+| Half-point | `one_le_halfQ` | theorem | Theorem-Target | `1 ≤ halfQ` |
 
 ## Proof Obligations and Closure Plan
 

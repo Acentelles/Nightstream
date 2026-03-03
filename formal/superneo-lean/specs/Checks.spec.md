@@ -32,7 +32,7 @@
 
 ## Contract Surface
 
-| Group | Lean symbol | Kind | Status | Guarantee |
+| Group | Lean symbol | Kind | Role | Guarantee |
 |-------|-------------|------|--------|-----------|
 | SuperNeo | `checkSuperNeoCases` | def | Definitional | `superneoCases.all (checkSuperCase bar)` |
 | Ring | `checkRingMulCases` | def | Definitional | `ringMulCases.all checkRingCase` |

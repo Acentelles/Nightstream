@@ -16,27 +16,27 @@ namespace PolyLemmasInterface
 
 /-! ## Core Surfaces -/
 
-/-- [Status: Proved] Curated re-export of `eqLiftFromTable`. -/
+/-- [Role: Theorem-Target] Curated re-export of `eqLiftFromTable`. -/
 abbrev eqLiftFromTable := SuperNeo.eqLiftFromTable
 
-/-- [Status: Proved] Curated re-export of `eqLiftBooleanIndicator`. -/
+/-- [Role: Theorem-Target] Curated re-export of `eqLiftBooleanIndicator`. -/
 abbrev eqLiftBooleanIndicator := SuperNeo.eqLiftBooleanIndicator
 
-/-- [Status: Proved] Curated re-export of `eqLiftAllBoolean`. -/
+/-- [Role: Theorem-Target] Curated re-export of `eqLiftAllBoolean`. -/
 abbrev eqLiftAllBoolean := SuperNeo.eqLiftAllBoolean
 
-/-- [Status: Proved] Curated re-export of `schwartzZippelBoundLeOne`. -/
+/-- [Role: Theorem-Target] Curated re-export of `schwartzZippelBoundLeOne`. -/
 abbrev schwartzZippelBoundLeOne := SuperNeo.schwartzZippelBoundLeOne
 
-/-- [Status: Proved] Curated re-export of `polyLemmaSanity`. -/
+/-- [Role: Theorem-Target] Curated re-export of `polyLemmaSanity`. -/
 abbrev polyLemmaSanity := SuperNeo.polyLemmaSanity
 
 /-! ## Key Theorems -/
 
-/-- [Status: Proved] Curated theorem surface `schwartzZippelBoundLeOne_sound`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `schwartzZippelBoundLeOne_sound`. -/
 abbrev schwartzZippelBoundLeOne_sound := SuperNeo.schwartzZippelBoundLeOne_sound
 
-/-- [Status: Proved] Curated theorem surface `schwartzZippelBoundLeOne_complete`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `schwartzZippelBoundLeOne_complete`. -/
 abbrev schwartzZippelBoundLeOne_complete := SuperNeo.schwartzZippelBoundLeOne_complete
 
 end PolyLemmasInterface

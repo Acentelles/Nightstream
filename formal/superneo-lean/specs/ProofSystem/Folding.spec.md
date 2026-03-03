@@ -24,7 +24,7 @@
 
 ## Contract Surface
 
-| Group | Symbol | Guarantee | Status |
+| Group | Symbol | Guarantee | Role |
 |-------|--------|-----------|--------|
 | Barrel | re-exports from PiCCS, PiRLC, PiDEC | Folding reduction wrappers | Definitional |
 

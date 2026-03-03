@@ -16,32 +16,32 @@ namespace ProtocolReductionInterface
 
 /-! ## Core Surfaces -/
 
-/-- [Status: Proved] Curated re-export of `p10ForClaim`. -/
+/-- [Role: Theorem-Target] Curated re-export of `p10ForClaim`. -/
 abbrev p10ForClaim := SuperNeo.p10ForClaim
 
-/-- [Status: Proved] Curated re-export of `arithmeticBundleForClaim`. -/
+/-- [Role: Theorem-Target] Curated re-export of `arithmeticBundleForClaim`. -/
 abbrev arithmeticBundleForClaim := SuperNeo.arithmeticBundleForClaim
 
 /-! ## Key Theorems -/
 
-/-- [Status: Proved] Curated theorem surface `superneoMathProtocolSkeleton_of_props`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `superneoMathProtocolSkeleton_of_props`. -/
 abbrev superneoMathProtocolSkeleton_of_props := SuperNeo.superneoMathProtocolSkeleton_of_props
 
-/-- [Status: Proved] Curated theorem surface `superneoMathProtocolSkeleton_of_checks`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `superneoMathProtocolSkeleton_of_checks`. -/
 abbrev superneoMathProtocolSkeleton_of_checks := SuperNeo.superneoMathProtocolSkeleton_of_checks
 
-/-- [Status: Proved] Curated theorem surface `smoke_checks_imply_props`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `smoke_checks_imply_props`. -/
 abbrev smoke_checks_imply_props := SuperNeo.smoke_checks_imply_props
 
-/-- [Status: Proved] Curated theorem surface `smoke_props_imply_check_subset`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `smoke_props_imply_check_subset`. -/
 abbrev smoke_props_imply_check_subset := SuperNeo.smoke_props_imply_check_subset
 
-/-- [Status: Proved] Curated theorem surface `smoke_protocolMathTarget_compose`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `smoke_protocolMathTarget_compose`. -/
 abbrev smoke_protocolMathTarget_compose := SuperNeo.smoke_protocolMathTarget_compose
 
 /-! ## Boundary Surfaces -/
 
-/-- [Status: Boundary-Assumed] Boundary surface `superneoMathProtocolSkeleton_of_thm3_assumption` requiring closure. -/
+/-- [Role: Boundary] Boundary surface `superneoMathProtocolSkeleton_of_thm3_assumption` requiring closure. -/
 abbrev superneoMathProtocolSkeleton_of_thm3_assumption := SuperNeo.superneoMathProtocolSkeleton_of_thm3_assumption
 
 end ProtocolReductionInterface

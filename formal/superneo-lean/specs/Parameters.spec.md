@@ -29,19 +29,19 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 
 ## Contract Surface
 
-| Group | Lean symbol | Kind | Status | Guarantee |
+| Group | Lean symbol | Kind | Role | Guarantee |
 |---|---|---|---|---|
 | Decomposition | `b`, `k`, `B` | def | Definitional | `b = 2`, `k = 14`, `B = b^k` |
 | Security | `kappa` | def | Definitional | `κ = 18` |
 | Folding bounds | `Kmax`, `T` | def | Definitional | `K_max = 61`, `T = 216` |
 | Extension | `extDegreeK` | def | Definitional | `extDegreeK = 2` |
 | Challenge | `cCoeffMin`, `cCoeffMax` | def | Definitional | `-2` and `2` |
-| Modulus link | `modulus_def` | theorem | Proved | `modulus = q` |
-| Concrete equalities | `b_eq_2`, `k_eq_14`, `B_eq_16384`, etc. | theorem | Proved | Exact values |
-| Positivity | `b_pos`, `k_pos`, `B_pos`, `kappa_pos`, etc. | theorem | Proved | `0 < x` for each |
-| Bound | `b_lt_modulus_half` | theorem | Proved | `b < q/2` |
-| Bound | `B_lt_modulus` | theorem | Proved | `B < q` |
-| Sanity | `concreteParameters` | theorem | Proved | Conjunction of all sanity checks |
+| Modulus link | `modulus_def` | theorem | Theorem-Target | `modulus = q` |
+| Concrete equalities | `b_eq_2`, `k_eq_14`, `B_eq_16384`, etc. | theorem | Theorem-Target | Exact values |
+| Positivity | `b_pos`, `k_pos`, `B_pos`, `kappa_pos`, etc. | theorem | Theorem-Target | `0 < x` for each |
+| Bound | `b_lt_modulus_half` | theorem | Theorem-Target | `b < q/2` |
+| Bound | `B_lt_modulus` | theorem | Theorem-Target | `B < q` |
+| Sanity | `concreteParameters` | theorem | Theorem-Target | Conjunction of all sanity checks |
 
 ## Proof Obligations and Closure Plan
 

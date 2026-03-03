@@ -17,45 +17,45 @@ namespace ProtocolTheoremInterface
 
 /-! ## Core Surfaces -/
 
-/-- [Status: Proved] Curated re-export of `schwartzZippelFailureEvent`. -/
+/-- [Role: Theorem-Target] Curated re-export of `schwartzZippelFailureEvent`. -/
 abbrev schwartzZippelFailureEvent := SuperNeo.schwartzZippelFailureEvent
 
-/-- [Status: Proved] Curated re-export of `SchwartzZippelAdvantage`. -/
+/-- [Role: Theorem-Target] Curated re-export of `SchwartzZippelAdvantage`. -/
 abbrev SchwartzZippelAdvantage := SuperNeo.SchwartzZippelAdvantage
 
-/-- [Status: Proved] Curated re-export of `SchwartzZippelAdvantageBound`. -/
+/-- [Role: Theorem-Target] Curated re-export of `SchwartzZippelAdvantageBound`. -/
 abbrev SchwartzZippelAdvantageBound := SuperNeo.SchwartzZippelAdvantageBound
 
-/-- [Status: Proved] Curated re-export of `LatticeParams`. -/
+/-- [Role: Theorem-Target] Curated re-export of `LatticeParams`. -/
 abbrev LatticeParams := SuperNeo.LatticeParams
 
-/-- [Status: Proved] Curated re-export of `FinalTheoremShape`. -/
+/-- [Role: Theorem-Target] Curated re-export of `FinalTheoremShape`. -/
 abbrev FinalTheoremShape := SuperNeo.FinalTheoremShape
 
 /-! ## Boundary Surfaces -/
 
-/-- [Status: Boundary-Assumed] Boundary surface `schwartzZippelAssumption` requiring closure. -/
+/-- [Role: Boundary] Boundary surface `schwartzZippelAssumption` requiring closure. -/
 abbrev schwartzZippelAssumption := SuperNeo.schwartzZippelAssumption
 
-/-- [Status: Boundary-Assumed] Boundary surface `SchwartzZippelBoundary` requiring closure. -/
+/-- [Role: Boundary] Boundary surface `SchwartzZippelBoundary` requiring closure. -/
 abbrev SchwartzZippelBoundary := SuperNeo.SchwartzZippelBoundary
 
-/-- [Status: Boundary-Assumed] Boundary surface `msisHardnessAssumption` requiring closure. -/
+/-- [Role: Boundary] Boundary surface `msisHardnessAssumption` requiring closure. -/
 abbrev msisHardnessAssumption := SuperNeo.msisHardnessAssumption
 
-/-- [Status: Boundary-Assumed] Boundary surface `ajtaiBindingAssumption` requiring closure. -/
+/-- [Role: Boundary] Boundary surface `ajtaiBindingAssumption` requiring closure. -/
 abbrev ajtaiBindingAssumption := SuperNeo.ajtaiBindingAssumption
 
-/-- [Status: Boundary-Assumed] Boundary surface `ajtaiRelaxedBindingAssumption` requiring closure. -/
+/-- [Role: Boundary] Boundary surface `ajtaiRelaxedBindingAssumption` requiring closure. -/
 abbrev ajtaiRelaxedBindingAssumption := SuperNeo.ajtaiRelaxedBindingAssumption
 
-/-- [Status: Boundary-Assumed] Boundary surface `reductionSumcheckSoundnessBoundary` requiring closure. -/
+/-- [Role: Boundary] Boundary surface `reductionSumcheckSoundnessBoundary` requiring closure. -/
 abbrev reductionSumcheckSoundnessBoundary := SuperNeo.reductionSumcheckSoundnessBoundary
 
-/-- [Status: Boundary-Assumed] Boundary surface `reductionSumcheckCompletenessBoundary` requiring closure. -/
+/-- [Role: Boundary] Boundary surface `reductionSumcheckCompletenessBoundary` requiring closure. -/
 abbrev reductionSumcheckCompletenessBoundary := SuperNeo.reductionSumcheckCompletenessBoundary
 
-/-- [Status: Boundary-Assumed] Boundary surface `FinalTheoremAssumptions` requiring closure. -/
+/-- [Role: Boundary] Boundary surface `FinalTheoremAssumptions` requiring closure. -/
 abbrev FinalTheoremAssumptions := SuperNeo.FinalTheoremAssumptions
 
 end ProtocolTheoremInterface

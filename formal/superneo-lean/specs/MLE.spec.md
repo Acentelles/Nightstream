@@ -29,7 +29,7 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 
 ## Contract Surface
 
-| Group | Lean symbol | Kind | Status | Guarantee |
+| Group | Lean symbol | Kind | Role | Guarantee |
 |---|---|---|---|---|
 | Predicates | `IsBit`, `IsBitVec` | def | Definitional | Boolean-cube membership |
 | Encoding | `bitsToFieldArray` | def | Definitional | Index-mask to bit-vector |
@@ -41,21 +41,21 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 | Chi dot | `mleViaChiDot`, `dot` | def | Definitional | Chi/dot evaluation route |
 | Table ops | `linComb` | def | Definitional | `f + δ·g` pointwise |
 | Compatibility | `rHat` | def | Definitional | Compatibility vector |
-| Identity | `mleEval_eq_innerProductForm_of_size` | theorem | Proved | Exec = sum when `|f| = 2^|r|` |
-| Folding equiv | `mleByInnerProduct_eq_mleByFolding_of_size` | theorem | Proved | Inner = folding |
-| Chi equiv | `mleInnerProductForm_eq_mleViaChiDot_of_size` | theorem | Proved | Sum = chi/dot |
-| Linearity | `mleEval_linComb_of_assumptions` | theorem | Proved | Table-linear under packages |
-| Size | `rHat_size`, `chi_size`, `linComb_size` | theorem | Proved | Output sizes |
+| Identity | `mleEval_eq_innerProductForm_of_size` | theorem | Theorem-Target | Exec = sum when `|f| = 2^|r|` |
+| Folding equiv | `mleByInnerProduct_eq_mleByFolding_of_size` | theorem | Theorem-Target | Inner = folding |
+| Chi equiv | `mleInnerProductForm_eq_mleViaChiDot_of_size` | theorem | Theorem-Target | Sum = chi/dot |
+| Linearity | `mleEval_linComb_of_assumptions` | theorem | Theorem-Target | Table-linear under packages |
+| Size | `rHat_size`, `chi_size`, `linComb_size` | theorem | Theorem-Target | Output sizes |
 | Packages | `mleIdentityAssumption` | def | Definitional | Identity package target |
-| Packages | `mleIdentityAssumption_holds` | theorem | Proved | Package closed |
+| Packages | `mleIdentityAssumption_holds` | theorem | Theorem-Target | Package closed |
 | Packages | `mleChiIdentityAssumption` | def | Definitional | Chi package target |
-| Packages | `mleChiIdentityAssumption_holds` | theorem | Proved | Package closed |
+| Packages | `mleChiIdentityAssumption_holds` | theorem | Theorem-Target | Package closed |
 | Packages | `mleInnerProductLinearityAssumption` | def | Definitional | Linearity package target |
-| Packages | `mleInnerProductLinearityAssumption_holds` | theorem | Proved | Package closed |
+| Packages | `mleInnerProductLinearityAssumption_holds` | theorem | Theorem-Target | Package closed |
 | Packages | `mleEvalLinearityAssumption` | def | Definitional | Eval linearity package |
-| Packages | `mleEvalLinearityAssumption_holds` | theorem | Proved | Package closed |
+| Packages | `mleEvalLinearityAssumption_holds` | theorem | Theorem-Target | Package closed |
 | Bridge | `eqPolyDeltaOnBitsAssumption` | def | Definitional | EqPoly delta on bits |
-| Bridge | `eqPolyDeltaOnBitsAssumption_holds_of_eqPolyAssumption` | theorem | Proved | Closed from EqPoly |
+| Bridge | `eqPolyDeltaOnBitsAssumption_holds_of_eqPolyAssumption` | theorem | Theorem-Target | Closed from EqPoly |
 
 ## Proof Obligations and Closure Plan
 

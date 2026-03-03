@@ -22,27 +22,27 @@
 
 ## Module Mapping
 
-| Paper concept | Lean symbol | Status |
+| Paper concept | Lean symbol | Role |
 |---------------|-------------|--------|
 | Soundness error boundary | `SoundnessErrorBoundary` | Definitional |
 | Theorem package | `TheoremPackage` | Definitional |
 | eps projection | `TheoremPackage.eps` | Definitional |
-| Negligible | `TheoremPackage.negligible` | Proved |
-| Soundness | `TheoremPackage.soundness`, `soundness` | Boundary-Assumed |
-| Completeness | `TheoremPackage.completeness`, `completeness` | Boundary-Assumed |
-| Extraction | `accepted_rounds_eq`, etc. | Proved (forwarded) |
+| Negligible | `TheoremPackage.negligible` | Theorem-Target |
+| Soundness | `TheoremPackage.soundness`, `soundness` | Boundary |
+| Completeness | `TheoremPackage.completeness`, `completeness` | Boundary |
+| Extraction | `accepted_rounds_eq`, etc. | Theorem-Target (forwarded) |
 
 ## Contract Surface
 
-| Group | Symbol | Guarantee | Status |
+| Group | Symbol | Guarantee | Role |
 |-------|--------|-----------|--------|
 | Boundary | `SoundnessErrorBoundary` | `epsSoundness : ErrorFn`, `negligibleEpsSoundness` | Definitional |
 | Package | `TheoremPackage` | Carries `soundnessError : SoundnessErrorBoundary` | Definitional |
 | | `TheoremPackage.eps` | Projects soundness error function | Definitional |
-| | `TheoremPackage.negligible` | \(\text{IsNegligible}(\text{eps})\) | Proved |
-| | `TheoremPackage.soundness` | \(\text{Accepted} \to \text{ClaimTrue}\) | Boundary-Assumed |
-| | `TheoremPackage.completeness` | \(\text{ClaimTrue} \to \exists \text{tr}, \text{Accepted}\) | Boundary-Assumed |
-| Top-level | `soundness`, `completeness` | Assumption-instantiated surfaces | Boundary-Assumed |
+| | `TheoremPackage.negligible` | \(\text{IsNegligible}(\text{eps})\) | Theorem-Target |
+| | `TheoremPackage.soundness` | \(\text{Accepted} \to \text{ClaimTrue}\) | Boundary |
+| | `TheoremPackage.completeness` | \(\text{ClaimTrue} \to \exists \text{tr}, \text{Accepted}\) | Boundary |
+| Top-level | `soundness`, `completeness` | Assumption-instantiated surfaces | Boundary |
 
 ## Proof Obligations and Closure Plan
 

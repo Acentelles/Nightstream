@@ -17,44 +17,44 @@ namespace ProtocolRelationsInterface
 
 /-! ## Core Surfaces -/
 
-/-- [Status: Proved] Curated re-export of `sumcheckInstanceOfContext`. -/
+/-- [Role: Theorem-Target] Curated re-export of `sumcheckInstanceOfContext`. -/
 abbrev sumcheckInstanceOfContext := SuperNeo.sumcheckInstanceOfContext
 
-/-- [Status: Proved] Curated re-export of `ccsRelation`. -/
+/-- [Role: Theorem-Target] Curated re-export of `ccsRelation`. -/
 abbrev ccsRelation := SuperNeo.ccsRelation
 
-/-- [Status: Proved] Curated re-export of `ceRelation`. -/
+/-- [Role: Theorem-Target] Curated re-export of `ceRelation`. -/
 abbrev ceRelation := SuperNeo.ceRelation
 
-/-- [Status: Proved] Curated re-export of `ceRelaxedRelation`. -/
+/-- [Role: Theorem-Target] Curated re-export of `ceRelaxedRelation`. -/
 abbrev ceRelaxedRelation := SuperNeo.ceRelaxedRelation
 
 /-! ## Key Theorems -/
 
-/-- [Status: Proved] Curated theorem surface `ceRelation_of_claimTrue`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `ceRelation_of_claimTrue`. -/
 abbrev ceRelation_of_claimTrue := SuperNeo.ceRelation_of_claimTrue
 
-/-- [Status: Proved] Curated theorem surface `ceClaimTrue_of_ce`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `ceClaimTrue_of_ce`. -/
 abbrev ceClaimTrue_of_ce := SuperNeo.ceClaimTrue_of_ce
 
-/-- [Status: Proved] Curated theorem surface `ceRelaxedRelation_of_ce`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `ceRelaxedRelation_of_ce`. -/
 abbrev ceRelaxedRelation_of_ce := SuperNeo.ceRelaxedRelation_of_ce
 
 /-! ## Boundary Surfaces -/
 
-/-- [Status: Boundary-Assumed] Boundary surface `SumCheckTransitionWitness` requiring closure. -/
+/-- [Role: Boundary] Boundary surface `SumCheckTransitionWitness` requiring closure. -/
 abbrev SumCheckTransitionWitness := SuperNeo.SumCheckTransitionWitness
 
-/-- [Status: Boundary-Assumed] Boundary surface `SumCheckTransitionWitness.accepted_exists` requiring closure. -/
+/-- [Role: Boundary] Boundary surface `SumCheckTransitionWitness.accepted_exists` requiring closure. -/
 abbrev SumCheckTransitionWitness_accepted_exists := SuperNeo.SumCheckTransitionWitness.accepted_exists
 
-/-- [Status: Boundary-Assumed] Boundary surface `ProtocolRelationsAssumptions` requiring closure. -/
+/-- [Role: Boundary] Boundary surface `ProtocolRelationsAssumptions` requiring closure. -/
 abbrev ProtocolRelationsAssumptions := SuperNeo.ProtocolRelationsAssumptions
 
-/-- [Status: Boundary-Assumed] Boundary surface `ccsRelation_of_assumptions` requiring closure. -/
+/-- [Role: Boundary] Boundary surface `ccsRelation_of_assumptions` requiring closure. -/
 abbrev ccsRelation_of_assumptions := SuperNeo.ccsRelation_of_assumptions
 
-/-- [Status: Boundary-Assumed] Boundary surface `ceRelation_of_assumptions` requiring closure. -/
+/-- [Role: Boundary] Boundary surface `ceRelation_of_assumptions` requiring closure. -/
 abbrev ceRelation_of_assumptions := SuperNeo.ceRelation_of_assumptions
 
 end ProtocolRelationsInterface

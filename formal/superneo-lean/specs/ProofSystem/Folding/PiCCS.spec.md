@@ -18,24 +18,24 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 
 ## Module Mapping
 
-| Paper concept | Lean symbol | Status |
+| Paper concept | Lean symbol | Role |
 |---------------|-------------|--------|
 | Π_CCS assumptions | `PiCCSAssumptions` | Definitional (abbrev of `SuperNeo.PiCCSAssumptions`) |
 | Strong statement | `StrongStatement` | Definitional (abbrev of `SuperNeo.piCCSStrongStatement`) |
-| Strong soundness | `soundness_relations` | Proved |
+| Strong soundness | `soundness_relations` | Theorem-Target |
 
 ## Contract Surface
 
-| Group | Symbol | Guarantee | Status |
+| Group | Symbol | Guarantee | Role |
 |-------|--------|-----------|--------|
 | Core | `PiCCSAssumptions` | Assumption bundle for Π_CCS | Definitional |
 | Core | `StrongStatement` | Strong relation output | Definitional |
-| Theorem | `soundness_relations` | `PiCCSAssumptions → SumCheckTransitionWitness → StrongStatement` | Proved |
+| Theorem | `soundness_relations` | `PiCCSAssumptions → SumCheckTransitionWitness → StrongStatement` | Theorem-Target |
 
 ## Proof Obligations and Closure Plan
 
-- `soundness_relations`: Proved by forwarding to `SuperNeo.piCCSStrong_of_assumptions`.
-- No pending obligations.
+- `soundness_relations`: forwards to `SuperNeo.piCCSStrong_of_assumptions`.
+- No additional obligations in this module.
 
 ## Assumption Ledger
 

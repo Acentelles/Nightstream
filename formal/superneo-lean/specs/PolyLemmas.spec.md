@@ -27,14 +27,14 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 
 ## Contract Surface
 
-| Group | Lean symbol | Kind | Status | Guarantee |
+| Group | Lean symbol | Kind | Role | Guarantee |
 |---|---|---|---|---|
 | Eq-lift | `eqLiftFromTable` | def | Definitional | `Σ eq(x,z) · q(x)` |
 | Eq-lift | `eqLiftBooleanIndicator` | def | Definitional | Single-point check |
 | Eq-lift | `eqLiftAllBoolean` | def | Definitional | All-points check |
 | SZ bound | `schwartzZippelBoundLeOne` | def | Definitional | `d ≤ |S|` executable check |
-| SZ sound | `schwartzZippelBoundLeOne_sound` | theorem | Proved | `check = true → bound holds` |
-| SZ complete | `schwartzZippelBoundLeOne_complete` | theorem | Proved | `bound holds → check = true` |
+| SZ sound | `schwartzZippelBoundLeOne_sound` | theorem | Theorem-Target | `check = true → bound holds` |
+| SZ complete | `schwartzZippelBoundLeOne_complete` | theorem | Theorem-Target | `bound holds → check = true` |
 | Sanity | `polyLemmaSanity` | def | Definitional | Cross-check harness |
 
 ## Proof Obligations and Closure Plan

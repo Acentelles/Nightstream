@@ -30,15 +30,15 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 
 ## Contract Surface
 
-| Group | Lean symbol | Kind | Status | Guarantee |
+| Group | Lean symbol | Kind | Role | Guarantee |
 |---|---|---|---|---|
 | Constants | `eta`, `d` | def | Definitional | `η = 81`, `d = 54` |
 | Dimension maps | `nF`, `nFIn` | def | Definitional | `nF nR = d * nR` |
-| Concrete values | `eta_eq_81`, `d_eq_54` | theorem | Proved | Exact equalities |
-| Positivity | `eta_pos`, `d_pos` | theorem | Proved | `0 < η`, `0 < d` |
-| Positivity transfer | `nF_pos_of_pos` | theorem | Proved | `0 < nR → 0 < nF nR` |
-| Algebra | `nF_add`, `nF_mul` | theorem | Proved | `nF(a+b) = nF a + nF b`, `nF(a*b) = nF a * b` |
-| Monotonicity | `nF_mono`, `nFIn_mono` | theorem | Proved | `a ≤ b → nF a ≤ nF b` |
+| Concrete values | `eta_eq_81`, `d_eq_54` | theorem | Theorem-Target | Exact equalities |
+| Positivity | `eta_pos`, `d_pos` | theorem | Theorem-Target | `0 < η`, `0 < d` |
+| Positivity transfer | `nF_pos_of_pos` | theorem | Theorem-Target | `0 < nR → 0 < nF nR` |
+| Algebra | `nF_add`, `nF_mul` | theorem | Theorem-Target | `nF(a+b) = nF a + nF b`, `nF(a*b) = nF a * b` |
+| Monotonicity | `nF_mono`, `nFIn_mono` | theorem | Theorem-Target | `a ≤ b → nF a ≤ nF b` |
 
 ## Proof Obligations and Closure Plan
 

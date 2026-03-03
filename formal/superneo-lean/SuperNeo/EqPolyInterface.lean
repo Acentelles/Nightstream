@@ -16,31 +16,31 @@ namespace EqPolyInterface
 
 /-! ## Core Definitions -/
 
-/-- [Status: Proved] Boolean predicate: `x = 0 ∨ x = 1`. -/
+/-- [Role: Theorem-Target] Boolean predicate: `x = 0 ∨ x = 1`. -/
 abbrev IsBit := SuperNeo.IsBit
 
-/-- [Status: Proved] All entries satisfy `IsBit`. -/
+/-- [Role: Theorem-Target] All entries satisfy `IsBit`. -/
 abbrev IsBitVec := SuperNeo.IsBitVec
 
-/-- [Status: Proved] Single-coordinate factor: `x*y + (1-x)*(1-y)`. -/
+/-- [Role: Theorem-Target] Single-coordinate factor: `x*y + (1-x)*(1-y)`. -/
 abbrev eqTerm := SuperNeo.eqTerm
 
-/-- [Status: Proved] Product equality polynomial: `Π_i eqTerm x[i] y[i]`; returns 0 on size mismatch. -/
+/-- [Role: Theorem-Target] Product equality polynomial: `Π_i eqTerm x[i] y[i]`; returns 0 on size mismatch. -/
 abbrev eqPoly := SuperNeo.eqPoly
 
-/-- [Status: Proved] Bit-vector embedding: natural number mask → `{0,1}^ℓ` as field elements. -/
+/-- [Role: Theorem-Target] Bit-vector embedding: natural number mask → `{0,1}^ℓ` as field elements. -/
 abbrev bitsToFArray := SuperNeo.bitsToFArray
 
 /-! ## Key Theorems -/
 
-/-- [Status: Proved] Size mismatch ⟹ `eqPoly x y = 0`. -/
+/-- [Role: Theorem-Target] Size mismatch ⟹ `eqPoly x y = 0`. -/
 theorem eqPoly_eq_zero_of_size_ne
   {x y : Array F}
   (hNe : x.size ≠ y.size) :
   eqPoly x y = 0 :=
   SuperNeo.eqPoly_eq_zero_of_size_ne hNe
 
-/-- [Status: Proved] Bit-level Kronecker: `eqTerm x y = if x = y then 1 else 0` for bits. -/
+/-- [Role: Theorem-Target] Bit-level Kronecker: `eqTerm x y = if x = y then 1 else 0` for bits. -/
 theorem eqTerm_eq_delta_of_isBit
   {x y : F}
   (hx : IsBit x)
@@ -48,7 +48,7 @@ theorem eqTerm_eq_delta_of_isBit
   eqTerm x y = (if x = y then 1 else 0) :=
   SuperNeo.eqTerm_eq_delta_of_isBit hx hy
 
-/-- [Status: Proved] Boolean-cube selector: `eqPoly x y = if x = y then 1 else 0` for equal-length bit-vectors. -/
+/-- [Role: Theorem-Target] Boolean-cube selector: `eqPoly x y = if x = y then 1 else 0` for equal-length bit-vectors. -/
 theorem eqPoly_eq_delta_of_isBitVec
   {x y : Array F}
   (hSize : x.size = y.size)
@@ -59,10 +59,10 @@ theorem eqPoly_eq_delta_of_isBitVec
 
 /-! ## Package Wrapper (closed) -/
 
-/-- [Status: Proved] Bundled Prop carrier for selector behavior; compatibility wrapper for assumption-threaded consumers. -/
+/-- [Role: Theorem-Target] Bundled Prop carrier for selector behavior; compatibility wrapper for assumption-threaded consumers. -/
 abbrev eqPolyAssumption := SuperNeo.eqPolyAssumption
 
-/-- [Status: Proved] Discharges `eqPolyAssumption` from the selector theorem. -/
+/-- [Role: Theorem-Target] Discharges `eqPolyAssumption` from the selector theorem. -/
 abbrev eqPolyAssumption_holds := SuperNeo.eqPolyAssumption_holds
 
 end EqPolyInterface

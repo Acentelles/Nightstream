@@ -24,7 +24,7 @@
 
 ## Contract Surface
 
-| Group | Symbol | Guarantee | Status |
+| Group | Symbol | Guarantee | Role |
 |-------|--------|-----------|--------|
 | Barrel | re-exports from General | SumCheck API (`TheoremPackage`, `soundness`, `completeness`) | Definitional |
 

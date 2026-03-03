@@ -23,21 +23,21 @@
 
 ## Module Mapping
 
-| Paper concept | Lean symbol | Status |
+| Paper concept | Lean symbol | Role |
 |---------------|-------------|--------|
 | Instance / transcript | `Instance`, `Transcript` | Definitional (abbrev) |
 | Round consistency | `RoundConsistent`, `InitialRoundConsistent` | Definitional (abbrev) |
 | Acceptance / claim | `Accepted`, `ClaimTrue` | Definitional (abbrev) |
-| Extraction | `accepted_rounds_eq`, `accepted_challenges_eq`, etc. | Proved |
-| Rejection | `not_accepted_of_*` | Proved |
+| Extraction | `accepted_rounds_eq`, `accepted_challenges_eq`, etc. | Theorem-Target |
+| Rejection | `not_accepted_of_*` | Theorem-Target |
 
 ## Contract Surface
 
-| Group | Symbol | Guarantee | Status |
+| Group | Symbol | Guarantee | Role |
 |-------|--------|-----------|--------|
 | Abbrevs | `Instance`, `Transcript`, `RoundConsistent`, `InitialRoundConsistent`, `Accepted`, `ClaimTrue` | Forward to `SuperNeo.SumCheck` | Definitional |
-| Extraction | `accepted_rounds_eq`, `accepted_challenges_eq`, `accepted_fold_step`, `accepted_initial_round`, `accepted_round_sum_step` | Structural implications of `Accepted` | Proved |
-| Rejection | `not_accepted_of_challenge_size_ne`, `not_accepted_of_roundpoly_size_ne`, `not_accepted_of_bad_round_shape`, `not_accepted_of_bad_final_claim`, `not_accepted_of_bad_initial_round` | Negation from bad structure | Proved |
+| Extraction | `accepted_rounds_eq`, `accepted_challenges_eq`, `accepted_fold_step`, `accepted_initial_round`, `accepted_round_sum_step` | Structural implications of `Accepted` | Theorem-Target |
+| Rejection | `not_accepted_of_challenge_size_ne`, `not_accepted_of_roundpoly_size_ne`, `not_accepted_of_bad_round_shape`, `not_accepted_of_bad_final_claim`, `not_accepted_of_bad_initial_round` | Negation from bad structure | Theorem-Target |
 
 ## Proof Obligations and Closure Plan
 

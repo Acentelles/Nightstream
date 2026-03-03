@@ -30,7 +30,7 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 
 ## Contract Surface
 
-| Group | Lean symbol | Kind | Status | Guarantee |
+| Group | Lean symbol | Kind | Role | Guarantee |
 |---|---|---|---|---|
 | Base-2 core | `bitAt` | def | Definitional | Bit at position `i` |
 | Base-2 core | `splitBase2Scalar` | def | Definitional | `k` base-2 digits of `a` |
@@ -51,18 +51,18 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 | Balanced predicates | `digitsWithinBaseProp` | def | Definitional | Propositional bound check |
 | Balanced predicates | `splitBalancedRoundTripProp` | def | Definitional | Full round-trip predicate |
 | Balanced predicates | `splitRoundTrip` | def | Definitional | Executable round-trip check |
-| Base-2 theorems | `bitAt_lt_two` | theorem | Proved | `bitAt n i < 2` |
-| Base-2 theorems | `bitAt_le_one` | theorem | Proved | `bitAt n i ≤ 1` |
-| Base-2 theorems | `splitBase2DecompositionNat` | theorem | Proved | Euclidean decomposition |
-| Base-2 theorems | `splitBase2DigitsWithinBound` | theorem | Proved | All digits in `{0,1}` |
-| Base-2 theorems | `splitBase2RowsWithinBound` | theorem | Proved | Row-wise bounds |
-| Balanced theorems | `splitBalancedDecompositionInt` | theorem | Proved | Integer decomposition identity |
-| Balanced theorems | `splitBalancedDecompositionInt_of_terminal_zero` | theorem | Proved | Under terminal-zero |
-| Balanced field lift | `splitBalancedScalarFieldLiftProp_holds_of_base_ge_two` | theorem | Proved | Field-lift for `b ≥ 2` |
-| Balanced field lift | `splitBalancedVecFieldLiftProp_holds_of_base_ge_two` | theorem | Proved | Vectorized field-lift |
-| Round-trip | `splitBalancedRoundTripProp_of_constructive_boundaries` | theorem | Proved | Constructive round-trip |
-| Round-trip bridge | `splitRoundTrip_sound_prop` | theorem | Proved | `Bool → Prop` |
-| Round-trip bridge | `splitRoundTrip_complete_prop` | theorem | Proved | `Prop → Bool` |
+| Base-2 theorems | `bitAt_lt_two` | theorem | Theorem-Target | `bitAt n i < 2` |
+| Base-2 theorems | `bitAt_le_one` | theorem | Theorem-Target | `bitAt n i ≤ 1` |
+| Base-2 theorems | `splitBase2DecompositionNat` | theorem | Theorem-Target | Euclidean decomposition |
+| Base-2 theorems | `splitBase2DigitsWithinBound` | theorem | Theorem-Target | All digits in `{0,1}` |
+| Base-2 theorems | `splitBase2RowsWithinBound` | theorem | Theorem-Target | Row-wise bounds |
+| Balanced theorems | `splitBalancedDecompositionInt` | theorem | Theorem-Target | Integer decomposition identity |
+| Balanced theorems | `splitBalancedDecompositionInt_of_terminal_zero` | theorem | Theorem-Target | Under terminal-zero |
+| Balanced field lift | `splitBalancedScalarFieldLiftProp_holds_of_base_ge_two` | theorem | Theorem-Target | Field-lift for `b ≥ 2` |
+| Balanced field lift | `splitBalancedVecFieldLiftProp_holds_of_base_ge_two` | theorem | Theorem-Target | Vectorized field-lift |
+| Round-trip | `splitBalancedRoundTripProp_of_constructive_boundaries` | theorem | Theorem-Target | Constructive round-trip |
+| Round-trip bridge | `splitRoundTrip_sound_prop` | theorem | Theorem-Target | `Bool → Prop` |
+| Round-trip bridge | `splitRoundTrip_complete_prop` | theorem | Theorem-Target | `Prop → Bool` |
 
 ## Proof Obligations and Closure Plan
 

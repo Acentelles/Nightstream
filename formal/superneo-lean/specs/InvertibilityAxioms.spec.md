@@ -11,7 +11,7 @@
 - `invertibleRq a ↔ ∃ aInv : Coeffs, mulRq a aInv = oneRq`
 - `invertibilityWindowProp B a ↔ normInfCoeffs a ≤ B`
 - `lowNormInvertibilityAssumption B → ∀ a, (normInfCoeffs a ≤ B → invertibleRq a)`
-- `invertibilityPreconditionsProp = True` (placeholder for protocol glue)
+- `invertibilityPreconditionsProp = True` (trivial; reserved for protocol-level preconditions)
 
 ## Paper Anchors
 
@@ -28,14 +28,14 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 
 ## Contract Surface
 
-| Group | Lean symbol | Kind | Status | Guarantee |
+| Group | Lean symbol | Kind | Role | Guarantee |
 |---|---|---|---|---|
 | Predicates | `invertibleRq` | def | Definitional | ∃ inverse in Rq |
 | Predicates | `invertibilityWindowProp` | def | Definitional | normInfCoeffs a ≤ B |
-| Predicates | `invertibilityPreconditionsProp` | def | Definitional | Placeholder (True) |
-| Boundary | `lowNormInvertibilityAssumption` | def | Boundary-Assumed | ∀ a, window → invertible |
-| Theorems | `invertibleRq_of_lowNormAssumption` | theorem | Boundary-Assumed | Uses assumption to derive invertibility |
-| Theorems | `invertibilityPreconditions_from_constants` | theorem | Proved | Preconditions hold |
+| Predicates | `invertibilityPreconditionsProp` | def | Definitional | Trivial (`True`); reserved for protocol-level preconditions |
+| Boundary | `lowNormInvertibilityAssumption` | def | Boundary | ∀ a, window → invertible |
+| Theorems | `invertibleRq_of_lowNormAssumption` | theorem | Boundary | Uses assumption to derive invertibility |
+| Theorems | `invertibilityPreconditions_from_constants` | theorem | Theorem-Target | Preconditions hold |
 
 ## Proof Obligations and Closure Plan
 

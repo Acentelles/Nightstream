@@ -19,19 +19,19 @@
 
 ## Module Mapping
 
-| Paper concept | Lean symbol | Status |
+| Paper concept | Lean symbol | Role |
 |---------------|-------------|--------|
 | Π_DEC assumptions | `PiDECAssumptions` | Definitional (abbrev) |
 | Final statement | `FinalStatement` | Definitional (abbrev) |
-| Reduction-of-knowledge theorem | `final_of_assumption` | Proved (forwarded) |
+| Reduction-of-knowledge theorem | `final_of_assumption` | Theorem-Target (forwarded) |
 
 ## Contract Surface
 
-| Group | Symbol | Guarantee | Status |
+| Group | Symbol | Guarantee | Role |
 |-------|--------|-----------|--------|
 | Assumptions | `PiDECAssumptions` | Forward to `SuperNeo.PiDECAssumptions` | Definitional |
 | Statement | `FinalStatement` | Forward to `SuperNeo.piDECKnowledgeStatement` | Definitional |
-| Theorem | `final_of_assumption` | Assumptions + witness → final statement | Proved |
+| Theorem | `final_of_assumption` | Assumptions + witness → final statement | Theorem-Target |
 
 ## Proof Obligations and Closure Plan
 

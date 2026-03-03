@@ -19,19 +19,19 @@
 
 ## Module Mapping
 
-| Paper concept | Lean symbol | Status |
+| Paper concept | Lean symbol | Role |
 |---------------|-------------|--------|
 | Π_RLC assumptions | `PiRLCAssumptions` | Definitional (abbrev) |
 | Weak statement | `WeakStatement` | Definitional (abbrev) |
-| Weak reduction theorem | `weak_relaxed` | Proved (forwarded) |
+| Weak reduction theorem | `weak_relaxed` | Theorem-Target (forwarded) |
 
 ## Contract Surface
 
-| Group | Symbol | Guarantee | Status |
+| Group | Symbol | Guarantee | Role |
 |-------|--------|-----------|--------|
 | Assumptions | `PiRLCAssumptions` | Forward to `SuperNeo.PiRLCAssumptions` | Definitional |
 | Statement | `WeakStatement` | Forward to `SuperNeo.piRLCWeakStatement` | Definitional |
-| Theorem | `weak_relaxed` | Assumptions + witness → weak statement | Proved |
+| Theorem | `weak_relaxed` | Assumptions + witness → weak statement | Theorem-Target |
 
 ## Proof Obligations and Closure Plan
 

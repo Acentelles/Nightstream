@@ -16,15 +16,15 @@ namespace PiDECInterface
 
 /-! ## Core Surfaces -/
 
-/-- [Status: Proved] Curated re-export of `piDECKnowledgeStatement`. -/
+/-- [Role: Theorem-Target] Curated re-export of `piDECKnowledgeStatement`. -/
 abbrev piDECKnowledgeStatement := SuperNeo.piDECKnowledgeStatement
 
 /-! ## Boundary Surfaces -/
 
-/-- [Status: Boundary-Assumed] Boundary surface `PiDECAssumptions` requiring closure. -/
+/-- [Role: Boundary] Boundary surface `PiDECAssumptions` requiring closure. -/
 abbrev PiDECAssumptions := SuperNeo.PiDECAssumptions
 
-/-- [Status: Boundary-Assumed] Boundary surface `piDEC_of_assumptions` requiring closure. -/
+/-- [Role: Boundary] Boundary surface `piDEC_of_assumptions` requiring closure. -/
 abbrev piDEC_of_assumptions := SuperNeo.piDEC_of_assumptions
 
 end PiDECInterface

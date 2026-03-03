@@ -16,32 +16,32 @@ namespace ProtocolMathTargetInterface
 
 /-! ## Core Surfaces -/
 
-/-- [Status: Proved] Curated re-export of `protocolMathTargetProp`. -/
+/-- [Role: Theorem-Target] Curated re-export of `protocolMathTargetProp`. -/
 abbrev protocolMathTargetProp := SuperNeo.protocolMathTargetProp
 
-/-- [Status: Proved] Curated re-export of `protocolMathTargetWithThm3Prop`. -/
+/-- [Role: Theorem-Target] Curated re-export of `protocolMathTargetWithThm3Prop`. -/
 abbrev protocolMathTargetWithThm3Prop := SuperNeo.protocolMathTargetWithThm3Prop
 
 /-! ## Key Theorems -/
 
-/-- [Status: Proved] Curated theorem surface `protocolMathTargetProp_of_arithmeticBundle`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `protocolMathTargetProp_of_arithmeticBundle`. -/
 abbrev protocolMathTargetProp_of_arithmeticBundle := SuperNeo.protocolMathTargetProp_of_arithmeticBundle
 
-/-- [Status: Proved] Curated theorem surface `protocolMathTargetWithThm3Prop_of_p10_arithmeticBundle`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `protocolMathTargetWithThm3Prop_of_p10_arithmeticBundle`. -/
 abbrev protocolMathTargetWithThm3Prop_of_p10_arithmeticBundle := SuperNeo.protocolMathTargetWithThm3Prop_of_p10_arithmeticBundle
 
-/-- [Status: Proved] Curated theorem surface `protocolMathTargetWithThm3Prop_of_thm3_preconditions`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `protocolMathTargetWithThm3Prop_of_thm3_preconditions`. -/
 abbrev protocolMathTargetWithThm3Prop_of_thm3_preconditions := SuperNeo.protocolMathTargetWithThm3Prop_of_thm3_preconditions
 
-/-- [Status: Proved] Curated theorem surface `protocolMathTargetProp_of_checks`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `protocolMathTargetProp_of_checks`. -/
 abbrev protocolMathTargetProp_of_checks := SuperNeo.protocolMathTargetProp_of_checks
 
-/-- [Status: Proved] Curated theorem surface `protocolMathTargetWithThm3Prop_of_checks`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `protocolMathTargetWithThm3Prop_of_checks`. -/
 abbrev protocolMathTargetWithThm3Prop_of_checks := SuperNeo.protocolMathTargetWithThm3Prop_of_checks
 
 /-! ## Boundary Surfaces -/
 
-/-- [Status: Boundary-Assumed] Boundary surface `protocolMathTargetWithThm3Prop_of_thm3_assumption` requiring closure. -/
+/-- [Role: Boundary] Boundary surface `protocolMathTargetWithThm3Prop_of_thm3_assumption` requiring closure. -/
 abbrev protocolMathTargetWithThm3Prop_of_thm3_assumption := SuperNeo.protocolMathTargetWithThm3Prop_of_thm3_assumption
 
 end ProtocolMathTargetInterface

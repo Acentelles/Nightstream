@@ -27,11 +27,11 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 
 ## Contract Surface
 
-| Group | Lean symbol | Kind | Status | Guarantee |
+| Group | Lean symbol | Kind | Role | Guarantee |
 |---|---|---|---|---|
 | Assumptions | `PiDECAssumptions` | structure | Definitional | weak : PiRLCAssumptions ctx, lowNormInvertibilityBoundary |
 | Statement | `piDECKnowledgeStatement` | def | Definitional | ∃ deltaInv, inverse ∧ ceRelaxed ∧ claimTrue |
-| Theorem | `piDEC_of_assumptions` | theorem | Proved | Assumptions + witness → knowledge statement |
+| Theorem | `piDEC_of_assumptions` | theorem | Theorem-Target | Assumptions + witness → knowledge statement |
 
 ## Proof Obligations and Closure Plan
 

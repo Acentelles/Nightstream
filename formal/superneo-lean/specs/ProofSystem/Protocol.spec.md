@@ -29,14 +29,14 @@
 
 ## Contract Surface
 
-| Group | Lean symbol | Kind | Status | Guarantee |
+| Group | Lean symbol | Kind | Role | Guarantee |
 |-------|-------------|------|--------|-----------|
 | Params | `LatticeParams` | abbrev | Definitional | `= SuperNeo.ProofSystem.AjtaiParams` |
 | Assumptions | `FinalTheoremAssumptions` | abbrev | Definitional | Assumption registry for `ctx` |
 | Statements | `FinalCompletenessStatement` | abbrev | Definitional | Completeness claim shape |
 | Statements | `FinalKnowledgeSoundnessStatement` | abbrev | Definitional | Knowledge-soundness claim shape |
 | Shape | `FinalTheoremShape` | abbrev | Definitional | Combined theorem shape |
-| Constructor | `finalTheoremShape_of_assumptions` | theorem | Proved | `hA : FinalTheoremAssumptions ctx → FinalTheoremShape ctx hA` |
+| Constructor | `finalTheoremShape_of_assumptions` | theorem | Theorem-Target | `hA : FinalTheoremAssumptions ctx → FinalTheoremShape ctx hA` |
 | SumCheck | `finalSumcheckPackage`, `finalSumcheckSoundnessBoundary`, etc. | def | Definitional | Accessors into `hA.sumcheckPackage`, `hA.sumcheckSoundnessBoundary`, etc. |
 | Schwartz-Zippel | `finalSchwartzZippelBoundaryPackage`, `finalSchwartzZippelErrorNegligible`, etc. | def | Definitional | Accessors into `hA.schwartzZippelBoundary`, etc. |
 | MSIS | `finalMSISHardnessBoundary`, `finalMSISErrorNegligible`, etc. | def | Definitional | Accessors into `hA.msisHardnessBoundary`, etc. |

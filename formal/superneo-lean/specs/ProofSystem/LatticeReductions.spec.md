@@ -3,15 +3,15 @@
 ## Purpose
 
 - **What it is**: MSIS-to-Ajtai binding reduction theorems that derive Ajtai commitment security from Module-SIS hardness.
-- **Key property**: `ajtaiBoundaries_of_msis` bundles standard + relaxed binding reductions: MSIS hardness → ¬BindingCollision ∧ ¬RelaxedBindingCollision.
+- **Key property**: `ajtaiBoundaries_of_msis` bundles standard + relaxed binding reductions: MSIS hardness → ¬BindingCollision ∧ ¬RelaxedBindingCollision over the reduction carrier `C`.
 - **Protocol role**: Provides the lattice-security reduction consumed by `ProtocolTheorem` to close the protocol's security proof under MSIS hardness.
 
 ## Target Formulas
 
 - `‖subVec n w₁ w₂‖∞ < msisNormBound` = norm transfer from binding collision witnesses.
 - `MSISBreakEvent → ¬BindingCollision` = standard binding from MSIS.
-- `MSISBreakEvent → ¬RelaxedBindingCollision` = relaxed binding from MSIS.
-- `MSISHardnessAssumption → AjtaiBindingAssumption ∧ AjtaiRelaxedBindingAssumption` = `ajtaiBoundaries_of_msis`.
+- `MSISBreakEvent → ¬RelaxedBindingCollision(params, C)` = relaxed binding from MSIS.
+- `MSISHardnessAssumption → AjtaiBindingAssumption(params) ∧ AjtaiRelaxedBindingAssumption(params, C)` = `ajtaiBoundaries_of_msis`.
 
 ## Paper Anchors
 
@@ -23,50 +23,72 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 
 ## Module Mapping
 
-| Paper concept | Lean symbol | Status |
+| Paper concept | Lean symbol | Role |
 |---------------|-------------|--------|
-| Norm transfer | `bindingCollision_subWitness_norm_lt_msisNormBound` | Proved |
-| Standard MSIS break | `msisBreakEvent_of_bindingCollision` | Proved |
-| Relaxed MSIS break | `msisBreakEvent_of_relaxedBindingCollision` | Proved |
-| No break under hardness | `no_msisBreakEvent_of_hardness` | Proved |
-| Standard binding | `no_ajtaiBindingCollision_of_advantageBound` | Proved |
-| Ajtai from MSIS (standard) | `ajtaiBinding_of_msis` | Proved |
-| Ajtai from MSIS (relaxed) | `ajtaiRelaxedBinding_of_msis` | Proved |
-| Combined bundle | `ajtaiBoundaries_of_msis` | Proved |
+| Norm transfer | `bindingCollision_subWitness_norm_lt_msisNormBound` | Theorem-Target |
+| Standard MSIS break | `msisBreakEvent_of_bindingCollision` | Theorem-Target |
+| Relaxed MSIS break | `msisBreakEvent_of_relaxedBindingCollision` | Theorem-Target |
+| No break under hardness | `no_msisBreakEvent_of_hardness` | Theorem-Target |
+| Standard binding | `no_ajtaiBindingCollision_of_advantageBound` | Theorem-Target |
+| Ajtai from MSIS (standard) | `ajtaiBinding_of_msis` | Theorem-Target |
+| Ajtai from MSIS (relaxed) | `ajtaiRelaxedBinding_of_msis` | Theorem-Target |
+| Combined bundle | `ajtaiBoundaries_of_msis` | Theorem-Target |
 | Reduction bundle | `MSISToAjtaiReductions` (structure) | Definitional |
-| Bundle constructor | `MSISToAjtaiReductions.mk` | Proved |
+| Bundle constructor | `MSISToAjtaiReductions.mk` | Theorem-Target |
 
 ## Contract Surface
 
-| Group | Symbol | Guarantee | Status |
+| Group | Symbol | Guarantee | Role |
 |-------|--------|-----------|--------|
-| Norm | `bindingCollision_subWitness_norm_lt_msisNormBound` | `‖w₁ - w₂‖∞ < msisNormBound` | Proved |
-| Extraction | `msisBreakEvent_of_bindingCollision` | Collision → MSIS break | Proved |
-| Extraction | `msisBreakEvent_of_relaxedBindingCollision` | Relaxed collision → MSIS break | Proved |
-| Security | `no_msisBreakEvent_of_hardness` | Hardness → no break event | Proved |
-| Binding | `ajtaiBinding_of_msis` | MSIS → standard binding | Proved |
-| Binding | `ajtaiRelaxedBinding_of_msis` | MSIS → relaxed binding | Proved |
-| Bundle | `ajtaiBoundaries_of_msis` | MSIS → both bindings | Proved |
+| Norm | `bindingCollision_subWitness_norm_lt_msisNormBound` | `‖w₁ - w₂‖∞ < msisNormBound` | Theorem-Target |
+| Extraction | `msisBreakEvent_of_bindingCollision` | Collision → MSIS break | Theorem-Target |
+| Extraction | `msisBreakEvent_of_relaxedBindingCollision` | Relaxed collision → MSIS break | Theorem-Target |
+| Security | `no_msisBreakEvent_of_hardness` | Hardness → no break event | Theorem-Target |
+| Binding | `ajtaiBinding_of_msis` | MSIS → standard binding | Theorem-Target |
+| Binding | `ajtaiRelaxedBinding_of_msis` | MSIS → relaxed binding | Theorem-Target |
+| Bundle | `ajtaiBoundaries_of_msis` | MSIS → both bindings | Theorem-Target |
+| Extractor algebra | `mulRq_sub_right`, `dotRq_subVec_linearity`, `subVec_ne_zero_of_ne`, `matVecMul_subVec` | Subtraction-linearity + collision witness non-triviality + matrix subtraction linearity | Theorem-Target |
+| Reduction-law bundle | `LatticeReductionLaws` | Threads `samplingCarrier : SamplingCarrier` and `strongSampling : strongSamplingExpansionProp C T`; C-C membership comes from `RelaxedBindingCollision` fields directly | Boundary |
+| Constructor | `LatticeReductionLaws.ofCarrier` | Canonical constructor from explicit carrier + strong-sampling theorem | Theorem-Target |
+| Constructor | `LatticeReductionLaws.ofPaperCarrier` | Canonical constructor specialized to `paperCarrier` | Theorem-Target |
+| Constructor | `LatticeReductionLaws.ofPaperCarrierFromBounds` | Derives `paperCarrier` laws from subtraction/multiplication norm bundles | Theorem-Target |
+| Derivation | `LatticeReductionLaws.paperStrongSampling_of_bounds` | Specializes `strongSamplingExpansionProp_of_paperCarrier` at `params.relaxedExpansion` | Theorem-Target |
+| Constructor | `MSISToAjtaiReductions.ofLaws` | Canonical reduction-package constructor from an explicit `LatticeReductionLaws` instance | Theorem-Target |
+| Constructor | `MSISToAjtaiReductions.ofPaperCarrier` | Specializes reduction package to `paperCarrier` from a strong-sampling theorem | Theorem-Target |
+| Constructor | `MSISToAjtaiReductions.ofPaperCarrierFromBounds` | Specializes reduction package to `paperCarrier` from norm bundles (`hSub`, `hMul`) | Theorem-Target |
+| Closed norm law | `normInfVec_subVec_le_derived` | \(\|\text{subVec}\,n\,v_1\,v_2\|_\infty \le \|v_1\|_\infty + \|v_2\|_\infty\) from `Field.centeredAbs_sub_le` + max-fold lemmas | Theorem-Target |
 
 ## Proof Obligations and Closure Plan
 
-- All theorems are proved (no sorry).
-- Proofs depend on the 8 axioms from `Lattice.lean`; once those axioms are discharged, these proofs remain valid.
+- All theorem statements must hold without `sorry`.
+- No module-level `axiom`s; unresolved laws are threaded explicitly via `LatticeReductionLaws` and carried in `MSISToAjtaiReductions`.
 
 ## Assumption Ledger
 
-No open boundary assumptions in this module. (All assumptions are inherited from `Lattice.lean` and documented there.)
+Open boundary assumptions are explicit in `LatticeReductionLaws`:
+
+- `strongSampling`: supply `strongSamplingExpansionProp` for the chosen sampling carrier.
+  Closure target: instantiate via `LatticeReductionLaws.ofCarrier`, `.ofPaperCarrier`, or `.ofPaperCarrierFromBounds` with a concrete sampling set proof.
+
+Relaxed-collision carrier membership is explicit in collision witnesses:
+- `RelaxedBindingCollision params C` carries `inDiff1 : samplingDiffSet C delta1`
+- `RelaxedBindingCollision params C` carries `inDiff2 : samplingDiffSet C delta2`
+
+Derived internally (not a boundary field):
+- `normInfVec_subVec_le_derived`: vector subtraction norm triangle, proved in-module.
+- `normInfVec_smulVec_le_of_diff`: vector-level bound
+  \(\|\delta \cdot v\|_\infty \le 4T\cdot B\) proved from `strongSampling` + `normInfVec` max aggregation.
 
 ## Dependency and Consumer Map
 
-- **Dependencies**: `SuperNeo.ProofSystem.Lattice` (uses structures, axioms, and vector operations).
+- **Dependencies**: `SuperNeo.ProofSystem.Lattice` (uses structures, vector operations, and boundary package typeclass).
 - **Consumers**:
   - `SuperNeo.ProtocolTheorem`: imports `LatticeReductions` for `ajtaiBoundaries_of_msis` in the final theorem.
   - `SuperNeo.ProofSystem.Protocol`: uses reduction bundle in the proof-system capstone.
 
 ## Implementation Plan
 
-- Stable. No changes expected until Lattice axioms are discharged.
+- Stable. Next closure step is discharging/proving `strongSampling` for the concrete carrier required by protocol instantiations.
 
 ## Quality Expectations
 

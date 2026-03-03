@@ -3,7 +3,7 @@
 ## Purpose
 
 - **What it is**: The polynomial ring `R_q = F_q[X] / Φ_η(X)` represented as coefficient arrays `Coeffs := Array F` of length `d = 54`, with schoolbook cyclic multiplication `mulRq`, vector addition `vecAdd`, scalar scaling `vecScale`, constant-term extraction `ct`, and ring identity/zero elements.
-- **Key property**: `mulRq` preserves shape (`mulRq_size : (mulRq a b).size = d`) and `vecAdd` preserves size (`vecAdd_size_of_eq : a.size = b.size → (vecAdd a b).size = a.size`).
+- **Key property**: `mulRq` preserves shape (`mulRq_size : (mulRq a b).size = d`), is commutative (`mulRq_comm`), is associative (`mulRq_assoc`), and distributes over `vecAdd` on both sides (`mulRq_vecAdd_right/left`); `vecAdd` preserves size (`vecAdd_size_of_eq : a.size = b.size → (vecAdd a b).size = a.size`).
 - **Protocol role**: `Coeffs` is the universal wire type for ring-element witnesses throughout SuperNeo. `vecAdd` and `vecScale` underlie the folding scheme's linear combination `z' = ρ₁·z₁ + ρ₂·z₂` (Π_CCS, Section 7.3). `ct` extracts the constant term for CCS relation checks. `mulRq` appears in embedding products (Definition 9).
 
 ## Target Formulas
@@ -30,7 +30,7 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 
 ## Contract Surface
 
-| Group | Lean symbol | Kind | Status | Guarantee |
+| Group | Lean symbol | Kind | Role | Guarantee |
 |---|---|---|---|---|
 | Types | `Coeffs` | abbrev | Definitional | `Coeffs = Array F` |
 | Constants | `D` | def | Definitional | `D = d` |
@@ -42,20 +42,24 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 | Operations | `mulRq` | def | Definitional | Cyclic convolution mod `d` |
 | Extraction | `ct`, `coeffAt` | def | Definitional | Constant term / i-th coefficient |
 | Identity | `zeroRq`, `oneRq` | def | Definitional | Zero and one in `R_q` |
-| Size | `vecScale_size` | theorem | Proved | `(vecScale s a).size = a.size` |
-| Size | `vecAdd_size_of_eq` | theorem | Proved | Equal inputs → preserved size |
-| Size | `vecAdd_size_of_ne` | theorem | Proved | Unequal inputs → empty result |
-| Size | `linComb2Vec_size_of_eq` | theorem | Proved | Preserved under linear combination |
-| Size | `mulRq_size` | theorem | Proved | `(mulRq a b).size = d` |
-| Size | `zeroRq_size`, `oneRq_size` | theorem | Proved | Both have size `d` |
-| Value | `ct_zeroRq` | theorem | Proved | `ct zeroRq = 0` |
+| Size | `vecScale_size` | theorem | Theorem-Target | `(vecScale s a).size = a.size` |
+| Size | `vecAdd_size_of_eq` | theorem | Theorem-Target | Equal inputs → preserved size |
+| Size | `vecAdd_size_of_ne` | theorem | Theorem-Target | Unequal inputs → empty result |
+| Size | `linComb2Vec_size_of_eq` | theorem | Theorem-Target | Preserved under linear combination |
+| Size | `mulRq_size` | theorem | Theorem-Target | `(mulRq a b).size = d` |
+| Size | `zeroRq_size`, `oneRq_size` | theorem | Theorem-Target | Both have size `d` |
+| Algebra | `mulRq_assoc` | theorem | Theorem-Target | `mulRq (mulRq a b) c = mulRq a (mulRq b c)` |
+| Algebra | `mulRq_vecAdd_right` | theorem | Theorem-Target | Right distributivity over `vecAdd` (shape-preserving operands) |
+| Algebra | `mulRq_vecAdd_left` | theorem | Theorem-Target | Left distributivity over `vecAdd` (shape-preserving operands) |
+| Value | `ct_zeroRq` | theorem | Theorem-Target | `ct zeroRq = 0` |
+| Shape | `hasRingDegreeShape_zeroRq`, `hasRingDegreeShape_oneRq`, `hasRingDegreeShape_mulRq` | theorem | Theorem-Target | Canonical degree-shape closure for constants/products |
+| Value | `ct_oneRq`, `coeffAt_zeroRq` | theorem | Theorem-Target | `ct oneRq = 1`, zero coefficients for `zeroRq` |
+| Shape bundle | `ringMulShapeProp_of_shapes`, `ringMulShapeProp_left/right` | theorem | Theorem-Target | Constructor + projections for multiplication preconditions |
 
 ## Proof Obligations and Closure Plan
 
-All current obligations closed. Future work:
-- `mulRq` commutativity and associativity (needed for Section 5 embedding products).
-- `ct_mulRq` relating `ct(a·b)` to inner products (needed for Theorem 3 core).
-- `vecAdd` commutativity (cosmetic, not blocking).
+All current module-scope obligations are closed (no open assumptions in this file), including `mulRq` associativity.
+Cross-module closure for `ct`-interaction and embedding-specific identities remains tracked in embedding/theorem-3 milestones.
 
 ## Assumption Ledger
 
@@ -76,7 +80,7 @@ Downstream consumers:
 
 ## Implementation Plan
 
-No further work required for current scope. Algebraic properties (`mulRq` commutativity/associativity) are future-scope items tracked separately.
+Stable for module scope; downstream theorem modules consume these shape/value guarantees directly.
 
 ## Quality Expectations
 
@@ -86,10 +90,10 @@ All size theorems must be `@[simp]`-tagged or usable in `simp` calls. Shape pred
 
 - `lake build` succeeds.
 - No `sorry`.
-- All 7 size/shape theorems are proved.
+- Core size/shape/value theorem surfaces listed in Contract Surface are proved.
 
 ## Out of Scope
 
 - NTT-based multiplication.
-- Quotient-ring algebraic identities (commutativity, associativity).
+- Additional `ct`-interaction identities beyond current contract (`ct_mulRq`, evaluation linkage specifics).
 - Ring element comparison / ordering.

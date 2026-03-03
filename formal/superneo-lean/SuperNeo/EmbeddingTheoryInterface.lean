@@ -16,7 +16,7 @@ namespace SuperNeo
 
 namespace EmbeddingTheoryInterface
 
-/-- [Status: Pending] No curated module-level surface extracted yet. -/
+/-- [Role: Theorem-Target] No curated module-level surface extracted yet. -/
 def moduleContractPending : Prop := True
 
 theorem moduleContractPending_true : moduleContractPending := by

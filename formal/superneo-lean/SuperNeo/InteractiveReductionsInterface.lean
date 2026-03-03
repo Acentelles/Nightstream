@@ -17,21 +17,21 @@ namespace InteractiveReductionsInterface
 
 /-! ## Core Surfaces -/
 
-/-- [Status: Proved] Curated re-export of `strongCompositionStatement`. -/
+/-- [Role: Theorem-Target] Curated re-export of `strongCompositionStatement`. -/
 abbrev strongCompositionStatement := SuperNeo.strongCompositionStatement
 
-/-- [Status: Proved] Curated re-export of `weakCompositionStatement`. -/
+/-- [Role: Theorem-Target] Curated re-export of `weakCompositionStatement`. -/
 abbrev weakCompositionStatement := SuperNeo.weakCompositionStatement
 
 /-! ## Boundary Surfaces -/
 
-/-- [Status: Boundary-Assumed] Boundary surface `InteractiveReductionAssumptions` requiring closure. -/
+/-- [Role: Boundary] Boundary surface `InteractiveReductionAssumptions` requiring closure. -/
 abbrev InteractiveReductionAssumptions := SuperNeo.InteractiveReductionAssumptions
 
-/-- [Status: Boundary-Assumed] Boundary surface `strongComposition_of_assumptions` requiring closure. -/
+/-- [Role: Boundary] Boundary surface `strongComposition_of_assumptions` requiring closure. -/
 abbrev strongComposition_of_assumptions := SuperNeo.strongComposition_of_assumptions
 
-/-- [Status: Boundary-Assumed] Boundary surface `weakComposition_of_assumptions` requiring closure. -/
+/-- [Role: Boundary] Boundary surface `weakComposition_of_assumptions` requiring closure. -/
 abbrev weakComposition_of_assumptions := SuperNeo.weakComposition_of_assumptions
 
 end InteractiveReductionsInterface

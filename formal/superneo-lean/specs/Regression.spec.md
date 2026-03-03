@@ -22,7 +22,7 @@ No exported declarations — this module is a parity entrypoint.
 
 ## Contract Surface
 
-| Group | Symbol | Guarantee | Status |
+| Group | Symbol | Guarantee | Role |
 |-------|--------|-----------|--------|
 | (none) | — | No exported declarations — this module is a parity entrypoint. | Definitional |
 

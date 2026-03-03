@@ -15,36 +15,36 @@ namespace CoeffMapsInterface
 
 /-! ## Core Surfaces -/
 
-/-- [Status: Proved] Curated re-export of `cf`. -/
+/-- [Role: Theorem-Target] Curated re-export of `cf`. -/
 abbrev cf := SuperNeo.cf
 
-/-- [Status: Proved] Curated re-export of `cfInv`. -/
+/-- [Role: Theorem-Target] Curated re-export of `cfInv`. -/
 abbrev cfInv := SuperNeo.cfInv
 
-/-- [Status: Proved] Curated re-export of `coeffMapRoundTripProp`. -/
+/-- [Role: Theorem-Target] Curated re-export of `coeffMapRoundTripProp`. -/
 abbrev coeffMapRoundTripProp := SuperNeo.coeffMapRoundTripProp
 
-/-- [Status: Proved] Curated re-export of `coeffMapRoundTrip`. -/
+/-- [Role: Theorem-Target] Curated re-export of `coeffMapRoundTrip`. -/
 abbrev coeffMapRoundTrip := SuperNeo.coeffMapRoundTrip
 
 /-! ## Key Theorems -/
 
-/-- [Status: Proved] Curated theorem surface `cfInv_cf`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `cfInv_cf`. -/
 abbrev cfInv_cf := SuperNeo.cfInv_cf
 
-/-- [Status: Proved] Curated theorem surface `cf_cfInv`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `cf_cfInv`. -/
 abbrev cf_cfInv := SuperNeo.cf_cfInv
 
-/-- [Status: Proved] Curated theorem surface `cf_size`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `cf_size`. -/
 abbrev cf_size := SuperNeo.cf_size
 
-/-- [Status: Proved] Curated theorem surface `cfInv_size`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `cfInv_size`. -/
 abbrev cfInv_size := SuperNeo.cfInv_size
 
-/-- [Status: Proved] Curated theorem surface `ct_cf`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `ct_cf`. -/
 abbrev ct_cf := SuperNeo.ct_cf
 
-/-- [Status: Proved] Curated theorem surface `ct_cfInv`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `ct_cfInv`. -/
 abbrev ct_cfInv := SuperNeo.ct_cfInv
 
 end CoeffMapsInterface

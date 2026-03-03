@@ -16,48 +16,48 @@ namespace NormInterface
 
 /-! ## Core Surfaces -/
 
-/-- [Status: Proved] Curated re-export of `normInfF`. -/
+/-- [Role: Theorem-Target] Curated re-export of `normInfF`. -/
 abbrev normInfF := SuperNeo.normInfF
 
-/-- [Status: Proved] Curated re-export of `normInfCoeffs`. -/
+/-- [Role: Theorem-Target] Curated re-export of `normInfCoeffs`. -/
 abbrev normInfCoeffs := SuperNeo.normInfCoeffs
 
-/-- [Status: Proved] Curated re-export of `maxRhoNorm`. -/
+/-- [Role: Theorem-Target] Curated re-export of `maxRhoNorm`. -/
 abbrev maxRhoNorm := SuperNeo.maxRhoNorm
 
-/-- [Status: Proved] Curated re-export of `vecAddNormBoundFromOperands`. -/
+/-- [Role: Theorem-Target] Curated re-export of `vecAddNormBoundFromOperands`. -/
 abbrev vecAddNormBoundFromOperands := SuperNeo.vecAddNormBoundFromOperands
 
-/-- [Status: Proved] Curated re-export of `vecScaleNormBoundFromOperands`. -/
+/-- [Role: Theorem-Target] Curated re-export of `vecScaleNormBoundFromOperands`. -/
 abbrev vecScaleNormBoundFromOperands := SuperNeo.vecScaleNormBoundFromOperands
 
-/-- [Status: Proved] Curated re-export of `mulRqNormBoundFromOperands`. -/
+/-- [Role: Theorem-Target] Curated re-export of `mulRqNormBoundFromOperands`. -/
 abbrev mulRqNormBoundFromOperands := SuperNeo.mulRqNormBoundFromOperands
 
-/-- [Status: Proved] Curated re-export of `coeffSubNormBoundFromOperands`. -/
+/-- [Role: Theorem-Target] Curated re-export of `coeffSubNormBoundFromOperands`. -/
 abbrev coeffSubNormBoundFromOperands := SuperNeo.coeffSubNormBoundFromOperands
 
-/-- [Status: Proved] Curated re-export of `AllChallengeCoeffs`. -/
+/-- [Role: Theorem-Target] Curated re-export of `AllChallengeCoeffs`. -/
 abbrev AllChallengeCoeffs := SuperNeo.AllChallengeCoeffs
 
 /-! ## Key Theorems -/
 
-/-- [Status: Proved] Curated theorem surface `normInfF_zero`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `normInfF_zero`. -/
 theorem normInfF_zero : normInfF (0 : F) = 0 := SuperNeo.normInfF_zero
 
-/-- [Status: Proved] Curated theorem surface `normInfCoeffs_empty`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `normInfCoeffs_empty`. -/
 theorem normInfCoeffs_empty : normInfCoeffs (#[] : Coeffs) = 0 := SuperNeo.normInfCoeffs_empty
 
-/-- [Status: Proved] Curated theorem surface `normInfCoeffs_nonneg`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `normInfCoeffs_nonneg`. -/
 theorem normInfCoeffs_nonneg (a : Coeffs) : 0 ≤ normInfCoeffs a := SuperNeo.normInfCoeffs_nonneg a
 
-/-- [Status: Proved] Curated theorem surface `maxRhoNorm_nonneg`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `maxRhoNorm_nonneg`. -/
 theorem maxRhoNorm_nonneg (a : Coeffs) : 0 ≤ maxRhoNorm a := SuperNeo.maxRhoNorm_nonneg a
 
-/-- [Status: Proved] Curated theorem surface `allChallengeCoeffs_empty`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `allChallengeCoeffs_empty`. -/
 theorem allChallengeCoeffs_empty : AllChallengeCoeffs (#[] : Coeffs) := SuperNeo.allChallengeCoeffs_empty
 
-/-- [Status: Proved] Curated theorem surface `allChallengeCoeffs_mono`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `allChallengeCoeffs_mono`. -/
 theorem allChallengeCoeffs_mono
     {a : Coeffs}
     {B C : Nat}
@@ -66,21 +66,21 @@ theorem allChallengeCoeffs_mono
     ∀ i : Fin a.size, normInfF a[i] ≤ C :=
   SuperNeo.allChallengeCoeffs_mono hB hBC
 
-/-- [Status: Proved] Curated theorem surface `allChallengeCoeffs_of_bound`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `allChallengeCoeffs_of_bound`. -/
 theorem allChallengeCoeffs_of_bound
     {a : Coeffs}
     (hB : ∀ i : Fin a.size, normInfF a[i] ≤ 2) :
     AllChallengeCoeffs a :=
   SuperNeo.allChallengeCoeffs_of_bound hB
 
-/-- [Status: Proved] Curated theorem surface `allChallengeCoeffs_weaken`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `allChallengeCoeffs_weaken`. -/
 theorem allChallengeCoeffs_weaken
     {a : Coeffs}
     (h : AllChallengeCoeffs a) :
     ∀ i : Fin a.size, normInfF a[i] ≤ 2 :=
   SuperNeo.allChallengeCoeffs_weaken h
 
-/-- [Status: Proved] Curated theorem surface `vecAddNormBoundFromOperands_of_global`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `vecAddNormBoundFromOperands_of_global`. -/
 theorem vecAddNormBoundFromOperands_of_global
     {BA BB B : Nat}
     (hGlobal : ∀ a b : Coeffs, a.size = b.size →
@@ -88,21 +88,21 @@ theorem vecAddNormBoundFromOperands_of_global
     vecAddNormBoundFromOperands BA BB B :=
   SuperNeo.vecAddNormBoundFromOperands_of_global hGlobal
 
-/-- [Status: Proved] Curated theorem surface `vecScaleNormBoundFromOperands_of_global`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `vecScaleNormBoundFromOperands_of_global`. -/
 theorem vecScaleNormBoundFromOperands_of_global
     {BS BA B : Nat}
     (hGlobal : ∀ s : F, ∀ a : Coeffs, normInfCoeffs (vecScale s a) ≤ B) :
     vecScaleNormBoundFromOperands BS BA B :=
   SuperNeo.vecScaleNormBoundFromOperands_of_global hGlobal
 
-/-- [Status: Proved] Curated theorem surface `mulRqNormBoundFromOperands_of_global`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `mulRqNormBoundFromOperands_of_global`. -/
 theorem mulRqNormBoundFromOperands_of_global
     {BA BB B : Nat}
     (hGlobal : ∀ a b : Coeffs, normInfCoeffs (mulRq a b) ≤ B) :
     mulRqNormBoundFromOperands BA BB B :=
   SuperNeo.mulRqNormBoundFromOperands_of_global hGlobal
 
-/-- [Status: Proved] Curated theorem surface `coeffSubNormBoundFromOperands_of_global`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `coeffSubNormBoundFromOperands_of_global`. -/
 theorem coeffSubNormBoundFromOperands_of_global
     {BA BB B : Nat}
     (hGlobal : ∀ a b : Coeffs, a.size = b.size →

@@ -27,14 +27,14 @@
 
 ## Contract Surface
 
-| Contract group | Lean surface | Preconditions | Guarantee | Status | Used by |
+| Contract group | Lean surface | Preconditions | Guarantee | Role | Used by |
 |---|---|---|---|---|---|
 | Structure | `ArithmeticObligations` | None | Bundles splitScalarBelowPow, evalHom, vecModule, scalarModule, invertibilityWindow, sampling, mleTableSize, mleIdentityAtR, interpolation | Definitional | ProtocolTarget |
-| Constructor | `ArithmeticObligations.of_p10_p11` | thm3, barLift, vec/scalar module, inv, sampling, mleSize, interp | `ArithmeticObligations` with evalHom from P10+P11 | Proved | — |
-| Terminal zero | `ArithmeticObligations.splitTerminalZero` | `ArithmeticObligations` | `splitBase2TerminalZeroProp splitScalar kSplit` | Proved | ProtocolTarget |
-| Split decomp | `splitDecompositionNat_of_obligations` | `ArithmeticObligations` | `splitBase2LowPartNat + (2^kSplit)*splitBase2TerminalQuot = splitScalar.val` | Proved | — |
-| MLE from assumption | `mleIdentityAtR_of_assumption` | `qVals.size = 2^r.size`, `mleIdentityAssumption` | `mleEval qVals r = mleInnerProductForm qVals r` | Proved | — |
-| MLE from size | `mleIdentityAtR_of_size` | `qVals.size = 2^r.size` | `mleEval qVals r = mleInnerProductForm qVals r` | Proved | — |
+| Constructor | `ArithmeticObligations.of_p10_p11` | thm3, barLift, vec/scalar module, inv, sampling, mleSize, interp | `ArithmeticObligations` with evalHom from P10+P11 | Theorem-Target | — |
+| Terminal zero | `ArithmeticObligations.splitTerminalZero` | `ArithmeticObligations` | `splitBase2TerminalZeroProp splitScalar kSplit` | Theorem-Target | ProtocolTarget |
+| Split decomp | `splitDecompositionNat_of_obligations` | `ArithmeticObligations` | `splitBase2LowPartNat + (2^kSplit)*splitBase2TerminalQuot = splitScalar.val` | Theorem-Target | — |
+| MLE from assumption | `mleIdentityAtR_of_assumption` | `qVals.size = 2^r.size`, `mleIdentityAssumption` | `mleEval qVals r = mleInnerProductForm qVals r` | Theorem-Target | — |
+| MLE from size | `mleIdentityAtR_of_size` | `qVals.size = 2^r.size` | `mleEval qVals r = mleInnerProductForm qVals r` | Theorem-Target | — |
 
 ## Proof Obligations and Closure Plan
 

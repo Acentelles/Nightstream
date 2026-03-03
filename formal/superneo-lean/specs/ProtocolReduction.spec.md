@@ -32,15 +32,15 @@
 
 ## Contract Surface
 
-| Contract group | Lean surface | Preconditions | Guarantee | Status | Used by |
+| Contract group | Lean surface | Preconditions | Guarantee | Role | Used by |
 |---|---|---|---|---|---|
 | Claim surfaces | `p10ForClaim`, `arithmeticBundleForClaim` | None | Claim-level P10 and arithmetic bundle | Definitional | — |
-| Skeleton from props | `superneoMathProtocolSkeleton_of_props` | ClaimShapeValid, IsDBarMatrix, IsDVec, p10ForClaim, arithmeticBundleForClaim, witness, norm | CEValid | Proved | — |
-| Skeleton from Thm3 | `superneoMathProtocolSkeleton_of_thm3_assumption` | ClaimShapeValid, IsDBarMatrix, IsDVec, thm3CoreAssumption, arithmeticBundleForClaim, witness, norm | CEValid | Proved | — |
-| Skeleton from checks | `superneoMathProtocolSkeleton_of_checks` | ClaimShapeValid, IsDBarMatrix, IsDVec, check-driven (P10, P6, P12, P14, module, P17, P18, P19), witness, norm | CEValid | Proved | — |
-| Smoke: checks → props | `smoke_checks_imply_props` | Check-driven assumptions | `p10ForClaim ∧ arithmeticBundleForClaim` | Proved | — |
-| Smoke: props → check subset | `smoke_props_imply_check_subset` | ClaimShapeValid, p10ForClaim ∧ arithmeticBundleForClaim | P10, P6, P12, module, P17, P18, P19 checks | Proved | — |
-| Smoke: compose | `smoke_protocolMathTarget_compose` | ClaimShapeValid, IsDBarMatrix, IsDVec, props, witness, norm | CEValid | Proved | — |
+| Skeleton from props | `superneoMathProtocolSkeleton_of_props` | ClaimShapeValid, IsDBarMatrix, IsDVec, p10ForClaim, arithmeticBundleForClaim, witness, norm | CEValid | Theorem-Target | — |
+| Skeleton from Thm3 | `superneoMathProtocolSkeleton_of_thm3_assumption` | ClaimShapeValid, IsDBarMatrix, IsDVec, thm3CoreAssumption, arithmeticBundleForClaim, witness, norm | CEValid | Theorem-Target | — |
+| Skeleton from checks | `superneoMathProtocolSkeleton_of_checks` | ClaimShapeValid, IsDBarMatrix, IsDVec, check-driven (P10, P6, P12, P14, module, P17, P18, P19), witness, norm | CEValid | Theorem-Target | — |
+| Smoke: checks → props | `smoke_checks_imply_props` | Check-driven assumptions | `p10ForClaim ∧ arithmeticBundleForClaim` | Theorem-Target | — |
+| Smoke: props → check subset | `smoke_props_imply_check_subset` | ClaimShapeValid, p10ForClaim ∧ arithmeticBundleForClaim | P10, P6, P12, module, P17, P18, P19 checks | Theorem-Target | — |
+| Smoke: compose | `smoke_protocolMathTarget_compose` | ClaimShapeValid, IsDBarMatrix, IsDVec, props, witness, norm | CEValid | Theorem-Target | — |
 
 ## Proof Obligations and Closure Plan
 

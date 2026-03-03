@@ -16,15 +16,15 @@ namespace PiRLCInterface
 
 /-! ## Core Surfaces -/
 
-/-- [Status: Proved] Curated re-export of `piRLCWeakStatement`. -/
+/-- [Role: Theorem-Target] Curated re-export of `piRLCWeakStatement`. -/
 abbrev piRLCWeakStatement := SuperNeo.piRLCWeakStatement
 
 /-! ## Boundary Surfaces -/
 
-/-- [Status: Boundary-Assumed] Boundary surface `PiRLCAssumptions` requiring closure. -/
+/-- [Role: Boundary] Boundary surface `PiRLCAssumptions` requiring closure. -/
 abbrev PiRLCAssumptions := SuperNeo.PiRLCAssumptions
 
-/-- [Status: Boundary-Assumed] Boundary surface `piRLCWeak_of_assumptions` requiring closure. -/
+/-- [Role: Boundary] Boundary surface `piRLCWeak_of_assumptions` requiring closure. -/
 abbrev piRLCWeak_of_assumptions := SuperNeo.piRLCWeak_of_assumptions
 
 end PiRLCInterface

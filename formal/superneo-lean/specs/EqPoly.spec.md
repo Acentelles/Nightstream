@@ -32,14 +32,14 @@
 - Interface: `SuperNeo.EqPolyInterface`
 
 ## Contract Surface
-| Contract group | Lean surface (interface) | Preconditions | Guarantee | Status | Used by |
+| Contract group | Lean surface (interface) | Preconditions | Guarantee | Role | Used by |
 |---|---|---|---|---|---|
-| Bit predicates | `IsBit`, `IsBitVec` | None | `IsBit x ↔ x = 0 ∨ x = 1`; `IsBitVec v ↔ ∀ i, IsBit v[i]` | Proved | `MLE.lean`, `PolyLemmas.lean` |
-| Core eq definitions | `eqTerm`, `eqPoly`, `bitsToFArray` | `eqPoly` returns 0 when sizes differ | `eqTerm x y = x*y + (1-x)*(1-y)`; `eqPoly x y = Π_i eqTerm x[i] y[i]` | Proved | `MLE.lean`, `Checks.lean` |
-| Size-mismatch theorem | `eqPoly_eq_zero_of_size_ne` | `x.size ≠ y.size` | `eqPoly x y = 0` | Proved | `MLE.lean` |
-| Bit-level selector | `eqTerm_eq_delta_of_isBit` | `IsBit x`, `IsBit y` | `eqTerm x y = if x = y then 1 else 0` | Proved | internal (proof chain) |
-| Boolean-cube selector | `eqPoly_eq_delta_of_isBitVec` | `x.size = y.size`, `IsBitVec x`, `IsBitVec y` | `eqPoly x y = if x = y then 1 else 0` | Proved | `MLE.lean`, `PolyLemmas.lean` |
-| Package wrapper (closed) | `eqPolyAssumption`, `eqPolyAssumption_holds` | Same as selector | Bundled `Prop` carrier for downstream assumption-threading; discharged by `eqPolyAssumption_holds` | Proved | `MLE.lean`, `ArithmeticObligations.lean` |
+| Bit predicates | `IsBit`, `IsBitVec` | None | `IsBit x ↔ x = 0 ∨ x = 1`; `IsBitVec v ↔ ∀ i, IsBit v[i]` | Theorem-Target | `MLE.lean`, `PolyLemmas.lean` |
+| Core eq definitions | `eqTerm`, `eqPoly`, `bitsToFArray` | `eqPoly` returns 0 when sizes differ | `eqTerm x y = x*y + (1-x)*(1-y)`; `eqPoly x y = Π_i eqTerm x[i] y[i]` | Theorem-Target | `MLE.lean`, `Checks.lean` |
+| Size-mismatch theorem | `eqPoly_eq_zero_of_size_ne` | `x.size ≠ y.size` | `eqPoly x y = 0` | Theorem-Target | `MLE.lean` |
+| Bit-level selector | `eqTerm_eq_delta_of_isBit` | `IsBit x`, `IsBit y` | `eqTerm x y = if x = y then 1 else 0` | Theorem-Target | internal (proof chain) |
+| Boolean-cube selector | `eqPoly_eq_delta_of_isBitVec` | `x.size = y.size`, `IsBitVec x`, `IsBitVec y` | `eqPoly x y = if x = y then 1 else 0` | Theorem-Target | `MLE.lean`, `PolyLemmas.lean` |
+| Package wrapper (closed) | `eqPolyAssumption`, `eqPolyAssumption_holds` | Same as selector | Bundled `Prop` carrier for downstream assumption-threading; discharged by `eqPolyAssumption_holds` | Theorem-Target | `MLE.lean`, `ArithmeticObligations.lean` |
 
 ## Proof Obligations and Closure Plan
 All obligations closed. Every theorem in the contract surface is fully proved; no boundary assumptions remain.

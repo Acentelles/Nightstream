@@ -31,25 +31,25 @@
 
 ## Contract Surface
 
-| Contract group | Lean surface | Preconditions | Guarantee | Status | Used by |
+| Contract group | Lean surface | Preconditions | Guarantee | Role | Used by |
 |---|---|---|---|---|---|
-| Dot product | `dotVec a b` | None (size guard) | `dotVec a b = innerProduct a b` | Proved | — |
+| Dot product | `dotVec a b` | None (size guard) | `dotVec a b = innerProduct a b` | Theorem-Target | — |
 | Direct product | `matrixVecDirect m z` | None | Row-wise `dotVec row z` | Definitional | — |
 | Bar-lifted product | `matrixVecCtBar bar m z` | None | Row-wise `dotVec (barLiftVector bar row) (barLiftVector bar z)` | Definitional | — |
-| Dot/inner equivalence | `dotVec_eq_innerProduct` | None | `dotVec a b = innerProduct a b` | Proved | — |
+| Dot/inner equivalence | `dotVec_eq_innerProduct` | None | `dotVec a b = innerProduct a b` | Theorem-Target | — |
 | Row compatibility | `MatrixRowsCompatible m z` | None | `∀ i, (m[i]).size = z.size` | Definitional | — |
-| Check surface | `matrixTransformIdentity bar m z` | None | `true ↔ MatrixRowsCompatible m z ∧ matrixVecDirect m z = matrixVecCtBar bar m z` | Proved | — |
-| Theorem-facing boundary | `matrixTransformAssumption bar m` | None | `∀ z, MatrixRowsCompatible m z → matrixVecDirect m z = matrixVecCtBar bar m z` | Proved | `EvalLink.lean` |
-| Check-facing boundary | `matrixTransformCheckAssumption bar m` | None | `∀ z, MatrixRowsCompatible m z → matrixTransformIdentity bar m z = true` | Proved | — |
-| Native closure | `matrixTransformEq_native`, `matrixTransformAssumption_native` | `MatrixRowsCompatible m z` | `matrixVecDirect m z = matrixVecCtBar bar m z` | Proved | — |
-| Thm3 closure | `matrixTransformAssumption_of_thm3CoreAssumption` | `thm3CoreAssumption bar` | `matrixTransformAssumption bar m` | Proved | — |
-| P10+P11 closure | `matrixTransformAssumption_of_p10_p11` | `thm3CoreAssumption bar`, `barLiftLinearityAssumption bar` | `matrixTransformAssumption bar m` | Proved | — |
-| P9 closure | `matrixTransformAssumption_of_p9Embedding`, `matrixTransformAssumption_of_p9Embedding_closed` | P9 embedding | `matrixTransformAssumption bar m` | Proved | — |
-| Check/prop bridges | `matrixTransformIdentity_sound`, `matrixTransformIdentity_complete`, `matrixTransformIdentity_iff_prop`, `_of_assumption`, `_of_checkAssumption`, `_iff_checkAssumption` | None | Theorem ↔ check equivalence | Proved | — |
+| Check surface | `matrixTransformIdentity bar m z` | None | `true ↔ MatrixRowsCompatible m z ∧ matrixVecDirect m z = matrixVecCtBar bar m z` | Theorem-Target | — |
+| Theorem-facing boundary | `matrixTransformAssumption bar m` | None | `∀ z, MatrixRowsCompatible m z → matrixVecDirect m z = matrixVecCtBar bar m z` | Theorem-Target | `EvalLink.lean` |
+| Check-facing boundary | `matrixTransformCheckAssumption bar m` | None | `∀ z, MatrixRowsCompatible m z → matrixTransformIdentity bar m z = true` | Theorem-Target | — |
+| Native closure | `matrixTransformEq_native`, `matrixTransformAssumption_native` | `MatrixRowsCompatible m z` | `matrixVecDirect m z = matrixVecCtBar bar m z` | Theorem-Target | — |
+| Thm3 closure | `matrixTransformAssumption_of_thm3CoreAssumption` | `thm3CoreAssumption bar` | `matrixTransformAssumption bar m` | Theorem-Target | — |
+| P10+P11 closure | `matrixTransformAssumption_of_p10_p11` | `thm3CoreAssumption bar`, `barLiftLinearityAssumption bar` | `matrixTransformAssumption bar m` | Theorem-Target | — |
+| P9 closure | `matrixTransformAssumption_of_p9Embedding`, `matrixTransformAssumption_of_p9Embedding_closed` | P9 embedding | `matrixTransformAssumption bar m` | Theorem-Target | — |
+| Check/prop bridges | `matrixTransformIdentity_sound`, `matrixTransformIdentity_complete`, `matrixTransformIdentity_iff_prop`, `_of_assumption`, `_of_checkAssumption`, `_iff_checkAssumption` | None | Theorem ↔ check equivalence | Theorem-Target | — |
 
 ## Proof Obligations and Closure Plan
 
-All obligations closed. `matrixTransformEq_native` proves Theorem 4 in scaffold. `matrixTransformAssumption_of_thm3CoreAssumption` derives from Theorem 3 row-wise. P9-threaded closure reduces to native path. Sound/complete and check/prop bridges proved.
+All obligations closed. `matrixTransformEq_native` proves Theorem 4 in the identity-bar-lift model. `matrixTransformAssumption_of_thm3CoreAssumption` derives from Theorem 3 row-wise. P9-threaded closure reduces to native path. Sound/complete and check/prop bridges proved.
 
 ## Assumption Ledger
 

@@ -30,7 +30,7 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 
 ## Contract Surface
 
-| Group | Lean symbol | Kind | Status | Guarantee |
+| Group | Lean symbol | Kind | Role | Guarantee |
 |---|---|---|---|---|
 | Props | `arithmeticEvalHomProp` | def | Definitional | evalHom2Prop |
 | Props | `arithmeticVecModuleProp` | def | Definitional | add/scale linearity for VecModuleHom |
@@ -40,13 +40,13 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 | Props | `arithmeticDecompProp` | def | Definitional | splitBalancedRoundTripProp |
 | Props | `arithmeticInterpProp` | def | Definitional | interpolationProp |
 | Bundle | `arithmeticBundleProp` | def | Definitional | Conjunction of all above |
-| Theorems | `arithmeticDecompProp_iff_splitRoundTrip_true` | theorem | Proved | Prop ↔ check |
-| Theorems | `arithmeticBundleProp_of_props` | theorem | Proved | Component props → bundle |
-| Theorems | `arithmeticBundleProp_of_theorem_stack` | theorem | Proved | P10+P11 + thm3 + module assumptions → bundle |
-| Theorems | `arithmeticBundleProp_checks_imply_props` | theorem | Proved | Checks → bundle |
-| Theorems | `arithmeticBundleProp_props_imply_check_subset` | theorem | Proved | Bundle → check subset |
-| Theorems | `arithmeticBundleProp_props_imply_module_checks` | theorem | Proved | Bundle + size guard → module checks |
-| Theorems | `arithmeticBundleProp_of_checks` | theorem | Proved | Checks → bundle (convenience) |
+| Theorems | `arithmeticDecompProp_iff_splitRoundTrip_true` | theorem | Theorem-Target | Prop ↔ check |
+| Theorems | `arithmeticBundleProp_of_props` | theorem | Theorem-Target | Component props → bundle |
+| Theorems | `arithmeticBundleProp_of_theorem_stack` | theorem | Theorem-Target | P10+P11 + thm3 + module assumptions → bundle |
+| Theorems | `arithmeticBundleProp_checks_imply_props` | theorem | Theorem-Target | Checks → bundle |
+| Theorems | `arithmeticBundleProp_props_imply_check_subset` | theorem | Theorem-Target | Bundle → check subset |
+| Theorems | `arithmeticBundleProp_props_imply_module_checks` | theorem | Theorem-Target | Bundle + size guard → module checks |
+| Theorems | `arithmeticBundleProp_of_checks` | theorem | Theorem-Target | Checks → bundle (convenience) |
 
 ## Proof Obligations and Closure Plan
 

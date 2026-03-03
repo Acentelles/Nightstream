@@ -29,27 +29,32 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 
 ## Contract Surface
 
-| Group | Lean symbol | Kind | Status | Guarantee |
+| Group | Lean symbol | Kind | Role | Guarantee |
 |---|---|---|---|---|
 | Predicates | `samplingNormBoundProp` | def | Definitional | Per-entry norm bounds |
 | Predicates | `samplingExpansionProp` | def | Definitional | ∃ B with bounds |
 | Predicates | `samplingDiffSet` | def | Definitional | Difference-set surface `C-C` |
+| Predicates | `ringNormCarrier` | def | Definitional | Ring-shaped carrier with norm cap `K` |
+| Predicates | `paperCarrier` | abbrev | Definitional | Canonical `ringNormCarrier 2` surface |
 | Predicates | `strongSamplingExpansionProp` | def | Definitional | Theorem-9-style expansion contract |
 | Check | `samplingSetBoundCheck` | def | Definitional | Executable bound check |
-| Theorems | `samplingNormBoundProp_left/right` | theorem | Proved | Projection helpers for bound components |
-| Theorems | `samplingNormBoundProp_mono` | theorem | Proved | Bound monotonicity in `B` |
-| Theorems | `samplingExpansionProp_of_bounds` | theorem | Proved | Bounds → expansion prop |
-| Theorems | `samplingExpansionProp_mono` | theorem | Proved | Lift monotone bounds into expansion prop |
-| Theorems | `samplingExpansionProp_empty` | theorem | Proved | Empty sets satisfy expansion trivially |
-| Theorems | `samplingSetBoundCheck_sound` | theorem | Proved | true → prop |
-| Theorems | `samplingSetBoundCheck_complete` | theorem | Proved | prop → true |
-| Theorems | `samplingSetBoundCheck_iff` | theorem | Proved | Boolean check iff proposition |
-| Theorems | `strongSamplingExpansionProp_mono` | theorem | Proved | Expansion contract monotone in `T` |
-| Theorems | `expansionFactor_of_strongSampling` | theorem | Proved | Direct extractor-facing expansion theorem from strong-sampling contract |
+| Theorems | `samplingNormBoundProp_left/right` | theorem | Theorem-Target | Projection helpers for bound components |
+| Theorems | `samplingNormBoundProp_mono` | theorem | Theorem-Target | Bound monotonicity in `B` |
+| Theorems | `samplingExpansionProp_of_bounds` | theorem | Theorem-Target | Bounds → expansion prop |
+| Theorems | `samplingExpansionProp_mono` | theorem | Theorem-Target | Lift monotone bounds into expansion prop |
+| Theorems | `samplingExpansionProp_empty` | theorem | Theorem-Target | Empty sets satisfy expansion trivially |
+| Theorems | `samplingSetBoundCheck_sound` | theorem | Theorem-Target | true → prop |
+| Theorems | `samplingSetBoundCheck_complete` | theorem | Theorem-Target | prop → true |
+| Theorems | `samplingSetBoundCheck_iff` | theorem | Theorem-Target | Boolean check iff proposition |
+| Theorems | `strongSamplingExpansionProp_mono` | theorem | Theorem-Target | Expansion contract monotone in `T` |
+| Theorems | `expansionFactor_of_strongSampling` | theorem | Theorem-Target | Direct extractor-facing expansion theorem from strong-sampling contract |
+| Theorems | `strongSamplingExpansionProp_of_ringNormCarrier` | theorem | Theorem-Target | Derive strong-sampling from subtraction/multiplication norm bundles |
+| Theorems | `strongSamplingExpansionProp_of_paperCarrier` | theorem | Theorem-Target | Specialization for the `paperCarrier` surface |
 
 ## Proof Obligations and Closure Plan
 
 All obligations closed for the module contract, including monotonicity and boolean-prop equivalence (`samplingSetBoundCheck_iff`).
+Theorem-native derivation helpers (`strongSamplingExpansionProp_of_ringNormCarrier`, `..._of_paperCarrier`) are now available to thread concrete closure once ring multiplication/subtraction norm bundles are instantiated.
 
 ## Assumption Ledger
 

@@ -25,12 +25,12 @@
 
 ## Contract Surface
 
-| Contract group | Lean surface | Preconditions | Guarantee | Status | Used by |
+| Contract group | Lean surface | Preconditions | Guarantee | Role | Used by |
 |---|---|---|---|---|---|
 | Context | `ProtocolTargetContext` | None | Bundles bar, m, r, rho1, rho2, hVec, hScal, splitScalar, kSplit, invDelta, cset, samples, xs, ys, qVals, coeffs, xEval, expectedEval | Definitional | ProtocolRelations, PiCCS |
 | Assumptions | `ProtocolTargetAssumptions ctx` | None | Bundles thm3, arithmetic (ArithmeticObligations), lowNormInvertibility | Definitional | — |
 | Target prop | `protocolTargetProp ctx` | None | Conjunction of all protocol-target predicates | Definitional | ProtocolRelations |
-| Derivation | `protocolTargetProp_of_assumptions` | `ProtocolTargetAssumptions ctx` | `protocolTargetProp ctx` | Proved | ProtocolRelations |
+| Derivation | `protocolTargetProp_of_assumptions` | `ProtocolTargetAssumptions ctx` | `protocolTargetProp ctx` | Theorem-Target | ProtocolRelations |
 
 ## Proof Obligations and Closure Plan
 

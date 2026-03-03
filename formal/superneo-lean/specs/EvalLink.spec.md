@@ -29,15 +29,15 @@
 
 ## Contract Surface
 
-| Contract group | Lean surface | Preconditions | Guarantee | Status | Used by |
+| Contract group | Lean surface | Preconditions | Guarantee | Role | Used by |
 |---|---|---|---|---|---|
-| Eval-link identity | `evalLinkIdentity`, `evalLinkIdentityProp` | None | Delegates to `matrixTransformIdentity` | Proved | `EvalHom.lean` |
-| Theorem-facing boundary | `evalLinkAssumption bar m` | None | `∀ z, MatrixRowsCompatible m z → evalLinkIdentityProp bar m z` | Proved | `EvalHom.lean`, `ProtocolTarget` |
-| Check-facing boundary | `evalLinkCheckAssumption bar m` | None | `∀ z, MatrixRowsCompatible m z → evalLinkIdentity bar m z = true` | Proved | — |
-| Sound/complete | `evalLinkIdentity_sound`, `evalLinkIdentity_complete`, `evalLinkIdentity_iff_prop` | Check true / Prop holds | Bidirectional bridge | Proved | — |
-| From MatrixTransform | `evalLinkAssumption_of_matrixTransformAssumption` | `matrixTransformAssumption bar m` | `evalLinkAssumption bar m` | Proved | — |
-| From Thm3Core | `evalLinkAssumption_of_thm3CoreAssumption` | `thm3CoreAssumption bar` | `evalLinkAssumption bar m` | Proved | — |
-| From P10+P11 | `evalLinkAssumption_of_p10_p11` | `thm3CoreAssumption bar`, `barLiftLinearityAssumption bar` | `evalLinkAssumption bar m` | Proved | — |
+| Eval-link identity | `evalLinkIdentity`, `evalLinkIdentityProp` | None | Delegates to `matrixTransformIdentity` | Theorem-Target | `EvalHom.lean` |
+| Theorem-facing boundary | `evalLinkAssumption bar m` | None | `∀ z, MatrixRowsCompatible m z → evalLinkIdentityProp bar m z` | Theorem-Target | `EvalHom.lean`, `ProtocolTarget` |
+| Check-facing boundary | `evalLinkCheckAssumption bar m` | None | `∀ z, MatrixRowsCompatible m z → evalLinkIdentity bar m z = true` | Theorem-Target | — |
+| Sound/complete | `evalLinkIdentity_sound`, `evalLinkIdentity_complete`, `evalLinkIdentity_iff_prop` | Check true / Prop holds | Bidirectional bridge | Theorem-Target | — |
+| From MatrixTransform | `evalLinkAssumption_of_matrixTransformAssumption` | `matrixTransformAssumption bar m` | `evalLinkAssumption bar m` | Theorem-Target | — |
+| From Thm3Core | `evalLinkAssumption_of_thm3CoreAssumption` | `thm3CoreAssumption bar` | `evalLinkAssumption bar m` | Theorem-Target | — |
+| From P10+P11 | `evalLinkAssumption_of_p10_p11` | `thm3CoreAssumption bar`, `barLiftLinearityAssumption bar` | `evalLinkAssumption bar m` | Theorem-Target | — |
 
 ## Proof Obligations and Closure Plan
 
@@ -76,4 +76,4 @@ No open boundary assumptions in this module.
 ## Out of Scope
 
 - Full evaluation-hom instantiation (belongs to EvalHom).
-- Non-scaffold bar-lift (belongs to embedding/bar-lift extension).
+- Non-identity bar-lift (belongs to embedding/bar-lift extension).

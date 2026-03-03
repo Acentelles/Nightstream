@@ -27,11 +27,11 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 
 ## Contract Surface
 
-| Group | Lean symbol | Kind | Status | Guarantee |
+| Group | Lean symbol | Kind | Role | Guarantee |
 |---|---|---|---|---|
 | Assumptions | `PiRLCAssumptions` | structure | Definitional | strong : PiCCSAssumptions ctx |
 | Statement | `piRLCWeakStatement` | def | Definitional | ceRelaxedRelation ∧ SumCheckClaimTrue |
-| Theorem | `piRLCWeak_of_assumptions` | theorem | Proved | Assumptions + witness → weak statement |
+| Theorem | `piRLCWeak_of_assumptions` | theorem | Theorem-Target | Assumptions + witness → weak statement |
 
 ## Proof Obligations and Closure Plan
 

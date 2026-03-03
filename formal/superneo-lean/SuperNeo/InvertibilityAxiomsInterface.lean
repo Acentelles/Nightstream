@@ -15,26 +15,26 @@ namespace InvertibilityAxiomsInterface
 
 /-! ## Core Surfaces -/
 
-/-- [Status: Proved] Curated re-export of `invertibleRq`. -/
+/-- [Role: Theorem-Target] Curated re-export of `invertibleRq`. -/
 abbrev invertibleRq := SuperNeo.invertibleRq
 
-/-- [Status: Proved] Curated re-export of `invertibilityWindowProp`. -/
+/-- [Role: Theorem-Target] Curated re-export of `invertibilityWindowProp`. -/
 abbrev invertibilityWindowProp := SuperNeo.invertibilityWindowProp
 
-/-- [Status: Proved] Curated re-export of `invertibilityPreconditionsProp`. -/
+/-- [Role: Theorem-Target] Curated re-export of `invertibilityPreconditionsProp`. -/
 abbrev invertibilityPreconditionsProp := SuperNeo.invertibilityPreconditionsProp
 
 /-! ## Key Theorems -/
 
-/-- [Status: Proved] Curated theorem surface `invertibilityPreconditions_from_constants`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `invertibilityPreconditions_from_constants`. -/
 abbrev invertibilityPreconditions_from_constants := SuperNeo.invertibilityPreconditions_from_constants
 
 /-! ## Boundary Surfaces -/
 
-/-- [Status: Boundary-Assumed] Boundary surface `lowNormInvertibilityAssumption` requiring closure. -/
+/-- [Role: Boundary] Boundary surface `lowNormInvertibilityAssumption` requiring closure. -/
 abbrev lowNormInvertibilityAssumption := SuperNeo.lowNormInvertibilityAssumption
 
-/-- [Status: Boundary-Assumed] Boundary surface `invertibleRq_of_lowNormAssumption` requiring closure. -/
+/-- [Role: Boundary] Boundary surface `invertibleRq_of_lowNormAssumption` requiring closure. -/
 abbrev invertibleRq_of_lowNormAssumption := SuperNeo.invertibleRq_of_lowNormAssumption
 
 end InvertibilityAxiomsInterface

@@ -21,7 +21,7 @@
 
 ## Module Mapping
 
-| Paper concept | Lean symbol | Status |
+| Paper concept | Lean symbol | Role |
 |---------------|-------------|--------|
 | Norm-bounded CCS relation | `CCS` | Definitional |
 | Norm-bounded CE relation | `CE` | Definitional |
@@ -30,7 +30,7 @@
 
 ## Contract Surface
 
-| Group | Symbol | Guarantee | Status |
+| Group | Symbol | Guarantee | Role |
 |-------|--------|-----------|--------|
 | Relations | `CCS` | `arity : Nat`, `constraints : Nat` | Definitional |
 | | `CE` | `arity : Nat`, `normBound : Nat` | Definitional |
@@ -39,7 +39,7 @@
 
 ## Proof Obligations and Closure Plan
 
-All obligations closed. Structures are definitional scaffolding; no theorem-level proof obligations.
+All obligations closed. Structures are definitional; no theorem-level proof obligations.
 
 ## Assumption Ledger
 

@@ -15,23 +15,23 @@ namespace InterpInterface
 
 /-! ## Core Surfaces -/
 
-/-- [Status: Proved] Curated re-export of `interpolationProp`. -/
+/-- [Role: Theorem-Target] Curated re-export of `interpolationProp`. -/
 abbrev interpolationProp := SuperNeo.interpolationProp
 
-/-- [Status: Proved] Curated re-export of `interpolationCase`. -/
+/-- [Role: Theorem-Target] Curated re-export of `interpolationCase`. -/
 abbrev interpolationCase := SuperNeo.interpolationCase
 
 /-! ## Key Theorems -/
 
-/-- [Status: Proved] Curated theorem surface `interpolationCase_sound`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `interpolationCase_sound`. -/
 abbrev interpolationCase_sound := SuperNeo.interpolationCase_sound
 
-/-- [Status: Proved] Curated theorem surface `interpolationCase_complete`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `interpolationCase_complete`. -/
 abbrev interpolationCase_complete := SuperNeo.interpolationCase_complete
 
 /-! ## Boundary Surfaces -/
 
-/-- [Status: Boundary-Assumed] Boundary surface `interpolationAssumption` requiring closure. -/
+/-- [Role: Boundary] Boundary surface `interpolationAssumption` requiring closure. -/
 abbrev interpolationAssumption := SuperNeo.interpolationAssumption
 
 end InterpInterface

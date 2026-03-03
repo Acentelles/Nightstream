@@ -16,49 +16,49 @@ namespace DimensionsInterface
 
 /-! ## Core Surfaces -/
 
-/-- [Status: Proved] Curated re-export of `eta`. -/
+/-- [Role: Theorem-Target] Curated re-export of `eta`. -/
 abbrev eta := SuperNeo.eta
 
-/-- [Status: Proved] Curated re-export of `d`. -/
+/-- [Role: Theorem-Target] Curated re-export of `d`. -/
 abbrev d := SuperNeo.d
 
-/-- [Status: Proved] Curated re-export of `nF`. -/
+/-- [Role: Theorem-Target] Curated re-export of `nF`. -/
 abbrev nF := SuperNeo.nF
 
-/-- [Status: Proved] Curated re-export of `nFIn`. -/
+/-- [Role: Theorem-Target] Curated re-export of `nFIn`. -/
 abbrev nFIn := SuperNeo.nFIn
 
-/-- [Status: Proved] Curated re-export of `goldilocksShapeSanity`. -/
+/-- [Role: Theorem-Target] Curated re-export of `goldilocksShapeSanity`. -/
 abbrev goldilocksShapeSanity := SuperNeo.goldilocksShapeSanity
 
-/-- [Status: Proved] Curated re-export of `goldilocksShapeProp`. -/
+/-- [Role: Theorem-Target] Curated re-export of `goldilocksShapeProp`. -/
 abbrev goldilocksShapeProp := SuperNeo.goldilocksShapeProp
 
 /-! ## Key Theorems -/
 
-/-- [Status: Proved] Curated theorem surface `goldilocksShapeSanity_sound`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `goldilocksShapeSanity_sound`. -/
 abbrev goldilocksShapeSanity_sound := SuperNeo.goldilocksShapeSanity_sound
 
-/-- [Status: Proved] Curated theorem surface `goldilocksShape`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `goldilocksShape`. -/
 abbrev goldilocksShape := SuperNeo.goldilocksShape
 
-/-- [Status: Proved] Curated theorem surface `eta_eq_81`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `eta_eq_81`. -/
 abbrev eta_eq_81 := SuperNeo.eta_eq_81
 
-/-- [Status: Proved] Curated theorem surface `d_eq_54`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `d_eq_54`. -/
 abbrev d_eq_54 := SuperNeo.d_eq_54
 
-/-- [Status: Proved] Curated theorem surfaces for positivity. -/
+/-- [Role: Theorem-Target] Curated theorem surfaces for positivity. -/
 abbrev eta_pos := SuperNeo.eta_pos
 abbrev d_pos := SuperNeo.d_pos
 
-/-- [Status: Proved] Curated theorem surface `nF_def`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `nF_def`. -/
 abbrev nF_def := SuperNeo.nF_def
 
-/-- [Status: Proved] Curated theorem surface `nFIn_def`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `nFIn_def`. -/
 abbrev nFIn_def := SuperNeo.nFIn_def
 
-/-- [Status: Proved] Curated rewrite surfaces for `nF`/`nFIn`. -/
+/-- [Role: Theorem-Target] Curated rewrite surfaces for `nF`/`nFIn`. -/
 abbrev nF_zero := SuperNeo.nF_zero
 abbrev nF_one := SuperNeo.nF_one
 abbrev nF_two := SuperNeo.nF_two

@@ -30,7 +30,7 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 
 ## Contract Surface
 
-| Group | Lean symbol | Kind | Status | Guarantee |
+| Group | Lean symbol | Kind | Role | Guarantee |
 |---|---|---|---|---|
 | Type | `F` | abbrev | Definitional | `F = Fin q` |
 | Construction | `ofNat`, `zero`, `one` | def | Definitional | Field element constructors |
@@ -38,12 +38,12 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 | Representatives | `canonicalRep` | def | Definitional | `canonicalRep a = a.val` |
 | Representatives | `centeredRep` | def | Definitional | Signed representative in `[-(q-1)/2, (q-1)/2]` |
 | Representatives | `centeredAbs` | def | Definitional | `|centeredRep a|` as `Nat` |
-| Round-trip | `ofNat_val` | theorem | Proved | `ofNat a.val = a` |
-| Round-trip | `ofNat_canonicalRep` | theorem | Proved | `ofNat (canonicalRep a) = a` |
-| Canonicality | `canonical` | theorem | Proved | `∀ a : F, isCanonical a` |
-| Arithmetic rewrites | `val_add`, `val_mul`, `val_sub`, `val_neg` | theorem | Proved | Operation semantics as `% q` |
-| Centered rep | `centeredRep_eq_of_le_halfQ` | theorem | Proved | `a.val ≤ halfQ → centeredRep a = a.val` |
-| Centered rep | `centeredRep_eq_sub_q_of_halfQ_lt` | theorem | Proved | `halfQ < a.val → centeredRep a = a.val - q` |
+| Round-trip | `ofNat_val` | theorem | Theorem-Target | `ofNat a.val = a` |
+| Round-trip | `ofNat_canonicalRep` | theorem | Theorem-Target | `ofNat (canonicalRep a) = a` |
+| Canonicality | `canonical` | theorem | Theorem-Target | `∀ a : F, isCanonical a` |
+| Arithmetic rewrites | `val_add`, `val_mul`, `val_sub`, `val_neg` | theorem | Theorem-Target | Operation semantics as `% q` |
+| Centered rep | `centeredRep_eq_of_le_halfQ` | theorem | Theorem-Target | `a.val ≤ halfQ → centeredRep a = a.val` |
+| Centered rep | `centeredRep_eq_sub_q_of_halfQ_lt` | theorem | Theorem-Target | `halfQ < a.val → centeredRep a = a.val - q` |
 
 ## Proof Obligations and Closure Plan
 

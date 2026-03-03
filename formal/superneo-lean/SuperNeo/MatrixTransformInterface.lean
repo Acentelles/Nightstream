@@ -15,43 +15,44 @@ namespace MatrixTransformInterface
 
 /-! ## Core Surfaces -/
 
-/-- [Status: Proved] Curated re-export of `dotVec`. -/
+/-- [Role: Theorem-Target] Curated re-export of `dotVec`. -/
 abbrev dotVec := SuperNeo.dotVec
 
-/-- [Status: Proved] Curated re-export of `matrixVecDirect`. -/
+/-- [Role: Theorem-Target] Curated re-export of `matrixVecDirect`. -/
 abbrev matrixVecDirect := SuperNeo.matrixVecDirect
 
-/-- [Status: Proved] Curated re-export of `matrixVecCtBar`. -/
+/-- [Role: Theorem-Target] Curated re-export of `matrixVecCtBar`. -/
 abbrev matrixVecCtBar := SuperNeo.matrixVecCtBar
 
-/-- [Status: Proved] Curated re-export of `MatrixRowsCompatible`. -/
+/-- [Role: Theorem-Target] Curated re-export of `MatrixRowsCompatible`. -/
 abbrev MatrixRowsCompatible := SuperNeo.MatrixRowsCompatible
 
-/-- [Status: Proved] Curated re-export of `matrixTransformIdentity`. -/
+/-- [Role: Theorem-Target] Curated re-export of `matrixTransformIdentity`. -/
 abbrev matrixTransformIdentity := SuperNeo.matrixTransformIdentity
 
-/-- [Status: Proved] Curated re-export of `matrixTransformIdentityProp`. -/
+/-- [Role: Theorem-Target] Curated re-export of `matrixTransformIdentityProp`. -/
 abbrev matrixTransformIdentityProp := SuperNeo.matrixTransformIdentityProp
 
 /-! ## Key Theorems -/
 
-/-- [Status: Proved] Curated theorem surface `matrixVecDirect_size`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `matrixVecDirect_size`. -/
 abbrev matrixVecDirect_size := SuperNeo.matrixVecDirect_size
 
-/-- [Status: Proved] Curated theorem surface `matrixVecCtBar_size`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `matrixVecCtBar_size`. -/
 abbrev matrixVecCtBar_size := SuperNeo.matrixVecCtBar_size
 
-/-- [Status: Proved] Dot/inner-product equivalence used by theorem-native P12 derivation. -/
+/-- [Role: Theorem-Target] Dot/inner-product equivalence used by theorem-native P12 derivation. -/
 abbrev dotVec_eq_innerProduct := SuperNeo.dotVec_eq_innerProduct
 
-/-- [Status: Proved] Curated theorem surface `matrixTransformEq_native`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `matrixTransformEq_native`. -/
 theorem matrixTransformEq_native
   {bar : Array (Array F)} {m : Array (Array F)} {z : Array F}
+  (hId : barBlockIdentityAssumption bar)
   (hRows : MatrixRowsCompatible m z) :
   matrixVecDirect m z = matrixVecCtBar bar m z :=
-  SuperNeo.matrixTransformEq_native hRows
+  SuperNeo.matrixTransformEq_native hId hRows
 
-/-- [Status: Proved] Theorem-native P12 derivation from Theorem-3. -/
+/-- [Role: Theorem-Target] Theorem-native P12 derivation from Theorem-3. -/
 theorem matrixTransformEq_of_thm3CoreAssumption
   {bar : Array (Array F)} {m : Array (Array F)} {z : Array F}
   (hThm3 : thm3CoreAssumption bar)
@@ -59,21 +60,21 @@ theorem matrixTransformEq_of_thm3CoreAssumption
   matrixVecDirect m z = matrixVecCtBar bar m z :=
   SuperNeo.matrixTransformEq_of_thm3CoreAssumption hThm3 hRows
 
-/-- [Status: Proved] Curated theorem surface `matrixTransformIdentity_sound`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `matrixTransformIdentity_sound`. -/
 theorem matrixTransformIdentity_sound
   {bar : Array (Array F)} {m : Array (Array F)} {z : Array F}
   (hOk : matrixTransformIdentity bar m z = true) :
   matrixTransformIdentityProp bar m z :=
   SuperNeo.matrixTransformIdentity_sound hOk
 
-/-- [Status: Proved] Curated theorem surface `matrixTransformIdentity_complete`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `matrixTransformIdentity_complete`. -/
 theorem matrixTransformIdentity_complete
   {bar : Array (Array F)} {m : Array (Array F)} {z : Array F}
   (hProp : matrixTransformIdentityProp bar m z) :
   matrixTransformIdentity bar m z = true :=
   SuperNeo.matrixTransformIdentity_complete hProp
 
-/-- [Status: Proved] Curated theorem surface `matrixTransformIdentity_iff_prop`. -/
+/-- [Role: Theorem-Target] Curated theorem surface `matrixTransformIdentity_iff_prop`. -/
 theorem matrixTransformIdentity_iff_prop
   {bar : Array (Array F)} {m : Array (Array F)} {z : Array F} :
   matrixTransformIdentity bar m z = true ↔ matrixTransformIdentityProp bar m z :=
@@ -94,26 +95,26 @@ theorem matrixTransformIdentity_complete_of_rowsCompatible
 
 /-! ## Boundary Surfaces -/
 
-/-- [Status: Proved] Theorem-facing matrix-transform boundary surface. -/
+/-- [Role: Theorem-Target] Theorem-facing matrix-transform boundary surface. -/
 abbrev matrixTransformAssumption := SuperNeo.matrixTransformAssumption
 
-/-- [Status: Proved] Check-facing matrix-transform boundary surface. -/
+/-- [Role: Theorem-Target] Check-facing matrix-transform boundary surface. -/
 abbrev matrixTransformCheckAssumption := SuperNeo.matrixTransformCheckAssumption
 
-/-- [Status: Proved] Native closure of theorem-facing matrix-transform boundary. -/
+/-- [Role: Theorem-Target] Native closure of theorem-facing matrix-transform boundary. -/
 theorem matrixTransformAssumption_native
   {bar : Array (Array F)} {m : Array (Array F)} :
-  matrixTransformAssumption bar m :=
+  barBlockIdentityAssumption bar → matrixTransformAssumption bar m :=
   SuperNeo.matrixTransformAssumption_native
 
-/-- [Status: Proved] Theorem-native P12 boundary constructor from Theorem-3. -/
+/-- [Role: Theorem-Target] Theorem-native P12 boundary constructor from Theorem-3. -/
 theorem matrixTransformAssumption_of_thm3CoreAssumption
   {bar : Array (Array F)} {m : Array (Array F)}
   (hThm3 : thm3CoreAssumption bar) :
   matrixTransformAssumption bar m :=
   SuperNeo.matrixTransformAssumption_of_thm3CoreAssumption hThm3
 
-/-- [Status: Proved] Theorem-native P12 boundary constructor from `(P10 + P11)`. -/
+/-- [Role: Theorem-Target] Theorem-native P12 boundary constructor from `(P10 + P11)`. -/
 theorem matrixTransformAssumption_of_p10_p11
   {bar : Array (Array F)} {m : Array (Array F)}
   (hThm3 : thm3CoreAssumption bar)
@@ -121,34 +122,36 @@ theorem matrixTransformAssumption_of_p10_p11
   matrixTransformAssumption bar m :=
   SuperNeo.matrixTransformAssumption_of_p10_p11 hThm3 hLift
 
-/-- [Status: Proved] P9-threaded closure of theorem-facing matrix-transform boundary. -/
+/-- [Role: Theorem-Target] P9-threaded closure of theorem-facing matrix-transform boundary. -/
 theorem matrixTransformAssumption_of_p9Embedding
   {bar : Array (Array F)} {m : Array (Array F)}
-  (hP9 : p9EmbeddingAssumption) :
+  (hP9 : p9EmbeddingAssumption)
+  (hId : barBlockIdentityAssumption bar) :
   matrixTransformAssumption bar m :=
-  SuperNeo.matrixTransformAssumption_of_p9Embedding hP9
+  SuperNeo.matrixTransformAssumption_of_p9Embedding hP9 hId
 
-/-- [Status: Proved] Closed P9 theorem-native matrix-transform boundary. -/
+/-- [Role: Theorem-Target] Closed P9 theorem-native matrix-transform boundary. -/
 theorem matrixTransformAssumption_of_p9Embedding_closed
-  {bar : Array (Array F)} {m : Array (Array F)} :
+  {bar : Array (Array F)} {m : Array (Array F)}
+  (hId : barBlockIdentityAssumption bar) :
   matrixTransformAssumption bar m :=
-  SuperNeo.matrixTransformAssumption_of_p9Embedding_closed
+  SuperNeo.matrixTransformAssumption_of_p9Embedding_closed hId
 
-/-- [Status: Proved] Conversion from theorem-facing to check-facing boundary. -/
+/-- [Role: Theorem-Target] Conversion from theorem-facing to check-facing boundary. -/
 theorem matrixTransformCheckAssumption_of_assumption
   {bar : Array (Array F)} {m : Array (Array F)}
   (hAssm : matrixTransformAssumption bar m) :
   matrixTransformCheckAssumption bar m :=
   SuperNeo.matrixTransformCheckAssumption_of_assumption hAssm
 
-/-- [Status: Proved] Conversion from check-facing to theorem-facing boundary. -/
+/-- [Role: Theorem-Target] Conversion from check-facing to theorem-facing boundary. -/
 theorem matrixTransformAssumption_of_checkAssumption
   {bar : Array (Array F)} {m : Array (Array F)}
   (hCheck : matrixTransformCheckAssumption bar m) :
   matrixTransformAssumption bar m :=
   SuperNeo.matrixTransformAssumption_of_checkAssumption hCheck
 
-/-- [Status: Proved] Equivalence between theorem and check boundaries. -/
+/-- [Role: Theorem-Target] Equivalence between theorem and check boundaries. -/
 theorem matrixTransformAssumption_iff_checkAssumption
   {bar : Array (Array F)} {m : Array (Array F)} :
   matrixTransformAssumption bar m ↔ matrixTransformCheckAssumption bar m :=
