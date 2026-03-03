@@ -21,6 +21,14 @@ abbrev barLiftVector := SuperNeo.barLiftVector
 /-- [Status: Proved] Curated re-export of `barLiftMatrix`. -/
 abbrev barLiftMatrix := SuperNeo.barLiftMatrix
 
+/-! ## Shape Contracts -/
+
+/-- [Status: Proved] Vector chunkability predicate for Definition-8 lifting. -/
+abbrev barLiftChunkableVec := SuperNeo.barLiftChunkableVec
+
+/-- [Status: Proved] Matrix chunkability predicate (row-wise). -/
+abbrev barLiftChunkableMatrix := SuperNeo.barLiftChunkableMatrix
+
 /-! ## Key Theorems -/
 
 /-- [Status: Proved] Curated theorem surface `barLiftVector_eq`. -/
@@ -32,8 +40,25 @@ abbrev barLiftMatrix_eq := SuperNeo.barLiftMatrix_eq
 /-- [Status: Proved] Curated theorem surface `barLiftVector_add`. -/
 abbrev barLiftVector_add := SuperNeo.barLiftVector_add
 
+/-- [Status: Proved] Curated theorem surface `barLiftVector_add_of_size_eq`. -/
+abbrev barLiftVector_add_of_size_eq := SuperNeo.barLiftVector_add_of_size_eq
+
 /-- [Status: Proved] Curated theorem surface `barLiftVector_scale`. -/
 abbrev barLiftVector_scale := SuperNeo.barLiftVector_scale
+
+/-- [Status: Proved] Curated theorem surface `barLiftVector_size`. -/
+abbrev barLiftVector_size := SuperNeo.barLiftVector_size
+
+/-- [Status: Proved] Curated theorem surface `barLiftMatrix_size`. -/
+abbrev barLiftMatrix_size := SuperNeo.barLiftMatrix_size
+
+/-- [Status: Proved] Chunkable vectors follow the embedding round-trip lifting path. -/
+abbrev barLiftVector_eq_embedRoundTrip_of_chunkable :=
+  SuperNeo.barLiftVector_eq_embedRoundTrip_of_chunkable
+
+/-- [Status: Proved] Non-chunkable vectors take the identity fallback path. -/
+abbrev barLiftVector_eq_self_of_not_chunkable :=
+  SuperNeo.barLiftVector_eq_self_of_not_chunkable
 
 /-! ## Boundary Surfaces -/
 

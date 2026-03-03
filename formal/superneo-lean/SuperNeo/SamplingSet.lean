@@ -1,4 +1,5 @@
 import SuperNeo.Norm
+import SuperNeo.Parameters
 
 /-!
 Sampling-set norm boundary layer (Theorem 9 style).
@@ -16,6 +17,15 @@ abbrev SamplingCarrier := Coeffs → Prop
 /-- Difference set `C - C` used in relaxed-binding analyses. -/
 def samplingDiffSet (C : SamplingCarrier) : SamplingCarrier :=
   fun δ => ∃ c1 c2 : Coeffs, C c1 ∧ C c2 ∧ δ = vecAdd c1 (vecScale (-1) c2)
+
+/--
+Canonical ring-shaped carrier with an explicit norm cap.
+
+This is a theorem-facing helper used to derive strong-sampling contracts from
+operation-level norm-bound bundles.
+-/
+def ringNormCarrier (K : Nat) : SamplingCarrier :=
+  fun c => hasRingDegreeShape c ∧ normInfCoeffs c ≤ K
 
 /--
 Strong-sampling expansion-factor contract (Definition 17 / Theorem 9 style):
@@ -113,6 +123,49 @@ theorem expansionFactor_of_strongSampling
   (hB : normInfCoeffs z ≤ B) :
   normInfCoeffs (mulRq δ z) ≤ 4 * T * B :=
   h δ hδ z B hB
+
+theorem strongSamplingExpansionProp_of_ringNormCarrier
+  {K T D : Nat}
+  (hSub : coeffSubNormBoundFromOperands K K D)
+  (hMul : ∀ B : Nat, mulRqNormBoundFromOperands D B (4 * T * B)) :
+  strongSamplingExpansionProp (ringNormCarrier K) T := by
+  intro δ hδ z B hB
+  rcases hδ with ⟨c1, c2, hc1, hc2, rfl⟩
+  rcases hc1 with ⟨hc1Shape, hc1Norm⟩
+  rcases hc2 with ⟨hc2Shape, hc2Norm⟩
+  have hShapeEq : c1.size = c2.size := hc1Shape.trans hc2Shape.symm
+  have hDeltaNorm : normInfCoeffs (vecAdd c1 (vecScale (-1) c2)) ≤ D := by
+    exact hSub c1 c2 hShapeEq hc1Norm hc2Norm
+  exact hMul B (vecAdd c1 (vecScale (-1) c2)) z hDeltaNorm hB
+
+abbrev paperCarrier : SamplingCarrier :=
+  ringNormCarrier 2
+
+theorem strongSamplingExpansionProp_of_paperCarrier
+  {T D : Nat}
+  (hSub : coeffSubNormBoundFromOperands 2 2 D)
+  (hMul : ∀ B : Nat, mulRqNormBoundFromOperands D B (4 * T * B)) :
+  strongSamplingExpansionProp paperCarrier T := by
+  simpa [paperCarrier] using
+    (strongSamplingExpansionProp_of_ringNormCarrier (K := 2) (T := T) (D := D) hSub hMul)
+
+theorem strongSamplingExpansionProp_paperCarrier_of_d_le
+  {T : Nat}
+  (hTd : d ≤ T) :
+  strongSamplingExpansionProp paperCarrier T := by
+  apply strongSamplingExpansionProp_of_paperCarrier (T := T) (D := 4)
+  · exact coeffSubNormBoundFromOperands_two_two_four
+  · intro B
+    exact mulRqNormBoundFromOperands_four_of_d_le (T := T) (B := B) hTd
+
+theorem strongSamplingExpansionProp_paperCarrier_concrete :
+  strongSamplingExpansionProp paperCarrier Parameters.Goldilocks.T := by
+  have hTd : d ≤ Parameters.Goldilocks.T := by
+    rw [SuperNeo.d_eq_54, Parameters.Goldilocks.T_eq_216]
+    decide
+  simpa using
+    (strongSamplingExpansionProp_paperCarrier_of_d_le
+      (T := Parameters.Goldilocks.T) hTd)
 
 /-! Compatibility check surface retained for protocol-level glue. -/
 

@@ -73,6 +73,22 @@ theorem mulRq_comm (a b : Coeffs) : mulRq a b = mulRq b a := SuperNeo.mulRq_comm
 theorem mulRq_assoc (a b c : Coeffs) : mulRq (mulRq a b) c = mulRq a (mulRq b c) :=
   SuperNeo.mulRq_assoc a b c
 
+/-- [Status: Proved] Curated theorem surface `mulRq_vecAdd_right`. -/
+theorem mulRq_vecAdd_right
+    (a b c : Coeffs)
+    (hb : b.size = d)
+    (hc : c.size = d) :
+    mulRq a (vecAdd b c) = vecAdd (mulRq a b) (mulRq a c) :=
+  SuperNeo.mulRq_vecAdd_right a b c hb hc
+
+/-- [Status: Proved] Curated theorem surface `mulRq_vecAdd_left`. -/
+theorem mulRq_vecAdd_left
+    (a b c : Coeffs)
+    (hb : b.size = d)
+    (hc : c.size = d) :
+    mulRq (vecAdd b c) a = vecAdd (mulRq b a) (mulRq c a) :=
+  SuperNeo.mulRq_vecAdd_left a b c hb hc
+
 /-- [Status: Proved] Curated theorem surface `hasRingDegreeShape_zeroRq`. -/
 theorem hasRingDegreeShape_zeroRq : SuperNeo.hasRingDegreeShape SuperNeo.zeroRq :=
   SuperNeo.hasRingDegreeShape_zeroRq

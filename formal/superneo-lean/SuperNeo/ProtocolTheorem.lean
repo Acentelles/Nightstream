@@ -57,8 +57,10 @@ def ajtaiBindingAssumption (params : LatticeParams) : Prop :=
   SuperNeo.ProofSystem.AjtaiBindingAssumption params
 
 /-- Typed boundary for Ajtai relaxed binding. -/
-def ajtaiRelaxedBindingAssumption (params : LatticeParams) : Prop :=
-  SuperNeo.ProofSystem.AjtaiRelaxedBindingAssumption params
+def ajtaiRelaxedBindingAssumption
+  (params : LatticeParams)
+  (C : SuperNeo.SamplingCarrier) : Prop :=
+  SuperNeo.ProofSystem.AjtaiRelaxedBindingAssumption params C
 
 /-- Canonical nested SumCheck soundness boundary extracted from reductions. -/
 def reductionSumcheckSoundnessBoundary
@@ -224,13 +226,15 @@ def FinalTheoremAssumptions.ajtaiBindingBoundary
 def FinalTheoremAssumptions.ajtaiRelaxedBindingBoundaryPackage
   {ctx : ProtocolTargetContext}
   (hA : FinalTheoremAssumptions ctx) :
-  SuperNeo.ProofSystem.AjtaiRelaxedBindingBoundary hA.latticeParams :=
+  SuperNeo.ProofSystem.AjtaiRelaxedBindingBoundary
+    hA.latticeParams hA.msisToAjtai.laws.samplingCarrier :=
   SuperNeo.ProofSystem.ajtaiRelaxedBindingBoundary_of_msis hA.msisToAjtai hA.msisHardnessBoundary
 
 /-- Canonical Ajtai relaxed-binding boundary derived from MSIS hardness via reductions. -/
 def FinalTheoremAssumptions.ajtaiRelaxedBindingBoundary
   {ctx : ProtocolTargetContext}
-  (hA : FinalTheoremAssumptions ctx) : ajtaiRelaxedBindingAssumption hA.latticeParams :=
+  (hA : FinalTheoremAssumptions ctx) :
+  ajtaiRelaxedBindingAssumption hA.latticeParams hA.msisToAjtai.laws.samplingCarrier :=
   SuperNeo.ProofSystem.AjtaiRelaxedBindingBoundary.hardnessFromFields hA.ajtaiRelaxedBindingBoundaryPackage
 
 /-- Canonical Ajtai binding-error negligibility aligned to final error accounting. -/
@@ -275,15 +279,17 @@ def FinalTheoremAssumptions.relaxedBindingAdvantageBound
   {ctx : ProtocolTargetContext}
   (hA : FinalTheoremAssumptions ctx) :
   SuperNeo.ProofSystem.AjtaiRelaxedBindingAdvantageBound
-      hA.latticeParams hA.errorModel.epsRelaxedBinding := by
+      hA.latticeParams hA.msisToAjtai.laws.samplingCarrier hA.errorModel.epsRelaxedBinding := by
   have hB :
       SuperNeo.ProofSystem.AjtaiRelaxedBindingAdvantageBound
-          hA.latticeParams hA.ajtaiRelaxedBindingBoundaryPackage.epsRelaxedBinding :=
+          hA.latticeParams hA.msisToAjtai.laws.samplingCarrier
+            hA.ajtaiRelaxedBindingBoundaryPackage.epsRelaxedBinding :=
     hA.ajtaiRelaxedBindingBoundaryPackage.advantageBound
   intro prob n
   have hLe :
       SuperNeo.ProofSystem.AjtaiRelaxedBindingAdvantage prob
-          (SuperNeo.ProofSystem.canonicalAjtaiRelaxedBindingGame hA.latticeParams) n ≤
+          (SuperNeo.ProofSystem.canonicalAjtaiRelaxedBindingGame
+            hA.latticeParams hA.msisToAjtai.laws.samplingCarrier) n ≤
         (hA.ajtaiRelaxedBindingBoundaryPackage.epsRelaxedBinding n : Rat) :=
     hB prob n
   simpa [hA.relaxedBindingErrorAligned] using hLe
@@ -341,7 +347,7 @@ def FinalKnowledgeSoundnessStatement
   hA.errorModel.epsRelaxedBinding = hA.msisToAjtai.epsRelaxedBinding ∧
   SuperNeo.ProofSystem.IsNegligible hA.errorModel.epsRelaxedBinding ∧
   SuperNeo.ProofSystem.AjtaiRelaxedBindingAdvantageBound
-      hA.latticeParams hA.errorModel.epsRelaxedBinding ∧
+      hA.latticeParams hA.msisToAjtai.laws.samplingCarrier hA.errorModel.epsRelaxedBinding ∧
   (∀ n,
     hA.errorModel.epsTotal n =
       hA.sumcheckPackage.soundnessError.epsSoundness n +
@@ -352,7 +358,7 @@ def FinalKnowledgeSoundnessStatement
   SuperNeo.ProofSystem.IsNegligible hA.errorModel.epsTotal ∧
   msisHardnessAssumption hA.latticeParams ∧
   ajtaiBindingAssumption hA.latticeParams ∧
-  ajtaiRelaxedBindingAssumption hA.latticeParams
+  ajtaiRelaxedBindingAssumption hA.latticeParams hA.msisToAjtai.laws.samplingCarrier
 
 /-- Canonical final theorem container. -/
 structure FinalTheoremShape

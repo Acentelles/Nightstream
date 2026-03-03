@@ -28,7 +28,7 @@ def thm3CoreAssumption (bar : Array (Array F)) : Prop :=
 theorem thm3CoreAssumption_native (bar : Array (Array F)) :
   thm3CoreAssumption bar := by
   intro a b hSize
-  simp [innerProduct, barLiftVector, hSize]
+  rw [barLiftVector_eq bar a, barLiftVector_eq bar b]
 
 /-! ### P10 Compatibility Surface -/
 

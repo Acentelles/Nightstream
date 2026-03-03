@@ -11,18 +11,80 @@ These are threaded explicitly until Ring/Norm closure discharges them.
 local instance : NeZero Goldilocks.q := ⟨Nat.ne_of_gt Goldilocks.q_pos⟩
 
 structure LatticeReductionLaws (params : AjtaiParams) where
-  normInfVec_subVec_le :
-    ∀ (n : Nat) (v1 v2 : Array Coeffs),
-      normInfVec (subVec n v1 v2) ≤ normInfVec v1 + normInfVec v2
   samplingCarrier : SamplingCarrier
   strongSampling : strongSamplingExpansionProp samplingCarrier params.relaxedExpansion
-  deltaInDiff_of_deltaBound :
-    ∀ (delta : Coeffs),
-      normInfCoeffs delta < 4 * params.relaxedExpansion →
-      samplingDiffSet samplingCarrier delta
-  smulVec_comm :
-    ∀ (delta1 delta2 : Coeffs) (v : Array Coeffs),
-      smulVec delta1 (smulVec delta2 v) = smulVec delta2 (smulVec delta1 v)
+
+namespace LatticeReductionLaws
+
+/--
+Canonical constructor from an explicit carrier-level strong-sampling theorem.
+-/
+def ofCarrier
+  {params : AjtaiParams}
+  (C : SamplingCarrier)
+  (hStrong : strongSamplingExpansionProp C params.relaxedExpansion) :
+  LatticeReductionLaws params where
+  samplingCarrier := C
+  strongSampling := hStrong
+
+/--
+Canonical constructor specialized to the paper-facing carrier `paperCarrier`.
+-/
+def ofPaperCarrier
+  {params : AjtaiParams}
+  (hStrong : strongSamplingExpansionProp paperCarrier params.relaxedExpansion) :
+  LatticeReductionLaws params :=
+  ofCarrier paperCarrier hStrong
+
+/--
+Derive the paper-facing strong-sampling contract from subtraction/multiplication
+norm bundles, specialized at `params.relaxedExpansion`.
+-/
+theorem paperStrongSampling_of_bounds
+  {params : AjtaiParams}
+  {D : Nat}
+  (hSub : coeffSubNormBoundFromOperands 2 2 D)
+  (hMul : ∀ B : Nat, mulRqNormBoundFromOperands D B (4 * params.relaxedExpansion * B)) :
+  strongSamplingExpansionProp paperCarrier params.relaxedExpansion := by
+  simpa using
+    (SuperNeo.strongSamplingExpansionProp_of_paperCarrier
+      (T := params.relaxedExpansion) (D := D) hSub hMul)
+
+/--
+Concrete paper-carrier strong-sampling derived from proved norm bundles, under
+the arithmetic side-condition `d ≤ params.relaxedExpansion`.
+-/
+theorem paperStrongSampling_of_d_le
+  {params : AjtaiParams}
+  (hTd : d ≤ params.relaxedExpansion) :
+  strongSamplingExpansionProp paperCarrier params.relaxedExpansion := by
+  simpa using
+    (SuperNeo.strongSamplingExpansionProp_paperCarrier_of_d_le
+      (T := params.relaxedExpansion) hTd)
+
+/--
+Constructor specialized to `paperCarrier`, derived from theorem-native norm
+bundles through `SamplingSet.strongSamplingExpansionProp_of_paperCarrier`.
+-/
+def ofPaperCarrierFromBounds
+  {params : AjtaiParams}
+  {D : Nat}
+  (hSub : coeffSubNormBoundFromOperands 2 2 D)
+  (hMul : ∀ B : Nat, mulRqNormBoundFromOperands D B (4 * params.relaxedExpansion * B)) :
+  LatticeReductionLaws params :=
+  ofPaperCarrier (paperStrongSampling_of_bounds (params := params) (D := D) hSub hMul)
+
+/--
+Constructor specialized to `paperCarrier`, using concrete proved norm bundles
+and the side-condition `d ≤ params.relaxedExpansion`.
+-/
+def ofPaperCarrierFromDLe
+  {params : AjtaiParams}
+  (hTd : d ≤ params.relaxedExpansion) :
+  LatticeReductionLaws params :=
+  ofPaperCarrier (paperStrongSampling_of_d_le (params := params) hTd)
+
+end LatticeReductionLaws
 
 private theorem f_sub_eq_add_neg (a b : F) : a - b = a + -b := by
   apply Fin.ext
@@ -450,108 +512,7 @@ theorem mulRq_vecAdd_right
   (hb : b.size = d)
   (hc : c.size = d) :
   mulRq a (vecAdd b c) = vecAdd (mulRq a b) (mulRq a c) := by
-  have hEq : (mulRq a b).size = (mulRq a c).size := by
-    simp [mulRq_size]
-  have hsizeR : (vecAdd (mulRq a b) (mulRq a c)).size = d := by
-    calc
-      (vecAdd (mulRq a b) (mulRq a c)).size = (mulRq a b).size := vecAdd_size_of_eq hEq
-      _ = d := mulRq_size a b
-  apply Array.ext
-  · exact (mulRq_size a (vecAdd b c)).trans hsizeR.symm
-  · intro i hi₁ hi₂
-    have hi : i < d := by simpa [mulRq_size] using hi₁
-    have hiR : i < d := by simpa [hsizeR] using hi₂
-    let t1 : Nat → F := fun j => coeffAt a j * coeffAt b ((i + d - j) % d)
-    let t2 : Nat → F := fun j => coeffAt a j * coeffAt c ((i + d - j) % d)
-    have hterm :
-        ∀ j,
-          coeffAt a j * coeffAt (vecAdd b c) ((i + d - j) % d) =
-            (t1 j + t2 j) := by
-      intro j
-      let k : Nat := (i + d - j) % d
-      have hk : k < d := by
-        dsimp [k]
-        exact Nat.mod_lt _ d_pos
-      have hVec :
-          coeffAt (vecAdd b c) k = coeffAt b k + coeffAt c k := by
-        exact coeffAt_vecAdd_of_size_d b c hb hc k hk
-      have hMul :
-          coeffAt a j * (coeffAt b k + coeffAt c k) =
-            coeffAt a j * coeffAt b k + coeffAt a j * coeffAt c k := by
-        simpa using
-          (Lean.Grind.Fin.left_distrib (n := Goldilocks.q)
-            (coeffAt a j) (coeffAt b k) (coeffAt c k))
-      calc
-        coeffAt a j * coeffAt (vecAdd b c) ((i + d - j) % d)
-            = coeffAt a j * coeffAt (vecAdd b c) k := by
-                rfl
-        _ = coeffAt a j * (coeffAt b k + coeffAt c k) := by
-              rw [hVec]
-        _ = coeffAt a j * coeffAt b k + coeffAt a j * coeffAt c k := hMul
-        _ = t1 j + t2 j := by
-              simp [t1, t2, k]
-    have hleft :
-        (List.range d).foldl
-            (fun acc j => acc + coeffAt a j * coeffAt (vecAdd b c) ((i + d - j) % d))
-            0 =
-          (List.range d).foldl (fun acc j => acc + (t1 j + t2 j)) 0 := by
-      exact list_foldl_congr
-        (fun acc j => acc + coeffAt a j * coeffAt (vecAdd b c) ((i + d - j) % d))
-        (fun acc j => acc + (t1 j + t2 j))
-        0
-        (List.range d)
-        (by
-          intro acc j
-          exact congrArg (fun t => acc + t) (hterm j))
-    have hfold := foldl_add_linearity_F (l := List.range d) t1 t2 0 0
-    have hzero : ((0 : F) + 0) = 0 := by
-      simp
-    have hfold0 :
-        (List.range d).foldl (fun acc j => acc + (t1 j + t2 j)) 0 =
-          (List.range d).foldl (fun acc j => acc + t1 j) 0 +
-            (List.range d).foldl (fun acc j => acc + t2 j) 0 := by
-      simpa [hzero] using hfold
-    have hright :
-        (List.range d).foldl (fun acc j => acc + t1 j) 0 +
-          (List.range d).foldl (fun acc j => acc + t2 j) 0 =
-            coeffAt (vecAdd (mulRq a b) (mulRq a c)) i := by
-      have hVecCoeff :
-          coeffAt (vecAdd (mulRq a b) (mulRq a c)) i =
-            coeffAt (mulRq a b) i + coeffAt (mulRq a c) i := by
-        exact coeffAt_vecAdd_of_size_d (mulRq a b) (mulRq a c)
-          (mulRq_size a b)
-          (mulRq_size a c)
-          i
-          hi
-      calc
-        (List.range d).foldl (fun acc j => acc + t1 j) 0 +
-            (List.range d).foldl (fun acc j => acc + t2 j) 0
-            = coeffAt (mulRq a b) i + coeffAt (mulRq a c) i := by
-                simp [coeffAt_mulRq, t1, t2, hi]
-        _ = coeffAt (vecAdd (mulRq a b) (mulRq a c)) i := by
-              symm
-              exact hVecCoeff
-    have hmulExpand :
-        coeffAt (mulRq a (vecAdd b c)) i =
-          (List.range d).foldl
-            (fun acc j => acc + coeffAt a j * coeffAt (vecAdd b c) ((i + d - j) % d))
-            0 := by
-      exact coeffAt_mulRq a (vecAdd b c) i hi
-    have hmain :
-        coeffAt (mulRq a (vecAdd b c)) i =
-          coeffAt (vecAdd (mulRq a b) (mulRq a c)) i := by
-      calc
-        coeffAt (mulRq a (vecAdd b c)) i
-            = (List.range d).foldl
-                (fun acc j => acc + coeffAt a j * coeffAt (vecAdd b c) ((i + d - j) % d))
-                0 := hmulExpand
-        _ = (List.range d).foldl (fun acc j => acc + (t1 j + t2 j)) 0 := hleft
-        _ = (List.range d).foldl (fun acc j => acc + t1 j) 0 +
-              (List.range d).foldl (fun acc j => acc + t2 j) 0 := hfold0
-        _ = coeffAt (vecAdd (mulRq a b) (mulRq a c)) i := by
-              exact hright
-    have hiL : i < d := by simpa [mulRq_size] using hi₁
-    simpa [coeffAt, hiL, hiR, Array.getD, hi₁, hi₂, hsizeR] using hmain
+  exact SuperNeo.mulRq_vecAdd_right a b c hb hc
 
 private theorem smulVec_getD_of_lt
   (delta : Coeffs) (v : Array Coeffs) (j : Nat)
@@ -559,21 +520,42 @@ private theorem smulVec_getD_of_lt
   (smulVec delta v).getD j zeroRq = mulRq delta (v.getD j zeroRq) := by
   simp [smulVec, Array.getD, hj]
 
-private theorem mulRq_mul_swap_of_smulVec_comm
-  {params : AjtaiParams}
-  (laws : LatticeReductionLaws params)
+private theorem smulVec_comm_derived
+  (delta1 delta2 : Coeffs)
+  (v : Array Coeffs) :
+  smulVec delta1 (smulVec delta2 v) = smulVec delta2 (smulVec delta1 v) := by
+  apply Array.ext
+  · simp [smulVec]
+  · intro i hiL hiR
+    calc
+      (smulVec delta1 (smulVec delta2 v))[i]'hiL
+          = mulRq delta1 (mulRq delta2 (v[i]'(by simpa [smulVec] using hiL))) := by
+              simp [smulVec]
+      _ = mulRq delta2 (mulRq delta1 (v[i]'(by simpa [smulVec] using hiR))) := by
+            calc
+              mulRq delta1 (mulRq delta2 (v[i]'(by simpa [smulVec] using hiL)))
+                  = mulRq (mulRq delta1 delta2) (v[i]'(by simpa [smulVec] using hiL)) := by
+                      simpa using (mulRq_assoc delta1 delta2 (v[i]'(by simpa [smulVec] using hiL))).symm
+              _ = mulRq (mulRq delta2 delta1) (v[i]'(by simpa [smulVec] using hiL)) := by
+                    rw [mulRq_comm delta1 delta2]
+              _ = mulRq delta2 (mulRq delta1 (v[i]'(by simpa [smulVec] using hiL))) := by
+                    simpa using (mulRq_assoc delta2 delta1 (v[i]'(by simpa [smulVec] using hiL)))
+      _ = (smulVec delta2 (smulVec delta1 v))[i]'hiR := by
+            simp [smulVec]
+
+private theorem mulRq_mul_swap
   (a delta v : Coeffs) :
   mulRq a (mulRq delta v) = mulRq delta (mulRq a v) := by
-  let one : Array Coeffs := #[v]
-  have hComm : smulVec a (smulVec delta one) = smulVec delta (smulVec a one) :=
-    laws.smulVec_comm a delta one
-  have hGet := congrArg (fun t => t.getD 0 zeroRq) hComm
-  simpa [one, smulVec] using hGet
+  calc
+    mulRq a (mulRq delta v) = mulRq (mulRq a delta) v := by
+      simpa using (mulRq_assoc a delta v).symm
+    _ = mulRq (mulRq delta a) v := by
+      rw [mulRq_comm a delta]
+    _ = mulRq delta (mulRq a v) := by
+      simpa using (mulRq_assoc delta a v)
 
 set_option maxHeartbeats 1200000 in
 private theorem foldl_pull_mulRq_smul
-  {params : AjtaiParams}
-  (laws : LatticeReductionLaws params)
   (l : List Nat)
   (xs v : Array Coeffs)
   (delta acc : Coeffs)
@@ -595,7 +577,7 @@ private theorem foldl_pull_mulRq_smul
           mulRq (xs.getD j zeroRq) (mulRq delta (v.getD j zeroRq)) =
             mulRq delta term := by
         simpa [term] using
-          mulRq_mul_swap_of_smulVec_comm (params := params) laws (xs.getD j zeroRq) delta (v.getD j zeroRq)
+          mulRq_mul_swap (xs.getD j zeroRq) delta (v.getD j zeroRq)
       have hStep :
           vecAdd (mulRq delta acc) (mulRq (xs.getD j zeroRq) (mulRq delta (v.getD j zeroRq))) =
             mulRq delta (vecAdd acc term) := by
@@ -637,7 +619,7 @@ private theorem foldl_pull_mulRq_smul
 set_option maxHeartbeats 4000000 in
 theorem dotRq_smulVec_derived
   {params : AjtaiParams}
-  (laws : LatticeReductionLaws params)
+  (_laws : LatticeReductionLaws params)
   (xs v : Array Coeffs)
   (delta : Coeffs) :
   dotRq xs (smulVec delta v) = mulRq delta (dotRq xs v) := by
@@ -683,8 +665,6 @@ theorem dotRq_smulVec_derived
             (fun a j => vecAdd a (mulRq (xs.getD j zeroRq) (v.getD j zeroRq)))
             zeroRq) := by
             exact foldl_pull_mulRq_smul
-              (params := params)
-              laws
               (List.range n)
               xs
               v
@@ -1044,6 +1024,35 @@ private theorem foldl_max_le_of_forall_le_fn
         exact hAll x (by simp [hx])
       simpa [List.foldl] using ih (acc := Nat.max acc (f a)) hAcc' hAll'
 
+private theorem foldl_max_normInfF_replicate_zero
+  (n acc : Nat) :
+  (List.replicate n (0 : F)).foldl
+      (fun a y => Nat.max a (normInfF y))
+      acc = acc := by
+  induction n generalizing acc with
+  | zero =>
+      simp
+  | succ n ih =>
+      calc
+        (List.replicate (n + 1) (0 : F)).foldl
+            (fun a y => Nat.max a (normInfF y))
+            acc
+            = (List.replicate n (0 : F)).foldl
+                (fun a y => Nat.max a (normInfF y))
+                (Nat.max acc (normInfF (0 : F))) := by
+                  simp [List.replicate, List.foldl]
+        _ = (List.replicate n (0 : F)).foldl
+              (fun a y => Nat.max a (normInfF y))
+              acc := by
+                rw [SuperNeo.normInfF_zero]
+                simp
+        _ = acc := ih acc
+
+private theorem normInfCoeffs_zeroRq : normInfCoeffs zeroRq = 0 := by
+  unfold normInfCoeffs zeroRq
+  rw [← Array.foldl_toList, Array.toList_replicate]
+  simpa using foldl_max_normInfF_replicate_zero d 0
+
 private theorem normInfCoeffs_le_normInfVec_of_mem
   {v : Array Coeffs} {x : Coeffs}
   (hx : x ∈ v.toList) :
@@ -1051,6 +1060,85 @@ private theorem normInfCoeffs_le_normInfVec_of_mem
   unfold normInfVec
   rw [← Array.foldl_toList]
   exact le_foldl_max_of_mem_fn v.toList normInfCoeffs 0 x hx
+
+private theorem normInfF_coeffAt_le_normInfCoeffs
+  (a : Coeffs) (i : Nat) (hi : i < d) :
+  normInfF (coeffAt a i) ≤ normInfCoeffs a := by
+  by_cases his : i < a.size
+  · have hmem : a[i]'his ∈ a.toList := Array.getElem_mem_toList (xs := a) his
+    have hle : normInfF (a[i]'his) ≤ normInfCoeffs a := by
+      unfold normInfCoeffs
+      rw [← Array.foldl_toList]
+      exact le_foldl_max_of_mem_fn a.toList normInfF 0 (a[i]'his) hmem
+    simpa [coeffAt, hi, Array.getD, his] using hle
+  · have hcoeff : coeffAt a i = (0 : F) := by
+      simp [coeffAt, hi, Array.getD, his]
+    rw [hcoeff]
+    rw [SuperNeo.normInfF_zero]
+    exact Nat.zero_le (normInfCoeffs a)
+
+private theorem normInfCoeffs_subRq_le (x y : Coeffs) :
+  normInfCoeffs (subRq x y) ≤ normInfCoeffs x + normInfCoeffs y := by
+  unfold normInfCoeffs subRq
+  rw [← Array.foldl_toList, Array.toList_ofFn]
+  refine foldl_max_le_of_forall_le_fn
+    (l := List.ofFn (fun i : Fin d => coeffAt x i.1 - coeffAt y i.1))
+    (f := normInfF)
+    (acc := 0)
+    (m := normInfCoeffs x + normInfCoeffs y)
+    (by exact Nat.zero_le _)
+    ?_
+  intro z hz
+  rcases (List.mem_ofFn.mp hz) with ⟨i, rfl⟩
+  have hx : normInfF (coeffAt x i.1) ≤ normInfCoeffs x :=
+    normInfF_coeffAt_le_normInfCoeffs x i.1 i.2
+  have hy : normInfF (coeffAt y i.1) ≤ normInfCoeffs y :=
+    normInfF_coeffAt_le_normInfCoeffs y i.1 i.2
+  have hsub :
+      normInfF (coeffAt x i.1 - coeffAt y i.1) ≤
+        normInfF (coeffAt x i.1) + normInfF (coeffAt y i.1) := by
+    simpa [normInfF] using F.centeredAbs_sub_le (coeffAt x i.1) (coeffAt y i.1)
+  exact Nat.le_trans hsub (Nat.add_le_add hx hy)
+
+private theorem normInfCoeffs_getD_le_normInfVec
+  (v : Array Coeffs) (i : Nat) :
+  normInfCoeffs (v.getD i zeroRq) ≤ normInfVec v := by
+  by_cases his : i < v.size
+  · have hmem : v[i]'his ∈ v.toList := Array.getElem_mem_toList (xs := v) his
+    have hle : normInfCoeffs (v[i]'his) ≤ normInfVec v :=
+      normInfCoeffs_le_normInfVec_of_mem hmem
+    simpa [Array.getD, his] using hle
+  · have hget : v.getD i zeroRq = zeroRq := by
+      simp [Array.getD, his]
+    rw [hget]
+    calc
+      normInfCoeffs zeroRq = 0 := normInfCoeffs_zeroRq
+      _ ≤ normInfVec v := Nat.zero_le _
+
+private theorem normInfVec_subVec_le_derived
+  (n : Nat) (v1 v2 : Array Coeffs) :
+  normInfVec (subVec n v1 v2) ≤ normInfVec v1 + normInfVec v2 := by
+  unfold normInfVec subVec
+  rw [← Array.foldl_toList, Array.toList_ofFn]
+  refine foldl_max_le_of_forall_le_fn
+    (l := List.ofFn (fun i : Fin n =>
+      subRq (v1.getD i.1 zeroRq) (v2.getD i.1 zeroRq)))
+    (f := normInfCoeffs)
+    (acc := 0)
+    (m := normInfVec v1 + normInfVec v2)
+    (by exact Nat.zero_le _)
+    ?_
+  intro z hz
+  rcases (List.mem_ofFn.mp hz) with ⟨i, rfl⟩
+  have hSub :
+      normInfCoeffs (subRq (v1.getD i.1 zeroRq) (v2.getD i.1 zeroRq)) ≤
+        normInfCoeffs (v1.getD i.1 zeroRq) + normInfCoeffs (v2.getD i.1 zeroRq) :=
+    normInfCoeffs_subRq_le (v1.getD i.1 zeroRq) (v2.getD i.1 zeroRq)
+  have h1 : normInfCoeffs (v1.getD i.1 zeroRq) ≤ normInfVec v1 :=
+    normInfCoeffs_getD_le_normInfVec v1 i.1
+  have h2 : normInfCoeffs (v2.getD i.1 zeroRq) ≤ normInfVec v2 :=
+    normInfCoeffs_getD_le_normInfVec v2 i.1
+  exact Nat.le_trans hSub (Nat.add_le_add h1 h2)
 
 private theorem normInfVec_smulVec_le_of_diff
   {params : AjtaiParams}
@@ -1079,7 +1167,7 @@ private theorem normInfVec_smulVec_le_of_diff
 /-- Norm-transfer boundary for extracted witness from a standard binding collision. -/
 theorem bindingCollision_subWitness_norm_lt_msisNormBound
   {params : AjtaiParams}
-  (laws : LatticeReductionLaws params)
+  (_laws : LatticeReductionLaws params)
   (hExpPos : 0 < params.relaxedExpansion)
   (coll : BindingCollision params) :
   normInfVec (subVec params.msgLen coll.opening1.witness coll.opening2.witness) <
@@ -1091,7 +1179,7 @@ theorem bindingCollision_subWitness_norm_lt_msisNormBound
     normInfVec (subVec params.msgLen coll.opening1.witness coll.opening2.witness) ≤
       coll.opening1.normBound + coll.opening2.normBound := by
     have h :=
-      laws.normInfVec_subVec_le (n := params.msgLen)
+      normInfVec_subVec_le_derived (n := params.msgLen)
         coll.opening1.witness coll.opening2.witness
     exact Nat.le_trans h (Nat.add_le_add hNs1 hNs2)
 
@@ -1127,7 +1215,7 @@ theorem relaxedBindingCollision_subWitness_norm_lt_msisNormBound
   {params : AjtaiParams}
   (laws : LatticeReductionLaws params)
   (hExpPos : 0 < params.relaxedExpansion)
-  (coll : RelaxedBindingCollision params) :
+  (coll : RelaxedBindingCollision params laws.samplingCarrier) :
   normInfVec
       (subVec params.msgLen
         (smulVec coll.delta1 coll.opening2.witness)
@@ -1143,13 +1231,6 @@ theorem relaxedBindingCollision_subWitness_norm_lt_msisNormBound
   let w1 := smulVec coll.delta1 coll.opening2.witness
   let w2 := smulVec coll.delta2 coll.opening1.witness
 
-  have hδ1Diff :
-      samplingDiffSet laws.samplingCarrier coll.delta1 :=
-    laws.deltaInDiff_of_deltaBound coll.delta1 coll.deltaBound1
-  have hδ2Diff :
-      samplingDiffSet laws.samplingCarrier coll.delta2 :=
-    laws.deltaInDiff_of_deltaBound coll.delta2 coll.deltaBound2
-
   have hw1_le :
       normInfVec w1 ≤ (4 * params.relaxedExpansion) * coll.opening2.normBound :=
     by
@@ -1160,7 +1241,7 @@ theorem relaxedBindingCollision_subWitness_norm_lt_msisNormBound
           coll.delta1
           coll.opening2.witness
           coll.opening2.normBound
-          hδ1Diff
+          coll.inDiff1
           hNs2
 
   have hw2_le :
@@ -1172,12 +1253,12 @@ theorem relaxedBindingCollision_subWitness_norm_lt_msisNormBound
         coll.delta2
         coll.opening1.witness
         coll.opening1.normBound
-        hδ2Diff
+        coll.inDiff2
         hNs1
 
   have hsub_le :
       normInfVec (subVec params.msgLen w1 w2) ≤ normInfVec w1 + normInfVec w2 :=
-    laws.normInfVec_subVec_le (n := params.msgLen) w1 w2
+    normInfVec_subVec_le_derived (n := params.msgLen) w1 w2
 
   have htotal_le :
       normInfVec (subVec params.msgLen w1 w2) ≤
@@ -1290,7 +1371,7 @@ theorem msisBreakEvent_of_relaxedBindingCollision
   {params : AjtaiParams}
   (laws : LatticeReductionLaws params)
   (hExpPos : 0 < params.relaxedExpansion)
-  (coll : RelaxedBindingCollision params) :
+  (coll : RelaxedBindingCollision params laws.samplingCarrier) :
   MSISBreakEvent params := by
   rcases coll.opens1 with ⟨hCwf1, hOwf1, _hNs1, hEq1⟩
   rcases coll.opens2 with ⟨_hCwf2, hOwf2, _hNs2, hEq2⟩
@@ -1343,7 +1424,7 @@ theorem msisBreakEvent_of_relaxedBindingCollision
         _ = subVec params.kappa
               (smulVec coll.delta2 (smulVec coll.delta1 (Commitment.valueVec params coll.commitment)))
               (smulVec coll.delta2 (smulVec coll.delta1 (Commitment.valueVec params coll.commitment))) := by
-              simp [laws.smulVec_comm]
+              simp [smulVec_comm_derived]
         _ = zeroVec params.kappa := by
               simpa using
                 subVec_self params.kappa
@@ -1430,18 +1511,19 @@ advantage bound implies no relaxed binding collision can exist.
 -/
 theorem no_ajtaiRelaxedBindingCollision_of_advantageBound
   {params : AjtaiParams}
+  {C : SamplingCarrier}
   {eps : ErrorFn}
-  (hBound : AjtaiRelaxedBindingAdvantageBound params eps)
+  (hBound : AjtaiRelaxedBindingAdvantageBound params C eps)
   (hNeg : IsNegligible eps) :
-  AjtaiRelaxedBindingAssumption params := by
+  AjtaiRelaxedBindingAssumption params C := by
   rcases hNeg 0 with ⟨N, hZero⟩
   have hEps0 : eps N = 0 := hZero N (Nat.le_refl N)
   intro hColl
   have hLe :
-      AjtaiRelaxedBindingAdvantage truthProb (canonicalAjtaiRelaxedBindingGame params) N ≤ (eps N : Rat) :=
+      AjtaiRelaxedBindingAdvantage truthProb (canonicalAjtaiRelaxedBindingGame params C) N ≤ (eps N : Rat) :=
     hBound truthProb N
   have hAdvOne :
-      AjtaiRelaxedBindingAdvantage truthProb (canonicalAjtaiRelaxedBindingGame params) N = (1 : Rat) := by
+      AjtaiRelaxedBindingAdvantage truthProb (canonicalAjtaiRelaxedBindingGame params C) N = (1 : Rat) := by
     classical
     simp [AjtaiRelaxedBindingAdvantage, canonicalAjtaiRelaxedBindingGame, truthProb, hColl]
   have hOneLe : (1 : Rat) ≤ (eps N : Rat) := by
@@ -1483,24 +1565,28 @@ namespace AjtaiRelaxedBindingBoundary
 /-- Canonical hardness view for an Ajtai relaxed-binding boundary package. -/
 def hardness
   {params : AjtaiParams}
-  (h : AjtaiRelaxedBindingBoundary params) : AjtaiRelaxedBindingAssumption params :=
+  {C : SamplingCarrier}
+  (h : AjtaiRelaxedBindingBoundary params C) : AjtaiRelaxedBindingAssumption params C :=
   no_ajtaiRelaxedBindingCollision_of_advantageBound h.advantageBound h.negligibleEpsRelaxedBinding
 
 /-- Canonical relaxed-hardness derivation from package fields. -/
 theorem hardnessFromFields
   {params : AjtaiParams}
-  (h : AjtaiRelaxedBindingBoundary params) : AjtaiRelaxedBindingAssumption params :=
+  {C : SamplingCarrier}
+  (h : AjtaiRelaxedBindingBoundary params C) : AjtaiRelaxedBindingAssumption params C :=
   h.hardness
 
 /-- Normalize any relaxed package by overwriting redundant `hardness` proof from aligned fields. -/
 def normalize
   {params : AjtaiParams}
-  (h : AjtaiRelaxedBindingBoundary params) : AjtaiRelaxedBindingBoundary params :=
+  {C : SamplingCarrier}
+  (h : AjtaiRelaxedBindingBoundary params C) : AjtaiRelaxedBindingBoundary params C :=
   h
 
 theorem normalize_hardnessFromFields
   {params : AjtaiParams}
-  (h : AjtaiRelaxedBindingBoundary params) :
+  {C : SamplingCarrier}
+  (h : AjtaiRelaxedBindingBoundary params C) :
   (normalize h).hardness = h.hardnessFromFields := by
   rfl
 
@@ -1516,11 +1602,106 @@ structure MSISToAjtaiReductions (params : AjtaiParams) where
   epsBinding : ErrorFn
   epsRelaxedBinding : ErrorFn
   bindingAdvantageBound : AjtaiBindingAdvantageBound params epsBinding
-  relaxedBindingAdvantageBound : AjtaiRelaxedBindingAdvantageBound params epsRelaxedBinding
+  relaxedBindingAdvantageBound :
+    AjtaiRelaxedBindingAdvantageBound params laws.samplingCarrier epsRelaxedBinding
   negligibleEpsBinding : IsNegligible epsBinding
   negligibleEpsRelaxedBinding : IsNegligible epsRelaxedBinding
 
 namespace MSISToAjtaiReductions
+
+/--
+Canonical constructor from an already-built lattice-law package.
+-/
+def ofLaws
+  {params : AjtaiParams}
+  (laws : LatticeReductionLaws params)
+  (hExpPos : 0 < params.relaxedExpansion)
+  (epsBinding epsRelaxedBinding : ErrorFn)
+  (hBindBound : AjtaiBindingAdvantageBound params epsBinding)
+  (hRelaxedBound : AjtaiRelaxedBindingAdvantageBound params laws.samplingCarrier epsRelaxedBinding)
+  (hBindNeg : IsNegligible epsBinding)
+  (hRelaxedNeg : IsNegligible epsRelaxedBinding) :
+  MSISToAjtaiReductions params where
+  laws := laws
+  relaxedExpansionPos := hExpPos
+  epsBinding := epsBinding
+  epsRelaxedBinding := epsRelaxedBinding
+  bindingAdvantageBound := hBindBound
+  relaxedBindingAdvantageBound := hRelaxedBound
+  negligibleEpsBinding := hBindNeg
+  negligibleEpsRelaxedBinding := hRelaxedNeg
+
+/--
+Canonical constructor specialized to `paperCarrier`, when strong-sampling is
+already available for that carrier at `params.relaxedExpansion`.
+-/
+def ofPaperCarrier
+  {params : AjtaiParams}
+  (hStrong : strongSamplingExpansionProp paperCarrier params.relaxedExpansion)
+  (hExpPos : 0 < params.relaxedExpansion)
+  (epsBinding epsRelaxedBinding : ErrorFn)
+  (hBindBound : AjtaiBindingAdvantageBound params epsBinding)
+  (hRelaxedBound :
+    AjtaiRelaxedBindingAdvantageBound params paperCarrier epsRelaxedBinding)
+  (hBindNeg : IsNegligible epsBinding)
+  (hRelaxedNeg : IsNegligible epsRelaxedBinding) :
+  MSISToAjtaiReductions params :=
+  ofLaws
+    (laws := LatticeReductionLaws.ofPaperCarrier hStrong)
+    hExpPos
+    epsBinding epsRelaxedBinding
+    hBindBound
+    (by simpa using hRelaxedBound)
+    hBindNeg hRelaxedNeg
+
+/--
+Paper-carrier constructor from subtraction/multiplication norm bundles.
+This threads `strongSampling` via
+`LatticeReductionLaws.ofPaperCarrierFromBounds`.
+-/
+def ofPaperCarrierFromBounds
+  {params : AjtaiParams}
+  {D : Nat}
+  (hSub : coeffSubNormBoundFromOperands 2 2 D)
+  (hMul : ∀ B : Nat, mulRqNormBoundFromOperands D B (4 * params.relaxedExpansion * B))
+  (hExpPos : 0 < params.relaxedExpansion)
+  (epsBinding epsRelaxedBinding : ErrorFn)
+  (hBindBound : AjtaiBindingAdvantageBound params epsBinding)
+  (hRelaxedBound :
+    AjtaiRelaxedBindingAdvantageBound params paperCarrier epsRelaxedBinding)
+  (hBindNeg : IsNegligible epsBinding)
+  (hRelaxedNeg : IsNegligible epsRelaxedBinding) :
+  MSISToAjtaiReductions params :=
+  ofLaws
+    (laws := LatticeReductionLaws.ofPaperCarrierFromBounds (params := params) (D := D) hSub hMul)
+    hExpPos
+    epsBinding epsRelaxedBinding
+    hBindBound
+    (by simpa using hRelaxedBound)
+    hBindNeg hRelaxedNeg
+
+/--
+Paper-carrier constructor from the concrete norm-bundle closure path.
+This only requires `d ≤ params.relaxedExpansion` to derive strong sampling.
+-/
+def ofPaperCarrierFromDLe
+  {params : AjtaiParams}
+  (hTd : d ≤ params.relaxedExpansion)
+  (hExpPos : 0 < params.relaxedExpansion)
+  (epsBinding epsRelaxedBinding : ErrorFn)
+  (hBindBound : AjtaiBindingAdvantageBound params epsBinding)
+  (hRelaxedBound :
+    AjtaiRelaxedBindingAdvantageBound params paperCarrier epsRelaxedBinding)
+  (hBindNeg : IsNegligible epsBinding)
+  (hRelaxedNeg : IsNegligible epsRelaxedBinding) :
+  MSISToAjtaiReductions params :=
+  ofLaws
+    (laws := LatticeReductionLaws.ofPaperCarrierFromDLe (params := params) hTd)
+    hExpPos
+    epsBinding epsRelaxedBinding
+    hBindBound
+    (by simpa using hRelaxedBound)
+    hBindNeg hRelaxedNeg
 
 /-- Derived Ajtai binding boundary from MSIS hardness, via explicit extractor. -/
 theorem toBinding
@@ -1539,7 +1720,7 @@ theorem toRelaxedBinding
   {params : AjtaiParams}
   (hRed : MSISToAjtaiReductions params)
   (hMsis : MSISHardnessAssumption params) :
-  AjtaiRelaxedBindingAssumption params := by
+  AjtaiRelaxedBindingAssumption params hRed.laws.samplingCarrier := by
   intro hColl
   rcases hColl with ⟨coll⟩
   have hBreak : MSISBreakEvent params :=
@@ -1561,7 +1742,7 @@ theorem ajtaiRelaxedBinding_of_msis
   {params : AjtaiParams}
   (hRed : MSISToAjtaiReductions params)
   (hMsis : MSISHardnessAssumption params) :
-  AjtaiRelaxedBindingAssumption params := by
+  AjtaiRelaxedBindingAssumption params hRed.laws.samplingCarrier := by
   exact hRed.toRelaxedBinding hMsis
 
 /-- Package both Ajtai boundaries derived from MSIS under one reduction interface. -/
@@ -1569,7 +1750,8 @@ theorem ajtaiBoundaries_of_msis
   {params : AjtaiParams}
   (hRed : MSISToAjtaiReductions params)
   (hMsis : MSISHardnessAssumption params) :
-  AjtaiBindingAssumption params ∧ AjtaiRelaxedBindingAssumption params := by
+  AjtaiBindingAssumption params ∧
+    AjtaiRelaxedBindingAssumption params hRed.laws.samplingCarrier := by
   exact ⟨ajtaiBinding_of_msis hRed hMsis, ajtaiRelaxedBinding_of_msis hRed hMsis⟩
 
 /-- Build the canonical Ajtai binding boundary package from MSIS hardness + reduction surface. -/
@@ -1587,7 +1769,7 @@ def ajtaiRelaxedBindingBoundary_of_msis
   {params : AjtaiParams}
   (hRed : MSISToAjtaiReductions params)
   (_hMsis : MSISHardnessAssumption params) :
-  AjtaiRelaxedBindingBoundary params where
+  AjtaiRelaxedBindingBoundary params hRed.laws.samplingCarrier where
   epsRelaxedBinding := hRed.epsRelaxedBinding
   advantageBound := hRed.relaxedBindingAdvantageBound
   negligibleEpsRelaxedBinding := hRed.negligibleEpsRelaxedBinding

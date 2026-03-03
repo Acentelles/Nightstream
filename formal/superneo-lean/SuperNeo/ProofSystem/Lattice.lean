@@ -1,5 +1,6 @@
 import SuperNeo.Ring
 import SuperNeo.Norm
+import SuperNeo.SamplingSet
 import SuperNeo.ProofSystem.Negligible
 import SuperNeo.ProofSystem.Security
 
@@ -205,18 +206,19 @@ structure BindingCollision (params : AjtaiParams) where
   bounded1 : opening1.normBound < params.bindingNormBound
   bounded2 : opening2.normBound < params.bindingNormBound
 
-/-- Collision witness for relaxed binding. -/
-structure RelaxedBindingCollision (params : AjtaiParams) where
+/-- Collision witness for relaxed binding over a fixed sampling carrier `C`. -/
+structure RelaxedBindingCollision (params : AjtaiParams) (C : SuperNeo.SamplingCarrier) where
   commitment : Commitment
   delta1 : Coeffs
   delta2 : Coeffs
-  /-- Paper-facing Δ-bounds needed for norm transfer into MSIS. -/
-  deltaBound1 : normInfCoeffs delta1 < 4 * params.relaxedExpansion
-  deltaBound2 : normInfCoeffs delta2 < 4 * params.relaxedExpansion
   opening1 : Opening
   opening2 : Opening
   /-- Paper-faithful relaxed distinctness: `Δ1 z2 ≠ Δ2 z1`. -/
   distinct : smulVec delta1 opening2.witness ≠ smulVec delta2 opening1.witness
+  /-- Paper-faithful carrier membership: `Δ1 ∈ C-C`. -/
+  inDiff1 : SuperNeo.samplingDiffSet C delta1
+  /-- Paper-faithful carrier membership: `Δ2 ∈ C-C`. -/
+  inDiff2 : SuperNeo.samplingDiffSet C delta2
   opens1 : opensToRelaxed params commitment delta1 opening1
   opens2 : opensToRelaxed params commitment delta2 opening2
   bounded1 : opening1.normBound < params.bindingNormBound
@@ -447,8 +449,10 @@ def AjtaiBindingAssumption (params : AjtaiParams) : Prop :=
   ¬ Nonempty (BindingCollision params)
 
 /-- Ajtai relaxed-binding boundary at theorem level. -/
-def AjtaiRelaxedBindingAssumption (params : AjtaiParams) : Prop :=
-  ¬ Nonempty (RelaxedBindingCollision params)
+def AjtaiRelaxedBindingAssumption
+  (params : AjtaiParams)
+  (C : SuperNeo.SamplingCarrier) : Prop :=
+  ¬ Nonempty (RelaxedBindingCollision params C)
 
 /-- Abstract Ajtai binding game interface indexed by security parameter. -/
 structure AjtaiBindingGame (params : AjtaiParams) where
@@ -474,27 +478,33 @@ def AjtaiBindingAdvantageBound
     AjtaiBindingAdvantage prob (canonicalAjtaiBindingGame params) n ≤ (eps n : Rat)
 
 /-- Abstract Ajtai relaxed-binding game interface indexed by security parameter. -/
-structure AjtaiRelaxedBindingGame (params : AjtaiParams) where
+structure AjtaiRelaxedBindingGame
+  (params : AjtaiParams)
+  (C : SuperNeo.SamplingCarrier) where
   breakAt : Nat → Prop
 
 /-- Canonical Ajtai relaxed-binding game induced by relaxed-collision events. -/
-def canonicalAjtaiRelaxedBindingGame (params : AjtaiParams) : AjtaiRelaxedBindingGame params where
-  breakAt := fun _n => Nonempty (RelaxedBindingCollision params)
+def canonicalAjtaiRelaxedBindingGame
+  (params : AjtaiParams)
+  (C : SuperNeo.SamplingCarrier) : AjtaiRelaxedBindingGame params C where
+  breakAt := fun _n => Nonempty (RelaxedBindingCollision params C)
 
 /-- Advantage of an Ajtai relaxed-binding adversary/game event under a probability model. -/
 def AjtaiRelaxedBindingAdvantage
   {params : AjtaiParams}
+  {C : SuperNeo.SamplingCarrier}
   (prob : ProbModel)
-  (game : AjtaiRelaxedBindingGame params)
+  (game : AjtaiRelaxedBindingGame params C)
   (n : Nat) : Rat :=
   prob.Pr (game.breakAt n)
 
 /-- Theorem-facing Ajtai relaxed-binding advantage bound shape against an error function. -/
 def AjtaiRelaxedBindingAdvantageBound
   (params : AjtaiParams)
+  (C : SuperNeo.SamplingCarrier)
   (eps : ErrorFn) : Prop :=
   ∀ prob : ProbModel, ∀ n : Nat,
-    AjtaiRelaxedBindingAdvantage prob (canonicalAjtaiRelaxedBindingGame params) n ≤ (eps n : Rat)
+    AjtaiRelaxedBindingAdvantage prob (canonicalAjtaiRelaxedBindingGame params C) n ≤ (eps n : Rat)
 
 /-- Explicit Ajtai binding boundary package with aligned error/bound surfaces. -/
 structure AjtaiBindingBoundary (params : AjtaiParams) where
@@ -503,9 +513,11 @@ structure AjtaiBindingBoundary (params : AjtaiParams) where
   negligibleEpsBinding : IsNegligible epsBinding
 
 /-- Explicit Ajtai relaxed-binding boundary package with aligned error/bound surfaces. -/
-structure AjtaiRelaxedBindingBoundary (params : AjtaiParams) where
+structure AjtaiRelaxedBindingBoundary
+  (params : AjtaiParams)
+  (C : SuperNeo.SamplingCarrier) where
   epsRelaxedBinding : ErrorFn
-  advantageBound : AjtaiRelaxedBindingAdvantageBound params epsRelaxedBinding
+  advantageBound : AjtaiRelaxedBindingAdvantageBound params C epsRelaxedBinding
   negligibleEpsRelaxedBinding : IsNegligible epsRelaxedBinding
 
 namespace AjtaiBindingBoundary
@@ -526,10 +538,11 @@ namespace AjtaiRelaxedBindingBoundary
 
 def ofFields
   {params : AjtaiParams}
+  {C : SuperNeo.SamplingCarrier}
   (eps : ErrorFn)
-  (adv : AjtaiRelaxedBindingAdvantageBound params eps)
+  (adv : AjtaiRelaxedBindingAdvantageBound params C eps)
   (negl : IsNegligible eps) :
-  AjtaiRelaxedBindingBoundary params where
+  AjtaiRelaxedBindingBoundary params C where
   epsRelaxedBinding := eps
   advantageBound := adv
   negligibleEpsRelaxedBinding := negl

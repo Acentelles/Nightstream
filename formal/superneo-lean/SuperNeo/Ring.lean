@@ -59,9 +59,26 @@ def mulRq (a b : Coeffs) : Coeffs :=
         acc + coeffAt a j * coeffAt b k)
       0)
 
-/-- Compact bar-block placeholder used by executable cross-check harnesses. -/
-def superneoBarBlock (_bar : Array (Array F)) (a : Array F) : Coeffs :=
-  a
+/-- Dot product with a shape guard, used by bar-block matrix application. -/
+private def dotBySize (row v : Array F) : F :=
+  if _h : row.size = v.size then
+    (List.range row.size).foldl (fun acc i => acc + row[i]! * v[i]!) 0
+  else
+    0
+
+/--
+Apply one SuperNeo bar block transform: matrix-vector multiplication `bar * a`
+when both shapes are `d`; otherwise return the input block unchanged.
+-/
+def superneoBarBlock (bar : Array (Array F)) (a : Array F) : Coeffs :=
+  if hBar : bar.size = d then
+    if hA : a.size = d then
+      Array.ofFn (fun i : Fin d =>
+        dotBySize (bar[i.1]'(by simpa [hBar] using i.2)) a)
+    else
+      a
+  else
+    a
 
 def zeroRq : Coeffs :=
   Array.replicate d 0
@@ -635,7 +652,7 @@ private theorem inner_reindex_sub
             mod_add_sub_cancel_of_lt k j hk hj
           simp [f, hIdxB]
 
-private theorem coeffAt_mulRq
+theorem coeffAt_mulRq
   (a b : Coeffs) (k : Nat) (hk : k < d) :
   coeffAt (mulRq a b) k =
     (List.range d).foldl
@@ -645,6 +662,17 @@ private theorem coeffAt_mulRq
       0 := by
   unfold coeffAt mulRq
   simp [Array.getD, hk, coeffAt]
+
+theorem coeffAt_vecAdd_of_size_d
+  (x y : Coeffs)
+  (hx : x.size = d) (hy : y.size = d)
+  (k : Nat) (hk : k < d) :
+  coeffAt (vecAdd x y) k = coeffAt x k + coeffAt y k := by
+  have hxy : x.size = y.size := by simpa [hx, hy]
+  have hkx : k < x.size := by simpa [hx] using hk
+  have hky : k < y.size := by simpa [hy] using hk
+  unfold coeffAt
+  simp [vecAdd, hxy, hk, Array.getD, hkx, hky, coeffAt, hx, hy]
 
 
 set_option maxHeartbeats 800000 in
@@ -958,6 +986,129 @@ theorem mulRq_assoc (a b c : Coeffs) : mulRq (mulRq a b) c = mulRq a (mulRq b c)
       exact hLeft.trans hRight.symm
     have hiR' : i < d := by simpa [mulRq] using hiR
     simpa [coeffAt, hi, hiR', Array.getD, hiL, hiR, mulRq_size] using hCoeff
+
+set_option maxHeartbeats 1200000 in
+theorem mulRq_vecAdd_right
+  (a b c : Coeffs)
+  (hb : b.size = d)
+  (hc : c.size = d) :
+  mulRq a (vecAdd b c) = vecAdd (mulRq a b) (mulRq a c) := by
+  have hEq : (mulRq a b).size = (mulRq a c).size := by
+    simp [mulRq_size]
+  have hsizeR : (vecAdd (mulRq a b) (mulRq a c)).size = d := by
+    calc
+      (vecAdd (mulRq a b) (mulRq a c)).size = (mulRq a b).size := vecAdd_size_of_eq hEq
+      _ = d := mulRq_size a b
+  apply Array.ext
+  · exact (mulRq_size a (vecAdd b c)).trans hsizeR.symm
+  · intro i hi₁ hi₂
+    have hi : i < d := by simpa [mulRq_size] using hi₁
+    have hiR : i < d := by simpa [hsizeR] using hi₂
+    let t1 : Nat → F := fun j => coeffAt a j * coeffAt b ((i + d - j) % d)
+    let t2 : Nat → F := fun j => coeffAt a j * coeffAt c ((i + d - j) % d)
+    have hterm :
+        ∀ j,
+          coeffAt a j * coeffAt (vecAdd b c) ((i + d - j) % d) =
+            (t1 j + t2 j) := by
+      intro j
+      let k : Nat := (i + d - j) % d
+      have hk : k < d := by
+        dsimp [k]
+        exact Nat.mod_lt _ d_pos
+      have hVec :
+          coeffAt (vecAdd b c) k = coeffAt b k + coeffAt c k := by
+        exact coeffAt_vecAdd_of_size_d b c hb hc k hk
+      have hMul :
+          coeffAt a j * (coeffAt b k + coeffAt c k) =
+            coeffAt a j * coeffAt b k + coeffAt a j * coeffAt c k := by
+        simpa using
+          (Lean.Grind.Fin.left_distrib (n := Goldilocks.q)
+            (coeffAt a j) (coeffAt b k) (coeffAt c k))
+      calc
+        coeffAt a j * coeffAt (vecAdd b c) ((i + d - j) % d)
+            = coeffAt a j * coeffAt (vecAdd b c) k := by
+                rfl
+        _ = coeffAt a j * (coeffAt b k + coeffAt c k) := by
+              rw [hVec]
+        _ = coeffAt a j * coeffAt b k + coeffAt a j * coeffAt c k := hMul
+        _ = t1 j + t2 j := by
+              simp [t1, t2, k]
+    have hleft :
+        (List.range d).foldl
+            (fun acc j => acc + coeffAt a j * coeffAt (vecAdd b c) ((i + d - j) % d))
+            0 =
+          (List.range d).foldl (fun acc j => acc + (t1 j + t2 j)) 0 := by
+      exact list_foldl_congr_mem
+        (fun acc j => acc + coeffAt a j * coeffAt (vecAdd b c) ((i + d - j) % d))
+        (fun acc j => acc + (t1 j + t2 j))
+        0
+        (List.range d)
+        (by
+          intro acc j _hj
+          exact congrArg (fun t => acc + t) (hterm j))
+    have hfold := foldl_add_linearity_F (l := List.range d) t1 t2 0 0
+    have hzero : ((0 : F) + 0) = 0 := by
+      simp
+    have hfold0 :
+        (List.range d).foldl (fun acc j => acc + (t1 j + t2 j)) 0 =
+          (List.range d).foldl (fun acc j => acc + t1 j) 0 +
+            (List.range d).foldl (fun acc j => acc + t2 j) 0 := by
+      simpa [hzero] using hfold
+    have hright :
+        (List.range d).foldl (fun acc j => acc + t1 j) 0 +
+          (List.range d).foldl (fun acc j => acc + t2 j) 0 =
+            coeffAt (vecAdd (mulRq a b) (mulRq a c)) i := by
+      have hVecCoeff :
+          coeffAt (vecAdd (mulRq a b) (mulRq a c)) i =
+            coeffAt (mulRq a b) i + coeffAt (mulRq a c) i := by
+        exact coeffAt_vecAdd_of_size_d (mulRq a b) (mulRq a c)
+          (mulRq_size a b)
+          (mulRq_size a c)
+          i
+          hi
+      calc
+        (List.range d).foldl (fun acc j => acc + t1 j) 0 +
+            (List.range d).foldl (fun acc j => acc + t2 j) 0
+            = coeffAt (mulRq a b) i + coeffAt (mulRq a c) i := by
+                simp [coeffAt_mulRq, t1, t2, hi]
+        _ = coeffAt (vecAdd (mulRq a b) (mulRq a c)) i := by
+              symm
+              exact hVecCoeff
+    have hmulExpand :
+        coeffAt (mulRq a (vecAdd b c)) i =
+          (List.range d).foldl
+            (fun acc j => acc + coeffAt a j * coeffAt (vecAdd b c) ((i + d - j) % d))
+            0 := by
+      exact coeffAt_mulRq a (vecAdd b c) i hi
+    have hmain :
+        coeffAt (mulRq a (vecAdd b c)) i =
+          coeffAt (vecAdd (mulRq a b) (mulRq a c)) i := by
+      calc
+        coeffAt (mulRq a (vecAdd b c)) i
+            = (List.range d).foldl
+                (fun acc j => acc + coeffAt a j * coeffAt (vecAdd b c) ((i + d - j) % d))
+                0 := hmulExpand
+        _ = (List.range d).foldl (fun acc j => acc + (t1 j + t2 j)) 0 := hleft
+        _ = (List.range d).foldl (fun acc j => acc + t1 j) 0 +
+              (List.range d).foldl (fun acc j => acc + t2 j) 0 := hfold0
+        _ = coeffAt (vecAdd (mulRq a b) (mulRq a c)) i := by
+              exact hright
+    have hiL : i < d := by simpa [mulRq_size] using hi₁
+    simpa [coeffAt, hiL, hiR, Array.getD, hi₁, hi₂, hsizeR] using hmain
+
+theorem mulRq_vecAdd_left
+  (a b c : Coeffs)
+  (hb : b.size = d)
+  (hc : c.size = d) :
+  mulRq (vecAdd b c) a = vecAdd (mulRq b a) (mulRq c a) := by
+  calc
+    mulRq (vecAdd b c) a = mulRq a (vecAdd b c) := by
+      simpa using (mulRq_comm (vecAdd b c) a)
+    _ = vecAdd (mulRq a b) (mulRq a c) := mulRq_vecAdd_right a b c hb hc
+    _ = vecAdd (mulRq b a) (mulRq a c) := by
+      rw [mulRq_comm a b]
+    _ = vecAdd (mulRq b a) (mulRq c a) := by
+      rw [mulRq_comm a c]
 
 theorem zeroRq_size : zeroRq.size = d := by
   simp [zeroRq, d]

@@ -22,6 +22,103 @@ noncomputable section
 abbrev MSISToAjtaiReductions := SuperNeo.ProofSystem.MSISToAjtaiReductions
 abbrev LatticeReductionLaws := SuperNeo.ProofSystem.LatticeReductionLaws
 
+def LatticeReductionLaws_ofCarrier
+  {params : AjtaiParams}
+  (C : SamplingCarrier)
+  (hStrong : strongSamplingExpansionProp C params.relaxedExpansion) :
+  LatticeReductionLaws params :=
+  SuperNeo.ProofSystem.LatticeReductionLaws.ofCarrier C hStrong
+
+def LatticeReductionLaws_ofPaperCarrier
+  {params : AjtaiParams}
+  (hStrong : strongSamplingExpansionProp paperCarrier params.relaxedExpansion) :
+  LatticeReductionLaws params :=
+  SuperNeo.ProofSystem.LatticeReductionLaws.ofPaperCarrier hStrong
+
+theorem LatticeReductionLaws_paperStrongSampling_of_bounds
+  {params : AjtaiParams}
+  {D : Nat}
+  (hSub : coeffSubNormBoundFromOperands 2 2 D)
+  (hMul : ∀ B : Nat, mulRqNormBoundFromOperands D B (4 * params.relaxedExpansion * B)) :
+  strongSamplingExpansionProp paperCarrier params.relaxedExpansion :=
+  SuperNeo.ProofSystem.LatticeReductionLaws.paperStrongSampling_of_bounds (params := params) (D := D) hSub hMul
+
+theorem LatticeReductionLaws_paperStrongSampling_of_d_le
+  {params : AjtaiParams}
+  (hTd : d ≤ params.relaxedExpansion) :
+  strongSamplingExpansionProp paperCarrier params.relaxedExpansion :=
+  SuperNeo.ProofSystem.LatticeReductionLaws.paperStrongSampling_of_d_le (params := params) hTd
+
+def LatticeReductionLaws_ofPaperCarrierFromBounds
+  {params : AjtaiParams}
+  {D : Nat}
+  (hSub : coeffSubNormBoundFromOperands 2 2 D)
+  (hMul : ∀ B : Nat, mulRqNormBoundFromOperands D B (4 * params.relaxedExpansion * B)) :
+  LatticeReductionLaws params :=
+  SuperNeo.ProofSystem.LatticeReductionLaws.ofPaperCarrierFromBounds (params := params) (D := D) hSub hMul
+
+def LatticeReductionLaws_ofPaperCarrierFromDLe
+  {params : AjtaiParams}
+  (hTd : d ≤ params.relaxedExpansion) :
+  LatticeReductionLaws params :=
+  SuperNeo.ProofSystem.LatticeReductionLaws.ofPaperCarrierFromDLe (params := params) hTd
+
+def MSISToAjtaiReductions_ofLaws
+  {params : AjtaiParams}
+  (laws : LatticeReductionLaws params)
+  (hExpPos : 0 < params.relaxedExpansion)
+  (epsBinding epsRelaxedBinding : ErrorFn)
+  (hBindBound : AjtaiBindingAdvantageBound params epsBinding)
+  (hRelaxedBound : AjtaiRelaxedBindingAdvantageBound params laws.samplingCarrier epsRelaxedBinding)
+  (hBindNeg : IsNegligible epsBinding)
+  (hRelaxedNeg : IsNegligible epsRelaxedBinding) :
+  MSISToAjtaiReductions params :=
+  SuperNeo.ProofSystem.MSISToAjtaiReductions.ofLaws
+    laws hExpPos epsBinding epsRelaxedBinding hBindBound hRelaxedBound hBindNeg hRelaxedNeg
+
+def MSISToAjtaiReductions_ofPaperCarrier
+  {params : AjtaiParams}
+  (hStrong : strongSamplingExpansionProp paperCarrier params.relaxedExpansion)
+  (hExpPos : 0 < params.relaxedExpansion)
+  (epsBinding epsRelaxedBinding : ErrorFn)
+  (hBindBound : AjtaiBindingAdvantageBound params epsBinding)
+  (hRelaxedBound : AjtaiRelaxedBindingAdvantageBound params paperCarrier epsRelaxedBinding)
+  (hBindNeg : IsNegligible epsBinding)
+  (hRelaxedNeg : IsNegligible epsRelaxedBinding) :
+  MSISToAjtaiReductions params :=
+  SuperNeo.ProofSystem.MSISToAjtaiReductions.ofPaperCarrier
+    hStrong hExpPos epsBinding epsRelaxedBinding hBindBound hRelaxedBound hBindNeg hRelaxedNeg
+
+def MSISToAjtaiReductions_ofPaperCarrierFromBounds
+  {params : AjtaiParams}
+  {D : Nat}
+  (hSub : coeffSubNormBoundFromOperands 2 2 D)
+  (hMul : ∀ B : Nat, mulRqNormBoundFromOperands D B (4 * params.relaxedExpansion * B))
+  (hExpPos : 0 < params.relaxedExpansion)
+  (epsBinding epsRelaxedBinding : ErrorFn)
+  (hBindBound : AjtaiBindingAdvantageBound params epsBinding)
+  (hRelaxedBound : AjtaiRelaxedBindingAdvantageBound params paperCarrier epsRelaxedBinding)
+  (hBindNeg : IsNegligible epsBinding)
+  (hRelaxedNeg : IsNegligible epsRelaxedBinding) :
+  MSISToAjtaiReductions params :=
+  SuperNeo.ProofSystem.MSISToAjtaiReductions.ofPaperCarrierFromBounds
+    (params := params) (D := D)
+    hSub hMul hExpPos epsBinding epsRelaxedBinding hBindBound hRelaxedBound hBindNeg hRelaxedNeg
+
+def MSISToAjtaiReductions_ofPaperCarrierFromDLe
+  {params : AjtaiParams}
+  (hTd : d ≤ params.relaxedExpansion)
+  (hExpPos : 0 < params.relaxedExpansion)
+  (epsBinding epsRelaxedBinding : ErrorFn)
+  (hBindBound : AjtaiBindingAdvantageBound params epsBinding)
+  (hRelaxedBound : AjtaiRelaxedBindingAdvantageBound params paperCarrier epsRelaxedBinding)
+  (hBindNeg : IsNegligible epsBinding)
+  (hRelaxedNeg : IsNegligible epsRelaxedBinding) :
+  MSISToAjtaiReductions params :=
+  SuperNeo.ProofSystem.MSISToAjtaiReductions.ofPaperCarrierFromDLe
+    (params := params)
+    hTd hExpPos epsBinding epsRelaxedBinding hBindBound hRelaxedBound hBindNeg hRelaxedNeg
+
 /-! ## Extractor and Norm-Transfer Theorems -/
 
 theorem bindingCollision_subWitness_norm_lt_msisNormBound
@@ -38,7 +135,7 @@ theorem relaxedBindingCollision_subWitness_norm_lt_msisNormBound
   {params : AjtaiParams}
   (laws : LatticeReductionLaws params)
   (hExpPos : 0 < params.relaxedExpansion)
-  (coll : RelaxedBindingCollision params) :
+  (coll : RelaxedBindingCollision params laws.samplingCarrier) :
   normInfVec
       (subVec params.msgLen
         (smulVec coll.delta1 coll.opening2.witness)
@@ -59,7 +156,7 @@ theorem msisBreakEvent_of_relaxedBindingCollision
   {params : AjtaiParams}
   (laws : LatticeReductionLaws params)
   (hExpPos : 0 < params.relaxedExpansion)
-  (coll : RelaxedBindingCollision params) :
+  (coll : RelaxedBindingCollision params laws.samplingCarrier) :
   MSISBreakEvent params :=
   SuperNeo.ProofSystem.msisBreakEvent_of_relaxedBindingCollision
     (params := params) laws hExpPos coll
@@ -84,10 +181,11 @@ theorem no_ajtaiBindingCollision_of_advantageBound
 
 theorem no_ajtaiRelaxedBindingCollision_of_advantageBound
   {params : AjtaiParams}
+  {C : SamplingCarrier}
   {eps : ErrorFn}
-  (hBound : AjtaiRelaxedBindingAdvantageBound params eps)
+  (hBound : AjtaiRelaxedBindingAdvantageBound params C eps)
   (hNeg : IsNegligible eps) :
-  AjtaiRelaxedBindingAssumption params :=
+  AjtaiRelaxedBindingAssumption params C :=
   SuperNeo.ProofSystem.no_ajtaiRelaxedBindingCollision_of_advantageBound (params := params) hBound hNeg
 
 def AjtaiBindingBoundary_hardness
@@ -102,12 +200,14 @@ def AjtaiBindingBoundary_hardnessFromFields
 
 def AjtaiRelaxedBindingBoundary_hardness
   {params : AjtaiParams}
-  (h : AjtaiRelaxedBindingBoundary params) : AjtaiRelaxedBindingAssumption params :=
+  {C : SamplingCarrier}
+  (h : AjtaiRelaxedBindingBoundary params C) : AjtaiRelaxedBindingAssumption params C :=
   h.hardness
 
 def AjtaiRelaxedBindingBoundary_hardnessFromFields
   {params : AjtaiParams}
-  (h : AjtaiRelaxedBindingBoundary params) : AjtaiRelaxedBindingAssumption params :=
+  {C : SamplingCarrier}
+  (h : AjtaiRelaxedBindingBoundary params C) : AjtaiRelaxedBindingAssumption params C :=
   h.hardnessFromFields
 
 theorem MSISToAjtaiReductions_toBinding
@@ -121,7 +221,7 @@ theorem MSISToAjtaiReductions_toRelaxedBinding
   {params : AjtaiParams}
   (hRed : MSISToAjtaiReductions params)
   (hMsis : MSISHardnessAssumption params) :
-  AjtaiRelaxedBindingAssumption params :=
+  AjtaiRelaxedBindingAssumption params hRed.laws.samplingCarrier :=
   hRed.toRelaxedBinding hMsis
 
 theorem ajtaiBinding_of_msis
@@ -135,14 +235,15 @@ theorem ajtaiRelaxedBinding_of_msis
   {params : AjtaiParams}
   (hRed : MSISToAjtaiReductions params)
   (hMsis : MSISHardnessAssumption params) :
-  AjtaiRelaxedBindingAssumption params :=
+  AjtaiRelaxedBindingAssumption params hRed.laws.samplingCarrier :=
   SuperNeo.ProofSystem.ajtaiRelaxedBinding_of_msis hRed hMsis
 
 theorem ajtaiBoundaries_of_msis
   {params : AjtaiParams}
   (hRed : MSISToAjtaiReductions params)
   (hMsis : MSISHardnessAssumption params) :
-  AjtaiBindingAssumption params ∧ AjtaiRelaxedBindingAssumption params :=
+  AjtaiBindingAssumption params ∧
+    AjtaiRelaxedBindingAssumption params hRed.laws.samplingCarrier :=
   SuperNeo.ProofSystem.ajtaiBoundaries_of_msis hRed hMsis
 
 def ajtaiBindingBoundary_of_msis
@@ -156,7 +257,7 @@ def ajtaiRelaxedBindingBoundary_of_msis
   {params : AjtaiParams}
   (hRed : MSISToAjtaiReductions params)
   (hMsis : MSISHardnessAssumption params) :
-  AjtaiRelaxedBindingBoundary params :=
+  AjtaiRelaxedBindingBoundary params hRed.laws.samplingCarrier :=
   SuperNeo.ProofSystem.ajtaiRelaxedBindingBoundary_of_msis hRed hMsis
 
 end

@@ -1,4 +1,5 @@
 import SuperNeo.Goldilocks
+import Init.GrindInstances.Ring.Fin
 
 namespace SuperNeo
 
@@ -6,6 +7,8 @@ namespace SuperNeo
 abbrev F : Type := Fin Goldilocks.q
 
 namespace F
+
+local instance : NeZero Goldilocks.q := ⟨Nat.ne_of_gt Goldilocks.q_pos⟩
 
 instance : Inhabited F := ⟨⟨0, Goldilocks.q_pos⟩⟩
 
@@ -65,6 +68,163 @@ def centeredRep (a : F) : Int :=
 
 def centeredAbs (a : F) : Nat :=
   Int.natAbs (centeredRep a)
+
+private def distToZero (x : Nat) : Nat :=
+  if x ≤ Goldilocks.halfQ then x else Goldilocks.q - x
+
+private theorem q_eq_two_mul_halfQ_add_one :
+    Goldilocks.q = 2 * Goldilocks.halfQ + 1 := by
+  decide
+
+private theorem centeredAbs_eq_distToZero (a : F) :
+    centeredAbs a = distToZero a.val := by
+  unfold centeredAbs distToZero
+  by_cases h : a.val ≤ Goldilocks.halfQ
+  · simp [centeredRep, h]
+  · have hqle : a.val ≤ Goldilocks.q := Nat.le_of_lt a.isLt
+    have hsub : Int.ofNat a.val - Int.ofNat Goldilocks.q = - Int.ofNat (Goldilocks.q - a.val) := by
+      calc
+        Int.ofNat a.val - Int.ofNat Goldilocks.q = -(Int.ofNat Goldilocks.q - Int.ofNat a.val) := by omega
+        _ = - Int.ofNat (Goldilocks.q - a.val) := by
+          congr
+          exact (Int.ofNat_sub hqle).symm
+    calc
+      (if h : a.val ≤ Goldilocks.halfQ then Int.ofNat a.val else Int.ofNat a.val - Int.ofNat Goldilocks.q).natAbs
+          = (Int.ofNat a.val - Int.ofNat Goldilocks.q).natAbs := by simp [h]
+      _ = (- Int.ofNat (Goldilocks.q - a.val)).natAbs := by rw [hsub]
+      _ = Goldilocks.q - a.val := by simp
+      _ = (if a.val ≤ Goldilocks.halfQ then a.val else Goldilocks.q - a.val) := by simp [h]
+
+private theorem distToZero_le_self_of_lt_q {x : Nat} (hx : x < Goldilocks.q) :
+    distToZero x ≤ x := by
+  unfold distToZero
+  by_cases h : x ≤ Goldilocks.halfQ
+  · simp [h]
+  · have hgt : Goldilocks.halfQ < x := Nat.lt_of_not_ge h
+    have hqle2x : Goldilocks.q ≤ 2 * x := by
+      rw [q_eq_two_mul_halfQ_add_one]
+      omega
+    have hqmx_le : Goldilocks.q - x ≤ x := by
+      omega
+    simp [h, hqmx_le]
+
+private theorem distToZero_le_compl_of_lt_q {x : Nat} (hx : x < Goldilocks.q) :
+    distToZero x ≤ Goldilocks.q - x := by
+  unfold distToZero
+  by_cases h : x ≤ Goldilocks.halfQ
+  · have h2xle : 2 * x ≤ Goldilocks.q := by
+      rw [q_eq_two_mul_halfQ_add_one]
+      omega
+    have hxle : x ≤ Goldilocks.q - x := by
+      omega
+    simp [h, hxle]
+  · simp [h]
+
+private theorem distToZero_sub_triangle
+    (x y : Nat)
+    (hx : x < Goldilocks.q)
+    (hy : y < Goldilocks.q) :
+    distToZero ((x + Goldilocks.q - y) % Goldilocks.q) ≤
+      distToZero x + distToZero y := by
+  by_cases hxy : y ≤ x
+  · have hmod : ((x + Goldilocks.q - y) % Goldilocks.q) = x - y := by
+      have hdecomp : x + Goldilocks.q - y = Goldilocks.q + (x - y) := by omega
+      calc
+        ((x + Goldilocks.q - y) % Goldilocks.q)
+            = ((Goldilocks.q + (x - y)) % Goldilocks.q) := by simp [hdecomp]
+        _ = (x - y) % Goldilocks.q := by simpa [Nat.add_comm] using (Nat.add_mod_right (x - y) Goldilocks.q)
+        _ = x - y := by
+          have hlt : x - y < Goldilocks.q := Nat.lt_of_le_of_lt (Nat.sub_le _ _) hx
+          simp [Nat.mod_eq_of_lt hlt]
+    by_cases hxh : x ≤ Goldilocks.halfQ
+    · have hyh : y ≤ Goldilocks.halfQ := Nat.le_trans hxy hxh
+      have hleft : distToZero (x - y) ≤ x - y :=
+        distToZero_le_self_of_lt_q (Nat.lt_of_le_of_lt (Nat.sub_le _ _) hx)
+      have hsuble : x - y ≤ x + y := by omega
+      have hxDist : distToZero x = x := by simp [distToZero, hxh]
+      have hyDist : distToZero y = y := by simp [distToZero, hyh]
+      calc
+        distToZero ((x + Goldilocks.q - y) % Goldilocks.q)
+            = distToZero (x - y) := by simp [hmod]
+        _ ≤ x - y := hleft
+        _ ≤ x + y := hsuble
+        _ = distToZero x + distToZero y := by simp [hxDist, hyDist]
+    · by_cases hyh : y ≤ Goldilocks.halfQ
+      · have hright : distToZero (x - y) ≤ Goldilocks.q - (x - y) := by
+          apply distToZero_le_compl_of_lt_q
+          exact Nat.lt_of_le_of_lt (Nat.sub_le _ _) hx
+        have hxDist : distToZero x = Goldilocks.q - x := by simp [distToZero, hxh]
+        have hyDist : distToZero y = y := by simp [distToZero, hyh]
+        calc
+          distToZero ((x + Goldilocks.q - y) % Goldilocks.q)
+              = distToZero (x - y) := by simp [hmod]
+          _ ≤ Goldilocks.q - (x - y) := hright
+          _ = (Goldilocks.q - x) + y := by omega
+          _ = distToZero x + distToZero y := by simp [hxDist, hyDist]
+      · have hleft : distToZero (x - y) ≤ x - y :=
+          distToZero_le_self_of_lt_q (Nat.lt_of_le_of_lt (Nat.sub_le _ _) hx)
+        have hsum : x - y ≤ (Goldilocks.q - x) + (Goldilocks.q - y) := by
+          omega
+        have hxDist : distToZero x = Goldilocks.q - x := by simp [distToZero, hxh]
+        have hyDist : distToZero y = Goldilocks.q - y := by simp [distToZero, hyh]
+        calc
+          distToZero ((x + Goldilocks.q - y) % Goldilocks.q)
+              = distToZero (x - y) := by simp [hmod]
+          _ ≤ x - y := hleft
+          _ ≤ (Goldilocks.q - x) + (Goldilocks.q - y) := hsum
+          _ = distToZero x + distToZero y := by simp [hxDist, hyDist]
+  · have hxygt : x < y := Nat.lt_of_not_ge hxy
+    have hmod : ((x + Goldilocks.q - y) % Goldilocks.q) = Goldilocks.q + x - y := by
+      have hlt : x + Goldilocks.q - y < Goldilocks.q := by omega
+      have hEq : x + Goldilocks.q - y = Goldilocks.q + x - y := by omega
+      calc
+        ((x + Goldilocks.q - y) % Goldilocks.q) = (x + Goldilocks.q - y) := by simp [Nat.mod_eq_of_lt hlt]
+        _ = Goldilocks.q + x - y := hEq
+    by_cases hxh : x ≤ Goldilocks.halfQ
+    · by_cases hyh : y ≤ Goldilocks.halfQ
+      · have hright : distToZero (Goldilocks.q + x - y) ≤ Goldilocks.q - (Goldilocks.q + x - y) := by
+          apply distToZero_le_compl_of_lt_q
+          have hlt : Goldilocks.q + x - y < Goldilocks.q := by omega
+          exact hlt
+        have hxDist : distToZero x = x := by simp [distToZero, hxh]
+        have hyDist : distToZero y = y := by simp [distToZero, hyh]
+        have hsum : Goldilocks.q - (Goldilocks.q + x - y) ≤ x + y := by
+          omega
+        calc
+          distToZero ((x + Goldilocks.q - y) % Goldilocks.q)
+              = distToZero (Goldilocks.q + x - y) := by simp [hmod]
+          _ ≤ Goldilocks.q - (Goldilocks.q + x - y) := hright
+          _ ≤ x + y := hsum
+          _ = distToZero x + distToZero y := by simp [hxDist, hyDist]
+      · have hleft : distToZero (Goldilocks.q + x - y) ≤ Goldilocks.q + x - y := by
+          apply distToZero_le_self_of_lt_q
+          have hlt : Goldilocks.q + x - y < Goldilocks.q := by omega
+          exact hlt
+        have hxDist : distToZero x = x := by simp [distToZero, hxh]
+        have hyDist : distToZero y = Goldilocks.q - y := by simp [distToZero, hyh]
+        calc
+          distToZero ((x + Goldilocks.q - y) % Goldilocks.q)
+              = distToZero (Goldilocks.q + x - y) := by simp [hmod]
+          _ ≤ Goldilocks.q + x - y := hleft
+          _ = x + (Goldilocks.q - y) := by omega
+          _ = distToZero x + distToZero y := by simp [hxDist, hyDist]
+    · have hyh : ¬ y ≤ Goldilocks.halfQ := by
+        intro hyle
+        exact hxh (Nat.le_trans (Nat.le_of_lt hxygt) hyle)
+      have hright : distToZero (Goldilocks.q + x - y) ≤ Goldilocks.q - (Goldilocks.q + x - y) := by
+        apply distToZero_le_compl_of_lt_q
+        have hlt : Goldilocks.q + x - y < Goldilocks.q := by omega
+        exact hlt
+      have hsum : Goldilocks.q - (Goldilocks.q + x - y) ≤ (Goldilocks.q - x) + (Goldilocks.q - y) := by
+        omega
+      have hxDist : distToZero x = Goldilocks.q - x := by simp [distToZero, hxh]
+      have hyDist : distToZero y = Goldilocks.q - y := by simp [distToZero, hyh]
+      calc
+        distToZero ((x + Goldilocks.q - y) % Goldilocks.q)
+            = distToZero (Goldilocks.q + x - y) := by simp [hmod]
+        _ ≤ Goldilocks.q - (Goldilocks.q + x - y) := hright
+        _ ≤ (Goldilocks.q - x) + (Goldilocks.q - y) := hsum
+        _ = distToZero x + distToZero y := by simp [hxDist, hyDist]
 
 theorem centeredRep_eq_of_le_halfQ {a : F} (h : a.val ≤ Goldilocks.halfQ) :
     centeredRep a = Int.ofNat a.val := by
@@ -143,6 +303,9 @@ theorem isCanonical_one : isCanonical (1 : F) := by
     simp
   simpa [h] using centeredRep_eq_of_le_halfQ h
 
+@[simp] theorem centeredAbs_zero : centeredAbs (0 : F) = 0 := by
+  simp [centeredAbs, centeredRep_zero]
+
 @[simp] theorem centeredRep_one : centeredRep (1 : F) = 1 := by
   have h : ((1 : F).val) ≤ Goldilocks.halfQ := by
     exact Goldilocks.one_le_halfQ
@@ -185,11 +348,72 @@ theorem centeredRep_cover (a : F) :
     _ = (a.val + Goldilocks.q - b.val) % Goldilocks.q := by
       simp [Nat.add_assoc, Nat.add_left_comm, Nat.add_comm]
 
-@[simp] theorem val_mul (a b : F) :
-    (a * b).val = (a.val * b.val) % Goldilocks.q := rfl
-
 @[simp] theorem val_neg (a : F) :
     (-a).val = (Goldilocks.q - a.val) % Goldilocks.q := rfl
+
+theorem centeredAbs_sub_le (a b : F) :
+    centeredAbs (a - b) ≤ centeredAbs a + centeredAbs b := by
+  have hSub :
+      centeredAbs (a - b) =
+        distToZero ((a.val + Goldilocks.q - b.val) % Goldilocks.q) := by
+    rw [centeredAbs_eq_distToZero]
+    simpa [val_sub]
+  calc
+    centeredAbs (a - b)
+        = distToZero ((a.val + Goldilocks.q - b.val) % Goldilocks.q) := hSub
+    _ ≤ distToZero a.val + distToZero b.val :=
+          distToZero_sub_triangle a.val b.val a.isLt b.isLt
+    _ = centeredAbs a + centeredAbs b := by
+          simp [centeredAbs_eq_distToZero]
+
+private theorem zero_sub_eq_neg (a : F) : (0 : F) - a = -a := by
+  apply Fin.ext
+  simp [val_sub, val_neg]
+
+private theorem neg_neg_eq (a : F) : -(-a) = a := by
+  apply Fin.ext
+  by_cases h0 : a.val = 0
+  · simp [h0, val_neg]
+  · have hpos : 0 < a.val := Nat.pos_of_ne_zero h0
+    have hqsub_lt : Goldilocks.q - a.val < Goldilocks.q := Nat.sub_lt Goldilocks.q_pos hpos
+    calc
+      (-(-a)).val
+          = (Goldilocks.q - ((Goldilocks.q - a.val) % Goldilocks.q)) % Goldilocks.q := by
+              simp [val_neg]
+      _ = (Goldilocks.q - (Goldilocks.q - a.val)) % Goldilocks.q := by
+            simp [Nat.mod_eq_of_lt hqsub_lt]
+      _ = a.val % Goldilocks.q := by
+            have hsub : Goldilocks.q - (Goldilocks.q - a.val) = a.val := by omega
+            simp [hsub]
+      _ = a.val := Nat.mod_eq_of_lt a.isLt
+
+theorem centeredAbs_neg_eq (a : F) :
+    centeredAbs (-a) = centeredAbs a := by
+  apply Nat.le_antisymm
+  · have h := centeredAbs_sub_le (0 : F) a
+    simpa [zero_sub_eq_neg, centeredAbs_zero] using h
+  · have h := centeredAbs_sub_le (0 : F) (-a)
+    have h0 : (0 : F) - (-a) = a := by
+      calc
+        (0 : F) - (-a) = -(-a) := by simpa using zero_sub_eq_neg (-a)
+        _ = a := neg_neg_eq a
+    simpa [h0, centeredAbs_zero] using h
+
+theorem centeredAbs_add_le (a b : F) :
+    centeredAbs (a + b) ≤ centeredAbs a + centeredAbs b := by
+  have h := centeredAbs_sub_le a (-b)
+  have hSub :
+      a - (-b) = a + b := by
+    calc
+      a - (-b) = a + -(-b) := by
+        simpa using (Lean.Grind.Fin.sub_eq_add_neg (n := Goldilocks.q) a (-b))
+      _ = a + b := by
+            congr
+            exact neg_neg_eq b
+  simpa [hSub, centeredAbs_neg_eq] using h
+
+@[simp] theorem val_mul (a b : F) :
+    (a * b).val = (a.val * b.val) % Goldilocks.q := rfl
 
 theorem canonicalRep_add (a b : F) :
     canonicalRep (a + b) = (a.val + b.val) % Goldilocks.q := by
@@ -205,6 +429,115 @@ theorem canonicalRep_neg (a : F) :
     canonicalRep (-a) = (Goldilocks.q - a.val) % Goldilocks.q := by
   show (-a).val = (Goldilocks.q - a.val) % Goldilocks.q
   exact val_neg a
+
+@[simp] theorem ofNat_add (m n : Nat) :
+    ofNat (m + n) = ofNat m + ofNat n := by
+  apply Fin.ext
+  simp [ofNat, Nat.add_mod]
+
+@[simp] theorem ofNat_succ (n : Nat) :
+    ofNat (n + 1) = ofNat n + 1 := by
+  simpa using (ofNat_add n 1)
+
+theorem centeredAbs_mul_ofNat_le (n : Nat) (a : F) :
+    centeredAbs (ofNat n * a) ≤ n * centeredAbs a := by
+  induction n with
+  | zero =>
+      have hZero : centeredAbs (ofNat 0 * a) = 0 := by
+        calc
+          centeredAbs (ofNat 0 * a)
+              = centeredAbs ((0 : F) * a) := by simp [ofNat]
+          _ = centeredAbs (0 : F) := by
+                simp [Lean.Grind.Fin.zero_mul (n := Goldilocks.q) a]
+          _ = 0 := by
+                simp [centeredAbs, centeredRep_zero]
+      simpa [hZero]
+  | succ n ih =>
+      calc
+        centeredAbs (ofNat (n + 1) * a)
+            = centeredAbs ((ofNat n + 1) * a) := by simp [ofNat_succ]
+        _ = centeredAbs (ofNat n * a + a) := by
+              calc
+                centeredAbs ((ofNat n + 1) * a)
+                    = centeredAbs (a * (ofNat n + 1)) := by
+                        simp [Lean.Grind.Fin.mul_comm]
+                _ = centeredAbs (a * ofNat n + a * 1) := by
+                      simpa using
+                        congrArg centeredAbs
+                          (Lean.Grind.Fin.left_distrib (n := Goldilocks.q) a (ofNat n) (1 : F))
+                _ = centeredAbs (ofNat n * a + a) := by
+                      have hMulComm : a * ofNat n = ofNat n * a := by
+                        simpa using (Lean.Grind.Fin.mul_comm (n := Goldilocks.q) a (ofNat n))
+                      have hMulOne : a * (1 : F) = a := by
+                        simpa using (Lean.Grind.Fin.mul_one (n := Goldilocks.q) a)
+                      simp [hMulComm, hMulOne]
+        _ ≤ centeredAbs (ofNat n * a) + centeredAbs a := centeredAbs_add_le (ofNat n * a) a
+        _ ≤ n * centeredAbs a + centeredAbs a := Nat.add_le_add_right ih _
+        _ = (n + 1) * centeredAbs a := by
+              simp [Nat.succ_mul, Nat.add_comm, Nat.add_left_comm, Nat.add_assoc]
+
+theorem exists_smallNat_or_neg_of_centeredAbs_le_four
+    (x : F) (hx : centeredAbs x ≤ 4) :
+    ∃ n : Nat, n ≤ 4 ∧ (x = ofNat n ∨ x = - ofNat n) := by
+  rcases centeredRep_cases x with hL | hR
+  · refine ⟨x.val, ?_, ?_⟩
+    · have habs : centeredAbs x = x.val := by
+        unfold centeredAbs
+        simpa [hL.2]
+      simpa [habs] using hx
+    · exact Or.inl (by simpa [canonicalRep] using (ofNat_canonicalRep x).symm)
+  · let n : Nat := Goldilocks.q - x.val
+    have hqle : x.val ≤ Goldilocks.q := Nat.le_of_lt x.isLt
+    have hrep : centeredRep x = - Int.ofNat n := by
+      unfold n
+      calc
+        centeredRep x = Int.ofNat x.val - Int.ofNat Goldilocks.q := hR.2
+        _ = - (Int.ofNat Goldilocks.q - Int.ofNat x.val) := by omega
+        _ = - Int.ofNat (Goldilocks.q - x.val) := by
+              congr
+              exact (Int.ofNat_sub hqle).symm
+    have hnle4 : n ≤ 4 := by
+      have hNatAbs : Int.natAbs (- Int.ofNat n) ≤ 4 := by
+        simpa [centeredAbs, hrep]
+          using hx
+      simpa using hNatAbs
+    have hxpos : 0 < x.val := Nat.lt_of_le_of_lt (Nat.zero_le _) hR.1
+    have hnlt : n < Goldilocks.q := by
+      unfold n
+      exact Nat.sub_lt Goldilocks.q_pos hxpos
+    have hxEq : x = - ofNat n := by
+      apply Fin.ext
+      have hmodN : n % Goldilocks.q = n := Nat.mod_eq_of_lt hnlt
+      unfold n
+      calc
+        x.val = Goldilocks.q - (Goldilocks.q - x.val) := by omega
+        _ = (Goldilocks.q - ((Goldilocks.q - x.val) % Goldilocks.q)) % Goldilocks.q := by
+              have hlt : Goldilocks.q - (Goldilocks.q - x.val) < Goldilocks.q := by omega
+              have hsublt : Goldilocks.q - x.val < Goldilocks.q :=
+                Nat.sub_lt Goldilocks.q_pos hxpos
+              simp [Nat.mod_eq_of_lt hsublt]
+              symm
+              exact Nat.mod_eq_of_lt hlt
+        _ = (- ofNat (Goldilocks.q - x.val)).val := by
+              simp [val_neg, ofNat, Nat.mod_eq_of_lt (Nat.sub_lt Goldilocks.q_pos hxpos)]
+    exact ⟨n, hnle4, Or.inr hxEq⟩
+
+theorem centeredAbs_mul_le_of_centeredAbs_left_le_four
+    (x y : F)
+    (hx : centeredAbs x ≤ 4) :
+    centeredAbs (x * y) ≤ 4 * centeredAbs y := by
+  rcases exists_smallNat_or_neg_of_centeredAbs_le_four x hx with ⟨n, hn, hxEq | hxEq⟩
+  · subst hxEq
+    exact Nat.le_trans (centeredAbs_mul_ofNat_le n y) (Nat.mul_le_mul_right _ hn)
+  · subst hxEq
+    have hnegMul : (- ofNat n) * y = - (ofNat n * y) := by
+      simpa using (Lean.Grind.Fin.neg_mul (n := Goldilocks.q) (ofNat n) y)
+    calc
+      centeredAbs ((- ofNat n) * y)
+          = centeredAbs (-(ofNat n * y)) := by simp [hnegMul]
+      _ = centeredAbs (ofNat n * y) := centeredAbs_neg_eq (ofNat n * y)
+      _ ≤ n * centeredAbs y := centeredAbs_mul_ofNat_le n y
+      _ ≤ 4 * centeredAbs y := Nat.mul_le_mul_right _ hn
 
 private theorem eq_of_qmul_pos_lt2q (k : Nat)
     (hpos : 0 < Goldilocks.q * k)

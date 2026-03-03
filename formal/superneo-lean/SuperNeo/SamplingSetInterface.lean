@@ -30,6 +30,12 @@ abbrev samplingDiffSet := SuperNeo.samplingDiffSet
 /-- [Status: Proved] Curated re-export of `strongSamplingExpansionProp`. -/
 abbrev strongSamplingExpansionProp := SuperNeo.strongSamplingExpansionProp
 
+/-- [Status: Proved] Curated re-export of `ringNormCarrier`. -/
+abbrev ringNormCarrier := SuperNeo.ringNormCarrier
+
+/-- [Status: Proved] Curated re-export of `paperCarrier`. -/
+abbrev paperCarrier := SuperNeo.paperCarrier
+
 /-! ## Key Theorems -/
 
 /-- [Status: Proved] Curated theorem surface `samplingExpansionProp_of_bounds`. -/
@@ -120,6 +126,22 @@ theorem expansionFactor_of_strongSampling
   (hB : normInfCoeffs z ≤ B) :
   normInfCoeffs (mulRq δ z) ≤ 4 * T * B :=
   SuperNeo.expansionFactor_of_strongSampling h hδ hB
+
+/-- [Status: Proved] Curated theorem surface `strongSamplingExpansionProp_of_ringNormCarrier`. -/
+theorem strongSamplingExpansionProp_of_ringNormCarrier
+  {K T D : Nat}
+  (hSub : coeffSubNormBoundFromOperands K K D)
+  (hMul : ∀ B : Nat, mulRqNormBoundFromOperands D B (4 * T * B)) :
+  strongSamplingExpansionProp (ringNormCarrier K) T :=
+  SuperNeo.strongSamplingExpansionProp_of_ringNormCarrier hSub hMul
+
+/-- [Status: Proved] Curated theorem surface `strongSamplingExpansionProp_of_paperCarrier`. -/
+theorem strongSamplingExpansionProp_of_paperCarrier
+  {T D : Nat}
+  (hSub : coeffSubNormBoundFromOperands 2 2 D)
+  (hMul : ∀ B : Nat, mulRqNormBoundFromOperands D B (4 * T * B)) :
+  strongSamplingExpansionProp paperCarrier T :=
+  SuperNeo.strongSamplingExpansionProp_of_paperCarrier hSub hMul
 
 end SamplingSetInterface
 

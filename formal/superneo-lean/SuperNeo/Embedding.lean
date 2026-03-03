@@ -83,11 +83,15 @@ def embedVec (z : Array F) : Array Coeffs :=
   if z.size % d != 0 then
     #[]
   else
-    #[embedElem z]
+    (chunkExact z d).map embedElem
 
 /-- Vector unembedding by block flattening. -/
 def unembedVec (zr : Array Coeffs) : Array F :=
-  flatten (zr.map unembedElem)
+  Array.ofFn (fun i : Fin (zr.size * d) =>
+    let hBlock : i.1 / d < zr.size := by
+      exact (Nat.div_lt_iff_lt_mul d_pos).2 (by
+        simpa [Nat.mul_comm, Nat.mul_left_comm, Nat.mul_assoc] using i.2)
+    (unembedElem (zr[i.1 / d]'hBlock)).getD (i.1 % d) 0)
 
 private theorem d_ne_zero : d ≠ 0 := by
   unfold d
@@ -140,33 +144,108 @@ theorem unembedVec_embedVec_of_mod_eq_zero
   {z : Array F}
   (hMod : z.size % d = 0) :
   unembedVec (embedVec z) = z := by
+  have hNe : (z.size % d != 0) = false := by
+    simp [hMod]
+  have hDivMul : (z.size / d) * d = z.size := by
+    exact Nat.div_mul_cancel (Nat.dvd_of_mod_eq_zero hMod)
   unfold unembedVec embedVec
-  simp [hMod, flatten, embedElem, unembedElem]
+  simp [hNe, chunkExact, d_ne_zero]
+  apply Array.ext
+  · simpa [hMod, hDivMul, chunkExact, d_ne_zero]
+  · intro i hiL hiR
+    have hlt : i < (z.size / d) * d := by
+      simpa [hDivMul] using hiR
+    have hBlockLt : i / d < z.size / d := by
+      exact (Nat.div_lt_iff_lt_mul d_pos).2 hlt
+    have hBlockSuccLe : i / d + 1 ≤ z.size / d := Nat.succ_le_of_lt hBlockLt
+    have hStopLe : (i / d) * d + d ≤ z.size := by
+      have hMul : (i / d + 1) * d ≤ (z.size / d) * d :=
+        Nat.mul_le_mul_right d hBlockSuccLe
+      have hMul' : (i / d) * d + d ≤ (z.size / d) * d := by
+        simpa [Nat.succ_mul, Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using hMul
+      simpa [hDivMul] using hMul'
+    have hExtractSize :
+        (z.extract ((i / d) * d) ((i / d) * d + d)).size = d := by
+      simp [Array.size_extract, Nat.min_eq_left hStopLe, d_ne_zero]
+    have hOffLt : i % d < (z.extract ((i / d) * d) ((i / d) * d + d)).size := by
+      simpa [hExtractSize] using (Nat.mod_lt i d_pos)
+    have hExtract :
+        (z.extract ((i / d) * d) ((i / d) * d + d))[i % d] =
+          z[(i / d) * d + (i % d)] :=
+      Array.getElem_extract (xs := z) (start := (i / d) * d) (stop := (i / d) * d + d)
+        (i := i % d) hOffLt
+    have hExtractSome :
+        (z.extract ((i / d) * d) ((i / d) * d + d))[i % d]? =
+          some z[(i / d) * d + (i % d)] := by
+      simpa [Array.getElem?_eq_getElem hOffLt] using congrArg some hExtract
+    have hLeft :
+        (z.extract ((i / d) * d) ((i / d) * d + d))[i % d]?.getD 0 =
+          z[(i / d) * d + (i % d)] := by
+      simpa [hExtractSome]
+    have hIdx : (i / d) * d + (i % d) = i := by
+      simpa [Nat.mul_comm, Nat.mul_left_comm, Nat.mul_assoc] using (Nat.div_add_mod i d)
+    simpa [hIdx] using hLeft
+
+private theorem chunkExact_vecScale
+  (s : F) (z : Array F) :
+  chunkExact (vecScale s z) d = (chunkExact z d).map (vecScale s) := by
+  unfold chunkExact
+  simp [d_ne_zero]
+  apply Array.ext
+  · simp [vecScale_size]
+  · intro i hiL hiR
+    simp [vecScale_extract]
+
+private theorem chunkExact_vecAdd
+  {v w : Array F}
+  (hSize : v.size = w.size) :
+  chunkExact (vecAdd v w) d = vecAddBlocks (chunkExact v d) (chunkExact w d) := by
+  have hVecAddSize : (vecAdd v w).size = v.size := vecAdd_size_of_eq hSize
+  unfold chunkExact vecAddBlocks
+  simp [d_ne_zero, hSize, hVecAddSize]
+  apply Array.ext
+  · simpa [hVecAddSize]
+  · intro i hiL hiR
+    have hExtract :
+        (vecAdd v w).extract (i * d) (i * d + d) =
+          vecAdd (v.extract (i * d) (i * d + d)) (w.extract (i * d) (i * d + d)) :=
+      vecAdd_extract_of_size_eq hSize (i * d) (i * d + d)
+    simp [hExtract]
+
+private theorem map_embedElem_vecAddBlocks
+  (a b : Array Coeffs) :
+  Array.map embedElem (vecAddBlocks a b) =
+    vecAddBlocks (Array.map embedElem a) (Array.map embedElem b) := by
+  unfold vecAddBlocks
+  by_cases hSize : a.size = b.size
+  · simp [hSize]
+    apply Array.ext
+    · simp
+    · intro i hiL hiR
+      simp [embedElem]
+  · simp [hSize, embedElem]
 
 theorem embedVec_vecScale_of_mod_eq_zero
   {z : Array F}
   (hMod : z.size % d = 0)
   (s : F) :
   embedVec (vecScale s z) = vecScaleBlocks s (embedVec z) := by
+  have hScaleMod : (vecScale s z).size % d = 0 := by
+    simpa [vecScale_size] using hMod
   unfold embedVec vecScaleBlocks
-  simp [hMod, vecScale_size, embedElem_vecScale]
+  simp [hMod, hScaleMod, embedElem, chunkExact_vecScale]
 
 theorem embedVec_vecAdd_of_size_mod_eq_zero
   {v w : Array F}
   (hSize : v.size = w.size)
   (hMod : v.size % d = 0) :
   embedVec (vecAdd v w) = vecAddBlocks (embedVec v) (embedVec w) := by
-  unfold embedVec vecAddBlocks
-  have hModW : w.size % d = 0 := by simpa [hSize] using hMod
+  have hModW : w.size % d = 0 := by
+    simpa [hSize] using hMod
   have hAddMod : (vecAdd v w).size % d = 0 := by
     simpa [vecAdd_size_of_eq hSize] using hMod
-  simp [hMod, hModW, hAddMod, hSize, embedElem_vecAdd]
-  apply Array.ext
-  · simp
-    simpa [hMod]
-  · intro i hiL hiR
-    have hi0 : i = 0 := Nat.lt_one_iff.mp hiL
-    simp [hi0]
+  unfold embedVec
+  simp [hAddMod, hMod, hModW, chunkExact_vecAdd hSize, map_embedElem_vecAddBlocks]
 
 /-- Matrix embedding row-wise. -/
 def embedMatrix (m : Array (Array F)) : Array (Array Coeffs) :=

@@ -101,7 +101,16 @@ theorem matrixTransformEq_native
   {bar : Array (Array F)} {m : Array (Array F)} {z : Array F}
   (_hRows : MatrixRowsCompatible m z) :
   matrixVecDirect m z = matrixVecCtBar bar m z := by
-  simp [matrixVecDirect, matrixVecCtBar, barLiftVector]
+  apply Array.ext
+  · simp [matrixVecDirect, matrixVecCtBar]
+  · intro i hiL hiR
+    have hi : i < m.size := by simpa using hiL
+    calc
+      (matrixVecDirect m z)[i]'hiL
+          = dotVec (m[i]'hi) z := by simp [matrixVecDirect, hi]
+      _ = dotVec (barLiftVector bar (m[i]'hi)) (barLiftVector bar z) := by
+            rw [barLiftVector_eq bar (m[i]'hi), barLiftVector_eq bar z]
+      _ = (matrixVecCtBar bar m z)[i]'hiR := by simp [matrixVecCtBar, hi]
 
 /--
 Theorem-4 identity derived from the theorem-native Theorem-3 assumption.

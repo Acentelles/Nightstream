@@ -202,7 +202,7 @@ def finalRelaxedBindingAdvantageBound
   {ctx : SuperNeo.ProtocolTargetContext}
   (hA : FinalTheoremAssumptions ctx) :
   SuperNeo.ProofSystem.AjtaiRelaxedBindingAdvantageBound
-      hA.latticeParams hA.errorModel.epsRelaxedBinding :=
+      hA.latticeParams hA.msisToAjtai.laws.samplingCarrier hA.errorModel.epsRelaxedBinding :=
   hA.relaxedBindingAdvantageBound
 
 /-- Access explicit alignment for aggregated total error accounting at final theorem level. -/
@@ -249,7 +249,8 @@ def finalAjtaiBindingBoundaryPackage
 def finalAjtaiRelaxedBindingBoundaryPackage
   {ctx : SuperNeo.ProtocolTargetContext}
   (hA : FinalTheoremAssumptions ctx) :
-  SuperNeo.ProofSystem.AjtaiRelaxedBindingBoundary hA.latticeParams :=
+  SuperNeo.ProofSystem.AjtaiRelaxedBindingBoundary
+    hA.latticeParams hA.msisToAjtai.laws.samplingCarrier :=
   hA.ajtaiRelaxedBindingBoundaryPackage
 
 /-- Access explicit lattice Ajtai binding boundary from final assumptions. -/
@@ -263,7 +264,8 @@ def finalAjtaiBindingBoundary
 def finalAjtaiRelaxedBindingBoundary
   {ctx : SuperNeo.ProtocolTargetContext}
   (hA : FinalTheoremAssumptions ctx) :
-  SuperNeo.ProofSystem.AjtaiRelaxedBindingAssumption hA.latticeParams :=
+  SuperNeo.ProofSystem.AjtaiRelaxedBindingAssumption
+    hA.latticeParams hA.msisToAjtai.laws.samplingCarrier :=
   hA.ajtaiRelaxedBindingBoundary
 
 /-- Canonical proof-system final theorem shape constructor. -/
