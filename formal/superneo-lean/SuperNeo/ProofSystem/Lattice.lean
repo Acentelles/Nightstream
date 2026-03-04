@@ -106,7 +106,7 @@ def matVecMul (params : AjtaiParams) (matrixFlat : Array Coeffs) (v : Array Coef
 
 /-- Scalar multiplication of a ring-vector by one ring element. -/
 def smulVec (delta : Coeffs) (v : Array Coeffs) : Array Coeffs :=
-  v.map (fun x => mulRq delta x)
+  v.map (fun x => mulRqPhi delta x)
 
 /-! ### Extractor-facing vector subtraction + linearity surfaces
 

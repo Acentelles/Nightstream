@@ -12,7 +12,9 @@
 - `ceRelation(ctx) ↔ ccsRelation(ctx) ∧ ∃ tr, SumCheckAccepted inst tr` where `inst = sumcheckInstanceOfContext ctx`
 - `ceRelaxedRelation(ctx) ↔ ccsRelation(ctx)`
 - `ceRelation_of_claimTrue`: `ProtocolRelationsAssumptions ctx → SumCheckClaimTrue inst → ceRelation ctx`
+- `ceRelation_of_native_claimTrue`: `ProtocolRelationsNativeAssumptions ctx → SumCheckClaimTrue inst → ceRelation ctx`
 - `ceClaimTrue_of_ce`: `ProtocolRelationsAssumptions ctx → ceRelation ctx → SumCheckClaimTrue inst`
+- `ceClaimTrue_of_native_ce`: `ProtocolRelationsNativeAssumptions ctx → ceRelation ctx → SumCheckClaimTrue inst`
 - `ceRelaxedRelation_of_ce`: `ceRelation ctx → ceRelaxedRelation ctx`
 
 ## Paper Anchors
@@ -39,25 +41,32 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 | Relations | `ceRelation` | def | Definitional | ccsRelation ∧ ∃ tr, SumCheckAccepted |
 | Relations | `ceRelaxedRelation` | def | Definitional | ccsRelation ctx |
 | Assumptions | `ProtocolRelationsAssumptions` | structure | Boundary | Bundles target, sumcheckSoundness, sumcheckCompleteness |
+| Assumptions | `ProtocolRelationsNativeAssumptions` | structure | Boundary | Bundles native target, sumcheckSoundness, sumcheckCompleteness |
 | Theorems | `ccsRelation_of_assumptions` | theorem | Theorem-Target | Assumptions → ccsRelation |
+| Theorems | `ccsRelation_of_native_assumptions` | theorem | Theorem-Target | Native assumptions → ccsRelation |
 | Theorems | `ceRelation_of_assumptions` | theorem | Theorem-Target | Assumptions + witness → ceRelation |
+| Theorems | `ceRelation_of_native_assumptions` | theorem | Theorem-Target | Native assumptions + witness → ceRelation |
 | Theorems | `ceRelation_of_claimTrue` | theorem | Theorem-Target | Assumptions + claimTrue → ceRelation |
+| Theorems | `ceRelation_of_native_claimTrue` | theorem | Theorem-Target | Native assumptions + claimTrue → ceRelation |
 | Theorems | `ceClaimTrue_of_ce` | theorem | Theorem-Target | Assumptions + ceRelation → claimTrue |
+| Theorems | `ceClaimTrue_of_native_ce` | theorem | Theorem-Target | Native assumptions + ceRelation → claimTrue |
 | Theorems | `ceRelaxedRelation_of_ce` | theorem | Theorem-Target | ceRelation → ceRelaxedRelation |
 | Witness | `SumCheckTransitionWitness.accepted_exists` | theorem | Theorem-Target | Witness → ∃ tr, accepted |
 
 ## Proof Obligations and Closure Plan
 
-All relation-level theorems proved. `ProtocolRelationsAssumptions` bundles upstream boundaries (ProtocolTarget, SumCheck); closure targets live in those modules.
+All relation-level theorems proved, including native-path constructors. `ProtocolRelationsAssumptions` and `ProtocolRelationsNativeAssumptions` bundle upstream boundaries (ProtocolTarget, SumCheck); closure targets live in those modules.
 
 ## Assumption Ledger
 
-`ProtocolRelationsAssumptions` bundles upstream assumptions: `ProtocolTargetAssumptions`, `SumcheckSoundnessAssumption`, `SumcheckCompletenessAssumption`. Closure target: each upstream module (ProtocolTarget, SumCheck) has its own closure plan.
+`ProtocolRelationsAssumptions` bundles upstream assumptions: `ProtocolTargetAssumptions`, `SumcheckSoundnessAssumption`, `SumcheckCompletenessAssumption`.
+`ProtocolRelationsNativeAssumptions` bundles upstream assumptions: `ProtocolTargetNativeAssumptions`, `SumcheckSoundnessAssumption`, `SumcheckCompletenessAssumption`.
+Closure target: each upstream module (ProtocolTarget/Thm3Core, SumCheck) has its own closure plan.
 
 ## Dependency and Consumer Map
 
 Upstream dependencies:
-- `SuperNeo/ProtocolTarget.lean`: imports `protocolTargetProp`, `ProtocolTargetAssumptions`, `ProtocolTargetContext`.
+- `SuperNeo/ProtocolTarget.lean`: imports `protocolTargetProp`, `ProtocolTargetAssumptions`, `ProtocolTargetNativeAssumptions`, `ProtocolTargetContext`.
 - `SuperNeo/SumCheck.lean`: imports `SumCheckInstance`, `SumCheckTranscript`, `SumCheckAccepted`, `SumCheckClaimTrue`, `SumcheckSoundnessAssumption`, `SumcheckCompletenessAssumption`.
 
 Downstream consumers:

@@ -341,6 +341,19 @@ theorem evalHomAssumption_of_thm3_and_moduleAssumptions
     (hEvalLink := evalLinkAssumption_of_thm3CoreAssumption hThm3)
     hVecAssm hScalAssm
 
+/-- Theorem-native `P14` constructor from `P10` and module-hom boundaries. -/
+theorem evalHomAssumption_of_p10_and_moduleAssumptions
+  {bar : Array (Array F)} {m : Array (Array F)}
+  {r : Array F} {ρ1 ρ2 : F}
+  {hVec : VecModuleHom} {hScal : ScalarModuleHom}
+  (hThm3 : thm3CoreAssumption bar)
+  (hVecAssm : vecModuleAssumption hVec)
+  (hScalAssm : scalarModuleAssumption hScal) :
+  evalHomAssumption bar m r ρ1 ρ2 := by
+  exact evalHomAssumption_of_evalLink_and_moduleAssumptions
+    (hEvalLink := evalLinkAssumption_of_p10 hThm3)
+    hVecAssm hScalAssm
+
 /--
 Theorem-native `P14` constructor from `(P10 + P11)` and module-hom boundaries.
 
@@ -351,12 +364,42 @@ theorem evalHomAssumption_of_p10_p11_and_moduleAssumptions
   {r : Array F} {ρ1 ρ2 : F}
   {hVec : VecModuleHom} {hScal : ScalarModuleHom}
   (hThm3 : thm3CoreAssumption bar)
-  (hLift : barLiftLinearityAssumption bar)
+  (_hLift : barLiftLinearityAssumption bar)
   (hVecAssm : vecModuleAssumption hVec)
   (hScalAssm : scalarModuleAssumption hScal) :
   evalHomAssumption bar m r ρ1 ρ2 := by
+  exact evalHomAssumption_of_p10_and_moduleAssumptions
+    (hThm3 := hThm3)
+    (hVecAssm := hVecAssm)
+    (hScalAssm := hScalAssm)
+
+/--
+Native theorem-stack constructor for P14: use canonical native bar matrix and
+avoid explicit `hThm3` threading.
+-/
+theorem evalHomAssumption_native_bar
+  {m : Array (Array F)}
+  {r : Array F} {ρ1 ρ2 : F}
+  {hVec : VecModuleHom} {hScal : ScalarModuleHom}
+  (hVecAssm : vecModuleAssumption hVec)
+  (hScalAssm : scalarModuleAssumption hScal) :
+  evalHomAssumption nativeBarMatrix m r ρ1 ρ2 := by
   exact evalHomAssumption_of_evalLink_and_moduleAssumptions
-    (hEvalLink := evalLinkAssumption_of_p10_p11 hThm3 hLift)
+    (hEvalLink := evalLinkAssumption_native m)
+    hVecAssm hScalAssm
+
+/-- Rewrite helper for deriving native P14 under `bar = nativeBarMatrix`. -/
+theorem evalHomAssumption_of_bar_eq_native
+  {bar : Array (Array F)} {m : Array (Array F)}
+  {r : Array F} {ρ1 ρ2 : F}
+  {hVec : VecModuleHom} {hScal : ScalarModuleHom}
+  (hBar : bar = nativeBarMatrix)
+  (hVecAssm : vecModuleAssumption hVec)
+  (hScalAssm : scalarModuleAssumption hScal) :
+  evalHomAssumption bar m r ρ1 ρ2 := by
+  subst hBar
+  exact evalHomAssumption_native_bar
+    (m := m) (r := r) (ρ1 := ρ1) (ρ2 := ρ2)
     hVecAssm hScalAssm
 
 end SuperNeo

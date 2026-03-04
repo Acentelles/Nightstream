@@ -108,10 +108,10 @@ theorem arithmeticBundleProp_of_props
   exact ⟨hP6, hP12Rows, hP12Eq, hP14, hP15Vec, hP15Scal, hP16, hP17, hP18, hP19⟩
 
 /--
-Theorem-native constructor for `P20` from `(P10 + P11)` plus theorem boundaries.
+Theorem-native constructor for `P20` from `P10` plus theorem boundaries.
 
 This avoids check-driven plumbing for the P12/P13/P14 path:
-- derive P12 from `thm3CoreAssumption` + bar-lift linearity,
+- derive P12 from `thm3CoreAssumption`,
 - derive P13 from P12,
 - derive P14 from P13 + module-hom assumptions,
 then assemble the arithmetic bundle proposition.
@@ -134,7 +134,6 @@ theorem arithmeticBundleProp_of_theorem_stack
   (hRowsZ1 : MatrixRowsCompatible m z1)
   (hSize12 : z1.size = z2.size)
   (hThm3 : thm3CoreAssumption bar)
-  (hLift : barLiftLinearityAssumption bar)
   (hVecAssm : vecModuleAssumption hVec)
   (hScalAssm : scalarModuleAssumption hScal)
   (hP16 : invertibilityPreconditionsProp)
@@ -143,10 +142,10 @@ theorem arithmeticBundleProp_of_theorem_stack
   (hP19 : arithmeticInterpProp xs ys expectedCoeffs evalPoint expectedEval) :
   arithmeticBundleProp bar m z z1 z2 zDecomp r ρ1 ρ2 b k hVec hScal cset samples qVals xs ys expectedCoeffs evalPoint expectedEval ell totalDegree setSize := by
   have hP12Eq : matrixVecDirect m z = matrixVecCtBar bar m z :=
-    (matrixTransformAssumption_of_p10_p11 hThm3 hLift) z hRowsZ
+    (matrixTransformAssumption_of_p10 hThm3) z hRowsZ
   have hEvalHomAssm : evalHomAssumption bar m r ρ1 ρ2 :=
-    evalHomAssumption_of_p10_p11_and_moduleAssumptions
-      (hThm3 := hThm3) (hLift := hLift)
+    evalHomAssumption_of_p10_and_moduleAssumptions
+      (hThm3 := hThm3)
       (hVecAssm := hVecAssm) (hScalAssm := hScalAssm)
   have hP14 : arithmeticEvalHomProp bar m z1 z2 r ρ1 ρ2 :=
     hEvalHomAssm z1 z2 hSize12 hRowsZ1
@@ -161,6 +160,49 @@ theorem arithmeticBundleProp_of_theorem_stack
     (hP17 := hP17)
     (hP18 := hP18)
     (hP19 := hP19)
+
+/--
+Native theorem-stack constructor for `P20`: canonical Theorem-3 closure path
+without threading an explicit `hThm3`.
+-/
+theorem arithmeticBundleProp_of_native_theorem_stack
+  {m : Array (Array F)}
+  {z z1 z2 zDecomp r : Array F}
+  {ρ1 ρ2 : F}
+  {b k : Nat}
+  {hVec : VecModuleHom}
+  {hScal : ScalarModuleHom}
+  {cset samples : Array Coeffs}
+  {qVals : Array F}
+  {xs ys expectedCoeffs : Array F}
+  {evalPoint expectedEval : F}
+  {ell totalDegree setSize : Nat}
+  (hP6 : arithmeticDecompProp zDecomp b k)
+  (hRowsZ : MatrixRowsCompatible m z)
+  (hRowsZ1 : MatrixRowsCompatible m z1)
+  (hSize12 : z1.size = z2.size)
+  (hVecAssm : vecModuleAssumption hVec)
+  (hScalAssm : scalarModuleAssumption hScal)
+  (hP16 : invertibilityPreconditionsProp)
+  (hP17 : arithmeticSamplingProp cset samples)
+  (hP18 : arithmeticPolyProp qVals ell totalDegree setSize)
+  (hP19 : arithmeticInterpProp xs ys expectedCoeffs evalPoint expectedEval) :
+  arithmeticBundleProp nativeBarMatrix m z z1 z2 zDecomp r ρ1 ρ2 b k hVec hScal cset samples qVals xs ys expectedCoeffs evalPoint expectedEval ell totalDegree setSize := by
+  exact arithmeticBundleProp_of_theorem_stack
+    (bar := nativeBarMatrix)
+    (m := m)
+    (z := z) (z1 := z1) (z2 := z2) (zDecomp := zDecomp) (r := r)
+    (ρ1 := ρ1) (ρ2 := ρ2)
+    (b := b) (k := k)
+    (hVec := hVec) (hScal := hScal)
+    (cset := cset) (samples := samples)
+    (qVals := qVals)
+    (xs := xs) (ys := ys) (expectedCoeffs := expectedCoeffs)
+    (evalPoint := evalPoint) (expectedEval := expectedEval)
+    (ell := ell) (totalDegree := totalDegree) (setSize := setSize)
+    hP6 hRowsZ hRowsZ1 hSize12
+    thm3CoreAssumption_native
+    hVecAssm hScalAssm hP16 hP17 hP18 hP19
 
 /--
 Bridge theorem: executable checks imply the proposition-native arithmetic bundle.

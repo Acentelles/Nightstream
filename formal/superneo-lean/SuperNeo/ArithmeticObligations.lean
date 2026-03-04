@@ -42,8 +42,51 @@ structure ArithmeticObligations
 /--
 Theorem-native constructor for arithmetic obligations.
 
-This derives the `evalHom` field from `(P10 + P11)` and module-hom assumptions,
+This derives the `evalHom` field from `P10` and module-hom assumptions,
 and derives the local MLE identity from the theorem-native size theorem.
+-/
+def ArithmeticObligations.of_p10
+  {bar m : Array (Array F)}
+  {r : Array F}
+  {rho1 rho2 : F}
+  {hVec : VecModuleHom}
+  {hScal : ScalarModuleHom}
+  {splitScalar : F}
+  {kSplit : Nat}
+  {invDelta : Coeffs}
+  {cset samples : Array Coeffs}
+  {xs ys qVals coeffs : Array F}
+  {xEval expectedEval : F}
+  (hSplit : splitScalar.val < 2 ^ kSplit)
+  (hThm3 : thm3CoreAssumption bar)
+  (hVecAssm : vecModuleAssumption hVec)
+  (hScalAssm : scalarModuleAssumption hScal)
+  (hInv : invertibilityWindowProp Goldilocks.halfQ invDelta)
+  (hSampling : samplingExpansionProp cset samples)
+  (hMleSize : qVals.size = (2 ^ r.size))
+  (hInterp : interpolationProp xs ys coeffs xEval expectedEval) :
+  ArithmeticObligations
+    bar m r rho1 rho2
+    hVec hScal
+    splitScalar kSplit
+    invDelta cset samples
+    xs ys qVals coeffs
+    xEval expectedEval where
+  splitScalarBelowPow := hSplit
+  evalHom := evalHomAssumption_of_p10_and_moduleAssumptions
+    (hThm3 := hThm3)
+    (hVecAssm := hVecAssm) (hScalAssm := hScalAssm)
+  vecModule := hVecAssm
+  scalarModule := hScalAssm
+  invertibilityWindow := hInv
+  sampling := hSampling
+  mleTableSize := hMleSize
+  mleIdentityAtR := by
+    exact mleIdentityAssumption_holds qVals r hMleSize
+  interpolation := hInterp
+
+/--
+Compatibility constructor keeping the historical `(P10 + P11)` signature.
 -/
 def ArithmeticObligations.of_p10_p11
   {bar m : Array (Array F)}
@@ -59,7 +102,7 @@ def ArithmeticObligations.of_p10_p11
   {xEval expectedEval : F}
   (hSplit : splitScalar.val < 2 ^ kSplit)
   (hThm3 : thm3CoreAssumption bar)
-  (hLift : barLiftLinearityAssumption bar)
+  (_hLift : barLiftLinearityAssumption bar)
   (hVecAssm : vecModuleAssumption hVec)
   (hScalAssm : scalarModuleAssumption hScal)
   (hInv : invertibilityWindowProp Goldilocks.halfQ invDelta)
@@ -72,19 +115,16 @@ def ArithmeticObligations.of_p10_p11
     splitScalar kSplit
     invDelta cset samples
     xs ys qVals coeffs
-    xEval expectedEval where
-  splitScalarBelowPow := hSplit
-  evalHom := evalHomAssumption_of_p10_p11_and_moduleAssumptions
-    (hThm3 := hThm3) (hLift := hLift)
-    (hVecAssm := hVecAssm) (hScalAssm := hScalAssm)
-  vecModule := hVecAssm
-  scalarModule := hScalAssm
-  invertibilityWindow := hInv
-  sampling := hSampling
-  mleTableSize := hMleSize
-  mleIdentityAtR := by
-    exact mleIdentityAssumption_holds qVals r hMleSize
-  interpolation := hInterp
+    xEval expectedEval := by
+  exact ArithmeticObligations.of_p10
+    (hSplit := hSplit)
+    (hThm3 := hThm3)
+    (hVecAssm := hVecAssm)
+    (hScalAssm := hScalAssm)
+    (hInv := hInv)
+    (hSampling := hSampling)
+    (hMleSize := hMleSize)
+    (hInterp := hInterp)
 
 /--
 Compatibility accessor: recover the terminal-quotient-zero obligation from the

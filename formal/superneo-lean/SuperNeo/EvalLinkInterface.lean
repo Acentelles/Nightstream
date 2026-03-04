@@ -74,6 +74,13 @@ theorem evalLinkAssumption_of_thm3CoreAssumption
   evalLinkAssumption bar m :=
   SuperNeo.evalLinkAssumption_of_thm3CoreAssumption hThm3
 
+/-- [Role: Theorem-Target] Theorem-native eval-link boundary constructor from `P10` only. -/
+theorem evalLinkAssumption_of_p10
+  {bar : Array (Array F)} {m : Array (Array F)}
+  (hThm3 : thm3CoreAssumption bar) :
+  evalLinkAssumption bar m :=
+  SuperNeo.evalLinkAssumption_of_p10 hThm3
+
 /-- [Role: Theorem-Target] Theorem-native eval-link boundary constructor from `(P10 + P11)`. -/
 theorem evalLinkAssumption_of_p10_p11
   {bar : Array (Array F)} {m : Array (Array F)}

@@ -57,12 +57,25 @@ structure ProtocolRelationsAssumptions (ctx : ProtocolTargetContext) where
   sumcheckSoundness : SumcheckSoundnessAssumption
   sumcheckCompleteness : SumcheckCompletenessAssumption
 
+/-- Native assumption bundle: protocol target closes Theorem-3 via native bar. -/
+structure ProtocolRelationsNativeAssumptions (ctx : ProtocolTargetContext) where
+  target : ProtocolTargetNativeAssumptions ctx
+  sumcheckSoundness : SumcheckSoundnessAssumption
+  sumcheckCompleteness : SumcheckCompletenessAssumption
+
 /-- Derive CCS relation from target assumptions. -/
 theorem ccsRelation_of_assumptions
   {ctx : ProtocolTargetContext}
   (h : ProtocolRelationsAssumptions ctx) :
   ccsRelation ctx := by
   exact protocolTargetProp_of_assumptions h.target
+
+/-- Derive CCS relation from native target assumptions. -/
+theorem ccsRelation_of_native_assumptions
+  {ctx : ProtocolTargetContext}
+  (h : ProtocolRelationsNativeAssumptions ctx) :
+  ccsRelation ctx := by
+  exact protocolTargetProp_of_native_assumptions h.target
 
 /-- Derive CE relation from explicit transcript acceptance witness. -/
 theorem ceRelation_of_assumptions
@@ -88,10 +101,43 @@ theorem ceRelation_of_claimTrue
   intro i hi
   exact sumcheckAccepted_round_sum_step hAcc hi
 
+/-- Derive CE relation from native assumptions and explicit transcript witness. -/
+theorem ceRelation_of_native_assumptions
+  {ctx : ProtocolTargetContext}
+  (h : ProtocolRelationsNativeAssumptions ctx)
+  (hWitness : SumCheckTransitionWitness ctx) :
+  ceRelation ctx := by
+  exact ⟨ccsRelation_of_native_assumptions h, hWitness.accepted_exists⟩
+
+/-- Derive CE relation from claim-truth via native assumptions. -/
+theorem ceRelation_of_native_claimTrue
+  {ctx : ProtocolTargetContext}
+  (h : ProtocolRelationsNativeAssumptions ctx)
+  (hClaimTrue : SumCheckClaimTrue (sumcheckInstanceOfContext ctx)) :
+  ceRelation ctx := by
+  rcases h.sumcheckCompleteness _ hClaimTrue with ⟨tr, hAcc⟩
+  refine ceRelation_of_native_assumptions h ?_
+  refine
+    { transcript := tr
+      accepted := hAcc
+      initialRound := sumcheckAccepted_initial_round hAcc
+      roundSumStep := ?_ }
+  intro i hi
+  exact sumcheckAccepted_round_sum_step hAcc hi
+
 /-- Soundness lift: any CE witness yields SumCheck claim truth. -/
 theorem ceClaimTrue_of_ce
   {ctx : ProtocolTargetContext}
   (h : ProtocolRelationsAssumptions ctx)
+  (hCE : ceRelation ctx) :
+  SumCheckClaimTrue (sumcheckInstanceOfContext ctx) := by
+  rcases hCE.2 with ⟨tr, hAcc⟩
+  exact h.sumcheckSoundness _ _ hAcc
+
+/-- Soundness lift on the native assumption path. -/
+theorem ceClaimTrue_of_native_ce
+  {ctx : ProtocolTargetContext}
+  (h : ProtocolRelationsNativeAssumptions ctx)
   (hCE : ceRelation ctx) :
   SumCheckClaimTrue (sumcheckInstanceOfContext ctx) := by
   rcases hCE.2 with ⟨tr, hAcc⟩

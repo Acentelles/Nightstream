@@ -66,13 +66,6 @@ theorem linComb2Vec_size_of_eq
 /-- [Role: Theorem-Target] Curated theorem surface `mulRq_size`. -/
 theorem mulRq_size (a b : Coeffs) : (mulRq a b).size = d := SuperNeo.mulRq_size a b
 
-/-- [Role: Theorem-Target] Curated theorem surface `mulRq_comm`. -/
-theorem mulRq_comm (a b : Coeffs) : mulRq a b = mulRq b a := SuperNeo.mulRq_comm a b
-
-/-- [Role: Theorem-Target] Curated theorem surface `mulRq_assoc`. -/
-theorem mulRq_assoc (a b c : Coeffs) : mulRq (mulRq a b) c = mulRq a (mulRq b c) :=
-  SuperNeo.mulRq_assoc a b c
-
 /-- [Role: Theorem-Target] Curated theorem surface `mulRq_vecAdd_right`. -/
 theorem mulRq_vecAdd_right
     (a b c : Coeffs)

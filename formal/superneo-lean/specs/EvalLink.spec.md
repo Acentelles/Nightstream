@@ -8,7 +8,7 @@
 
 ## Target Formulas (Paper → Lean)
 
-- Paper formula: `Mz = ct(M̄z̄)` (Remark 2, Matrix-Vector Product Evaluation)
+- Paper formula: `Mz = ct(M̄z)` (Remark 2, Matrix-Vector Product Evaluation)
 - Lean mapping:
   - `evalLinkIdentity bar m z` : executable check (delegates to `matrixTransformIdentity`)
   - `evalLinkIdentityProp bar m z` : proposition counterpart
@@ -37,11 +37,12 @@
 | Sound/complete | `evalLinkIdentity_sound`, `evalLinkIdentity_complete`, `evalLinkIdentity_iff_prop` | Check true / Prop holds | Bidirectional bridge | Theorem-Target | — |
 | From MatrixTransform | `evalLinkAssumption_of_matrixTransformAssumption` | `matrixTransformAssumption bar m` | `evalLinkAssumption bar m` | Theorem-Target | — |
 | From Thm3Core | `evalLinkAssumption_of_thm3CoreAssumption` | `thm3CoreAssumption bar` | `evalLinkAssumption bar m` | Theorem-Target | — |
-| From P10+P11 | `evalLinkAssumption_of_p10_p11` | `thm3CoreAssumption bar`, `barLiftLinearityAssumption bar` | `evalLinkAssumption bar m` | Theorem-Target | — |
+| From P10 | `evalLinkAssumption_of_p10` | `thm3CoreAssumption bar` | `evalLinkAssumption bar m` | Theorem-Target | — |
+| From P10+P11 | `evalLinkAssumption_of_p10_p11` | `thm3CoreAssumption bar`, `barLiftLinearityAssumption bar` | `evalLinkAssumption bar m` (compatibility path) | Theorem-Target | — |
 
 ## Proof Obligations and Closure Plan
 
-All obligations closed. Eval-link delegates to MatrixTransform; all bridge theorems (`_of_checkAssumption`, `_of_assumption`, `_iff`, `_of_matrixTransformAssumption`, `_of_thm3CoreAssumption`, `_of_p10_p11`) are proved.
+All obligations closed. Eval-link delegates to MatrixTransform; all bridge theorems (`_of_checkAssumption`, `_of_assumption`, `_iff`, `_of_matrixTransformAssumption`, `_of_thm3CoreAssumption`, `_of_p10`, `_of_p10_p11`) are proved.
 
 ## Assumption Ledger
 
@@ -60,7 +61,7 @@ No open boundary assumptions in this module.
 1. `evalLinkIdentity` / `evalLinkIdentityProp` delegate to `matrixTransformIdentity` / `matrixTransformIdentityProp`.
 2. Sound/complete/iff_prop proved via MatrixTransform theorems.
 3. Assumption bridges proved via universal quantification and sound/complete.
-4. Constructors from MatrixTransform, Thm3Core, P10+P11 chain through `evalLinkAssumption_of_matrixTransformAssumption`.
+4. Constructors from MatrixTransform, Thm3Core, and P10/P10+P11 chains flow through `evalLinkAssumption_of_matrixTransformAssumption`.
 
 ## Quality Expectations
 

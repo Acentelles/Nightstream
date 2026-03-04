@@ -3,7 +3,7 @@
 ## Purpose
 
 - **What it is**: A structure bundling arithmetic obligations from Sections 4–5 (decomposition, matrix transform, eval homomorphism, module homomorphisms, invertibility, sampling, MLE, interpolation) for consumption by Section 7 protocol layers.
-- **Key property**: Under the bundle, `evalHom` is derivable from `(P10 + P11)` and module-hom assumptions; `mleIdentityAtR` follows from table-size precondition; `splitTerminalZero` from scalar bound.
+- **Key property**: Under the bundle, `evalHom` is derivable from `P10` and module-hom assumptions (`of_p10`), with a compatibility constructor retaining `(P10 + P11)` signature (`of_p10_p11`); `mleIdentityAtR` follows from table-size precondition; `splitTerminalZero` from scalar bound.
 - **Protocol role**: ProtocolTarget and downstream reductions depend on ArithmeticObligations to derive `protocolTargetProp` and compose the protocol skeleton.
 
 ## Target Formulas (Paper → Lean)
@@ -11,7 +11,7 @@
 - `ArithmeticObligations bar m r ... → splitBase2TerminalZeroProp splitScalar kSplit`
 - `splitBase2LowPartNat + (2^kSplit) * splitBase2TerminalQuot = splitScalar.val` (split decomposition)
 - `qVals.size = 2^r.size → mleEval qVals r = mleInnerProductForm qVals r`
-- `evalHomAssumption_of_p10_p11_and_moduleAssumptions → evalHomAssumption`
+- `evalHomAssumption_of_p10_and_moduleAssumptions → evalHomAssumption`
 
 ## Paper Anchors
 
@@ -30,7 +30,8 @@
 | Contract group | Lean surface | Preconditions | Guarantee | Role | Used by |
 |---|---|---|---|---|---|
 | Structure | `ArithmeticObligations` | None | Bundles splitScalarBelowPow, evalHom, vecModule, scalarModule, invertibilityWindow, sampling, mleTableSize, mleIdentityAtR, interpolation | Definitional | ProtocolTarget |
-| Constructor | `ArithmeticObligations.of_p10_p11` | thm3, barLift, vec/scalar module, inv, sampling, mleSize, interp | `ArithmeticObligations` with evalHom from P10+P11 | Theorem-Target | — |
+| Constructor | `ArithmeticObligations.of_p10` | thm3, vec/scalar module, inv, sampling, mleSize, interp | `ArithmeticObligations` with evalHom from P10 | Theorem-Target | — |
+| Constructor (compat) | `ArithmeticObligations.of_p10_p11` | thm3, barLift, vec/scalar module, inv, sampling, mleSize, interp | `ArithmeticObligations` via `of_p10` | Theorem-Target | — |
 | Terminal zero | `ArithmeticObligations.splitTerminalZero` | `ArithmeticObligations` | `splitBase2TerminalZeroProp splitScalar kSplit` | Theorem-Target | ProtocolTarget |
 | Split decomp | `splitDecompositionNat_of_obligations` | `ArithmeticObligations` | `splitBase2LowPartNat + (2^kSplit)*splitBase2TerminalQuot = splitScalar.val` | Theorem-Target | — |
 | MLE from assumption | `mleIdentityAtR_of_assumption` | `qVals.size = 2^r.size`, `mleIdentityAssumption` | `mleEval qVals r = mleInnerProductForm qVals r` | Theorem-Target | — |
@@ -38,7 +39,7 @@
 
 ## Proof Obligations and Closure Plan
 
-All obligations closed. `ArithmeticObligations.of_p10_p11` derives evalHom from P10+P11 and module assumptions. `splitTerminalZero` and `splitDecompositionNat_of_obligations` are proved. MLE identity follows from `mleIdentityAssumption_holds` or global `mleIdentityAssumption`.
+All obligations closed. `ArithmeticObligations.of_p10` derives evalHom from P10 and module assumptions; `of_p10_p11` is a compatibility wrapper. `splitTerminalZero` and `splitDecompositionNat_of_obligations` are proved. MLE identity follows from `mleIdentityAssumption_holds` or global `mleIdentityAssumption`.
 
 ## Assumption Ledger
 
@@ -61,7 +62,7 @@ No open boundary assumptions in this module.
 ## Implementation Plan
 
 1. `ArithmeticObligations` structure bundles all arithmetic obligations.
-2. `of_p10_p11` constructor derives evalHom via `evalHomAssumption_of_p10_p11_and_moduleAssumptions`.
+2. `of_p10` constructor derives evalHom via `evalHomAssumption_of_p10_and_moduleAssumptions`; `of_p10_p11` wraps `of_p10`.
 3. `splitTerminalZero` and `splitDecompositionNat_of_obligations` proved from definitions.
 4. `mleIdentityAtR_of_assumption` and `mleIdentityAtR_of_size` bridge MLE theorem surface.
 

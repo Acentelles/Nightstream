@@ -25,43 +25,73 @@ abbrev LatticeReductionLaws := SuperNeo.ProofSystem.LatticeReductionLaws
 def LatticeReductionLaws_ofCarrier
   {params : AjtaiParams}
   (C : SamplingCarrier)
-  (hStrong : strongSamplingExpansionProp C params.relaxedExpansion) :
+  (hStrong : strongSamplingExpansionProp C params.relaxedExpansion)
+  (hSmulComm :
+    ∀ (delta1 delta2 : Coeffs) (v : Array Coeffs),
+      smulVec delta1 (smulVec delta2 v) = smulVec delta2 (smulVec delta1 v))
+  (hMatSmul :
+    ∀ (matrixFlat : Array Coeffs) (delta : Coeffs) (v : Array Coeffs),
+      matVecMul params matrixFlat (smulVec delta v) =
+        smulVec delta (matVecMul params matrixFlat v)) :
   LatticeReductionLaws params :=
-  SuperNeo.ProofSystem.LatticeReductionLaws.ofCarrier C hStrong
+  SuperNeo.ProofSystem.LatticeReductionLaws.ofCarrier C hStrong hSmulComm hMatSmul
 
 def LatticeReductionLaws_ofPaperCarrier
   {params : AjtaiParams}
-  (hStrong : strongSamplingExpansionProp paperCarrier params.relaxedExpansion) :
+  (hStrong : strongSamplingExpansionProp paperCarrier params.relaxedExpansion)
+  (hSmulComm :
+    ∀ (delta1 delta2 : Coeffs) (v : Array Coeffs),
+      smulVec delta1 (smulVec delta2 v) = smulVec delta2 (smulVec delta1 v))
+  (hMatSmul :
+    ∀ (matrixFlat : Array Coeffs) (delta : Coeffs) (v : Array Coeffs),
+      matVecMul params matrixFlat (smulVec delta v) =
+        smulVec delta (matVecMul params matrixFlat v)) :
   LatticeReductionLaws params :=
-  SuperNeo.ProofSystem.LatticeReductionLaws.ofPaperCarrier hStrong
+  SuperNeo.ProofSystem.LatticeReductionLaws.ofPaperCarrier hStrong hSmulComm hMatSmul
 
 theorem LatticeReductionLaws_paperStrongSampling_of_bounds
   {params : AjtaiParams}
   {D : Nat}
   (hSub : coeffSubNormBoundFromOperands 2 2 D)
-  (hMul : ∀ B : Nat, mulRqNormBoundFromOperands D B (4 * params.relaxedExpansion * B)) :
+  (hMul : ∀ B : Nat, mulRqPhiNormBoundFromOperands D B (4 * params.relaxedExpansion * B)) :
   strongSamplingExpansionProp paperCarrier params.relaxedExpansion :=
   SuperNeo.ProofSystem.LatticeReductionLaws.paperStrongSampling_of_bounds (params := params) (D := D) hSub hMul
 
-theorem LatticeReductionLaws_paperStrongSampling_of_d_le
+theorem LatticeReductionLaws_paperStrongSampling_of_three_d_le
   {params : AjtaiParams}
-  (hTd : d ≤ params.relaxedExpansion) :
+  (hTd : 3 * d ≤ params.relaxedExpansion) :
   strongSamplingExpansionProp paperCarrier params.relaxedExpansion :=
-  SuperNeo.ProofSystem.LatticeReductionLaws.paperStrongSampling_of_d_le (params := params) hTd
+  SuperNeo.ProofSystem.LatticeReductionLaws.paperStrongSampling_of_three_d_le (params := params) hTd
 
 def LatticeReductionLaws_ofPaperCarrierFromBounds
   {params : AjtaiParams}
   {D : Nat}
   (hSub : coeffSubNormBoundFromOperands 2 2 D)
-  (hMul : ∀ B : Nat, mulRqNormBoundFromOperands D B (4 * params.relaxedExpansion * B)) :
+  (hMul : ∀ B : Nat, mulRqPhiNormBoundFromOperands D B (4 * params.relaxedExpansion * B))
+  (hSmulComm :
+    ∀ (delta1 delta2 : Coeffs) (v : Array Coeffs),
+      smulVec delta1 (smulVec delta2 v) = smulVec delta2 (smulVec delta1 v))
+  (hMatSmul :
+    ∀ (matrixFlat : Array Coeffs) (delta : Coeffs) (v : Array Coeffs),
+      matVecMul params matrixFlat (smulVec delta v) =
+        smulVec delta (matVecMul params matrixFlat v)) :
   LatticeReductionLaws params :=
-  SuperNeo.ProofSystem.LatticeReductionLaws.ofPaperCarrierFromBounds (params := params) (D := D) hSub hMul
+  SuperNeo.ProofSystem.LatticeReductionLaws.ofPaperCarrierFromBounds
+    (params := params) (D := D) hSub hMul hSmulComm hMatSmul
 
-def LatticeReductionLaws_ofPaperCarrierFromDLe
+def LatticeReductionLaws_ofPaperCarrierFromThreeDLe
   {params : AjtaiParams}
-  (hTd : d ≤ params.relaxedExpansion) :
+  (hTd : 3 * d ≤ params.relaxedExpansion)
+  (hSmulComm :
+    ∀ (delta1 delta2 : Coeffs) (v : Array Coeffs),
+      smulVec delta1 (smulVec delta2 v) = smulVec delta2 (smulVec delta1 v))
+  (hMatSmul :
+    ∀ (matrixFlat : Array Coeffs) (delta : Coeffs) (v : Array Coeffs),
+      matVecMul params matrixFlat (smulVec delta v) =
+        smulVec delta (matVecMul params matrixFlat v)) :
   LatticeReductionLaws params :=
-  SuperNeo.ProofSystem.LatticeReductionLaws.ofPaperCarrierFromDLe (params := params) hTd
+  SuperNeo.ProofSystem.LatticeReductionLaws.ofPaperCarrierFromThreeDLe
+    (params := params) hTd hSmulComm hMatSmul
 
 def MSISToAjtaiReductions_ofLaws
   {params : AjtaiParams}
@@ -79,6 +109,13 @@ def MSISToAjtaiReductions_ofLaws
 def MSISToAjtaiReductions_ofPaperCarrier
   {params : AjtaiParams}
   (hStrong : strongSamplingExpansionProp paperCarrier params.relaxedExpansion)
+  (hSmulComm :
+    ∀ (delta1 delta2 : Coeffs) (v : Array Coeffs),
+      smulVec delta1 (smulVec delta2 v) = smulVec delta2 (smulVec delta1 v))
+  (hMatSmul :
+    ∀ (matrixFlat : Array Coeffs) (delta : Coeffs) (v : Array Coeffs),
+      matVecMul params matrixFlat (smulVec delta v) =
+        smulVec delta (matVecMul params matrixFlat v))
   (hExpPos : 0 < params.relaxedExpansion)
   (epsBinding epsRelaxedBinding : ErrorFn)
   (hBindBound : AjtaiBindingAdvantageBound params epsBinding)
@@ -87,13 +124,20 @@ def MSISToAjtaiReductions_ofPaperCarrier
   (hRelaxedNeg : IsNegligible epsRelaxedBinding) :
   MSISToAjtaiReductions params :=
   SuperNeo.ProofSystem.MSISToAjtaiReductions.ofPaperCarrier
-    hStrong hExpPos epsBinding epsRelaxedBinding hBindBound hRelaxedBound hBindNeg hRelaxedNeg
+    hStrong hSmulComm hMatSmul hExpPos epsBinding epsRelaxedBinding hBindBound hRelaxedBound hBindNeg hRelaxedNeg
 
 def MSISToAjtaiReductions_ofPaperCarrierFromBounds
   {params : AjtaiParams}
   {D : Nat}
   (hSub : coeffSubNormBoundFromOperands 2 2 D)
-  (hMul : ∀ B : Nat, mulRqNormBoundFromOperands D B (4 * params.relaxedExpansion * B))
+  (hMul : ∀ B : Nat, mulRqPhiNormBoundFromOperands D B (4 * params.relaxedExpansion * B))
+  (hSmulComm :
+    ∀ (delta1 delta2 : Coeffs) (v : Array Coeffs),
+      smulVec delta1 (smulVec delta2 v) = smulVec delta2 (smulVec delta1 v))
+  (hMatSmul :
+    ∀ (matrixFlat : Array Coeffs) (delta : Coeffs) (v : Array Coeffs),
+      matVecMul params matrixFlat (smulVec delta v) =
+        smulVec delta (matVecMul params matrixFlat v))
   (hExpPos : 0 < params.relaxedExpansion)
   (epsBinding epsRelaxedBinding : ErrorFn)
   (hBindBound : AjtaiBindingAdvantageBound params epsBinding)
@@ -103,11 +147,18 @@ def MSISToAjtaiReductions_ofPaperCarrierFromBounds
   MSISToAjtaiReductions params :=
   SuperNeo.ProofSystem.MSISToAjtaiReductions.ofPaperCarrierFromBounds
     (params := params) (D := D)
-    hSub hMul hExpPos epsBinding epsRelaxedBinding hBindBound hRelaxedBound hBindNeg hRelaxedNeg
+    hSub hMul hSmulComm hMatSmul hExpPos epsBinding epsRelaxedBinding hBindBound hRelaxedBound hBindNeg hRelaxedNeg
 
-def MSISToAjtaiReductions_ofPaperCarrierFromDLe
+def MSISToAjtaiReductions_ofPaperCarrierFromThreeDLe
   {params : AjtaiParams}
-  (hTd : d ≤ params.relaxedExpansion)
+  (hTd : 3 * d ≤ params.relaxedExpansion)
+  (hSmulComm :
+    ∀ (delta1 delta2 : Coeffs) (v : Array Coeffs),
+      smulVec delta1 (smulVec delta2 v) = smulVec delta2 (smulVec delta1 v))
+  (hMatSmul :
+    ∀ (matrixFlat : Array Coeffs) (delta : Coeffs) (v : Array Coeffs),
+      matVecMul params matrixFlat (smulVec delta v) =
+        smulVec delta (matVecMul params matrixFlat v))
   (hExpPos : 0 < params.relaxedExpansion)
   (epsBinding epsRelaxedBinding : ErrorFn)
   (hBindBound : AjtaiBindingAdvantageBound params epsBinding)
@@ -115,9 +166,9 @@ def MSISToAjtaiReductions_ofPaperCarrierFromDLe
   (hBindNeg : IsNegligible epsBinding)
   (hRelaxedNeg : IsNegligible epsRelaxedBinding) :
   MSISToAjtaiReductions params :=
-  SuperNeo.ProofSystem.MSISToAjtaiReductions.ofPaperCarrierFromDLe
+  SuperNeo.ProofSystem.MSISToAjtaiReductions.ofPaperCarrierFromThreeDLe
     (params := params)
-    hTd hExpPos epsBinding epsRelaxedBinding hBindBound hRelaxedBound hBindNeg hRelaxedNeg
+    hTd hSmulComm hMatSmul hExpPos epsBinding epsRelaxedBinding hBindBound hRelaxedBound hBindNeg hRelaxedNeg
 
 /-! ## Extractor and Norm-Transfer Theorems -/
 

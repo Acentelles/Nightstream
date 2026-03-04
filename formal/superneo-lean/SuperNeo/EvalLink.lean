@@ -89,6 +89,14 @@ theorem evalLinkAssumption_of_thm3CoreAssumption
   exact evalLinkAssumption_of_matrixTransformAssumption
     (matrixTransformAssumption_of_thm3CoreAssumption hThm3)
 
+/-- Theorem-native `P13` constructor from `P10` only. -/
+theorem evalLinkAssumption_of_p10
+  {bar : Array (Array F)} {m : Array (Array F)}
+  (hThm3 : thm3CoreAssumption bar) :
+  evalLinkAssumption bar m := by
+  exact evalLinkAssumption_of_matrixTransformAssumption
+    (matrixTransformAssumption_of_p10 hThm3)
+
 /--
 Theorem-native `P13` constructor from `(P10 + P11)` through `P12`.
 
@@ -97,10 +105,27 @@ Theorem-native `P13` constructor from `(P10 + P11)` through `P12`.
 theorem evalLinkAssumption_of_p10_p11
   {bar : Array (Array F)} {m : Array (Array F)}
   (hThm3 : thm3CoreAssumption bar)
-  (hLift : barLiftLinearityAssumption bar) :
+  (_hLift : barLiftLinearityAssumption bar) :
   evalLinkAssumption bar m := by
+  exact evalLinkAssumption_of_p10 hThm3
+
+/--
+Native Theorem-3 path for P13: build eval-link assumption directly from the
+canonical native bar matrix, without explicit `hThm3`.
+-/
+theorem evalLinkAssumption_native
+  (m : Array (Array F)) :
+  evalLinkAssumption nativeBarMatrix m := by
   exact evalLinkAssumption_of_matrixTransformAssumption
-    (matrixTransformAssumption_of_p10_p11 hThm3 hLift)
+    (matrixTransformAssumption_native m)
+
+/-- Rewrite helper for deriving native P13 under `bar = nativeBarMatrix`. -/
+theorem evalLinkAssumption_of_bar_eq_native
+  {bar : Array (Array F)} {m : Array (Array F)}
+  (hBar : bar = nativeBarMatrix) :
+  evalLinkAssumption bar m := by
+  subst hBar
+  exact evalLinkAssumption_native m
 
 
 end SuperNeo

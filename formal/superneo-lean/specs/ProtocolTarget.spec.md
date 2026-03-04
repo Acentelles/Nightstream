@@ -3,13 +3,14 @@
 ## Purpose
 
 - **What it is**: A layer that binds Theorem 3 and arithmetic obligations into one target context (`ProtocolTargetContext`), then derives the core target proposition `protocolTargetProp` used by protocol relations.
-- **Key property**: `ProtocolTargetAssumptions ctx → protocolTargetProp ctx`; the target proposition conjoins thm3, split terminal zero, eval homomorphism, module assumptions, sampling, MLE identity, interpolation, and invertibility.
+- **Key property**: both `ProtocolTargetAssumptions ctx → protocolTargetProp ctx` and `ProtocolTargetNativeAssumptions ctx → protocolTargetProp ctx`; the target proposition conjoins thm3, split terminal zero, eval homomorphism, module assumptions, sampling, MLE identity, interpolation, and invertibility.
 - **Protocol role**: ProtocolRelations uses `protocolTargetProp` to define CCS/CE relations; PiCCS and downstream reductions depend on this target.
 
 ## Target Formulas (Paper → Lean)
 
 - `protocolTargetProp ctx ↔ thm3CoreAssumption ctx.bar ∧ splitBase2TerminalZeroProp ctx.splitScalar ctx.kSplit ∧ evalHomAssumption ... ∧ vecModuleAssumption ... ∧ scalarModuleAssumption ... ∧ samplingExpansionProp ... ∧ qVals.size = 2^r.size ∧ mleEval qVals r = mleInnerProductForm qVals r ∧ interpolationProp ... ∧ invertibleRq ctx.invDelta`
 - `ProtocolTargetAssumptions ctx → protocolTargetProp ctx`
+- `ProtocolTargetNativeAssumptions ctx → protocolTargetProp ctx`
 
 ## Paper Anchors
 
@@ -29,16 +30,18 @@
 |---|---|---|---|---|---|
 | Context | `ProtocolTargetContext` | None | Bundles bar, m, r, rho1, rho2, hVec, hScal, splitScalar, kSplit, invDelta, cset, samples, xs, ys, qVals, coeffs, xEval, expectedEval | Definitional | ProtocolRelations, PiCCS |
 | Assumptions | `ProtocolTargetAssumptions ctx` | None | Bundles thm3, arithmetic (ArithmeticObligations), lowNormInvertibility | Definitional | — |
+| Assumptions | `ProtocolTargetNativeAssumptions ctx` | `ctx.bar = nativeBarMatrix` | Bundles native bar equality, arithmetic (ArithmeticObligations), lowNormInvertibility | Definitional | ProtocolRelations native path |
 | Target prop | `protocolTargetProp ctx` | None | Conjunction of all protocol-target predicates | Definitional | ProtocolRelations |
 | Derivation | `protocolTargetProp_of_assumptions` | `ProtocolTargetAssumptions ctx` | `protocolTargetProp ctx` | Theorem-Target | ProtocolRelations |
+| Derivation | `protocolTargetProp_of_native_assumptions` | `ProtocolTargetNativeAssumptions ctx` | `protocolTargetProp ctx` | Theorem-Target | ProtocolRelations native path |
 
 ## Proof Obligations and Closure Plan
 
-All obligations closed. `protocolTargetProp_of_assumptions` derives the target from the assumption bundle; invertibility follows from `invertibleRq_of_lowNormAssumption`.
+All local obligations closed. `protocolTargetProp_of_assumptions` and `protocolTargetProp_of_native_assumptions` derive the target from their bundles; invertibility follows from `invertibleRq_of_lowNormAssumption`.
 
 ## Assumption Ledger
 
-No open boundary assumptions in this module.
+No open proof obligations inside this module. Native closure still depends on upstream `thm3CoreAssumption_native` (declared in `Thm3Core`).
 
 ## Dependency and Consumer Map
 
@@ -54,8 +57,9 @@ No open boundary assumptions in this module.
 
 1. `ProtocolTargetContext` structure holds all protocol parameters.
 2. `ProtocolTargetAssumptions` bundles thm3, arithmetic obligations, and low-norm invertibility.
-3. `protocolTargetProp` defined as conjunction of target predicates.
-4. `protocolTargetProp_of_assumptions` proved by projecting from arithmetic bundle and low-norm assumption.
+3. `ProtocolTargetNativeAssumptions` bundles `ctx.bar = nativeBarMatrix`, arithmetic obligations, and low-norm invertibility.
+4. `protocolTargetProp` defined as conjunction of target predicates.
+5. `protocolTargetProp_of_assumptions` and `protocolTargetProp_of_native_assumptions` proved by projection + low-norm invertibility.
 
 ## Quality Expectations
 
@@ -70,5 +74,5 @@ No open boundary assumptions in this module.
 
 ## Out of Scope
 
-- Concrete instantiation of `ProtocolTargetAssumptions`; that belongs to protocol setup.
+- Concrete instantiation of `ProtocolTargetAssumptions` / `ProtocolTargetNativeAssumptions`; that belongs to protocol setup.
 - `matrixTransformAssumption_of_thm3CoreAssumption` is re-exported from MatrixTransform for consumers; closure is in MatrixTransform.

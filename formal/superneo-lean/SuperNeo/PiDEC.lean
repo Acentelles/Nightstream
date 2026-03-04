@@ -11,6 +11,11 @@ structure PiDECAssumptions (ctx : ProtocolTargetContext) where
   weak : PiRLCAssumptions ctx
   lowNormInvertibilityBoundary : lowNormInvertibilityAssumption Goldilocks.halfQ
 
+/-- Native assumptions consumed by the `Π_DEC` step. -/
+structure PiDECNativeAssumptions (ctx : ProtocolTargetContext) where
+  weak : PiRLCNativeAssumptions ctx
+  lowNormInvertibilityBoundary : lowNormInvertibilityAssumption Goldilocks.halfQ
+
 /-- Knowledge-style `Π_DEC` target statement. -/
 def piDECKnowledgeStatement (ctx : ProtocolTargetContext) : Prop :=
   ∃ deltaInv : Coeffs,
@@ -26,6 +31,19 @@ theorem piDEC_of_assumptions
   piDECKnowledgeStatement ctx := by
   have hWeak : piRLCWeakStatement ctx :=
     piRLCWeak_of_assumptions h.weak hWitness
+  have hWin : invertibilityWindowProp Goldilocks.halfQ ctx.invDelta :=
+    h.weak.strong.relations.target.arithmetic.invertibilityWindow
+  rcases invertibleRq_of_lowNormAssumption h.lowNormInvertibilityBoundary hWin with ⟨deltaInv, hMul⟩
+  exact ⟨deltaInv, hMul, hWeak.1, hWeak.2⟩
+
+/-- Derive `Π_DEC` statement from native weak relation and invertibility boundary. -/
+theorem piDEC_of_native_assumptions
+  {ctx : ProtocolTargetContext}
+  (h : PiDECNativeAssumptions ctx)
+  (hWitness : SumCheckTransitionWitness ctx) :
+  piDECKnowledgeStatement ctx := by
+  have hWeak : piRLCWeakStatement ctx :=
+    piRLCWeak_of_native_assumptions h.weak hWitness
   have hWin : invertibilityWindowProp Goldilocks.halfQ ctx.invDelta :=
     h.weak.strong.relations.target.arithmetic.invertibilityWindow
   rcases invertibleRq_of_lowNormAssumption h.lowNormInvertibilityBoundary hWin with ⟨deltaInv, hMul⟩

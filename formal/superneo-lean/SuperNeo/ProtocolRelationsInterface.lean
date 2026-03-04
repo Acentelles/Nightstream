@@ -32,13 +32,35 @@ abbrev ceRelaxedRelation := SuperNeo.ceRelaxedRelation
 /-! ## Key Theorems -/
 
 /-- [Role: Theorem-Target] Curated theorem surface `ceRelation_of_claimTrue`. -/
-abbrev ceRelation_of_claimTrue := SuperNeo.ceRelation_of_claimTrue
+abbrev ceRelation_of_claimTrue
+  {ctx : ProtocolTargetContext} :
+  ProtocolRelationsAssumptions ctx →
+  SumCheckClaimTrue (sumcheckInstanceOfContext ctx) →
+  ceRelation ctx :=
+  SuperNeo.ceRelation_of_claimTrue
 
 /-- [Role: Theorem-Target] Curated theorem surface `ceClaimTrue_of_ce`. -/
-abbrev ceClaimTrue_of_ce := SuperNeo.ceClaimTrue_of_ce
+abbrev ceClaimTrue_of_ce
+  {ctx : ProtocolTargetContext} :
+  ProtocolRelationsAssumptions ctx →
+  ceRelation ctx →
+  SumCheckClaimTrue (sumcheckInstanceOfContext ctx) :=
+  SuperNeo.ceClaimTrue_of_ce
+
+/-- [Role: Theorem-Target] Curated theorem surface `ceClaimTrue_of_native_ce`. -/
+abbrev ceClaimTrue_of_native_ce
+  {ctx : ProtocolTargetContext} :
+  ProtocolRelationsNativeAssumptions ctx →
+  ceRelation ctx →
+  SumCheckClaimTrue (sumcheckInstanceOfContext ctx) :=
+  SuperNeo.ceClaimTrue_of_native_ce
 
 /-- [Role: Theorem-Target] Curated theorem surface `ceRelaxedRelation_of_ce`. -/
-abbrev ceRelaxedRelation_of_ce := SuperNeo.ceRelaxedRelation_of_ce
+abbrev ceRelaxedRelation_of_ce
+  {ctx : ProtocolTargetContext} :
+  ceRelation ctx →
+  ceRelaxedRelation ctx :=
+  SuperNeo.ceRelaxedRelation_of_ce
 
 /-! ## Boundary Surfaces -/
 
@@ -46,16 +68,55 @@ abbrev ceRelaxedRelation_of_ce := SuperNeo.ceRelaxedRelation_of_ce
 abbrev SumCheckTransitionWitness := SuperNeo.SumCheckTransitionWitness
 
 /-- [Role: Boundary] Boundary surface `SumCheckTransitionWitness.accepted_exists` requiring closure. -/
-abbrev SumCheckTransitionWitness_accepted_exists := SuperNeo.SumCheckTransitionWitness.accepted_exists
+abbrev SumCheckTransitionWitness_accepted_exists
+  {ctx : ProtocolTargetContext} :
+  SumCheckTransitionWitness ctx →
+  ∃ tr : SumCheckTranscript, SumCheckAccepted (sumcheckInstanceOfContext ctx) tr :=
+  SuperNeo.SumCheckTransitionWitness.accepted_exists
 
 /-- [Role: Boundary] Boundary surface `ProtocolRelationsAssumptions` requiring closure. -/
 abbrev ProtocolRelationsAssumptions := SuperNeo.ProtocolRelationsAssumptions
 
+/-- [Role: Boundary] Native boundary bundle for protocol relations assumptions. -/
+abbrev ProtocolRelationsNativeAssumptions := SuperNeo.ProtocolRelationsNativeAssumptions
+
 /-- [Role: Boundary] Boundary surface `ccsRelation_of_assumptions` requiring closure. -/
-abbrev ccsRelation_of_assumptions := SuperNeo.ccsRelation_of_assumptions
+abbrev ccsRelation_of_assumptions
+  {ctx : ProtocolTargetContext} :
+  ProtocolRelationsAssumptions ctx →
+  ccsRelation ctx :=
+  SuperNeo.ccsRelation_of_assumptions
+
+/-- [Role: Boundary] Native constructor surface for `ccsRelation`. -/
+abbrev ccsRelation_of_native_assumptions
+  {ctx : ProtocolTargetContext} :
+  ProtocolRelationsNativeAssumptions ctx →
+  ccsRelation ctx :=
+  SuperNeo.ccsRelation_of_native_assumptions
 
 /-- [Role: Boundary] Boundary surface `ceRelation_of_assumptions` requiring closure. -/
-abbrev ceRelation_of_assumptions := SuperNeo.ceRelation_of_assumptions
+abbrev ceRelation_of_assumptions
+  {ctx : ProtocolTargetContext} :
+  ProtocolRelationsAssumptions ctx →
+  SumCheckTransitionWitness ctx →
+  ceRelation ctx :=
+  SuperNeo.ceRelation_of_assumptions
+
+/-- [Role: Boundary] Native constructor surface for `ceRelation` from witness. -/
+abbrev ceRelation_of_native_assumptions
+  {ctx : ProtocolTargetContext} :
+  ProtocolRelationsNativeAssumptions ctx →
+  SumCheckTransitionWitness ctx →
+  ceRelation ctx :=
+  SuperNeo.ceRelation_of_native_assumptions
+
+/-- [Role: Boundary] Native constructor surface for `ceRelation` from claim truth. -/
+abbrev ceRelation_of_native_claimTrue
+  {ctx : ProtocolTargetContext} :
+  ProtocolRelationsNativeAssumptions ctx →
+  SumCheckClaimTrue (sumcheckInstanceOfContext ctx) →
+  ceRelation ctx :=
+  SuperNeo.ceRelation_of_native_claimTrue
 
 end ProtocolRelationsInterface
 

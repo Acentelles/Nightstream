@@ -24,7 +24,10 @@ abbrev ArithmeticObligations := SuperNeo.ArithmeticObligations
 /-- [Role: Theorem-Target] Curated theorem surface `ArithmeticObligations.splitTerminalZero`. -/
 abbrev ArithmeticObligations_splitTerminalZero := @SuperNeo.ArithmeticObligations.splitTerminalZero
 
-/-- [Role: Theorem-Target] Theorem-native constructor deriving `evalHom` from `(P10 + P11)`. -/
+/-- [Role: Theorem-Target] Theorem-native constructor deriving `evalHom` from `P10`. -/
+abbrev ArithmeticObligations_of_p10 := @SuperNeo.ArithmeticObligations.of_p10
+
+/-- [Role: Theorem-Target] Compatibility constructor keeping `(P10 + P11)` signature. -/
 abbrev ArithmeticObligations_of_p10_p11 := @SuperNeo.ArithmeticObligations.of_p10_p11
 
 /-- [Role: Theorem-Target] Curated theorem surface `splitDecompositionNat_of_obligations`. -/

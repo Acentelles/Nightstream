@@ -44,6 +44,14 @@ abbrev barBlockIdentityAssumption := SuperNeo.barBlockIdentityAssumption
 abbrev barBlockIdentityAssumption_of_bar_size_ne_d :=
   SuperNeo.barBlockIdentityAssumption_of_bar_size_ne_d
 
+/-- [Role: Theorem-Target] Constructive linearity closure from bar-block identity. -/
+abbrev barLiftLinearityAssumption_of_barBlockIdentity :=
+  SuperNeo.barLiftLinearityAssumption_of_barBlockIdentity
+
+/-- [Role: Theorem-Target] Constructive linearity closure for fallback shape branch. -/
+abbrev barLiftLinearityAssumption_of_bar_size_ne_d :=
+  SuperNeo.barLiftLinearityAssumption_of_bar_size_ne_d
+
 /-- [Role: Theorem-Target] Curated theorem surface `barLiftVector_add`. -/
 abbrev barLiftVector_add := SuperNeo.barLiftVector_add
 

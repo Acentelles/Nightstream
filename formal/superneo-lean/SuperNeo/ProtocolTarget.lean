@@ -43,6 +43,23 @@ structure ProtocolTargetAssumptions (ctx : ProtocolTargetContext) where
     ctx.xEval ctx.expectedEval
   lowNormInvertibility : lowNormInvertibilityAssumption Goldilocks.halfQ
 
+/--
+Native protocol-target assumptions.
+
+This variant closes Theorem-3 through the canonical native bar matrix and does
+not require an explicit `thm3CoreAssumption` field.
+-/
+structure ProtocolTargetNativeAssumptions (ctx : ProtocolTargetContext) where
+  barNative : ctx.bar = nativeBarMatrix
+  arithmetic : ArithmeticObligations
+    ctx.bar ctx.m ctx.r ctx.rho1 ctx.rho2
+    ctx.hVec ctx.hScal
+    ctx.splitScalar ctx.kSplit
+    ctx.invDelta ctx.cset ctx.samples
+    ctx.xs ctx.ys ctx.qVals ctx.coeffs
+    ctx.xEval ctx.expectedEval
+  lowNormInvertibility : lowNormInvertibilityAssumption Goldilocks.halfQ
+
 /-- Protocol-target proposition (compact protocol-math-target style surface). -/
 def protocolTargetProp (ctx : ProtocolTargetContext) : Prop :=
   thm3CoreAssumption ctx.bar ∧
@@ -65,4 +82,21 @@ theorem protocolTargetProp_of_assumptions
     h.arithmetic.vecModule, h.arithmetic.scalarModule, h.arithmetic.sampling,
     h.arithmetic.mleTableSize, h.arithmetic.mleIdentityAtR, h.arithmetic.interpolation, ?_⟩
   exact invertibleRq_of_lowNormAssumption h.lowNormInvertibility h.arithmetic.invertibilityWindow
+
+/--
+Derive protocol target from native assumptions, closing Theorem-3 by rewriting
+`ctx.bar` to `nativeBarMatrix`.
+-/
+theorem protocolTargetProp_of_native_assumptions
+  {ctx : ProtocolTargetContext}
+  (h : ProtocolTargetNativeAssumptions ctx) :
+  protocolTargetProp ctx := by
+  rcases h with ⟨hBar, hArithmetic, hLowNormInvertibility⟩
+  have hThm3 : thm3CoreAssumption ctx.bar := by
+    simpa [hBar] using thm3CoreAssumption_native
+  refine ⟨hThm3, hArithmetic.splitTerminalZero, hArithmetic.evalHom,
+    hArithmetic.vecModule, hArithmetic.scalarModule, hArithmetic.sampling,
+    hArithmetic.mleTableSize, hArithmetic.mleIdentityAtR, hArithmetic.interpolation, ?_⟩
+  exact invertibleRq_of_lowNormAssumption
+    hLowNormInvertibility hArithmetic.invertibilityWindow
 end SuperNeo

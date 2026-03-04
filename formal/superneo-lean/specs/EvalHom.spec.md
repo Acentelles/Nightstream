@@ -46,7 +46,8 @@
 | Sound/complete | `evalHom2_sound`, `evalHom2_complete`, `evalHom2_iff_prop` | Check true / Prop holds | Bidirectional bridge | Theorem-Target | — |
 | From eval-link + module | `evalHomAssumption_of_evalLink_and_moduleAssumptions` | `evalLinkAssumption`, `vecModuleAssumption`, `scalarModuleAssumption` | `evalHomAssumption` | Theorem-Target | — |
 | From Thm3 + module | `evalHomAssumption_of_thm3_and_moduleAssumptions` | `thm3CoreAssumption`, module assumptions | `evalHomAssumption` | Theorem-Target | — |
-| From P10+P11 + module | `evalHomAssumption_of_p10_p11_and_moduleAssumptions` | `thm3CoreAssumption`, `barLiftLinearityAssumption`, module assumptions | `evalHomAssumption` | Theorem-Target | — |
+| From P10 + module | `evalHomAssumption_of_p10_and_moduleAssumptions` | `thm3CoreAssumption`, module assumptions | `evalHomAssumption` | Theorem-Target | — |
+| From P10+P11 + module | `evalHomAssumption_of_p10_p11_and_moduleAssumptions` | `thm3CoreAssumption`, `barLiftLinearityAssumption`, module assumptions | `evalHomAssumption` (compatibility path) | Theorem-Target | — |
 
 ## Proof Obligations and Closure Plan
 
@@ -54,7 +55,7 @@ All obligations closed. `evalHomAssumption_native` proves the Theorem-5 linearit
 1. `mleInnerProductLinearityAssumption_holds`,
 2. helper lemmas linking `linComb2Vec` to `MLE.linComb`,
 3. derived scaling lemma for `mleInnerProductForm`.
-Constructors from eval-link, Thm3, P10+P11 chain through `evalHomAssumption_of_evalLink_and_moduleAssumptions`.
+Constructors from eval-link, Thm3, P10, and P10+P11 chain through `evalHomAssumption_of_evalLink_and_moduleAssumptions`.
 
 ## Assumption Ledger
 

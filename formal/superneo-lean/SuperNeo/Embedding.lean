@@ -10,6 +10,7 @@ Embedding layer (P9 core):
 namespace SuperNeo
 
 open F
+local instance : NeZero Goldilocks.q := ⟨Nat.ne_of_gt Goldilocks.q_pos⟩
 
 /-- Element embedding: `F^d -> Coeffs`. In the compact scaffold this is identity. -/
 def embedElem (v : Array F) : Coeffs :=
@@ -92,6 +93,10 @@ def unembedVec (zr : Array Coeffs) : Array F :=
       exact (Nat.div_lt_iff_lt_mul d_pos).2 (by
         simpa [Nat.mul_comm, Nat.mul_left_comm, Nat.mul_assoc] using i.2)
     (unembedElem (zr[i.1 / d]'hBlock)).getD (i.1 % d) 0)
+
+@[simp] theorem unembedVec_size (zr : Array Coeffs) :
+    (unembedVec zr).size = zr.size * d := by
+  simp [unembedVec]
 
 private theorem d_ne_zero : d ≠ 0 := by
   unfold d
@@ -186,6 +191,86 @@ theorem unembedVec_embedVec_of_mod_eq_zero
       simpa [Nat.mul_comm, Nat.mul_left_comm, Nat.mul_assoc] using (Nat.div_add_mod i d)
     simpa [hIdx] using hLeft
 
+theorem unembedVec_vecScaleBlocks
+  (s : F)
+  (zr : Array Coeffs) :
+  unembedVec (vecScaleBlocks s zr) = vecScale s (unembedVec zr) := by
+  apply Array.ext
+  · simp [unembedVec, vecScaleBlocks, vecScale]
+  · intro i hiL hiR
+    have hBlock : i / d < zr.size := by
+      exact (Nat.div_lt_iff_lt_mul d_pos).2 (by
+        simpa [Nat.mul_comm, Nat.mul_left_comm, Nat.mul_assoc] using hiR)
+    have hBlockScaled : i / d < (vecScaleBlocks s zr).size := by
+      simpa [vecScaleBlocks] using hBlock
+    have hPoint :
+        (unembedElem (Array.map (fun x => s * x) zr[i / d]))[i % d]?.getD 0 =
+          s * (unembedElem zr[i / d])[i % d]?.getD 0 := by
+      have hMapGetD :
+          (Option.map (fun x => s * x) zr[i / d][i % d]?).getD 0 =
+            s * zr[i / d][i % d]?.getD 0 := by
+        cases hOpt : zr[i / d][i % d]? with
+        | none =>
+            simpa using (Fin.mul_zero (n := Goldilocks.q) s).symm
+        | some x =>
+            simp [hOpt]
+      simpa [unembedElem] using hMapGetD
+    simpa [unembedVec, vecScaleBlocks, vecScale, hBlock, hBlockScaled] using hPoint
+
+theorem unembedVec_vecAddBlocks_of_size_eq_of_block_size_d
+  {a b : Array Coeffs}
+  (hSize : a.size = b.size)
+  (ha : ∀ i : Fin a.size, (a[i.1]'i.2).size = d)
+  (hb : ∀ i : Fin b.size, (b[i.1]'i.2).size = d) :
+  unembedVec (vecAddBlocks a b) = vecAdd (unembedVec a) (unembedVec b) := by
+  have hUnembedSizeEq : (unembedVec a).size = (unembedVec b).size := by
+    simp [unembedVec, hSize]
+  have hLSize : (unembedVec (vecAddBlocks a b)).size = a.size * d := by
+    calc
+      (unembedVec (vecAddBlocks a b)).size
+          = (vecAddBlocks a b).size * d := by simp [unembedVec]
+      _ = a.size * d := by simpa [vecAddBlocks_size_of_eq hSize]
+  have hRSize : (vecAdd (unembedVec a) (unembedVec b)).size = a.size * d := by
+    calc
+      (vecAdd (unembedVec a) (unembedVec b)).size
+          = (unembedVec a).size := vecAdd_size_of_eq hUnembedSizeEq
+      _ = a.size * d := by simp [unembedVec]
+  apply Array.ext
+  · exact hLSize.trans hRSize.symm
+  · intro i hiL hiR
+    have hi : i < a.size * d := by simpa [hRSize] using hiR
+    have hBlockA : i / d < a.size := by
+      exact (Nat.div_lt_iff_lt_mul d_pos).2 (by simpa [Nat.mul_comm, Nat.mul_left_comm, Nat.mul_assoc] using hi)
+    have hBlockB : i / d < b.size := by
+      simpa [hSize] using hBlockA
+    have hBlockAB : i / d < (vecAddBlocks a b).size := by
+      simpa [vecAddBlocks_size_of_eq hSize] using hBlockA
+    have hOffLt : i % d < d := Nat.mod_lt i d_pos
+    have hAblock : (a[i / d]'hBlockA).size = d := ha ⟨i / d, hBlockA⟩
+    have hBblock : (b[i / d]'hBlockB).size = d := hb ⟨i / d, hBlockB⟩
+    have hCoeff :
+        coeffAt (vecAdd (a[i / d]'hBlockA) (b[i / d]'hBlockB)) (i % d) =
+          coeffAt (a[i / d]'hBlockA) (i % d) + coeffAt (b[i / d]'hBlockB) (i % d) := by
+      exact coeffAt_vecAdd_of_size_d
+        (a[i / d]'hBlockA) (b[i / d]'hBlockB) hAblock hBblock (i % d) hOffLt
+    have hGet :
+        (vecAdd (a[i / d]'hBlockA) (b[i / d]'hBlockB)).getD (i % d) 0 =
+          (a[i / d]'hBlockA).getD (i % d) 0 + (b[i / d]'hBlockB).getD (i % d) 0 := by
+      simpa [coeffAt, hOffLt] using hCoeff
+    have hLeft :
+        (unembedVec (vecAddBlocks a b))[i] =
+          (a[i / d]'hBlockA).getD (i % d) 0 + (b[i / d]'hBlockB).getD (i % d) 0 := by
+      -- unfold through block-unembedding and vecAddBlocks.
+      simpa [unembedVec, vecAddBlocks, hSize, hBlockAB, unembedElem] using hGet
+    have hRight :
+        (vecAdd (unembedVec a) (unembedVec b))[i] =
+          (a[i / d]'hBlockA).getD (i % d) 0 + (b[i / d]'hBlockB).getD (i % d) 0 := by
+      have hSizeMul : a.size * d = b.size * d := by
+        simpa [hSize]
+      unfold vecAdd
+      simp [hSizeMul, unembedVec, hBlockA, hBlockB, unembedElem]
+    exact hLeft.trans hRight.symm
+
 private theorem chunkExact_vecScale
   (s : F) (z : Array F) :
   chunkExact (vecScale s z) d = (chunkExact z d).map (vecScale s) := by
@@ -246,6 +331,29 @@ theorem embedVec_vecAdd_of_size_mod_eq_zero
     simpa [vecAdd_size_of_eq hSize] using hMod
   unfold embedVec
   simp [hAddMod, hMod, hModW, chunkExact_vecAdd hSize, map_embedElem_vecAddBlocks]
+
+/-- Every embedded block has canonical ring length `d` when `z.size % d = 0`. -/
+theorem embedVec_block_size_of_mod_eq_zero
+  {z : Array F}
+  (hMod : z.size % d = 0)
+  (i : Fin (embedVec z).size) :
+  ((embedVec z)[i.1]'i.2).size = d := by
+  have hNe : (z.size % d != 0) = false := by
+    simp [hMod]
+  have hDivMul : (z.size / d) * d = z.size := by
+    exact Nat.div_mul_cancel (Nat.dvd_of_mod_eq_zero hMod)
+  have hi : i.1 < z.size / d := by
+    simpa [embedVec, hNe, chunkExact, d_ne_zero] using i.2
+  have hStopLe : i.1 * d + d ≤ z.size := by
+    have hSucc : i.1 + 1 ≤ z.size / d := Nat.succ_le_of_lt hi
+    have hMul : (i.1 + 1) * d ≤ (z.size / d) * d := Nat.mul_le_mul_right d hSucc
+    have hMul' : i.1 * d + d ≤ (z.size / d) * d := by
+      simpa [Nat.succ_mul, Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using hMul
+    simpa [hDivMul] using hMul'
+  have hExtractSize :
+      (z.extract (i.1 * d) (i.1 * d + d)).size = d := by
+    simp [Array.size_extract, Nat.min_eq_left hStopLe, d_ne_zero]
+  simpa [embedVec, hNe, chunkExact, d_ne_zero, embedElem] using hExtractSize
 
 /-- Matrix embedding row-wise. -/
 def embedMatrix (m : Array (Array F)) : Array (Array Coeffs) :=

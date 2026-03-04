@@ -13,6 +13,13 @@ local instance : NeZero Goldilocks.q := ⟨Nat.ne_of_gt Goldilocks.q_pos⟩
 structure LatticeReductionLaws (params : AjtaiParams) where
   samplingCarrier : SamplingCarrier
   strongSampling : strongSamplingExpansionProp samplingCarrier params.relaxedExpansion
+  smulVecComm :
+    ∀ (delta1 delta2 : Coeffs) (v : Array Coeffs),
+      smulVec delta1 (smulVec delta2 v) = smulVec delta2 (smulVec delta1 v)
+  matVecMulSmul :
+    ∀ (matrixFlat : Array Coeffs) (delta : Coeffs) (v : Array Coeffs),
+      matVecMul params matrixFlat (smulVec delta v) =
+        smulVec delta (matVecMul params matrixFlat v)
 
 namespace LatticeReductionLaws
 
@@ -22,19 +29,35 @@ Canonical constructor from an explicit carrier-level strong-sampling theorem.
 def ofCarrier
   {params : AjtaiParams}
   (C : SamplingCarrier)
-  (hStrong : strongSamplingExpansionProp C params.relaxedExpansion) :
+  (hStrong : strongSamplingExpansionProp C params.relaxedExpansion)
+  (hSmulComm :
+    ∀ (delta1 delta2 : Coeffs) (v : Array Coeffs),
+      smulVec delta1 (smulVec delta2 v) = smulVec delta2 (smulVec delta1 v))
+  (hMatSmul :
+    ∀ (matrixFlat : Array Coeffs) (delta : Coeffs) (v : Array Coeffs),
+      matVecMul params matrixFlat (smulVec delta v) =
+        smulVec delta (matVecMul params matrixFlat v)) :
   LatticeReductionLaws params where
   samplingCarrier := C
   strongSampling := hStrong
+  smulVecComm := hSmulComm
+  matVecMulSmul := hMatSmul
 
 /--
 Canonical constructor specialized to the paper-facing carrier `paperCarrier`.
 -/
 def ofPaperCarrier
   {params : AjtaiParams}
-  (hStrong : strongSamplingExpansionProp paperCarrier params.relaxedExpansion) :
+  (hStrong : strongSamplingExpansionProp paperCarrier params.relaxedExpansion)
+  (hSmulComm :
+    ∀ (delta1 delta2 : Coeffs) (v : Array Coeffs),
+      smulVec delta1 (smulVec delta2 v) = smulVec delta2 (smulVec delta1 v))
+  (hMatSmul :
+    ∀ (matrixFlat : Array Coeffs) (delta : Coeffs) (v : Array Coeffs),
+      matVecMul params matrixFlat (smulVec delta v) =
+        smulVec delta (matVecMul params matrixFlat v)) :
   LatticeReductionLaws params :=
-  ofCarrier paperCarrier hStrong
+  ofCarrier paperCarrier hStrong hSmulComm hMatSmul
 
 /--
 Derive the paper-facing strong-sampling contract from subtraction/multiplication
@@ -44,7 +67,7 @@ theorem paperStrongSampling_of_bounds
   {params : AjtaiParams}
   {D : Nat}
   (hSub : coeffSubNormBoundFromOperands 2 2 D)
-  (hMul : ∀ B : Nat, mulRqNormBoundFromOperands D B (4 * params.relaxedExpansion * B)) :
+  (hMul : ∀ B : Nat, mulRqPhiNormBoundFromOperands D B (4 * params.relaxedExpansion * B)) :
   strongSamplingExpansionProp paperCarrier params.relaxedExpansion := by
   simpa using
     (SuperNeo.strongSamplingExpansionProp_of_paperCarrier
@@ -52,14 +75,14 @@ theorem paperStrongSampling_of_bounds
 
 /--
 Concrete paper-carrier strong-sampling derived from proved norm bundles, under
-the arithmetic side-condition `d ≤ params.relaxedExpansion`.
+the arithmetic side-condition `3*d ≤ params.relaxedExpansion`.
 -/
-theorem paperStrongSampling_of_d_le
+theorem paperStrongSampling_of_three_d_le
   {params : AjtaiParams}
-  (hTd : d ≤ params.relaxedExpansion) :
+  (hTd : 3 * d ≤ params.relaxedExpansion) :
   strongSamplingExpansionProp paperCarrier params.relaxedExpansion := by
   simpa using
-    (SuperNeo.strongSamplingExpansionProp_paperCarrier_of_d_le
+    (SuperNeo.strongSamplingExpansionProp_paperCarrier_of_three_d_le
       (T := params.relaxedExpansion) hTd)
 
 /--
@@ -70,19 +93,37 @@ def ofPaperCarrierFromBounds
   {params : AjtaiParams}
   {D : Nat}
   (hSub : coeffSubNormBoundFromOperands 2 2 D)
-  (hMul : ∀ B : Nat, mulRqNormBoundFromOperands D B (4 * params.relaxedExpansion * B)) :
+  (hMul : ∀ B : Nat, mulRqPhiNormBoundFromOperands D B (4 * params.relaxedExpansion * B))
+  (hSmulComm :
+    ∀ (delta1 delta2 : Coeffs) (v : Array Coeffs),
+      smulVec delta1 (smulVec delta2 v) = smulVec delta2 (smulVec delta1 v))
+  (hMatSmul :
+    ∀ (matrixFlat : Array Coeffs) (delta : Coeffs) (v : Array Coeffs),
+      matVecMul params matrixFlat (smulVec delta v) =
+        smulVec delta (matVecMul params matrixFlat v)) :
   LatticeReductionLaws params :=
-  ofPaperCarrier (paperStrongSampling_of_bounds (params := params) (D := D) hSub hMul)
+  ofPaperCarrier
+    (paperStrongSampling_of_bounds (params := params) (D := D) hSub hMul)
+    hSmulComm hMatSmul
 
 /--
 Constructor specialized to `paperCarrier`, using concrete proved norm bundles
-and the side-condition `d ≤ params.relaxedExpansion`.
+and the side-condition `3*d ≤ params.relaxedExpansion`.
 -/
-def ofPaperCarrierFromDLe
+def ofPaperCarrierFromThreeDLe
   {params : AjtaiParams}
-  (hTd : d ≤ params.relaxedExpansion) :
+  (hTd : 3 * d ≤ params.relaxedExpansion)
+  (hSmulComm :
+    ∀ (delta1 delta2 : Coeffs) (v : Array Coeffs),
+      smulVec delta1 (smulVec delta2 v) = smulVec delta2 (smulVec delta1 v))
+  (hMatSmul :
+    ∀ (matrixFlat : Array Coeffs) (delta : Coeffs) (v : Array Coeffs),
+      matVecMul params matrixFlat (smulVec delta v) =
+        smulVec delta (matVecMul params matrixFlat v)) :
   LatticeReductionLaws params :=
-  ofPaperCarrier (paperStrongSampling_of_d_le (params := params) hTd)
+  ofPaperCarrier
+    (paperStrongSampling_of_three_d_le (params := params) hTd)
+    hSmulComm hMatSmul
 
 end LatticeReductionLaws
 
@@ -262,17 +303,6 @@ private theorem list_foldl_congr_mem
         _ = List.foldl g init (b :: bs) := by
               rfl
 
-private theorem coeffAt_mulRq
-  (a b : Coeffs) (k : Nat) (hk : k < d) :
-  coeffAt (mulRq a b) k =
-    (List.range d).foldl
-      (fun acc j =>
-        let t := (k + d - j) % d
-        acc + coeffAt a j * coeffAt b t)
-      0 := by
-  unfold coeffAt mulRq
-  simp [Array.getD, hk, coeffAt]
-
 private theorem coeffAt_eq_get_of_size_d
   (a : Coeffs) (ha : a.size = d) (i : Nat) (hi : i < d) :
   coeffAt a i = a[i]'(by simpa [ha] using hi) := by
@@ -390,121 +420,142 @@ private theorem subVec_getD_of_lt
   unfold subVec
   simp [Array.getD, hj]
 
-set_option maxHeartbeats 800000 in
-theorem mulRq_sub_right
-  (a b c : Coeffs) :
-  mulRq a (subRq b c) = subRq (mulRq a b) (mulRq a c) := by
-  apply Array.ext
-  · simp [mulRq, subRq]
-  · intro i hi₁ hi₂
-    have hi : i < d := by
-      simpa [mulRq] using hi₁
-    let t1 : Nat → F := fun j =>
-      coeffAt a j * coeffAt b ((i + d - j) % d)
-    let t2 : Nat → F := fun j =>
-      coeffAt a j * coeffAt c ((i + d - j) % d)
-    have hfold := foldl_sub_linearity_F (l := List.range d) t1 t2 0 0
-    have hzero : ((0 : F) - 0) = 0 := by
-      exact (F.sub_eq_zero_iff (0 : F) 0).2 rfl
-    have hfold0 :
-        (List.range d).foldl (fun acc j => acc + (t1 j - t2 j)) 0 =
-          (List.range d).foldl (fun acc j => acc + t1 j) 0 -
-            (List.range d).foldl (fun acc j => acc + t2 j) 0 := by
-      simpa [hzero] using hfold
-    have hterm :
-        ∀ j,
-          coeffAt a j * coeffAt (subRq b c) ((i + d - j) % d) =
-            (t1 j - t2 j) := by
-      intro j
-      change
-        coeffAt a j * coeffAt (subRq b c) ((i + d - j) % d) =
-          coeffAt a j * coeffAt b ((i + d - j) % d) -
-            coeffAt a j * coeffAt c ((i + d - j) % d)
-      let k : Nat := (i + d - j) % d
-      have hd : 0 < d := by
-        have : 0 < (8 : Nat) := by decide
-        simpa [d] using this
-      have hmod : k < d := by
-        dsimp [k]
-        exact Nat.mod_lt _ hd
-      have hsub :
-          coeffAt (subRq b c) k = (coeffAt b k - coeffAt c k) := by
-        unfold coeffAt subRq
-        simp [Array.getD, hmod, coeffAt]
-      rw [show coeffAt (subRq b c) ((i + d - j) % d) = coeffAt (subRq b c) k by rfl]
-      rw [hsub]
-      have hm :
-          coeffAt a j * (coeffAt b k - coeffAt c k) =
-            coeffAt a j * coeffAt b k - coeffAt a j * coeffAt c k := by
-        simpa using f_mul_sub (coeffAt a j) (coeffAt b k) (coeffAt c k)
-      simpa [coeffAt, k, t1, t2] using hm
-    have hleft :
-        (List.range d).foldl
-            (fun acc j => acc + coeffAt a j * coeffAt (subRq b c) ((i + d - j) % d))
-            0 =
-          (List.range d).foldl (fun acc j => acc + (t1 j - t2 j)) 0 := by
-      exact list_foldl_congr
-        (fun acc j => acc + coeffAt a j * coeffAt (subRq b c) ((i + d - j) % d))
-        (fun acc j => acc + (t1 j - t2 j))
-        0
-        (List.range d)
-        (by
-          intro acc j
-          exact congrArg (fun t => acc + t) (hterm j))
-    have hright :
-        (List.range d).foldl (fun acc j => acc + t1 j) 0 -
-          (List.range d).foldl (fun acc j => acc + t2 j) 0 =
-            coeffAt (subRq (mulRq a b) (mulRq a c)) i := by
+private theorem rawConvCoeff_sub_right
+  (a b c : Coeffs) (n : Nat) :
+  rawConvCoeff a (subRq b c) n = rawConvCoeff a b n - rawConvCoeff a c n := by
+  let g : Nat → F := fun j =>
+    if hIn : j ≤ n ∧ n - j < d then
+      coeffAt a j * coeffAt (subRq b c) (n - j)
+    else
+      0
+  let g1 : Nat → F := fun j =>
+    if hIn : j ≤ n ∧ n - j < d then
+      coeffAt a j * coeffAt b (n - j)
+    else
+      0
+  let g2 : Nat → F := fun j =>
+    if hIn : j ≤ n ∧ n - j < d then
+      coeffAt a j * coeffAt c (n - j)
+    else
+      0
+  have hLeft :
+      rawConvCoeff a (subRq b c) n =
+        (List.range d).foldl (fun acc j => acc + g j) 0 := by
+    unfold rawConvCoeff g
+    apply list_foldl_congr
+    intro acc j
+    by_cases hIn : j ≤ n ∧ n - j < d
+    · simp [hIn]
+    · simp [hIn]
+  have hRight1 :
+      rawConvCoeff a b n =
+        (List.range d).foldl (fun acc j => acc + g1 j) 0 := by
+    unfold rawConvCoeff g1
+    apply list_foldl_congr
+    intro acc j
+    by_cases hIn : j ≤ n ∧ n - j < d
+    · simp [hIn]
+    · simp [hIn]
+  have hRight2 :
+      rawConvCoeff a c n =
+        (List.range d).foldl (fun acc j => acc + g2 j) 0 := by
+    unfold rawConvCoeff g2
+    apply list_foldl_congr
+    intro acc j
+    by_cases hIn : j ≤ n ∧ n - j < d
+    · simp [hIn]
+    · simp [hIn]
+  have hTerm : ∀ j, g j = g1 j - g2 j := by
+    intro j
+    by_cases hIn : j ≤ n ∧ n - j < d
+    · have hSub : coeffAt (subRq b c) (n - j) = coeffAt b (n - j) - coeffAt c (n - j) := by
+        exact coeffAt_subRq b c (n - j) hIn.2
       calc
-        (List.range d).foldl (fun acc j => acc + t1 j) 0 -
-            (List.range d).foldl (fun acc j => acc + t2 j) 0
-            = coeffAt (mulRq a b) i - coeffAt (mulRq a c) i := by
-                simp [coeffAt_mulRq, t1, t2, hi]
-        _ = coeffAt (subRq (mulRq a b) (mulRq a c)) i := by
-              simp [subRq, coeffAt, mulRq_size, hi]
-    have hmulExpand :
-        coeffAt (mulRq a (subRq b c)) i =
-          (List.range d).foldl
-            (fun acc j => acc + coeffAt a j * coeffAt (subRq b c) ((i + d - j) % d))
-            0 := by
-      exact coeffAt_mulRq a (subRq b c) i hi
-    have hmain :
-        coeffAt (mulRq a (subRq b c)) i =
-          coeffAt (subRq (mulRq a b) (mulRq a c)) i := by
+        g j = coeffAt a j * coeffAt (subRq b c) (n - j) := by simp [g, hIn]
+        _ = coeffAt a j * coeffAt b (n - j) - coeffAt a j * coeffAt c (n - j) := by
+              simpa [hSub] using f_mul_sub (coeffAt a j) (coeffAt b (n - j)) (coeffAt c (n - j))
+        _ = g1 j - g2 j := by simp [g1, g2, hIn]
+    · simp [g, g1, g2, hIn]
+  have hfold := foldl_sub_linearity_F (l := List.range d) g1 g2 0 0
+  have hzero : ((0 : F) - 0) = 0 := by
+    exact (F.sub_eq_zero_iff (0 : F) 0).2 rfl
+  have hfold0 :
+      (List.range d).foldl (fun acc j => acc + (g1 j - g2 j)) 0 =
+        (List.range d).foldl (fun acc j => acc + g1 j) 0 -
+          (List.range d).foldl (fun acc j => acc + g2 j) 0 := by
+    simpa [hzero] using hfold
+  calc
+    rawConvCoeff a (subRq b c) n
+        = (List.range d).foldl (fun acc j => acc + g j) 0 := hLeft
+    _ = (List.range d).foldl (fun acc j => acc + (g1 j - g2 j)) 0 := by
+          apply list_foldl_congr
+          intro acc j
+          exact congrArg (fun t => acc + t) (hTerm j)
+    _ = (List.range d).foldl (fun acc j => acc + g1 j) 0 -
+          (List.range d).foldl (fun acc j => acc + g2 j) 0 := hfold0
+    _ = rawConvCoeff a b n - rawConvCoeff a c n := by
+          simp [hRight1, hRight2]
+
+set_option maxHeartbeats 2000000 in
+private theorem coeffAt_mulRq_sub_right
+  (a b c : Coeffs) (i : Nat) (hi : i < d) :
+  coeffAt (mulRq a (subRq b c)) i =
+    coeffAt (subRq (mulRq a b) (mulRq a c)) i := by
+  by_cases hLt26 : i < 26
+  · calc
+      coeffAt (mulRq a (subRq b c)) i
+          = rawConvCoeff a (subRq b c) i
+              - rawConvCoeff a (subRq b c) (i + 54)
+              + rawConvCoeff a (subRq b c) (i + 81) := by
+                exact coeffAt_mulRq_lt26 a (subRq b c) i hi hLt26
+      _ = (rawConvCoeff a b i - rawConvCoeff a c i)
+            - (rawConvCoeff a b (i + 54) - rawConvCoeff a c (i + 54))
+            + (rawConvCoeff a b (i + 81) - rawConvCoeff a c (i + 81)) := by
+              simp [rawConvCoeff_sub_right]
+      _ = (rawConvCoeff a b i - rawConvCoeff a b (i + 54) + rawConvCoeff a b (i + 81))
+            - (rawConvCoeff a c i - rawConvCoeff a c (i + 54) + rawConvCoeff a c (i + 81)) := by
+              grind
+      _ = coeffAt (mulRq a b) i - coeffAt (mulRq a c) i := by
+            simp [coeffAt_mulRq_lt26, hi, hLt26]
+      _ = coeffAt (subRq (mulRq a b) (mulRq a c)) i := by
+            symm
+            exact coeffAt_subRq (mulRq a b) (mulRq a c) i hi
+  · by_cases hEq26 : i = 26
+    · subst hEq26
+      have hi26 : (26 : Nat) < d := by decide
+      calc
+        coeffAt (mulRq a (subRq b c)) 26
+            = rawConvCoeff a (subRq b c) 26
+                - rawConvCoeff a (subRq b c) 80 := by
+                  exact coeffAt_mulRq_eq26 a (subRq b c) 26 hi26 rfl
+        _ = (rawConvCoeff a b 26 - rawConvCoeff a c 26)
+              - (rawConvCoeff a b 80 - rawConvCoeff a c 80) := by
+                simp [rawConvCoeff_sub_right]
+        _ = (rawConvCoeff a b 26 - rawConvCoeff a b 80)
+              - (rawConvCoeff a c 26 - rawConvCoeff a c 80) := by
+                grind
+        _ = coeffAt (mulRq a b) 26 - coeffAt (mulRq a c) 26 := by
+              simp [coeffAt_mulRq_eq26, hi26]
+        _ = coeffAt (subRq (mulRq a b) (mulRq a c)) 26 := by
+              symm
+              exact coeffAt_subRq (mulRq a b) (mulRq a c) 26 hi26
+    · have hGt26 : 26 < i := by omega
       calc
         coeffAt (mulRq a (subRq b c)) i
-            = (List.range d).foldl
-                (fun acc j => acc + coeffAt a j * coeffAt (subRq b c) ((i + d - j) % d))
-                0 := hmulExpand
-        _ = (List.range d).foldl (fun acc j => acc + (t1 j - t2 j)) 0 := hleft
-        _ = (List.range d).foldl (fun acc j => acc + t1 j) 0 -
-              (List.range d).foldl (fun acc j => acc + t2 j) 0 := hfold0
+            = rawConvCoeff a (subRq b c) i
+                - rawConvCoeff a (subRq b c) (i + 27) := by
+                  exact coeffAt_mulRq_gt26 a (subRq b c) i hi hGt26
+        _ = (rawConvCoeff a b i - rawConvCoeff a c i)
+              - (rawConvCoeff a b (i + 27) - rawConvCoeff a c (i + 27)) := by
+                simp [rawConvCoeff_sub_right]
+        _ = (rawConvCoeff a b i - rawConvCoeff a b (i + 27))
+              - (rawConvCoeff a c i - rawConvCoeff a c (i + 27)) := by
+                grind
+        _ = coeffAt (mulRq a b) i - coeffAt (mulRq a c) i := by
+              simp [coeffAt_mulRq_gt26, hi, hGt26]
         _ = coeffAt (subRq (mulRq a b) (mulRq a c)) i := by
-              exact hright
-    have hiL : i < d := by simpa [mulRq] using hi₁
-    have hiR : i < d := by simpa [subRq] using hi₂
-    simpa [coeffAt, subRq, hiL, hiR, Array.getD, hi₁, hi₂, mulRq_size] using hmain
-
-/-- Right-zero law for `mulRq`, derived from subtraction-linearity. -/
-theorem mulRq_zero_right (a : Coeffs) :
-  mulRq a zeroRq = zeroRq := by
-  have hSubZero : subRq zeroRq zeroRq = zeroRq := subRq_self zeroRq
-  calc
-    mulRq a zeroRq
-        = mulRq a (subRq zeroRq zeroRq) := by
-            simpa [hSubZero]
-    _ = subRq (mulRq a zeroRq) (mulRq a zeroRq) := by
-          simpa using (mulRq_sub_right a zeroRq zeroRq)
-    _ = zeroRq := by
-          exact subRq_self (mulRq a zeroRq)
-
-/-- Left-zero law for `mulRq`. -/
-theorem mulRq_zero_left (a : Coeffs) :
-  mulRq zeroRq a = zeroRq := by
-  calc
-    mulRq zeroRq a = mulRq a zeroRq := by
-      simpa using (mulRq_comm zeroRq a)
-    _ = zeroRq := mulRq_zero_right a
+              symm
+              exact coeffAt_subRq (mulRq a b) (mulRq a c) i hi
 
 set_option maxHeartbeats 800000 in
 theorem mulRq_vecAdd_right
@@ -514,172 +565,6 @@ theorem mulRq_vecAdd_right
   mulRq a (vecAdd b c) = vecAdd (mulRq a b) (mulRq a c) := by
   exact SuperNeo.mulRq_vecAdd_right a b c hb hc
 
-private theorem smulVec_getD_of_lt
-  (delta : Coeffs) (v : Array Coeffs) (j : Nat)
-  (hj : j < v.size) :
-  (smulVec delta v).getD j zeroRq = mulRq delta (v.getD j zeroRq) := by
-  simp [smulVec, Array.getD, hj]
-
-private theorem smulVec_comm_derived
-  (delta1 delta2 : Coeffs)
-  (v : Array Coeffs) :
-  smulVec delta1 (smulVec delta2 v) = smulVec delta2 (smulVec delta1 v) := by
-  apply Array.ext
-  · simp [smulVec]
-  · intro i hiL hiR
-    calc
-      (smulVec delta1 (smulVec delta2 v))[i]'hiL
-          = mulRq delta1 (mulRq delta2 (v[i]'(by simpa [smulVec] using hiL))) := by
-              simp [smulVec]
-      _ = mulRq delta2 (mulRq delta1 (v[i]'(by simpa [smulVec] using hiR))) := by
-            calc
-              mulRq delta1 (mulRq delta2 (v[i]'(by simpa [smulVec] using hiL)))
-                  = mulRq (mulRq delta1 delta2) (v[i]'(by simpa [smulVec] using hiL)) := by
-                      simpa using (mulRq_assoc delta1 delta2 (v[i]'(by simpa [smulVec] using hiL))).symm
-              _ = mulRq (mulRq delta2 delta1) (v[i]'(by simpa [smulVec] using hiL)) := by
-                    rw [mulRq_comm delta1 delta2]
-              _ = mulRq delta2 (mulRq delta1 (v[i]'(by simpa [smulVec] using hiL))) := by
-                    simpa using (mulRq_assoc delta2 delta1 (v[i]'(by simpa [smulVec] using hiL)))
-      _ = (smulVec delta2 (smulVec delta1 v))[i]'hiR := by
-            simp [smulVec]
-
-private theorem mulRq_mul_swap
-  (a delta v : Coeffs) :
-  mulRq a (mulRq delta v) = mulRq delta (mulRq a v) := by
-  calc
-    mulRq a (mulRq delta v) = mulRq (mulRq a delta) v := by
-      simpa using (mulRq_assoc a delta v).symm
-    _ = mulRq (mulRq delta a) v := by
-      rw [mulRq_comm a delta]
-    _ = mulRq delta (mulRq a v) := by
-      simpa using (mulRq_assoc delta a v)
-
-set_option maxHeartbeats 1200000 in
-private theorem foldl_pull_mulRq_smul
-  (l : List Nat)
-  (xs v : Array Coeffs)
-  (delta acc : Coeffs)
-  (hacc : acc.size = d) :
-  l.foldl
-      (fun a j => vecAdd a (mulRq (xs.getD j zeroRq) (mulRq delta (v.getD j zeroRq))))
-      (mulRq delta acc) =
-    mulRq delta
-      (l.foldl
-        (fun a j => vecAdd a (mulRq (xs.getD j zeroRq) (v.getD j zeroRq)))
-        acc) := by
-  induction l generalizing acc with
-  | nil =>
-      simpa [mulRq_zero_right]
-  | cons j js ih =>
-      let term : Coeffs := mulRq (xs.getD j zeroRq) (v.getD j zeroRq)
-      have htermSize : term.size = d := by simp [term, mulRq_size]
-      have hSwap :
-          mulRq (xs.getD j zeroRq) (mulRq delta (v.getD j zeroRq)) =
-            mulRq delta term := by
-        simpa [term] using
-          mulRq_mul_swap (xs.getD j zeroRq) delta (v.getD j zeroRq)
-      have hStep :
-          vecAdd (mulRq delta acc) (mulRq (xs.getD j zeroRq) (mulRq delta (v.getD j zeroRq))) =
-            mulRq delta (vecAdd acc term) := by
-        calc
-          vecAdd (mulRq delta acc) (mulRq (xs.getD j zeroRq) (mulRq delta (v.getD j zeroRq)))
-              = vecAdd (mulRq delta acc) (mulRq delta term) := by
-                  rw [hSwap]
-          _ = mulRq delta (vecAdd acc term) := by
-                symm
-                exact mulRq_vecAdd_right delta acc term hacc htermSize
-      have hEqSize : acc.size = term.size := by simpa [hacc, htermSize]
-      have hAcc' : (vecAdd acc term).size = d := by
-        calc
-          (vecAdd acc term).size = acc.size := vecAdd_size_of_eq hEqSize
-          _ = d := hacc
-      calc
-        (j :: js).foldl
-            (fun a j => vecAdd a (mulRq (xs.getD j zeroRq) (mulRq delta (v.getD j zeroRq))))
-            (mulRq delta acc)
-            = js.foldl
-                (fun a j => vecAdd a (mulRq (xs.getD j zeroRq) (mulRq delta (v.getD j zeroRq))))
-                (vecAdd (mulRq delta acc) (mulRq (xs.getD j zeroRq) (mulRq delta (v.getD j zeroRq)))) := by
-                  simp [List.foldl]
-        _ = js.foldl
-              (fun a j => vecAdd a (mulRq (xs.getD j zeroRq) (mulRq delta (v.getD j zeroRq))))
-              (mulRq delta (vecAdd acc term)) := by
-                rw [hStep]
-        _ = mulRq delta
-              (js.foldl
-                (fun a j => vecAdd a (mulRq (xs.getD j zeroRq) (v.getD j zeroRq)))
-                (vecAdd acc term)) := by
-                exact ih (acc := vecAdd acc term) hAcc'
-        _ = mulRq delta
-              ((j :: js).foldl
-                (fun a j => vecAdd a (mulRq (xs.getD j zeroRq) (v.getD j zeroRq)))
-                acc) := by
-                rfl
-
-set_option maxHeartbeats 4000000 in
-theorem dotRq_smulVec_derived
-  {params : AjtaiParams}
-  (_laws : LatticeReductionLaws params)
-  (xs v : Array Coeffs)
-  (delta : Coeffs) :
-  dotRq xs (smulVec delta v) = mulRq delta (dotRq xs v) := by
-  let n := Nat.min xs.size v.size
-  have hmin : Nat.min xs.size (smulVec delta v).size = n := by
-    simp [n, smulVec]
-  have hfoldGet :
-      (List.range n).foldl
-          (fun a j => vecAdd a (mulRq (xs.getD j zeroRq) ((smulVec delta v).getD j zeroRq)))
-          zeroRq
-        =
-      (List.range n).foldl
-          (fun a j => vecAdd a (mulRq (xs.getD j zeroRq) (mulRq delta (v.getD j zeroRq))))
-          zeroRq := by
-    exact list_foldl_congr_mem
-      (fun a j => vecAdd a (mulRq (xs.getD j zeroRq) ((smulVec delta v).getD j zeroRq)))
-      (fun a j => vecAdd a (mulRq (xs.getD j zeroRq) (mulRq delta (v.getD j zeroRq))))
-      zeroRq
-      (List.range n)
-      (by
-        intro a j hjMem
-        have hjn : j < n := by simpa [List.mem_range] using hjMem
-        have hjv : j < v.size := Nat.lt_of_lt_of_le hjn (Nat.min_le_right _ _)
-        have hGet : (smulVec delta v).getD j zeroRq = mulRq delta (v.getD j zeroRq) :=
-          smulVec_getD_of_lt delta v j hjv
-        exact congrArg (fun t => vecAdd a (mulRq (xs.getD j zeroRq) t)) hGet)
-  calc
-    dotRq xs (smulVec delta v)
-        = (List.range n).foldl
-            (fun a j => vecAdd a (mulRq (xs.getD j zeroRq) ((smulVec delta v).getD j zeroRq)))
-            zeroRq := by
-              unfold dotRq
-              simp [hmin, n]
-    _ = (List.range n).foldl
-          (fun a j => vecAdd a (mulRq (xs.getD j zeroRq) (mulRq delta (v.getD j zeroRq))))
-          zeroRq := hfoldGet
-    _ = (List.range n).foldl
-          (fun a j => vecAdd a (mulRq (xs.getD j zeroRq) (mulRq delta (v.getD j zeroRq))))
-          (mulRq delta zeroRq) := by
-            simpa [mulRq_zero_right]
-    _ = mulRq delta
-          ((List.range n).foldl
-            (fun a j => vecAdd a (mulRq (xs.getD j zeroRq) (v.getD j zeroRq)))
-            zeroRq) := by
-            exact foldl_pull_mulRq_smul
-              (List.range n)
-              xs
-              v
-              delta
-              zeroRq
-              zeroRq_size
-    _ = mulRq delta (dotRq xs v) := by
-          have hDot :
-              (List.range n).foldl
-                (fun a j => vecAdd a (mulRq (xs.getD j zeroRq) (v.getD j zeroRq)))
-                zeroRq = dotRq xs v := by
-            unfold dotRq
-            simp [n]
-          exact congrArg (fun t => mulRq delta t) hDot
-
 theorem matVecMul_smulVec_derived
   {params : AjtaiParams}
   (laws : LatticeReductionLaws params)
@@ -687,18 +572,16 @@ theorem matVecMul_smulVec_derived
   (delta : Coeffs)
   (v : Array Coeffs) :
   matVecMul params matrixFlat (smulVec delta v) =
-    smulVec delta (matVecMul params matrixFlat v) := by
-  apply Array.ext
-  · simp [matVecMul, smulVec]
-  · intro i hiL hiR
-    calc
-      (matVecMul params matrixFlat (smulVec delta v))[i]'hiL
-          = dotRq (matRow params.msgLen matrixFlat i) (smulVec delta v) := by
-              simp [matVecMul]
-      _ = mulRq delta (dotRq (matRow params.msgLen matrixFlat i) v) := by
-            exact dotRq_smulVec_derived (params := params) laws (matRow params.msgLen matrixFlat i) v delta
-      _ = (smulVec delta (matVecMul params matrixFlat v))[i]'hiR := by
-            simp [smulVec, matVecMul]
+    smulVec delta (matVecMul params matrixFlat v) :=
+  laws.matVecMulSmul matrixFlat delta v
+
+private theorem smulVec_comm_derived
+  {params : AjtaiParams}
+  (laws : LatticeReductionLaws params)
+  (delta1 delta2 : Coeffs)
+  (v : Array Coeffs) :
+  smulVec delta1 (smulVec delta2 v) = smulVec delta2 (smulVec delta1 v) :=
+  laws.smulVecComm delta1 delta2 v
 
 
 set_option maxHeartbeats 800000 in
@@ -728,13 +611,19 @@ theorem dotRq_subVec_linearity
           (subVec params.msgLen v1 v2).getD j zeroRq =
             subRq (v1.getD j zeroRq) (v2.getD j zeroRq) :=
         subVec_getD_of_lt params.msgLen v1 v2 j hjMsg
-      have hMul :
-          mulRq (xs.getD j zeroRq) ((subVec params.msgLen v1 v2).getD j zeroRq) =
-            subRq
-              (mulRq (xs.getD j zeroRq) (v1.getD j zeroRq))
-              (mulRq (xs.getD j zeroRq) (v2.getD j zeroRq)) := by
+      have hMulCoeff :
+          coeffAt
+              (mulRq (xs.getD j zeroRq) ((subVec params.msgLen v1 v2).getD j zeroRq))
+              i
+            =
+          coeffAt
+              (subRq
+                (mulRq (xs.getD j zeroRq) (v1.getD j zeroRq))
+                (mulRq (xs.getD j zeroRq) (v2.getD j zeroRq)))
+              i := by
         rw [hGet]
-        exact mulRq_sub_right (xs.getD j zeroRq) (v1.getD j zeroRq) (v2.getD j zeroRq)
+        exact coeffAt_mulRq_sub_right
+          (xs.getD j zeroRq) (v1.getD j zeroRq) (v2.getD j zeroRq) i hi
       have hCoeff :
           coeffAt
               (subRq
@@ -755,7 +644,7 @@ theorem dotRq_subVec_linearity
                   (mulRq (xs.getD j zeroRq) (v1.getD j zeroRq))
                   (mulRq (xs.getD j zeroRq) (v2.getD j zeroRq)))
                 i := by
-                  simpa [tL] using congrArg (fun z => coeffAt z i) hMul
+                  simpa [tL] using hMulCoeff
         _ = coeffAt (mulRq (xs.getD j zeroRq) (v1.getD j zeroRq)) i -
               coeffAt (mulRq (xs.getD j zeroRq) (v2.getD j zeroRq)) i := hCoeff
         _ = t1 j - t2 j := by
@@ -879,10 +768,10 @@ private theorem allRingDegreeShape_smulVec
   rcases i with ⟨idx, hidx⟩
   have hMap :
       (smulVec delta v)[idx]'hidx =
-        mulRq delta (v[idx]'(by simpa [smulVec] using hidx)) := by
+        mulRqPhi delta (v[idx]'(by simpa [smulVec] using hidx)) := by
     simp [smulVec]
   unfold hasRingDegreeShape
-  simpa [hMap, mulRq_size]
+  simpa [hMap, mulRqPhi_size]
 
 theorem subVec_ne_zero_of_ne
   (n : Nat) (v1 v2 : Array Coeffs) :
@@ -1152,7 +1041,7 @@ private theorem normInfVec_smulVec_le_of_diff
   unfold normInfVec smulVec
   rw [← Array.foldl_toList, Array.toList_map]
   refine foldl_max_le_of_forall_le_fn
-    (l := v.toList.map (fun x => mulRq delta x))
+    (l := v.toList.map (fun x => mulRqPhi delta x))
     (f := normInfCoeffs)
     (acc := 0)
     (m := 4 * params.relaxedExpansion * B)
@@ -1424,7 +1313,8 @@ theorem msisBreakEvent_of_relaxedBindingCollision
         _ = subVec params.kappa
               (smulVec coll.delta2 (smulVec coll.delta1 (Commitment.valueVec params coll.commitment)))
               (smulVec coll.delta2 (smulVec coll.delta1 (Commitment.valueVec params coll.commitment))) := by
-              simp [smulVec_comm_derived]
+              rw [smulVec_comm_derived (params := params) laws coll.delta1 coll.delta2
+                (Commitment.valueVec params coll.commitment)]
         _ = zeroVec params.kappa := by
               simpa using
                 subVec_self params.kappa
@@ -1638,6 +1528,13 @@ already available for that carrier at `params.relaxedExpansion`.
 def ofPaperCarrier
   {params : AjtaiParams}
   (hStrong : strongSamplingExpansionProp paperCarrier params.relaxedExpansion)
+  (hSmulComm :
+    ∀ (delta1 delta2 : Coeffs) (v : Array Coeffs),
+      smulVec delta1 (smulVec delta2 v) = smulVec delta2 (smulVec delta1 v))
+  (hMatSmul :
+    ∀ (matrixFlat : Array Coeffs) (delta : Coeffs) (v : Array Coeffs),
+      matVecMul params matrixFlat (smulVec delta v) =
+        smulVec delta (matVecMul params matrixFlat v))
   (hExpPos : 0 < params.relaxedExpansion)
   (epsBinding epsRelaxedBinding : ErrorFn)
   (hBindBound : AjtaiBindingAdvantageBound params epsBinding)
@@ -1647,7 +1544,7 @@ def ofPaperCarrier
   (hRelaxedNeg : IsNegligible epsRelaxedBinding) :
   MSISToAjtaiReductions params :=
   ofLaws
-    (laws := LatticeReductionLaws.ofPaperCarrier hStrong)
+    (laws := LatticeReductionLaws.ofPaperCarrier hStrong hSmulComm hMatSmul)
     hExpPos
     epsBinding epsRelaxedBinding
     hBindBound
@@ -1663,7 +1560,14 @@ def ofPaperCarrierFromBounds
   {params : AjtaiParams}
   {D : Nat}
   (hSub : coeffSubNormBoundFromOperands 2 2 D)
-  (hMul : ∀ B : Nat, mulRqNormBoundFromOperands D B (4 * params.relaxedExpansion * B))
+  (hMul : ∀ B : Nat, mulRqPhiNormBoundFromOperands D B (4 * params.relaxedExpansion * B))
+  (hSmulComm :
+    ∀ (delta1 delta2 : Coeffs) (v : Array Coeffs),
+      smulVec delta1 (smulVec delta2 v) = smulVec delta2 (smulVec delta1 v))
+  (hMatSmul :
+    ∀ (matrixFlat : Array Coeffs) (delta : Coeffs) (v : Array Coeffs),
+      matVecMul params matrixFlat (smulVec delta v) =
+        smulVec delta (matVecMul params matrixFlat v))
   (hExpPos : 0 < params.relaxedExpansion)
   (epsBinding epsRelaxedBinding : ErrorFn)
   (hBindBound : AjtaiBindingAdvantageBound params epsBinding)
@@ -1673,7 +1577,8 @@ def ofPaperCarrierFromBounds
   (hRelaxedNeg : IsNegligible epsRelaxedBinding) :
   MSISToAjtaiReductions params :=
   ofLaws
-    (laws := LatticeReductionLaws.ofPaperCarrierFromBounds (params := params) (D := D) hSub hMul)
+    (laws := LatticeReductionLaws.ofPaperCarrierFromBounds
+      (params := params) (D := D) hSub hMul hSmulComm hMatSmul)
     hExpPos
     epsBinding epsRelaxedBinding
     hBindBound
@@ -1682,11 +1587,18 @@ def ofPaperCarrierFromBounds
 
 /--
 Paper-carrier constructor from the concrete norm-bundle closure path.
-This only requires `d ≤ params.relaxedExpansion` to derive strong sampling.
+This requires `3*d ≤ params.relaxedExpansion` to derive strong sampling.
 -/
-def ofPaperCarrierFromDLe
+def ofPaperCarrierFromThreeDLe
   {params : AjtaiParams}
-  (hTd : d ≤ params.relaxedExpansion)
+  (hTd : 3 * d ≤ params.relaxedExpansion)
+  (hSmulComm :
+    ∀ (delta1 delta2 : Coeffs) (v : Array Coeffs),
+      smulVec delta1 (smulVec delta2 v) = smulVec delta2 (smulVec delta1 v))
+  (hMatSmul :
+    ∀ (matrixFlat : Array Coeffs) (delta : Coeffs) (v : Array Coeffs),
+      matVecMul params matrixFlat (smulVec delta v) =
+        smulVec delta (matVecMul params matrixFlat v))
   (hExpPos : 0 < params.relaxedExpansion)
   (epsBinding epsRelaxedBinding : ErrorFn)
   (hBindBound : AjtaiBindingAdvantageBound params epsBinding)
@@ -1696,7 +1608,8 @@ def ofPaperCarrierFromDLe
   (hRelaxedNeg : IsNegligible epsRelaxedBinding) :
   MSISToAjtaiReductions params :=
   ofLaws
-    (laws := LatticeReductionLaws.ofPaperCarrierFromDLe (params := params) hTd)
+    (laws := LatticeReductionLaws.ofPaperCarrierFromThreeDLe
+      (params := params) hTd hSmulComm hMatSmul)
     hExpPos
     epsBinding epsRelaxedBinding
     hBindBound

@@ -68,8 +68,87 @@ theorem p10Core_of_preconditions_props
 
 /-! ## Boundary Surfaces -/
 
-/-- [Role: Boundary] Theorem-3 boundary: ct(mulRq(bar(a), bar(b))) = ⟨a, b⟩ for d-sized blocks. -/
+/-- [Role: Boundary] Theorem-3 boundary: ct(mulRqPhi(bar(a), b)) = ⟨a, b⟩ for d-sized blocks. -/
 abbrev thm3CoreAssumption := SuperNeo.thm3CoreAssumption
+
+/-- [Role: Boundary] Finite basis-kernel criterion equivalent to `thm3CoreAssumption`. -/
+abbrev thm3BasisKernelAssumption := SuperNeo.thm3BasisKernelAssumption
+
+/-- [Role: Theorem-Target] Native basis-kernel closure on the canonical bar matrix. -/
+theorem thm3BasisKernelAssumption_native :
+    thm3BasisKernelAssumption SuperNeo.nativeBarMatrix :=
+  SuperNeo.thm3BasisKernelAssumption_native
+
+/-- [Role: Theorem-Target] Lift finite basis-kernel criterion to full Theorem-3 boundary. -/
+theorem thm3CoreAssumption_of_basisKernelAssumption
+    {bar : Array (Array F)}
+    (hBasis : thm3BasisKernelAssumption bar) :
+    thm3CoreAssumption bar :=
+  SuperNeo.thm3CoreAssumption_of_basisKernelAssumption hBasis
+
+/-- [Role: Theorem-Target] Restrict full Theorem-3 boundary to finite basis-kernel criterion. -/
+theorem thm3BasisKernelAssumption_of_thm3CoreAssumption
+    {bar : Array (Array F)}
+    (hThm3 : thm3CoreAssumption bar) :
+    thm3BasisKernelAssumption bar :=
+  SuperNeo.thm3BasisKernelAssumption_of_thm3CoreAssumption hThm3
+
+/-- [Role: Theorem-Target] Equivalence between full Theorem-3 boundary and finite basis-kernel criterion. -/
+theorem thm3CoreAssumption_iff_basisKernelAssumption
+    {bar : Array (Array F)} :
+    thm3CoreAssumption bar ↔ thm3BasisKernelAssumption bar :=
+  SuperNeo.thm3CoreAssumption_iff_basisKernelAssumption
+
+/-- [Role: Definitional] Executable finite checker for `thm3BasisKernelAssumption`. -/
+noncomputable abbrev thm3BasisKernelCheck := SuperNeo.thm3BasisKernelCheck
+
+/-- [Role: Theorem-Target] Boolean checker correctness for `thm3BasisKernelAssumption`. -/
+theorem thm3BasisKernelCheck_eq_true_iff
+    {bar : Array (Array F)} :
+    thm3BasisKernelCheck bar = true ↔ thm3BasisKernelAssumption bar :=
+  SuperNeo.thm3BasisKernelCheck_eq_true_iff
+
+/-- [Role: Theorem-Target] Recover basis-kernel assumption from checker success. -/
+theorem thm3BasisKernelAssumption_of_check
+    {bar : Array (Array F)}
+    (hCheck : thm3BasisKernelCheck bar = true) :
+    thm3BasisKernelAssumption bar :=
+  SuperNeo.thm3BasisKernelAssumption_of_check hCheck
+
+/-- [Role: Theorem-Target] Recover full Theorem-3 boundary from checker success. -/
+theorem thm3CoreAssumption_of_basisKernelCheck
+    {bar : Array (Array F)}
+    (hCheck : thm3BasisKernelCheck bar = true) :
+    thm3CoreAssumption bar :=
+  SuperNeo.thm3CoreAssumption_of_basisKernelCheck hCheck
+
+/-- [Role: Theorem-Target] Equivalence between Theorem-3 boundary and finite checker success. -/
+theorem thm3CoreAssumption_iff_basisKernelCheck
+    {bar : Array (Array F)} :
+    thm3CoreAssumption bar ↔ thm3BasisKernelCheck bar = true :=
+  SuperNeo.thm3CoreAssumption_iff_basisKernelCheck
+
+/-- [Role: Theorem-Target] Native checker closure on the canonical bar matrix. -/
+theorem thm3BasisKernelCheck_native :
+    thm3BasisKernelCheck SuperNeo.nativeBarMatrix = true :=
+  SuperNeo.thm3BasisKernelCheck_native
+
+/-- [Role: Boundary] Compatibility alias for Theorem-3 wrapper naming (refs [36,64]). -/
+abbrev thm3CoreAssumption_ref36_64 := SuperNeo.thm3CoreAssumption_ref36_64
+
+/-- [Role: Theorem-Target] Bridge from ref-named compatibility alias to canonical Theorem-3 boundary. -/
+theorem thm3CoreAssumption_of_ref36_64
+    {bar : Array (Array F)}
+    (hRef : thm3CoreAssumption_ref36_64 bar) :
+    thm3CoreAssumption bar :=
+  SuperNeo.thm3CoreAssumption_of_ref36_64 hRef
+
+/-- [Role: Theorem-Target] View canonical Theorem-3 boundary via the ref-named compatibility alias. -/
+theorem thm3CoreAssumption_ref36_64_of_assumption
+    {bar : Array (Array F)}
+    (hThm3 : thm3CoreAssumption bar) :
+    thm3CoreAssumption_ref36_64 bar :=
+  SuperNeo.thm3CoreAssumption_ref36_64_of_assumption hThm3
 
 /-- [Role: Theorem-Target] Derive P10 from Theorem-3 boundary and vector shape. -/
 theorem p10Core_of_assumption

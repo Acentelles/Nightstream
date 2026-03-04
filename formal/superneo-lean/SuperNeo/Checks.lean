@@ -37,7 +37,7 @@ private def toF3 (m : Array (Array (Array Nat))) : Array (Array (Array F)) :=
 private def checkSuperCase (bar : Array (Array F)) (c : SuperNeoCase) : Bool :=
   let a := toFArray c.a
   let b := toFArray c.b
-  let lhs := ct (mulRq (superneoBarBlock bar a) b)
+  let lhs := ct (mulRqPhi (superneoBarBlock bar a) b)
   let rhs := dot a b
   let expCt := toF c.expectedCt
   let expDot := toF c.expectedDot
@@ -46,7 +46,7 @@ private def checkSuperCase (bar : Array (Array F)) (c : SuperNeoCase) : Bool :=
 private def checkRingCase (c : RingMulCase) : Bool :=
   let a := toFArray c.a
   let b := toFArray c.b
-  let got := mulRq a b
+  let got := mulRqPhi a b
   let exp := toFArray c.expected
   decide (got = exp)
 

@@ -5,7 +5,7 @@ Theorem-4 matrix-transform layer (paper-faithful).
 
 Reading guide:
 1. `matrixVecDirect` is the direct field-level matrix-vector computation.
-2. `matrixVecCtBar` is the ring-level side: block-wise ct(mulRq(bar(·), bar(·))).
+2. `matrixVecCtBar` is the ring-level side: block-wise ct(mulRqPhi(bar(·), ·)).
 3. `matrixTransformIdentity` is the executable check surface.
 4. `matrixTransformAssumption` is the theorem-facing boundary used downstream.
 5. `_of_assumption`, `_of_checkAssumption`, `_iff_...` are check/prop bridges.
@@ -28,15 +28,15 @@ private theorem d_ne_zero : d ≠ 0 := Nat.ne_of_gt d_pos
 
 /-! ### Ring-level block operations for paper-faithful Theorem 4 -/
 
-/-- Constant term of ring product of bar-transformed blocks (Theorem 3 kernel). -/
+/-- Constant term of ring product with bar transform on the left block (Theorem 3 kernel). -/
 def ctBarDot (bar : Array (Array F)) (a b : Array F) : F :=
-  ct (mulRq (superneoBarBlock bar a) (superneoBarBlock bar b))
+  ct (mulRqPhi (superneoBarBlock bar a) b)
 
 /-- Extract the j-th d-sized block from a field vector. -/
 def extractBlock (v : Array F) (j : Nat) : Array F :=
   v.extract (j * d) ((j + 1) * d)
 
-/-- Ring-level dot product: Σ_j ct(mulRq(bar(row_j), bar(z_j))) over d-sized blocks. -/
+/-- Ring-level dot product: Σ_j ct(mulRqPhi(bar(row_j), z_j)) over d-sized blocks. -/
 def ringBlockDot (bar : Array (Array F)) (row z : Array F) : F :=
   let nR := min (row.size / d) (z.size / d)
   (List.range nR).foldl (fun acc j =>
@@ -52,7 +52,7 @@ def directBlockDot (row z : Array F) : F :=
 def matrixVecDirect (m : Array (Array F)) (z : Array F) : Array F :=
   m.map (fun row => directBlockDot row z)
 
-/-- Bar-lifted matrix-vector side (paper: ct(M̄z̄) via block-wise ring products). -/
+/-- Bar-lifted matrix-vector side (paper: ct(M̄z) via block-wise ring products). -/
 def matrixVecCtBar (bar : Array (Array F)) (m : Array (Array F)) (z : Array F) : Array F :=
   m.map (fun row => ringBlockDot bar row z)
 
@@ -265,6 +265,13 @@ theorem matrixTransformAssumption_of_thm3CoreAssumption
   intro z hRows
   exact matrixTransformEq_of_thm3CoreAssumption hThm3 hRows
 
+/-- Theorem-native `P12` constructor from `P10` only. -/
+theorem matrixTransformAssumption_of_p10
+  {bar : Array (Array F)} {m : Array (Array F)}
+  (hThm3 : thm3CoreAssumption bar) :
+  matrixTransformAssumption bar m := by
+  exact matrixTransformAssumption_of_thm3CoreAssumption hThm3
+
 /--
 Theorem-native `P12` constructor from `(P10 + P11)` boundaries.
 
@@ -275,7 +282,31 @@ theorem matrixTransformAssumption_of_p10_p11
   (hThm3 : thm3CoreAssumption bar)
   (_hLift : barLiftLinearityAssumption bar) :
   matrixTransformAssumption bar m := by
-  exact matrixTransformAssumption_of_thm3CoreAssumption hThm3
+  exact matrixTransformAssumption_of_p10 hThm3
+
+/--
+Native theorem-stack constructor: instantiate P12 directly from the canonical
+Theorem-3 closure theorem (`thm3CoreAssumption_native`), without threading an
+explicit `hThm3` argument.
+-/
+theorem matrixTransformAssumption_native
+  (m : Array (Array F)) :
+  matrixTransformAssumption nativeBarMatrix m := by
+  exact matrixTransformAssumption_of_thm3CoreAssumption
+    (bar := nativeBarMatrix)
+    (m := m)
+    thm3CoreAssumption_native
+
+/--
+Rewrite helper: if `bar = nativeBarMatrix`, obtain P12 without explicitly
+passing `thm3CoreAssumption bar`.
+-/
+theorem matrixTransformAssumption_of_bar_eq_native
+  {bar : Array (Array F)} {m : Array (Array F)}
+  (hBar : bar = nativeBarMatrix) :
+  matrixTransformAssumption bar m := by
+  subst hBar
+  exact matrixTransformAssumption_native m
 
 /-- Convert theorem-facing transform contract into the check-facing form. -/
 theorem matrixTransformCheckAssumption_of_assumption

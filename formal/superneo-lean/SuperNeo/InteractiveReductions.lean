@@ -11,6 +11,11 @@ structure InteractiveReductionAssumptions (ctx : ProtocolTargetContext) where
   reduction : PiDECAssumptions ctx
   sumcheckTransitionWitness : SumCheckTransitionWitness ctx
 
+/-- Native assumptions for composed interactive reductions. -/
+structure InteractiveReductionNativeAssumptions (ctx : ProtocolTargetContext) where
+  reduction : PiDECNativeAssumptions ctx
+  sumcheckTransitionWitness : SumCheckTransitionWitness ctx
+
 /-- Strong composition statement (knowledge-style). -/
 def strongCompositionStatement (ctx : ProtocolTargetContext) : Prop :=
   piDECKnowledgeStatement ctx
@@ -33,6 +38,21 @@ theorem weakComposition_of_assumptions
   (h : InteractiveReductionAssumptions ctx) :
   weakCompositionStatement ctx := by
   rcases strongComposition_of_assumptions h with ⟨_deltaInv, _hMul, hWeak, hClaim⟩
+  exact ⟨hWeak, hClaim⟩
+
+/-- Strong composed reduction theorem (native assumption path). -/
+theorem strongComposition_of_native_assumptions
+  {ctx : ProtocolTargetContext}
+  (h : InteractiveReductionNativeAssumptions ctx) :
+  strongCompositionStatement ctx := by
+  exact piDEC_of_native_assumptions h.reduction h.sumcheckTransitionWitness
+
+/-- Weak composed reduction theorem (native assumption path). -/
+theorem weakComposition_of_native_assumptions
+  {ctx : ProtocolTargetContext}
+  (h : InteractiveReductionNativeAssumptions ctx) :
+  weakCompositionStatement ctx := by
+  rcases strongComposition_of_native_assumptions h with ⟨_deltaInv, _hMul, hWeak, hClaim⟩
   exact ⟨hWeak, hClaim⟩
 
 end SuperNeo

@@ -13,3 +13,4 @@ demos/ios-demo/TestingWasm.xcodeproj/project.xcworkspace/xcuserdata/nicolasarque
 formal/superneo-lean/.lake
 formal/external
 formal/superneo-lean/deprecated
+formal/superneo-lean/bundles

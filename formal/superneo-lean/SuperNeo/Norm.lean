@@ -55,6 +55,13 @@ def mulRqNormBoundFromOperands (BA BB B : Nat) : Prop :=
     normInfCoeffs b ≤ BB →
     normInfCoeffs (mulRq a b) ≤ B
 
+/-- Assumption bundle: cyclotomic ring multiplication norm bound from operand norms. -/
+def mulRqPhiNormBoundFromOperands (BA BB B : Nat) : Prop :=
+  ∀ a b : Coeffs,
+    normInfCoeffs a ≤ BA →
+    normInfCoeffs b ≤ BB →
+    normInfCoeffs (mulRqPhi a b) ≤ B
+
 /-- Assumption bundle: subtraction norm bound from operand norms. -/
 def coeffSubNormBoundFromOperands (BA BB B : Nat) : Prop :=
   ∀ a b : Coeffs, a.size = b.size →
@@ -108,6 +115,13 @@ theorem mulRqNormBoundFromOperands_of_global
     {BA BB B : Nat}
     (hGlobal : ∀ a b : Coeffs, normInfCoeffs (mulRq a b) ≤ B) :
     mulRqNormBoundFromOperands BA BB B := by
+  intro a b _hA _hB
+  exact hGlobal a b
+
+theorem mulRqPhiNormBoundFromOperands_of_global
+    {BA BB B : Nat}
+    (hGlobal : ∀ a b : Coeffs, normInfCoeffs (mulRqPhi a b) ≤ B) :
+    mulRqPhiNormBoundFromOperands BA BB B := by
   intro a b _hA _hB
   exact hGlobal a b
 
@@ -280,62 +294,238 @@ private theorem normInfF_foldl_add_range_le
     normInfF_foldl_add_le_with_init (l := List.range d) (t := t) (init := 0) (M := M) hM
   simpa [normInfF_zero, List.length_range] using h
 
+private theorem foldl_acc_if_eq_foldl_add_if
+  (l : List Nat)
+  (n : Nat)
+  (f : Nat → F)
+  (acc : F) :
+  l.foldl
+      (fun acc i =>
+        if hIn : i ≤ n ∧ n - i < d then
+          acc + f i
+        else
+          acc)
+      acc
+    =
+    l.foldl
+      (fun acc i =>
+        acc + (if hIn : i ≤ n ∧ n - i < d then f i else 0))
+      acc := by
+  induction l generalizing acc with
+  | nil =>
+      simp
+  | cons i is ih =>
+      by_cases hIn : i ≤ n ∧ n - i < d
+      · simpa [List.foldl, hIn] using ih (acc := acc + f i)
+      · simpa [List.foldl, hIn] using ih (acc := acc)
+
 set_option maxHeartbeats 1000000 in
-theorem normInfF_coeffAt_mulRq_le_of_left_four
+theorem normInfF_coeffAt_mulRqPhi_le_of_left_four
   (a b : Coeffs)
   (i : Nat) (hi : i < d)
   {B : Nat}
   (hA : normInfCoeffs a ≤ 4)
   (hB : normInfCoeffs b ≤ B) :
-  normInfF (coeffAt (mulRq a b) i) ≤ 4 * d * B := by
-  let term : Nat → F := fun j => coeffAt a j * coeffAt b ((i + d - j) % d)
+  normInfF (coeffAt (mulRqPhi a b) i) ≤ 12 * d * B := by
+  let rawM : Nat := d * (4 * B)
+  have hRawBound : ∀ n : Nat, normInfF (rawConvCoeff a b n) ≤ rawM := by
+    intro n
+    let term : Nat → F := fun j =>
+      if hIn : j ≤ n ∧ n - j < d then
+        coeffAt a j * coeffAt b (n - j)
+      else
+        0
+    have hTermBound : ∀ j ∈ List.range d, normInfF (term j) ≤ 4 * B := by
+      intro j hj
+      by_cases hIn : j ≤ n ∧ n - j < d
+      · have hAj : normInfF (coeffAt a j) ≤ 4 :=
+          Nat.le_trans (normInfF_coeffAt_le_normInfCoeffs a j) hA
+        have hBj : normInfF (coeffAt b (n - j)) ≤ B :=
+          Nat.le_trans (normInfF_coeffAt_le_normInfCoeffs b (n - j)) hB
+        have hMul :
+            normInfF (coeffAt a j * coeffAt b (n - j)) ≤
+              4 * normInfF (coeffAt b (n - j)) := by
+          exact normInfF_mul_le_of_normInfF_left_le_four
+            (coeffAt a j) (coeffAt b (n - j)) hAj
+        have hLe : normInfF (coeffAt a j * coeffAt b (n - j)) ≤ 4 * B :=
+          Nat.le_trans hMul (Nat.mul_le_mul_left 4 hBj)
+        simpa [term, hIn] using hLe
+      · have : normInfF (term j) = 0 := by simp [term, hIn, normInfF_zero]
+        rw [this]
+        exact Nat.zero_le _
+    have hFold :
+        normInfF ((List.range d).foldl (fun acc j => acc + term j) 0) ≤ d * (4 * B) :=
+      normInfF_foldl_add_range_le d term (4 * B) hTermBound
+    have hRaw :
+        rawConvCoeff a b n = (List.range d).foldl (fun acc j => acc + term j) 0 := by
+      unfold rawConvCoeff term
+      rw [foldl_acc_if_eq_foldl_add_if
+        (l := List.range d)
+        (n := n)
+        (f := fun j => coeffAt a j * coeffAt b (n - j))
+        (acc := 0)]
+    simpa [rawM, hRaw] using hFold
   have hCoeff :
-      coeffAt (mulRq a b) i =
-        (List.range d).foldl (fun acc j => acc + term j) 0 := by
-    simpa [term] using (coeffAt_mulRq a b i hi)
-  have hTermBound : ∀ j ∈ List.range d, normInfF (term j) ≤ 4 * B := by
-    intro j hj
-    have hjd : j < d := (List.mem_range.mp hj)
-    have hk : (i + d - j) % d < d := Nat.mod_lt _ d_pos
-    have hAj : normInfF (coeffAt a j) ≤ 4 := Nat.le_trans (normInfF_coeffAt_le_normInfCoeffs a j) hA
-    have hBk : normInfF (coeffAt b ((i + d - j) % d)) ≤ B := by
-      exact Nat.le_trans (normInfF_coeffAt_le_normInfCoeffs b ((i + d - j) % d)) hB
-    have hMul :
-        normInfF (coeffAt a j * coeffAt b ((i + d - j) % d)) ≤
-          4 * normInfF (coeffAt b ((i + d - j) % d)) := by
-      exact normInfF_mul_le_of_normInfF_left_le_four
-        (coeffAt a j) (coeffAt b ((i + d - j) % d)) hAj
-    exact Nat.le_trans hMul (Nat.mul_le_mul_left 4 hBk)
-  have hFold :
-      normInfF ((List.range d).foldl (fun acc j => acc + term j) 0) ≤ d * (4 * B) :=
-    normInfF_foldl_add_range_le d term (4 * B) hTermBound
+      coeffAt (mulRqPhi a b) i =
+        let n := i
+        let base := rawConvCoeff a b n
+        if n < 26 then
+          base - rawConvCoeff a b (n + 54) + rawConvCoeff a b (n + 81)
+        else if n = 26 then
+          base - rawConvCoeff a b 80
+        else
+          base - rawConvCoeff a b (n + 27) := by
+    simp [coeffAt, hi, mulRqPhi]
   rw [hCoeff]
-  have hReassoc : d * (4 * B) = 4 * d * B := by
-    calc
-      d * (4 * B) = (d * 4) * B := by simp [Nat.mul_assoc]
-      _ = (4 * d) * B := by simp [Nat.mul_comm]
-      _ = 4 * d * B := by simp [Nat.mul_assoc]
-  simpa [hReassoc] using hFold
+  have h3Mle12 : rawM + rawM + rawM ≤ 12 * d * B := by
+    let x : Nat := d * B
+    have hRawX : rawM = 4 * x := by
+      unfold rawM x
+      calc
+        d * (4 * B) = d * (B * 4) := by rw [Nat.mul_comm 4 B]
+        _ = (d * B) * 4 := by rw [Nat.mul_assoc]
+        _ = 4 * (d * B) := by rw [Nat.mul_comm]
+    have hLeft : rawM + rawM + rawM = 12 * x := by
+      rw [hRawX]
+      calc
+        4 * x + 4 * x + 4 * x
+            = (4 * x + 4 * x) + 4 * x := by
+                simp [Nat.add_assoc]
+        _ = (4 + 4) * x + 4 * x := by
+              rw [← Nat.add_mul]
+        _ = ((4 + 4) + 4) * x := by
+              rw [← Nat.add_mul]
+        _ = 12 * x := by simp
+    have hRight : 12 * d * B = 12 * x := by
+      unfold x
+      rw [Nat.mul_assoc]
+    exact Nat.le_of_eq (hLeft.trans hRight.symm)
+  have h2Mle12 : rawM + rawM ≤ 12 * d * B := by
+    have h2le3 : rawM + rawM ≤ rawM + rawM + rawM := by
+      simpa [Nat.add_assoc] using Nat.le_add_right (rawM + rawM) rawM
+    exact Nat.le_trans h2le3 h3Mle12
+  by_cases hLt26 : i < 26
+  · have hBase : normInfF (rawConvCoeff a b i) ≤ rawM := hRawBound i
+    have h54 : normInfF (rawConvCoeff a b (i + 54)) ≤ rawM := hRawBound (i + 54)
+    have h81 : normInfF (rawConvCoeff a b (i + 81)) ≤ rawM := hRawBound (i + 81)
+    have hSub :
+        normInfF (rawConvCoeff a b i - rawConvCoeff a b (i + 54)) ≤
+          normInfF (rawConvCoeff a b i) + normInfF (rawConvCoeff a b (i + 54)) := by
+      simpa [normInfF] using
+        F.centeredAbs_sub_le (rawConvCoeff a b i) (rawConvCoeff a b (i + 54))
+    have hAdd :
+        normInfF (rawConvCoeff a b i - rawConvCoeff a b (i + 54) + rawConvCoeff a b (i + 81)) ≤
+          normInfF (rawConvCoeff a b i - rawConvCoeff a b (i + 54)) + normInfF (rawConvCoeff a b (i + 81)) := by
+      simpa [normInfF] using
+        F.centeredAbs_add_le
+          (rawConvCoeff a b i - rawConvCoeff a b (i + 54))
+          (rawConvCoeff a b (i + 81))
+    have hLe3M :
+        normInfF (rawConvCoeff a b i - rawConvCoeff a b (i + 54) + rawConvCoeff a b (i + 81)) ≤
+          rawM + rawM + rawM := by
+      exact Nat.le_trans hAdd (Nat.add_le_add hSub h81 |> fun h => Nat.le_trans h (Nat.add_le_add (Nat.add_le_add hBase h54) (Nat.le_refl _)))
+    have hLe :
+        normInfF (rawConvCoeff a b i - rawConvCoeff a b (i + 54) + rawConvCoeff a b (i + 81)) ≤
+          12 * d * B := Nat.le_trans hLe3M h3Mle12
+    have hEval :
+        (let n := i
+         let base := rawConvCoeff a b n
+         if n < 26 then
+           base - rawConvCoeff a b (n + 54) + rawConvCoeff a b (n + 81)
+         else if n = 26 then
+           base - rawConvCoeff a b 80
+         else
+           base - rawConvCoeff a b (n + 27)) =
+        rawConvCoeff a b i - rawConvCoeff a b (i + 54) + rawConvCoeff a b (i + 81) := by
+      simp [hLt26]
+    simpa [hEval] using hLe
+  · by_cases hEq26 : i = 26
+    · have hBase : normInfF (rawConvCoeff a b i) ≤ rawM := hRawBound i
+      have h80 : normInfF (rawConvCoeff a b 80) ≤ rawM := hRawBound 80
+      have hSub :
+          normInfF (rawConvCoeff a b i - rawConvCoeff a b 80) ≤
+            normInfF (rawConvCoeff a b i) + normInfF (rawConvCoeff a b 80) := by
+        simpa [normInfF] using
+          F.centeredAbs_sub_le (rawConvCoeff a b i) (rawConvCoeff a b 80)
+      have hLe2M : normInfF (rawConvCoeff a b i - rawConvCoeff a b 80) ≤ rawM + rawM :=
+        Nat.le_trans hSub (Nat.add_le_add hBase h80)
+      have hLe : normInfF (rawConvCoeff a b i - rawConvCoeff a b 80) ≤ 12 * d * B :=
+        Nat.le_trans hLe2M h2Mle12
+      have hEval :
+          (let n := i
+           let base := rawConvCoeff a b n
+           if n < 26 then
+             base - rawConvCoeff a b (n + 54) + rawConvCoeff a b (n + 81)
+           else if n = 26 then
+             base - rawConvCoeff a b 80
+           else
+             base - rawConvCoeff a b (n + 27)) =
+          rawConvCoeff a b i - rawConvCoeff a b 80 := by
+        simp [hLt26, hEq26]
+      simpa [hEval] using hLe
+    · have hBase : normInfF (rawConvCoeff a b i) ≤ rawM := hRawBound i
+      have h27 : normInfF (rawConvCoeff a b (i + 27)) ≤ rawM := hRawBound (i + 27)
+      have hSub :
+          normInfF (rawConvCoeff a b i - rawConvCoeff a b (i + 27)) ≤
+            normInfF (rawConvCoeff a b i) + normInfF (rawConvCoeff a b (i + 27)) := by
+        simpa [normInfF] using
+          F.centeredAbs_sub_le (rawConvCoeff a b i) (rawConvCoeff a b (i + 27))
+      have hLe2M : normInfF (rawConvCoeff a b i - rawConvCoeff a b (i + 27)) ≤ rawM + rawM :=
+        Nat.le_trans hSub (Nat.add_le_add hBase h27)
+      have hLe : normInfF (rawConvCoeff a b i - rawConvCoeff a b (i + 27)) ≤ 12 * d * B :=
+        Nat.le_trans hLe2M h2Mle12
+      have hEval :
+          (let n := i
+           let base := rawConvCoeff a b n
+           if n < 26 then
+             base - rawConvCoeff a b (n + 54) + rawConvCoeff a b (n + 81)
+           else if n = 26 then
+             base - rawConvCoeff a b 80
+           else
+             base - rawConvCoeff a b (n + 27)) =
+          rawConvCoeff a b i - rawConvCoeff a b (i + 27) := by
+        simp [hLt26, hEq26]
+      simpa [hEval] using hLe
 
 set_option maxHeartbeats 1000000 in
-theorem mulRqNormBoundFromOperands_four_d (B : Nat) :
-  mulRqNormBoundFromOperands 4 B (4 * d * B) := by
+theorem mulRqPhiNormBoundFromOperands_four_d (B : Nat) :
+  mulRqPhiNormBoundFromOperands 4 B (12 * d * B) := by
   intro a b hA hB
-  have hsize : (mulRq a b).size = d := mulRq_size a b
+  have hsize : (mulRqPhi a b).size = d := mulRqPhi_size a b
   apply normInfCoeffs_le_of_forall_coeffAt hsize
   intro i hi
-  exact normInfF_coeffAt_mulRq_le_of_left_four a b i hi hA hB
+  exact normInfF_coeffAt_mulRqPhi_le_of_left_four a b i hi hA hB
+
+theorem mulRqPhiNormBoundFromOperands_four_of_three_d_le
+  {T B : Nat}
+  (hTd : 3 * d ≤ T) :
+  mulRqPhiNormBoundFromOperands 4 B (4 * T * B) := by
+  intro a b hA hB
+  have hBase : normInfCoeffs (mulRqPhi a b) ≤ 12 * d * B :=
+    mulRqPhiNormBoundFromOperands_four_d B a b hA hB
+  have hGrow : 12 * d * B ≤ 4 * T * B := by
+    have h4 : 4 * (3 * d) ≤ 4 * T := Nat.mul_le_mul_left 4 hTd
+    have h4B : (4 * (3 * d)) * B ≤ (4 * T) * B := Nat.mul_le_mul_right B h4
+    calc
+      12 * d * B = (4 * (3 * d)) * B := by
+        simp [Nat.mul_assoc, Nat.mul_left_comm, Nat.mul_comm]
+      _ ≤ (4 * T) * B := h4B
+      _ = 4 * T * B := by
+        simp [Nat.mul_assoc]
+  exact Nat.le_trans hBase hGrow
+
+theorem mulRqNormBoundFromOperands_four_d (B : Nat) :
+  mulRqNormBoundFromOperands 4 B (12 * d * B) := by
+  intro a b hA hB
+  simpa [mulRq] using mulRqPhiNormBoundFromOperands_four_d B a b hA hB
 
 theorem mulRqNormBoundFromOperands_four_of_d_le
   {T B : Nat}
-  (hTd : d ≤ T) :
+  (hTd : 3 * d ≤ T) :
   mulRqNormBoundFromOperands 4 B (4 * T * B) := by
   intro a b hA hB
-  have hBase : normInfCoeffs (mulRq a b) ≤ 4 * d * B :=
-    mulRqNormBoundFromOperands_four_d B a b hA hB
-  have hGrow : 4 * d * B ≤ 4 * T * B := by
-    exact Nat.mul_le_mul_right B (Nat.mul_le_mul_left 4 hTd)
-  exact Nat.le_trans hBase hGrow
+  simpa [mulRq] using
+    mulRqPhiNormBoundFromOperands_four_of_three_d_le (T := T) (B := B) hTd a b hA hB
 
 private theorem vecAdd_vecScale_neg_eq_ofFn_sub
   (a b : Coeffs)

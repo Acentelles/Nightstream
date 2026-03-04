@@ -49,7 +49,7 @@ abbrev arithmeticDecompProp_iff_splitRoundTrip_true := @SuperNeo.arithmeticDecom
 /-- [Role: Theorem-Target] Curated theorem surface `arithmeticBundleProp_of_props`. -/
 abbrev arithmeticBundleProp_of_props := @SuperNeo.arithmeticBundleProp_of_props
 
-/-- [Role: Theorem-Target] Theorem-native constructor threading `(P10 + P11)` into P20 obligations. -/
+/-- [Role: Theorem-Target] Theorem-native constructor threading `P10` into P20 obligations. -/
 abbrev arithmeticBundleProp_of_theorem_stack := @SuperNeo.arithmeticBundleProp_of_theorem_stack
 
 /-- [Role: Theorem-Target] Curated theorem surface `arithmeticBundleProp_checks_imply_props`. -/

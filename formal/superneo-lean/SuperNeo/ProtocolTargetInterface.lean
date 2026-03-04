@@ -27,11 +27,18 @@ abbrev protocolTargetProp := SuperNeo.protocolTargetProp
 /-- [Role: Boundary] Boundary surface `ProtocolTargetAssumptions` requiring closure. -/
 abbrev ProtocolTargetAssumptions := SuperNeo.ProtocolTargetAssumptions
 
+/-- [Role: Boundary] Native boundary bundle for protocol target assumptions. -/
+abbrev ProtocolTargetNativeAssumptions := SuperNeo.ProtocolTargetNativeAssumptions
+
 /-- [Role: Boundary] Boundary surface `matrixTransformAssumption_of_thm3CoreAssumption` requiring closure. -/
 abbrev matrixTransformAssumption_of_thm3CoreAssumption := SuperNeo.matrixTransformAssumption_of_thm3CoreAssumption
 
 /-- [Role: Boundary] Boundary surface `protocolTargetProp_of_assumptions` requiring closure. -/
 abbrev protocolTargetProp_of_assumptions := SuperNeo.protocolTargetProp_of_assumptions
+
+/-- [Role: Boundary] Native constructor surface for `protocolTargetProp`. -/
+abbrev protocolTargetProp_of_native_assumptions :=
+  SuperNeo.protocolTargetProp_of_native_assumptions
 
 end ProtocolTargetInterface
 

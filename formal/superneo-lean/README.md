@@ -2,8 +2,15 @@
 
 This folder is intentionally outside `crates/` and independent from the Rust workspace.
 
-It provides a Lean implementation of core SuperNeo/Neo math checks and verifies them
-against vectors generated directly from Rust (`neo-math`).
+It provides the theorem-facing Lean implementation of core SuperNeo/Neo math surfaces.
+Lean is the mathematical source of truth.
+
+Operationally:
+- Lean theorem/definition surfaces are authoritative.
+- Golden vectors from this formalization are used to validate Rust implementations.
+- Rust-generated vectors (`neo-math`) are used as executable regression evidence.
+- Target direction: run corresponding Lean and Rust computations in parallel and
+  require value equality at each compared surface.
 
 ## What is checked
 
@@ -127,8 +134,8 @@ This is stronger than unit smoke tests, but weaker than full universal theorem p
 
 | Output flag | `true` means (exactly what passed) | Evidence type | Remaining gap to a full SuperNeo proof |
 |---|---|---|---|
-| `superneo_cases` | For every generated `(a,b)`: `ct(mulRq(superneoBarBlock(bar,a), b))`, `dot(a,b)`, and expected values all agree. | Rust-generated vectors + Lean recomputation | Prove identity for all valid inputs, not only sampled/generated cases. |
-| `ring_mul_cases` | `mulRq a b` matches expected coefficient vectors for all generated multiplication cases. | Rust-generated vectors | Prove quotient-ring multiplication semantics universally. |
+| `superneo_cases` | For every generated `(a,b)`: `ct(mulRqPhi(superneoBarBlock(bar,a), b))`, `dot(a,b)`, and expected values all agree. | Rust-generated vectors + Lean recomputation | Prove identity for all valid inputs, not only sampled/generated cases. |
+| `ring_mul_cases` | `mulRqPhi a b` matches expected coefficient vectors for all generated multiplication cases. | Rust-generated vectors | Prove quotient-ring multiplication semantics universally. |
 | `norm_cases` | `normInfCoeffs` equals expected norms on all generated norm cases. | Rust-generated vectors | Prove general norm properties/bounds used in later theorems. |
 | `split_cases` | `splitBalancedVec` digits match expected, recomposition equals expected and original input, and per-digit bounds hold. | Rust-generated vectors + invariant check | Prove reconstruction and bound theorems for all inputs. |
 | `eq_cases` | `eqPoly x y` matches expected; Boolean points also satisfy indicator behavior check. | Rust-generated vectors + Boolean invariant | Prove full hypercube-indicator theorem. |
@@ -243,9 +250,9 @@ paper Definition, Theorem, or Lemma.
 | `S4.5` | Lemmas 5-6, interpolation | `PolyLemmas.lean`, `Interp.lean` | Schwartz-Zippel, eq-lifting, interpolation correctness. | S4.3 | S7.5 | In progress (sanity checks pass; quantified lemmas pending). |
 | `S4.6` | App B.2 parameters | `Parameters.lean`, `Goldilocks.lean` | Concrete constants and bound checks. | - | S5.2, S6.3 | Done (Boundary). |
 | `S5.1` | Def 7 (embedding) | `Embedding.lean` | Element/vector/matrix embedding bijection + linearity. | S4.1 | S5.2 | In progress (parity passing; proof layer pending). |
-| `S5.2` | Thm 3 (inner-product transform) | `Thm3Core.lean` | `ct(cf⁻¹(bar(a)) · cf⁻¹(b)) = ⟨a, b⟩`. | S4.1, S4.6, S5.1 | S5.3, S7.6 | In progress (check/prop equivalence + assumption interface; universal proof pending). |
-| `S5.3` | Def 8 (bar-lift) | `BarLift.lean` | Blockwise lifting is correct and linear. | S5.1, S5.2 | S5.4 | In progress (prop-level linearity interfaces + structural lemmas; core proof pending). |
-| `S5.4` | Thm 4 (matrix-vector transform) | `MatrixTransform.lean` | `Mz = ct(bar(M)z)` for all valid M, z. | S5.2, S5.3 | S5.5, S5.6, S7.5 | In progress (row-shape interfaces; full proof pending). |
+| `S5.2` | Thm 3 (inner-product transform) | `Thm3Core.lean` | `ct(cf⁻¹(bar(a)) · cf⁻¹(b)) = ⟨a, b⟩`. | S4.1, S4.6, S5.1 | S5.3, S7.6 | Done (Proof-Complete for the native paper instance via `thm3CoreAssumption_native`; generic closure is provided as finite basis criterion/checker `thm3BasisKernelCheck`). |
+| `S5.3` | Def 8 (bar-lift) | `BarLift.lean` | Blockwise lifting is correct and linear. | S5.1, S5.2 | S5.4 | Done (Proof-Complete) for module-level theorem closure (`barLiftVector_add_constructive`, `barLiftVector_scale_constructive`, `barLiftLinearityAssumption_closed`). |
+| `S5.4` | Thm 4 (matrix-vector transform) | `MatrixTransform.lean` | `Mz = ct(bar(M)z)` for all valid M, z. | S5.2 | S5.5, S5.6, S7.5 | Done (Boundary): theorem-native closure from P10 is proved; remaining open surface is upstream generic `thm3CoreAssumption` closure. |
 | `S5.5` | Remark 2 + Def 15 | `EvalLink.lean`, `ModuleHom.lean` | Eval/`ct` linkage; module-hom linearity. | S4.1, S5.4 | S5.6 | In progress (check-level; quantified proofs pending). |
 | `S5.6` | Thm 5 (eval homomorphism) | `EvalHom.lean` | Linear-combination preservation under evaluation. | S5.4, S5.5 | S7.5 | In progress (parity passing; formal proof pending). |
 | `S6.1` | Defs 5, 9-10, Thm 6 | `InteractiveReductions.lean` | Weak/strong reductions compose correctly. | - | S7.6 | In progress (composition statement stubs). |
@@ -274,9 +281,9 @@ Rows marked `Done (Boundary)` are intentionally intermediate.
 | `S4.5` | In progress. | Quantified SZ, eq-lift, interpolation correctness/uniqueness. | Full polynomial lemma set consumed by S7.5. |
 | `S4.6` | Done (Boundary). | None for boundary closure. | Parameter inequalities used by S5.2/S6.3 come from theorem constants. |
 | `S5.1` | In progress. | Embedding bijection + linearity not theorem-native. | General embedding/unembedding theorem suite. |
-| `S5.2` | In progress. | Universal derivation from S4.1/S4.6/S5.1 lemmas. | Theorem-3 core proved directly from algebraic stack. |
-| `S5.3` | In progress. | Core linearity equalities not derived from lower lemmas. | Lift linearity proved from embedding/ring lemmas. |
-| `S5.4` | In progress. | Matrix identity not fully derived from theorem stack. | Full Theorem-4 proof from S5.2/S5.3 lemmas. |
+| `S5.2` | Done (Proof-Complete for native paper instance). | Optional extension only: prove basis criterion for additional concrete bar constructions. | Native Theorem-3 remains constructive while preserving downstream theorem interfaces. |
+| `S5.3` | Done (Proof-Complete) for module-level closure. | None for the module-level theorem closure; optional extension is additional non-native bar design validation. | Keep bar-lift linearity theorem-native and reused directly by S5.4/S5.5 constructors. |
+| `S5.4` | Done (Boundary). | Upstream generic `thm3CoreAssumption` closure remains open. | Full Theorem-4 proof remains discharged for native/bar-closed P10 paths; generic closure finalizes when S5.2 generic boundary is discharged. |
 | `S5.5` | In progress. | Eval-link and module-hom remain check-oriented. | Quantified proofs for Remark 2 and module-hom linearity. |
 | `S5.6` | In progress. | Eval-hom proof path leans on check soundness. | Full Theorem-5 proof via S5.4/S5.5 interfaces. |
 | `S6.1` | In progress. | Composition theorem stubs need proofs. | Theorem-6 composition proved and consumed by S7.6. |
@@ -322,9 +329,9 @@ Source references:
 | ID | Math item (paper) | Lean target | Milestone | Status |
 |---|---|---|---|---|
 | M13 | Definition 7 (coefficient embedding) | `Embedding.lean` | S5.1 | In progress |
-| M14 | Theorem 3 (inner-product transform) | `Thm3Core.lean` | S5.2 | In progress |
-| M15 | Definition 8 (lifting transform) | `BarLift.lean` | S5.3 | In progress |
-| M16 | Theorem 4 (matrix-vector product transform) | `MatrixTransform.lean` | S5.4 | In progress |
+| M14 | Theorem 3 (inner-product transform) | `Thm3Core.lean` | S5.2 | Done (Proof-Complete for native paper instance) |
+| M15 | Definition 8 (lifting transform) | `BarLift.lean` | S5.3 | Done (Proof-Complete) |
+| M16 | Theorem 4 (matrix-vector product transform) | `MatrixTransform.lean` | S5.4 | Done (Boundary) |
 | M17 | Remark 2 (evaluation/ct linkage) | `EvalLink.lean` | S5.5 | In progress |
 | M18 | Definition 15 (module homomorphisms) | `ModuleHom.lean` | S5.5 | In progress |
 | M19 | Theorem 5 (evaluation homomorphism) | `EvalHom.lean` | S5.6 | In progress |

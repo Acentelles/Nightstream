@@ -3,13 +3,13 @@
 ## Purpose
 
 - **What it is**: The executable deterministic cross-check harness used by `Main.lean`'s `lake exe check`. Contains `checkSuperCase`, `checkRingCase`, `checkNormCase`, `checkSplitCase`, `checkEqCase`, `checkMleCase`, `checkEmbeddingVecCase`, `checkEmbeddingMatrixCase`, `checkBarLiftVecCase`, `checkBarLiftMatrixCase`, `checkMatrixTransformCase`, `checkEvalLinkCase`, `checkEvalHomCase`, `checkSamplingCase`, `checkEqLiftCase`, `checkInterpCase`, and aggregators `checkSuperNeoCases`, `checkRingMulCases`, etc.
-- **Key property**: For each module with golden vectors, `check*Cases = true` iff the module's executable semantics match the expected outputs from `SuperNeo.Generated.Vectors`. Formally: `∀ c ∈ superneoCases, checkSuperCase bar c → ct(mulRq(superneoBarBlock bar a) b) = expectedCt ∧ dot a b = expectedDot`.
+- **Key property**: For each module with golden vectors, `check*Cases = true` iff the module's executable semantics match the expected outputs from `SuperNeo.Generated.Vectors`. Formally: `∀ c ∈ superneoCases, checkSuperCase bar c → ct(mulRqPhi(superneoBarBlock bar a) b) = expectedCt ∧ dot a b = expectedDot`.
 - **Protocol role**: Compile-time validation that all module sanity checks pass. Validates Definition 1 (Fields) and later definitions (coefficient maps, norm, decomposition, MLE, embedding, bar lift, matrix transform, eval link, eval hom) against golden vectors.
 
 ## Target Formulas
 
-- `checkSuperNeoCases = true ↔ ∀ c ∈ superneoCases, ct(mulRq(superneoBarBlock bar a) b) = expectedCt ∧ dot a b = expectedDot ∧ ct(...) = dot(...)`
-- `checkRingMulCases = true ↔ ∀ c ∈ ringMulCases, mulRq a b = expected`
+- `checkSuperNeoCases = true ↔ ∀ c ∈ superneoCases, ct(mulRqPhi(superneoBarBlock bar a) b) = expectedCt ∧ dot a b = expectedDot ∧ ct(...) = dot(...)`
+- `checkRingMulCases = true ↔ ∀ c ∈ ringMulCases, mulRqPhi a b = expected`
 - `checkNormCases = true ↔ ∀ c ∈ normCases, normInfCoeffs a = expectedNorm`
 - `checkSplitCases = true ↔ ∀ c ∈ splitCases, splitBalancedVec input base k = expectedDigits ∧ recomposeSplitDigits gotDigits base = input`
 - `checkMleCases = true ↔ ∀ c ∈ mleCases, mleByInnerProduct v r = mleByFoldingExec v r = expectedInner`

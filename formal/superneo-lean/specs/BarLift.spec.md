@@ -3,7 +3,7 @@
 ## Purpose
 
 - **What it is**: Definition-8 bar-lift layer. Given `v ∈ F^{n_F}`, partition into d-sized sub-vectors `[v₁, ..., v_{n_R}]` and define `v̄ := [v̄₁, ..., v̄_{n_R}]` where each `v̄_i` is the Theorem-3 inner-product transform applied block-wise. Extends to matrices row-wise: `M̄ := [M̄₁, ..., M̄_m]`.
-- **Current instantiation**: `barBlock = id` (identity transform), so `barLiftVector = id` for chunkable vectors. The full Theorem-3 transform is out of scope; linearity and Theorem-4 closure hold under the identity instantiation.
+- **Current instantiation**: the chunkable path applies the provided block transform concretely via `embedVec -> map superneoBarBlock -> unembedVec`; non-chunkable vectors keep identity fallback. For the native theorem stack, the bar transform is `nativeBarMatrix`.
 - **Key property**: Linearity — `barLiftVector bar (v + w) = barLiftVector bar v + barLiftVector bar w` and `barLiftVector bar (s·v) = s · barLiftVector bar v` when sizes match (Remark 1: the transform is linear, hence the lift preserves linearity).
 - **Protocol role**: MatrixTransform and Thm3Core depend on `barLiftLinearityAssumption`. Embedding feeds into BarLift (P9 → bar-lift linearity).
 
@@ -49,17 +49,26 @@
 | Linearity | `barLiftVector_add`, `barLiftVector_add_of_size_eq`, `barLiftVector_scale` | Add: `v.size = w.size` | Add/scale linearity | Theorem-Target | — |
 | Theorem-facing boundary | `barLiftLinearityAssumption bar` | None | Add + scale linearity (Prop) | Theorem-Target | `MatrixTransform.lean` |
 | Check-facing boundary | `barLiftLinearityCheckAssumption bar` | None | Executable check (Prop) | Theorem-Target | — |
-| Native closure | `barLiftLinearityAssumption_native` | None | `barLiftLinearityAssumption bar` | Theorem-Target | — |
+| Identity/fallback closure | `barLiftLinearityAssumption_of_barBlockIdentity`, `barLiftLinearityAssumption_of_bar_size_ne_d` | Bar-block identity / `bar.size ≠ d` | Constructive linearity closure on identity branch | Theorem-Target | — |
+| Native closure | `barLiftLinearityAssumption_native` | Explicit `barLiftLinearityAssumption bar` input | Thread theorem-facing contract unchanged | Theorem-Target | — |
 | P9 closure | `barLiftLinearityAssumption_of_p9Embedding`, `barLiftLinearityAssumption_of_p9Embedding_closed` | P9 embedding | `barLiftLinearityAssumption bar` | Theorem-Target | — |
 | Check/prop bridges | `barLiftLinearityCheckAssumption_of_assumption`, `barLiftLinearityAssumption_of_checkAssumption`, `barLiftLinearityAssumption_iff_checkAssumption` | None | Theorem ↔ check equivalence | Theorem-Target | — |
 
 ## Proof Obligations and Closure Plan
 
-All obligations in the current contract are closed. The module now exposes explicit branch/path lemmas (`chunkable` vs. `non-chunkable`) and size invariants, then proves linearity and check/prop bridges on top.
+- Closed:
+  - Explicit branch/path behavior (`chunkable` vs `non-chunkable`) and size invariants.
+  - Constructive linearity closure for identity/fallback bar-block branch.
+  - Check/prop bridges for linearity contracts.
+- Remaining for this module:
+  - None for the module-level theorem closure; linearity is proved constructively from embedding/ring lemmas.
 
 ## Assumption Ledger
 
-No open boundary assumptions in this module.
+- No open boundary assumptions in this module for bar-lift linearity.
+- `barLiftLinearityAssumption bar` is closed constructively by
+  `barLiftLinearityAssumption_constructive` and exposed as
+  `barLiftLinearityAssumption_closed`.
 
 ## Dependency and Consumer Map
 
@@ -89,4 +98,4 @@ No open boundary assumptions in this module.
 
 ## Out of Scope
 
-- Final nontrivial Theorem-3 bar transform instantiation (requires coordinated closure in `Thm3Core.lean` + ring algebra stack).
+- Generic/non-native Theorem-3 instantiation proof classification (handled in `Thm3Core.lean`).

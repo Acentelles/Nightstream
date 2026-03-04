@@ -110,6 +110,13 @@ theorem matrixTransformAssumption_of_thm3CoreAssumption
   matrixTransformAssumption bar m :=
   SuperNeo.matrixTransformAssumption_of_thm3CoreAssumption hThm3
 
+/-- [Role: Theorem-Target] Theorem-native P12 boundary constructor from `P10` only. -/
+theorem matrixTransformAssumption_of_p10
+  {bar : Array (Array F)} {m : Array (Array F)}
+  (hThm3 : thm3CoreAssumption bar) :
+  matrixTransformAssumption bar m :=
+  SuperNeo.matrixTransformAssumption_of_p10 hThm3
+
 /-- [Role: Theorem-Target] Theorem-native P12 boundary constructor from `(P10 + P11)`. -/
 theorem matrixTransformAssumption_of_p10_p11
   {bar : Array (Array F)} {m : Array (Array F)}

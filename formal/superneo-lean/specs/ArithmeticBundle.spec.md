@@ -42,7 +42,7 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 | Bundle | `arithmeticBundleProp` | def | Definitional | Conjunction of all above |
 | Theorems | `arithmeticDecompProp_iff_splitRoundTrip_true` | theorem | Theorem-Target | Prop ↔ check |
 | Theorems | `arithmeticBundleProp_of_props` | theorem | Theorem-Target | Component props → bundle |
-| Theorems | `arithmeticBundleProp_of_theorem_stack` | theorem | Theorem-Target | P10+P11 + thm3 + module assumptions → bundle |
+| Theorems | `arithmeticBundleProp_of_theorem_stack` | theorem | Theorem-Target | P10 + thm3 + module assumptions → bundle |
 | Theorems | `arithmeticBundleProp_checks_imply_props` | theorem | Theorem-Target | Checks → bundle |
 | Theorems | `arithmeticBundleProp_props_imply_check_subset` | theorem | Theorem-Target | Bundle → check subset |
 | Theorems | `arithmeticBundleProp_props_imply_module_checks` | theorem | Theorem-Target | Bundle + size guard → module checks |
@@ -50,11 +50,11 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 
 ## Proof Obligations and Closure Plan
 
-All obligations closed. Proposition/check bridges proved. Theorem-native constructor (`arithmeticBundleProp_of_theorem_stack`) derives from thm3CoreAssumption, barLiftLinearityAssumption, and module assumptions.
+All obligations closed. Proposition/check bridges proved. Theorem-native constructor (`arithmeticBundleProp_of_theorem_stack`) derives from thm3CoreAssumption and module assumptions.
 
 ## Assumption Ledger
 
-No open boundary assumptions in this module. The theorem-native path uses `thm3CoreAssumption`, `barLiftLinearityAssumption`, `vecModuleAssumption`, `scalarModuleAssumption` from upstream; those have closure plans in their respective modules.
+No open boundary assumptions in this module. The theorem-native path uses `thm3CoreAssumption`, `vecModuleAssumption`, and `scalarModuleAssumption` from upstream; those have closure plans in their respective modules.
 
 ## Dependency and Consumer Map
 
@@ -74,7 +74,7 @@ Downstream consumers:
 
 ## Implementation Plan
 
-Current scope complete. All constructors and bridges proved. Theorem stack path threads P10+P11 through matrix transform and eval hom.
+Current scope complete. All constructors and bridges proved. Theorem stack path threads P10 through matrix transform and eval hom.
 
 ## Quality Expectations
 

@@ -96,6 +96,17 @@ theorem evalHomAssumption_of_thm3_and_moduleAssumptions
   evalHomAssumption bar m r ρ1 ρ2 :=
   SuperNeo.evalHomAssumption_of_thm3_and_moduleAssumptions hThm3 hVecAssm hScalAssm
 
+/-- [Role: Theorem-Target] Theorem-native eval-hom boundary constructor from `P10` + module-hom. -/
+theorem evalHomAssumption_of_p10_and_moduleAssumptions
+  {bar : Array (Array F)} {m : Array (Array F)}
+  {r : Array F} {ρ1 ρ2 : F}
+  {hVec : VecModuleHom} {hScal : ScalarModuleHom}
+  (hThm3 : thm3CoreAssumption bar)
+  (hVecAssm : vecModuleAssumption hVec)
+  (hScalAssm : scalarModuleAssumption hScal) :
+  evalHomAssumption bar m r ρ1 ρ2 :=
+  SuperNeo.evalHomAssumption_of_p10_and_moduleAssumptions hThm3 hVecAssm hScalAssm
+
 /-- [Role: Theorem-Target] Theorem-native eval-hom boundary constructor from `(P10 + P11)` + module-hom. -/
 theorem evalHomAssumption_of_p10_p11_and_moduleAssumptions
   {bar : Array (Array F)} {m : Array (Array F)}
