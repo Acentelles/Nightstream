@@ -1,4 +1,5 @@
 import SuperNeo.ProofSystem.SumCheck.General
+import SuperNeo.ProofSystem.SumCheck.PrefixSoundnessEndpoint
 
 /-!
 Paper-facing SumCheck facade.

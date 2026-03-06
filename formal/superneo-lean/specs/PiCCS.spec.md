@@ -29,7 +29,7 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 
 | Group | Lean symbol | Kind | Role | Guarantee |
 |---|---|---|---|---|
-| Assumptions | `PiCCSAssumptions` | structure | Definitional | relations : ProtocolRelationsAssumptions ctx |
+| Assumptions | `PiCCSAssumptions` | abbrev | Definitional | Alias of `ProtocolRelationsAssumptions ctx` |
 | Statement | `piCCSStrongStatement` | def | Definitional | ceRelation ∧ SumCheckClaimTrue |
 | Theorem | `piCCSStrong_of_assumptions` | theorem | Theorem-Target | Assumptions + witness → strong statement |
 
@@ -39,7 +39,7 @@ All obligations closed. `piCCSStrong_of_assumptions` proved from `ceRelation_of_
 
 ## Assumption Ledger
 
-No open boundary assumptions in this module. `PiCCSAssumptions` forwards `ProtocolRelationsAssumptions` from upstream.
+No open boundary assumptions in this module. `PiCCSAssumptions` is a direct alias to `ProtocolRelationsAssumptions` from upstream.
 
 ## Dependency and Consumer Map
 

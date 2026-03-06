@@ -63,6 +63,28 @@ structure ProtocolRelationsNativeAssumptions (ctx : ProtocolTargetContext) where
   sumcheckSoundness : SumcheckSoundnessAssumption
   sumcheckCompleteness : SumcheckCompletenessAssumption
 
+/--
+Canonical protocol-relations assumptions using constructive SumCheck closure.
+-/
+def ProtocolRelationsAssumptions.ofTarget
+  {ctx : ProtocolTargetContext}
+  (hTarget : ProtocolTargetAssumptions ctx) :
+  ProtocolRelationsAssumptions ctx :=
+  { target := hTarget
+    sumcheckSoundness := sumcheckSoundness_constructive
+    sumcheckCompleteness := sumcheckCompleteness_constructive }
+
+/--
+Canonical native protocol-relations assumptions using constructive SumCheck closure.
+-/
+def ProtocolRelationsNativeAssumptions.ofTarget
+  {ctx : ProtocolTargetContext}
+  (hTarget : ProtocolTargetNativeAssumptions ctx) :
+  ProtocolRelationsNativeAssumptions ctx :=
+  { target := hTarget
+    sumcheckSoundness := sumcheckSoundness_constructive
+    sumcheckCompleteness := sumcheckCompleteness_constructive }
+
 /-- Derive CCS relation from target assumptions. -/
 theorem ccsRelation_of_assumptions
   {ctx : ProtocolTargetContext}

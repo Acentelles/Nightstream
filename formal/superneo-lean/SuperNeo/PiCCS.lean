@@ -7,12 +7,12 @@ Strong interactive-reduction step `Π_CCS`.
 namespace SuperNeo
 
 /-- Assumptions consumed by the `Π_CCS` reduction step. -/
-structure PiCCSAssumptions (ctx : ProtocolTargetContext) where
-  relations : ProtocolRelationsAssumptions ctx
+abbrev PiCCSAssumptions (ctx : ProtocolTargetContext) :=
+  ProtocolRelationsAssumptions ctx
 
 /-- Native assumptions consumed by the `Π_CCS` reduction step. -/
-structure PiCCSNativeAssumptions (ctx : ProtocolTargetContext) where
-  relations : ProtocolRelationsNativeAssumptions ctx
+abbrev PiCCSNativeAssumptions (ctx : ProtocolTargetContext) :=
+  ProtocolRelationsNativeAssumptions ctx
 
 /-- Strong `Π_CCS` target statement. -/
 def piCCSStrongStatement (ctx : ProtocolTargetContext) : Prop :=
@@ -26,8 +26,8 @@ theorem piCCSStrong_of_assumptions
   (hWitness : SumCheckTransitionWitness ctx) :
   piCCSStrongStatement ctx := by
   have hCE : ceRelation ctx :=
-    ceRelation_of_assumptions h.relations hWitness
-  exact ⟨hCE, ceClaimTrue_of_ce h.relations hCE⟩
+    ceRelation_of_assumptions h hWitness
+  exact ⟨hCE, ceClaimTrue_of_ce h hCE⟩
 
 /-- Derive strong `Π_CCS` statement from native relation assumptions. -/
 theorem piCCSStrong_of_native_assumptions
@@ -36,7 +36,7 @@ theorem piCCSStrong_of_native_assumptions
   (hWitness : SumCheckTransitionWitness ctx) :
   piCCSStrongStatement ctx := by
   have hCE : ceRelation ctx :=
-    ceRelation_of_native_assumptions h.relations hWitness
-  exact ⟨hCE, ceClaimTrue_of_native_ce h.relations hCE⟩
+    ceRelation_of_native_assumptions h hWitness
+  exact ⟨hCE, ceClaimTrue_of_native_ce h hCE⟩
 
 end SuperNeo

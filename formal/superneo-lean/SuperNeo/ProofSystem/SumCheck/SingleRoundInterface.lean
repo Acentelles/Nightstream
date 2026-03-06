@@ -19,13 +19,13 @@ namespace ProofSystem.SumCheck.SingleRoundInterface
 def implementationModule : String := "SuperNeo.ProofSystem.SumCheck.SingleRound"
 
 /-- Canonical paper source used for this module-level interface/spec pair. -/
-def paperSource : String := "/Users/nicolasarqueros/starstream/SuperNeo.pdf.md"
+def paperSource : String := "./formal/superneo-lean/SuperNeo.pdf.md"
 
 /-- Paper sections used to ground this module boundary. -/
 def paperAnchors : List String := ["§2.1 Sum-check reduction role", "§7.3 Interactive reduction for CCS"]
 
 /-- Public symbol inventory extracted from the implementation module. -/
-def exportedSymbolNames : List String := ["Instance", "Transcript", "RoundConsistent", "InitialRoundConsistent", "Accepted", "ClaimTrue", "accepted_rounds_eq", "accepted_challenges_eq", "accepted_fold_step", "accepted_initial_round", "accepted_round_sum_step", "not_accepted_of_challenge_size_ne", "not_accepted_of_roundpoly_size_ne", "not_accepted_of_bad_round_shape", "not_accepted_of_bad_final_claim", "not_accepted_of_bad_initial_round"]
+def exportedSymbolNames : List String := ["Instance", "Transcript", "RoundConsistent", "InitialRoundConsistent", "Accepted", "ClaimTrue", "accepted_rounds_eq", "accepted_challenges_eq", "accepted_fold_step", "accepted_initial_round", "accepted_round_sum_step", "not_accepted_of_challenge_size_ne", "not_accepted_of_roundpoly_size_ne", "not_accepted_of_bad_round_shape", "not_accepted_of_no_final_oracle_witness", "not_accepted_of_bad_initial_round"]
 
 /-- Assumption/boundary-oriented symbols extracted by naming convention. -/
 def boundarySymbolNames : List String := []

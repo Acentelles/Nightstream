@@ -1,6 +1,4 @@
-import SuperNeo
-
-open SuperNeo
+import Init
 
 private def checkProofImportWall : IO Bool := do
   let pattern := "^import SuperNeo\\.(Checks|Generated|Regression|Golden)"

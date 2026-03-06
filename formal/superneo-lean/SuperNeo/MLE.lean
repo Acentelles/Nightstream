@@ -112,15 +112,22 @@ def rHat (r : Array F) (n : Nat) : Array F :=
 def mleByInnerProduct (v r : Array F) : F :=
   mleInnerProductForm v r
 
-private def foldLayer (vals : Array F) (ri : F) : Array F :=
+/--
+One multilinear folding layer.
+
+This is the executable half-step used by `mleByFolding`; it is also reused by
+the SumCheck prefix-soundness development to relate honest residual tables to
+the MLE oracle semantics.
+-/
+def foldLayer (vals : Array F) (ri : F) : Array F :=
   Array.ofFn (fun i : Fin (vals.size / 2) =>
     vals[2 * i.1]! * ((1 : F) - ri) + vals[2 * i.1 + 1]! * ri)
 
-private theorem foldLayer_size (vals : Array F) (ri : F) :
+@[simp] theorem foldLayer_size (vals : Array F) (ri : F) :
     (foldLayer vals ri).size = vals.size / 2 := by
   simp [foldLayer]
 
-private theorem foldLayer_get
+theorem foldLayer_get
     (vals : Array F) (ri : F)
     (i : Nat) (hi : i < vals.size / 2) :
     (foldLayer vals ri)[i]! = vals[2 * i]! * ((1 : F) - ri) + vals[2 * i + 1]! * ri := by
@@ -146,7 +153,7 @@ decreasing_by
   simpa using (Nat.sub_lt hPos (Nat.succ_pos 0))
 
 /-- Unfolding step for non-empty folding states. -/
-private theorem mleByFoldingExec_step
+theorem mleByFoldingExec_step
     (v r : Array F)
     (hRNe : r.size ≠ 0) :
     mleByFoldingExec v r =
@@ -166,6 +173,23 @@ private theorem mleByFoldingExec_step
 /-- Theorem-facing folding surface (same executable evaluator). -/
 def mleByFolding (v r : Array F) : F :=
   mleByFoldingExec v r
+
+theorem mleByFolding_step
+    (v r : Array F)
+    (hRNe : r.size ≠ 0) :
+    mleByFolding v r =
+      mleByFolding (foldLayer v r[0]!) (r.extract 1 r.size) := by
+  simpa [mleByFolding] using mleByFoldingExec_step v r hRNe
+
+theorem mleByFolding_empty
+    (v : Array F)
+    (hVNe : v.size ≠ 0) :
+    mleByFolding v #[] = v[0]! := by
+  have hNotEmpty : ¬ v.isEmpty := by
+    intro hEmpty
+    exact hVNe (by simpa [Array.isEmpty] using hEmpty)
+  unfold mleByFolding mleByFoldingExec
+  simp [hNotEmpty]
 
 /-!
 `mleByInnerProduct_eq_mleByFolding_of_size` is proved later in this file after

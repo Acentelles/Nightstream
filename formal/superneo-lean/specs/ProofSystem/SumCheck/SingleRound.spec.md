@@ -3,7 +3,7 @@
 ## Purpose
 
 - **What it is**: Proof-system namespace that re-exports `SuperNeo.SumCheck` types and predicates under `ProofSystem.Sumcheck.SingleRound`, plus forwarding theorems for `Accepted` → structural properties (rounds, challenges, fold steps, initial round, round-sum step) and rejection lemmas.
-- **Key property**: `Accepted inst tr` implies \(|\text{roundPolys}| = \text{rounds}\), \(|\text{challenges}| = |\text{roundPolys}|\), and round-consistency identities; rejection theorems give \(\neg\text{Accepted}\) from bad shapes or claims.
+- **Key property**: `Accepted inst tr` implies \(|\text{roundPolys}| = \text{rounds}\), \(|\text{challenges}| = |\text{roundPolys}|\), and round-consistency identities; rejection theorems give \(\neg\text{Accepted}\) from bad shapes or missing final-oracle witnesses.
 - **Protocol role**: Single-round view of sum-check used by Π_CCS (Section 7.3); provides the theorem surface for proof-system composition.
 
 ## Target Formulas
@@ -13,7 +13,7 @@
 - \(\text{Accepted}(\text{inst}, \text{tr}) \wedge i+1 < |\text{roundPolys}| \to \text{eval}(p_i, r_i) = p_{i+1}(0)\) (fold step).
 - \(\text{Accepted}(\text{inst}, \text{tr}) \to \text{InitialRoundConsistent}(\text{inst}, \text{tr})\).
 - \(\text{Accepted}(\text{inst}, \text{tr}) \wedge i+1 < |\text{roundPolys}| \to p_{i+1}(0) + p_{i+1}(1) = \text{eval}(p_i, r_i)\) (round-sum step).
-- \(|\text{challenges}| \neq \text{rounds} \to \neg\text{Accepted}\); analogous for bad round shape, bad final claim, bad initial round.
+- \(|\text{challenges}| \neq \text{rounds} \to \neg\text{Accepted}\); analogous for bad round shape, no final-oracle witness, bad initial round.
 
 ## Paper Anchors
 
@@ -37,7 +37,7 @@
 |-------|--------|-----------|--------|
 | Abbrevs | `Instance`, `Transcript`, `RoundConsistent`, `InitialRoundConsistent`, `Accepted`, `ClaimTrue` | Forward to `SuperNeo.SumCheck` | Definitional |
 | Extraction | `accepted_rounds_eq`, `accepted_challenges_eq`, `accepted_fold_step`, `accepted_initial_round`, `accepted_round_sum_step` | Structural implications of `Accepted` | Theorem-Target |
-| Rejection | `not_accepted_of_challenge_size_ne`, `not_accepted_of_roundpoly_size_ne`, `not_accepted_of_bad_round_shape`, `not_accepted_of_bad_final_claim`, `not_accepted_of_bad_initial_round` | Negation from bad structure | Theorem-Target |
+| Rejection | `not_accepted_of_challenge_size_ne`, `not_accepted_of_roundpoly_size_ne`, `not_accepted_of_bad_round_shape`, `not_accepted_of_no_final_oracle_witness`, `not_accepted_of_bad_initial_round` | Negation from bad structure / endpoint-witness failure | Theorem-Target |
 
 ## Proof Obligations and Closure Plan
 

@@ -49,11 +49,15 @@ abbrev ajtaiBindingAssumption := SuperNeo.ajtaiBindingAssumption
 /-- [Role: Boundary] Boundary surface `ajtaiRelaxedBindingAssumption` requiring closure. -/
 abbrev ajtaiRelaxedBindingAssumption := SuperNeo.ajtaiRelaxedBindingAssumption
 
-/-- [Role: Boundary] Boundary surface `reductionSumcheckSoundnessBoundary` requiring closure. -/
-abbrev reductionSumcheckSoundnessBoundary := SuperNeo.reductionSumcheckSoundnessBoundary
+/-- [Role: Boundary] Faithful prefix-dependent SumCheck Lund package for protocols. -/
+abbrev SumcheckPrefixLundBoundary := SuperNeo.SumcheckPrefixLundBoundary
 
-/-- [Role: Boundary] Boundary surface `reductionSumcheckCompletenessBoundary` requiring closure. -/
-abbrev reductionSumcheckCompletenessBoundary := SuperNeo.reductionSumcheckCompletenessBoundary
+/-- [Role: Boundary] Witness-level SumCheck failure-advantage bound surface. -/
+abbrev sumcheckFailureAdvantageBound :=
+  SuperNeo.ProofSystem.Sumcheck.SoundnessFailureAdvantageBound
+
+/-- [Role: Boundary] Canonical final error package surface. -/
+abbrev FinalErrorPackage := SuperNeo.FinalErrorPackage
 
 /-- [Role: Boundary] Boundary surface `FinalTheoremAssumptions` requiring closure. -/
 abbrev FinalTheoremAssumptions := SuperNeo.FinalTheoremAssumptions

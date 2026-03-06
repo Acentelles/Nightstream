@@ -2,13 +2,16 @@
 
 ## Purpose
 
-- **What it is**: Abstract probability model \(\Pr : \text{Prop} \to \mathbb{Q}\) with \(0 \le \Pr(P) \le 1\), and error accounting model decomposing total error into sum-check, MSIS, Schwartz–Zippel, binding, and relaxed-binding components.
+- **What it is**: Abstract probability model \(\Pr : \text{Prop} \to \mathbb{Q}\) with theorem-usable laws (`Pr False = 0`, monotonicity, union bound), and error accounting model decomposing total error into sum-check, MSIS, Schwartz–Zippel, binding, and relaxed-binding components.
 - **Key property**: \(\varepsilon_{\text{total}} = \varepsilon_{\text{sumcheck}} + \varepsilon_{\text{MSIS}} + \varepsilon_{\text{SZ}} + \varepsilon_{\text{bind}} + \varepsilon_{\text{rk}}\) with each component negligible.
 - **Protocol role**: Definitions 9–10 and Theorem 6 use probability bounds and negligible error terms; `ProbModel` and `ErrorModel` provide the typed surfaces for protocol theorem statements.
 
 ## Target Formulas
 
 - \(\Pr[P] \in [0, 1]\) ↔ `ProbModel.prNonneg`, `ProbModel.prLeOne`.
+- \(\Pr[\bot] = 0\) ↔ `ProbModel.prFalse`.
+- \(P \Rightarrow Q \Rightarrow \Pr[P] \le \Pr[Q]\) ↔ `ProbModel.prMonotone`.
+- \(\Pr[P \lor Q] \le \Pr[P] + \Pr[Q]\) ↔ `ProbModel.prUnionLeAdd`.
 - \(\varepsilon_{\text{total}}(n) = \sum_i \varepsilon_i(n)\) ↔ `ErrorModel.epsTotal_decomp`.
 - \(\text{IsNegligible}(\varepsilon_i)\) for each component ↔ `ErrorModel.negligibleSumcheck`, etc.
 
@@ -31,7 +34,7 @@
 
 | Group | Symbol | Guarantee | Role |
 |-------|--------|-----------|--------|
-| Probability | `ProbModel` | \(\Pr : \text{Prop} \to \mathbb{Q}\), \(0 \le \Pr(P) \le 1\) | Definitional |
+| Probability | `ProbModel` | \(\Pr : \text{Prop} \to \mathbb{Q}\), \(0 \le \Pr(P) \le 1\), `Pr False = 0`, monotonicity, union bound | Definitional |
 | Error accounting | `ErrorModel` | Decomposition + all components negligible | Definitional |
 | Default | `zeroErrorModel` | Canonical zero-error model | Definitional |
 

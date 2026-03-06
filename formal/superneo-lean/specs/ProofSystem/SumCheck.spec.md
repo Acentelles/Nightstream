@@ -2,7 +2,7 @@
 
 ## Purpose
 
-- **What it is**: Barrel module that re-exports `SuperNeo.ProofSystem.SumCheck.General` (Instance, Transcript, Accepted, ClaimTrue, SoundnessErrorBoundary, TheoremPackage, soundness, completeness, extraction theorems).
+- **What it is**: Barrel module that re-exports `SuperNeo.ProofSystem.SumCheck.General` and `SuperNeo.ProofSystem.SumCheck.PrefixSoundnessEndpoint` (Instance, Transcript, Accepted, ClaimTrue, SoundnessErrorBoundary, `TheoremPackage`, constructive package constructors, Lund/Schwartz–Zippel bound surface, soundness/completeness surfaces, extraction theorems, and the faithful prefix-dependent aligned positive-round endpoint).
 - **Key property**: Importing `SuperNeo.ProofSystem.SumCheck` provides the structured SumCheck API without importing the submodule directly.
 - **Protocol role**: Facade for proof-system consumers that need sum-check types and theorem package (Section 7.3 Π_CCS, Section 7.4 Π_RLC).
 
@@ -20,13 +20,13 @@
 
 | Lean module | Paper section |
 |-------------|---------------|
-| `SuperNeo.ProofSystem.SumCheck` | Barrel; re-exports General (Definition 6, Sections 7.3–7.4) |
+| `SuperNeo.ProofSystem.SumCheck` | Barrel; re-exports General plus the prefix-dependent aligned positive-round endpoint (Definition 6, Sections 7.3–7.4) |
 
 ## Contract Surface
 
 | Group | Symbol | Guarantee | Role |
 |-------|--------|-----------|--------|
-| Barrel | re-exports from General | SumCheck API (`TheoremPackage`, `soundness`, `completeness`) | Definitional |
+| Barrel | re-exports from General and PrefixSoundnessEndpoint | SumCheck API (`TheoremPackage`, `soundness`, `completeness`, `lundSoundnessAssumptionFullFieldAlignedPosRounds_prefix`) | Definitional |
 
 ## Proof Obligations and Closure Plan
 
@@ -38,7 +38,7 @@ No open boundary assumptions in this module.
 
 ## Dependency and Consumer Map
 
-- **Dependencies**: imports `SuperNeo.ProofSystem.SumCheck.General`.
+- **Dependencies**: imports `SuperNeo.ProofSystem.SumCheck.General`, `SuperNeo.ProofSystem.SumCheck.PrefixSoundnessEndpoint`.
 - **Consumers**:
   - `SuperNeo.ProofSystem.Folding`, `SuperNeo.FoldingProtocol`: use sum-check for folding reductions.
   - `SuperNeo.ProofSystem.SumCheckInterface`: imports this module for interface boundary.

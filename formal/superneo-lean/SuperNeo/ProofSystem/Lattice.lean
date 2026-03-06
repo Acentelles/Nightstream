@@ -444,16 +444,6 @@ theorem matVecMul_size (params : AjtaiParams) (matrixFlat v : Array Coeffs) :
   (matVecMul params matrixFlat v).size = params.kappa := by
   simp [matVecMul]
 
-/-- Ajtai binding boundary at theorem level. -/
-def AjtaiBindingAssumption (params : AjtaiParams) : Prop :=
-  ¬ Nonempty (BindingCollision params)
-
-/-- Ajtai relaxed-binding boundary at theorem level. -/
-def AjtaiRelaxedBindingAssumption
-  (params : AjtaiParams)
-  (C : SuperNeo.SamplingCarrier) : Prop :=
-  ¬ Nonempty (RelaxedBindingCollision params C)
-
 /-- Abstract Ajtai binding game interface indexed by security parameter. -/
 structure AjtaiBindingGame (params : AjtaiParams) where
   breakAt : Nat → Prop
@@ -505,6 +495,20 @@ def AjtaiRelaxedBindingAdvantageBound
   (eps : ErrorFn) : Prop :=
   ∀ prob : ProbModel, ∀ n : Nat,
     AjtaiRelaxedBindingAdvantage prob (canonicalAjtaiRelaxedBindingGame params C) n ≤ (eps n : Rat)
+
+/-- Ajtai binding boundary at theorem level (probabilistic form). -/
+def AjtaiBindingAssumption (params : AjtaiParams) : Prop :=
+  ∃ eps : ErrorFn,
+    IsNegligible eps ∧
+    AjtaiBindingAdvantageBound params eps
+
+/-- Ajtai relaxed-binding boundary at theorem level (probabilistic form). -/
+def AjtaiRelaxedBindingAssumption
+  (params : AjtaiParams)
+  (C : SuperNeo.SamplingCarrier) : Prop :=
+  ∃ eps : ErrorFn,
+    IsNegligible eps ∧
+    AjtaiRelaxedBindingAdvantageBound params C eps
 
 /-- Explicit Ajtai binding boundary package with aligned error/bound surfaces. -/
 structure AjtaiBindingBoundary (params : AjtaiParams) where

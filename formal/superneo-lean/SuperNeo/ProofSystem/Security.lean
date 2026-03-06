@@ -7,11 +7,14 @@ structure ProbModel where
   Pr : Prop → Rat
   prNonneg : ∀ P : Prop, 0 ≤ Pr P
   prLeOne : ∀ P : Prop, Pr P ≤ 1
+  prFalse : Pr False = 0
+  prMonotone : ∀ {P Q : Prop}, (P → Q) → Pr P ≤ Pr Q
+  prUnionLeAdd : ∀ P Q : Prop, Pr (P ∨ Q) ≤ Pr P + Pr Q
 
 private def zeroError : ErrorFn := fun _ => 0
 
 private theorem negligible_zeroError : IsNegligible zeroError := by
-  simp [zeroError]
+  simpa [zeroError] using (isNegligible_zero : IsNegligible (fun _ => 0))
 
 /-- Error accounting model with explicit source terms and total term. -/
 structure ErrorModel where
@@ -42,7 +45,7 @@ def zeroErrorModel : ErrorModel where
   epsTotal := zeroError
   epsTotal_decomp := by
     intro n
-    simp [zeroError]
+    simp [zeroError, Rat.add_zero]
   negligibleSumcheck := negligible_zeroError
   negligibleMSIS := negligible_zeroError
   negligibleSchwartzZippel := negligible_zeroError

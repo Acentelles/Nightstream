@@ -29,7 +29,7 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 
 | Group | Lean symbol | Kind | Role | Guarantee |
 |---|---|---|---|---|
-| Assumptions | `PiRLCAssumptions` | structure | Definitional | strong : PiCCSAssumptions ctx |
+| Assumptions | `PiRLCAssumptions` | abbrev | Definitional | Alias of `ProtocolRelationsAssumptions ctx` |
 | Statement | `piRLCWeakStatement` | def | Definitional | ceRelaxedRelation ∧ SumCheckClaimTrue |
 | Theorem | `piRLCWeak_of_assumptions` | theorem | Theorem-Target | Assumptions + witness → weak statement |
 
@@ -39,7 +39,7 @@ All obligations closed. `piRLCWeak_of_assumptions` proved from `piCCSStrong_of_a
 
 ## Assumption Ledger
 
-No open boundary assumptions in this module. `PiRLCAssumptions` forwards `PiCCSAssumptions` from upstream.
+No open boundary assumptions in this module. `PiRLCAssumptions` is a direct alias to `ProtocolRelationsAssumptions` from upstream.
 
 ## Dependency and Consumer Map
 

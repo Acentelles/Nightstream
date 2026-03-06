@@ -7,12 +7,12 @@ Weak interactive-reduction step `Π_RLC`.
 namespace SuperNeo
 
 /-- Assumptions consumed by the `Π_RLC` reduction step. -/
-structure PiRLCAssumptions (ctx : ProtocolTargetContext) where
-  strong : PiCCSAssumptions ctx
+abbrev PiRLCAssumptions (ctx : ProtocolTargetContext) :=
+  ProtocolRelationsAssumptions ctx
 
 /-- Native assumptions consumed by the `Π_RLC` reduction step. -/
-structure PiRLCNativeAssumptions (ctx : ProtocolTargetContext) where
-  strong : PiCCSNativeAssumptions ctx
+abbrev PiRLCNativeAssumptions (ctx : ProtocolTargetContext) :=
+  ProtocolRelationsNativeAssumptions ctx
 
 /-- Weak `Π_RLC` target statement. -/
 def piRLCWeakStatement (ctx : ProtocolTargetContext) : Prop :=
@@ -26,7 +26,7 @@ theorem piRLCWeak_of_assumptions
   (hWitness : SumCheckTransitionWitness ctx) :
   piRLCWeakStatement ctx := by
   have hStrong : piCCSStrongStatement ctx :=
-    piCCSStrong_of_assumptions h.strong hWitness
+    piCCSStrong_of_assumptions h hWitness
   exact ⟨ceRelaxedRelation_of_ce hStrong.1, hStrong.2⟩
 
 /-- Derive weak `Π_RLC` statement from native strong `Π_CCS`. -/
@@ -36,7 +36,7 @@ theorem piRLCWeak_of_native_assumptions
   (hWitness : SumCheckTransitionWitness ctx) :
   piRLCWeakStatement ctx := by
   have hStrong : piCCSStrongStatement ctx :=
-    piCCSStrong_of_native_assumptions h.strong hWitness
+    piCCSStrong_of_native_assumptions h hWitness
   exact ⟨ceRelaxedRelation_of_ce hStrong.1, hStrong.2⟩
 
 end SuperNeo

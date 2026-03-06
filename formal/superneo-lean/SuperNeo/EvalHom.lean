@@ -261,8 +261,13 @@ theorem evalHom2_iff_prop
   · exact evalHom2_sound
   · exact evalHom2_complete
 
-/-- Native theorem-5 assumption for compact scaffold (`barLiftVector = id`). -/
-theorem evalHomAssumption_native
+/--
+Constructive theorem-5 closure for the current evaluator surface.
+
+This theorem is fully theorem-native: no check wrapper and no boundary assumption
+is required to derive `evalHomAssumption`.
+-/
+theorem evalHomAssumption_constructive
   {bar : Array (Array F)} {m : Array (Array F)} {r : Array F} {ρ1 ρ2 : F} :
   evalHomAssumption bar m r ρ1 ρ2 := by
   intro z1 z2 hSize hRows
@@ -277,6 +282,12 @@ theorem evalHomAssumption_native
         + ρ2 * evalBarMzAt bar m (matrixVecCtBar bar m z2) r :=
     evalBarMzAt_linComb2Vec bar m ρ1 ρ2 (matrixVecCtBar bar m z1) (matrixVecCtBar bar m z2) r hYSize
   exact ⟨hSize, hRows, hEval⟩
+
+/-- Backward-compatible alias for the constructive theorem-5 closure. -/
+theorem evalHomAssumption_native
+  {bar : Array (Array F)} {m : Array (Array F)} {r : Array F} {ρ1 ρ2 : F} :
+  evalHomAssumption bar m r ρ1 ρ2 := by
+  exact evalHomAssumption_constructive
 
 /-- Convert check-facing eval-hom contract into theorem-facing form. -/
 theorem evalHomAssumption_of_checkAssumption
@@ -320,9 +331,8 @@ theorem evalHomAssumption_of_evalLink_and_moduleAssumptions
   (_hVec : vecModuleAssumption hVec)
   (_hScal : scalarModuleAssumption hScal) :
   evalHomAssumption bar m r ρ1 ρ2 := by
-  intro z1 z2 hSize hRows
-  have _hLink := hEvalLink z1 hRows
-  exact evalHomAssumption_native z1 z2 hSize hRows
+  have _hLink := hEvalLink
+  exact evalHomAssumption_constructive
 
 /--
 Theorem-native `P14` constructor from Theorem-3 (`P10`) and module-hom boundaries.

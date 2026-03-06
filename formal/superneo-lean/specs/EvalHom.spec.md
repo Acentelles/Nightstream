@@ -42,7 +42,8 @@
 | Eval-hom prop | `evalHom2Prop`, `evalHom2` | `z1.size = z2.size`, row compatibility | Theorem-5 linearity equation over `matrixVecCtBar` images | Theorem-Target | `ArithmeticBundle.lean` |
 | Theorem-facing boundary | `evalHomAssumption bar m r ρ1 ρ2` | None | `∀ z1 z2, ... → evalHom2Prop ...` | Theorem-Target | `ProtocolMathTarget` |
 | Check-facing boundary | `evalHomCheckAssumption bar m r ρ1 ρ2` | None | `∀ z1 z2, ... → evalHom2 = true` | Theorem-Target | — |
-| Native closure | `evalHomAssumption_native` | None | `evalHomAssumption bar m r ρ1 ρ2` (MLE linearity, independent of bar-lift) | Theorem-Target | — |
+| Constructive closure | `evalHomAssumption_constructive` | None | `evalHomAssumption bar m r ρ1 ρ2` (derived from MLE linearity; theorem-native) | Theorem-Target | — |
+| Compatibility alias | `evalHomAssumption_native` | None | Backward-compatible alias to constructive closure | Theorem-Target | — |
 | Sound/complete | `evalHom2_sound`, `evalHom2_complete`, `evalHom2_iff_prop` | Check true / Prop holds | Bidirectional bridge | Theorem-Target | — |
 | From eval-link + module | `evalHomAssumption_of_evalLink_and_moduleAssumptions` | `evalLinkAssumption`, `vecModuleAssumption`, `scalarModuleAssumption` | `evalHomAssumption` | Theorem-Target | — |
 | From Thm3 + module | `evalHomAssumption_of_thm3_and_moduleAssumptions` | `thm3CoreAssumption`, module assumptions | `evalHomAssumption` | Theorem-Target | — |
@@ -51,7 +52,7 @@
 
 ## Proof Obligations and Closure Plan
 
-All obligations closed. `evalHomAssumption_native` proves the Theorem-5 linearity equation via:
+All obligations closed. `evalHomAssumption_constructive` proves the Theorem-5 linearity equation via:
 1. `mleInnerProductLinearityAssumption_holds`,
 2. helper lemmas linking `linComb2Vec` to `MLE.linComb`,
 3. derived scaling lemma for `mleInnerProductForm`.
@@ -78,7 +79,7 @@ No open boundary assumptions in this module.
    - zero/scale behavior of `mleInnerProductForm`,
    - `linComb2Vec`-to-`linComb` bridge.
 4. Prove `evalHom2_sound`, `evalHom2_complete`, `evalHom2_iff_prop`.
-5. Prove `evalHomAssumption_native`, then bridge constructors (`eval-link`, `P10`, `P11`).
+5. Prove `evalHomAssumption_constructive`, then bridge constructors (`eval-link`, `P10`, `P11`).
 
 ## Quality Expectations
 

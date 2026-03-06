@@ -44,6 +44,13 @@ abbrev evalHomAssumption := SuperNeo.evalHomAssumption
 abbrev evalHomCheckAssumption := SuperNeo.evalHomCheckAssumption
 
 /-- [Role: Theorem-Target] Native closure of theorem-facing eval-hom boundary. -/
+theorem evalHomAssumption_constructive
+  {bar : Array (Array F)} {m : Array (Array F)}
+  {r : Array F} {ρ1 ρ2 : F} :
+  evalHomAssumption bar m r ρ1 ρ2 :=
+  SuperNeo.evalHomAssumption_constructive
+
+/-- [Role: Theorem-Target] Backward-compatible alias for constructive eval-hom closure. -/
 theorem evalHomAssumption_native
   {bar : Array (Array F)} {m : Array (Array F)}
   {r : Array F} {ρ1 ρ2 : F} :

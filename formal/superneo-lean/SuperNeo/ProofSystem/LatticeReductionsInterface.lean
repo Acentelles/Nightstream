@@ -216,11 +216,11 @@ theorem msisBreakEvent_of_relaxedBindingCollision
 
 abbrev truthProb := SuperNeo.ProofSystem.truthProb
 
-theorem no_msisBreakEvent_of_hardness
+theorem msisAdvantageBound_of_hardness
   {params : AjtaiParams}
   (h : MSISHardnessAssumption params) :
-  ¬ MSISBreakEvent params :=
-  SuperNeo.ProofSystem.no_msisBreakEvent_of_hardness (params := params) h
+  ∃ eps : ErrorFn, IsNegligible eps ∧ MSISAdvantageBound params eps :=
+  SuperNeo.ProofSystem.msisAdvantageBound_of_hardness (params := params) h
 
 theorem no_ajtaiBindingCollision_of_advantageBound
   {params : AjtaiParams}

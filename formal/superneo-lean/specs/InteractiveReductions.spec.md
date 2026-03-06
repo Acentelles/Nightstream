@@ -2,7 +2,7 @@
 
 ## Purpose
 
-- **What it is**: A structure `InteractiveReductionAssumptions` bundling PiCCS, PiRLC, and PiDEC assumptions, plus strong and weak composition statements for the reduction pipeline Π_RLC ∘ Π_CCS and Π_DEC ∘ Π_RLC ∘ Π_CCS.
+- **What it is**: A compact structure `InteractiveReductionAssumptions` bundling protocol-relation assumptions (via `PiDECAssumptions`, now an alias of `ProtocolRelationsAssumptions`) and a sum-check transition witness, plus strong and weak composition statements for the reduction pipeline Π_RLC ∘ Π_CCS and Π_DEC ∘ Π_RLC ∘ Π_CCS.
 - **Key property**: Under the assumption bundle, `strongCompositionStatement` (Π_RLC ∘ Π_CCS is strong) and `weakCompositionStatement` (Π_DEC ∘ Π_RLC ∘ Π_CCS is weak) hold; composition theorems are proved from the bundle.
 - **Protocol role**: ProtocolTheorem uses composition statements. This is the composition capstone for all three reduction steps (CCS → RLC → DEC).
 
@@ -12,6 +12,7 @@
 - `weakCompositionStatement ctx ↔ ceRelaxedRelation ctx ∧ SumCheckClaimTrue (sumcheckInstanceOfContext ctx)`
 - `InteractiveReductionAssumptions ctx → strongCompositionStatement ctx`
 - `InteractiveReductionAssumptions ctx → weakCompositionStatement ctx`
+- `InteractiveReductionAssumptions ctx + (∀ n, 0 ≤ eps n) → SoundnessFailureAdvantageBound(sumcheckInstanceOfContext ctx, witnessTranscript, eps)`
 
 ## Paper Anchors
 
@@ -31,20 +32,23 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 
 | Group | Lean symbol | Kind | Role | Guarantee |
 |---|---|---|---|---|
-| Assumptions | `InteractiveReductionAssumptions` | structure | Boundary | Bundles PiCCS, PiRLC, PiDEC |
+| Assumptions | `InteractiveReductionAssumptions` | structure | Boundary | Bundles relation assumptions + SumCheck transition witness |
+| Constructor | `InteractiveReductionAssumptions.ofProtocolRelations` | def | Theorem-Target | Canonical constructor from protocol-relations assumptions + witness |
 | Statements | `strongCompositionStatement` | def | Definitional | Π_RLC ∘ Π_CCS strong |
 | Statements | `weakCompositionStatement` | def | Definitional | Π_DEC ∘ Π_RLC ∘ Π_CCS weak |
 | Theorems | `strongComposition_of_assumptions` | theorem | Theorem-Target | Assumptions → strong |
 | Theorems | `weakComposition_of_assumptions` | theorem | Theorem-Target | Assumptions → weak |
+| Theorems | `sumcheckFailureAdvantageBound_of_assumptions` | theorem | Theorem-Target | Witness-level SumCheck failure-advantage bound from reduction assumptions |
+| Theorems | `sumcheckFailureAdvantageBound_of_native_assumptions` | theorem | Theorem-Target | Native-path witness-level SumCheck failure-advantage bound |
 
 ## Proof Obligations and Closure Plan
 
-Closure target: Prove `InteractiveReductionAssumptions ctx` for concrete protocol contexts by instantiating PiCCS, PiRLC, and PiDEC assumptions. The composition theorems are proved from the bundle; the bundle itself is the boundary.
+Closure target: Prove `InteractiveReductionAssumptions ctx` for concrete protocol contexts by instantiating protocol-relations assumptions and an accepted sum-check transition witness. The composition theorems are proved from the bundle; the bundle itself is the boundary.
 
 ## Assumption Ledger
 
-- `InteractiveReductionAssumptions`: boundary assumption bundling PiCCS, PiRLC, and PiDEC reduction assumptions.
-- Closure target: Instantiate from ProtocolTarget/PiCCS/PiRLC/PiDEC proofs for concrete protocol parameters.
+- `InteractiveReductionAssumptions`: boundary assumption bundling relation assumptions and a transition witness.
+- Closure target: instantiate via `InteractiveReductionAssumptions.ofProtocolRelations`.
 
 ## Dependency and Consumer Map
 

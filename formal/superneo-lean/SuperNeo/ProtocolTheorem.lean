@@ -62,78 +62,217 @@ def ajtaiRelaxedBindingAssumption
   (C : SuperNeo.SamplingCarrier) : Prop :=
   SuperNeo.ProofSystem.AjtaiRelaxedBindingAssumption params C
 
-/-- Canonical nested SumCheck soundness boundary extracted from reductions. -/
-def reductionSumcheckSoundnessBoundary
-  {ctx : ProtocolTargetContext}
-  (hR : InteractiveReductionAssumptions ctx) : SumcheckSoundnessAssumption :=
-  hR.reduction.weak.strong.relations.sumcheckSoundness
+/--
+Protocol-facing SumCheck soundness package built around the faithful
+prefix-dependent full-field endpoint.
 
-/-- Canonical nested SumCheck completeness boundary extracted from reductions. -/
-def reductionSumcheckCompletenessBoundary
+This does not try to reconstruct a `SoundnessGame` from `ctx`; it carries the
+concrete aligned positive-round game that the protocol instantiation uses.
+-/
+structure SumcheckPrefixLundBoundary (ctx : ProtocolTargetContext) where
+  game : SuperNeo.ProofSystem.Sumcheck.SoundnessGame
+  instEq : game.inst = sumcheckInstanceOfContext ctx
+  denominatorAligned :
+    SuperNeo.sumcheckLundSoundnessDenominator game.inst = Goldilocks.q
+  roundsPos : 0 < game.inst.rounds
+
+/-- Access the faithful prefix-dependent SumCheck Lund bound from the package. -/
+theorem SumcheckPrefixLundBoundary.lundBoundHolds
   {ctx : ProtocolTargetContext}
-  (hR : InteractiveReductionAssumptions ctx) : SumcheckCompletenessAssumption :=
-  hR.reduction.weak.strong.relations.sumcheckCompleteness
+  (h : SumcheckPrefixLundBoundary ctx) :
+  h.game.lundBoundHolds
+    (SuperNeo.ProofSystem.Sumcheck.fullFieldUniformCoinProbModel h.game.inst.rounds) := by
+  exact SuperNeo.ProofSystem.Sumcheck.lundSoundnessAssumptionFullFieldAlignedPosRounds_prefix
+    h.game h.denominatorAligned h.roundsPos
+
+/--
+Canonical final error package:
+groups all boundary error terms and one alignment witness against a shared
+`ErrorModel`.
+-/
+structure FinalErrorPackage (params : LatticeParams) where
+  /-- Minimal explicit SumCheck error boundary; theorem package is derived. -/
+  sumcheckError : SuperNeo.ProofSystem.Sumcheck.SoundnessErrorBoundary
+  schwartzZippelBoundary : SchwartzZippelBoundary
+  errorModel : SuperNeo.ProofSystem.ErrorModel
+  msisBoundary : SuperNeo.ProofSystem.MSISHardnessBoundary params
+  msisToAjtai : SuperNeo.ProofSystem.MSISToAjtaiReductions params
+  aligned :
+    errorModel.epsSumcheck = sumcheckError.epsSoundness ∧
+    errorModel.epsSchwartzZippel = schwartzZippelBoundary.epsSchwartzZippel ∧
+    errorModel.epsMSIS = msisBoundary.epsMSIS ∧
+    errorModel.epsBinding = msisToAjtai.epsBinding ∧
+    errorModel.epsRelaxedBinding = msisToAjtai.epsRelaxedBinding
 
 /-- Canonical final assumption registry. -/
 structure FinalTheoremAssumptions (ctx : ProtocolTargetContext) where
   reduction : InteractiveReductionAssumptions ctx
-  sumcheckPackage :
-    SuperNeo.ProofSystem.Sumcheck.TheoremPackage
-      (reductionSumcheckSoundnessBoundary reduction)
-      (reductionSumcheckCompletenessBoundary reduction)
-  schwartzZippelBoundary : SchwartzZippelBoundary
-  errorModel : SuperNeo.ProofSystem.ErrorModel
-  sumcheckErrorAligned :
-    errorModel.epsSumcheck = sumcheckPackage.soundnessError.epsSoundness
-  schwartzZippelErrorAligned :
-    errorModel.epsSchwartzZippel = schwartzZippelBoundary.epsSchwartzZippel
+  sumcheckPrefix : SumcheckPrefixLundBoundary ctx
   latticeParams : LatticeParams
-  msisBoundary : SuperNeo.ProofSystem.MSISHardnessBoundary latticeParams
-  msisToAjtai : SuperNeo.ProofSystem.MSISToAjtaiReductions latticeParams
-  msisErrorAligned :
-    errorModel.epsMSIS = msisBoundary.epsMSIS
-  bindingErrorAligned :
-    errorModel.epsBinding = msisToAjtai.epsBinding
-  relaxedBindingErrorAligned :
-    errorModel.epsRelaxedBinding = msisToAjtai.epsRelaxedBinding
-  totalErrorAligned :
-    ∀ n,
-      errorModel.epsTotal n =
-        sumcheckPackage.soundnessError.epsSoundness n +
-          msisBoundary.epsMSIS n +
-            schwartzZippelBoundary.epsSchwartzZippel n +
-              msisToAjtai.epsBinding n +
-                msisToAjtai.epsRelaxedBinding n
+  errorPackage : FinalErrorPackage latticeParams
+  /--
+  Concrete error-model index used to account for the faithful prefix-game
+  SumCheck failure probability in the final theorem.
+  -/
+  sumcheckErrorIndex : Nat
+  /--
+  The faithful prefix-dependent SumCheck game is instantiated by the same
+  concrete transcript carried by the reduction witness.
+  -/
+  sumcheckWitnessMatchesPrefix :
+    sumcheckPrefix.game.transcript
+        reduction.sumcheckTransitionWitness.transcript.challenges =
+      reduction.sumcheckTransitionWitness.transcript
+  /--
+  Final SumCheck error accounting dominates the faithful prefix-game failure
+  probability under the canonical full-field coin model at the chosen
+  error-model index.
+  -/
+  sumcheckErrorCoversPrefix :
+    sumcheckPrefix.game.advantage
+        (SuperNeo.ProofSystem.Sumcheck.fullFieldUniformCoinProbModel
+          sumcheckPrefix.game.inst.rounds) ≤
+      errorPackage.errorModel.epsSumcheck sumcheckErrorIndex
 
-/-- Canonical SumCheck soundness boundary extracted from nested reduction assumptions. -/
-def FinalTheoremAssumptions.sumcheckSoundnessBoundary
+/-- Access canonical SumCheck error boundary from final assumptions. -/
+def FinalTheoremAssumptions.sumcheckError
   {ctx : ProtocolTargetContext}
-  (hA : FinalTheoremAssumptions ctx) : SumcheckSoundnessAssumption :=
-  reductionSumcheckSoundnessBoundary hA.reduction
+  (hA : FinalTheoremAssumptions ctx) :
+  SuperNeo.ProofSystem.Sumcheck.SoundnessErrorBoundary :=
+  hA.errorPackage.sumcheckError
 
-/-- Canonical SumCheck completeness boundary extracted from nested reduction assumptions. -/
-def FinalTheoremAssumptions.sumcheckCompletenessBoundary
+/-- Access the protocol-facing faithful SumCheck prefix-Lund package. -/
+def FinalTheoremAssumptions.sumcheckPrefixBoundary
   {ctx : ProtocolTargetContext}
-  (hA : FinalTheoremAssumptions ctx) : SumcheckCompletenessAssumption :=
-  reductionSumcheckCompletenessBoundary hA.reduction
+  (hA : FinalTheoremAssumptions ctx) : SumcheckPrefixLundBoundary ctx :=
+  hA.sumcheckPrefix
+
+/-- Identify the reduction witness transcript with the faithful prefix-game transcript. -/
+def FinalTheoremAssumptions.sumcheckWitnessTranscriptEq
+  {ctx : ProtocolTargetContext}
+  (hA : FinalTheoremAssumptions ctx) :
+  hA.sumcheckPrefix.game.transcript
+      hA.reduction.sumcheckTransitionWitness.transcript.challenges =
+    hA.reduction.sumcheckTransitionWitness.transcript :=
+  hA.sumcheckWitnessMatchesPrefix
+
+/-- Access canonical Schwartz-Zippel boundary from final assumptions. -/
+def FinalTheoremAssumptions.schwartzZippelBoundary
+  {ctx : ProtocolTargetContext}
+  (hA : FinalTheoremAssumptions ctx) : SchwartzZippelBoundary :=
+  hA.errorPackage.schwartzZippelBoundary
+
+/-- Access canonical error model from final assumptions. -/
+def FinalTheoremAssumptions.errorModel
+  {ctx : ProtocolTargetContext}
+  (hA : FinalTheoremAssumptions ctx) :
+  SuperNeo.ProofSystem.ErrorModel :=
+  hA.errorPackage.errorModel
+
+/-- Access canonical MSIS boundary package from final assumptions. -/
+def FinalTheoremAssumptions.msisBoundary
+  {ctx : ProtocolTargetContext}
+  (hA : FinalTheoremAssumptions ctx) :
+  SuperNeo.ProofSystem.MSISHardnessBoundary hA.latticeParams :=
+  hA.errorPackage.msisBoundary
+
+/-- Access canonical MSIS-to-Ajtai reduction package from final assumptions. -/
+def FinalTheoremAssumptions.msisToAjtai
+  {ctx : ProtocolTargetContext}
+  (hA : FinalTheoremAssumptions ctx) :
+  SuperNeo.ProofSystem.MSISToAjtaiReductions hA.latticeParams :=
+  hA.errorPackage.msisToAjtai
+
+/-- Alignment between `epsSumcheck` and SumCheck soundness error. -/
+def FinalTheoremAssumptions.sumcheckErrorAligned
+  {ctx : ProtocolTargetContext}
+  (hA : FinalTheoremAssumptions ctx) :
+  hA.errorModel.epsSumcheck = hA.sumcheckError.epsSoundness :=
+  hA.errorPackage.aligned.1
+
+/-- Alignment between `epsSchwartzZippel` and Schwartz-Zippel boundary error. -/
+def FinalTheoremAssumptions.schwartzZippelErrorAligned
+  {ctx : ProtocolTargetContext}
+  (hA : FinalTheoremAssumptions ctx) :
+  hA.errorModel.epsSchwartzZippel = hA.schwartzZippelBoundary.epsSchwartzZippel :=
+  hA.errorPackage.aligned.2.1
+
+/-- Alignment between `epsMSIS` and MSIS boundary error. -/
+def FinalTheoremAssumptions.msisErrorAligned
+  {ctx : ProtocolTargetContext}
+  (hA : FinalTheoremAssumptions ctx) :
+  hA.errorModel.epsMSIS = hA.msisBoundary.epsMSIS :=
+  hA.errorPackage.aligned.2.2.1
+
+/-- Alignment between `epsBinding` and Ajtai binding boundary error. -/
+def FinalTheoremAssumptions.bindingErrorAligned
+  {ctx : ProtocolTargetContext}
+  (hA : FinalTheoremAssumptions ctx) :
+  hA.errorModel.epsBinding = hA.msisToAjtai.epsBinding :=
+  hA.errorPackage.aligned.2.2.2.1
+
+/-- Alignment between `epsRelaxedBinding` and Ajtai relaxed-binding boundary error. -/
+def FinalTheoremAssumptions.relaxedBindingErrorAligned
+  {ctx : ProtocolTargetContext}
+  (hA : FinalTheoremAssumptions ctx) :
+  hA.errorModel.epsRelaxedBinding = hA.msisToAjtai.epsRelaxedBinding :=
+  hA.errorPackage.aligned.2.2.2.2
 
 /-- Canonical SumCheck error boundary carried by final assumptions. -/
 def FinalTheoremAssumptions.sumcheckErrorBoundary
   {ctx : ProtocolTargetContext}
   (hA : FinalTheoremAssumptions ctx) :
   SuperNeo.ProofSystem.Sumcheck.SoundnessErrorBoundary :=
-  hA.sumcheckPackage.soundnessError
+  hA.sumcheckError
 
 /-- Canonical SumCheck error negligibility aligned to final error accounting. -/
 def FinalTheoremAssumptions.sumcheckErrorNegligible
   {ctx : ProtocolTargetContext}
   (hA : FinalTheoremAssumptions ctx) :
   SuperNeo.ProofSystem.IsNegligible hA.errorModel.epsSumcheck := by
-  have hNegPkg :
-      SuperNeo.ProofSystem.IsNegligible
-        hA.sumcheckPackage.soundnessError.epsSoundness :=
-    hA.sumcheckPackage.soundnessError.negligibleEpsSoundness
-  simpa [hA.sumcheckErrorAligned] using hNegPkg
+  simpa [hA.sumcheckErrorAligned] using
+    hA.sumcheckError.negligibleEpsSoundness
+
+/--
+Canonical SumCheck soundness-failure advantage bound on the witnessed transcript,
+aligned to final error accounting.
+-/
+def FinalTheoremAssumptions.sumcheckAdvantageBound
+  {ctx : ProtocolTargetContext}
+  (hA : FinalTheoremAssumptions ctx) :
+  SuperNeo.ProofSystem.Sumcheck.SoundnessFailureAdvantageBound
+      (sumcheckInstanceOfContext ctx)
+      hA.reduction.sumcheckTransitionWitness.transcript
+      hA.errorModel.epsSumcheck := by
+  apply sumcheckFailureAdvantageBound_of_assumptions
+    (h := hA.reduction)
+    (eps := hA.errorModel.epsSumcheck)
+  intro n
+  have hNonnegSoundness : 0 ≤ hA.sumcheckError.epsSoundness n :=
+    hA.sumcheckError.nonnegEpsSoundness n
+  simpa [hA.sumcheckErrorAligned] using hNonnegSoundness
+
+/-- Faithful prefix-dependent SumCheck Lund bound carried by final assumptions. -/
+def FinalTheoremAssumptions.sumcheckPrefixLundBound
+  {ctx : ProtocolTargetContext}
+  (hA : FinalTheoremAssumptions ctx) :
+  hA.sumcheckPrefix.game.lundBoundHolds
+    (SuperNeo.ProofSystem.Sumcheck.fullFieldUniformCoinProbModel
+      hA.sumcheckPrefix.game.inst.rounds) :=
+  hA.sumcheckPrefix.lundBoundHolds
+
+/--
+Faithful game-level SumCheck failure-probability bound aligned to the final
+error model.
+-/
+def FinalTheoremAssumptions.sumcheckPrefixAdvantageBound
+  {ctx : ProtocolTargetContext}
+  (hA : FinalTheoremAssumptions ctx) :
+  hA.sumcheckPrefix.game.advantage
+      (SuperNeo.ProofSystem.Sumcheck.fullFieldUniformCoinProbModel
+        hA.sumcheckPrefix.game.inst.rounds) ≤
+    hA.errorModel.epsSumcheck hA.sumcheckErrorIndex := by
+  simpa [FinalTheoremAssumptions.errorModel] using hA.sumcheckErrorCoversPrefix
 
 /-- Access Schwartz-Zippel boundary assumption from final assumptions. -/
 def FinalTheoremAssumptions.schwartzZippelBoundaryAssumption
@@ -171,12 +310,6 @@ def FinalTheoremAssumptions.schwartzZippelAdvantageBound
         (hA.schwartzZippelBoundary.epsSchwartzZippel n : Rat) :=
     hBound prob n
   simpa [hA.schwartzZippelErrorAligned] using hLe
-
-/-- Canonical low-norm invertibility boundary extracted from nested reduction assumptions. -/
-def FinalTheoremAssumptions.lowNormInvertibilityBoundary
-  {ctx : ProtocolTargetContext}
-  (hA : FinalTheoremAssumptions ctx) : lowNormInvertibilityAssumption Goldilocks.halfQ :=
-  hA.reduction.reduction.lowNormInvertibilityBoundary
 
 /-- Canonical MSIS hardness boundary extracted from the final lattice package. -/
 def FinalTheoremAssumptions.msisHardnessBoundary
@@ -300,7 +433,7 @@ def FinalTheoremAssumptions.totalErrorDecompFromModel
   (hA : FinalTheoremAssumptions ctx) :
   ∀ n,
     hA.errorModel.epsTotal n =
-      hA.sumcheckPackage.soundnessError.epsSoundness n +
+      hA.sumcheckError.epsSoundness n +
         hA.msisBoundary.epsMSIS n +
           hA.schwartzZippelBoundary.epsSchwartzZippel n +
             hA.msisToAjtai.epsBinding n +
@@ -333,32 +466,29 @@ def FinalKnowledgeSoundnessStatement
   (hA : FinalTheoremAssumptions ctx) : Prop :=
   strongCompositionStatement ctx ∧
   schwartzZippelAssumption ∧
-  hA.errorModel.epsSchwartzZippel = hA.schwartzZippelBoundary.epsSchwartzZippel ∧
-  SuperNeo.ProofSystem.IsNegligible hA.errorModel.epsSchwartzZippel ∧
   SchwartzZippelAdvantageBound hA.errorModel.epsSchwartzZippel ∧
-  hA.errorModel.epsSumcheck = hA.sumcheckPackage.soundnessError.epsSoundness ∧
-  SuperNeo.ProofSystem.IsNegligible hA.errorModel.epsSumcheck ∧
-  hA.errorModel.epsMSIS = hA.msisBoundary.epsMSIS ∧
-  SuperNeo.ProofSystem.IsNegligible hA.errorModel.epsMSIS ∧
+  hA.sumcheckPrefix.game.transcript
+      hA.reduction.sumcheckTransitionWitness.transcript.challenges =
+    hA.reduction.sumcheckTransitionWitness.transcript ∧
+  hA.sumcheckPrefix.game.lundBoundHolds
+      (SuperNeo.ProofSystem.Sumcheck.fullFieldUniformCoinProbModel
+        hA.sumcheckPrefix.game.inst.rounds) ∧
+  hA.sumcheckPrefix.game.advantage
+      (SuperNeo.ProofSystem.Sumcheck.fullFieldUniformCoinProbModel
+        hA.sumcheckPrefix.game.inst.rounds) ≤
+    hA.errorModel.epsSumcheck hA.sumcheckErrorIndex ∧
   SuperNeo.ProofSystem.MSISAdvantageBound hA.latticeParams hA.errorModel.epsMSIS ∧
-  hA.errorModel.epsBinding = hA.msisToAjtai.epsBinding ∧
-  SuperNeo.ProofSystem.IsNegligible hA.errorModel.epsBinding ∧
   SuperNeo.ProofSystem.AjtaiBindingAdvantageBound hA.latticeParams hA.errorModel.epsBinding ∧
-  hA.errorModel.epsRelaxedBinding = hA.msisToAjtai.epsRelaxedBinding ∧
-  SuperNeo.ProofSystem.IsNegligible hA.errorModel.epsRelaxedBinding ∧
   SuperNeo.ProofSystem.AjtaiRelaxedBindingAdvantageBound
       hA.latticeParams hA.msisToAjtai.laws.samplingCarrier hA.errorModel.epsRelaxedBinding ∧
   (∀ n,
     hA.errorModel.epsTotal n =
-      hA.sumcheckPackage.soundnessError.epsSoundness n +
+      hA.sumcheckError.epsSoundness n +
         hA.msisBoundary.epsMSIS n +
           hA.schwartzZippelBoundary.epsSchwartzZippel n +
             hA.msisToAjtai.epsBinding n +
               hA.msisToAjtai.epsRelaxedBinding n) ∧
-  SuperNeo.ProofSystem.IsNegligible hA.errorModel.epsTotal ∧
-  msisHardnessAssumption hA.latticeParams ∧
-  ajtaiBindingAssumption hA.latticeParams ∧
-  ajtaiRelaxedBindingAssumption hA.latticeParams hA.msisToAjtai.laws.samplingCarrier
+  SuperNeo.ProofSystem.IsNegligible hA.errorModel.epsTotal
 
 /-- Canonical final theorem container. -/
 structure FinalTheoremShape
@@ -376,24 +506,14 @@ theorem finalTheoremShape_of_assumptions
   · exact (weakComposition_of_assumptions hA.reduction).1
   · exact ⟨strongComposition_of_assumptions hA.reduction,
       hA.schwartzZippelBoundary.assumption,
-      hA.schwartzZippelErrorAligned,
-      hA.schwartzZippelErrorNegligible,
       hA.schwartzZippelAdvantageBound,
-      hA.sumcheckErrorAligned,
-      hA.sumcheckErrorNegligible,
-      hA.msisErrorAligned,
-      hA.msisErrorNegligible,
+      hA.sumcheckWitnessTranscriptEq,
+      hA.sumcheckPrefixLundBound,
+      hA.sumcheckPrefixAdvantageBound,
       hA.msisAdvantageBound,
-      hA.bindingErrorAligned,
-      hA.bindingErrorNegligible,
       hA.bindingAdvantageBound,
-      hA.relaxedBindingErrorAligned,
-      hA.relaxedBindingErrorNegligible,
       hA.relaxedBindingAdvantageBound,
-      hA.totalErrorAligned,
-      hA.totalErrorNegligible,
-      hA.msisHardnessBoundary,
-      hA.ajtaiBindingBoundary,
-      hA.ajtaiRelaxedBindingBoundary⟩
+      hA.totalErrorDecompFromModel,
+      hA.totalErrorNegligible⟩
 
 end SuperNeo

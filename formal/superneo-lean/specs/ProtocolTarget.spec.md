@@ -29,15 +29,16 @@
 | Contract group | Lean surface | Preconditions | Guarantee | Role | Used by |
 |---|---|---|---|---|---|
 | Context | `ProtocolTargetContext` | None | Bundles bar, m, r, rho1, rho2, hVec, hScal, splitScalar, kSplit, invDelta, cset, samples, xs, ys, qVals, coeffs, xEval, expectedEval | Definitional | ProtocolRelations, PiCCS |
-| Assumptions | `ProtocolTargetAssumptions ctx` | None | Bundles thm3, arithmetic (ArithmeticObligations), lowNormInvertibility | Definitional | — |
-| Assumptions | `ProtocolTargetNativeAssumptions ctx` | `ctx.bar = nativeBarMatrix` | Bundles native bar equality, arithmetic (ArithmeticObligations), lowNormInvertibility | Definitional | ProtocolRelations native path |
+| Assumptions | `ProtocolTargetAssumptions ctx` | None | Bundles thm3, arithmetic (ArithmeticObligations), direct witness `invertibleRq ctx.invDelta` | Definitional | — |
+| Assumptions | `ProtocolTargetNativeAssumptions ctx` | `ctx.bar = nativeBarMatrix` | Bundles native bar equality, arithmetic (ArithmeticObligations), direct witness `invertibleRq ctx.invDelta` | Definitional | ProtocolRelations native path |
+| Compatibility | `ProtocolTargetAssumptions.of_lowNormBoundary` / `ProtocolTargetNativeAssumptions.of_lowNormBoundary` | low-norm boundary + arithmetic window | Derives direct `invertibleRq` witness from low-norm boundary | Theorem-Target | Legacy assumption wiring |
 | Target prop | `protocolTargetProp ctx` | None | Conjunction of all protocol-target predicates | Definitional | ProtocolRelations |
 | Derivation | `protocolTargetProp_of_assumptions` | `ProtocolTargetAssumptions ctx` | `protocolTargetProp ctx` | Theorem-Target | ProtocolRelations |
 | Derivation | `protocolTargetProp_of_native_assumptions` | `ProtocolTargetNativeAssumptions ctx` | `protocolTargetProp ctx` | Theorem-Target | ProtocolRelations native path |
 
 ## Proof Obligations and Closure Plan
 
-All local obligations closed. `protocolTargetProp_of_assumptions` and `protocolTargetProp_of_native_assumptions` derive the target from their bundles; invertibility follows from `invertibleRq_of_lowNormAssumption`.
+All local obligations closed. `protocolTargetProp_of_assumptions` and `protocolTargetProp_of_native_assumptions` derive the target from their bundles using direct `invertibleRq` witnesses.
 
 ## Assumption Ledger
 

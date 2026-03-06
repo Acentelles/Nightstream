@@ -7,14 +7,12 @@ Reduction-of-knowledge step `Π_DEC`.
 namespace SuperNeo
 
 /-- Assumptions consumed by the `Π_DEC` step. -/
-structure PiDECAssumptions (ctx : ProtocolTargetContext) where
-  weak : PiRLCAssumptions ctx
-  lowNormInvertibilityBoundary : lowNormInvertibilityAssumption Goldilocks.halfQ
+abbrev PiDECAssumptions (ctx : ProtocolTargetContext) :=
+  ProtocolRelationsAssumptions ctx
 
 /-- Native assumptions consumed by the `Π_DEC` step. -/
-structure PiDECNativeAssumptions (ctx : ProtocolTargetContext) where
-  weak : PiRLCNativeAssumptions ctx
-  lowNormInvertibilityBoundary : lowNormInvertibilityAssumption Goldilocks.halfQ
+abbrev PiDECNativeAssumptions (ctx : ProtocolTargetContext) :=
+  ProtocolRelationsNativeAssumptions ctx
 
 /-- Knowledge-style `Π_DEC` target statement. -/
 def piDECKnowledgeStatement (ctx : ProtocolTargetContext) : Prop :=
@@ -30,10 +28,11 @@ theorem piDEC_of_assumptions
   (hWitness : SumCheckTransitionWitness ctx) :
   piDECKnowledgeStatement ctx := by
   have hWeak : piRLCWeakStatement ctx :=
-    piRLCWeak_of_assumptions h.weak hWitness
-  have hWin : invertibilityWindowProp Goldilocks.halfQ ctx.invDelta :=
-    h.weak.strong.relations.target.arithmetic.invertibilityWindow
-  rcases invertibleRq_of_lowNormAssumption h.lowNormInvertibilityBoundary hWin with ⟨deltaInv, hMul⟩
+    piRLCWeak_of_assumptions h hWitness
+  have hTarget : protocolTargetProp ctx := hWeak.1
+  rcases hTarget with ⟨_hThm3, _hSplit, _hEvalHom, _hVecMod, _hScalMod, _hSampling,
+      _hMleSize, _hMleId, _hInterp, hInvDelta⟩
+  rcases hInvDelta with ⟨deltaInv, hMul⟩
   exact ⟨deltaInv, hMul, hWeak.1, hWeak.2⟩
 
 /-- Derive `Π_DEC` statement from native weak relation and invertibility boundary. -/
@@ -43,10 +42,11 @@ theorem piDEC_of_native_assumptions
   (hWitness : SumCheckTransitionWitness ctx) :
   piDECKnowledgeStatement ctx := by
   have hWeak : piRLCWeakStatement ctx :=
-    piRLCWeak_of_native_assumptions h.weak hWitness
-  have hWin : invertibilityWindowProp Goldilocks.halfQ ctx.invDelta :=
-    h.weak.strong.relations.target.arithmetic.invertibilityWindow
-  rcases invertibleRq_of_lowNormAssumption h.lowNormInvertibilityBoundary hWin with ⟨deltaInv, hMul⟩
+    piRLCWeak_of_native_assumptions h hWitness
+  have hTarget : protocolTargetProp ctx := hWeak.1
+  rcases hTarget with ⟨_hThm3, _hSplit, _hEvalHom, _hVecMod, _hScalMod, _hSampling,
+      _hMleSize, _hMleId, _hInterp, hInvDelta⟩
+  rcases hInvDelta with ⟨deltaInv, hMul⟩
   exact ⟨deltaInv, hMul, hWeak.1, hWeak.2⟩
 
 end SuperNeo

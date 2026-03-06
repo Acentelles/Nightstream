@@ -8,7 +8,8 @@ Paper: `./formal/superneo-lean/SuperNeo.pdf.md`
 - Definition 6 (The sum-check protocol), lines 352–355
 - Section 7.3 (Π_CCS), lines 481–548; Section 7.4 (Π_RLC), lines 549–583
 
-Barrel re-export of General. This interface file is the typed boundary companion.
+Barrel re-export of General plus the prefix-dependent aligned positive-round endpoint.
+This interface file is the typed boundary companion.
 -/
 
 namespace SuperNeo
@@ -19,13 +20,15 @@ namespace ProofSystem.SumCheckInterface
 def implementationModule : String := "SuperNeo.ProofSystem.SumCheck"
 
 /-- Canonical paper source used for this module-level interface/spec pair. -/
-def paperSource : String := "/Users/nicolasarqueros/starstream/SuperNeo.pdf.md"
+def paperSource : String := "./formal/superneo-lean/SuperNeo.pdf.md"
 
 /-- Paper sections used to ground this module boundary. -/
 def paperAnchors : List String := ["§2.1 Sum-check reduction role", "§7.3 Interactive reduction for CCS"]
 
 /-- Public symbol inventory extracted from the implementation module. -/
-def exportedSymbolNames : List String := []
+def exportedSymbolNames : List String :=
+  [ "lundSoundnessAssumptionFullFieldAlignedPosRounds_prefix"
+  , "lundSoundnessAssumptionFullFieldAlignedPosRoundsPosDegree_prefix" ]
 
 /-- Assumption/boundary-oriented symbols extracted by naming convention. -/
 def boundarySymbolNames : List String := []

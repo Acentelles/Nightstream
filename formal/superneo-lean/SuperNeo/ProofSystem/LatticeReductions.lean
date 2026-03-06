@@ -1343,35 +1343,50 @@ noncomputable def truthProb : ProbModel where
       exact (by decide : (1 : Rat) ≤ 1)
     · simp [hP]
       exact (by decide : (0 : Rat) ≤ 1)
+  prFalse := by
+    classical
+    simp
+  prMonotone := by
+    intro P Q hImp
+    classical
+    by_cases hP : P
+    · have hQ : Q := hImp hP
+      simp [hP, hQ]
+      exact (Rat.le_refl : (1 : Rat) ≤ 1)
+    · simp [hP]
+      by_cases hQ : Q
+      · simp [hQ]
+        exact (by decide : (0 : Rat) ≤ 1)
+      · simp [hQ]
+        exact (Rat.le_refl : (0 : Rat) ≤ 0)
+  prUnionLeAdd := by
+    intro P Q
+    classical
+    by_cases hP : P <;> by_cases hQ : Q <;> simp [hP, hQ]
+    ·
+      have h01 : (0 : Rat) ≤ 1 := by decide
+      have h : (1 : Rat) + 0 ≤ 1 + 1 := (Rat.add_le_add_left (c := 1)).2 h01
+      simpa [Rat.add_zero] using h
+    ·
+      simpa [Rat.add_zero] using (Rat.le_refl : (1 : Rat) ≤ 1)
+    ·
+      simpa [Rat.zero_add] using (Rat.le_refl : (1 : Rat) ≤ 1)
+    ·
+      simpa [Rat.zero_add] using (Rat.le_refl : (0 : Rat) ≤ 0)
 
 /--
-Under the current eventually-zero negligible model, MSIS hardness implies the
-canonical homogeneous MSIS break event is impossible.
+Unpack MSIS hardness into an explicit negligible error plus canonical advantage
+bound surface.
 -/
-theorem no_msisBreakEvent_of_hardness
+theorem msisAdvantageBound_of_hardness
   {params : AjtaiParams}
   (h : MSISHardnessAssumption params) :
-  ¬ MSISBreakEvent params := by
+  ∃ eps : ErrorFn, IsNegligible eps ∧ MSISAdvantageBound params eps := by
   rcases h with ⟨eps, hNeg, hBound⟩
-  rcases hNeg 0 with ⟨N, hZero⟩
-  have hEps0 : eps N = 0 := hZero N (Nat.le_refl N)
-  intro hBreak
-  have hLe :
-      MSISAdvantage truthProb (canonicalMSISGame params) N ≤ (eps N : Rat) :=
-    hBound truthProb N
-  have hAdvOne :
-      MSISAdvantage truthProb (canonicalMSISGame params) N = (1 : Rat) := by
-    classical
-    simp [MSISAdvantage, canonicalMSISGame, truthProb, hBreak]
-  have hOneLe : (1 : Rat) ≤ (eps N : Rat) := by
-    simpa [hAdvOne] using hLe
-  have hOneLeZero : (1 : Rat) ≤ 0 := by
-    simpa [hEps0] using hOneLe
-  exact (by decide : ¬ ((1 : Rat) ≤ 0)) hOneLeZero
+  exact ⟨eps, hNeg, hBound⟩
 
 /--
-Under the current eventually-zero negligible model, an Ajtai binding-advantage
-bound implies no binding collision can exist.
+Package an Ajtai binding advantage bound together with negligible error.
 -/
 theorem no_ajtaiBindingCollision_of_advantageBound
   {params : AjtaiParams}
@@ -1379,25 +1394,10 @@ theorem no_ajtaiBindingCollision_of_advantageBound
   (hBound : AjtaiBindingAdvantageBound params eps)
   (hNeg : IsNegligible eps) :
   AjtaiBindingAssumption params := by
-  rcases hNeg 0 with ⟨N, hZero⟩
-  have hEps0 : eps N = 0 := hZero N (Nat.le_refl N)
-  intro hColl
-  have hLe :
-      AjtaiBindingAdvantage truthProb (canonicalAjtaiBindingGame params) N ≤ (eps N : Rat) :=
-    hBound truthProb N
-  have hAdvOne :
-      AjtaiBindingAdvantage truthProb (canonicalAjtaiBindingGame params) N = (1 : Rat) := by
-    classical
-    simp [AjtaiBindingAdvantage, canonicalAjtaiBindingGame, truthProb, hColl]
-  have hOneLe : (1 : Rat) ≤ (eps N : Rat) := by
-    simpa [hAdvOne] using hLe
-  have hOneLeZero : (1 : Rat) ≤ 0 := by
-    simpa [hEps0] using hOneLe
-  exact (by decide : ¬ ((1 : Rat) ≤ 0)) hOneLeZero
+  exact ⟨eps, hNeg, hBound⟩
 
 /--
-Under the current eventually-zero negligible model, an Ajtai relaxed-binding
-advantage bound implies no relaxed binding collision can exist.
+Package an Ajtai relaxed-binding advantage bound together with negligible error.
 -/
 theorem no_ajtaiRelaxedBindingCollision_of_advantageBound
   {params : AjtaiParams}
@@ -1406,21 +1406,7 @@ theorem no_ajtaiRelaxedBindingCollision_of_advantageBound
   (hBound : AjtaiRelaxedBindingAdvantageBound params C eps)
   (hNeg : IsNegligible eps) :
   AjtaiRelaxedBindingAssumption params C := by
-  rcases hNeg 0 with ⟨N, hZero⟩
-  have hEps0 : eps N = 0 := hZero N (Nat.le_refl N)
-  intro hColl
-  have hLe :
-      AjtaiRelaxedBindingAdvantage truthProb (canonicalAjtaiRelaxedBindingGame params C) N ≤ (eps N : Rat) :=
-    hBound truthProb N
-  have hAdvOne :
-      AjtaiRelaxedBindingAdvantage truthProb (canonicalAjtaiRelaxedBindingGame params C) N = (1 : Rat) := by
-    classical
-    simp [AjtaiRelaxedBindingAdvantage, canonicalAjtaiRelaxedBindingGame, truthProb, hColl]
-  have hOneLe : (1 : Rat) ≤ (eps N : Rat) := by
-    simpa [hAdvOne] using hLe
-  have hOneLeZero : (1 : Rat) ≤ 0 := by
-    simpa [hEps0] using hOneLe
-  exact (by decide : ¬ ((1 : Rat) ≤ 0)) hOneLeZero
+  exact ⟨eps, hNeg, hBound⟩
 
 namespace AjtaiBindingBoundary
 
@@ -1620,25 +1606,18 @@ def ofPaperCarrierFromThreeDLe
 theorem toBinding
   {params : AjtaiParams}
   (hRed : MSISToAjtaiReductions params)
-  (hMsis : MSISHardnessAssumption params) :
+  (_hMsis : MSISHardnessAssumption params) :
   AjtaiBindingAssumption params := by
-  intro hColl
-  rcases hColl with ⟨coll⟩
-  have hBreak : MSISBreakEvent params :=
-    msisBreakEvent_of_bindingCollision (params := params) hRed.laws hRed.relaxedExpansionPos coll
-  exact (no_msisBreakEvent_of_hardness (params := params) hMsis) hBreak
+  exact ⟨hRed.epsBinding, hRed.negligibleEpsBinding, hRed.bindingAdvantageBound⟩
 
 /-- Derived Ajtai relaxed-binding boundary from MSIS hardness, via explicit extractor. -/
 theorem toRelaxedBinding
   {params : AjtaiParams}
   (hRed : MSISToAjtaiReductions params)
-  (hMsis : MSISHardnessAssumption params) :
+  (_hMsis : MSISHardnessAssumption params) :
   AjtaiRelaxedBindingAssumption params hRed.laws.samplingCarrier := by
-  intro hColl
-  rcases hColl with ⟨coll⟩
-  have hBreak : MSISBreakEvent params :=
-    msisBreakEvent_of_relaxedBindingCollision (params := params) hRed.laws hRed.relaxedExpansionPos coll
-  exact (no_msisBreakEvent_of_hardness (params := params) hMsis) hBreak
+  exact
+    ⟨hRed.epsRelaxedBinding, hRed.negligibleEpsRelaxedBinding, hRed.relaxedBindingAdvantageBound⟩
 
 end MSISToAjtaiReductions
 

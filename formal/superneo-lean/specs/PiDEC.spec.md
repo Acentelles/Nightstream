@@ -3,7 +3,7 @@
 ## Purpose
 
 - **What it is**: The decomposition reduction step Π_DEC. Defines `piDECKnowledgeStatement` as the existence of `deltaInv` with `mulRq ctx.invDelta deltaInv = oneRq`, plus `ceRelaxedRelation ctx` and `SumCheckClaimTrue`.
-- **Key property**: `piDEC_of_assumptions`: given `PiDECAssumptions ctx` and `SumCheckTransitionWitness ctx`, we have `piDECKnowledgeStatement ctx`. Uses `lowNormInvertibilityAssumption` to obtain the inverse.
+- **Key property**: `piDEC_of_assumptions`: given `PiDECAssumptions ctx` and `SumCheckTransitionWitness ctx`, we have `piDECKnowledgeStatement ctx`. Invertibility is extracted directly from `protocolTargetProp` (via `ceRelaxedRelation`), not from a separate low-norm boundary input.
 - **Protocol role**: ProtocolTheorem and FoldingProtocol depend on `piDECKnowledgeStatement` for the knowledge-soundness chain. Section 7.5 (Π_DEC) reduces norm from B to b via decomposition.
 
 ## Target Formulas
@@ -29,24 +29,23 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 
 | Group | Lean symbol | Kind | Role | Guarantee |
 |---|---|---|---|---|
-| Assumptions | `PiDECAssumptions` | structure | Definitional | weak : PiRLCAssumptions ctx, lowNormInvertibilityBoundary |
+| Assumptions | `PiDECAssumptions` | abbrev | Definitional | Alias of `ProtocolRelationsAssumptions ctx` |
 | Statement | `piDECKnowledgeStatement` | def | Definitional | ∃ deltaInv, inverse ∧ ceRelaxed ∧ claimTrue |
 | Theorem | `piDEC_of_assumptions` | theorem | Theorem-Target | Assumptions + witness → knowledge statement |
 
 ## Proof Obligations and Closure Plan
 
-All obligations closed. `piDEC_of_assumptions` proved from `piRLCWeak_of_assumptions`, `invertibleRq_of_lowNormAssumption`, and invertibility-window precondition from protocol target.
+All obligations closed. `piDEC_of_assumptions` and `piDEC_of_native_assumptions` are proved from `piRLCWeak_*` plus projection of `invertibleRq ctx.invDelta` from `protocolTargetProp`.
 
 ## Assumption Ledger
 
-`PiDECAssumptions` includes `lowNormInvertibilityBoundary : lowNormInvertibilityAssumption Goldilocks.halfQ`. Closure target: prove `lowNormInvertibilityAssumption` in InvertibilityAxioms from Theorem 8.
+No extra invertibility boundary is threaded at `PiDEC` level; invertibility is already required upstream in `ProtocolTargetAssumptions`.
 
 ## Dependency and Consumer Map
 
 Upstream dependencies:
 - `SuperNeo/PiRLC.lean`: uses `piRLCWeakStatement`, `piRLCWeak_of_assumptions`, `PiRLCAssumptions`.
-- `SuperNeo/InvertibilityAxioms.lean`: uses `lowNormInvertibilityAssumption`, `invertibleRq_of_lowNormAssumption`, `invertibilityWindowProp`.
-- `SuperNeo/Goldilocks.lean`: uses `Goldilocks.halfQ`.
+- `SuperNeo/ProtocolTarget.lean`: `protocolTargetProp` carries `invertibleRq ctx.invDelta`.
 
 Downstream consumers:
 - `SuperNeo/ProtocolTheorem.lean`: depends on PiDEC for knowledge reduction chain.

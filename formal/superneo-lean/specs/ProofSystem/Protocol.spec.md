@@ -2,7 +2,7 @@
 
 ## Purpose
 
-- **What it is**: The proof-system-level protocol capstone that lifts `SuperNeo.ProtocolTheorem` into the `SuperNeo.ProofSystem` type framework. Re-exports `FinalTheoremAssumptions`, `FinalCompletenessStatement`, `FinalKnowledgeSoundnessStatement`, `FinalTheoremShape`, and accessors for all nested boundaries (SumCheck, Schwartz-Zippel, MSIS, Ajtai, error accounting).
+- **What it is**: The proof-system-level protocol capstone that lifts `SuperNeo.ProtocolTheorem` into the `SuperNeo.ProofSystem` type framework. Re-exports `FinalTheoremAssumptions`, `FinalCompletenessStatement`, `FinalKnowledgeSoundnessStatement`, `FinalTheoremShape`, and accessors for all nested boundaries (faithful SumCheck prefix-Lund game package, explicit SumCheck error boundary, Schwartz-Zippel, MSIS, Ajtai, error accounting).
 - **Key property**: `hA : FinalTheoremAssumptions ctx → FinalTheoremShape ctx hA`, i.e., the canonical theorem constructor `finalTheoremShape_of_assumptions` produces the final theorem shape from the assumption registry.
 - **Protocol role**: Single entrypoint for proof-system consumers that need the composed protocol theorem (Sections 4–7 and Appendix C). Aggregates Π_CCS, Π_RLC, Π_DEC, lattice boundaries, and error decomposition into one typed surface.
 
@@ -37,11 +37,11 @@
 | Statements | `FinalKnowledgeSoundnessStatement` | abbrev | Definitional | Knowledge-soundness claim shape |
 | Shape | `FinalTheoremShape` | abbrev | Definitional | Combined theorem shape |
 | Constructor | `finalTheoremShape_of_assumptions` | theorem | Theorem-Target | `hA : FinalTheoremAssumptions ctx → FinalTheoremShape ctx hA` |
-| SumCheck | `finalSumcheckPackage`, `finalSumcheckSoundnessBoundary`, etc. | def | Definitional | Accessors into `hA.sumcheckPackage`, `hA.sumcheckSoundnessBoundary`, etc. |
+| SumCheck | `finalSumcheckPrefixBoundary`, `finalSumcheckPrefixLundBound`, `finalSumcheckWitnessTranscriptEq`, `finalSumcheckPrefixAdvantageBound`, `finalSumcheckErrorBoundary`, `finalSumcheckAdvantageBound`, etc. | def | Definitional | Accessors into the faithful protocol-facing prefix-Lund package, transcript linkage, game-level SumCheck error accounting at the chosen final-theorem error index, explicit SumCheck error boundary, and an auxiliary witness-level failure-advantage helper |
 | Schwartz-Zippel | `finalSchwartzZippelBoundaryPackage`, `finalSchwartzZippelErrorNegligible`, etc. | def | Definitional | Accessors into `hA.schwartzZippelBoundary`, etc. |
 | MSIS | `finalMSISHardnessBoundary`, `finalMSISErrorNegligible`, etc. | def | Definitional | Accessors into `hA.msisHardnessBoundary`, etc. |
 | Ajtai | `finalAjtaiBindingBoundary`, `finalBindingErrorNegligible`, etc. | def | Definitional | Accessors into `hA.ajtaiBindingBoundary`, etc. |
-| Error | `finalTotalErrorAligned`, `finalTotalErrorNegligible` | def | Definitional | Accessors into `hA.totalErrorAligned`, `hA.totalErrorNegligible` |
+| Error | `finalTotalErrorAligned`, `finalTotalErrorNegligible` | def | Definitional | Accessors into derived `hA.totalErrorDecompFromModel` and `hA.totalErrorNegligible` |
 
 ## Proof Obligations and Closure Plan
 

@@ -50,7 +50,7 @@
 | Collisions | `BindingCollision`, `RelaxedBindingCollision params C` | Paper-faithful distinctness and carrier-membership threading | Definitional |
 | MSIS | `MSISBreakEvent`, `MSISSolution`, `MSISChallenge` | Homogeneous MSIS, \(Mz = 0\) | Definitional |
 | Hardness | `MSISHardnessAssumption`, `MSISHardnessBoundary` | \(\exists \varepsilon, \text{IsNegligible}(\varepsilon) \wedge \text{Adv} \le \varepsilon\) | Definitional |
-| Ajtai assumptions | `AjtaiBindingAssumption`, `AjtaiRelaxedBindingAssumption params C` | \(\neg \text{BindingCollision}\), \(\neg \text{RelaxedBindingCollision}\) | Definitional |
+| Ajtai assumptions | `AjtaiBindingAssumption`, `AjtaiRelaxedBindingAssumption params C` | \(\exists \varepsilon, \text{IsNegligible}(\varepsilon) \wedge \text{Adv} \le \varepsilon\) | Definitional |
 | Vector ops | `subRq_self`, `subVec_self` | \(\text{subRq}\,x\,x = 0\), \(\text{subVec}\,n\,v\,v = \text{zeroVec}\,n\) | Theorem-Target |
 
 ## Proof Obligations and Closure Plan
@@ -89,4 +89,4 @@ No open boundary assumptions in this module. Reduction-layer assumptions are tra
 ## Out of Scope
 
 - Concrete probabilistic game semantics (challenger/adversary sampling); abstract `breakAt` shells suffice for theorem-facing layer.
-- Advantage-to-probability translation for general negligible model; current eventually-zero model is sufficient for truth-valued `Pr`.
+- Tight computational-soundness accounting across concrete samplers; theorem-facing bounds are modeled via `ProbModel` + negligible error terms.

@@ -2,15 +2,15 @@
 
 ## Purpose
 
-- **What it is**: Error functions \(\varepsilon : \mathbb{N} \to \mathbb{N}\) and the predicate \(\text{IsNegligible}(\varepsilon)\) meaning \(\varepsilon\) becomes identically zero beyond some threshold.
-- **Key property**: \(\text{IsNegligible}(f) \leftrightarrow \forall c, \exists N, \forall n \ge N, f(n) = 0\).
+- **What it is**: Error functions \(\varepsilon : \mathbb{N} \to \mathbb{Q}\) and the predicate \(\text{IsNegligible}(\varepsilon)\) in asymptotic inverse-polynomial form.
+- **Key property**: \(\text{IsNegligible}(f) \leftrightarrow \forall c, \exists N, \forall n \ge N, f(n) \le \frac{1}{(n+1)^c}\).
 - **Protocol role**: Section 6 security reductions bound adversary success by \(\epsilon(\mathcal{A}, \mathcal{P}^*) - \text{negl}(\lambda)\); `IsNegligible` formalizes the negligible error bound \(\varepsilon\) in Definitions 9–10.
 
 ## Target Formulas
 
 - \(\text{negl}(\lambda)\) (paper) ↔ \(\exists \varepsilon : \text{ErrorFn}, \text{IsNegligible}(\varepsilon)\).
 - \(\epsilon(\mathcal{A}, \mathcal{P}^*) - \text{negl}(\lambda)\) ↔ extractor success probability bounded below by advantage minus negligible term.
-- \(\text{IsNegligible}(f) \leftrightarrow \forall _c, \exists N, \forall n \ge N, f(n) = 0\).
+- \(\text{IsNegligible}(f) \leftrightarrow \forall _c, \exists N, \forall n \ge N, f(n) \le \frac{1}{(n+1)^c}\).
 
 ## Paper Anchors
 
@@ -23,7 +23,8 @@
 
 | Paper concept | Lean symbol | Role |
 |---------------|-------------|--------|
-| Error function | `ErrorFn` (= `Nat → Nat`) | Definitional |
+| Error function | `ErrorFn` (= `Nat → Rat`) | Definitional |
+| Inverse-poly bound | `invPolyBound` | Definitional |
 | Negligible predicate | `IsNegligible` | Definitional |
 | Zero is negligible | `isNegligible_zero` | Theorem-Target |
 | Identically zero ⇒ negligible | `isNegligible_of_zero` | Theorem-Target |
@@ -33,9 +34,9 @@
 
 | Group | Symbol | Guarantee | Role |
 |-------|--------|-----------|--------|
-| Error functions | `ErrorFn` | `Nat → Nat` | Definitional |
-| Negligible predicate | `IsNegligible` | \(\forall c, \exists N, \forall n \ge N, f(n) = 0\) | Definitional |
-| Basic lemmas | `isNegligible_iff` | \(\text{IsNegligible}(f) \leftrightarrow \forall c, \exists N, \forall n \ge N, f(n) = 0\) | Theorem-Target |
+| Error functions | `ErrorFn` | `Nat → Rat` | Definitional |
+| Negligible predicate | `IsNegligible` | \(\forall c, \exists N, \forall n \ge N, f(n) \le \frac{1}{(n+1)^c}\) | Definitional |
+| Basic lemmas | `isNegligible_iff` | \(\text{IsNegligible}(f) \leftrightarrow \forall c, \exists N, \forall n \ge N, f(n) \le \frac{1}{(n+1)^c}\) | Theorem-Target |
 | | `isNegligible_zero` | \(\text{IsNegligible}(\lambda n. 0)\) | Theorem-Target |
 | | `isNegligible_of_zero` | \((\forall n, f(n) = 0) \to \text{IsNegligible}(f)\) | Theorem-Target |
 
@@ -57,12 +58,12 @@ No open boundary assumptions in this module.
 
 ## Implementation Plan
 
-- Current eventually-zero model is sufficient for truth-valued probability and boundary theorems.
-- Future: consider polynomial-negligible model if full asymptotic security proofs are formalized.
+- Keep asymptotic inverse-polynomial negligible form as the default theorem-facing surface.
+- Use this directly in `Security`, `Lattice`, and `ProtocolTheorem` error-accounting chains.
 
 ## Quality Expectations
 
-- Spec documents the eventually-zero model and its adequacy for current boundary proofs.
+- Spec documents asymptotic negligible behavior and the concrete bound shape.
 - Interface exposes `ErrorFn`, `IsNegligible`, and key lemmas.
 
 ## Acceptance Criteria
@@ -73,5 +74,5 @@ No open boundary assumptions in this module.
 
 ## Out of Scope
 
-- Full asymptotic negligible (e.g. \(f(n) < n^{-c}\) for all \(c\)); current model is intentionally compact.
-- Mathlib asymptotics; project avoids hard Mathlib dependency in proof-system facade.
+- Tight asymptotic optimization (Big-O/Theta style APIs); current surface is theorem-usable and minimal.
+- Full game-level probabilistic semantics; those live in reduction/protocol modules.

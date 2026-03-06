@@ -41,7 +41,7 @@ structure ProtocolTargetAssumptions (ctx : ProtocolTargetContext) where
     ctx.invDelta ctx.cset ctx.samples
     ctx.xs ctx.ys ctx.qVals ctx.coeffs
     ctx.xEval ctx.expectedEval
-  lowNormInvertibility : lowNormInvertibilityAssumption Goldilocks.halfQ
+  invDeltaInvertible : invertibleRq ctx.invDelta
 
 /--
 Native protocol-target assumptions.
@@ -58,7 +58,49 @@ structure ProtocolTargetNativeAssumptions (ctx : ProtocolTargetContext) where
     ctx.invDelta ctx.cset ctx.samples
     ctx.xs ctx.ys ctx.qVals ctx.coeffs
     ctx.xEval ctx.expectedEval
-  lowNormInvertibility : lowNormInvertibilityAssumption Goldilocks.halfQ
+  invDeltaInvertible : invertibleRq ctx.invDelta
+
+/--
+Compatibility constructor: derive protocol-target assumptions from a low-norm
+invertibility boundary and the arithmetic invertibility window.
+-/
+def ProtocolTargetAssumptions.of_lowNormBoundary
+  {ctx : ProtocolTargetContext}
+  (thm3 : thm3CoreAssumption ctx.bar)
+  (arithmetic : ArithmeticObligations
+    ctx.bar ctx.m ctx.r ctx.rho1 ctx.rho2
+    ctx.hVec ctx.hScal
+    ctx.splitScalar ctx.kSplit
+    ctx.invDelta ctx.cset ctx.samples
+    ctx.xs ctx.ys ctx.qVals ctx.coeffs
+    ctx.xEval ctx.expectedEval)
+  (hLowNorm : lowNormInvertibilityAssumption Goldilocks.halfQ) :
+  ProtocolTargetAssumptions ctx where
+  thm3 := thm3
+  arithmetic := arithmetic
+  invDeltaInvertible :=
+    invertibleRq_of_lowNormAssumption hLowNorm arithmetic.invertibilityWindow
+
+/--
+Compatibility constructor: derive native protocol-target assumptions from a
+low-norm invertibility boundary and the arithmetic invertibility window.
+-/
+def ProtocolTargetNativeAssumptions.of_lowNormBoundary
+  {ctx : ProtocolTargetContext}
+  (barNative : ctx.bar = nativeBarMatrix)
+  (arithmetic : ArithmeticObligations
+    ctx.bar ctx.m ctx.r ctx.rho1 ctx.rho2
+    ctx.hVec ctx.hScal
+    ctx.splitScalar ctx.kSplit
+    ctx.invDelta ctx.cset ctx.samples
+    ctx.xs ctx.ys ctx.qVals ctx.coeffs
+    ctx.xEval ctx.expectedEval)
+  (hLowNorm : lowNormInvertibilityAssumption Goldilocks.halfQ) :
+  ProtocolTargetNativeAssumptions ctx where
+  barNative := barNative
+  arithmetic := arithmetic
+  invDeltaInvertible :=
+    invertibleRq_of_lowNormAssumption hLowNorm arithmetic.invertibilityWindow
 
 /-- Protocol-target proposition (compact protocol-math-target style surface). -/
 def protocolTargetProp (ctx : ProtocolTargetContext) : Prop :=
@@ -81,7 +123,7 @@ theorem protocolTargetProp_of_assumptions
   refine ⟨h.thm3, h.arithmetic.splitTerminalZero, h.arithmetic.evalHom,
     h.arithmetic.vecModule, h.arithmetic.scalarModule, h.arithmetic.sampling,
     h.arithmetic.mleTableSize, h.arithmetic.mleIdentityAtR, h.arithmetic.interpolation, ?_⟩
-  exact invertibleRq_of_lowNormAssumption h.lowNormInvertibility h.arithmetic.invertibilityWindow
+  exact h.invDeltaInvertible
 
 /--
 Derive protocol target from native assumptions, closing Theorem-3 by rewriting
@@ -91,12 +133,11 @@ theorem protocolTargetProp_of_native_assumptions
   {ctx : ProtocolTargetContext}
   (h : ProtocolTargetNativeAssumptions ctx) :
   protocolTargetProp ctx := by
-  rcases h with ⟨hBar, hArithmetic, hLowNormInvertibility⟩
+  rcases h with ⟨hBar, hArithmetic, hInvDelta⟩
   have hThm3 : thm3CoreAssumption ctx.bar := by
     simpa [hBar] using thm3CoreAssumption_native
   refine ⟨hThm3, hArithmetic.splitTerminalZero, hArithmetic.evalHom,
     hArithmetic.vecModule, hArithmetic.scalarModule, hArithmetic.sampling,
     hArithmetic.mleTableSize, hArithmetic.mleIdentityAtR, hArithmetic.interpolation, ?_⟩
-  exact invertibleRq_of_lowNormAssumption
-    hLowNormInvertibility hArithmetic.invertibilityWindow
+  exact hInvDelta
 end SuperNeo

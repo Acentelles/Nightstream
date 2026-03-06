@@ -6,9 +6,9 @@ namespace SuperNeo
 /-- Base field carrier for SuperNeo (`F_q`). -/
 abbrev F : Type := Fin Goldilocks.q
 
-namespace F
+instance : NeZero Goldilocks.q := ⟨Nat.ne_of_gt Goldilocks.q_pos⟩
 
-local instance : NeZero Goldilocks.q := ⟨Nat.ne_of_gt Goldilocks.q_pos⟩
+namespace F
 
 instance : Inhabited F := ⟨⟨0, Goldilocks.q_pos⟩⟩
 

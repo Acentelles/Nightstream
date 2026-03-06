@@ -3,14 +3,15 @@
 ## Purpose
 
 - **What it is**: MSIS-to-Ajtai binding reduction theorems that derive Ajtai commitment security from Module-SIS hardness.
-- **Key property**: `ajtaiBoundaries_of_msis` bundles standard + relaxed binding reductions: MSIS hardness → ¬BindingCollision ∧ ¬RelaxedBindingCollision over the reduction carrier `C`.
+- **Key property**: `ajtaiBoundaries_of_msis` bundles standard + relaxed binding consequences in probabilistic-bound form (negligible + advantage bounds) over the reduction carrier `C`.
 - **Protocol role**: Provides the lattice-security reduction consumed by `ProtocolTheorem` to close the protocol's security proof under MSIS hardness.
 
 ## Target Formulas
 
 - `‖subVec n w₁ w₂‖∞ < msisNormBound` = norm transfer from binding collision witnesses (standard: 2B, relaxed: 4TB per Theorem 2).
-- `MSISBreakEvent → ¬BindingCollision` = standard B-binding from MSIS_{m,2B} hardness.
-- `MSISBreakEvent → ¬RelaxedBindingCollision(params, C)` = (B,C)-relaxed binding from MSIS_{m,4TB} hardness + C being a strong sampling set with expansion T (Theorem 9).
+- `MSISHardnessAssumption → ∃ ε_MSIS, negl(ε_MSIS) ∧ Adv_MSIS ≤ ε_MSIS` = `msisAdvantageBound_of_hardness`.
+- `AjtaiBindingAdvantageBound + IsNegligible → AjtaiBindingAssumption` = `no_ajtaiBindingCollision_of_advantageBound`.
+- `AjtaiRelaxedBindingAdvantageBound + IsNegligible → AjtaiRelaxedBindingAssumption` = `no_ajtaiRelaxedBindingCollision_of_advantageBound`.
 - `MSISHardnessAssumption → AjtaiBindingAssumption(params) ∧ AjtaiRelaxedBindingAssumption(params, C)` = `ajtaiBoundaries_of_msis`.
 
 ## Paper Anchors
@@ -31,7 +32,7 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 | Norm transfer | `bindingCollision_subWitness_norm_lt_msisNormBound` | Theorem-Target |
 | Standard MSIS break | `msisBreakEvent_of_bindingCollision` | Theorem-Target |
 | Relaxed MSIS break | `msisBreakEvent_of_relaxedBindingCollision` | Theorem-Target |
-| No break under hardness | `no_msisBreakEvent_of_hardness` | Theorem-Target |
+| Hardness unpacking | `msisAdvantageBound_of_hardness` | Theorem-Target |
 | Standard binding | `no_ajtaiBindingCollision_of_advantageBound` | Theorem-Target |
 | Ajtai from MSIS (standard) | `ajtaiBinding_of_msis` | Theorem-Target |
 | Ajtai from MSIS (relaxed) | `ajtaiRelaxedBinding_of_msis` | Theorem-Target |
@@ -46,7 +47,7 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 | Norm | `bindingCollision_subWitness_norm_lt_msisNormBound` | `‖w₁ - w₂‖∞ < msisNormBound` | Theorem-Target |
 | Extraction | `msisBreakEvent_of_bindingCollision` | Collision → MSIS break | Theorem-Target |
 | Extraction | `msisBreakEvent_of_relaxedBindingCollision` | Relaxed collision → MSIS break | Theorem-Target |
-| Security | `no_msisBreakEvent_of_hardness` | Hardness → no break event | Theorem-Target |
+| Security | `msisAdvantageBound_of_hardness` | Hardness package → explicit negligible + MSIS advantage bound package | Theorem-Target |
 | Binding | `ajtaiBinding_of_msis` | MSIS → standard binding | Theorem-Target |
 | Binding | `ajtaiRelaxedBinding_of_msis` | MSIS → relaxed binding | Theorem-Target |
 | Bundle | `ajtaiBoundaries_of_msis` | MSIS → both bindings | Theorem-Target |

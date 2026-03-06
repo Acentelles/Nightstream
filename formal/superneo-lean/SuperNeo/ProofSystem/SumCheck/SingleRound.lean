@@ -27,8 +27,9 @@ theorem accepted_fold_step
   (hAccepted : Accepted inst tr)
   {i : Nat}
   (hi : i + 1 < tr.roundPolys.size) :
-  SuperNeo.sumcheckEvalPoly (tr.roundPolys[i]!) (tr.challenges[i]!) =
-    tr.roundPolys[i + 1]!.getD 0 0 := by
+  SuperNeo.sumcheckEvalPoly (tr.roundPolys[i + 1]!) 0 +
+      SuperNeo.sumcheckEvalPoly (tr.roundPolys[i + 1]!) 1 =
+    SuperNeo.sumcheckEvalPoly (tr.roundPolys[i]!) (tr.challenges[i]!) := by
   exact SuperNeo.sumcheckAccepted_fold_step hAccepted hi
 
 theorem accepted_initial_round
@@ -66,11 +67,12 @@ theorem not_accepted_of_bad_round_shape
   ¬ Accepted inst tr := by
   exact SuperNeo.sumcheckAccepted_not_of_bad_round_shape hBad
 
-theorem not_accepted_of_bad_final_claim
+theorem not_accepted_of_no_final_oracle_witness
   {inst : Instance} {tr : Transcript}
-  (hBad : ¬ SuperNeo.sumcheckFinalClaimConsistent inst tr) :
-  ¬ Accepted inst tr := by
-  exact SuperNeo.sumcheckAccepted_not_of_bad_final_claim hBad
+  (hBad : ∀ stmt : SuperNeo.SumCheckStatement inst,
+    ¬ SuperNeo.sumcheckFinalOracleConsistent inst stmt tr) :
+  ¬ SuperNeo.sumcheckAcceptedClosed inst tr := by
+  exact SuperNeo.sumcheckAccepted_not_of_no_final_oracle_witness hBad
 
 theorem not_accepted_of_bad_initial_round
   {inst : Instance} {tr : Transcript}
