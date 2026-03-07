@@ -32,6 +32,38 @@
   protocol-facing `SumcheckPrefixLundBoundary ctx`
 - `FinalTheoremAssumptions.sumcheckPrefixAdvantageBound`:
   `game.advantage (fullFieldUniformCoinProbModel game.inst.rounds) ≤ epsSumcheck sumcheckErrorIndex`
+- `FinalErrorPackage.ofAlignedComponents`:
+  canonical constructor from explicit SumCheck/SZ/MSIS/Ajtai boundary packages plus one alignment witness against a shared `ErrorModel`
+- `FinalErrorPackage.ofAlignedPaperCarrierFromThreeDLe`:
+  canonical constructor specialized to the proved `paperCarrier` strong-sampling path, deriving the internal `MSISToAjtaiReductions` package directly from the MSIS boundary plus `3*d ≤ params.relaxedExpansion`
+- `FinalErrorPackage.ofGoldilocksPaperCarrier`:
+  canonical constructor specialized further to the Goldilocks Appendix B.2 paper-parameter family, keeping only `messageLength` explicit while fixing `κ = 18`, `B = 2^14`, and `T = 216`; internally this now uses the direct Goldilocks `paperCarrier` MSIS-to-Ajtai constructor
+- `FinalTheoremAssumptions.ofBoundaryPackages`:
+  canonical constructor from the reduction bundle, faithful protocol-facing SumCheck prefix package, canonical final error package, chosen SumCheck error index, transcript-link witness, and game-level SumCheck error dominance witness
+- `FinalTheoremAssumptions.ofAlignedPaperCarrierBoundaryPackages`:
+  canonical constructor specialized to the proved `paperCarrier` strong-sampling path, deriving the internal `MSISToAjtaiReductions` package directly from the MSIS boundary plus `3*d ≤ params.relaxedExpansion`
+- `FinalTheoremAssumptions.ofAlignedPaperCarrierDiffBoundaryPackages`:
+  canonical constructor specialized further to the paper-facing challenge-difference route for `invDelta`, deriving the internal `InteractiveReductionAssumptions` bundle from `thm3`, arithmetic obligations, `paperCarrierDiffInvertibilityAssumption`, `samplingDiffSet paperCarrier ctx.invDelta`, `ctx.invDelta ≠ 0`, and one `SumCheckTransitionWitness`
+- `FinalTheoremAssumptions.ofAlignedPaperCarrierLowNormBoundaryPackages`:
+  canonical constructor specialized instead to a stronger strict low-norm invertibility theorem `lowNormInvertibilityAssumption B` with `5 ≤ B`, deriving the internal `InteractiveReductionAssumptions` bundle from `thm3`, arithmetic obligations, that low-norm theorem, `samplingDiffSet paperCarrier ctx.invDelta`, `ctx.invDelta ≠ 0`, and one `SumCheckTransitionWitness`
+- `FinalTheoremAssumptions.ofGoldilocksPaperCarrierBoundaryPackages`:
+  canonical constructor specialized to the Goldilocks Appendix B.2 paper-parameter family on the proved `paperCarrier` path
+- `FinalTheoremAssumptions.ofGoldilocksPaperCarrierDiffBoundaryPackages`:
+  canonical constructor specialized to the Goldilocks Appendix B.2 paper-parameter family on the active paper-facing challenge-difference path
+- `FinalTheoremAssumptions.ofGoldilocksPaperCarrierLowNormBoundaryPackages`:
+  canonical constructor specialized to the Goldilocks Appendix B.2 paper-parameter family on the stronger strict low-norm route
+- `finalTheoremShape_of_alignedPaperCarrierBoundaryPackages`:
+  direct final theorem specialized to the same proved `paperCarrier` path
+- `finalTheoremShape_of_alignedPaperCarrierDiffBoundaryPackages`:
+  direct final theorem specialized to the same paper-facing challenge-difference path
+- `finalTheoremShape_of_alignedPaperCarrierLowNormBoundaryPackages`:
+  direct final theorem specialized to the same proved `paperCarrier` path but entered through the stronger strict low-norm theorem
+- `finalTheoremShape_of_goldilocksPaperCarrierBoundaryPackages`:
+  direct final theorem specialized to the Goldilocks Appendix B.2 paper-parameter family on the proved `paperCarrier` path
+- `finalTheoremShape_of_goldilocksPaperCarrierDiffBoundaryPackages`:
+  direct final theorem specialized to the Goldilocks Appendix B.2 paper-parameter family on the active paper-facing challenge-difference path
+- `finalTheoremShape_of_goldilocksPaperCarrierLowNormBoundaryPackages`:
+  direct final theorem specialized to the Goldilocks Appendix B.2 paper-parameter family on the stronger strict low-norm route
 - `msisHardnessAssumption params`, `ajtaiBindingAssumption params`, `ajtaiRelaxedBindingAssumption params C` (typed boundaries; relaxed binding is parameterized by sampling carrier `C`)
 - `totalErrorDecompFromModel`: `epsTotal = epsSumcheck + epsMSIS + epsSchwartzZippel + epsBinding + epsRelaxedBinding`
 
@@ -56,18 +88,28 @@
 | Lattice | `LatticeParams`, `msisHardnessAssumption`, `ajtaiBindingAssumption`, `ajtaiRelaxedBindingAssumption params C` | None | Typed boundaries for MSIS/Ajtai; relaxed binding parameterized by `C : SamplingCarrier` | Definitional | — |
 | SumCheck prefix game | `SumcheckPrefixLundBoundary ctx` | `ProtocolTargetContext` | Concrete protocol-facing SumCheck game/alignment package for the faithful prefix-dependent Lund endpoint | Definitional | `FinalTheoremAssumptions` |
 | Canonical error package | `FinalErrorPackage params` | None | Bundles SumCheck/SZ/MSIS/MSIS→Ajtai error surfaces plus one consolidated alignment witness against a shared `ErrorModel` | Definitional | `FinalTheoremAssumptions` |
+| Constructor | `FinalErrorPackage.ofAlignedComponents` | explicit component packages + one alignment witness | Canonical boundary-level final-error assembly | Theorem-Target | `FinalTheoremAssumptions` |
+| Constructor | `FinalErrorPackage.ofAlignedPaperCarrierFromThreeDLe` | `3*d ≤ params.relaxedExpansion` + aligned SumCheck/SZ/MSIS components | Canonical final-error assembly specialized to the proved `paperCarrier` strong-sampling path, deriving Ajtai reduction data from MSIS hardness | Theorem-Target | `FinalTheoremAssumptions` |
+| Constructor | `FinalErrorPackage.ofGoldilocksPaperCarrier` | `messageLength` + aligned SumCheck/SZ/MSIS components | Canonical final-error assembly specialized to the Goldilocks Appendix B.2 paper-parameter family, fixing the concrete paper constants and leaving only message length explicit | Theorem-Target | `FinalTheoremAssumptions` |
 | Final assumptions | `FinalTheoremAssumptions ctx` | None | Bundles reduction + protocol-facing SumCheck prefix game + lattice params + canonical error package; per-component alignments are derived accessors | Definitional | — |
+| Constructor | `FinalTheoremAssumptions.ofBoundaryPackages` | reduction + SumCheck prefix package + canonical error package + transcript/error witnesses | Canonical boundary-level final theorem assembly | Theorem-Target | `ProofSystem.Protocol` |
+| Constructor | `FinalTheoremAssumptions.ofAlignedPaperCarrierBoundaryPackages` | reduction + SumCheck prefix package + aligned SumCheck/SZ/MSIS components + `3*d ≤ params.relaxedExpansion` | Canonical boundary-level final theorem assembly specialized to the proved `paperCarrier` path, deriving Ajtai reduction data from MSIS hardness | Theorem-Target | `ProofSystem.Protocol` |
+| Constructor | `FinalTheoremAssumptions.ofAlignedPaperCarrierDiffBoundaryPackages` | `thm3` + arithmetic + `paperCarrierDiffInvertibilityAssumption` + `samplingDiffSet paperCarrier ctx.invDelta` + `ctx.invDelta ≠ 0` + SumCheck witness + aligned SumCheck/SZ/MSIS components + `3*d ≤ params.relaxedExpansion` | Canonical boundary-level final theorem assembly specialized to the paper-facing challenge-difference path, deriving Ajtai reduction data from MSIS hardness | Theorem-Target | `ProofSystem.Protocol` |
+| Constructor | `FinalTheoremAssumptions.ofAlignedPaperCarrierLowNormBoundaryPackages` | `thm3` + arithmetic + `lowNormInvertibilityAssumption B` with `5 ≤ B` + `samplingDiffSet paperCarrier ctx.invDelta` + `ctx.invDelta ≠ 0` + SumCheck witness + aligned SumCheck/SZ/MSIS components + `3*d ≤ params.relaxedExpansion` | Canonical boundary-level final theorem assembly specialized to the stronger strict low-norm route, deriving Ajtai reduction data from MSIS hardness | Theorem-Target | `ProofSystem.Protocol` |
+| Constructor | `FinalTheoremAssumptions.ofGoldilocksPaperCarrierBoundaryPackages` | reduction + SumCheck prefix package + `messageLength` + aligned SumCheck/SZ/MSIS components | Canonical boundary-level final theorem assembly specialized to the Goldilocks Appendix B.2 paper-parameter family on the proved `paperCarrier` path | Theorem-Target | `ProofSystem.Protocol` |
+| Constructor | `FinalTheoremAssumptions.ofGoldilocksPaperCarrierDiffBoundaryPackages` | `thm3` + arithmetic + `paperCarrierDiffInvertibilityAssumption` + `samplingDiffSet paperCarrier ctx.invDelta` + `ctx.invDelta ≠ 0` + SumCheck witness + `messageLength` + aligned SumCheck/SZ/MSIS components | Canonical boundary-level final theorem assembly specialized to the Goldilocks Appendix B.2 paper-parameter family on the paper-facing challenge-difference path | Theorem-Target | `ProofSystem.Protocol` |
+| Constructor | `FinalTheoremAssumptions.ofGoldilocksPaperCarrierLowNormBoundaryPackages` | `thm3` + arithmetic + `lowNormInvertibilityAssumption B` with `5 ≤ B` + `samplingDiffSet paperCarrier ctx.invDelta` + `ctx.invDelta ≠ 0` + SumCheck witness + `messageLength` + aligned SumCheck/SZ/MSIS components | Canonical boundary-level final theorem assembly specialized to the Goldilocks Appendix B.2 paper-parameter family on the stronger strict low-norm route | Theorem-Target | `ProofSystem.Protocol` |
 | Accessors | `FinalTheoremAssumptions.sumcheckPrefixBoundary`, `schwartzZippelBoundaryAssumption`, `msisHardnessBoundary`, etc. | `FinalTheoremAssumptions` | Projected boundaries | Theorem-Target | — |
 | SumCheck prefix endpoint | `FinalTheoremAssumptions.sumcheckPrefixLundBound` | `FinalTheoremAssumptions` | Faithful protocol-facing prefix-dependent Lund bound | Theorem-Target | — |
 | SumCheck transcript link | `FinalTheoremAssumptions.sumcheckWitnessTranscriptEq` | `FinalTheoremAssumptions` | Identifies the faithful prefix-game transcript with the reduction witness transcript | Theorem-Target | — |
 | SumCheck game advantage | `FinalTheoremAssumptions.sumcheckPrefixAdvantageBound` | `FinalTheoremAssumptions` | Faithful protocol-facing game-level SumCheck advantage bound aligned to `epsSumcheck` at the chosen final-theorem error index | Theorem-Target | — |
 | SumCheck witness helper | `FinalTheoremAssumptions.sumcheckAdvantageBound` | `FinalTheoremAssumptions` | Convenience failure-event advantage bound for the witness transcript; not part of the primary final knowledge-soundness shape | Theorem-Target | — |
 | Error negligibility | `sumcheckErrorNegligible`, `schwartzZippelErrorNegligible`, `msisErrorNegligible`, `bindingErrorNegligible`, `totalErrorNegligible` | `FinalTheoremAssumptions` | Aligned negligibility | Theorem-Target | — |
-| Final theorem | `FinalTheoremShape`, `finalTheoremShape_of_assumptions` | `FinalTheoremAssumptions` | Completeness + knowledge-soundness | Theorem-Target | ProofSystem.Protocol |
+| Final theorem | `FinalTheoremShape`, `finalTheoremShape_of_assumptions`, `finalTheoremShape_of_alignedPaperCarrierBoundaryPackages`, `finalTheoremShape_of_alignedPaperCarrierDiffBoundaryPackages` | `FinalTheoremAssumptions` or aligned boundary packages | Completeness + knowledge-soundness | Theorem-Target | ProofSystem.Protocol |
 
 ## Proof Obligations and Closure Plan
 
-All obligations closed. `finalTheoremShape_of_assumptions` proves completeness from `weakComposition_of_assumptions` and knowledge-soundness from `strongComposition_of_assumptions` plus the faithful protocol-facing SumCheck prefix-Lund endpoint, an explicit transcript link from the faithful game to the reduction witness, faithful game-level SumCheck advantage accounting aligned to `epsSumcheck` at one explicit final-theorem error index, Schwartz-Zippel/MSIS/Ajtai advantage-bound surfaces, and total-error accounting. Alignment equalities are derived from the canonical `FinalErrorPackage` witness. The witness-level SumCheck bound remains available as a helper accessor, but it is no longer part of the primary final knowledge-soundness statement.
+All obligations closed. `finalTheoremShape_of_assumptions` proves completeness from `weakComposition_of_assumptions` and knowledge-soundness from `strongComposition_of_assumptions` plus the faithful protocol-facing SumCheck prefix-Lund endpoint, an explicit transcript link from the faithful game to the reduction witness, faithful game-level SumCheck advantage accounting aligned to `epsSumcheck` at one explicit final-theorem error index, Schwartz-Zippel/MSIS/Ajtai advantage-bound surfaces, and total-error accounting. `FinalErrorPackage.ofAlignedComponents`, `FinalErrorPackage.ofAlignedPaperCarrierFromThreeDLe`, `FinalErrorPackage.ofGoldilocksPaperCarrier`, `FinalTheoremAssumptions.ofBoundaryPackages`, `FinalTheoremAssumptions.ofAlignedPaperCarrierBoundaryPackages`, `FinalTheoremAssumptions.ofAlignedPaperCarrierDiffBoundaryPackages`, `FinalTheoremAssumptions.ofAlignedPaperCarrierLowNormBoundaryPackages`, `FinalTheoremAssumptions.ofGoldilocksPaperCarrierBoundaryPackages`, `FinalTheoremAssumptions.ofGoldilocksPaperCarrierDiffBoundaryPackages`, and `FinalTheoremAssumptions.ofGoldilocksPaperCarrierLowNormBoundaryPackages` are the canonical boundary-level assembly points for the final theorem path. On the active narrowed route they derive the internal Ajtai reduction package directly from the MSIS hardness boundary; on the Goldilocks-specialized route this is now expressed directly through the Appendix B.2 paper-parameter family while leaving only message length explicit. The remaining invertibility input on that path can be supplied either directly as `paperCarrierDiffInvertibilityAssumption` or indirectly through the stronger theorem-shaped route `lowNormInvertibilityAssumption B` with `5 ≤ B`. Alignment equalities are derived from the canonical `FinalErrorPackage` witness. The witness-level SumCheck bound remains available as a helper accessor, but it is no longer part of the primary final knowledge-soundness statement.
 
 ## Assumption Ledger
 

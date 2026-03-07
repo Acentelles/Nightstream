@@ -2,7 +2,7 @@
 
 ## Purpose
 
-- **What it is**: The proof-system-level protocol capstone that lifts `SuperNeo.ProtocolTheorem` into the `SuperNeo.ProofSystem` type framework. Re-exports `FinalTheoremAssumptions`, `FinalCompletenessStatement`, `FinalKnowledgeSoundnessStatement`, `FinalTheoremShape`, and accessors for all nested boundaries (faithful SumCheck prefix-Lund game package, explicit SumCheck error boundary, Schwartz-Zippel, MSIS, Ajtai, error accounting).
+- **What it is**: The proof-system-level protocol capstone that lifts `SuperNeo.ProtocolTheorem` into the `SuperNeo.ProofSystem` type framework. Re-exports `FinalTheoremAssumptions`, `FinalCompletenessStatement`, `FinalKnowledgeSoundnessStatement`, `FinalTheoremShape`, and accessors for all nested boundaries (faithful SumCheck prefix-Lund game package, explicit SumCheck error boundary, Schwartz-Zippel, MSIS, Ajtai, error accounting), including the newer strict low-norm invertibility entry points on the final theorem path.
 - **Key property**: `hA : FinalTheoremAssumptions ctx → FinalTheoremShape ctx hA`, i.e., the canonical theorem constructor `finalTheoremShape_of_assumptions` produces the final theorem shape from the assumption registry.
 - **Protocol role**: Single entrypoint for proof-system consumers that need the composed protocol theorem (Sections 4–7 and Appendix C). Aggregates Π_CCS, Π_RLC, Π_DEC, lattice boundaries, and error decomposition into one typed surface.
 
@@ -32,11 +32,27 @@
 | Group | Lean symbol | Kind | Role | Guarantee |
 |-------|-------------|------|--------|-----------|
 | Params | `LatticeParams` | abbrev | Definitional | `= SuperNeo.ProofSystem.AjtaiParams` |
+| Constructor | `finalErrorPackageOfAlignedComponents` | def | Definitional | Canonical proof-system re-export of final-error boundary assembly |
+| Constructor | `finalErrorPackageOfAlignedPaperCarrierFromThreeDLe` | def | Definitional | Canonical proof-system re-export of final-error assembly specialized to the proved `paperCarrier` path, deriving Ajtai reduction data from the MSIS boundary |
+| Constructor | `finalErrorPackageOfGoldilocksPaperCarrier` | def | Definitional | Canonical proof-system re-export of final-error assembly specialized to the Goldilocks Appendix B.2 paper-parameter family |
 | Assumptions | `FinalTheoremAssumptions` | abbrev | Definitional | Assumption registry for `ctx` |
+| Constructor | `finalTheoremAssumptionsOfBoundaryPackages` | def | Definitional | Canonical proof-system re-export of final theorem boundary assembly |
+| Constructor | `finalTheoremAssumptionsOfAlignedPaperCarrierBoundaryPackages` | def | Definitional | Canonical proof-system re-export of final theorem boundary assembly specialized to the proved `paperCarrier` path, deriving Ajtai reduction data from the MSIS boundary |
+| Constructor | `finalTheoremAssumptionsOfAlignedPaperCarrierDiffBoundaryPackages` | def | Definitional | Canonical proof-system re-export of final theorem boundary assembly specialized to the paper-facing challenge-difference path, deriving Ajtai reduction data from the MSIS boundary |
+| Constructor | `finalTheoremAssumptionsOfAlignedPaperCarrierLowNormBoundaryPackages` | def | Definitional | Canonical proof-system re-export of final theorem boundary assembly specialized to the proved `paperCarrier` path through a stronger strict low-norm invertibility theorem |
+| Constructor | `finalTheoremAssumptionsOfGoldilocksPaperCarrierBoundaryPackages` | def | Definitional | Canonical proof-system re-export of final theorem boundary assembly specialized to the Goldilocks Appendix B.2 paper-parameter family |
+| Constructor | `finalTheoremAssumptionsOfGoldilocksPaperCarrierDiffBoundaryPackages` | def | Definitional | Canonical proof-system re-export of final theorem boundary assembly specialized to the Goldilocks Appendix B.2 paper-parameter family on the paper-facing challenge-difference path |
+| Constructor | `finalTheoremAssumptionsOfGoldilocksPaperCarrierLowNormBoundaryPackages` | def | Definitional | Canonical proof-system re-export of final theorem boundary assembly specialized to the Goldilocks Appendix B.2 paper-parameter family through a stronger strict low-norm invertibility theorem |
 | Statements | `FinalCompletenessStatement` | abbrev | Definitional | Completeness claim shape |
 | Statements | `FinalKnowledgeSoundnessStatement` | abbrev | Definitional | Knowledge-soundness claim shape |
 | Shape | `FinalTheoremShape` | abbrev | Definitional | Combined theorem shape |
 | Constructor | `finalTheoremShape_of_assumptions` | theorem | Theorem-Target | `hA : FinalTheoremAssumptions ctx → FinalTheoremShape ctx hA` |
+| Constructor | `finalTheoremShapeOfAlignedPaperCarrierBoundaryPackages` | def | Definitional | Canonical proof-system re-export of the direct final theorem specialized to the proved `paperCarrier` path |
+| Constructor | `finalTheoremShapeOfAlignedPaperCarrierDiffBoundaryPackages` | def | Definitional | Canonical proof-system re-export of the direct final theorem specialized to the paper-facing challenge-difference path |
+| Constructor | `finalTheoremShapeOfAlignedPaperCarrierLowNormBoundaryPackages` | def | Definitional | Canonical proof-system re-export of the direct final theorem specialized to the proved `paperCarrier` path through a stronger strict low-norm invertibility theorem |
+| Constructor | `finalTheoremShapeOfGoldilocksPaperCarrierBoundaryPackages` | def | Definitional | Canonical proof-system re-export of the direct final theorem specialized to the Goldilocks Appendix B.2 paper-parameter family |
+| Constructor | `finalTheoremShapeOfGoldilocksPaperCarrierDiffBoundaryPackages` | def | Definitional | Canonical proof-system re-export of the direct final theorem specialized to the Goldilocks Appendix B.2 paper-parameter family on the paper-facing challenge-difference path |
+| Constructor | `finalTheoremShapeOfGoldilocksPaperCarrierLowNormBoundaryPackages` | def | Definitional | Canonical proof-system re-export of the direct final theorem specialized to the Goldilocks Appendix B.2 paper-parameter family through a stronger strict low-norm invertibility theorem |
 | SumCheck | `finalSumcheckPrefixBoundary`, `finalSumcheckPrefixLundBound`, `finalSumcheckWitnessTranscriptEq`, `finalSumcheckPrefixAdvantageBound`, `finalSumcheckErrorBoundary`, `finalSumcheckAdvantageBound`, etc. | def | Definitional | Accessors into the faithful protocol-facing prefix-Lund package, transcript linkage, game-level SumCheck error accounting at the chosen final-theorem error index, explicit SumCheck error boundary, and an auxiliary witness-level failure-advantage helper |
 | Schwartz-Zippel | `finalSchwartzZippelBoundaryPackage`, `finalSchwartzZippelErrorNegligible`, etc. | def | Definitional | Accessors into `hA.schwartzZippelBoundary`, etc. |
 | MSIS | `finalMSISHardnessBoundary`, `finalMSISErrorNegligible`, etc. | def | Definitional | Accessors into `hA.msisHardnessBoundary`, etc. |
@@ -45,7 +61,7 @@
 
 ## Proof Obligations and Closure Plan
 
-All obligations closed. Every accessor is a definitional re-export of `ProtocolTheorem`; `finalTheoremShape_of_assumptions` is proved by `exact SuperNeo.finalTheoremShape_of_assumptions hA`.
+All obligations closed. Every accessor is a definitional re-export of `ProtocolTheorem`; `finalErrorPackageOfAlignedComponents`, `finalErrorPackageOfAlignedPaperCarrierFromThreeDLe`, `finalErrorPackageOfGoldilocksPaperCarrier`, `finalTheoremAssumptionsOfBoundaryPackages`, `finalTheoremAssumptionsOfAlignedPaperCarrierBoundaryPackages`, `finalTheoremAssumptionsOfAlignedPaperCarrierDiffBoundaryPackages`, `finalTheoremAssumptionsOfAlignedPaperCarrierLowNormBoundaryPackages`, `finalTheoremAssumptionsOfGoldilocksPaperCarrierBoundaryPackages`, `finalTheoremAssumptionsOfGoldilocksPaperCarrierDiffBoundaryPackages`, and `finalTheoremAssumptionsOfGoldilocksPaperCarrierLowNormBoundaryPackages` are the canonical proof-system assembly points for the final theorem boundary. On the active narrowed route, those constructors derive the internal Ajtai reduction package directly from the MSIS boundary; the Goldilocks-specialized route now expresses that reduction directly through the Appendix B.2 paper-parameter family while leaving only message length explicit, and the remaining invertibility input can be supplied either as `paperCarrierDiffInvertibilityAssumption` or through the stronger theorem-shaped route `lowNormInvertibilityAssumption B` with `5 ≤ B`. `finalTheoremShape_of_assumptions`, `finalTheoremShapeOfAlignedPaperCarrierBoundaryPackages`, `finalTheoremShapeOfAlignedPaperCarrierDiffBoundaryPackages`, `finalTheoremShapeOfAlignedPaperCarrierLowNormBoundaryPackages`, `finalTheoremShapeOfGoldilocksPaperCarrierBoundaryPackages`, `finalTheoremShapeOfGoldilocksPaperCarrierDiffBoundaryPackages`, and `finalTheoremShapeOfGoldilocksPaperCarrierLowNormBoundaryPackages` are exact forwarders of the corresponding `ProtocolTheorem` surfaces.
 
 ## Assumption Ledger
 

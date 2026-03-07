@@ -3,6 +3,7 @@ import SuperNeo.ProofSystem.Types
 import SuperNeo.ProofSystem.Security
 import SuperNeo.ProofSystem.Negligible
 import SuperNeo.ProofSystem.Lattice
+import SuperNeo.ProofSystem.LatticePaper
 import SuperNeo.ProofSystem.LatticeReductions
 import SuperNeo.InvertibilityAxioms
 import SuperNeo.SamplingSet
