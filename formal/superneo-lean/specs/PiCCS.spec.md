@@ -29,22 +29,23 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 
 | Group | Lean symbol | Kind | Role | Guarantee |
 |---|---|---|---|---|
-| Assumptions | `PiCCSAssumptions` | abbrev | Definitional | Alias of `ProtocolRelationsAssumptions ctx` |
+| Assumptions | `PiCCSAssumptions` | abbrev | Definitional | Alias of `ProtocolTargetAssumptions ctx` |
 | Statement | `piCCSStrongStatement` | def | Definitional | ceRelation ∧ SumCheckClaimTrue |
 | Theorem | `piCCSStrong_of_assumptions` | theorem | Theorem-Target | Assumptions + witness → strong statement |
 
 ## Proof Obligations and Closure Plan
 
-All obligations closed. `piCCSStrong_of_assumptions` proved from `ceRelation_of_assumptions` and `ceClaimTrue_of_ce`.
+All obligations closed for the current boundary target. `piCCSStrong_of_assumptions` is proved from `protocolTargetProp_of_assumptions`, the accepted transition witness, and `sumcheckSoundness_constructive`; no separate SumCheck boundary bundle is threaded on this path.
 
 ## Assumption Ledger
 
-No open boundary assumptions in this module. `PiCCSAssumptions` is a direct alias to `ProtocolRelationsAssumptions` from upstream.
+No open local boundary assumptions in this module. `PiCCSAssumptions` is a direct alias to `ProtocolTargetAssumptions` from upstream; SumCheck truth is discharged from the accepted witness rather than assumed separately here.
 
 ## Dependency and Consumer Map
 
 Upstream dependencies:
-- `SuperNeo/ProtocolRelations.lean`: uses `ceRelation`, `ceRelation_of_assumptions`, `ceClaimTrue_of_ce`, `SumCheckTransitionWitness`, `sumcheckInstanceOfContext`, `ProtocolRelationsAssumptions`.
+- `SuperNeo/ProtocolTarget.lean`: uses `protocolTargetProp_of_assumptions`, `ceRelation`, `SumCheckTransitionWitness`, `sumcheckInstanceOfContext`, `ProtocolTargetAssumptions`.
+- `SuperNeo/SumCheck.lean`: uses `sumcheckSoundness_constructive`.
 
 Downstream consumers:
 - `SuperNeo/PiRLC.lean`: uses `piCCSStrongStatement`, `piCCSStrong_of_assumptions`, `PiCCSAssumptions`.
@@ -52,7 +53,7 @@ Downstream consumers:
 
 ## Implementation Plan
 
-Current scope complete. Strong statement and derivation theorem proved.
+Current boundary scope complete. Strong statement and derivation theorem proved from protocol-target assumptions plus an accepted SumCheck witness.
 
 ## Quality Expectations
 

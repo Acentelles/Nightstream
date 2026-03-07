@@ -29,17 +29,17 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 
 | Group | Lean symbol | Kind | Role | Guarantee |
 |---|---|---|---|---|
-| Assumptions | `PiDECAssumptions` | abbrev | Definitional | Alias of `ProtocolRelationsAssumptions ctx` |
+| Assumptions | `PiDECAssumptions` | abbrev | Definitional | Alias of `ProtocolTargetAssumptions ctx` |
 | Statement | `piDECKnowledgeStatement` | def | Definitional | ∃ deltaInv, inverse ∧ ceRelaxed ∧ claimTrue |
 | Theorem | `piDEC_of_assumptions` | theorem | Theorem-Target | Assumptions + witness → knowledge statement |
 
 ## Proof Obligations and Closure Plan
 
-All obligations closed. `piDEC_of_assumptions` and `piDEC_of_native_assumptions` are proved from `piRLCWeak_*` plus projection of `invertibleRq ctx.invDelta` from `protocolTargetProp`.
+All obligations closed at the module boundary. `piDEC_of_assumptions` and `piDEC_of_native_assumptions` are proved from `piRLCWeak_*` plus projection of `invertibleRq ctx.invDelta` from `protocolTargetProp`.
 
 ## Assumption Ledger
 
-No extra invertibility boundary is threaded at `PiDEC` level; invertibility is already required upstream in `ProtocolTargetAssumptions`.
+No extra invertibility boundary is threaded at `PiDEC` level; invertibility is already required upstream in `ProtocolTargetAssumptions`, and no separate SumCheck bundle remains here.
 
 ## Dependency and Consumer Map
 
@@ -53,7 +53,7 @@ Downstream consumers:
 
 ## Implementation Plan
 
-Current scope complete. Knowledge statement and derivation theorem proved. Invertibility boundary closure is upstream.
+Current scope complete at boundary level. Knowledge statement and derivation theorem proved. Invertibility boundary closure remains upstream.
 
 ## Quality Expectations
 

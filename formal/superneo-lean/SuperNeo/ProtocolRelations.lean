@@ -54,14 +54,10 @@ def ceRelaxedRelation (ctx : ProtocolTargetContext) : Prop :=
 /-- Assumptions needed to derive relation-level statements. -/
 structure ProtocolRelationsAssumptions (ctx : ProtocolTargetContext) where
   target : ProtocolTargetAssumptions ctx
-  sumcheckSoundness : SumcheckSoundnessAssumption
-  sumcheckCompleteness : SumcheckCompletenessAssumption
 
 /-- Native assumption bundle: protocol target closes Theorem-3 via native bar. -/
 structure ProtocolRelationsNativeAssumptions (ctx : ProtocolTargetContext) where
   target : ProtocolTargetNativeAssumptions ctx
-  sumcheckSoundness : SumcheckSoundnessAssumption
-  sumcheckCompleteness : SumcheckCompletenessAssumption
 
 /--
 Canonical protocol-relations assumptions using constructive SumCheck closure.
@@ -70,9 +66,52 @@ def ProtocolRelationsAssumptions.ofTarget
   {ctx : ProtocolTargetContext}
   (hTarget : ProtocolTargetAssumptions ctx) :
   ProtocolRelationsAssumptions ctx :=
-  { target := hTarget
-    sumcheckSoundness := sumcheckSoundness_constructive
-    sumcheckCompleteness := sumcheckCompleteness_constructive }
+  { target := hTarget }
+
+/--
+Canonical protocol-relations assumptions using the paper-facing challenge-
+difference route for `invDelta`.
+-/
+def ProtocolRelationsAssumptions.ofPaperCarrierDiff
+  {ctx : ProtocolTargetContext}
+  (hThm3 : thm3CoreAssumption ctx.bar)
+  (hArithmetic : ArithmeticObligations
+    ctx.bar ctx.m ctx.r ctx.rho1 ctx.rho2
+    ctx.hVec ctx.hScal
+    ctx.splitScalar ctx.kSplit
+    ctx.cset ctx.samples
+    ctx.xs ctx.ys ctx.qVals ctx.coeffs
+    ctx.xEval ctx.expectedEval)
+  (hInv : paperCarrierDiffInvertibilityAssumption)
+  (hDiff : samplingDiffSet paperCarrier ctx.invDelta)
+  (hNe : ctx.invDelta ≠ zeroRq) :
+  ProtocolRelationsAssumptions ctx :=
+  { target := ProtocolTargetAssumptions.ofPaperCarrierDiff
+      hThm3 hArithmetic hInv hDiff hNe }
+
+/--
+Canonical protocol-relations assumptions from any strict low-norm
+invertibility boundary whose threshold is at least `5`, specialized to the
+active paper-carrier-difference route.
+-/
+def ProtocolRelationsAssumptions.ofLowNormAtLeastFive
+  {ctx : ProtocolTargetContext}
+  {B : Nat}
+  (hFive : 5 ≤ B)
+  (hThm3 : thm3CoreAssumption ctx.bar)
+  (hArithmetic : ArithmeticObligations
+    ctx.bar ctx.m ctx.r ctx.rho1 ctx.rho2
+    ctx.hVec ctx.hScal
+    ctx.splitScalar ctx.kSplit
+    ctx.cset ctx.samples
+    ctx.xs ctx.ys ctx.qVals ctx.coeffs
+    ctx.xEval ctx.expectedEval)
+  (hInv : lowNormInvertibilityAssumption B)
+  (hDiff : samplingDiffSet paperCarrier ctx.invDelta)
+  (hNe : ctx.invDelta ≠ zeroRq) :
+  ProtocolRelationsAssumptions ctx :=
+  { target := ProtocolTargetAssumptions.ofLowNormAtLeastFive
+      hFive hThm3 hArithmetic hInv hDiff hNe }
 
 /--
 Canonical native protocol-relations assumptions using constructive SumCheck closure.
@@ -81,9 +120,52 @@ def ProtocolRelationsNativeAssumptions.ofTarget
   {ctx : ProtocolTargetContext}
   (hTarget : ProtocolTargetNativeAssumptions ctx) :
   ProtocolRelationsNativeAssumptions ctx :=
-  { target := hTarget
-    sumcheckSoundness := sumcheckSoundness_constructive
-    sumcheckCompleteness := sumcheckCompleteness_constructive }
+  { target := hTarget }
+
+/--
+Canonical native protocol-relations assumptions using the paper-facing
+challenge-difference route for `invDelta`.
+-/
+def ProtocolRelationsNativeAssumptions.ofPaperCarrierDiff
+  {ctx : ProtocolTargetContext}
+  (hBarNative : ctx.bar = nativeBarMatrix)
+  (hArithmetic : ArithmeticObligations
+    ctx.bar ctx.m ctx.r ctx.rho1 ctx.rho2
+    ctx.hVec ctx.hScal
+    ctx.splitScalar ctx.kSplit
+    ctx.cset ctx.samples
+    ctx.xs ctx.ys ctx.qVals ctx.coeffs
+    ctx.xEval ctx.expectedEval)
+  (hInv : paperCarrierDiffInvertibilityAssumption)
+  (hDiff : samplingDiffSet paperCarrier ctx.invDelta)
+  (hNe : ctx.invDelta ≠ zeroRq) :
+  ProtocolRelationsNativeAssumptions ctx :=
+  { target := ProtocolTargetNativeAssumptions.ofPaperCarrierDiff
+      hBarNative hArithmetic hInv hDiff hNe }
+
+/--
+Canonical native protocol-relations assumptions from any strict low-norm
+invertibility boundary whose threshold is at least `5`, specialized to the
+active paper-carrier-difference route.
+-/
+def ProtocolRelationsNativeAssumptions.ofLowNormAtLeastFive
+  {ctx : ProtocolTargetContext}
+  {B : Nat}
+  (hFive : 5 ≤ B)
+  (hBarNative : ctx.bar = nativeBarMatrix)
+  (hArithmetic : ArithmeticObligations
+    ctx.bar ctx.m ctx.r ctx.rho1 ctx.rho2
+    ctx.hVec ctx.hScal
+    ctx.splitScalar ctx.kSplit
+    ctx.cset ctx.samples
+    ctx.xs ctx.ys ctx.qVals ctx.coeffs
+    ctx.xEval ctx.expectedEval)
+  (hInv : lowNormInvertibilityAssumption B)
+  (hDiff : samplingDiffSet paperCarrier ctx.invDelta)
+  (hNe : ctx.invDelta ≠ zeroRq) :
+  ProtocolRelationsNativeAssumptions ctx :=
+  { target := ProtocolTargetNativeAssumptions.ofLowNormAtLeastFive
+      hFive hBarNative hArithmetic hInv hDiff hNe }
 
 /-- Derive CCS relation from target assumptions. -/
 theorem ccsRelation_of_assumptions
@@ -113,7 +195,7 @@ theorem ceRelation_of_claimTrue
   (h : ProtocolRelationsAssumptions ctx)
   (hClaimTrue : SumCheckClaimTrue (sumcheckInstanceOfContext ctx)) :
   ceRelation ctx := by
-  rcases h.sumcheckCompleteness _ hClaimTrue with ⟨tr, hAcc⟩
+  rcases sumcheckCompleteness_constructive (sumcheckInstanceOfContext ctx) hClaimTrue with ⟨tr, hAcc⟩
   refine ceRelation_of_assumptions h ?_
   refine
     { transcript := tr
@@ -137,7 +219,7 @@ theorem ceRelation_of_native_claimTrue
   (h : ProtocolRelationsNativeAssumptions ctx)
   (hClaimTrue : SumCheckClaimTrue (sumcheckInstanceOfContext ctx)) :
   ceRelation ctx := by
-  rcases h.sumcheckCompleteness _ hClaimTrue with ⟨tr, hAcc⟩
+  rcases sumcheckCompleteness_constructive (sumcheckInstanceOfContext ctx) hClaimTrue with ⟨tr, hAcc⟩
   refine ceRelation_of_native_assumptions h ?_
   refine
     { transcript := tr
@@ -153,8 +235,9 @@ theorem ceClaimTrue_of_ce
   (h : ProtocolRelationsAssumptions ctx)
   (hCE : ceRelation ctx) :
   SumCheckClaimTrue (sumcheckInstanceOfContext ctx) := by
+  let _ := h
   rcases hCE.2 with ⟨tr, hAcc⟩
-  exact h.sumcheckSoundness _ _ hAcc
+  exact sumcheckSoundness_constructive _ _ hAcc
 
 /-- Soundness lift on the native assumption path. -/
 theorem ceClaimTrue_of_native_ce
@@ -162,8 +245,9 @@ theorem ceClaimTrue_of_native_ce
   (h : ProtocolRelationsNativeAssumptions ctx)
   (hCE : ceRelation ctx) :
   SumCheckClaimTrue (sumcheckInstanceOfContext ctx) := by
+  let _ := h
   rcases hCE.2 with ⟨tr, hAcc⟩
-  exact h.sumcheckSoundness _ _ hAcc
+  exact sumcheckSoundness_constructive _ _ hAcc
 
 /-- CE implies relaxed CE. -/
 theorem ceRelaxedRelation_of_ce

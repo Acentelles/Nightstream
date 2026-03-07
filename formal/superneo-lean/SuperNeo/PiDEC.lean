@@ -8,11 +8,11 @@ namespace SuperNeo
 
 /-- Assumptions consumed by the `Π_DEC` step. -/
 abbrev PiDECAssumptions (ctx : ProtocolTargetContext) :=
-  ProtocolRelationsAssumptions ctx
+  ProtocolTargetAssumptions ctx
 
 /-- Native assumptions consumed by the `Π_DEC` step. -/
 abbrev PiDECNativeAssumptions (ctx : ProtocolTargetContext) :=
-  ProtocolRelationsNativeAssumptions ctx
+  ProtocolTargetNativeAssumptions ctx
 
 /-- Knowledge-style `Π_DEC` target statement. -/
 def piDECKnowledgeStatement (ctx : ProtocolTargetContext) : Prop :=

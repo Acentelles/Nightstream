@@ -24,7 +24,7 @@ abbrev piRLCWeakStatement := SuperNeo.piRLCWeakStatement
 /-- [Role: Boundary] Boundary surface `PiRLCAssumptions` requiring closure. -/
 abbrev PiRLCAssumptions := SuperNeo.PiRLCAssumptions
 
-/-- [Role: Boundary] Boundary surface `piRLCWeak_of_assumptions` requiring closure. -/
+/-- [Role: Theorem-Target] Curated theorem surface `piRLCWeak_of_assumptions`. -/
 abbrev piRLCWeak_of_assumptions := SuperNeo.piRLCWeak_of_assumptions
 
 end PiRLCInterface

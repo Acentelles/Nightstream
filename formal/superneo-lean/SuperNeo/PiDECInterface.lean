@@ -24,7 +24,7 @@ abbrev piDECKnowledgeStatement := SuperNeo.piDECKnowledgeStatement
 /-- [Role: Boundary] Boundary surface `PiDECAssumptions` requiring closure. -/
 abbrev PiDECAssumptions := SuperNeo.PiDECAssumptions
 
-/-- [Role: Boundary] Boundary surface `piDEC_of_assumptions` requiring closure. -/
+/-- [Role: Theorem-Target] Curated theorem surface `piDEC_of_assumptions`. -/
 abbrev piDEC_of_assumptions := SuperNeo.piDEC_of_assumptions
 
 end PiDECInterface

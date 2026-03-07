@@ -26,8 +26,59 @@ def InteractiveReductionAssumptions.ofProtocolRelations
   (hRelations : ProtocolRelationsAssumptions ctx)
   (hWitness : SumCheckTransitionWitness ctx) :
   InteractiveReductionAssumptions ctx :=
-  { reduction := hRelations
+  { reduction := hRelations.target
     sumcheckTransitionWitness := hWitness }
+
+/--
+Canonical constructor from the paper-facing challenge-difference route for
+`invDelta` plus an explicit SumCheck transition witness.
+-/
+def InteractiveReductionAssumptions.ofPaperCarrierDiff
+  {ctx : ProtocolTargetContext}
+  (hThm3 : thm3CoreAssumption ctx.bar)
+  (hArithmetic : ArithmeticObligations
+    ctx.bar ctx.m ctx.r ctx.rho1 ctx.rho2
+    ctx.hVec ctx.hScal
+    ctx.splitScalar ctx.kSplit
+    ctx.cset ctx.samples
+    ctx.xs ctx.ys ctx.qVals ctx.coeffs
+    ctx.xEval ctx.expectedEval)
+  (hInv : paperCarrierDiffInvertibilityAssumption)
+  (hDiff : samplingDiffSet paperCarrier ctx.invDelta)
+  (hNe : ctx.invDelta ≠ zeroRq)
+  (hWitness : SumCheckTransitionWitness ctx) :
+  InteractiveReductionAssumptions ctx :=
+  ofProtocolRelations
+    (ProtocolRelationsAssumptions.ofPaperCarrierDiff
+      hThm3 hArithmetic hInv hDiff hNe)
+    hWitness
+
+/--
+Canonical constructor from any strict low-norm invertibility boundary whose
+threshold is at least `5`, specialized to the active paper-carrier-difference
+route plus an explicit SumCheck transition witness.
+-/
+def InteractiveReductionAssumptions.ofLowNormAtLeastFive
+  {ctx : ProtocolTargetContext}
+  {B : Nat}
+  (hFive : 5 ≤ B)
+  (hThm3 : thm3CoreAssumption ctx.bar)
+  (hArithmetic : ArithmeticObligations
+    ctx.bar ctx.m ctx.r ctx.rho1 ctx.rho2
+    ctx.hVec ctx.hScal
+    ctx.splitScalar ctx.kSplit
+    ctx.cset ctx.samples
+    ctx.xs ctx.ys ctx.qVals ctx.coeffs
+    ctx.xEval ctx.expectedEval)
+  (hInv : lowNormInvertibilityAssumption B)
+  (hDiff : samplingDiffSet paperCarrier ctx.invDelta)
+  (hNe : ctx.invDelta ≠ zeroRq)
+  (hWitness : SumCheckTransitionWitness ctx) :
+  InteractiveReductionAssumptions ctx :=
+  ofProtocolRelations
+    (ProtocolRelationsAssumptions.ofLowNormAtLeastFive
+      hFive hThm3 hArithmetic hInv hDiff hNe)
+    hWitness
 
 /--
 Canonical native constructor from relation-level native assumptions plus an
@@ -38,8 +89,59 @@ def InteractiveReductionNativeAssumptions.ofProtocolRelations
   (hRelations : ProtocolRelationsNativeAssumptions ctx)
   (hWitness : SumCheckTransitionWitness ctx) :
   InteractiveReductionNativeAssumptions ctx :=
-  { reduction := hRelations
+  { reduction := hRelations.target
     sumcheckTransitionWitness := hWitness }
+
+/--
+Canonical native constructor from the paper-facing challenge-difference route
+for `invDelta` plus an explicit SumCheck transition witness.
+-/
+def InteractiveReductionNativeAssumptions.ofPaperCarrierDiff
+  {ctx : ProtocolTargetContext}
+  (hBarNative : ctx.bar = nativeBarMatrix)
+  (hArithmetic : ArithmeticObligations
+    ctx.bar ctx.m ctx.r ctx.rho1 ctx.rho2
+    ctx.hVec ctx.hScal
+    ctx.splitScalar ctx.kSplit
+    ctx.cset ctx.samples
+    ctx.xs ctx.ys ctx.qVals ctx.coeffs
+    ctx.xEval ctx.expectedEval)
+  (hInv : paperCarrierDiffInvertibilityAssumption)
+  (hDiff : samplingDiffSet paperCarrier ctx.invDelta)
+  (hNe : ctx.invDelta ≠ zeroRq)
+  (hWitness : SumCheckTransitionWitness ctx) :
+  InteractiveReductionNativeAssumptions ctx :=
+  ofProtocolRelations
+    (ProtocolRelationsNativeAssumptions.ofPaperCarrierDiff
+      hBarNative hArithmetic hInv hDiff hNe)
+    hWitness
+
+/--
+Canonical native constructor from any strict low-norm invertibility boundary
+whose threshold is at least `5`, specialized to the active
+paper-carrier-difference route plus an explicit SumCheck transition witness.
+-/
+def InteractiveReductionNativeAssumptions.ofLowNormAtLeastFive
+  {ctx : ProtocolTargetContext}
+  {B : Nat}
+  (hFive : 5 ≤ B)
+  (hBarNative : ctx.bar = nativeBarMatrix)
+  (hArithmetic : ArithmeticObligations
+    ctx.bar ctx.m ctx.r ctx.rho1 ctx.rho2
+    ctx.hVec ctx.hScal
+    ctx.splitScalar ctx.kSplit
+    ctx.cset ctx.samples
+    ctx.xs ctx.ys ctx.qVals ctx.coeffs
+    ctx.xEval ctx.expectedEval)
+  (hInv : lowNormInvertibilityAssumption B)
+  (hDiff : samplingDiffSet paperCarrier ctx.invDelta)
+  (hNe : ctx.invDelta ≠ zeroRq)
+  (hWitness : SumCheckTransitionWitness ctx) :
+  InteractiveReductionNativeAssumptions ctx :=
+  ofProtocolRelations
+    (ProtocolRelationsNativeAssumptions.ofLowNormAtLeastFive
+      hFive hBarNative hArithmetic hInv hDiff hNe)
+    hWitness
 
 /-- Strong composition statement (knowledge-style). -/
 def strongCompositionStatement (ctx : ProtocolTargetContext) : Prop :=
@@ -99,7 +201,7 @@ theorem sumcheckFailureAdvantageBound_of_assumptions
           (sumcheckInstanceOfContext ctx)
           h.sumcheckTransitionWitness.transcript → False := by
     intro hFail
-    exact hFail.2 (h.reduction.sumcheckSoundness
+    exact hFail.2 (sumcheckSoundness_constructive
       (sumcheckInstanceOfContext ctx)
       h.sumcheckTransitionWitness.transcript
       hFail.1)
@@ -137,7 +239,7 @@ theorem sumcheckFailureAdvantageBound_of_native_assumptions
           (sumcheckInstanceOfContext ctx)
           h.sumcheckTransitionWitness.transcript → False := by
     intro hFail
-    exact hFail.2 (h.reduction.sumcheckSoundness
+    exact hFail.2 (sumcheckSoundness_constructive
       (sumcheckInstanceOfContext ctx)
       h.sumcheckTransitionWitness.transcript
       hFail.1)

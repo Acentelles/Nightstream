@@ -80,6 +80,68 @@ abbrev ProtocolRelationsAssumptions := SuperNeo.ProtocolRelationsAssumptions
 /-- [Role: Boundary] Native boundary bundle for protocol relations assumptions. -/
 abbrev ProtocolRelationsNativeAssumptions := SuperNeo.ProtocolRelationsNativeAssumptions
 
+/--
+[Role: Theorem-Target] Canonical protocol-relations constructor from the
+paper-facing challenge-difference route.
+-/
+abbrev ProtocolRelationsAssumptions_ofPaperCarrierDiff
+  {ctx : ProtocolTargetContext} :=
+  SuperNeo.ProtocolRelationsAssumptions.ofPaperCarrierDiff (ctx := ctx)
+
+/--
+[Role: Theorem-Target] Canonical protocol-relations constructor from a stronger
+strict low-norm invertibility theorem with threshold at least `5`.
+-/
+theorem ProtocolRelationsAssumptions_ofLowNormAtLeastFive
+  {ctx : ProtocolTargetContext}
+  {B : Nat}
+  (hFive : 5 ≤ B)
+  (hThm3 : thm3CoreAssumption ctx.bar)
+  (hArithmetic : ArithmeticObligations
+    ctx.bar ctx.m ctx.r ctx.rho1 ctx.rho2
+    ctx.hVec ctx.hScal
+    ctx.splitScalar ctx.kSplit
+    ctx.cset ctx.samples
+    ctx.xs ctx.ys ctx.qVals ctx.coeffs
+    ctx.xEval ctx.expectedEval)
+  (hInv : lowNormInvertibilityAssumption B)
+  (hDiff : samplingDiffSet paperCarrier ctx.invDelta)
+  (hNe : ctx.invDelta ≠ zeroRq) :
+  ProtocolRelationsAssumptions ctx :=
+  SuperNeo.ProtocolRelationsAssumptions.ofLowNormAtLeastFive
+    (ctx := ctx) hFive hThm3 hArithmetic hInv hDiff hNe
+
+/--
+[Role: Theorem-Target] Canonical native protocol-relations constructor from the
+paper-facing challenge-difference route.
+-/
+abbrev ProtocolRelationsNativeAssumptions_ofPaperCarrierDiff
+  {ctx : ProtocolTargetContext} :=
+  SuperNeo.ProtocolRelationsNativeAssumptions.ofPaperCarrierDiff (ctx := ctx)
+
+/--
+[Role: Theorem-Target] Canonical native protocol-relations constructor from a
+stronger strict low-norm invertibility theorem with threshold at least `5`.
+-/
+theorem ProtocolRelationsNativeAssumptions_ofLowNormAtLeastFive
+  {ctx : ProtocolTargetContext}
+  {B : Nat}
+  (hFive : 5 ≤ B)
+  (hBarNative : ctx.bar = nativeBarMatrix)
+  (hArithmetic : ArithmeticObligations
+    ctx.bar ctx.m ctx.r ctx.rho1 ctx.rho2
+    ctx.hVec ctx.hScal
+    ctx.splitScalar ctx.kSplit
+    ctx.cset ctx.samples
+    ctx.xs ctx.ys ctx.qVals ctx.coeffs
+    ctx.xEval ctx.expectedEval)
+  (hInv : lowNormInvertibilityAssumption B)
+  (hDiff : samplingDiffSet paperCarrier ctx.invDelta)
+  (hNe : ctx.invDelta ≠ zeroRq) :
+  ProtocolRelationsNativeAssumptions ctx :=
+  SuperNeo.ProtocolRelationsNativeAssumptions.ofLowNormAtLeastFive
+    (ctx := ctx) hFive hBarNative hArithmetic hInv hDiff hNe
+
 /-- [Role: Boundary] Boundary surface `ccsRelation_of_assumptions` requiring closure. -/
 abbrev ccsRelation_of_assumptions
   {ctx : ProtocolTargetContext} :

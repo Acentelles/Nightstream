@@ -29,17 +29,17 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 
 | Group | Lean symbol | Kind | Role | Guarantee |
 |---|---|---|---|---|
-| Assumptions | `PiRLCAssumptions` | abbrev | Definitional | Alias of `ProtocolRelationsAssumptions ctx` |
+| Assumptions | `PiRLCAssumptions` | abbrev | Definitional | Alias of `ProtocolTargetAssumptions ctx` |
 | Statement | `piRLCWeakStatement` | def | Definitional | ceRelaxedRelation ∧ SumCheckClaimTrue |
 | Theorem | `piRLCWeak_of_assumptions` | theorem | Theorem-Target | Assumptions + witness → weak statement |
 
 ## Proof Obligations and Closure Plan
 
-All obligations closed. `piRLCWeak_of_assumptions` proved from `piCCSStrong_of_assumptions` and `ceRelaxedRelation_of_ce`.
+All obligations closed at the module boundary. `piRLCWeak_of_assumptions` is proved from `piCCSStrong_of_assumptions` and `ceRelaxedRelation_of_ce`, and the only remaining closure work is upstream instantiation of `ProtocolTargetAssumptions`.
 
 ## Assumption Ledger
 
-No open boundary assumptions in this module. `PiRLCAssumptions` is a direct alias to `ProtocolRelationsAssumptions` from upstream.
+No open local boundary assumptions in this module. `PiRLCAssumptions` is a direct alias to `ProtocolTargetAssumptions` from upstream; no separate SumCheck or protocol-relations bundle is threaded here.
 
 ## Dependency and Consumer Map
 
@@ -53,7 +53,7 @@ Downstream consumers:
 
 ## Implementation Plan
 
-Current scope complete. Weak statement and derivation theorem proved.
+Current scope complete at boundary level. Weak statement and derivation theorem proved.
 
 ## Quality Expectations
 

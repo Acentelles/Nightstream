@@ -40,8 +40,10 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 | Relations | `ccsRelation` | def | Definitional | protocolTargetProp ctx |
 | Relations | `ceRelation` | def | Definitional | ccsRelation ∧ ∃ tr, SumCheckAccepted |
 | Relations | `ceRelaxedRelation` | def | Definitional | ccsRelation ctx |
-| Assumptions | `ProtocolRelationsAssumptions` | structure | Boundary | Bundles target, sumcheckSoundness, sumcheckCompleteness |
-| Assumptions | `ProtocolRelationsNativeAssumptions` | structure | Boundary | Bundles native target, sumcheckSoundness, sumcheckCompleteness |
+| Assumptions | `ProtocolRelationsAssumptions` | structure | Boundary | Bundles target only |
+| Assumptions | `ProtocolRelationsNativeAssumptions` | structure | Boundary | Bundles native target only |
+| Constructors | `ProtocolRelationsAssumptions.ofPaperCarrierDiff`, `ProtocolRelationsNativeAssumptions.ofPaperCarrierDiff` | def | Theorem-Target | Canonical relations bundles from the paper-facing `paperCarrier`-difference invertibility route |
+| Constructors | `ProtocolRelationsAssumptions.ofLowNormAtLeastFive`, `ProtocolRelationsNativeAssumptions.ofLowNormAtLeastFive` | def | Theorem-Target | Canonical relations bundles from a stronger strict low-norm invertibility theorem with threshold at least `5` |
 | Theorems | `ccsRelation_of_assumptions` | theorem | Theorem-Target | Assumptions → ccsRelation |
 | Theorems | `ccsRelation_of_native_assumptions` | theorem | Theorem-Target | Native assumptions → ccsRelation |
 | Theorems | `ceRelation_of_assumptions` | theorem | Theorem-Target | Assumptions + witness → ceRelation |
@@ -55,19 +57,19 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 
 ## Proof Obligations and Closure Plan
 
-All relation-level theorems proved, including native-path constructors. `ProtocolRelationsAssumptions` and `ProtocolRelationsNativeAssumptions` bundle upstream boundaries (ProtocolTarget, SumCheck); closure targets live in those modules.
+All relation-level theorems proved, including native-path constructors. `ProtocolRelationsAssumptions` and `ProtocolRelationsNativeAssumptions` now bundle only the upstream protocol-target boundary; the claim-true/CE bridges use SumCheck's accepted SuperNeo-path constructive closure directly. Canonical constructors are available from an already-built protocol-target bundle, from the stricter paper-facing `paperCarrier` difference route for `ctx.invDelta`, and from the stronger strict low-norm invertibility theorem route.
 
 ## Assumption Ledger
 
-`ProtocolRelationsAssumptions` bundles upstream assumptions: `ProtocolTargetAssumptions`, `SumcheckSoundnessAssumption`, `SumcheckCompletenessAssumption`.
-`ProtocolRelationsNativeAssumptions` bundles upstream assumptions: `ProtocolTargetNativeAssumptions`, `SumcheckSoundnessAssumption`, `SumcheckCompletenessAssumption`.
-Closure target: each upstream module (ProtocolTarget/Thm3Core, SumCheck) has its own closure plan.
+`ProtocolRelationsAssumptions` bundles upstream assumptions: `ProtocolTargetAssumptions`.
+`ProtocolRelationsNativeAssumptions` bundles upstream assumptions: `ProtocolTargetNativeAssumptions`.
+Closure target: ProtocolTarget/Thm3Core remain upstream boundaries; no separate SumCheck boundary bundle remains in this module.
 
 ## Dependency and Consumer Map
 
 Upstream dependencies:
 - `SuperNeo/ProtocolTarget.lean`: imports `protocolTargetProp`, `ProtocolTargetAssumptions`, `ProtocolTargetNativeAssumptions`, `ProtocolTargetContext`.
-- `SuperNeo/SumCheck.lean`: imports `SumCheckInstance`, `SumCheckTranscript`, `SumCheckAccepted`, `SumCheckClaimTrue`, `SumcheckSoundnessAssumption`, `SumcheckCompletenessAssumption`.
+- `SuperNeo/SumCheck.lean`: imports `SumCheckInstance`, `SumCheckTranscript`, `SumCheckAccepted`, `SumCheckClaimTrue`, `sumcheckSoundness_constructive`, `sumcheckCompleteness_constructive`.
 
 Downstream consumers:
 - `SuperNeo/PiCCS.lean`: uses `ceRelation`, `ceRelation_of_assumptions`, `ceClaimTrue_of_ce`, `SumCheckTransitionWitness`, `sumcheckInstanceOfContext`.
@@ -92,4 +94,4 @@ Relation definitions must match paper CCS/CE semantics. Soundness/completeness b
 
 ## Out of Scope
 
-- Probabilistic soundness/completeness proofs (live in SumCheck boundary).
+- Generic standalone SumCheck redesign beyond the accepted SuperNeo-path closure.

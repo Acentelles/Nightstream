@@ -2,7 +2,6 @@ import SuperNeo.Decomp
 import SuperNeo.MatrixTransform
 import SuperNeo.EvalHom
 import SuperNeo.ModuleHom
-import SuperNeo.InvertibilityAxioms
 import SuperNeo.SamplingSet
 import SuperNeo.MLE
 import SuperNeo.Interp
@@ -25,7 +24,6 @@ structure ArithmeticObligations
   (hScal : ScalarModuleHom)
   (splitScalar : F)
   (kSplit : Nat)
-  (invDelta : Coeffs)
   (cset samples : Array Coeffs)
   (xs ys qVals coeffs : Array F)
   (xEval expectedEval : F) where
@@ -33,7 +31,6 @@ structure ArithmeticObligations
   evalHom : evalHomAssumption bar m r rho1 rho2
   vecModule : vecModuleAssumption hVec
   scalarModule : scalarModuleAssumption hScal
-  invertibilityWindow : invertibilityWindowProp Goldilocks.halfQ invDelta
   sampling : samplingExpansionProp cset samples
   mleTableSize : qVals.size = (2 ^ r.size)
   mleIdentityAtR : mleEval qVals r = mleInnerProductForm qVals r
@@ -53,7 +50,6 @@ def ArithmeticObligations.of_p10
   {hScal : ScalarModuleHom}
   {splitScalar : F}
   {kSplit : Nat}
-  {invDelta : Coeffs}
   {cset samples : Array Coeffs}
   {xs ys qVals coeffs : Array F}
   {xEval expectedEval : F}
@@ -61,7 +57,6 @@ def ArithmeticObligations.of_p10
   (hThm3 : thm3CoreAssumption bar)
   (hVecAssm : vecModuleAssumption hVec)
   (hScalAssm : scalarModuleAssumption hScal)
-  (hInv : invertibilityWindowProp Goldilocks.halfQ invDelta)
   (hSampling : samplingExpansionProp cset samples)
   (hMleSize : qVals.size = (2 ^ r.size))
   (hInterp : interpolationProp xs ys coeffs xEval expectedEval) :
@@ -69,7 +64,7 @@ def ArithmeticObligations.of_p10
     bar m r rho1 rho2
     hVec hScal
     splitScalar kSplit
-    invDelta cset samples
+    cset samples
     xs ys qVals coeffs
     xEval expectedEval where
   splitScalarBelowPow := hSplit
@@ -78,7 +73,6 @@ def ArithmeticObligations.of_p10
     (hVecAssm := hVecAssm) (hScalAssm := hScalAssm)
   vecModule := hVecAssm
   scalarModule := hScalAssm
-  invertibilityWindow := hInv
   sampling := hSampling
   mleTableSize := hMleSize
   mleIdentityAtR := by
@@ -96,7 +90,6 @@ def ArithmeticObligations.of_p10_p11
   {hScal : ScalarModuleHom}
   {splitScalar : F}
   {kSplit : Nat}
-  {invDelta : Coeffs}
   {cset samples : Array Coeffs}
   {xs ys qVals coeffs : Array F}
   {xEval expectedEval : F}
@@ -105,7 +98,6 @@ def ArithmeticObligations.of_p10_p11
   (_hLift : barLiftLinearityAssumption bar)
   (hVecAssm : vecModuleAssumption hVec)
   (hScalAssm : scalarModuleAssumption hScal)
-  (hInv : invertibilityWindowProp Goldilocks.halfQ invDelta)
   (hSampling : samplingExpansionProp cset samples)
   (hMleSize : qVals.size = (2 ^ r.size))
   (hInterp : interpolationProp xs ys coeffs xEval expectedEval) :
@@ -113,7 +105,7 @@ def ArithmeticObligations.of_p10_p11
     bar m r rho1 rho2
     hVec hScal
     splitScalar kSplit
-    invDelta cset samples
+    cset samples
     xs ys qVals coeffs
     xEval expectedEval := by
   exact ArithmeticObligations.of_p10
@@ -121,7 +113,6 @@ def ArithmeticObligations.of_p10_p11
     (hThm3 := hThm3)
     (hVecAssm := hVecAssm)
     (hScalAssm := hScalAssm)
-    (hInv := hInv)
     (hSampling := hSampling)
     (hMleSize := hMleSize)
     (hInterp := hInterp)
@@ -138,7 +129,6 @@ theorem ArithmeticObligations.splitTerminalZero
   {hScal : ScalarModuleHom}
   {splitScalar : F}
   {kSplit : Nat}
-  {invDelta : Coeffs}
   {cset samples : Array Coeffs}
   {xs ys qVals coeffs : Array F}
   {xEval expectedEval : F}
@@ -146,7 +136,7 @@ theorem ArithmeticObligations.splitTerminalZero
     bar m r rho1 rho2
     hVec hScal
     splitScalar kSplit
-    invDelta cset samples
+    cset samples
     xs ys qVals coeffs
     xEval expectedEval) :
   splitBase2TerminalZeroProp splitScalar kSplit :=
@@ -164,7 +154,6 @@ theorem splitDecompositionNat_of_obligations
   {hScal : ScalarModuleHom}
   {splitScalar : F}
   {kSplit : Nat}
-  {invDelta : Coeffs}
   {cset samples : Array Coeffs}
   {xs ys qVals coeffs : Array F}
   {xEval expectedEval : F}
@@ -172,7 +161,7 @@ theorem splitDecompositionNat_of_obligations
     bar m r rho1 rho2
     hVec hScal
     splitScalar kSplit
-    invDelta cset samples
+    cset samples
     xs ys qVals coeffs
     xEval expectedEval) :
   splitBase2LowPartNat splitScalar kSplit +

@@ -8,11 +8,11 @@ namespace SuperNeo
 
 /-- Assumptions consumed by the `Π_RLC` reduction step. -/
 abbrev PiRLCAssumptions (ctx : ProtocolTargetContext) :=
-  ProtocolRelationsAssumptions ctx
+  ProtocolTargetAssumptions ctx
 
 /-- Native assumptions consumed by the `Π_RLC` reduction step. -/
 abbrev PiRLCNativeAssumptions (ctx : ProtocolTargetContext) :=
-  ProtocolRelationsNativeAssumptions ctx
+  ProtocolTargetNativeAssumptions ctx
 
 /-- Weak `Π_RLC` target statement. -/
 def piRLCWeakStatement (ctx : ProtocolTargetContext) : Prop :=

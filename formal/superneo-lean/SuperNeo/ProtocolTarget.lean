@@ -1,5 +1,7 @@
 import SuperNeo.Thm3Core
 import SuperNeo.ArithmeticObligations
+import SuperNeo.InvertibilityAxioms
+import SuperNeo.SamplingSet
 
 /-!
 Protocol-target layer.
@@ -38,7 +40,7 @@ structure ProtocolTargetAssumptions (ctx : ProtocolTargetContext) where
     ctx.bar ctx.m ctx.r ctx.rho1 ctx.rho2
     ctx.hVec ctx.hScal
     ctx.splitScalar ctx.kSplit
-    ctx.invDelta ctx.cset ctx.samples
+    ctx.cset ctx.samples
     ctx.xs ctx.ys ctx.qVals ctx.coeffs
     ctx.xEval ctx.expectedEval
   invDeltaInvertible : invertibleRq ctx.invDelta
@@ -55,52 +57,10 @@ structure ProtocolTargetNativeAssumptions (ctx : ProtocolTargetContext) where
     ctx.bar ctx.m ctx.r ctx.rho1 ctx.rho2
     ctx.hVec ctx.hScal
     ctx.splitScalar ctx.kSplit
-    ctx.invDelta ctx.cset ctx.samples
+    ctx.cset ctx.samples
     ctx.xs ctx.ys ctx.qVals ctx.coeffs
     ctx.xEval ctx.expectedEval
   invDeltaInvertible : invertibleRq ctx.invDelta
-
-/--
-Compatibility constructor: derive protocol-target assumptions from a low-norm
-invertibility boundary and the arithmetic invertibility window.
--/
-def ProtocolTargetAssumptions.of_lowNormBoundary
-  {ctx : ProtocolTargetContext}
-  (thm3 : thm3CoreAssumption ctx.bar)
-  (arithmetic : ArithmeticObligations
-    ctx.bar ctx.m ctx.r ctx.rho1 ctx.rho2
-    ctx.hVec ctx.hScal
-    ctx.splitScalar ctx.kSplit
-    ctx.invDelta ctx.cset ctx.samples
-    ctx.xs ctx.ys ctx.qVals ctx.coeffs
-    ctx.xEval ctx.expectedEval)
-  (hLowNorm : lowNormInvertibilityAssumption Goldilocks.halfQ) :
-  ProtocolTargetAssumptions ctx where
-  thm3 := thm3
-  arithmetic := arithmetic
-  invDeltaInvertible :=
-    invertibleRq_of_lowNormAssumption hLowNorm arithmetic.invertibilityWindow
-
-/--
-Compatibility constructor: derive native protocol-target assumptions from a
-low-norm invertibility boundary and the arithmetic invertibility window.
--/
-def ProtocolTargetNativeAssumptions.of_lowNormBoundary
-  {ctx : ProtocolTargetContext}
-  (barNative : ctx.bar = nativeBarMatrix)
-  (arithmetic : ArithmeticObligations
-    ctx.bar ctx.m ctx.r ctx.rho1 ctx.rho2
-    ctx.hVec ctx.hScal
-    ctx.splitScalar ctx.kSplit
-    ctx.invDelta ctx.cset ctx.samples
-    ctx.xs ctx.ys ctx.qVals ctx.coeffs
-    ctx.xEval ctx.expectedEval)
-  (hLowNorm : lowNormInvertibilityAssumption Goldilocks.halfQ) :
-  ProtocolTargetNativeAssumptions ctx where
-  barNative := barNative
-  arithmetic := arithmetic
-  invDeltaInvertible :=
-    invertibleRq_of_lowNormAssumption hLowNorm arithmetic.invertibilityWindow
 
 /-- Protocol-target proposition (compact protocol-math-target style surface). -/
 def protocolTargetProp (ctx : ProtocolTargetContext) : Prop :=
@@ -140,4 +100,130 @@ theorem protocolTargetProp_of_native_assumptions
     hArithmetic.vecModule, hArithmetic.scalarModule, hArithmetic.sampling,
     hArithmetic.mleTableSize, hArithmetic.mleIdentityAtR, hArithmetic.interpolation, ?_⟩
   exact hInvDelta
+
+/--
+Paper-facing invertibility bridge: if `invDelta` is a nonzero difference of two
+elements from the proved `paperCarrier`, then the strict low-norm window `< 5`
+holds.
+-/
+theorem strictInvertibilityWindowProp_five_of_paperCarrierDiff
+  {δ : Coeffs}
+  (hDiff : samplingDiffSet paperCarrier δ)
+  (hNe : δ ≠ zeroRq) :
+  strictInvertibilityWindowProp 5 δ := by
+  rcases samplingDiffSet_paperCarrier_hasRingDegreeShape_and_norm_le_four hDiff with
+    ⟨hShape, hNorm⟩
+  exact strictInvertibilityWindowProp_five_of_shape_norm_le_four_of_ne_zeroRq
+    hShape hNorm hNe
+
+/-- Derive invertibility from the active paper-carrier-difference boundary. -/
+theorem invertibleRq_of_paperCarrierDiff
+  {δ : Coeffs}
+  (hInv : paperCarrierDiffInvertibilityAssumption)
+  (hDiff : samplingDiffSet paperCarrier δ)
+  (hNe : δ ≠ zeroRq) :
+  invertibleRq δ := by
+  exact hInv δ hDiff hNe
+
+/--
+Canonical protocol-target constructor on the paper-facing challenge-difference
+path: `invDelta` is a nonzero difference of two paper-carrier elements, and the
+only remaining invertibility boundary is the corresponding paper-carrier
+difference predicate.
+-/
+def ProtocolTargetAssumptions.ofPaperCarrierDiff
+  {ctx : ProtocolTargetContext}
+  (thm3 : thm3CoreAssumption ctx.bar)
+  (arithmetic : ArithmeticObligations
+    ctx.bar ctx.m ctx.r ctx.rho1 ctx.rho2
+    ctx.hVec ctx.hScal
+    ctx.splitScalar ctx.kSplit
+    ctx.cset ctx.samples
+    ctx.xs ctx.ys ctx.qVals ctx.coeffs
+    ctx.xEval ctx.expectedEval)
+  (hInv : paperCarrierDiffInvertibilityAssumption)
+  (hDiff : samplingDiffSet paperCarrier ctx.invDelta)
+  (hNe : ctx.invDelta ≠ zeroRq) :
+  ProtocolTargetAssumptions ctx :=
+  { thm3 := thm3
+    arithmetic := arithmetic
+    invDeltaInvertible := invertibleRq_of_paperCarrierDiff hInv hDiff hNe }
+
+/--
+Canonical protocol-target constructor from any strict low-norm invertibility
+boundary whose threshold is at least `5`, specialized to the active
+paper-carrier-difference route.
+-/
+def ProtocolTargetAssumptions.ofLowNormAtLeastFive
+  {ctx : ProtocolTargetContext}
+  {B : Nat}
+  (hFive : 5 ≤ B)
+  (thm3 : thm3CoreAssumption ctx.bar)
+  (arithmetic : ArithmeticObligations
+    ctx.bar ctx.m ctx.r ctx.rho1 ctx.rho2
+    ctx.hVec ctx.hScal
+    ctx.splitScalar ctx.kSplit
+    ctx.cset ctx.samples
+    ctx.xs ctx.ys ctx.qVals ctx.coeffs
+    ctx.xEval ctx.expectedEval)
+  (hInv : lowNormInvertibilityAssumption B)
+  (hDiff : samplingDiffSet paperCarrier ctx.invDelta)
+  (hNe : ctx.invDelta ≠ zeroRq) :
+  ProtocolTargetAssumptions ctx :=
+  ofPaperCarrierDiff
+    thm3
+    arithmetic
+    (paperCarrierDiffInvertibilityAssumption_of_lowNormAtLeastFive hFive hInv)
+    hDiff
+    hNe
+
+/--
+Canonical native protocol-target constructor on the paper-facing
+challenge-difference path.
+-/
+def ProtocolTargetNativeAssumptions.ofPaperCarrierDiff
+  {ctx : ProtocolTargetContext}
+  (barNative : ctx.bar = nativeBarMatrix)
+  (arithmetic : ArithmeticObligations
+    ctx.bar ctx.m ctx.r ctx.rho1 ctx.rho2
+    ctx.hVec ctx.hScal
+    ctx.splitScalar ctx.kSplit
+    ctx.cset ctx.samples
+    ctx.xs ctx.ys ctx.qVals ctx.coeffs
+    ctx.xEval ctx.expectedEval)
+  (hInv : paperCarrierDiffInvertibilityAssumption)
+  (hDiff : samplingDiffSet paperCarrier ctx.invDelta)
+  (hNe : ctx.invDelta ≠ zeroRq) :
+  ProtocolTargetNativeAssumptions ctx :=
+  { barNative := barNative
+    arithmetic := arithmetic
+    invDeltaInvertible := invertibleRq_of_paperCarrierDiff hInv hDiff hNe }
+
+/--
+Canonical native protocol-target constructor from any strict low-norm
+invertibility boundary whose threshold is at least `5`, specialized to the
+active paper-carrier-difference route.
+-/
+def ProtocolTargetNativeAssumptions.ofLowNormAtLeastFive
+  {ctx : ProtocolTargetContext}
+  {B : Nat}
+  (hFive : 5 ≤ B)
+  (barNative : ctx.bar = nativeBarMatrix)
+  (arithmetic : ArithmeticObligations
+    ctx.bar ctx.m ctx.r ctx.rho1 ctx.rho2
+    ctx.hVec ctx.hScal
+    ctx.splitScalar ctx.kSplit
+    ctx.cset ctx.samples
+    ctx.xs ctx.ys ctx.qVals ctx.coeffs
+    ctx.xEval ctx.expectedEval)
+  (hInv : lowNormInvertibilityAssumption B)
+  (hDiff : samplingDiffSet paperCarrier ctx.invDelta)
+  (hNe : ctx.invDelta ≠ zeroRq) :
+  ProtocolTargetNativeAssumptions ctx :=
+  ofPaperCarrierDiff
+    barNative
+    arithmetic
+    (paperCarrierDiffInvertibilityAssumption_of_lowNormAtLeastFive hFive hInv)
+    hDiff
+    hNe
 end SuperNeo

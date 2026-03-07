@@ -8,11 +8,11 @@ namespace SuperNeo
 
 /-- Assumptions consumed by the `Π_CCS` reduction step. -/
 abbrev PiCCSAssumptions (ctx : ProtocolTargetContext) :=
-  ProtocolRelationsAssumptions ctx
+  ProtocolTargetAssumptions ctx
 
 /-- Native assumptions consumed by the `Π_CCS` reduction step. -/
 abbrev PiCCSNativeAssumptions (ctx : ProtocolTargetContext) :=
-  ProtocolRelationsNativeAssumptions ctx
+  ProtocolTargetNativeAssumptions ctx
 
 /-- Strong `Π_CCS` target statement. -/
 def piCCSStrongStatement (ctx : ProtocolTargetContext) : Prop :=
@@ -26,8 +26,8 @@ theorem piCCSStrong_of_assumptions
   (hWitness : SumCheckTransitionWitness ctx) :
   piCCSStrongStatement ctx := by
   have hCE : ceRelation ctx :=
-    ceRelation_of_assumptions h hWitness
-  exact ⟨hCE, ceClaimTrue_of_ce h hCE⟩
+    ⟨protocolTargetProp_of_assumptions h, hWitness.accepted_exists⟩
+  exact ⟨hCE, sumcheckSoundness_constructive _ _ hWitness.accepted⟩
 
 /-- Derive strong `Π_CCS` statement from native relation assumptions. -/
 theorem piCCSStrong_of_native_assumptions
@@ -36,7 +36,7 @@ theorem piCCSStrong_of_native_assumptions
   (hWitness : SumCheckTransitionWitness ctx) :
   piCCSStrongStatement ctx := by
   have hCE : ceRelation ctx :=
-    ceRelation_of_native_assumptions h hWitness
-  exact ⟨hCE, ceClaimTrue_of_native_ce h hCE⟩
+    ⟨protocolTargetProp_of_native_assumptions h, hWitness.accepted_exists⟩
+  exact ⟨hCE, sumcheckSoundness_constructive _ _ hWitness.accepted⟩
 
 end SuperNeo
