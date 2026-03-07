@@ -1379,7 +1379,7 @@ theorem SoundnessGame.roundFailureCanonical_last_of_failureEvent
       sumcheckEvalPoly (g.transcript coins).roundPolys[g.inst.rounds - 1]!
         (g.transcript coins).challenges[g.inst.rounds - 1]! =
       mleByFolding g.table (g.transcript coins).challenges := by
-    simpa [SuperNeo.sumcheckFinalOracleConsistentWithTable, hRoundsNe] using hAccepted.2.2
+    simpa [SuperNeo.sumcheckFinalOracleConsistentWithTable, hRoundsNe] using hAccepted.2.2.2
   have hPolyLast :
       (g.transcript coins).roundPolys[g.inst.rounds - 1]! =
         g.prover.roundPoly (g.inst.rounds - 1) coins := by

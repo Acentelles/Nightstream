@@ -7,7 +7,7 @@ SumCheck protocol scaffold.
 
 This module provides:
 - protocol objects (`SumCheckInstance`, `SumCheckTranscript`),
-- paper-exact verifier acceptance semantics (round shape + fold consistency),
+- standalone SumCheck scaffold semantics and honest-transcript closure,
 - explicit soundness/completeness assumption boundaries.
 -/
 
@@ -78,8 +78,8 @@ def sumcheckInitialRoundConsistent
 /--
 Legacy scaffold helper: final claim check against the first round polynomial's constant term.
 
-This helper is no longer part of `sumcheckAcceptedCore`; the paper-facing acceptance
-endpoint is carried by `sumcheckFinalOracleConsistent` in `sumcheckAccepted`.
+This helper is no longer part of `sumcheckAcceptedCore`; endpoint consistency is
+tracked separately by `sumcheckFinalOracleConsistent` and `sumcheckAcceptedForTable`.
 -/
 def sumcheckFinalClaimConsistent
   (inst : SumCheckInstance)
@@ -103,12 +103,7 @@ the current standalone scaffold, not a full restatement of Definition 6.
 def sumcheckDegreeCompatible (inst : SumCheckInstance) : Prop :=
   inst.rounds = 0 ∨ 0 < inst.maxDegree
 
-/--
-Core verifier acceptance checks (without endpoint-oracle witness).
-
-This is the structural round-check layer only; endpoint consistency is carried
-by `sumcheckAccepted` through `sumcheckFinalOracleConsistent`.
--/
+/-- Core scaffold acceptance checks (without endpoint-oracle consistency). -/
 def sumcheckAcceptedCore
   (inst : SumCheckInstance)
   (tr : SumCheckTranscript) : Prop :=
@@ -191,36 +186,26 @@ proof-system game layer.
 def sumcheckPaperClaimTrue (inst : SumCheckInstance) : Prop :=
   Nonempty (SumCheckStatement inst)
 
-/--
-Final-round oracle consistency surface (Definition-6 style endpoint):
-the last claimed univariate evaluation must match the multilinear value at the
-challenge point.
-
-For `rounds = 0`, this collapses to the zero-round claim check.
--/
+/-- Final-round oracle consistency for a statement witness and transcript. -/
 def sumcheckFinalOracleConsistent
   (inst : SumCheckInstance)
   (stmt : SumCheckStatement inst)
   (tr : SumCheckTranscript) : Prop :=
-  if hZero : inst.rounds = 0 then
+  sumcheckRoundConsistent inst tr ∧
+  if _hZero : inst.rounds = 0 then
     mleByFolding stmt.table #[] = inst.claimedValue
   else
     sumcheckEvalPoly (tr.roundPolys[inst.rounds - 1]!) (tr.challenges[inst.rounds - 1]!) =
       mleByFolding stmt.table tr.challenges
 
-/--
-Table-indexed final oracle consistency.
-
-Unlike `sumcheckFinalOracleConsistent`, this surface does not require a
-`SumCheckStatement` witness carrying `sumcheckTableSum table = claimedValue`.
-It is used for soundness-game modeling where false claims must be expressible.
--/
+/-- Table-indexed final oracle consistency with transcript-shape safety. -/
 def sumcheckFinalOracleConsistentWithTable
   (inst : SumCheckInstance)
   (table : Array F)
   (tr : SumCheckTranscript) : Prop :=
   table.size = 2 ^ inst.rounds ∧
-  if hZero : inst.rounds = 0 then
+  sumcheckRoundConsistent inst tr ∧
+  if _hZero : inst.rounds = 0 then
     mleByFolding table #[] = inst.claimedValue
   else
     sumcheckEvalPoly (tr.roundPolys[inst.rounds - 1]!) (tr.challenges[inst.rounds - 1]!) =
@@ -250,7 +235,7 @@ Constructively closed acceptance surface.
 This is the historical scaffolded acceptance notion: verifier acceptance plus a
 same-transcript endpoint witness. It is kept explicitly named so downstream
 closure packages can continue to compile while the core `sumcheckAccepted`
-surface remains paper-exact.
+surface stays a plain verifier-side scaffold predicate.
 -/
 def sumcheckAcceptedClosed
   (inst : SumCheckInstance)
@@ -1255,6 +1240,9 @@ theorem sumcheckFinalOracleConsistent_of_statement_constructive
   {inst : SumCheckInstance}
   (stmt : SumCheckStatement inst) :
   sumcheckFinalOracleConsistent inst stmt (sumcheckHonestTranscript stmt) := by
+  have hCore : sumcheckAcceptedCore inst (sumcheckHonestTranscript stmt) :=
+    sumcheckHonestTranscript_acceptedCore_of_statement stmt
+  refine ⟨hCore.2.2.1, ?_⟩
   by_cases hZero : inst.rounds = 0
   · simp [sumcheckFinalOracleConsistent, hZero]
     have hSize : stmt.table.size = 1 := by simpa [hZero] using stmt.tableSize

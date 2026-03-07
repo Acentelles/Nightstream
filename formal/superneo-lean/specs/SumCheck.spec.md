@@ -2,7 +2,8 @@
 
 ## Purpose
 
-- **What it is**: The interactive sum-check protocol formalization, defining `SumCheckInstance` (claimed value, rounds, max degree), `SumCheckTranscript` (challenges, round polynomials), a structural verifier predicate `sumcheckAcceptedCore`, and a paper-exact verifier predicate `sumcheckAccepted`. Explicit `...Closed` helper surfaces still exist in the implementation, but they are internal compatibility scaffolding rather than the exported paper contract.
+- **What it is**: The interactive sum-check protocol formalization, defining `SumCheckInstance` (claimed value, rounds, max degree), `SumCheckTranscript` (challenges, round polynomials), a stronger standalone scaffold predicate `sumcheckAcceptedCore`, and a paper-facing verifier predicate `sumcheckVerifierAccepted`. The historical `sumcheckAccepted` surface remains the executable standalone scaffold acceptance used by the honest-transcript closure path.
+- **Scope note**: Accepted as paper-faithful and proof-complete for the SuperNeo protocol dependency chain. The standalone core remains table/MLE-specialized and is not claimed to be a fully generic `SumCheck(T; Q)` Definition-6 library formalization.
 - **Key property**: `sumcheckAccepted inst tr` implies structural properties: `tr.roundPolys.size = inst.rounds`, `tr.challenges.size = tr.roundPolys.size`, and each round's `p(0) + p(1) = eval(p_{prev}, r_{prev})`.
 - **Protocol role**: Sum-check is the interactive reduction backbone of SuperNeo. Section 7.3 (Π_CCS) and Section 7.4 (Π_RLC) both invoke sum-check to reduce multivariate polynomial claims to point-evaluation queries, which are then handled by MLE evaluation.
 
@@ -10,7 +11,8 @@
 
 - `p_0(0) + p_0(1) = v` (initial round sum = claimed value)
 - `p_{i+1}(0) + p_{i+1}(1) = p_i(r_i)` (round transition)
-- `|p_i| = maxDegree + 1` (polynomial shape)
+- `deg(p_i) ≤ maxDegree` (paper-facing degree bound)
+- `|p_i| = maxDegree + 1` (normalized executable encoding)
 - `|challenges| = |roundPolys| = rounds` (transcript shape)
 
 ## Paper Anchors
@@ -39,13 +41,16 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 | Evaluation | `sumcheckTableSum` | def | Definitional | Hypercube-table sum surface |
 | Predicates | `sumcheckRoundConsistent` | def | Definitional | Transcript shape check |
 | Predicates | `sumcheckRoundPolyShape` | def | Definitional | Polynomial coefficient count |
+| Predicates | `sumcheckRoundPolyDegreeLe` | def | Definitional | Paper-facing coefficient-array degree bound |
+| Predicates | `sumcheckRoundDegrees` | def | Definitional | Per-round paper-facing degree bound |
 | Predicates | `sumcheckRoundShapes` | def | Definitional | All round polys shaped |
 | Predicates | `sumcheckFoldConsistent` | def | Definitional | Round-to-round transition |
 | Predicates | `sumcheckInitialRoundConsistent` | def | Definitional | `p_0(0) + p_0(1) = v` |
 | Predicates | `sumcheckFinalClaimConsistent` | def | Definitional | Legacy scaffold helper (not part of acceptance endpoint) |
-| Predicates | `sumcheckFinalOracleConsistentWithTable` | def | Definitional | Final-oracle consistency indexed by a raw table (no sum-equals-claim field required) |
-| Acceptance | `sumcheckAcceptedCore` | def | Definitional | Structural verifier checks (parameter, degree, round shape/transition, initial, fold) |
-| Acceptance | `sumcheckAccepted` | def | Definitional | Paper-exact verifier predicate; equal to `sumcheckAcceptedCore` |
+| Predicates | `sumcheckFinalOracleConsistentWithTable` | def | Definitional | Shape-safe final-oracle consistency indexed by a raw table (no sum-equals-claim field required) |
+| Acceptance | `sumcheckAcceptedCore` | def | Definitional | Standalone scaffold acceptance (parameter, degree-compatibility, round shape/transition, initial, fold) |
+| Acceptance | `sumcheckVerifierAccepted` | def | Definitional | Paper-facing verifier predicate (round consistency, degree bound, initial, fold) |
+| Acceptance | `sumcheckAccepted` | def | Definitional | Executable standalone scaffold acceptance; equal to `sumcheckAcceptedCore` |
 | Acceptance | `sumcheckAcceptedForTable` | def | Definitional | `sumcheckAcceptedCore ∧ sumcheckFinalOracleConsistentWithTable inst table tr` |
 | Claim | `sumcheckParameterConsistent` | def | Definitional | `maxDegree ≤ domainSize` |
 | Claim | `sumcheckDegreeCompatible` | def | Definitional | Internal completeness restriction of the current table-based standalone model: `rounds = 0 ∨ 0 < maxDegree` |
@@ -65,6 +70,7 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 | Rejection | `sumcheckAccepted_not_of_bad_round_shape` | theorem | Theorem-Target | Reject bad poly shape |
 | Rejection | `sumcheckAccepted_not_of_bad_initial_round` | theorem | Theorem-Target | Reject bad initial round |
 | Closure | `sumcheckFinalOracleConsistent_iff_withTable` | theorem | Theorem-Target | Bridge between statement-indexed and table-indexed endpoint relations |
+| Closure | `sumcheckVerifierAccepted_of_accepted` | theorem | Theorem-Target | Scaffold acceptance implies the paper-facing verifier predicate |
 | Closure | `sumcheckAccepted_of_acceptedForTable` | theorem | Theorem-Target | Fixed-table acceptance + table-sum equality reconstructs statement-indexed acceptance |
 | Closure | `sumcheckAccepted_parameter_consistent` | theorem | Theorem-Target | Accepted transcript enforces parameter consistency |
 | Closure | `sumcheckAccepted_degree_compatible` | theorem | Theorem-Target | Accepted transcript enforces degree compatibility |
@@ -74,10 +80,12 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 | Closure | `sumcheckHonestTranscript_accepted_of_baseClaim` | theorem | Theorem-Target | Direct accepted proof for canonical honest transcript from base claim |
 | Closure | `sumcheckPaperClaimTrue_of_baseClaim_constructive` | theorem | Theorem-Target | Build paper statement witness from legacy base claim |
 | Closure | `sumcheckPaperClaimTrue_of_accepted` | theorem | Theorem-Target | Build paper statement witness from accepted transcript |
+| Closure | `sumcheckPaperClaimTrue_iff_baseClaim` | theorem | Theorem-Target | Explicitly exposes that the standalone claim surface collapses to scaffold well-formedness |
+| Closure | `sumcheckClaimTrue_iff_baseClaim` | theorem | Theorem-Target | Same collapse for the public standalone alias |
 | Closure | `sumcheckFinalOracleConsistent_of_baseClaim_constructive` | theorem | Theorem-Target | Constructive final-oracle consistency for canonical statement + honest transcript |
 | Closure | `sumcheckStatementTranscriptConsistent_of_baseClaim_constructive` | theorem | Theorem-Target | Constructive existence of statement/transcript consistency witness from base claim |
 | Closure | `sumcheckStatementTranscriptConsistent_of_accepted_sameTranscript` | theorem | Theorem-Target | For a chosen `stmt`, accepted + final-oracle consistency at same `tr` implies consistency |
-| Closure | `sumcheckCompleteness_constructive` | theorem | Theorem-Target | Canonical paper-claim completeness (`claimTrue -> ∃ accepted transcript`) |
+| Closure | `sumcheckCompleteness_constructive` | theorem | Theorem-Target | Canonical standalone statement-existence completeness (`claimTrue -> ∃ accepted transcript`) |
 | Closure | `sumcheckStructuralCompleteness_constructive` | abbrev | Theorem-Target | Preferred structural alias for the standalone constructive completeness theorem |
 | Closure | `sumcheckAssumptions_constructive` | def | Theorem-Target | Canonical constructive `SumCheckAssumptions` package |
 | Boundary | `SumcheckSoundnessAssumption` | def | Boundary | `accepted → claimTrue` |
@@ -91,7 +99,8 @@ Structural extraction/rejection theorems are closed.
 
 Constructive closure status:
 - `sumcheckSoundness_constructive` closes `SumcheckSoundnessAssumption` on the standalone structural path `sumcheckAccepted -> sumcheckClaimTrue`; the paper-facing probabilistic soundness theorem lives in the proof-system game layer.
-- `sumcheckCompleteness_constructive` closes `SumcheckCompletenessAssumption` on the paper-exact path `sumcheckClaimTrue -> ∃ tr, sumcheckAccepted inst tr`.
+- `sumcheckVerifierAccepted` is the paper-facing verifier contract in this module; `sumcheckAccepted` remains the stronger executable scaffold acceptance used by the standalone honest-transcript machinery.
+- `sumcheckCompleteness_constructive` closes `SumcheckCompletenessAssumption` on the standalone statement-existence path `sumcheckClaimTrue -> ∃ tr, sumcheckAccepted inst tr`.
 - Preferred public naming for the standalone scaffold is `sumcheckStructuralSoundness_constructive` / `sumcheckStructuralCompleteness_constructive`; the older names remain the underlying theorem names.
 - `sumcheckCompleteness_from_baseClaim_constructive` remains the executable honest-transcript constructor from base claim shape.
 - Statement/transcript-consistency status: closed constructively via
@@ -105,9 +114,11 @@ Constructive closure status:
 
 ## Assumption Ledger
 
-- `SumcheckSoundnessAssumption` [Boundary-surface, Constructively Closed]: closed on the paper-exact `accepted -> claimTrue` semantics.
-- `SumcheckCompletenessAssumption` [Boundary-surface, Constructively Closed]: closed on the paper-exact `claimTrue -> ∃ tr, accepted` semantics.
-- Remaining paper-level gap: probabilistic/adversarial semantics are not encoded in this core scaffold; this module exposes the paper bound surface (`ℓ·d/|K|`) while probability reasoning is handled in proof-system security layers.
+- `SumcheckSoundnessAssumption` [Boundary-surface, Constructively Closed]: closed on the standalone scaffold semantics `sumcheckAccepted -> sumcheckClaimTrue`.
+- `SumcheckCompletenessAssumption` [Boundary-surface, Constructively Closed]: closed on the standalone statement-existence `claimTrue -> ∃ tr, accepted` semantics.
+- Remaining paper-level gaps:
+  - the standalone core statement object is still table/MLE-based rather than a fully generic `SumCheck(T; Q)` witness;
+  - probabilistic/adversarial semantics are not encoded in this core scaffold and live in the proof-system security layers.
 
 ## Dependency and Consumer Map
 
@@ -122,7 +133,7 @@ Downstream consumers:
 
 ## Implementation Plan
 
-Current scope complete for paper-exact core soundness/completeness. Explicit `...Closed` helper surfaces are retained only as internal implementation scaffolding.
+Current scope complete for the standalone scaffold plus the paper-facing verifier view. Explicit `...Closed` helper surfaces are retained only as internal implementation scaffolding.
 
 ## Quality Expectations
 

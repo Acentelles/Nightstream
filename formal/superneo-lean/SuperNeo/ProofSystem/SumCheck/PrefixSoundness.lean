@@ -1014,7 +1014,7 @@ theorem SoundnessGame.acceptsOn_final_claim_eq_honest
       SuperNeo.sumcheckEvalPoly (g.prover.roundPoly (g.inst.rounds - 1) coins)
           (coins[g.inst.rounds - 1]!) = mleByFolding g.table coins := by
     simpa [SoundnessGame.acceptsOn, SoundnessGame.transcript,
-      SuperNeo.sumcheckFinalOracleConsistentWithTable, hRoundsNe, hLastLt] using hAcc.2.2
+      SuperNeo.sumcheckFinalOracleConsistentWithTable, hRoundsNe, hLastLt] using hAcc.2.2.2
   have hRounds :
       g.inst.rounds = (g.inst.rounds - 1) + 1 := by
     omega

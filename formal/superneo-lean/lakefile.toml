@@ -16,3 +16,7 @@ root = "Main"
 [[lean_exe]]
 name = "goldilocks-golden"
 root = "SuperNeo.Golden.GoldilocksGolden"
+
+[[lean_lib]]
+name = "SumCheckTests"
+globs = ["tests.+"]

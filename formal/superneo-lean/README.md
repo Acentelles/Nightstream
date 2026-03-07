@@ -56,7 +56,7 @@ The module structure mirrors the paper's four main sections.
 - `SuperNeo/Decomp.lean`: balanced base-`b` decomposition (`split_b`) helpers
 - `SuperNeo/EqPoly.lean`: `eq` polynomial helpers
 - `SuperNeo/MLE.lean`: multilinear-extension identities (`r_hat`, folding)
-- `SuperNeo/SumCheck.lean`: sum-check protocol scaffold (Definition 6)
+- `SuperNeo/SumCheck.lean`: SuperNeo-specialized sum-check scaffold plus paper-facing verifier view; accepted for the SuperNeo protocol path, not as a fully generic standalone Definition-6 library formalization
 - `SuperNeo/PolyLemmas.lean`: reusable polynomial helpers for Lemma 5/6
 - `SuperNeo/Interp.lean`: polynomial eval + interpolation
 - `SuperNeo/Parameters.lean`: Appendix B.2 concrete parameter constants
@@ -119,6 +119,23 @@ cd formal/superneo-lean
 lake build
 lake exe check
 ```
+
+## Run SumCheck tests
+
+The SumCheck test suite lives under `tests/` and is elaboration-driven:
+`#guard` checks and `example` proofs fail at compile time.
+
+```bash
+cd formal/superneo-lean
+lake build SumCheckTests
+```
+
+`lake build SumCheckTests` currently includes:
+- standalone/core SumCheck smoke tests,
+- proof-style SumCheck examples,
+- prefix-soundness smoke tests for the executable proof-system path.
+
+This complements `lake exe check`; it does not replace the global regression gate.
 
 Expected output ends with:
 
@@ -184,6 +201,7 @@ This means:
 | Label | Meaning | Final for project? |
 |---|---|---|
 | `Done (Boundary)` | Boundary/interface closure is complete and consumable; deeper theorem chain may still be open. | No |
+| `Accepted (SuperNeo path)` | Proof-complete and paper-faithful for the concrete SuperNeo dependency chain; generic standalone generalization may remain open. | Yes, for current repo scope |
 | `In progress` | Some theorem surfaces exist, but proof obligations remain open. | No |
 | `Good shell` | Composition skeleton exists; full derivation is not complete. | No |
 | `Done (Proof-Complete)` | Paper-faithful universal theorem closure achieved for that milestone with explicit assumptions only. | Yes |
@@ -246,7 +264,7 @@ paper Definition, Theorem, or Lemma.
 | `S4.1` | Defs 1-2 (Field/Ring/Dims) | `Field.lean`, `Dimensions.lean`, `Ring.lean`, `CoeffMaps.lean` | Base field/ring algebra, coefficient maps, `ct` bridge. | - | S4.2, S4.3, S4.4, S5.1 | In progress (Field/Dimensions/Ring are proof-complete at module level; CoeffMaps linearity remains pending). |
 | `S4.2` | Def 3 + decomposition | `Norm.lean`, `Decomp.lean` | Centered `l_∞` norm bounds, `split_b` recomposition. | S4.1 | S6.3, S6.4, S7.5 | In progress (Norm is proof-complete at module level; decomposition universal closure remains pending). |
 | `S4.3` | `eq` polynomial + MLE | `EqPoly.lean`, `MLE.lean` | `eq` is Boolean-cube selector; MLE identity `ṽ(r) = ⟨v, r̂⟩`. | S4.1 | S4.5, S5.5 | EqPoly: Done (Proof-Complete). MLE: In progress (executable-folding bridge pending). |
-| `S4.4` | Def 6 (sum-check) | `SumCheck.lean` | Sum-check soundness/completeness boundary. | S4.1 | S7.2 | In progress (scaffold with acceptance, soundness, completeness assumption boundaries). |
+| `S4.4` | Def 6 (sum-check) | `SumCheck.lean` | Sum-check soundness/completeness boundary. | S4.1 | S7.2 | Accepted (SuperNeo path): the prefix-dependent proof-system route and protocol integration are proof-complete for SuperNeo's actual use path; the standalone core remains a table/MLE-specialized scaffold rather than a fully generic `SumCheck(T; Q)` library formalization. |
 | `S4.5` | Lemmas 5-6, interpolation | `PolyLemmas.lean`, `Interp.lean` | Schwartz-Zippel, eq-lifting, interpolation correctness. | S4.3 | S7.5 | In progress (sanity checks pass; quantified lemmas pending). |
 | `S4.6` | App B.2 parameters | `Parameters.lean`, `Goldilocks.lean` | Concrete constants and bound checks. | - | S5.2, S6.3 | Done (Boundary). |
 | `S5.1` | Def 7 (embedding) | `Embedding.lean` | Element/vector/matrix embedding bijection + linearity. | S4.1 | S5.2 | In progress (parity passing; proof layer pending). |
@@ -277,7 +295,7 @@ Rows marked `Done (Boundary)` are intentionally intermediate.
 | `S4.1` | In progress (Field/Dimensions/Ring are Done (Proof-Complete) at module contract level; CoeffMaps remains open). | CoeffMaps: linearity lemmas and full `cf`/`cf⁻¹` theorem closure. | Complete theorem API for `cf`/`cf⁻¹`/`ct` + ring semantics consumed by S5.2/S5.5. |
 | `S4.2` | In progress (Norm is Done (Proof-Complete) at module contract level; Decomp remains open). | Universal decomposition theorem with terminal-state closure and bound threading. | Norm/decomp obligations in S6.3/S6.4/S7.5 discharged from theorem lemmas. |
 | `S4.3` | EqPoly: Done (Proof-Complete). MLE: In progress. | MLE: prove `mleByFoldingExec = mleByInnerProduct` universally. | Both modules proof-complete. |
-| `S4.4` | In progress (scaffold). | Soundness/completeness not yet theorem-backed. | Theorem-native sum-check consumed by S7.2 directly. |
+| `S4.4` | Accepted (SuperNeo path). | Optional generalization only: replace the standalone table/MLE scaffold with a generic Definition-6 `SumCheck(T; Q)` semantic object if a reusable library formalization is desired. | Sum-check remains theorem-native and paper-faithful for the SuperNeo dependency chain consumed by S7.2. |
 | `S4.5` | In progress. | Quantified SZ, eq-lift, interpolation correctness/uniqueness. | Full polynomial lemma set consumed by S7.5. |
 | `S4.6` | Done (Boundary). | None for boundary closure. | Parameter inequalities used by S5.2/S6.3 come from theorem constants. |
 | `S5.1` | In progress. | Embedding bijection + linearity not theorem-native. | General embedding/unembedding theorem suite. |
@@ -318,7 +336,7 @@ Source references:
 | M5 | `split_b` decomposition | `Decomp.lean` | S4.2 | In progress |
 | M6 | `eq` polynomial on Boolean hypercube | `EqPoly.lean` | S4.3 | Done (Proof-Complete) |
 | M7 | MLE identity | `MLE.lean` | S4.3 | In progress |
-| M8 | Definition 6 (sum-check protocol) | `SumCheck.lean` | S4.4 | In progress |
+| M8 | Definition 6 (sum-check protocol) | `SumCheck.lean` | S4.4 | Accepted (SuperNeo path) |
 | M9 | Lemma 5 (Schwartz-Zippel) | `PolyLemmas.lean` | S4.5 | In progress |
 | M10 | Lemma 6 (eq-lifting) | `PolyLemmas.lean` | S4.5 | In progress |
 | M11 | Polynomial interpolation/evaluation | `Interp.lean` | S4.5 | In progress |
@@ -375,8 +393,9 @@ Source references:
 
 | State | Count |
 |---|---|
+| Accepted (SuperNeo path) | 1 (M8) |
 | Done (Boundary) | 3 (M1, M12, M39) |
 | Done (Proof-Complete) | 8 (M3, M4, M6, M23, M24, M25, M28, M29) |
-| In progress | 26 |
+| In progress | 25 |
 | Good shell | 2 (M37, M38) |
 | Not started | 0 |

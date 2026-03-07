@@ -1,4 +1,4 @@
-import SuperNeo.SumCheck
+import SuperNeo.SumCheckPaper
 
 /-!
 Contract interface for `SuperNeo.SumCheck`.
@@ -32,6 +32,12 @@ abbrev sumcheckRoundConsistent := SuperNeo.sumcheckRoundConsistent
 /-- [Role: Theorem-Target] Curated re-export of `sumcheckRoundPolyShape`. -/
 abbrev sumcheckRoundPolyShape := SuperNeo.sumcheckRoundPolyShape
 
+/-- [Role: Theorem-Target] Curated re-export of `sumcheckRoundPolyDegreeLe`. -/
+abbrev sumcheckRoundPolyDegreeLe := SuperNeo.sumcheckRoundPolyDegreeLe
+
+/-- [Role: Theorem-Target] Curated re-export of `sumcheckRoundDegrees`. -/
+abbrev sumcheckRoundDegrees := SuperNeo.sumcheckRoundDegrees
+
 /-- [Role: Theorem-Target] Curated re-export of `sumcheckRoundShapes`. -/
 abbrev sumcheckRoundShapes := SuperNeo.sumcheckRoundShapes
 
@@ -43,6 +49,9 @@ abbrev sumcheckInitialRoundConsistent := SuperNeo.sumcheckInitialRoundConsistent
 
 /-- [Role: Theorem-Target] Curated re-export of `sumcheckAcceptedCore`. -/
 abbrev sumcheckAcceptedCore := SuperNeo.sumcheckAcceptedCore
+
+/-- [Role: Theorem-Target] Curated re-export of `sumcheckVerifierAccepted`. -/
+abbrev sumcheckVerifierAccepted := SuperNeo.sumcheckVerifierAccepted
 
 /-- [Role: Theorem-Target] Curated re-export of `sumcheckAccepted`. -/
 abbrev sumcheckAccepted := SuperNeo.sumcheckAccepted
@@ -125,6 +134,10 @@ abbrev sumcheckAccepted_not_of_bad_initial_round := @SuperNeo.sumcheckAccepted_n
 abbrev sumcheckFinalOracleConsistent_iff_withTable :=
   @SuperNeo.sumcheckFinalOracleConsistent_iff_withTable
 
+/-- [Role: Theorem-Target] Curated theorem surface `sumcheckVerifierAccepted_of_accepted`. -/
+abbrev sumcheckVerifierAccepted_of_accepted :=
+  @SuperNeo.sumcheckVerifierAccepted_of_accepted
+
 /-- [Role: Theorem-Target] Curated theorem surface `sumcheckAccepted_of_acceptedForTable`. -/
 abbrev sumcheckAccepted_of_acceptedForTable := @SuperNeo.sumcheckAccepted_of_acceptedForTable
 
@@ -166,6 +179,12 @@ abbrev sumcheckPaperClaimTrue_of_accepted := @SuperNeo.sumcheckPaperClaimTrue_of
 /-- [Role: Theorem-Target] Curated theorem surface `sumcheckPaperClaimTrue_of_statementTranscriptConsistent`. -/
 abbrev sumcheckPaperClaimTrue_of_statementTranscriptConsistent :=
   @SuperNeo.sumcheckPaperClaimTrue_of_statementTranscriptConsistent
+
+/-- [Role: Theorem-Target] Curated theorem surface `sumcheckPaperClaimTrue_iff_baseClaim`. -/
+abbrev sumcheckPaperClaimTrue_iff_baseClaim := @SuperNeo.sumcheckPaperClaimTrue_iff_baseClaim
+
+/-- [Role: Theorem-Target] Curated theorem surface `sumcheckClaimTrue_iff_baseClaim`. -/
+abbrev sumcheckClaimTrue_iff_baseClaim := @SuperNeo.sumcheckClaimTrue_iff_baseClaim
 
 /-- [Role: Theorem-Target] Curated theorem surface `sumcheckFinalOracleConsistent_of_baseClaim_constructive`. -/
 abbrev sumcheckFinalOracleConsistent_of_baseClaim_constructive :=
