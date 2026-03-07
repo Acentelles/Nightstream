@@ -141,6 +141,25 @@ theorem strongSamplingExpansionProp_of_ringNormCarrier
 abbrev paperCarrier : SamplingCarrier :=
   ringNormCarrier 2
 
+/-- Any paper-carrier difference remains ring-shaped and has infinity norm at most `4`. -/
+theorem samplingDiffSet_paperCarrier_hasRingDegreeShape_and_norm_le_four
+  {δ : Coeffs}
+  (hδ : samplingDiffSet paperCarrier δ) :
+  hasRingDegreeShape δ ∧ normInfCoeffs δ ≤ 4 := by
+  rcases hδ with ⟨c1, c2, hc1, hc2, rfl⟩
+  rcases hc1 with ⟨hc1Shape, hc1Norm⟩
+  rcases hc2 with ⟨hc2Shape, hc2Norm⟩
+  have hSizeEq : c1.size = c2.size := by
+    calc
+      c1.size = d := hc1Shape
+      _ = c2.size := hc2Shape.symm
+  have hScaledEq : c1.size = (vecScale (-1) c2).size := by
+    simpa [vecScale_size] using hSizeEq
+  constructor
+  · unfold hasRingDegreeShape
+    exact (vecAdd_size_of_eq hScaledEq).trans hc1Shape
+  · exact coeffSubNormBoundFromOperands_two_two_four c1 c2 hSizeEq hc1Norm hc2Norm
+
 theorem strongSamplingExpansionProp_of_paperCarrier
   {T D : Nat}
   (hSub : coeffSubNormBoundFromOperands 2 2 D)

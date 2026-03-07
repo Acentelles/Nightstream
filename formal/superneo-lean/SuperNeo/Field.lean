@@ -306,6 +306,32 @@ theorem isCanonical_one : isCanonical (1 : F) := by
 @[simp] theorem centeredAbs_zero : centeredAbs (0 : F) = 0 := by
   simp [centeredAbs, centeredRep_zero]
 
+theorem centeredAbs_eq_zero_iff (a : F) :
+    centeredAbs a = 0 ↔ a = 0 := by
+  constructor
+  · intro hAbs
+    apply Fin.ext
+    by_cases hHalf : a.val ≤ Goldilocks.halfQ
+    · have hRep := centeredRep_eq_of_le_halfQ hHalf
+      have hNatAbs : (Int.ofNat a.val).natAbs = 0 := by
+        simpa [centeredAbs, hRep] using hAbs
+      have hVal : a.val = 0 := by
+        simpa using hNatAbs
+      simpa [hVal]
+    · have hGt : Goldilocks.halfQ < a.val := Nat.lt_of_not_ge hHalf
+      have hRep := centeredRep_eq_sub_q_of_halfQ_lt hGt
+      have hNatAbs : (Int.ofNat a.val - Int.ofNat Goldilocks.q).natAbs = 0 := by
+        simpa [centeredAbs, hRep] using hAbs
+      have hInt : Int.ofNat a.val - Int.ofNat Goldilocks.q = 0 := by
+        exact Int.natAbs_eq_zero.mp hNatAbs
+      have hEqInt : Int.ofNat a.val = Int.ofNat Goldilocks.q := by
+        omega
+      have hVal : a.val = Goldilocks.q := by
+        exact Int.ofNat.inj hEqInt
+      exact False.elim (Nat.ne_of_lt a.isLt hVal)
+  · intro hEq
+    exact hEq ▸ centeredAbs_zero
+
 @[simp] theorem centeredRep_one : centeredRep (1 : F) = 1 := by
   have h : ((1 : F).val) ≤ Goldilocks.halfQ := by
     exact Goldilocks.one_le_halfQ

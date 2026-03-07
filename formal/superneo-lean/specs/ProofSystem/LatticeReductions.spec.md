@@ -52,7 +52,7 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 | Binding | `ajtaiRelaxedBinding_of_msis` | MSIS → relaxed binding | Theorem-Target |
 | Bundle | `ajtaiBoundaries_of_msis` | MSIS → both bindings | Theorem-Target |
 | Extractor algebra | `mulRq_sub_right`, `dotRq_subVec_linearity`, `subVec_ne_zero_of_ne`, `matVecMul_subVec` | Subtraction-linearity + collision witness non-triviality + matrix subtraction linearity | Theorem-Target |
-| Reduction-law bundle | `LatticeReductionLaws` | Threads `samplingCarrier : SamplingCarrier` and `strongSampling : strongSamplingExpansionProp C T`; C-C membership comes from `RelaxedBindingCollision` fields directly | Boundary |
+| Reduction-law bundle | `LatticeReductionLaws` | Threads only `samplingCarrier : SamplingCarrier` and `strongSampling : strongSamplingExpansionProp C T`; extractor algebra is now derived theorem-natively from ring operations | Boundary |
 | Constructor | `LatticeReductionLaws.ofCarrier` | Canonical constructor from explicit carrier + strong-sampling theorem | Theorem-Target |
 | Constructor | `LatticeReductionLaws.ofPaperCarrier` | Canonical constructor specialized to `paperCarrier` | Theorem-Target |
 | Constructor | `LatticeReductionLaws.ofPaperCarrierFromBounds` | Derives `paperCarrier` laws from subtraction/multiplication norm bundles | Theorem-Target |
@@ -60,16 +60,18 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 | Constructor | `MSISToAjtaiReductions.ofLaws` | Canonical reduction-package constructor from an explicit `LatticeReductionLaws` instance | Theorem-Target |
 | Constructor | `MSISToAjtaiReductions.ofPaperCarrier` | Specializes reduction package to `paperCarrier` from a strong-sampling theorem | Theorem-Target |
 | Constructor | `MSISToAjtaiReductions.ofPaperCarrierFromBounds` | Specializes reduction package to `paperCarrier` from norm bundles (`hSub`, `hMul`) | Theorem-Target |
+| Constructor | `MSISToAjtaiReductions.ofPaperCarrierFromThreeDLeAndMSISBoundary` | Specializes reduction package to the active `paperCarrier` path, deriving Ajtai error terms and bounds directly from an `MSISHardnessBoundary` plus `3*d ≤ params.relaxedExpansion` | Theorem-Target |
+| Constructor | `MSISToAjtaiReductions.ofGoldilocksPaperCarrierAndMSISBoundary` | Specializes reduction package further to the Goldilocks Appendix B.2 parameter family on the active `paperCarrier` path | Theorem-Target |
 | Closed norm law | `normInfVec_subVec_le_derived` | \(\|\text{subVec}\,n\,v_1\,v_2\|_\infty \le \|v_1\|_\infty + \|v_2\|_\infty\) from `Field.centeredAbs_sub_le` + max-fold lemmas | Theorem-Target |
 
 ## Proof Obligations and Closure Plan
 
 - All theorem statements must hold without `sorry`.
-- No module-level `axiom`s; unresolved laws are threaded explicitly via `LatticeReductionLaws` and carried in `MSISToAjtaiReductions`.
+- No module-level `axiom`s; unresolved carrier/algebra laws are threaded explicitly via `LatticeReductionLaws` and carried in `MSISToAjtaiReductions` only for the abstract carrier-parametric route. On the active `paperCarrier` / Goldilocks final-theorem path, Ajtai error/bound packaging and strong-sampling packaging are both derived theorem-natively from the MSIS boundary plus proved sampling bounds.
 
 ## Assumption Ledger
 
-Open boundary assumptions are explicit in `LatticeReductionLaws`:
+Generic carrier-parametric boundary assumptions are explicit in `LatticeReductionLaws`:
 
 - `strongSampling`: supply `strongSamplingExpansionProp` for the chosen sampling carrier.
   Closure target: instantiate via `LatticeReductionLaws.ofCarrier`, `.ofPaperCarrier`, or `.ofPaperCarrierFromBounds` with a concrete sampling set proof.
@@ -80,6 +82,8 @@ Relaxed-collision carrier membership is explicit in collision witnesses:
 
 Derived internally (not a boundary field):
 - `normInfVec_subVec_le_derived`: vector subtraction norm triangle, proved in-module.
+- `smulVec_comm_derived`: commutation of nested ring-vector scalar actions, proved from ring multiplication.
+- `matVecMul_smulVec_derived`: matrix/scalar compatibility, proved from `dotRq` linearity and ring multiplication.
 - `normInfVec_smulVec_le_of_diff`: vector-level bound
   \(\|\delta \cdot v\|_\infty \le 4T\cdot B\) proved from `strongSampling` + `normInfVec` max aggregation.
 
@@ -92,7 +96,11 @@ Derived internally (not a boundary field):
 
 ## Implementation Plan
 
-- Stable. Next closure step is discharging/proving `strongSampling` for the concrete carrier required by protocol instantiations.
+- Active protocol path: stable at boundary level and already specialized to the
+  theorem-native `paperCarrier` / Goldilocks route.
+- Optional extension only: discharge the remaining abstract
+  `LatticeReductionLaws` carrier surface if a fully carrier-parametric
+  reduction library is desired beyond the concrete protocol path.
 
 ## Quality Expectations
 

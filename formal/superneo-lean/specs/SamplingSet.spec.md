@@ -50,6 +50,7 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 | Theorems | `expansionFactor_of_strongSampling` | theorem | Theorem-Target | Direct extractor-facing expansion theorem from strong-sampling contract |
 | Theorems | `strongSamplingExpansionProp_of_ringNormCarrier` | theorem | Theorem-Target | Derive strong-sampling from subtraction/multiplication norm bundles |
 | Theorems | `strongSamplingExpansionProp_of_paperCarrier` | theorem | Theorem-Target | Specialization for the `paperCarrier` surface |
+| Theorems | `samplingDiffSet_paperCarrier_hasRingDegreeShape_and_norm_le_four` | theorem | Theorem-Target | `paperCarrier` differences stay ring-shaped and satisfy `‖·‖∞ ≤ 4` |
 
 ## Proof Obligations and Closure Plan
 
@@ -67,6 +68,7 @@ Upstream dependencies:
 
 Downstream consumers:
 - `SuperNeo/ArithmeticBundle.lean`: uses sampling properties for bound checks.
+- `SuperNeo/ProtocolTarget.lean`: uses the `paperCarrier` difference theorem to derive the strict invertibility window `< 5` from protocol-facing challenge differences.
 - `SuperNeo/ProtocolTheorem.lean`: depends on sampling set assumptions.
 
 ## Implementation Plan

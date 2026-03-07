@@ -143,6 +143,13 @@ theorem strongSamplingExpansionProp_of_paperCarrier
   strongSamplingExpansionProp paperCarrier T :=
   SuperNeo.strongSamplingExpansionProp_of_paperCarrier hSub hMul
 
+/-- [Role: Theorem-Target] Paper-carrier differences stay ring-shaped and have `‖·‖∞ ≤ 4`. -/
+theorem samplingDiffSet_paperCarrier_hasRingDegreeShape_and_norm_le_four
+  {δ : Coeffs}
+  (hδ : samplingDiffSet paperCarrier δ) :
+  hasRingDegreeShape δ ∧ normInfCoeffs δ ≤ 4 :=
+  SuperNeo.samplingDiffSet_paperCarrier_hasRingDegreeShape_and_norm_le_four hδ
+
 end SamplingSetInterface
 
 end SuperNeo

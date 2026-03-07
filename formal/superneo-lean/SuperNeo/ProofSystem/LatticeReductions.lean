@@ -1,4 +1,5 @@
 import SuperNeo.ProofSystem.Lattice
+import SuperNeo.RingMulComm
 import SuperNeo.SamplingSet
 import Init.GrindInstances.Ring.Fin
 
@@ -13,13 +14,6 @@ local instance : NeZero Goldilocks.q := ⟨Nat.ne_of_gt Goldilocks.q_pos⟩
 structure LatticeReductionLaws (params : AjtaiParams) where
   samplingCarrier : SamplingCarrier
   strongSampling : strongSamplingExpansionProp samplingCarrier params.relaxedExpansion
-  smulVecComm :
-    ∀ (delta1 delta2 : Coeffs) (v : Array Coeffs),
-      smulVec delta1 (smulVec delta2 v) = smulVec delta2 (smulVec delta1 v)
-  matVecMulSmul :
-    ∀ (matrixFlat : Array Coeffs) (delta : Coeffs) (v : Array Coeffs),
-      matVecMul params matrixFlat (smulVec delta v) =
-        smulVec delta (matVecMul params matrixFlat v)
 
 namespace LatticeReductionLaws
 
@@ -29,35 +23,19 @@ Canonical constructor from an explicit carrier-level strong-sampling theorem.
 def ofCarrier
   {params : AjtaiParams}
   (C : SamplingCarrier)
-  (hStrong : strongSamplingExpansionProp C params.relaxedExpansion)
-  (hSmulComm :
-    ∀ (delta1 delta2 : Coeffs) (v : Array Coeffs),
-      smulVec delta1 (smulVec delta2 v) = smulVec delta2 (smulVec delta1 v))
-  (hMatSmul :
-    ∀ (matrixFlat : Array Coeffs) (delta : Coeffs) (v : Array Coeffs),
-      matVecMul params matrixFlat (smulVec delta v) =
-        smulVec delta (matVecMul params matrixFlat v)) :
+  (hStrong : strongSamplingExpansionProp C params.relaxedExpansion) :
   LatticeReductionLaws params where
   samplingCarrier := C
   strongSampling := hStrong
-  smulVecComm := hSmulComm
-  matVecMulSmul := hMatSmul
 
 /--
 Canonical constructor specialized to the paper-facing carrier `paperCarrier`.
 -/
 def ofPaperCarrier
   {params : AjtaiParams}
-  (hStrong : strongSamplingExpansionProp paperCarrier params.relaxedExpansion)
-  (hSmulComm :
-    ∀ (delta1 delta2 : Coeffs) (v : Array Coeffs),
-      smulVec delta1 (smulVec delta2 v) = smulVec delta2 (smulVec delta1 v))
-  (hMatSmul :
-    ∀ (matrixFlat : Array Coeffs) (delta : Coeffs) (v : Array Coeffs),
-      matVecMul params matrixFlat (smulVec delta v) =
-        smulVec delta (matVecMul params matrixFlat v)) :
+  (hStrong : strongSamplingExpansionProp paperCarrier params.relaxedExpansion) :
   LatticeReductionLaws params :=
-  ofCarrier paperCarrier hStrong hSmulComm hMatSmul
+  ofCarrier paperCarrier hStrong
 
 /--
 Derive the paper-facing strong-sampling contract from subtraction/multiplication
@@ -93,18 +71,10 @@ def ofPaperCarrierFromBounds
   {params : AjtaiParams}
   {D : Nat}
   (hSub : coeffSubNormBoundFromOperands 2 2 D)
-  (hMul : ∀ B : Nat, mulRqPhiNormBoundFromOperands D B (4 * params.relaxedExpansion * B))
-  (hSmulComm :
-    ∀ (delta1 delta2 : Coeffs) (v : Array Coeffs),
-      smulVec delta1 (smulVec delta2 v) = smulVec delta2 (smulVec delta1 v))
-  (hMatSmul :
-    ∀ (matrixFlat : Array Coeffs) (delta : Coeffs) (v : Array Coeffs),
-      matVecMul params matrixFlat (smulVec delta v) =
-        smulVec delta (matVecMul params matrixFlat v)) :
+  (hMul : ∀ B : Nat, mulRqPhiNormBoundFromOperands D B (4 * params.relaxedExpansion * B)) :
   LatticeReductionLaws params :=
   ofPaperCarrier
     (paperStrongSampling_of_bounds (params := params) (D := D) hSub hMul)
-    hSmulComm hMatSmul
 
 /--
 Constructor specialized to `paperCarrier`, using concrete proved norm bundles
@@ -112,18 +82,10 @@ and the side-condition `3*d ≤ params.relaxedExpansion`.
 -/
 def ofPaperCarrierFromThreeDLe
   {params : AjtaiParams}
-  (hTd : 3 * d ≤ params.relaxedExpansion)
-  (hSmulComm :
-    ∀ (delta1 delta2 : Coeffs) (v : Array Coeffs),
-      smulVec delta1 (smulVec delta2 v) = smulVec delta2 (smulVec delta1 v))
-  (hMatSmul :
-    ∀ (matrixFlat : Array Coeffs) (delta : Coeffs) (v : Array Coeffs),
-      matVecMul params matrixFlat (smulVec delta v) =
-        smulVec delta (matVecMul params matrixFlat v)) :
+  (hTd : 3 * d ≤ params.relaxedExpansion) :
   LatticeReductionLaws params :=
   ofPaperCarrier
     (paperStrongSampling_of_three_d_le (params := params) hTd)
-    hSmulComm hMatSmul
 
 end LatticeReductionLaws
 
@@ -565,23 +527,129 @@ theorem mulRq_vecAdd_right
   mulRq a (vecAdd b c) = vecAdd (mulRq a b) (mulRq a c) := by
   exact SuperNeo.mulRq_vecAdd_right a b c hb hc
 
+private theorem vecScale_zero_of_size_d
+  (x : Coeffs)
+  (hx : x.size = d) :
+  vecScale (0 : F) x = zeroRq := by
+  apply Array.ext
+  · simp [vecScale, zeroRq, hx]
+  · intro i hi₁ hi₂
+    have hi : i < d := by
+      simpa [vecScale, hx, zeroRq] using hi₁
+    calc
+      (vecScale (0 : F) x)[i]'hi₁ = coeffAt (vecScale (0 : F) x) i := by
+        exact get_eq_coeffAt_of_size_d _ (by simp [vecScale, hx]) i hi
+      _ = (0 : F) * coeffAt x i := by
+        exact coeffAt_vecScale_of_size_d (s := (0 : F)) (x := x) hx i hi
+      _ = 0 := by simpa using (Lean.Grind.Fin.zero_mul (n := Goldilocks.q) (coeffAt x i))
+      _ = coeffAt zeroRq i := (coeffAt_zeroRq i).symm
+      _ = zeroRq[i]'hi₂ := by
+        exact coeffAt_eq_get_of_size_d zeroRq zeroRq_size i hi
+
+private theorem mulRq_zero_right (a : Coeffs) :
+    mulRq a zeroRq = zeroRq := by
+  calc
+    mulRq a zeroRq = mulRq a (vecScale (0 : F) oneRq) := by
+      rw [vecScale_zero_of_size_d oneRq oneRq_size]
+    _ = vecScale (0 : F) (mulRq a oneRq) := by
+      exact mulRq_vecScale_right (s := (0 : F)) (a := a) (x := oneRq) oneRq_size
+    _ = zeroRq := by
+      exact vecScale_zero_of_size_d (mulRq a oneRq) (mulRq_size a oneRq)
+
+set_option maxHeartbeats 800000 in
+private theorem foldl_vecAdd_mul_right_gen
+  (delta acc : Coeffs)
+  (hacc : acc.size = d)
+  (l : List Nat)
+  (t : Nat → Coeffs)
+  (ht : ∀ j, (t j).size = d) :
+  l.foldl (fun acc' j => vecAdd acc' (mulRq delta (t j))) (mulRq delta acc) =
+    mulRq delta (l.foldl (fun acc' j => vecAdd acc' (t j)) acc) := by
+  induction l generalizing acc with
+  | nil =>
+      simp
+  | cons j js ih =>
+      have htj : (t j).size = d := ht j
+      have hnext : (vecAdd acc (t j)).size = d := by
+        calc
+          (vecAdd acc (t j)).size = acc.size := by
+            exact vecAdd_size_of_eq (hacc.trans htj.symm)
+          _ = d := hacc
+      simpa [List.foldl, mulRq_vecAdd_right delta acc (t j) hacc htj] using
+        ih (vecAdd acc (t j)) hnext
+
+set_option maxHeartbeats 800000 in
+private theorem dotRq_smulVec_derived
+  (xs : Array Coeffs)
+  (delta : Coeffs)
+  (v : Array Coeffs) :
+  dotRq xs (smulVec delta v) = mulRq delta (dotRq xs v) := by
+  let n := Nat.min xs.size v.size
+  let t : Nat → Coeffs := fun j => mulRq (xs.getD j zeroRq) (v.getD j zeroRq)
+  have ht : ∀ j, (t j).size = d := by
+    intro j
+    simp [t, mulRq_size]
+  have hfold :
+      (List.range n).foldl (fun acc j => vecAdd acc (mulRq delta (t j))) zeroRq =
+        mulRq delta ((List.range n).foldl (fun acc j => vecAdd acc (t j)) zeroRq) := by
+    calc
+      (List.range n).foldl (fun acc j => vecAdd acc (mulRq delta (t j))) zeroRq
+          =
+        (List.range n).foldl (fun acc j => vecAdd acc (mulRq delta (t j))) (mulRq delta zeroRq) := by
+            rw [mulRq_zero_right]
+      _ = mulRq delta ((List.range n).foldl (fun acc j => vecAdd acc (t j)) zeroRq) := by
+            exact foldl_vecAdd_mul_right_gen delta zeroRq zeroRq_size (List.range n) t ht
+  calc
+    dotRq xs (smulVec delta v)
+        = (List.range n).foldl (fun acc j => vecAdd acc (mulRq delta (t j))) zeroRq := by
+            unfold dotRq
+            rw [show Nat.min xs.size (smulVec delta v).size = n by simp [n, smulVec]]
+            apply list_foldl_congr_mem
+            intro acc j hjMem
+            have hj : j < n := by simpa [n, List.mem_range] using hjMem
+            have hjv : j < v.size := Nat.lt_of_lt_of_le hj (Nat.min_le_right _ _)
+            have hget :
+                (smulVec delta v).getD j zeroRq = mulRq delta (v.getD j zeroRq) := by
+              unfold smulVec
+              simp [hjv]
+            calc
+              vecAdd acc (mulRq (xs.getD j zeroRq) ((smulVec delta v).getD j zeroRq))
+                  = vecAdd acc (mulRq (xs.getD j zeroRq) (mulRq delta (v.getD j zeroRq))) := by
+                      rw [hget]
+              _ = vecAdd acc (mulRq delta (mulRq (xs.getD j zeroRq) (v.getD j zeroRq))) := by
+                    rw [← mulRq_leftActionComm delta (xs.getD j zeroRq) (v.getD j zeroRq)]
+              _ = vecAdd acc (mulRq delta (t j)) := by simp [t]
+    _ = mulRq delta ((List.range n).foldl (fun acc j => vecAdd acc (t j)) zeroRq) := hfold
+    _ = mulRq delta (dotRq xs v) := by
+          unfold dotRq
+          simp [n, t]
+
 theorem matVecMul_smulVec_derived
   {params : AjtaiParams}
-  (laws : LatticeReductionLaws params)
   (matrixFlat : Array Coeffs)
   (delta : Coeffs)
   (v : Array Coeffs) :
   matVecMul params matrixFlat (smulVec delta v) =
-    smulVec delta (matVecMul params matrixFlat v) :=
-  laws.matVecMulSmul matrixFlat delta v
+    smulVec delta (matVecMul params matrixFlat v) := by
+  apply Array.ext
+  · simp [matVecMul, smulVec]
+  · intro i hi₁ hi₂
+    simpa [matVecMul, smulVec] using
+      dotRq_smulVec_derived (matRow params.msgLen matrixFlat i) delta v
 
+set_option maxHeartbeats 800000 in
 private theorem smulVec_comm_derived
   {params : AjtaiParams}
-  (laws : LatticeReductionLaws params)
   (delta1 delta2 : Coeffs)
   (v : Array Coeffs) :
-  smulVec delta1 (smulVec delta2 v) = smulVec delta2 (smulVec delta1 v) :=
-  laws.smulVecComm delta1 delta2 v
+  smulVec delta1 (smulVec delta2 v) = smulVec delta2 (smulVec delta1 v) := by
+  unfold smulVec
+  apply Array.ext
+  · simp
+  · intro i hi₁ hi₂
+    have hi : i < v.size := by simpa using hi₁
+    rw [Array.getElem_map, Array.getElem_map, Array.getElem_map, Array.getElem_map]
+    exact mulRqPhi_leftActionComm delta1 delta2 v[i]
 
 
 set_option maxHeartbeats 800000 in
@@ -1305,7 +1373,7 @@ theorem msisBreakEvent_of_relaxedBindingCollision
         _ = subVec params.kappa
               (smulVec coll.delta1 (matVecMul params chal.matrix coll.opening2.witness))
               (smulVec coll.delta2 (matVecMul params chal.matrix coll.opening1.witness)) := by
-              simp [w1, w2, matVecMul_smulVec_derived (params := params) laws]
+              simp [w1, w2, matVecMul_smulVec_derived (params := params)]
         _ = subVec params.kappa
               (smulVec coll.delta1 (smulVec coll.delta2 (Commitment.valueVec params coll.commitment)))
               (smulVec coll.delta2 (smulVec coll.delta1 (Commitment.valueVec params coll.commitment))) := by
@@ -1313,7 +1381,7 @@ theorem msisBreakEvent_of_relaxedBindingCollision
         _ = subVec params.kappa
               (smulVec coll.delta2 (smulVec coll.delta1 (Commitment.valueVec params coll.commitment)))
               (smulVec coll.delta2 (smulVec coll.delta1 (Commitment.valueVec params coll.commitment))) := by
-              rw [smulVec_comm_derived (params := params) laws coll.delta1 coll.delta2
+              rw [smulVec_comm_derived (params := params) coll.delta1 coll.delta2
                 (Commitment.valueVec params coll.commitment)]
         _ = zeroVec params.kappa := by
               simpa using
@@ -1514,13 +1582,6 @@ already available for that carrier at `params.relaxedExpansion`.
 def ofPaperCarrier
   {params : AjtaiParams}
   (hStrong : strongSamplingExpansionProp paperCarrier params.relaxedExpansion)
-  (hSmulComm :
-    ∀ (delta1 delta2 : Coeffs) (v : Array Coeffs),
-      smulVec delta1 (smulVec delta2 v) = smulVec delta2 (smulVec delta1 v))
-  (hMatSmul :
-    ∀ (matrixFlat : Array Coeffs) (delta : Coeffs) (v : Array Coeffs),
-      matVecMul params matrixFlat (smulVec delta v) =
-        smulVec delta (matVecMul params matrixFlat v))
   (hExpPos : 0 < params.relaxedExpansion)
   (epsBinding epsRelaxedBinding : ErrorFn)
   (hBindBound : AjtaiBindingAdvantageBound params epsBinding)
@@ -1530,7 +1591,7 @@ def ofPaperCarrier
   (hRelaxedNeg : IsNegligible epsRelaxedBinding) :
   MSISToAjtaiReductions params :=
   ofLaws
-    (laws := LatticeReductionLaws.ofPaperCarrier hStrong hSmulComm hMatSmul)
+    (laws := LatticeReductionLaws.ofPaperCarrier hStrong)
     hExpPos
     epsBinding epsRelaxedBinding
     hBindBound
@@ -1547,13 +1608,6 @@ def ofPaperCarrierFromBounds
   {D : Nat}
   (hSub : coeffSubNormBoundFromOperands 2 2 D)
   (hMul : ∀ B : Nat, mulRqPhiNormBoundFromOperands D B (4 * params.relaxedExpansion * B))
-  (hSmulComm :
-    ∀ (delta1 delta2 : Coeffs) (v : Array Coeffs),
-      smulVec delta1 (smulVec delta2 v) = smulVec delta2 (smulVec delta1 v))
-  (hMatSmul :
-    ∀ (matrixFlat : Array Coeffs) (delta : Coeffs) (v : Array Coeffs),
-      matVecMul params matrixFlat (smulVec delta v) =
-        smulVec delta (matVecMul params matrixFlat v))
   (hExpPos : 0 < params.relaxedExpansion)
   (epsBinding epsRelaxedBinding : ErrorFn)
   (hBindBound : AjtaiBindingAdvantageBound params epsBinding)
@@ -1564,7 +1618,7 @@ def ofPaperCarrierFromBounds
   MSISToAjtaiReductions params :=
   ofLaws
     (laws := LatticeReductionLaws.ofPaperCarrierFromBounds
-      (params := params) (D := D) hSub hMul hSmulComm hMatSmul)
+      (params := params) (D := D) hSub hMul)
     hExpPos
     epsBinding epsRelaxedBinding
     hBindBound
@@ -1578,13 +1632,6 @@ This requires `3*d ≤ params.relaxedExpansion` to derive strong sampling.
 def ofPaperCarrierFromThreeDLe
   {params : AjtaiParams}
   (hTd : 3 * d ≤ params.relaxedExpansion)
-  (hSmulComm :
-    ∀ (delta1 delta2 : Coeffs) (v : Array Coeffs),
-      smulVec delta1 (smulVec delta2 v) = smulVec delta2 (smulVec delta1 v))
-  (hMatSmul :
-    ∀ (matrixFlat : Array Coeffs) (delta : Coeffs) (v : Array Coeffs),
-      matVecMul params matrixFlat (smulVec delta v) =
-        smulVec delta (matVecMul params matrixFlat v))
   (hExpPos : 0 < params.relaxedExpansion)
   (epsBinding epsRelaxedBinding : ErrorFn)
   (hBindBound : AjtaiBindingAdvantageBound params epsBinding)
@@ -1595,7 +1642,7 @@ def ofPaperCarrierFromThreeDLe
   MSISToAjtaiReductions params :=
   ofLaws
     (laws := LatticeReductionLaws.ofPaperCarrierFromThreeDLe
-      (params := params) hTd hSmulComm hMatSmul)
+      (params := params) hTd)
     hExpPos
     epsBinding epsRelaxedBinding
     hBindBound

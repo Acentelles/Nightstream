@@ -25,6 +25,10 @@ def maxRhoNorm (a : Coeffs) : Nat :=
     simp
   simp [normInfF, F.centeredAbs, hRep]
 
+theorem normInfF_eq_zero_iff (x : F) :
+    normInfF x = 0 ↔ x = 0 := by
+  simpa [normInfF] using F.centeredAbs_eq_zero_iff x
+
 @[simp] theorem normInfCoeffs_empty : normInfCoeffs (#[] : Coeffs) = 0 := by
   simp [normInfCoeffs]
 
