@@ -32,6 +32,10 @@ abbrev LatticeParams := SuperNeo.LatticeParams
 /-- [Role: Theorem-Target] Curated re-export of `FinalTheoremShape`. -/
 abbrev FinalTheoremShape := SuperNeo.FinalTheoremShape
 
+/-- [Role: Theorem-Target] Canonical constructor for final error packages from component boundaries. -/
+def finalErrorPackageOfComponentBoundaries :=
+  @SuperNeo.FinalErrorPackage.ofComponentBoundaries
+
 /-- [Role: Theorem-Target] Canonical constructor for aligned final error packages. -/
 def finalErrorPackageOfAlignedComponents :=
   @SuperNeo.FinalErrorPackage.ofAlignedComponents
@@ -68,6 +72,10 @@ def finalTheoremAssumptionsOfGoldilocksPaperCarrierBoundaryPackages :=
 def finalTheoremAssumptionsOfGoldilocksPaperCarrierDiffBoundaryPackages :=
   @SuperNeo.FinalTheoremAssumptions.ofGoldilocksPaperCarrierDiffBoundaryPackages
 
+/-- [Role: Theorem-Target] Canonical constructor for final theorem assumptions on the Goldilocks Appendix B.2 paper-parameter family and active native-bar `paperCarrier`-difference path, discharging the generic Theorem-3 boundary from `thm3CoreAssumption_native`. -/
+def finalTheoremAssumptionsOfGoldilocksNativePaperCarrierDiffBoundaryPackages :=
+  @SuperNeo.FinalTheoremAssumptions.ofGoldilocksNativePaperCarrierDiffBoundaryPackages
+
 /-- [Role: Theorem-Target] Canonical constructor for final theorem assumptions on the Goldilocks Appendix B.2 paper-parameter family from a stronger strict low-norm invertibility theorem with threshold at least `5`. -/
 def finalTheoremAssumptionsOfGoldilocksPaperCarrierLowNormBoundaryPackages :=
   @SuperNeo.FinalTheoremAssumptions.ofGoldilocksPaperCarrierLowNormBoundaryPackages
@@ -92,14 +100,15 @@ def finalTheoremShapeOfGoldilocksPaperCarrierBoundaryPackages :=
 def finalTheoremShapeOfGoldilocksPaperCarrierDiffBoundaryPackages :=
   @SuperNeo.finalTheoremShape_of_goldilocksPaperCarrierDiffBoundaryPackages
 
+/-- [Role: Theorem-Target] Canonical final theorem specialized to the Goldilocks Appendix B.2 paper-parameter family and active native-bar `paperCarrier`-difference path. -/
+def finalTheoremShapeOfGoldilocksNativePaperCarrierDiffBoundaryPackages :=
+  @SuperNeo.finalTheoremShape_of_goldilocksNativePaperCarrierDiffBoundaryPackages
+
 /-- [Role: Theorem-Target] Canonical final theorem specialized to the Goldilocks Appendix B.2 paper-parameter family from a stronger strict low-norm invertibility theorem with threshold at least `5`. -/
 def finalTheoremShapeOfGoldilocksPaperCarrierLowNormBoundaryPackages :=
   @SuperNeo.finalTheoremShape_of_goldilocksPaperCarrierLowNormBoundaryPackages
 
 /-! ## Boundary Surfaces -/
-
-/-- [Role: Boundary] Boundary surface `schwartzZippelAssumption` requiring closure. -/
-abbrev schwartzZippelAssumption := SuperNeo.schwartzZippelAssumption
 
 /-- [Role: Boundary] Boundary surface `SchwartzZippelBoundary` requiring closure. -/
 abbrev SchwartzZippelBoundary := SuperNeo.SchwartzZippelBoundary

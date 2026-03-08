@@ -168,7 +168,7 @@ private theorem f_sub_add_sub (x y u v : F) :
         _ = (x + u) + (-y + -v) := by
           simpa using (Lean.Grind.Fin.add_assoc (n := Goldilocks.q) x u (-y + -v)).symm
     _ = (x + u) + (-(y + v)) := by
-      simp [f_neg_add]
+      simp [f_neg_add, Lean.Grind.Fin.add_comm]
     _ = (x + u) - (y + v) := by
       simp [f_sub_eq_add_neg]
 
@@ -1400,17 +1400,13 @@ noncomputable def truthProb : ProbModel where
     classical
     by_cases hP : P
     · simp [hP]
-      exact (by decide : (0 : Rat) ≤ 1)
     · simp [hP]
-      exact (by decide : (0 : Rat) ≤ 0)
   prLeOne := by
     intro P
     classical
     by_cases hP : P
     · simp [hP]
-      exact (by decide : (1 : Rat) ≤ 1)
     · simp [hP]
-      exact (by decide : (0 : Rat) ≤ 1)
   prFalse := by
     classical
     simp
@@ -1420,27 +1416,14 @@ noncomputable def truthProb : ProbModel where
     by_cases hP : P
     · have hQ : Q := hImp hP
       simp [hP, hQ]
-      exact (Rat.le_refl : (1 : Rat) ≤ 1)
     · simp [hP]
       by_cases hQ : Q
       · simp [hQ]
-        exact (by decide : (0 : Rat) ≤ 1)
       · simp [hQ]
-        exact (Rat.le_refl : (0 : Rat) ≤ 0)
   prUnionLeAdd := by
     intro P Q
     classical
     by_cases hP : P <;> by_cases hQ : Q <;> simp [hP, hQ]
-    ·
-      have h01 : (0 : Rat) ≤ 1 := by decide
-      have h : (1 : Rat) + 0 ≤ 1 + 1 := (Rat.add_le_add_left (c := 1)).2 h01
-      simpa [Rat.add_zero] using h
-    ·
-      simpa [Rat.add_zero] using (Rat.le_refl : (1 : Rat) ≤ 1)
-    ·
-      simpa [Rat.zero_add] using (Rat.le_refl : (1 : Rat) ≤ 1)
-    ·
-      simpa [Rat.zero_add] using (Rat.le_refl : (0 : Rat) ≤ 0)
 
 /--
 Unpack MSIS hardness into an explicit negligible error plus canonical advantage

@@ -36,11 +36,12 @@
 |-------|--------|-----------|--------|
 | Probability | `ProbModel` | \(\Pr : \text{Prop} \to \mathbb{Q}\), \(0 \le \Pr(P) \le 1\), `Pr False = 0`, monotonicity, union bound | Definitional |
 | Error accounting | `ErrorModel` | Decomposition + all components negligible | Definitional |
+| Constructor | `ErrorModel.ofComponents` | Canonical constructor deriving `epsTotal` and `negligibleTotal` from the five component error surfaces | Definitional |
 | Default | `zeroErrorModel` | Canonical zero-error model | Definitional |
 
 ## Proof Obligations and Closure Plan
 
-All obligations closed. Structures are definitional; `zeroErrorModel` is constructed with proofs.
+All obligations closed. Structures are definitional; `ErrorModel.ofComponents` derives the consolidated error model and total negligibility from the five component boundaries, and `zeroErrorModel` is then an instance of that constructor.
 
 ## Assumption Ledger
 

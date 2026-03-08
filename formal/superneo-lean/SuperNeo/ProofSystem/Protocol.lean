@@ -31,6 +31,10 @@ abbrev FinalTheoremShape
 def finalErrorPackageOfAlignedComponents :=
   @SuperNeo.FinalErrorPackage.ofAlignedComponents
 
+/-- Canonical constructor for final error packages from component boundaries. -/
+def finalErrorPackageOfComponentBoundaries :=
+  @SuperNeo.FinalErrorPackage.ofComponentBoundaries
+
 /-- Canonical constructor for aligned final error packages on the proved `paperCarrier` path, deriving Ajtai reduction data from the MSIS boundary. -/
 def finalErrorPackageOfAlignedPaperCarrierFromThreeDLe :=
   @SuperNeo.FinalErrorPackage.ofAlignedPaperCarrierFromThreeDLe
@@ -63,6 +67,10 @@ def finalTheoremAssumptionsOfGoldilocksPaperCarrierBoundaryPackages :=
 def finalTheoremAssumptionsOfGoldilocksPaperCarrierDiffBoundaryPackages :=
   @SuperNeo.FinalTheoremAssumptions.ofGoldilocksPaperCarrierDiffBoundaryPackages
 
+/-- Canonical constructor for final theorem assumptions on the Goldilocks Appendix B.2 paper-parameter family and active native-bar `paperCarrier`-difference path. -/
+def finalTheoremAssumptionsOfGoldilocksNativePaperCarrierDiffBoundaryPackages :=
+  @SuperNeo.FinalTheoremAssumptions.ofGoldilocksNativePaperCarrierDiffBoundaryPackages
+
 /-- Canonical constructor for final theorem assumptions on the Goldilocks Appendix B.2 paper-parameter family from a stronger strict low-norm invertibility theorem with threshold at least `5`. -/
 def finalTheoremAssumptionsOfGoldilocksPaperCarrierLowNormBoundaryPackages :=
   @SuperNeo.FinalTheoremAssumptions.ofGoldilocksPaperCarrierLowNormBoundaryPackages
@@ -86,6 +94,10 @@ def finalTheoremShapeOfGoldilocksPaperCarrierBoundaryPackages :=
 /-- Canonical final theorem specialized to the Goldilocks Appendix B.2 paper-parameter family and active `paperCarrier`-difference path. -/
 def finalTheoremShapeOfGoldilocksPaperCarrierDiffBoundaryPackages :=
   @SuperNeo.finalTheoremShape_of_goldilocksPaperCarrierDiffBoundaryPackages
+
+/-- Canonical final theorem specialized to the Goldilocks Appendix B.2 paper-parameter family and active native-bar `paperCarrier`-difference path. -/
+def finalTheoremShapeOfGoldilocksNativePaperCarrierDiffBoundaryPackages :=
+  @SuperNeo.finalTheoremShape_of_goldilocksNativePaperCarrierDiffBoundaryPackages
 
 /-- Canonical final theorem specialized to the Goldilocks Appendix B.2 paper-parameter family from a stronger strict low-norm invertibility theorem with threshold at least `5`. -/
 def finalTheoremShapeOfGoldilocksPaperCarrierLowNormBoundaryPackages :=
@@ -146,13 +158,6 @@ def finalSchwartzZippelBoundaryPackage
   (hA : FinalTheoremAssumptions ctx) :
   SuperNeo.SchwartzZippelBoundary :=
   hA.schwartzZippelBoundary
-
-/-- Access explicit Schwartz-Zippel assumption boundary from final assumptions. -/
-def finalSchwartzZippelBoundary
-  {ctx : SuperNeo.ProtocolTargetContext}
-  (hA : FinalTheoremAssumptions ctx) :
-  SuperNeo.schwartzZippelAssumption :=
-  hA.schwartzZippelBoundary.assumption
 
 /-- Access explicit alignment between error model and Schwartz-Zippel error term. -/
 def finalSchwartzZippelErrorAligned

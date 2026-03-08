@@ -18,13 +18,23 @@ This file provides:
 
 namespace SuperNeo
 
+/--
+Concrete theorem-facing Schwartz-Zippel failure witness surface.
+
+This avoids the refuted universal `interpolationAssumption` scaffold and instead
+tracks a single interpolation-check failure instance.
+-/
+structure SchwartzZippelFailureWitness where
+  xs : Array F
+  ys : Array F
+  coeffs : Array F
+  xEval : F
+  expectedEval : F
+  failure : interpolationCase xs ys coeffs xEval expectedEval = false
+
 /-- Canonical Schwartz-Zippel failure event surface (theorem-facing alias). -/
 def schwartzZippelFailureEvent : Prop :=
-  interpolationAssumption
-
-/-- Backward-compatible alias for the Schwartz-Zippel failure event surface. -/
-def schwartzZippelAssumption : Prop :=
-  schwartzZippelFailureEvent
+  Nonempty SchwartzZippelFailureWitness
 
 /-- Advantage of the Schwartz-Zippel failure event under a probability model. -/
 def SchwartzZippelAdvantage
@@ -40,7 +50,6 @@ def SchwartzZippelAdvantageBound
 
 /-- Theorem-facing boundary package for Schwartz-Zippel with explicit error term. -/
 structure SchwartzZippelBoundary where
-  assumption : schwartzZippelAssumption
   epsSchwartzZippel : SuperNeo.ProofSystem.ErrorFn
   negligibleEpsSchwartzZippel :
     SuperNeo.ProofSystem.IsNegligible epsSchwartzZippel
@@ -107,6 +116,36 @@ structure FinalErrorPackage (params : LatticeParams) where
     errorModel.epsRelaxedBinding = msisToAjtai.epsRelaxedBinding
 
 namespace FinalErrorPackage
+
+/--
+Canonical constructor from explicit component boundary packages, deriving the
+shared `ErrorModel` internally from the component error surfaces.
+-/
+def ofComponentBoundaries
+  {params : LatticeParams}
+  (sumcheckError : SuperNeo.ProofSystem.Sumcheck.SoundnessErrorBoundary)
+  (schwartzZippelBoundary : SchwartzZippelBoundary)
+  (msisBoundary : SuperNeo.ProofSystem.MSISHardnessBoundary params)
+  (msisToAjtai : SuperNeo.ProofSystem.MSISToAjtaiReductions params) :
+  FinalErrorPackage params where
+  sumcheckError := sumcheckError
+  schwartzZippelBoundary := schwartzZippelBoundary
+  errorModel :=
+    SuperNeo.ProofSystem.ErrorModel.ofComponents
+      sumcheckError.epsSoundness
+      msisBoundary.epsMSIS
+      schwartzZippelBoundary.epsSchwartzZippel
+      msisToAjtai.epsBinding
+      msisToAjtai.epsRelaxedBinding
+      sumcheckError.negligibleEpsSoundness
+      msisBoundary.negligibleEpsMSIS
+      schwartzZippelBoundary.negligibleEpsSchwartzZippel
+      msisToAjtai.negligibleEpsBinding
+      msisToAjtai.negligibleEpsRelaxedBinding
+  msisBoundary := msisBoundary
+  msisToAjtai := msisToAjtai
+  aligned := by
+    simp [SuperNeo.ProofSystem.ErrorModel.ofComponents]
 
 /--
 Canonical constructor from explicit boundary packages plus one alignment witness.
@@ -182,29 +221,17 @@ def ofGoldilocksPaperCarrier
   (messageLength : Nat)
   (sumcheckError : SuperNeo.ProofSystem.Sumcheck.SoundnessErrorBoundary)
   (schwartzZippelBoundary : SchwartzZippelBoundary)
-  (errorModel : SuperNeo.ProofSystem.ErrorModel)
   (msisBoundary :
     SuperNeo.ProofSystem.MSISHardnessBoundary
-      (SuperNeo.ProofSystem.goldilocksPaperAjtaiParams messageLength))
-  (hSumcheck : errorModel.epsSumcheck = sumcheckError.epsSoundness)
-  (hSZ : errorModel.epsSchwartzZippel = schwartzZippelBoundary.epsSchwartzZippel)
-  (hMSIS : errorModel.epsMSIS = msisBoundary.epsMSIS)
-  (hBinding : errorModel.epsBinding = msisBoundary.epsMSIS)
-  (hRelaxed : errorModel.epsRelaxedBinding = msisBoundary.epsMSIS) :
+      (SuperNeo.ProofSystem.goldilocksPaperAjtaiParams messageLength)) :
   FinalErrorPackage (SuperNeo.ProofSystem.goldilocksPaperAjtaiParams messageLength) :=
-  ofAlignedComponents
+  ofComponentBoundaries
     sumcheckError
     schwartzZippelBoundary
-    errorModel
     msisBoundary
     (SuperNeo.ProofSystem.MSISToAjtaiReductions.ofGoldilocksPaperCarrierAndMSISBoundary
       messageLength
       msisBoundary)
-    hSumcheck
-    hSZ
-    hMSIS
-    hBinding
-    hRelaxed
 
 end FinalErrorPackage
 
@@ -236,7 +263,7 @@ structure FinalTheoremAssumptions (ctx : ProtocolTargetContext) where
     sumcheckPrefix.game.advantage
         (SuperNeo.ProofSystem.Sumcheck.fullFieldUniformCoinProbModel
           sumcheckPrefix.game.inst.rounds) ≤
-      errorPackage.errorModel.epsSumcheck sumcheckErrorIndex
+      errorPackage.sumcheckError.epsSoundness sumcheckErrorIndex
 
 namespace FinalTheoremAssumptions
 
@@ -259,7 +286,7 @@ def ofBoundaryPackages
     sumcheckPrefix.game.advantage
         (SuperNeo.ProofSystem.Sumcheck.fullFieldUniformCoinProbModel
           sumcheckPrefix.game.inst.rounds) ≤
-      errorPackage.errorModel.epsSumcheck sumcheckErrorIndex) :
+      errorPackage.sumcheckError.epsSoundness sumcheckErrorIndex) :
   FinalTheoremAssumptions ctx where
   reduction := reduction
   sumcheckPrefix := sumcheckPrefix
@@ -298,7 +325,7 @@ def ofAlignedPaperCarrierBoundaryPackages
     sumcheckPrefix.game.advantage
         (SuperNeo.ProofSystem.Sumcheck.fullFieldUniformCoinProbModel
           sumcheckPrefix.game.inst.rounds) ≤
-      errorModel.epsSumcheck sumcheckErrorIndex) :
+      sumcheckError.epsSoundness sumcheckErrorIndex) :
   FinalTheoremAssumptions ctx :=
   ofBoundaryPackages
     reduction
@@ -342,7 +369,6 @@ def ofAlignedPaperCarrierDiffBoundaryPackages
     ctx.cset ctx.samples
     ctx.xs ctx.ys ctx.qVals ctx.coeffs
     ctx.xEval ctx.expectedEval)
-  (hInv : paperCarrierDiffInvertibilityAssumption)
   (hDiff : samplingDiffSet paperCarrier ctx.invDelta)
   (hNe : ctx.invDelta ≠ zeroRq)
   (hWitness : SumCheckTransitionWitness ctx)
@@ -367,12 +393,12 @@ def ofAlignedPaperCarrierDiffBoundaryPackages
     sumcheckPrefix.game.advantage
         (SuperNeo.ProofSystem.Sumcheck.fullFieldUniformCoinProbModel
           sumcheckPrefix.game.inst.rounds) ≤
-      errorModel.epsSumcheck sumcheckErrorIndex) :
+      sumcheckError.epsSoundness sumcheckErrorIndex) :
   FinalTheoremAssumptions ctx :=
   ofAlignedPaperCarrierBoundaryPackages
     (params := params)
     (InteractiveReductionAssumptions.ofPaperCarrierDiff
-      hThm3 hArithmetic hInv hDiff hNe hWitness)
+      hThm3 hArithmetic hDiff hNe hWitness)
     sumcheckPrefix
     hTd
     hExpPos
@@ -432,7 +458,7 @@ def ofAlignedPaperCarrierLowNormBoundaryPackages
     sumcheckPrefix.game.advantage
         (SuperNeo.ProofSystem.Sumcheck.fullFieldUniformCoinProbModel
           sumcheckPrefix.game.inst.rounds) ≤
-      errorModel.epsSumcheck sumcheckErrorIndex) :
+      sumcheckError.epsSoundness sumcheckErrorIndex) :
   FinalTheoremAssumptions ctx :=
   ofAlignedPaperCarrierBoundaryPackages
     (params := params)
@@ -469,15 +495,9 @@ def ofGoldilocksPaperCarrierBoundaryPackages
   (sumcheckPrefix : SumcheckPrefixLundBoundary ctx)
   (sumcheckError : SuperNeo.ProofSystem.Sumcheck.SoundnessErrorBoundary)
   (schwartzZippelBoundary : SchwartzZippelBoundary)
-  (errorModel : SuperNeo.ProofSystem.ErrorModel)
   (msisBoundary :
     SuperNeo.ProofSystem.MSISHardnessBoundary
       (SuperNeo.ProofSystem.goldilocksPaperAjtaiParams messageLength))
-  (hSumcheck : errorModel.epsSumcheck = sumcheckError.epsSoundness)
-  (hSZ : errorModel.epsSchwartzZippel = schwartzZippelBoundary.epsSchwartzZippel)
-  (hMSIS : errorModel.epsMSIS = msisBoundary.epsMSIS)
-  (hBinding : errorModel.epsBinding = msisBoundary.epsMSIS)
-  (hRelaxed : errorModel.epsRelaxedBinding = msisBoundary.epsMSIS)
   (sumcheckErrorIndex : Nat)
   (sumcheckWitnessMatchesPrefix :
     sumcheckPrefix.game.transcript
@@ -487,7 +507,7 @@ def ofGoldilocksPaperCarrierBoundaryPackages
     sumcheckPrefix.game.advantage
         (SuperNeo.ProofSystem.Sumcheck.fullFieldUniformCoinProbModel
           sumcheckPrefix.game.inst.rounds) ≤
-      errorModel.epsSumcheck sumcheckErrorIndex) :
+      sumcheckError.epsSoundness sumcheckErrorIndex) :
   FinalTheoremAssumptions ctx :=
   ofBoundaryPackages
     reduction
@@ -496,13 +516,7 @@ def ofGoldilocksPaperCarrierBoundaryPackages
       messageLength
       sumcheckError
       schwartzZippelBoundary
-      errorModel
-      msisBoundary
-      hSumcheck
-      hSZ
-      hMSIS
-      hBinding
-      hRelaxed)
+      msisBoundary)
     sumcheckErrorIndex
     sumcheckWitnessMatchesPrefix
     sumcheckErrorCoversPrefix
@@ -523,22 +537,15 @@ def ofGoldilocksPaperCarrierDiffBoundaryPackages
     ctx.cset ctx.samples
     ctx.xs ctx.ys ctx.qVals ctx.coeffs
     ctx.xEval ctx.expectedEval)
-  (hInv : paperCarrierDiffInvertibilityAssumption)
   (hDiff : samplingDiffSet paperCarrier ctx.invDelta)
   (hNe : ctx.invDelta ≠ zeroRq)
   (hWitness : SumCheckTransitionWitness ctx)
   (sumcheckPrefix : SumcheckPrefixLundBoundary ctx)
   (sumcheckError : SuperNeo.ProofSystem.Sumcheck.SoundnessErrorBoundary)
   (schwartzZippelBoundary : SchwartzZippelBoundary)
-  (errorModel : SuperNeo.ProofSystem.ErrorModel)
   (msisBoundary :
     SuperNeo.ProofSystem.MSISHardnessBoundary
       (SuperNeo.ProofSystem.goldilocksPaperAjtaiParams messageLength))
-  (hSumcheck : errorModel.epsSumcheck = sumcheckError.epsSoundness)
-  (hSZ : errorModel.epsSchwartzZippel = schwartzZippelBoundary.epsSchwartzZippel)
-  (hMSIS : errorModel.epsMSIS = msisBoundary.epsMSIS)
-  (hBinding : errorModel.epsBinding = msisBoundary.epsMSIS)
-  (hRelaxed : errorModel.epsRelaxedBinding = msisBoundary.epsMSIS)
   (sumcheckErrorIndex : Nat)
   (sumcheckWitnessMatchesPrefix :
     sumcheckPrefix.game.transcript
@@ -548,22 +555,65 @@ def ofGoldilocksPaperCarrierDiffBoundaryPackages
     sumcheckPrefix.game.advantage
         (SuperNeo.ProofSystem.Sumcheck.fullFieldUniformCoinProbModel
           sumcheckPrefix.game.inst.rounds) ≤
-      errorModel.epsSumcheck sumcheckErrorIndex) :
+      sumcheckError.epsSoundness sumcheckErrorIndex) :
   FinalTheoremAssumptions ctx :=
   ofGoldilocksPaperCarrierBoundaryPackages
     messageLength
     (InteractiveReductionAssumptions.ofPaperCarrierDiff
-      hThm3 hArithmetic hInv hDiff hNe hWitness)
+      hThm3 hArithmetic hDiff hNe hWitness)
     sumcheckPrefix
     sumcheckError
     schwartzZippelBoundary
-    errorModel
     msisBoundary
-    hSumcheck
-    hSZ
-    hMSIS
-    hBinding
-    hRelaxed
+    sumcheckErrorIndex
+    sumcheckWitnessMatchesPrefix
+    sumcheckErrorCoversPrefix
+
+/--
+Canonical final-theorem constructor specialized further to the active native-bar
+`paperCarrier`-difference invertibility route, using the Goldilocks Appendix
+B.2 paper-parameter family and discharging the generic Theorem-3 boundary from
+`thm3CoreAssumption_native`.
+-/
+def ofGoldilocksNativePaperCarrierDiffBoundaryPackages
+  {ctx : ProtocolTargetContext}
+  (messageLength : Nat)
+  (hBarNative : ctx.bar = nativeBarMatrix)
+  (hArithmetic : ArithmeticObligations
+    ctx.bar ctx.m ctx.r ctx.rho1 ctx.rho2
+    ctx.hVec ctx.hScal
+    ctx.splitScalar ctx.kSplit
+    ctx.cset ctx.samples
+    ctx.xs ctx.ys ctx.qVals ctx.coeffs
+    ctx.xEval ctx.expectedEval)
+  (hDiff : samplingDiffSet paperCarrier ctx.invDelta)
+  (hNe : ctx.invDelta ≠ zeroRq)
+  (hWitness : SumCheckTransitionWitness ctx)
+  (sumcheckPrefix : SumcheckPrefixLundBoundary ctx)
+  (sumcheckError : SuperNeo.ProofSystem.Sumcheck.SoundnessErrorBoundary)
+  (schwartzZippelBoundary : SchwartzZippelBoundary)
+  (msisBoundary :
+    SuperNeo.ProofSystem.MSISHardnessBoundary
+      (SuperNeo.ProofSystem.goldilocksPaperAjtaiParams messageLength))
+  (sumcheckErrorIndex : Nat)
+  (sumcheckWitnessMatchesPrefix :
+    sumcheckPrefix.game.transcript
+        hWitness.transcript.challenges =
+      hWitness.transcript)
+  (sumcheckErrorCoversPrefix :
+    sumcheckPrefix.game.advantage
+        (SuperNeo.ProofSystem.Sumcheck.fullFieldUniformCoinProbModel
+          sumcheckPrefix.game.inst.rounds) ≤
+      sumcheckError.epsSoundness sumcheckErrorIndex) :
+  FinalTheoremAssumptions ctx :=
+  ofGoldilocksPaperCarrierBoundaryPackages
+    messageLength
+    (InteractiveReductionAssumptions.ofNativePaperCarrierDiff
+      hBarNative hArithmetic hDiff hNe hWitness)
+    sumcheckPrefix
+    sumcheckError
+    schwartzZippelBoundary
+    msisBoundary
     sumcheckErrorIndex
     sumcheckWitnessMatchesPrefix
     sumcheckErrorCoversPrefix
@@ -593,15 +643,9 @@ def ofGoldilocksPaperCarrierLowNormBoundaryPackages
   (sumcheckPrefix : SumcheckPrefixLundBoundary ctx)
   (sumcheckError : SuperNeo.ProofSystem.Sumcheck.SoundnessErrorBoundary)
   (schwartzZippelBoundary : SchwartzZippelBoundary)
-  (errorModel : SuperNeo.ProofSystem.ErrorModel)
   (msisBoundary :
     SuperNeo.ProofSystem.MSISHardnessBoundary
       (SuperNeo.ProofSystem.goldilocksPaperAjtaiParams messageLength))
-  (hSumcheck : errorModel.epsSumcheck = sumcheckError.epsSoundness)
-  (hSZ : errorModel.epsSchwartzZippel = schwartzZippelBoundary.epsSchwartzZippel)
-  (hMSIS : errorModel.epsMSIS = msisBoundary.epsMSIS)
-  (hBinding : errorModel.epsBinding = msisBoundary.epsMSIS)
-  (hRelaxed : errorModel.epsRelaxedBinding = msisBoundary.epsMSIS)
   (sumcheckErrorIndex : Nat)
   (sumcheckWitnessMatchesPrefix :
     sumcheckPrefix.game.transcript
@@ -611,7 +655,7 @@ def ofGoldilocksPaperCarrierLowNormBoundaryPackages
     sumcheckPrefix.game.advantage
         (SuperNeo.ProofSystem.Sumcheck.fullFieldUniformCoinProbModel
           sumcheckPrefix.game.inst.rounds) ≤
-      errorModel.epsSumcheck sumcheckErrorIndex) :
+      sumcheckError.epsSoundness sumcheckErrorIndex) :
   FinalTheoremAssumptions ctx :=
   ofGoldilocksPaperCarrierBoundaryPackages
     messageLength
@@ -620,13 +664,7 @@ def ofGoldilocksPaperCarrierLowNormBoundaryPackages
     sumcheckPrefix
     sumcheckError
     schwartzZippelBoundary
-    errorModel
     msisBoundary
-    hSumcheck
-    hSZ
-    hMSIS
-    hBinding
-    hRelaxed
     sumcheckErrorIndex
     sumcheckWitnessMatchesPrefix
     sumcheckErrorCoversPrefix
@@ -775,19 +813,7 @@ def FinalTheoremAssumptions.sumcheckPrefixAdvantageBound
       (SuperNeo.ProofSystem.Sumcheck.fullFieldUniformCoinProbModel
         hA.sumcheckPrefix.game.inst.rounds) ≤
     hA.errorModel.epsSumcheck hA.sumcheckErrorIndex := by
-  simpa [FinalTheoremAssumptions.errorModel] using hA.sumcheckErrorCoversPrefix
-
-/-- Access Schwartz-Zippel boundary assumption from final assumptions. -/
-def FinalTheoremAssumptions.schwartzZippelBoundaryAssumption
-  {ctx : ProtocolTargetContext}
-  (hA : FinalTheoremAssumptions ctx) : schwartzZippelAssumption :=
-  hA.schwartzZippelBoundary.assumption
-
-/-- Backward-compatible accessor for the Schwartz-Zippel assumption surface. -/
-def FinalTheoremAssumptions.schwartzZippel
-  {ctx : ProtocolTargetContext}
-  (hA : FinalTheoremAssumptions ctx) : schwartzZippelAssumption :=
-  hA.schwartzZippelBoundaryAssumption
+  simpa [hA.sumcheckErrorAligned] using hA.sumcheckErrorCoversPrefix
 
 /-- Canonical Schwartz-Zippel error negligibility aligned to final error accounting. -/
 def FinalTheoremAssumptions.schwartzZippelErrorNegligible
@@ -968,7 +994,6 @@ def FinalKnowledgeSoundnessStatement
   (ctx : ProtocolTargetContext)
   (hA : FinalTheoremAssumptions ctx) : Prop :=
   strongCompositionStatement ctx ∧
-  schwartzZippelAssumption ∧
   SchwartzZippelAdvantageBound hA.errorModel.epsSchwartzZippel ∧
   hA.sumcheckPrefix.game.transcript
       hA.reduction.sumcheckTransitionWitness.transcript.challenges =
@@ -1008,7 +1033,6 @@ theorem finalTheoremShape_of_assumptions
   refine ⟨?_, ?_⟩
   · exact (weakComposition_of_assumptions hA.reduction).1
   · exact ⟨strongComposition_of_assumptions hA.reduction,
-      hA.schwartzZippelBoundary.assumption,
       hA.schwartzZippelAdvantageBound,
       hA.sumcheckWitnessTranscriptEq,
       hA.sumcheckPrefixLundBound,
@@ -1048,7 +1072,7 @@ theorem finalTheoremShape_of_alignedPaperCarrierBoundaryPackages
     sumcheckPrefix.game.advantage
         (SuperNeo.ProofSystem.Sumcheck.fullFieldUniformCoinProbModel
           sumcheckPrefix.game.inst.rounds) ≤
-      errorModel.epsSumcheck sumcheckErrorIndex) :
+      sumcheckError.epsSoundness sumcheckErrorIndex) :
   FinalTheoremShape ctx
     (FinalTheoremAssumptions.ofAlignedPaperCarrierBoundaryPackages
       (params := params)
@@ -1086,7 +1110,6 @@ theorem finalTheoremShape_of_alignedPaperCarrierDiffBoundaryPackages
     ctx.cset ctx.samples
     ctx.xs ctx.ys ctx.qVals ctx.coeffs
     ctx.xEval ctx.expectedEval)
-  (hInv : paperCarrierDiffInvertibilityAssumption)
   (hDiff : samplingDiffSet paperCarrier ctx.invDelta)
   (hNe : ctx.invDelta ≠ zeroRq)
   (hWitness : SumCheckTransitionWitness ctx)
@@ -1111,13 +1134,12 @@ theorem finalTheoremShape_of_alignedPaperCarrierDiffBoundaryPackages
     sumcheckPrefix.game.advantage
         (SuperNeo.ProofSystem.Sumcheck.fullFieldUniformCoinProbModel
           sumcheckPrefix.game.inst.rounds) ≤
-      errorModel.epsSumcheck sumcheckErrorIndex) :
+      sumcheckError.epsSoundness sumcheckErrorIndex) :
   FinalTheoremShape ctx
     (FinalTheoremAssumptions.ofAlignedPaperCarrierDiffBoundaryPackages
       (params := params)
       hThm3
       hArithmetic
-      hInv
       hDiff
       hNe
       hWitness
@@ -1181,7 +1203,7 @@ theorem finalTheoremShape_of_alignedPaperCarrierLowNormBoundaryPackages
     sumcheckPrefix.game.advantage
         (SuperNeo.ProofSystem.Sumcheck.fullFieldUniformCoinProbModel
           sumcheckPrefix.game.inst.rounds) ≤
-      errorModel.epsSumcheck sumcheckErrorIndex) :
+      sumcheckError.epsSoundness sumcheckErrorIndex) :
   FinalTheoremShape ctx
     (FinalTheoremAssumptions.ofAlignedPaperCarrierLowNormBoundaryPackages
       (params := params)
@@ -1220,15 +1242,9 @@ theorem finalTheoremShape_of_goldilocksPaperCarrierBoundaryPackages
   (sumcheckPrefix : SumcheckPrefixLundBoundary ctx)
   (sumcheckError : SuperNeo.ProofSystem.Sumcheck.SoundnessErrorBoundary)
   (schwartzZippelBoundary : SchwartzZippelBoundary)
-  (errorModel : SuperNeo.ProofSystem.ErrorModel)
   (msisBoundary :
     SuperNeo.ProofSystem.MSISHardnessBoundary
       (SuperNeo.ProofSystem.goldilocksPaperAjtaiParams messageLength))
-  (hSumcheck : errorModel.epsSumcheck = sumcheckError.epsSoundness)
-  (hSZ : errorModel.epsSchwartzZippel = schwartzZippelBoundary.epsSchwartzZippel)
-  (hMSIS : errorModel.epsMSIS = msisBoundary.epsMSIS)
-  (hBinding : errorModel.epsBinding = msisBoundary.epsMSIS)
-  (hRelaxed : errorModel.epsRelaxedBinding = msisBoundary.epsMSIS)
   (sumcheckErrorIndex : Nat)
   (sumcheckWitnessMatchesPrefix :
     sumcheckPrefix.game.transcript
@@ -1238,7 +1254,7 @@ theorem finalTheoremShape_of_goldilocksPaperCarrierBoundaryPackages
     sumcheckPrefix.game.advantage
         (SuperNeo.ProofSystem.Sumcheck.fullFieldUniformCoinProbModel
           sumcheckPrefix.game.inst.rounds) ≤
-      errorModel.epsSumcheck sumcheckErrorIndex) :
+      sumcheckError.epsSoundness sumcheckErrorIndex) :
   FinalTheoremShape ctx
     (FinalTheoremAssumptions.ofGoldilocksPaperCarrierBoundaryPackages
       messageLength
@@ -1246,13 +1262,7 @@ theorem finalTheoremShape_of_goldilocksPaperCarrierBoundaryPackages
       sumcheckPrefix
       sumcheckError
       schwartzZippelBoundary
-      errorModel
       msisBoundary
-      hSumcheck
-      hSZ
-      hMSIS
-      hBinding
-      hRelaxed
       sumcheckErrorIndex
       sumcheckWitnessMatchesPrefix
       sumcheckErrorCoversPrefix) := by
@@ -1273,22 +1283,15 @@ theorem finalTheoremShape_of_goldilocksPaperCarrierDiffBoundaryPackages
     ctx.cset ctx.samples
     ctx.xs ctx.ys ctx.qVals ctx.coeffs
     ctx.xEval ctx.expectedEval)
-  (hInv : paperCarrierDiffInvertibilityAssumption)
   (hDiff : samplingDiffSet paperCarrier ctx.invDelta)
   (hNe : ctx.invDelta ≠ zeroRq)
   (hWitness : SumCheckTransitionWitness ctx)
   (sumcheckPrefix : SumcheckPrefixLundBoundary ctx)
   (sumcheckError : SuperNeo.ProofSystem.Sumcheck.SoundnessErrorBoundary)
   (schwartzZippelBoundary : SchwartzZippelBoundary)
-  (errorModel : SuperNeo.ProofSystem.ErrorModel)
   (msisBoundary :
     SuperNeo.ProofSystem.MSISHardnessBoundary
       (SuperNeo.ProofSystem.goldilocksPaperAjtaiParams messageLength))
-  (hSumcheck : errorModel.epsSumcheck = sumcheckError.epsSoundness)
-  (hSZ : errorModel.epsSchwartzZippel = schwartzZippelBoundary.epsSchwartzZippel)
-  (hMSIS : errorModel.epsMSIS = msisBoundary.epsMSIS)
-  (hBinding : errorModel.epsBinding = msisBoundary.epsMSIS)
-  (hRelaxed : errorModel.epsRelaxedBinding = msisBoundary.epsMSIS)
   (sumcheckErrorIndex : Nat)
   (sumcheckWitnessMatchesPrefix :
     sumcheckPrefix.game.transcript
@@ -1298,26 +1301,71 @@ theorem finalTheoremShape_of_goldilocksPaperCarrierDiffBoundaryPackages
     sumcheckPrefix.game.advantage
         (SuperNeo.ProofSystem.Sumcheck.fullFieldUniformCoinProbModel
           sumcheckPrefix.game.inst.rounds) ≤
-      errorModel.epsSumcheck sumcheckErrorIndex) :
+      sumcheckError.epsSoundness sumcheckErrorIndex) :
   FinalTheoremShape ctx
     (FinalTheoremAssumptions.ofGoldilocksPaperCarrierDiffBoundaryPackages
       messageLength
       hThm3
       hArithmetic
-      hInv
       hDiff
       hNe
       hWitness
       sumcheckPrefix
       sumcheckError
       schwartzZippelBoundary
-      errorModel
       msisBoundary
-      hSumcheck
-      hSZ
-      hMSIS
-      hBinding
-      hRelaxed
+      sumcheckErrorIndex
+      sumcheckWitnessMatchesPrefix
+      sumcheckErrorCoversPrefix) := by
+  exact finalTheoremShape_of_assumptions _
+
+/--
+Canonical final theorem specialized to the active native-bar
+`paperCarrier`-difference invertibility route and the Goldilocks Appendix B.2
+paper-parameter family.
+-/
+theorem finalTheoremShape_of_goldilocksNativePaperCarrierDiffBoundaryPackages
+  {ctx : ProtocolTargetContext}
+  (messageLength : Nat)
+  (hBarNative : ctx.bar = nativeBarMatrix)
+  (hArithmetic : ArithmeticObligations
+    ctx.bar ctx.m ctx.r ctx.rho1 ctx.rho2
+    ctx.hVec ctx.hScal
+    ctx.splitScalar ctx.kSplit
+    ctx.cset ctx.samples
+    ctx.xs ctx.ys ctx.qVals ctx.coeffs
+    ctx.xEval ctx.expectedEval)
+  (hDiff : samplingDiffSet paperCarrier ctx.invDelta)
+  (hNe : ctx.invDelta ≠ zeroRq)
+  (hWitness : SumCheckTransitionWitness ctx)
+  (sumcheckPrefix : SumcheckPrefixLundBoundary ctx)
+  (sumcheckError : SuperNeo.ProofSystem.Sumcheck.SoundnessErrorBoundary)
+  (schwartzZippelBoundary : SchwartzZippelBoundary)
+  (msisBoundary :
+    SuperNeo.ProofSystem.MSISHardnessBoundary
+      (SuperNeo.ProofSystem.goldilocksPaperAjtaiParams messageLength))
+  (sumcheckErrorIndex : Nat)
+  (sumcheckWitnessMatchesPrefix :
+    sumcheckPrefix.game.transcript
+        hWitness.transcript.challenges =
+      hWitness.transcript)
+  (sumcheckErrorCoversPrefix :
+    sumcheckPrefix.game.advantage
+        (SuperNeo.ProofSystem.Sumcheck.fullFieldUniformCoinProbModel
+          sumcheckPrefix.game.inst.rounds) ≤
+      sumcheckError.epsSoundness sumcheckErrorIndex) :
+  FinalTheoremShape ctx
+    (FinalTheoremAssumptions.ofGoldilocksNativePaperCarrierDiffBoundaryPackages
+      messageLength
+      hBarNative
+      hArithmetic
+      hDiff
+      hNe
+      hWitness
+      sumcheckPrefix
+      sumcheckError
+      schwartzZippelBoundary
+      msisBoundary
       sumcheckErrorIndex
       sumcheckWitnessMatchesPrefix
       sumcheckErrorCoversPrefix) := by
@@ -1348,15 +1396,9 @@ theorem finalTheoremShape_of_goldilocksPaperCarrierLowNormBoundaryPackages
   (sumcheckPrefix : SumcheckPrefixLundBoundary ctx)
   (sumcheckError : SuperNeo.ProofSystem.Sumcheck.SoundnessErrorBoundary)
   (schwartzZippelBoundary : SchwartzZippelBoundary)
-  (errorModel : SuperNeo.ProofSystem.ErrorModel)
   (msisBoundary :
     SuperNeo.ProofSystem.MSISHardnessBoundary
       (SuperNeo.ProofSystem.goldilocksPaperAjtaiParams messageLength))
-  (hSumcheck : errorModel.epsSumcheck = sumcheckError.epsSoundness)
-  (hSZ : errorModel.epsSchwartzZippel = schwartzZippelBoundary.epsSchwartzZippel)
-  (hMSIS : errorModel.epsMSIS = msisBoundary.epsMSIS)
-  (hBinding : errorModel.epsBinding = msisBoundary.epsMSIS)
-  (hRelaxed : errorModel.epsRelaxedBinding = msisBoundary.epsMSIS)
   (sumcheckErrorIndex : Nat)
   (sumcheckWitnessMatchesPrefix :
     sumcheckPrefix.game.transcript
@@ -1366,7 +1408,7 @@ theorem finalTheoremShape_of_goldilocksPaperCarrierLowNormBoundaryPackages
     sumcheckPrefix.game.advantage
         (SuperNeo.ProofSystem.Sumcheck.fullFieldUniformCoinProbModel
           sumcheckPrefix.game.inst.rounds) ≤
-      errorModel.epsSumcheck sumcheckErrorIndex) :
+      sumcheckError.epsSoundness sumcheckErrorIndex) :
   FinalTheoremShape ctx
     (FinalTheoremAssumptions.ofGoldilocksPaperCarrierLowNormBoundaryPackages
       messageLength
@@ -1380,13 +1422,7 @@ theorem finalTheoremShape_of_goldilocksPaperCarrierLowNormBoundaryPackages
       sumcheckPrefix
       sumcheckError
       schwartzZippelBoundary
-      errorModel
       msisBoundary
-      hSumcheck
-      hSZ
-      hMSIS
-      hBinding
-      hRelaxed
       sumcheckErrorIndex
       sumcheckWitnessMatchesPrefix
       sumcheckErrorCoversPrefix) := by

@@ -275,15 +275,15 @@ paper Definition, Theorem, or Lemma.
 | `S5.6` | Thm 5 (eval homomorphism) | `EvalHom.lean` | Linear-combination preservation under evaluation. | S5.4, S5.5 | S7.5 | Done (Proof-Complete): theorem-native closure is proved constructively from MLE linearity, and all eval-hom boundary constructors are derived in-module. |
 | `S6.1` | Defs 5, 9-10, Thm 6 | `InteractiveReductions.lean` | Weak/strong reductions compose correctly. | - | S7.6 | Done (Boundary): strong/weak composition theorems are proved from `InteractiveReductionAssumptions`; remaining work is instantiating the bundle on the final protocol path. |
 | `S6.2` | Defs 4, 16, 18, Thm 2 | `ProofSystem/Lattice.lean`, `LatticeReductions.lean` | Ajtai commitment properties, MSIS hardness, binding reductions. | - | S6.3, S7.6 | Done (Boundary): Defs 4/16/18 and the Thm 2 reduction chain are proved; on the active `paperCarrier`/Goldilocks final-theorem path the Ajtai reduction package is derived directly from the MSIS boundary with theorem-native strong-sampling, while the generic `LatticeReductionLaws` surface remains only for abstract carrier generalization. |
-| `S6.3` | Thm 8 (invertibility) | `InvertibilityAxioms.lean` | Low-norm invertibility preconditions and interface. | S4.2, S4.6, S6.2 | S6.4, S7.5 | In progress (boundary repaired to the strict paper premise `0 < ‖a‖∞ < B`; the old weak-window reading is refuted in-repo; the concrete Goldilocks arithmetic side-conditions for the paper's cited Theorem-8 instantiation (`z = 3`, `ord_η(q) = 27`, `b_inv = 383`) are now discharged in-repo; the remaining gap is the external low-norm invertibility theorem itself). |
+| `S6.3` | Thm 8 (invertibility) | `InvertibilityAxioms.lean`, `InvertibilityGoldilocks.lean` | Low-norm invertibility preconditions and interface. | S4.2, S4.6, S6.2 | S6.4, S7.5 | Accepted (SuperNeo path): the active Goldilocks `paperCarrier`-difference theorem is now proved in-repo and consumed directly on the protocol path; the remaining generic gap is the standalone external low-norm invertibility theorem itself. |
 | `S6.4` | Def 17 + Thm 9 (sampling) | `SamplingSet.lean` | Strong-sampling + expansion-factor interface. | S4.2, S6.3 | S7.5 | Done (Proof-Complete) for module-level contract surfaces (`samplingDiffSet`, `strongSamplingExpansionProp`, and associated theorem wrappers). |
-| `S6.5` | Error/negligible model | `ProofSystem/{Types,Security,Negligible}.lean` | `ProbModel`, `ErrorModel`, `IsNegligible`. | - | S7.6 | In progress (models defined). |
+| `S6.5` | Error/negligible model | `ProofSystem/{Types,Security,Negligible}.lean` | `ProbModel`, `ErrorModel`, `IsNegligible`. | - | S7.6 | Done (Proof-Complete): the canonical `ErrorModel` now derives `epsTotal` and its negligibility internally from the five component boundaries, and the final theorem consumes that model directly on the active protocol path. |
 | `S7.1` | Defs 11-14 (CCS) | `ProofSystem/ConstraintSystem/CCS.lean`, `ProtocolRelations.lean` | Norm-bounded CCS structure and evaluation relations. | - | S7.2, S7.3 | In progress (definitions exist). |
 | `S7.2` | Sec 7.3, Lemma 3 (Π_CCS) | `PiCCS.lean`, `ProofSystem/Folding/PiCCS.lean` | Π_CCS is a strong interactive reduction. | S4.4, S7.1 | S7.4 | Done (Boundary): theorem is proved from protocol-target assumptions plus an accepted SumCheck witness; no separate SumCheck boundary bundle remains on this path. |
 | `S7.3` | Sec 7.4, Lemma 4 (Π_RLC) | `PiRLC.lean`, `ProofSystem/Folding/PiRLC.lean` | Π_RLC is a weak interactive reduction. | S7.2 | S7.4 | Done (Boundary): theorem is proved directly from `ProtocolTargetAssumptions` plus an accepted transition witness. |
 | `S7.4` | Sec 7.5, Thm 7 (Π_DEC) | `PiDEC.lean`, `ProofSystem/Folding/PiDEC.lean` | Π_DEC is a reduction of knowledge. | S7.3 | S7.6 | Done (Boundary): theorem is proved directly from `ProtocolTargetAssumptions` plus an accepted transition witness, using invertibility already packaged in `protocolTargetProp`. |
 | `S7.5` | Arithmetic obligations | `ArithmeticBundle.lean`, `ArithmeticObligations.lean`, `ProtocolTarget.lean`, `ProtocolMathTarget.lean` | Side-conditions compose cleanly for protocol reduction. | S4.2, S4.5, S5.4, S5.6, S6.3, S6.4 | S7.6 | Done (Boundary): theorem-native arithmetic bundles and protocol-target constructors are proved; remaining work is upstream theorem-provider closure, not a local shell. |
-| `S7.6` | Thm 1 (protocol theorem) | `ProtocolTheorem.lean`, `ProofSystem/Protocol.lean` | End-to-end completeness + knowledge-soundness. | S5.2, S6.1, S6.2, S6.5, S7.2, S7.3, S7.4, S7.5 | Final claim | Done (Boundary): theorem shape and canonical final-assumption assembly are proved; on the active `paperCarrier` path the final package now derives Ajtai reduction data directly from the MSIS boundary, the narrowed Goldilocks Appendix B.2 route fixes the concrete paper lattice constants while leaving only message length explicit, and the remaining invertibility input on that path can be supplied either directly as `paperCarrierDiffInvertibilityAssumption` or indirectly through the stronger theorem-shaped route `lowNormInvertibilityAssumption B` with `5 ≤ B`. Remaining work is instantiating the upstream lattice/error bundles on the final path. |
+| `S7.6` | Thm 1 (protocol theorem) | `ProtocolTheorem.lean`, `ProofSystem/Protocol.lean` | End-to-end completeness + knowledge-soundness. | S5.2, S6.1, S6.2, S6.5, S7.2, S7.3, S7.4, S7.5 | Final claim | Done (Boundary): theorem shape and canonical final-assumption assembly are proved; on the active `paperCarrier` path the final package now derives Ajtai reduction data directly from the MSIS boundary, the narrowed Goldilocks Appendix B.2 route fixes the concrete paper lattice constants while leaving only message length explicit, and the active `paperCarrier`-difference route now consumes the proved Goldilocks invertibility theorem directly rather than an external invertibility boundary. Remaining work is instantiating the upstream lattice/error bundles on the final path. |
 
 ### Tracked Status and Exit Criteria
 
@@ -306,15 +306,15 @@ Rows marked `Done (Boundary)` are intentionally intermediate.
 | `S5.6` | Done (Proof-Complete). | None at the module level. | Theorem-5 remains proved constructively and feeds S7.5 without additional local boundaries. |
 | `S6.1` | Done (Boundary). | Instantiate `InteractiveReductionAssumptions` on the final protocol path and collapse the remaining boundary bundle into S7.6. | Theorem-6 composition remains proved from the reduction bundle and is consumed directly by S7.6. |
 | `S6.2` | Done (Boundary). | Optional extension only: discharge the remaining generic `LatticeReductionLaws` abstraction if a fully carrier-parametric reduction library is desired beyond the active `paperCarrier`/Goldilocks route. | MSIS-to-Ajtai binding theorems consumed by S7.6 from the accepted base MSIS boundary on the concrete protocol path. |
-| `S6.3` | In progress. | Concrete Theorem-8 closure is still missing: the narrowed Goldilocks final-theorem route can now consume either `paperCarrierDiffInvertibilityAssumption` directly or the stronger theorem-shaped route `lowNormInvertibilityAssumption B` with `5 ≤ B`; the Goldilocks arithmetic applicability checks are discharged, but the external low-norm invertibility theorem itself is not yet constructively proved in-repo. | Replace the remaining invertibility boundary with a constructive proof or explicit trusted interface. |
+| `S6.3` | Accepted (SuperNeo path). | The active Goldilocks `paperCarrier`-difference route is now closed in-repo via `paperCarrierDiffInvertibilityAssumption_goldilocks`; the remaining generic gap is the standalone external low-norm invertibility theorem itself. | Decide whether to keep the generic theorem as an explicit trusted boundary or formalize it beyond the active path. |
 | `S6.4` | Done (Proof-Complete) for module-level theorem surfaces. | Downstream protocol threading (S7.5) still needs full theorem-only closure. | Universal sampling expansion theorem wired into S7.5. |
-| `S6.5` | In progress. | Models defined but not yet consumed by protocol proofs. | Error model consumed by S7.6 for soundness error bounds. |
+| `S6.5` | Done (Proof-Complete). | None at the module level. | Error model derives total-error decomposition/negligibility internally and is consumed directly by S7.6. |
 | `S7.1` | In progress. | CCS/relation definitions exist but not theorem-complete. | CCS relation predicates consumed by S7.2/S7.3. |
 | `S7.2` | Done (Boundary). | Upstream closure still sits in `ProtocolTargetAssumptions`; no separate SumCheck boundary remains on this path. | Π_CCS strong reduction proved from protocol-target assumptions plus an accepted transition witness. |
 | `S7.3` | Done (Boundary). | Instantiate `ProtocolTargetAssumptions` on the intended protocol path; no local theorem gap remains. | Π_RLC weak reduction remains proved from the narrowed protocol-target boundary. |
 | `S7.4` | Done (Boundary). | Instantiate `ProtocolTargetAssumptions` on the intended protocol path; no local theorem gap remains. | Π_DEC reduction-of-knowledge remains proved from the narrowed protocol-target boundary. |
 | `S7.5` | Done (Boundary). | Discharge upstream theorem providers (`S4.5`, `S6.3`) that feed the arithmetic/protocol-target bundle. | Arithmetic obligations and protocol-target composition remain theorem-native once those upstream providers are instantiated. |
-| `S7.6` | Done (Boundary). | Instantiate the remaining upstream boundary bundles (`S6.3`, `S6.5`) on the final protocol path; the narrowed Goldilocks Appendix B.2 route is now available as the canonical concrete entry point, and its remaining invertibility input can be supplied either as `paperCarrierDiffInvertibilityAssumption` or via the stronger theorem-shaped route `lowNormInvertibilityAssumption B` with `5 ≤ B`. | End-to-end protocol theorem consumed from explicit assumptions only, with final boundary packages assembled canonically in-module. |
+| `S7.6` | Done (Boundary). | Instantiate the remaining upstream boundary bundle `S6.5` on the final protocol path; the narrowed Goldilocks Appendix B.2 route is now available as the canonical concrete entry point, and its active `paperCarrier`-difference branch uses the proved Goldilocks invertibility theorem directly. | End-to-end protocol theorem consumed from explicit assumptions only, with final boundary packages assembled canonically in-module. |
 
 ## Math Breakdown (Current Status)
 
@@ -365,7 +365,7 @@ Source references:
 | M24 | Definition 16 (MSIS) | `ProofSystem/Lattice.lean` | S6.2 | Done (Proof-Complete) |
 | M25 | Definition 18 (Ajtai commitment) | `ProofSystem/Lattice.lean` | S6.2 | Done (Proof-Complete) |
 | M26 | Theorem 2 (Ajtai properties) | `ProofSystem/LatticeReductions.lean` | S6.2 | In progress |
-| M27 | Theorem 8 (low-norm invertibility) | `InvertibilityAxioms.lean` | S6.3 | In progress |
+| M27 | Theorem 8 (low-norm invertibility) | `InvertibilityAxioms.lean`, `InvertibilityGoldilocks.lean` | S6.3 | Accepted (SuperNeo path) |
 | M28 | Definition 17 (strong sampling sets) | `SamplingSet.lean` | S6.4 | Done (Proof-Complete) |
 | M29 | Theorem 9 (expansion factors) | `SamplingSet.lean` | S6.4 | Done (Proof-Complete) |
 
@@ -393,9 +393,9 @@ Source references:
 
 | State | Count |
 |---|---|
-| Accepted (SuperNeo path) | 1 (M8) |
+| Accepted (SuperNeo path) | 2 (M8, M27) |
 | Done (Boundary) | 12 (M1, M12, M16, M20, M21, M22, M34, M35, M36, M37, M38, M39) |
 | Done (Proof-Complete) | 11 (M3, M4, M6, M14, M15, M19, M23, M24, M25, M28, M29) |
-| In progress | 15 |
+| In progress | 14 |
 | Good shell | 0 |
 | Not started | 0 |
