@@ -45,11 +45,19 @@ abbrev InteractiveReductionAssumptions_ofPaperCarrierDiff
   SuperNeo.InteractiveReductionAssumptions.ofPaperCarrierDiff (ctx := ctx)
 
 /--
+[Role: Theorem-Target] Canonical constructor from the active native-bar
+paper-facing challenge-difference route plus a SumCheck transition witness.
+-/
+abbrev InteractiveReductionAssumptions_ofNativePaperCarrierDiff
+  {ctx : SuperNeo.ProtocolTargetContext} :=
+  SuperNeo.InteractiveReductionAssumptions.ofNativePaperCarrierDiff (ctx := ctx)
+
+/--
 [Role: Theorem-Target] Canonical constructor from a stronger strict low-norm
 invertibility theorem with threshold at least `5`, plus a SumCheck transition
 witness.
 -/
-theorem InteractiveReductionAssumptions_ofLowNormAtLeastFive
+def InteractiveReductionAssumptions_ofLowNormAtLeastFive
   {ctx : SuperNeo.ProtocolTargetContext}
   {B : Nat}
   (hFive : 5 ≤ B)
@@ -90,7 +98,7 @@ abbrev InteractiveReductionNativeAssumptions_ofPaperCarrierDiff
 low-norm invertibility theorem with threshold at least `5`, plus a SumCheck
 transition witness.
 -/
-theorem InteractiveReductionNativeAssumptions_ofLowNormAtLeastFive
+def InteractiveReductionNativeAssumptions_ofLowNormAtLeastFive
   {ctx : SuperNeo.ProtocolTargetContext}
   {B : Nat}
   (hFive : 5 ≤ B)

@@ -40,10 +40,10 @@
 | One-point check | `vecModuleCheckPair`, `scalarModuleCheckPair` | None | `checkPair = true ↔ propPair` | Theorem-Target | `ArithmeticBundle.lean` |
 | Compatibility checks | `preservesAddVec`, `preservesScaleVec`, `preservesAddScalar`, `preservesScaleScalar` | Size equality for add | Executable linearity checks | Theorem-Target | — |
 | Sound/complete | `preservesAdd*_sound/complete`, `preservesScale*_sound/complete` | Check true / Prop holds | Bidirectional bridge | Theorem-Target | — |
-| Prop/check bridges | `vecModulePropPair_of_checkPair`, `vecModuleCheckPair_of_propPair`, scalar analogues | — | One-point ↔ check | Theorem-Target | — |
+| Prop/check bridges | `vecModulePropPair_of_checkPair`, `vecModuleCheckPair_of_propPair`, `vecModuleCheckPair_iff_propPair`, scalar analogues | — | One-point ↔ check | Theorem-Target | — |
 | Universal theorem | `vecModuleAssumption`, `scalarModuleAssumption` | None | `∀` linearity | Definitional | `EvalHom.lean` |
 | Universal check | `vecModuleCheckAssumption`, `scalarModuleCheckAssumption` | None | `∀ s x y, checkPair = true` | Definitional | — |
-| Assumption bridges | `vecModuleAssumption_of_checkAssumption`, `vecModuleCheckAssumption_of_assumption`, scalar analogues | — | Theorem ↔ check universal | Theorem-Target | — |
+| Assumption bridges | `vecModuleAssumption_of_checkAssumption`, `vecModuleCheckAssumption_of_assumption`, `vecModuleAssumption_iff_checkAssumption`, scalar analogues | — | Theorem ↔ check universal | Theorem-Target | — |
 
 ## Proof Obligations and Closure Plan
 
@@ -66,7 +66,7 @@ No open boundary assumptions in this module.
 1. `VecModuleHom` / `ScalarModuleHom` defined as structures with `map` field.
 2. Prop/check pairs defined; decidable instances for `decide`.
 3. Sound/complete proved via `decide_eq_true_eq` / `decide_eq_true`.
-4. Universal assumption bridges: check → theorem via `vecModulePropPair_of_checkPair`; theorem → check via `vecModuleCheckPair_of_propPair`.
+4. Universal assumption bridges: check → theorem via `vecModulePropPair_of_checkPair`; theorem → check via `vecModuleCheckPair_of_propPair`; iff surfaces make the module theorem-facing enough for downstream use.
 
 ## Quality Expectations
 

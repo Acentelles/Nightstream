@@ -39,10 +39,10 @@ structure ArithmeticObligations
 /--
 Theorem-native constructor for arithmetic obligations.
 
-This derives the `evalHom` field from `P10` and module-hom assumptions,
-and derives the local MLE identity from the theorem-native size theorem.
+This uses the constructive eval-hom closure directly and derives the local MLE
+identity from the theorem-native size theorem.
 -/
-def ArithmeticObligations.of_p10
+def ArithmeticObligations.of_constructive
   {bar m : Array (Array F)}
   {r : Array F}
   {rho1 rho2 : F}
@@ -54,7 +54,6 @@ def ArithmeticObligations.of_p10
   {xs ys qVals coeffs : Array F}
   {xEval expectedEval : F}
   (hSplit : splitScalar.val < 2 ^ kSplit)
-  (hThm3 : thm3CoreAssumption bar)
   (hVecAssm : vecModuleAssumption hVec)
   (hScalAssm : scalarModuleAssumption hScal)
   (hSampling : samplingExpansionProp cset samples)
@@ -68,9 +67,7 @@ def ArithmeticObligations.of_p10
     xs ys qVals coeffs
     xEval expectedEval where
   splitScalarBelowPow := hSplit
-  evalHom := evalHomAssumption_of_p10_and_moduleAssumptions
-    (hThm3 := hThm3)
-    (hVecAssm := hVecAssm) (hScalAssm := hScalAssm)
+  evalHom := evalHomAssumption_constructive
   vecModule := hVecAssm
   scalarModule := hScalAssm
   sampling := hSampling
@@ -78,6 +75,45 @@ def ArithmeticObligations.of_p10
   mleIdentityAtR := by
     exact mleIdentityAssumption_holds qVals r hMleSize
   interpolation := hInterp
+
+/--
+Compatibility constructor deriving arithmetic obligations from `P10`.
+
+This keeps the historical dependency shape while routing `evalHom` through the
+constructive theorem-native closure.
+-/
+def ArithmeticObligations.of_p10
+  {bar m : Array (Array F)}
+  {r : Array F}
+  {rho1 rho2 : F}
+  {hVec : VecModuleHom}
+  {hScal : ScalarModuleHom}
+  {splitScalar : F}
+  {kSplit : Nat}
+  {cset samples : Array Coeffs}
+  {xs ys qVals coeffs : Array F}
+  {xEval expectedEval : F}
+  (hSplit : splitScalar.val < 2 ^ kSplit)
+  (_hThm3 : thm3CoreAssumption bar)
+  (hVecAssm : vecModuleAssumption hVec)
+  (hScalAssm : scalarModuleAssumption hScal)
+  (hSampling : samplingExpansionProp cset samples)
+  (hMleSize : qVals.size = (2 ^ r.size))
+  (hInterp : interpolationProp xs ys coeffs xEval expectedEval) :
+  ArithmeticObligations
+    bar m r rho1 rho2
+    hVec hScal
+    splitScalar kSplit
+    cset samples
+    xs ys qVals coeffs
+    xEval expectedEval := by
+  exact ArithmeticObligations.of_constructive
+    (hSplit := hSplit)
+    (hVecAssm := hVecAssm)
+    (hScalAssm := hScalAssm)
+    (hSampling := hSampling)
+    (hMleSize := hMleSize)
+    (hInterp := hInterp)
 
 /--
 Compatibility constructor keeping the historical `(P10 + P11)` signature.
@@ -109,13 +145,13 @@ def ArithmeticObligations.of_p10_p11
     xs ys qVals coeffs
     xEval expectedEval := by
   exact ArithmeticObligations.of_p10
-    (hSplit := hSplit)
-    (hThm3 := hThm3)
-    (hVecAssm := hVecAssm)
-    (hScalAssm := hScalAssm)
-    (hSampling := hSampling)
-    (hMleSize := hMleSize)
-    (hInterp := hInterp)
+    hSplit
+    hThm3
+    hVecAssm
+    hScalAssm
+    hSampling
+    hMleSize
+    hInterp
 
 /--
 Compatibility accessor: recover the terminal-quotient-zero obligation from the

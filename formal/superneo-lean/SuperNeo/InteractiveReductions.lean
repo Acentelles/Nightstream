@@ -43,14 +43,38 @@ def InteractiveReductionAssumptions.ofPaperCarrierDiff
     ctx.cset ctx.samples
     ctx.xs ctx.ys ctx.qVals ctx.coeffs
     ctx.xEval ctx.expectedEval)
-  (hInv : paperCarrierDiffInvertibilityAssumption)
   (hDiff : samplingDiffSet paperCarrier ctx.invDelta)
   (hNe : ctx.invDelta ≠ zeroRq)
   (hWitness : SumCheckTransitionWitness ctx) :
   InteractiveReductionAssumptions ctx :=
   ofProtocolRelations
     (ProtocolRelationsAssumptions.ofPaperCarrierDiff
-      hThm3 hArithmetic hInv hDiff hNe)
+      hThm3 hArithmetic hDiff hNe)
+    hWitness
+
+/--
+Canonical constructor for the active native-bar paper-carrier-difference route,
+discharging the generic Theorem-3 boundary from `thm3CoreAssumption_native`.
+-/
+def InteractiveReductionAssumptions.ofNativePaperCarrierDiff
+  {ctx : ProtocolTargetContext}
+  (hBarNative : ctx.bar = nativeBarMatrix)
+  (hArithmetic : ArithmeticObligations
+    ctx.bar ctx.m ctx.r ctx.rho1 ctx.rho2
+    ctx.hVec ctx.hScal
+    ctx.splitScalar ctx.kSplit
+    ctx.cset ctx.samples
+    ctx.xs ctx.ys ctx.qVals ctx.coeffs
+    ctx.xEval ctx.expectedEval)
+  (hDiff : samplingDiffSet paperCarrier ctx.invDelta)
+  (hNe : ctx.invDelta ≠ zeroRq)
+  (hWitness : SumCheckTransitionWitness ctx) :
+  InteractiveReductionAssumptions ctx :=
+  ofPaperCarrierDiff
+    (by simpa [hBarNative] using thm3CoreAssumption_native)
+    hArithmetic
+    hDiff
+    hNe
     hWitness
 
 /--
@@ -106,14 +130,13 @@ def InteractiveReductionNativeAssumptions.ofPaperCarrierDiff
     ctx.cset ctx.samples
     ctx.xs ctx.ys ctx.qVals ctx.coeffs
     ctx.xEval ctx.expectedEval)
-  (hInv : paperCarrierDiffInvertibilityAssumption)
   (hDiff : samplingDiffSet paperCarrier ctx.invDelta)
   (hNe : ctx.invDelta ≠ zeroRq)
   (hWitness : SumCheckTransitionWitness ctx) :
   InteractiveReductionNativeAssumptions ctx :=
   ofProtocolRelations
     (ProtocolRelationsNativeAssumptions.ofPaperCarrierDiff
-      hBarNative hArithmetic hInv hDiff hNe)
+      hBarNative hArithmetic hDiff hNe)
     hWitness
 
 /--

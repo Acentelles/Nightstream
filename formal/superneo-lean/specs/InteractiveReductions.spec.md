@@ -34,7 +34,8 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 |---|---|---|---|---|
 | Assumptions | `InteractiveReductionAssumptions` | structure | Boundary | Bundles protocol-target assumptions + SumCheck transition witness |
 | Constructor | `InteractiveReductionAssumptions.ofProtocolRelations` | def | Theorem-Target | Canonical constructor from protocol-relations assumptions by extracting the target component |
-| Constructor | `InteractiveReductionAssumptions.ofPaperCarrierDiff` | def | Theorem-Target | Canonical constructor from thm3 + arithmetic + active `paperCarrier`-difference invertibility boundary + witness |
+| Constructor | `InteractiveReductionAssumptions.ofPaperCarrierDiff` | def | Theorem-Target | Canonical constructor from thm3 + arithmetic + active `paperCarrier`-difference route + witness |
+| Constructor | `InteractiveReductionAssumptions.ofNativePaperCarrierDiff` | def | Theorem-Target | Canonical constructor from the active native-bar `paperCarrier`-difference route + witness, discharging generic Thm 3 from `thm3CoreAssumption_native` |
 | Constructor | `InteractiveReductionAssumptions.ofLowNormAtLeastFive` | def | Theorem-Target | Canonical constructor from thm3 + arithmetic + stronger strict low-norm invertibility theorem with threshold at least `5` + witness |
 | Constructor | `InteractiveReductionNativeAssumptions.ofPaperCarrierDiff` | def | Theorem-Target | Native canonical constructor from the same route + witness |
 | Constructor | `InteractiveReductionNativeAssumptions.ofLowNormAtLeastFive` | def | Theorem-Target | Native canonical constructor from the stronger strict low-norm route + witness |
@@ -47,7 +48,7 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 
 ## Proof Obligations and Closure Plan
 
-All local composition obligations are closed. `InteractiveReductionAssumptions ctx` is the remaining boundary bundle: instantiate protocol-target assumptions and an accepted sum-check transition witness for concrete protocol contexts. The composition theorems themselves are already proved from that bundle, and canonical constructors now exist from an already-built protocol-relations bundle, from the narrower `paperCarrier` difference route for `ctx.invDelta`, and from the stronger strict low-norm invertibility theorem route.
+All local composition obligations are closed. `InteractiveReductionAssumptions ctx` is the remaining boundary bundle: instantiate protocol-target assumptions and an accepted sum-check transition witness for concrete protocol contexts. The composition theorems themselves are already proved from that bundle, and canonical constructors now exist from an already-built protocol-relations bundle, from the narrower `paperCarrier` difference route for `ctx.invDelta` using the proved Goldilocks invertibility theorem internally, from the active native-bar `paperCarrier` difference route by rewriting the generic Thm 3 input to `thm3CoreAssumption_native`, and from the stronger strict low-norm invertibility theorem route.
 
 ## Assumption Ledger
 

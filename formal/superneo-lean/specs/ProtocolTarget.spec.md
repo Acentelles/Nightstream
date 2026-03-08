@@ -32,10 +32,10 @@
 | Assumptions | `ProtocolTargetAssumptions ctx` | None | Bundles thm3, arithmetic (ArithmeticObligations), direct witness `invertibleRq ctx.invDelta` | Definitional | — |
 | Assumptions | `ProtocolTargetNativeAssumptions ctx` | `ctx.bar = nativeBarMatrix` | Bundles native bar equality, arithmetic (ArithmeticObligations), direct witness `invertibleRq ctx.invDelta` | Definitional | ProtocolRelations native path |
 | Invertibility bridge | `strictInvertibilityWindowProp_five_of_paperCarrierDiff` | `samplingDiffSet paperCarrier δ`, `δ ≠ 0` | Strict paper-faithful window `< 5` | Theorem-Target | Protocol-facing invertibility assembly |
-| Invertibility bridge | `invertibleRq_of_paperCarrierDiff` | `paperCarrierDiffInvertibilityAssumption`, `samplingDiffSet paperCarrier δ`, `δ ≠ 0` | `invertibleRq δ` | Boundary | Protocol-facing invertibility assembly |
-| Constructor | `ProtocolTargetAssumptions.ofPaperCarrierDiff` | thm3 + arithmetic + paper-carrier-difference invertibility boundary + `samplingDiffSet paperCarrier ctx.invDelta` + `ctx.invDelta ≠ 0` | Canonical protocol-target bundle on the paper-facing challenge-difference path | Theorem-Target | ProtocolRelations / reductions |
+| Invertibility bridge | `invertibleRq_of_paperCarrierDiff` | `samplingDiffSet paperCarrier δ`, `δ ≠ 0` | `invertibleRq δ` | Theorem-Target | Protocol-facing invertibility assembly on the active Goldilocks path |
+| Constructor | `ProtocolTargetAssumptions.ofPaperCarrierDiff` | thm3 + arithmetic + `samplingDiffSet paperCarrier ctx.invDelta` + `ctx.invDelta ≠ 0` | Canonical protocol-target bundle on the paper-facing challenge-difference path | Theorem-Target | ProtocolRelations / reductions |
 | Constructor | `ProtocolTargetAssumptions.ofLowNormAtLeastFive` | thm3 + arithmetic + `lowNormInvertibilityAssumption B` with `5 ≤ B` + `samplingDiffSet paperCarrier ctx.invDelta` + `ctx.invDelta ≠ 0` | Canonical protocol-target bundle through the stronger strict low-norm route | Theorem-Target | ProtocolRelations / reductions |
-| Constructor | `ProtocolTargetNativeAssumptions.ofPaperCarrierDiff` | native bar + arithmetic + paper-carrier-difference invertibility boundary + `samplingDiffSet paperCarrier ctx.invDelta` + `ctx.invDelta ≠ 0` | Native protocol-target bundle on the same path | Theorem-Target | ProtocolRelations / reductions |
+| Constructor | `ProtocolTargetNativeAssumptions.ofPaperCarrierDiff` | native bar + arithmetic + `samplingDiffSet paperCarrier ctx.invDelta` + `ctx.invDelta ≠ 0` | Native protocol-target bundle on the same path | Theorem-Target | ProtocolRelations / reductions |
 | Constructor | `ProtocolTargetNativeAssumptions.ofLowNormAtLeastFive` | native bar + arithmetic + `lowNormInvertibilityAssumption B` with `5 ≤ B` + `samplingDiffSet paperCarrier ctx.invDelta` + `ctx.invDelta ≠ 0` | Native protocol-target bundle through the stronger strict low-norm route | Theorem-Target | ProtocolRelations / reductions |
 | Target prop | `protocolTargetProp ctx` | None | Conjunction of all protocol-target predicates | Definitional | ProtocolRelations |
 | Derivation | `protocolTargetProp_of_assumptions` | `ProtocolTargetAssumptions ctx` | `protocolTargetProp ctx` | Theorem-Target | ProtocolRelations |
@@ -43,7 +43,7 @@
 
 ## Proof Obligations and Closure Plan
 
-All local obligations closed. `protocolTargetProp_of_assumptions` and `protocolTargetProp_of_native_assumptions` derive the target from their bundles using direct `invertibleRq` witnesses. The module also exposes canonical constructors that derive those witnesses either from the active paper-facing route `samplingDiffSet paperCarrier ctx.invDelta ∧ ctx.invDelta ≠ 0` plus `paperCarrierDiffInvertibilityAssumption`, or from the stronger strict low-norm theorem route `lowNormInvertibilityAssumption B` with `5 ≤ B`.
+All local obligations closed. `protocolTargetProp_of_assumptions` and `protocolTargetProp_of_native_assumptions` derive the target from their bundles using direct `invertibleRq` witnesses. The module also exposes canonical constructors that derive those witnesses either from the active paper-facing route `samplingDiffSet paperCarrier ctx.invDelta ∧ ctx.invDelta ≠ 0`, using the proved Goldilocks theorem for nonzero `paperCarrier` differences internally, or from the stronger strict low-norm theorem route `lowNormInvertibilityAssumption B` with `5 ≤ B`.
 
 ## Assumption Ledger
 
@@ -64,7 +64,7 @@ No open proof obligations inside this module. Native closure still depends on up
 1. `ProtocolTargetContext` structure holds all protocol parameters.
 2. `ProtocolTargetAssumptions` bundles thm3, arithmetic obligations, and a direct `invertibleRq` witness for `ctx.invDelta`.
 3. `ProtocolTargetNativeAssumptions` bundles `ctx.bar = nativeBarMatrix`, arithmetic obligations, and a direct `invertibleRq` witness for `ctx.invDelta`.
-4. `ProtocolTargetAssumptions.ofPaperCarrierDiff` and `...Native...` derive those direct witnesses from the active paper-facing `paperCarrier`-difference invertibility path.
+4. `ProtocolTargetAssumptions.ofPaperCarrierDiff` and `...Native...` derive those direct witnesses from the active paper-facing `paperCarrier`-difference path using the proved Goldilocks theorem directly.
 5. `protocolTargetProp` defined as conjunction of target predicates.
 6. `protocolTargetProp_of_assumptions` and `protocolTargetProp_of_native_assumptions` proved by projection from the direct witness bundle.
 

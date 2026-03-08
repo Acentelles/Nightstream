@@ -48,40 +48,102 @@ abbrev preservesScaleScalar := SuperNeo.preservesScaleScalar
 /-! ## Key Theorems -/
 
 /-- [Role: Theorem-Target] `preservesAddVec = true` implies vector additivity. -/
-abbrev preservesAddVec_sound := SuperNeo.preservesAddVec_sound
+theorem preservesAddVec_sound
+  {h : VecModuleHom} {x y : Array F} :
+  preservesAddVec h x y = true →
+  h.map (vecAdd x y) = vecAdd (h.map x) (h.map y) :=
+  SuperNeo.preservesAddVec_sound
 
 /-- [Role: Theorem-Target] `preservesScaleVec = true` implies vector scaling law. -/
-abbrev preservesScaleVec_sound := SuperNeo.preservesScaleVec_sound
+theorem preservesScaleVec_sound
+  {h : VecModuleHom} {s : F} {x : Array F} :
+  preservesScaleVec h s x = true →
+  h.map (vecScale s x) = vecScale s (h.map x) :=
+  SuperNeo.preservesScaleVec_sound
 
 /-- [Role: Theorem-Target] `preservesAddScalar = true` implies scalar additivity. -/
-abbrev preservesAddScalar_sound := SuperNeo.preservesAddScalar_sound
+theorem preservesAddScalar_sound
+  {h : ScalarModuleHom} {x y : Array F} :
+  preservesAddScalar h x y = true →
+  h.map (vecAdd x y) = h.map x + h.map y :=
+  SuperNeo.preservesAddScalar_sound
 
 /-- [Role: Theorem-Target] `preservesScaleScalar = true` implies scalar scaling law. -/
-abbrev preservesScaleScalar_sound := SuperNeo.preservesScaleScalar_sound
+theorem preservesScaleScalar_sound
+  {h : ScalarModuleHom} {s : F} {x : Array F} :
+  preservesScaleScalar h s x = true →
+  h.map (vecScale s x) = s * h.map x :=
+  SuperNeo.preservesScaleScalar_sound
 
 /-- [Role: Theorem-Target] Vector additivity + shape premise implies `preservesAddVec = true`. -/
-abbrev preservesAddVec_complete := SuperNeo.preservesAddVec_complete
+theorem preservesAddVec_complete
+  {h : VecModuleHom} {x y : Array F} :
+  x.size = y.size →
+  h.map (vecAdd x y) = vecAdd (h.map x) (h.map y) →
+  preservesAddVec h x y = true :=
+  SuperNeo.preservesAddVec_complete
 
 /-- [Role: Theorem-Target] Vector scaling law implies `preservesScaleVec = true`. -/
-abbrev preservesScaleVec_complete := SuperNeo.preservesScaleVec_complete
+theorem preservesScaleVec_complete
+  {h : VecModuleHom} {s : F} {x : Array F} :
+  h.map (vecScale s x) = vecScale s (h.map x) →
+  preservesScaleVec h s x = true :=
+  SuperNeo.preservesScaleVec_complete
 
 /-- [Role: Theorem-Target] Scalar additivity + shape premise implies `preservesAddScalar = true`. -/
-abbrev preservesAddScalar_complete := SuperNeo.preservesAddScalar_complete
+theorem preservesAddScalar_complete
+  {h : ScalarModuleHom} {x y : Array F} :
+  x.size = y.size →
+  h.map (vecAdd x y) = h.map x + h.map y →
+  preservesAddScalar h x y = true :=
+  SuperNeo.preservesAddScalar_complete
 
 /-- [Role: Theorem-Target] Scalar scaling law implies `preservesScaleScalar = true`. -/
-abbrev preservesScaleScalar_complete := SuperNeo.preservesScaleScalar_complete
+theorem preservesScaleScalar_complete
+  {h : ScalarModuleHom} {s : F} {x : Array F} :
+  h.map (vecScale s x) = s * h.map x →
+  preservesScaleScalar h s x = true :=
+  SuperNeo.preservesScaleScalar_complete
 
 /-- [Role: Theorem-Target] Check-pair success implies vector proposition pair. -/
-abbrev vecModulePropPair_of_checkPair := SuperNeo.vecModulePropPair_of_checkPair
+theorem vecModulePropPair_of_checkPair
+  {h : VecModuleHom} {s : F} {x y : Array F} :
+  vecModuleCheckPair h s x y = true →
+  vecModulePropPair h s x y :=
+  SuperNeo.vecModulePropPair_of_checkPair
 
 /-- [Role: Theorem-Target] Vector proposition pair implies check-pair success. -/
-abbrev vecModuleCheckPair_of_propPair := SuperNeo.vecModuleCheckPair_of_propPair
+theorem vecModuleCheckPair_of_propPair
+  {h : VecModuleHom} {s : F} {x y : Array F} :
+  vecModulePropPair h s x y →
+  vecModuleCheckPair h s x y = true :=
+  SuperNeo.vecModuleCheckPair_of_propPair
+
+/-- [Role: Theorem-Target] Vector check-pair truth is equivalent to the proposition pair. -/
+theorem vecModuleCheckPair_iff_propPair
+  {h : VecModuleHom} {s : F} {x y : Array F} :
+  vecModuleCheckPair h s x y = true ↔ vecModulePropPair h s x y :=
+  SuperNeo.vecModuleCheckPair_iff_propPair
 
 /-- [Role: Theorem-Target] Check-pair success implies scalar proposition pair. -/
-abbrev scalarModulePropPair_of_checkPair := SuperNeo.scalarModulePropPair_of_checkPair
+theorem scalarModulePropPair_of_checkPair
+  {h : ScalarModuleHom} {s : F} {x y : Array F} :
+  scalarModuleCheckPair h s x y = true →
+  scalarModulePropPair h s x y :=
+  SuperNeo.scalarModulePropPair_of_checkPair
 
 /-- [Role: Theorem-Target] Scalar proposition pair implies check-pair success. -/
-abbrev scalarModuleCheckPair_of_propPair := SuperNeo.scalarModuleCheckPair_of_propPair
+theorem scalarModuleCheckPair_of_propPair
+  {h : ScalarModuleHom} {s : F} {x y : Array F} :
+  scalarModulePropPair h s x y →
+  scalarModuleCheckPair h s x y = true :=
+  SuperNeo.scalarModuleCheckPair_of_propPair
+
+/-- [Role: Theorem-Target] Scalar check-pair truth is equivalent to the proposition pair. -/
+theorem scalarModuleCheckPair_iff_propPair
+  {h : ScalarModuleHom} {s : F} {x y : Array F} :
+  scalarModuleCheckPair h s x y = true ↔ scalarModulePropPair h s x y :=
+  SuperNeo.scalarModuleCheckPair_iff_propPair
 
 /-! ## Universal Contracts -/
 
@@ -104,16 +166,44 @@ abbrev vecModuleCheckAssumption := SuperNeo.vecModuleCheckAssumption
 abbrev scalarModuleCheckAssumption := SuperNeo.scalarModuleCheckAssumption
 
 /-- [Role: Theorem-Target] Universal vector check contract implies universal vector theorem contract. -/
-abbrev vecModuleAssumption_of_checkAssumption := SuperNeo.vecModuleAssumption_of_checkAssumption
+theorem vecModuleAssumption_of_checkAssumption
+  {h : VecModuleHom} :
+  vecModuleCheckAssumption h →
+  vecModuleAssumption h :=
+  SuperNeo.vecModuleAssumption_of_checkAssumption
 
 /-- [Role: Theorem-Target] Universal vector theorem contract implies universal vector check contract. -/
-abbrev vecModuleCheckAssumption_of_assumption := SuperNeo.vecModuleCheckAssumption_of_assumption
+theorem vecModuleCheckAssumption_of_assumption
+  {h : VecModuleHom} :
+  vecModuleAssumption h →
+  vecModuleCheckAssumption h :=
+  SuperNeo.vecModuleCheckAssumption_of_assumption
+
+/-- [Role: Theorem-Target] Universal vector theorem/check contracts are equivalent. -/
+theorem vecModuleAssumption_iff_checkAssumption
+  {h : VecModuleHom} :
+  vecModuleAssumption h ↔ vecModuleCheckAssumption h :=
+  SuperNeo.vecModuleAssumption_iff_checkAssumption
 
 /-- [Role: Theorem-Target] Universal scalar check contract implies universal scalar theorem contract. -/
-abbrev scalarModuleAssumption_of_checkAssumption := SuperNeo.scalarModuleAssumption_of_checkAssumption
+theorem scalarModuleAssumption_of_checkAssumption
+  {h : ScalarModuleHom} :
+  scalarModuleCheckAssumption h →
+  scalarModuleAssumption h :=
+  SuperNeo.scalarModuleAssumption_of_checkAssumption
 
 /-- [Role: Theorem-Target] Universal scalar theorem contract implies universal scalar check contract. -/
-abbrev scalarModuleCheckAssumption_of_assumption := SuperNeo.scalarModuleCheckAssumption_of_assumption
+theorem scalarModuleCheckAssumption_of_assumption
+  {h : ScalarModuleHom} :
+  scalarModuleAssumption h →
+  scalarModuleCheckAssumption h :=
+  SuperNeo.scalarModuleCheckAssumption_of_assumption
+
+/-- [Role: Theorem-Target] Universal scalar theorem/check contracts are equivalent. -/
+theorem scalarModuleAssumption_iff_checkAssumption
+  {h : ScalarModuleHom} :
+  scalarModuleAssumption h ↔ scalarModuleCheckAssumption h :=
+  SuperNeo.scalarModuleAssumption_iff_checkAssumption
 
 end ModuleHomInterface
 

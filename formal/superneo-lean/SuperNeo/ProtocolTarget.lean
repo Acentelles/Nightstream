@@ -1,6 +1,7 @@
 import SuperNeo.Thm3Core
 import SuperNeo.ArithmeticObligations
 import SuperNeo.InvertibilityAxioms
+import SuperNeo.InvertibilityGoldilocks
 import SuperNeo.SamplingSet
 
 /-!
@@ -76,14 +77,29 @@ def protocolTargetProp (ctx : ProtocolTargetContext) : Prop :=
   invertibleRq ctx.invDelta
 
 /-- Derive the protocol target from explicit theorem/assumption inputs. -/
+theorem protocolTargetProp_of_components
+  {ctx : ProtocolTargetContext}
+  (hThm3 : thm3CoreAssumption ctx.bar)
+  (hArithmetic : ArithmeticObligations
+    ctx.bar ctx.m ctx.r ctx.rho1 ctx.rho2
+    ctx.hVec ctx.hScal
+    ctx.splitScalar ctx.kSplit
+    ctx.cset ctx.samples
+    ctx.xs ctx.ys ctx.qVals ctx.coeffs
+    ctx.xEval ctx.expectedEval)
+  (hInvDelta : invertibleRq ctx.invDelta) :
+  protocolTargetProp ctx := by
+  exact ⟨hThm3, hArithmetic.splitTerminalZero, hArithmetic.evalHom,
+    hArithmetic.vecModule, hArithmetic.scalarModule, hArithmetic.sampling,
+    hArithmetic.mleTableSize, hArithmetic.mleIdentityAtR,
+    hArithmetic.interpolation, hInvDelta⟩
+
+/-- Derive the protocol target from explicit theorem/assumption inputs. -/
 theorem protocolTargetProp_of_assumptions
   {ctx : ProtocolTargetContext}
   (h : ProtocolTargetAssumptions ctx) :
   protocolTargetProp ctx := by
-  refine ⟨h.thm3, h.arithmetic.splitTerminalZero, h.arithmetic.evalHom,
-    h.arithmetic.vecModule, h.arithmetic.scalarModule, h.arithmetic.sampling,
-    h.arithmetic.mleTableSize, h.arithmetic.mleIdentityAtR, h.arithmetic.interpolation, ?_⟩
-  exact h.invDeltaInvertible
+  exact protocolTargetProp_of_components h.thm3 h.arithmetic h.invDeltaInvertible
 
 /--
 Derive protocol target from native assumptions, closing Theorem-3 by rewriting
@@ -96,10 +112,7 @@ theorem protocolTargetProp_of_native_assumptions
   rcases h with ⟨hBar, hArithmetic, hInvDelta⟩
   have hThm3 : thm3CoreAssumption ctx.bar := by
     simpa [hBar] using thm3CoreAssumption_native
-  refine ⟨hThm3, hArithmetic.splitTerminalZero, hArithmetic.evalHom,
-    hArithmetic.vecModule, hArithmetic.scalarModule, hArithmetic.sampling,
-    hArithmetic.mleTableSize, hArithmetic.mleIdentityAtR, hArithmetic.interpolation, ?_⟩
-  exact hInvDelta
+  exact protocolTargetProp_of_components hThm3 hArithmetic hInvDelta
 
 /--
 Paper-facing invertibility bridge: if `invDelta` is a nonzero difference of two
@@ -116,14 +129,13 @@ theorem strictInvertibilityWindowProp_five_of_paperCarrierDiff
   exact strictInvertibilityWindowProp_five_of_shape_norm_le_four_of_ne_zeroRq
     hShape hNorm hNe
 
-/-- Derive invertibility from the active paper-carrier-difference boundary. -/
+/-- Derive invertibility on the active paper-carrier-difference route. -/
 theorem invertibleRq_of_paperCarrierDiff
   {δ : Coeffs}
-  (hInv : paperCarrierDiffInvertibilityAssumption)
   (hDiff : samplingDiffSet paperCarrier δ)
   (hNe : δ ≠ zeroRq) :
   invertibleRq δ := by
-  exact hInv δ hDiff hNe
+  exact paperCarrierDiffInvertibilityAssumption_goldilocks δ hDiff hNe
 
 /--
 Canonical protocol-target constructor on the paper-facing challenge-difference
@@ -141,13 +153,12 @@ def ProtocolTargetAssumptions.ofPaperCarrierDiff
     ctx.cset ctx.samples
     ctx.xs ctx.ys ctx.qVals ctx.coeffs
     ctx.xEval ctx.expectedEval)
-  (hInv : paperCarrierDiffInvertibilityAssumption)
   (hDiff : samplingDiffSet paperCarrier ctx.invDelta)
   (hNe : ctx.invDelta ≠ zeroRq) :
   ProtocolTargetAssumptions ctx :=
   { thm3 := thm3
     arithmetic := arithmetic
-    invDeltaInvertible := invertibleRq_of_paperCarrierDiff hInv hDiff hNe }
+    invDeltaInvertible := invertibleRq_of_paperCarrierDiff hDiff hNe }
 
 /--
 Canonical protocol-target constructor from any strict low-norm invertibility
@@ -170,12 +181,11 @@ def ProtocolTargetAssumptions.ofLowNormAtLeastFive
   (hDiff : samplingDiffSet paperCarrier ctx.invDelta)
   (hNe : ctx.invDelta ≠ zeroRq) :
   ProtocolTargetAssumptions ctx :=
-  ofPaperCarrierDiff
-    thm3
-    arithmetic
-    (paperCarrierDiffInvertibilityAssumption_of_lowNormAtLeastFive hFive hInv)
-    hDiff
-    hNe
+  { thm3 := thm3
+    arithmetic := arithmetic
+    invDeltaInvertible := invertibleRq_of_lowNormAssumption hInv
+      (strictInvertibilityWindowProp_mono hFive
+        (strictInvertibilityWindowProp_five_of_paperCarrierDiff hDiff hNe)) }
 
 /--
 Canonical native protocol-target constructor on the paper-facing
@@ -191,13 +201,12 @@ def ProtocolTargetNativeAssumptions.ofPaperCarrierDiff
     ctx.cset ctx.samples
     ctx.xs ctx.ys ctx.qVals ctx.coeffs
     ctx.xEval ctx.expectedEval)
-  (hInv : paperCarrierDiffInvertibilityAssumption)
   (hDiff : samplingDiffSet paperCarrier ctx.invDelta)
   (hNe : ctx.invDelta ≠ zeroRq) :
   ProtocolTargetNativeAssumptions ctx :=
   { barNative := barNative
     arithmetic := arithmetic
-    invDeltaInvertible := invertibleRq_of_paperCarrierDiff hInv hDiff hNe }
+    invDeltaInvertible := invertibleRq_of_paperCarrierDiff hDiff hNe }
 
 /--
 Canonical native protocol-target constructor from any strict low-norm
@@ -220,10 +229,9 @@ def ProtocolTargetNativeAssumptions.ofLowNormAtLeastFive
   (hDiff : samplingDiffSet paperCarrier ctx.invDelta)
   (hNe : ctx.invDelta ≠ zeroRq) :
   ProtocolTargetNativeAssumptions ctx :=
-  ofPaperCarrierDiff
-    barNative
-    arithmetic
-    (paperCarrierDiffInvertibilityAssumption_of_lowNormAtLeastFive hFive hInv)
-    hDiff
-    hNe
+  { barNative := barNative
+    arithmetic := arithmetic
+    invDeltaInvertible := invertibleRq_of_lowNormAssumption hInv
+      (strictInvertibilityWindowProp_mono hFive
+        (strictInvertibilityWindowProp_five_of_paperCarrierDiff hDiff hNe)) }
 end SuperNeo

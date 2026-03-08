@@ -39,10 +39,25 @@ abbrev ceRelation_of_claimTrue
   ceRelation ctx :=
   SuperNeo.ceRelation_of_claimTrue
 
+/-- [Role: Theorem-Target] Curated theorem surface `ceRelation_of_ccsRelation`. -/
+abbrev ceRelation_of_ccsRelation
+  {ctx : ProtocolTargetContext} :
+  ccsRelation ctx →
+  SumCheckTransitionWitness ctx →
+  ceRelation ctx :=
+  SuperNeo.ceRelation_of_ccsRelation
+
+/-- [Role: Theorem-Target] Curated theorem surface `ceRelation_of_ccsRelation_claimTrue`. -/
+abbrev ceRelation_of_ccsRelation_claimTrue
+  {ctx : ProtocolTargetContext} :
+  ccsRelation ctx →
+  SumCheckClaimTrue (sumcheckInstanceOfContext ctx) →
+  ceRelation ctx :=
+  SuperNeo.ceRelation_of_ccsRelation_claimTrue
+
 /-- [Role: Theorem-Target] Curated theorem surface `ceClaimTrue_of_ce`. -/
 abbrev ceClaimTrue_of_ce
   {ctx : ProtocolTargetContext} :
-  ProtocolRelationsAssumptions ctx →
   ceRelation ctx →
   SumCheckClaimTrue (sumcheckInstanceOfContext ctx) :=
   SuperNeo.ceClaimTrue_of_ce
@@ -50,7 +65,6 @@ abbrev ceClaimTrue_of_ce
 /-- [Role: Theorem-Target] Curated theorem surface `ceClaimTrue_of_native_ce`. -/
 abbrev ceClaimTrue_of_native_ce
   {ctx : ProtocolTargetContext} :
-  ProtocolRelationsNativeAssumptions ctx →
   ceRelation ctx →
   SumCheckClaimTrue (sumcheckInstanceOfContext ctx) :=
   SuperNeo.ceClaimTrue_of_native_ce
@@ -92,7 +106,7 @@ abbrev ProtocolRelationsAssumptions_ofPaperCarrierDiff
 [Role: Theorem-Target] Canonical protocol-relations constructor from a stronger
 strict low-norm invertibility theorem with threshold at least `5`.
 -/
-theorem ProtocolRelationsAssumptions_ofLowNormAtLeastFive
+def ProtocolRelationsAssumptions_ofLowNormAtLeastFive
   {ctx : ProtocolTargetContext}
   {B : Nat}
   (hFive : 5 ≤ B)
@@ -123,7 +137,7 @@ abbrev ProtocolRelationsNativeAssumptions_ofPaperCarrierDiff
 [Role: Theorem-Target] Canonical native protocol-relations constructor from a
 stronger strict low-norm invertibility theorem with threshold at least `5`.
 -/
-theorem ProtocolRelationsNativeAssumptions_ofLowNormAtLeastFive
+def ProtocolRelationsNativeAssumptions_ofLowNormAtLeastFive
   {ctx : ProtocolTargetContext}
   {B : Nat}
   (hFive : 5 ≤ B)

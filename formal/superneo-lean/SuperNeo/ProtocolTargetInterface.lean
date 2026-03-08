@@ -61,14 +61,13 @@ theorem strictInvertibilityWindowProp_five_of_paperCarrierDiff
   strictInvertibilityWindowProp 5 δ :=
   SuperNeo.strictInvertibilityWindowProp_five_of_paperCarrierDiff hDiff hNe
 
-/-- [Role: Boundary] Derive invertibility from the active paper-carrier-difference boundary. -/
+/-- [Role: Theorem-Target] Derive invertibility on the active paper-carrier-difference path. -/
 theorem invertibleRq_of_paperCarrierDiff
   {δ : Coeffs}
-  (hInv : paperCarrierDiffInvertibilityAssumption)
   (hDiff : samplingDiffSet paperCarrier δ)
   (hNe : δ ≠ zeroRq) :
   invertibleRq δ :=
-  SuperNeo.invertibleRq_of_paperCarrierDiff hInv hDiff hNe
+  SuperNeo.invertibleRq_of_paperCarrierDiff hDiff hNe
 
 /--
 [Role: Theorem-Target] Canonical protocol-target constructor from the
@@ -82,7 +81,7 @@ abbrev ProtocolTargetAssumptions_ofPaperCarrierDiff
 [Role: Theorem-Target] Canonical protocol-target constructor from a stronger
 strict low-norm invertibility theorem with threshold at least `5`.
 -/
-theorem ProtocolTargetAssumptions_ofLowNormAtLeastFive
+def ProtocolTargetAssumptions_ofLowNormAtLeastFive
   {ctx : ProtocolTargetContext}
   {B : Nat}
   (hFive : 5 ≤ B)
@@ -113,7 +112,7 @@ abbrev ProtocolTargetNativeAssumptions_ofPaperCarrierDiff
 [Role: Theorem-Target] Native protocol-target constructor from a stronger
 strict low-norm invertibility theorem with threshold at least `5`.
 -/
-theorem ProtocolTargetNativeAssumptions_ofLowNormAtLeastFive
+def ProtocolTargetNativeAssumptions_ofLowNormAtLeastFive
   {ctx : ProtocolTargetContext}
   {B : Nat}
   (hFive : 5 ≤ B)

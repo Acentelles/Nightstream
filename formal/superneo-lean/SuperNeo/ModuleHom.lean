@@ -137,6 +137,14 @@ theorem vecModuleCheckPair_of_propPair
   vecModuleCheckPair h s x y = true := by
   exact decide_eq_true hProp
 
+/-- One-point vector-linearity check is equivalent to the proposition pair. -/
+theorem vecModuleCheckPair_iff_propPair
+  {h : VecModuleHom} {s : F} {x y : Array F} :
+  vecModuleCheckPair h s x y = true ↔ vecModulePropPair h s x y := by
+  constructor
+  · exact vecModulePropPair_of_checkPair
+  · exact vecModuleCheckPair_of_propPair
+
 /-- Recover a scalar-linearity proposition pair from a passing check pair. -/
 theorem scalarModulePropPair_of_checkPair
   {h : ScalarModuleHom} {s : F} {x y : Array F}
@@ -150,6 +158,14 @@ theorem scalarModuleCheckPair_of_propPair
   (hProp : scalarModulePropPair h s x y) :
   scalarModuleCheckPair h s x y = true := by
   exact decide_eq_true hProp
+
+/-- One-point scalar-linearity check is equivalent to the proposition pair. -/
+theorem scalarModuleCheckPair_iff_propPair
+  {h : ScalarModuleHom} {s : F} {x y : Array F} :
+  scalarModuleCheckPair h s x y = true ↔ scalarModulePropPair h s x y := by
+  constructor
+  · exact scalarModulePropPair_of_checkPair
+  · exact scalarModuleCheckPair_of_propPair
 
 /-- Theorem-facing universal linearity contract for vector module homs. -/
 def vecModuleAssumption (h : VecModuleHom) : Prop :=
@@ -187,6 +203,14 @@ theorem vecModuleCheckAssumption_of_assumption
   intro s x y
   exact vecModuleCheckPair_of_propPair ⟨hAssm.1 x y, hAssm.2 s x⟩
 
+/-- Universal vector theorem/check contracts are equivalent. -/
+theorem vecModuleAssumption_iff_checkAssumption
+  {h : VecModuleHom} :
+  vecModuleAssumption h ↔ vecModuleCheckAssumption h := by
+  constructor
+  · exact vecModuleCheckAssumption_of_assumption
+  · exact vecModuleAssumption_of_checkAssumption
+
 /-- Convert check-facing scalar assumptions into theorem-facing form. -/
 theorem scalarModuleAssumption_of_checkAssumption
   {h : ScalarModuleHom}
@@ -205,6 +229,14 @@ theorem scalarModuleCheckAssumption_of_assumption
   scalarModuleCheckAssumption h := by
   intro s x y
   exact scalarModuleCheckPair_of_propPair ⟨hAssm.1 x y, hAssm.2 s x⟩
+
+/-- Universal scalar theorem/check contracts are equivalent. -/
+theorem scalarModuleAssumption_iff_checkAssumption
+  {h : ScalarModuleHom} :
+  scalarModuleAssumption h ↔ scalarModuleCheckAssumption h := by
+  constructor
+  · exact scalarModuleCheckAssumption_of_assumption
+  · exact scalarModuleAssumption_of_checkAssumption
 
 
 end SuperNeo

@@ -19,13 +19,25 @@ namespace PiCCSInterface
 /-- [Role: Theorem-Target] Curated re-export of `piCCSStrongStatement`. -/
 abbrev piCCSStrongStatement := SuperNeo.piCCSStrongStatement
 
+/-- [Role: Theorem-Target] Strong `Π_CCS` follows directly from the CE relation. -/
+theorem piCCSStrong_of_ce
+  {ctx : ProtocolTargetContext} :
+  ceRelation ctx →
+  piCCSStrongStatement ctx :=
+  SuperNeo.piCCSStrong_of_ce
+
 /-! ## Boundary Surfaces -/
 
 /-- [Role: Boundary] Boundary surface `PiCCSAssumptions` requiring closure. -/
 abbrev PiCCSAssumptions := SuperNeo.PiCCSAssumptions
 
-/-- [Role: Boundary] Boundary surface `piCCSStrong_of_assumptions` requiring closure. -/
-abbrev piCCSStrong_of_assumptions := SuperNeo.piCCSStrong_of_assumptions
+/-- [Role: Theorem-Target] Canonical strong `Π_CCS` constructor from assumptions and witness. -/
+theorem piCCSStrong_of_assumptions
+  {ctx : ProtocolTargetContext} :
+  PiCCSAssumptions ctx →
+  SumCheckTransitionWitness ctx →
+  piCCSStrongStatement ctx :=
+  SuperNeo.piCCSStrong_of_assumptions
 
 end PiCCSInterface
 

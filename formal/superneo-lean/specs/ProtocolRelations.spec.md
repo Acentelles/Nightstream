@@ -11,10 +11,12 @@
 - `ccsRelation(ctx) ↔ protocolTargetProp(ctx)` (CCS = protocol target)
 - `ceRelation(ctx) ↔ ccsRelation(ctx) ∧ ∃ tr, SumCheckAccepted inst tr` where `inst = sumcheckInstanceOfContext ctx`
 - `ceRelaxedRelation(ctx) ↔ ccsRelation(ctx)`
+- `ceRelation_of_ccsRelation`: `ccsRelation ctx → SumCheckTransitionWitness ctx → ceRelation ctx`
+- `ceRelation_of_ccsRelation_claimTrue`: `ccsRelation ctx → SumCheckClaimTrue inst → ceRelation ctx`
 - `ceRelation_of_claimTrue`: `ProtocolRelationsAssumptions ctx → SumCheckClaimTrue inst → ceRelation ctx`
 - `ceRelation_of_native_claimTrue`: `ProtocolRelationsNativeAssumptions ctx → SumCheckClaimTrue inst → ceRelation ctx`
-- `ceClaimTrue_of_ce`: `ProtocolRelationsAssumptions ctx → ceRelation ctx → SumCheckClaimTrue inst`
-- `ceClaimTrue_of_native_ce`: `ProtocolRelationsNativeAssumptions ctx → ceRelation ctx → SumCheckClaimTrue inst`
+- `ceClaimTrue_of_ce`: `ceRelation ctx → SumCheckClaimTrue inst`
+- `ceClaimTrue_of_native_ce`: `ceRelation ctx → SumCheckClaimTrue inst`
 - `ceRelaxedRelation_of_ce`: `ceRelation ctx → ceRelaxedRelation ctx`
 
 ## Paper Anchors
@@ -42,22 +44,27 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 | Relations | `ceRelaxedRelation` | def | Definitional | ccsRelation ctx |
 | Assumptions | `ProtocolRelationsAssumptions` | structure | Boundary | Bundles target only |
 | Assumptions | `ProtocolRelationsNativeAssumptions` | structure | Boundary | Bundles native target only |
-| Constructors | `ProtocolRelationsAssumptions.ofPaperCarrierDiff`, `ProtocolRelationsNativeAssumptions.ofPaperCarrierDiff` | def | Theorem-Target | Canonical relations bundles from the paper-facing `paperCarrier`-difference invertibility route |
+| Constructors | `ProtocolRelationsAssumptions.ofPaperCarrierDiff`, `ProtocolRelationsNativeAssumptions.ofPaperCarrierDiff` | def | Theorem-Target | Canonical relations bundles from the paper-facing `paperCarrier`-difference route on the active Goldilocks path |
 | Constructors | `ProtocolRelationsAssumptions.ofLowNormAtLeastFive`, `ProtocolRelationsNativeAssumptions.ofLowNormAtLeastFive` | def | Theorem-Target | Canonical relations bundles from a stronger strict low-norm invertibility theorem with threshold at least `5` |
 | Theorems | `ccsRelation_of_assumptions` | theorem | Theorem-Target | Assumptions → ccsRelation |
 | Theorems | `ccsRelation_of_native_assumptions` | theorem | Theorem-Target | Native assumptions → ccsRelation |
+| Theorems | `ccsRelation_iff_protocolTargetProp` | theorem | Theorem-Target | `ccsRelation ↔ protocolTargetProp` |
+| Theorems | `ceRelation_iff` | theorem | Theorem-Target | `ceRelation ↔ ccsRelation ∧ ∃ tr, accepted` |
+| Theorems | `ceRelaxedRelation_iff` | theorem | Theorem-Target | `ceRelaxedRelation ↔ ccsRelation` |
+| Theorems | `ceRelation_of_ccsRelation` | theorem | Theorem-Target | CCS + witness → ceRelation |
+| Theorems | `ceRelation_of_ccsRelation_claimTrue` | theorem | Theorem-Target | CCS + claimTrue → ceRelation |
 | Theorems | `ceRelation_of_assumptions` | theorem | Theorem-Target | Assumptions + witness → ceRelation |
 | Theorems | `ceRelation_of_native_assumptions` | theorem | Theorem-Target | Native assumptions + witness → ceRelation |
 | Theorems | `ceRelation_of_claimTrue` | theorem | Theorem-Target | Assumptions + claimTrue → ceRelation |
 | Theorems | `ceRelation_of_native_claimTrue` | theorem | Theorem-Target | Native assumptions + claimTrue → ceRelation |
-| Theorems | `ceClaimTrue_of_ce` | theorem | Theorem-Target | Assumptions + ceRelation → claimTrue |
-| Theorems | `ceClaimTrue_of_native_ce` | theorem | Theorem-Target | Native assumptions + ceRelation → claimTrue |
+| Theorems | `ceClaimTrue_of_ce` | theorem | Theorem-Target | ceRelation → claimTrue |
+| Theorems | `ceClaimTrue_of_native_ce` | theorem | Theorem-Target | ceRelation → claimTrue |
 | Theorems | `ceRelaxedRelation_of_ce` | theorem | Theorem-Target | ceRelation → ceRelaxedRelation |
 | Witness | `SumCheckTransitionWitness.accepted_exists` | theorem | Theorem-Target | Witness → ∃ tr, accepted |
 
 ## Proof Obligations and Closure Plan
 
-All relation-level theorems proved, including native-path constructors. `ProtocolRelationsAssumptions` and `ProtocolRelationsNativeAssumptions` now bundle only the upstream protocol-target boundary; the claim-true/CE bridges use SumCheck's accepted SuperNeo-path constructive closure directly. Canonical constructors are available from an already-built protocol-target bundle, from the stricter paper-facing `paperCarrier` difference route for `ctx.invDelta`, and from the stronger strict low-norm invertibility theorem route.
+All relation-level theorems proved, including native-path constructors. `ProtocolRelationsAssumptions` and `ProtocolRelationsNativeAssumptions` now bundle only the upstream protocol-target boundary. The theorem-native entrypoints are `ccsRelation`, `ceRelation`, and `ceRelaxedRelation` themselves; the claim-true and witness bridges factor through those relations instead of rethreading assumption bundles. Canonical constructors are available from an already-built protocol-target bundle, from the stricter paper-facing `paperCarrier` difference route for `ctx.invDelta` using the proved Goldilocks invertibility theorem internally, and from the stronger strict low-norm invertibility theorem route.
 
 ## Assumption Ledger
 
@@ -72,7 +79,7 @@ Upstream dependencies:
 - `SuperNeo/SumCheck.lean`: imports `SumCheckInstance`, `SumCheckTranscript`, `SumCheckAccepted`, `SumCheckClaimTrue`, `sumcheckSoundness_constructive`, `sumcheckCompleteness_constructive`.
 
 Downstream consumers:
-- `SuperNeo/PiCCS.lean`: uses `ceRelation`, `ceRelation_of_assumptions`, `ceClaimTrue_of_ce`, `SumCheckTransitionWitness`, `sumcheckInstanceOfContext`.
+- `SuperNeo/PiCCS.lean`: uses `ceRelation`, `ceRelation_of_ccsRelation`, `ceClaimTrue_of_ce`, `SumCheckTransitionWitness`, `sumcheckInstanceOfContext`.
 - `SuperNeo/PiRLC.lean`: uses `ceRelaxedRelation`, `ceRelaxedRelation_of_ce`, `piCCSStrongStatement`.
 - `SuperNeo/PiDEC.lean`: uses `ceRelaxedRelation`, `piRLCWeakStatement`.
 - `SuperNeo/FoldingProtocol.lean`: imports ProtocolRelations for folding relation predicates.
@@ -84,7 +91,7 @@ Current scope complete. Relation predicates and theorems proved; assumption bund
 
 ## Quality Expectations
 
-Relation definitions must match paper CCS/CE semantics. Soundness/completeness bridges (`ceRelation_of_claimTrue`, `ceClaimTrue_of_ce`) must be proved.
+Relation definitions must match paper CCS/CE semantics. Soundness/completeness bridges (`ceRelation_of_ccsRelation_claimTrue`, `ceClaimTrue_of_ce`) must be proved.
 
 ## Acceptance Criteria
 
