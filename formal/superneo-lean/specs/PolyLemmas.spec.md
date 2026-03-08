@@ -31,15 +31,20 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 |---|---|---|---|---|
 | Eq-lift | `eqLiftFromTable` | def | Definitional | `Σ eq(x,z) · q(x)` |
 | Eq-lift | `eqLiftBooleanIndicator` | def | Definitional | Single-point check |
+| Eq-lift | `eqLiftBooleanIndicatorProp` | def | Definitional | Single-point proposition |
 | Eq-lift | `eqLiftAllBoolean` | def | Definitional | All-points check |
 | SZ bound | `schwartzZippelBoundLeOne` | def | Definitional | `d ≤ |S|` executable check |
 | SZ sound | `schwartzZippelBoundLeOne_sound` | theorem | Theorem-Target | `check = true → bound holds` |
 | SZ complete | `schwartzZippelBoundLeOne_complete` | theorem | Theorem-Target | `bound holds → check = true` |
+| Eq-lift bridge | `eqLiftBooleanIndicator_sound` | theorem | Theorem-Target | `Bool → Prop` |
+| Eq-lift bridge | `eqLiftBooleanIndicator_complete` | theorem | Theorem-Target | `Prop → Bool` |
+| Eq-lift bridge | `eqLiftBooleanIndicator_eq_true_iff` | theorem | Theorem-Target | Bool↔Prop closure |
+| SZ bridge | `schwartzZippelBoundLeOne_eq_true_iff_prop` | theorem | Theorem-Target | Bool↔Prop closure |
 | Sanity | `polyLemmaSanity` | def | Definitional | Cross-check harness |
 
 ## Proof Obligations and Closure Plan
 
-All obligations closed. Soundness and completeness of the SZ bound check are fully proved.
+Executable SZ and single-point eq-lift bridges are closed. The fully universal paper-style eq-lift theorem is still a separate stronger target if downstream work ever needs it.
 
 ## Assumption Ledger
 

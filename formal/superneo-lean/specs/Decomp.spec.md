@@ -42,6 +42,9 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 | Base-2 bounds | `splitBase2DigitsWithinBoundProp` | def | Definitional | All digits ≤ 1 |
 | Base-2 lift | `splitBase2Coeffs` | def | Definitional | Row-wise lift to vectors |
 | Base-2 lift | `recomposeBase2Coeffs` | def | Definitional | Row-wise recomposition |
+| Base-2 lift | `recomposeBase2Coeffs_splitBase2Coeffs_entry` | theorem | Theorem-Target | recomposed column equals canonical low part |
+| Base-2 lift | `recomposeBase2Coeffs_splitBase2Coeffs_eq_of_terminal_zero` | theorem | Theorem-Target | exact row-wise round-trip under terminal-zero |
+| Base-2 lift | `recomposeBase2Coeffs_splitBase2Coeffs_eq_of_val_lt_pow` | theorem | Theorem-Target | exact row-wise round-trip under range bound |
 | Base-2 lift | `splitBase2RowsWithinBoundProp` | def | Definitional | Row-wise digit bounds |
 | Balanced core | `splitBalancedScalar` | def | Definitional | Balanced-carry scalar split |
 | Balanced core | `splitBalancedVec` | def | Definitional | Row-wise balanced split |

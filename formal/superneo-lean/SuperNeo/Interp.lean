@@ -23,6 +23,29 @@ def interpolationAssumption : Prop :=
   ∀ xs ys coeffs : Array F, ∀ xEval expectedEval : F,
     interpolationProp xs ys coeffs xEval expectedEval
 
+theorem interpolationProp_intro
+  {xs ys coeffs : Array F}
+  {xEval expectedEval : F}
+  (hXY : xs.size = ys.size)
+  (hCoeffs : coeffs.size = xs.size)
+  (hEval : expectedEval = xEval) :
+  interpolationProp xs ys coeffs xEval expectedEval := by
+  exact ⟨hXY, hCoeffs, hEval⟩
+
+theorem interpolationProp_sizes
+  {xs ys coeffs : Array F}
+  {xEval expectedEval : F}
+  (hProp : interpolationProp xs ys coeffs xEval expectedEval) :
+  xs.size = ys.size ∧ coeffs.size = xs.size := by
+  exact ⟨hProp.1, hProp.2.1⟩
+
+theorem interpolationProp_eval_eq
+  {xs ys coeffs : Array F}
+  {xEval expectedEval : F}
+  (hProp : interpolationProp xs ys coeffs xEval expectedEval) :
+  expectedEval = xEval := by
+  exact hProp.2.2
+
 instance interpolationProp_decidable
   (xs ys expectedCoeffs : Array F)
   (evalPoint expectedEval : F) :
@@ -53,6 +76,20 @@ theorem interpolationCase_complete
   interpolationCase xs ys expectedCoeffs evalPoint expectedEval = true := by
   unfold interpolationCase
   exact decide_eq_true hProp
+
+theorem interpolationCase_eq_true_iff
+  {xs ys expectedCoeffs : Array F}
+  {evalPoint expectedEval : F} :
+  interpolationCase xs ys expectedCoeffs evalPoint expectedEval = true ↔
+    interpolationProp xs ys expectedCoeffs evalPoint expectedEval := by
+  constructor
+  · exact interpolationCase_sound
+  · exact interpolationCase_complete
+
+theorem not_interpolationAssumption : ¬ interpolationAssumption := by
+  intro h
+  have hBad := h #[] #[0] #[] (0 : F) (0 : F)
+  simp [interpolationProp] at hBad
 
 
 end SuperNeo

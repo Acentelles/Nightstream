@@ -5,6 +5,7 @@ import SuperNeo.Ring
 import SuperNeo.CoeffMaps
 import SuperNeo.Norm
 import SuperNeo.Decomp
+import SuperNeo.DecompBase2
 import SuperNeo.EqPoly
 import SuperNeo.MLE
 import SuperNeo.SumCheck

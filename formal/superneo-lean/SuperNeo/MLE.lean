@@ -206,6 +206,34 @@ def mleIdentity (v r : Array F) : Bool :=
   else
     decide (mleByInnerProduct v r = mleByFolding v r)
 
+theorem mleIdentity_sound
+  {v r : Array F}
+  (hOk : mleIdentity v r = true) :
+  v.size = 2 ^ r.size ∧ mleByInnerProduct v r = mleByFolding v r := by
+  unfold mleIdentity at hOk
+  by_cases hSize : v.size = 2 ^ r.size
+  ·
+    have hDec : decide (mleByInnerProduct v r = mleByFolding v r) = true := by
+      simpa [hSize] using hOk
+    exact ⟨hSize, decide_eq_true_eq.mp hDec⟩
+  · simp [hSize] at hOk
+
+theorem mleIdentity_complete
+  {v r : Array F}
+  (hProp : v.size = 2 ^ r.size ∧ mleByInnerProduct v r = mleByFolding v r) :
+  mleIdentity v r = true := by
+  rcases hProp with ⟨hSize, hEq⟩
+  unfold mleIdentity
+  simp [hSize, decide_eq_true hEq]
+
+theorem mleIdentity_eq_true_iff
+  {v r : Array F} :
+  mleIdentity v r = true ↔
+    v.size = 2 ^ r.size ∧ mleByInnerProduct v r = mleByFolding v r := by
+  constructor
+  · exact mleIdentity_sound
+  · exact mleIdentity_complete
+
 /-- Lightweight executable sanity check for generated-vector regression harnesses. -/
 def mleSanity : Bool :=
   let v := #[F.ofNat 3, F.ofNat 5, F.ofNat 7, F.ofNat 9]
@@ -575,7 +603,7 @@ private theorem eqPoly_split_head
         = eqTerm x[0]! y[0]! * eqPoly xTail yTail := hMain
     _ = eqTerm x[0]! y[0]! *
           (List.range (y.size - 1)).foldl
-            (fun acc i => acc * eqTerm (x.extract 1 y.size)[i]! (y.extract 1)[i]!) 1 := by
+            (fun acc i => acc * eqTerm (x.extract 1 y.size)[i]! (y.extract 1 y.size)[i]!) 1 := by
           simpa [xTail, yTail, n] using congrArg (fun t => eqTerm x[0]! y[0]! * t) hTailEq
 
 private theorem eqPoly_bits_even

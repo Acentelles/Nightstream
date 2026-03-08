@@ -4,7 +4,7 @@
 
 - **What it is**: A compact interpolation module providing the proposition `interpolationProp` (pointwise interpolation/evaluation agreement) and the executable checker `interpolationCase` with sound/complete bridges, used as an obligation carrier for protocol-level arithmetic.
 - **Key property**: `interpolationCase_sound`: `interpolationCase = true → interpolationProp` and `interpolationCase_complete`: `interpolationProp → interpolationCase = true`.
-- **Protocol role**: Interpolation obligations arise when the folding protocol needs to verify that a polynomial evaluates correctly at a given point. The `interpolationAssumption` boundary is consumed by arithmetic obligation statements that require evaluation-point agreement.
+- **Protocol role**: Interpolation obligations arise when the folding protocol needs to verify that a polynomial evaluates correctly at a given point. Arithmetic obligation statements should rely on local `interpolationProp` hypotheses or `interpolationCase_eq_true_iff`; the legacy universal `interpolationAssumption` surface is refuted and not part of the live theorem path.
 
 ## Target Formulas
 
@@ -28,21 +28,26 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 | Group | Lean symbol | Kind | Role | Guarantee |
 |---|---|---|---|---|
 | Proposition | `interpolationProp` | def | Definitional | Shape + evaluation agreement |
-| Boundary | `interpolationAssumption` | def | Boundary | Universal interpolation claim |
+| Boundary | `interpolationAssumption` | def | Legacy Boundary | Universal interpolation claim (refuted as stated) |
 | Executable | `interpolationCase` | def | Definitional | `decide interpolationProp` |
 | Sound | `interpolationCase_sound` | theorem | Theorem-Target | `Bool → Prop` |
 | Complete | `interpolationCase_complete` | theorem | Theorem-Target | `Prop → Bool` |
+| Bridge | `interpolationCase_eq_true_iff` | theorem | Theorem-Target | Bool↔Prop closure |
+| Structure | `interpolationProp_sizes` | theorem | Theorem-Target | extracts size equalities |
+| Structure | `interpolationProp_eval_eq` | theorem | Theorem-Target | extracts evaluation equality |
+| Refutation | `not_interpolationAssumption` | theorem | Theorem-Target | universal boundary is false as stated |
 
 ## Proof Obligations and Closure Plan
 
-Sound/complete bridges: closed.
+Sound/complete bridges are closed.
 
 Open obligations:
-- `interpolationAssumption`: universally quantified — intentionally left as boundary. Closure requires a polynomial interpolation theorem over the polynomial ring formalization.
+- `interpolationAssumption` should not be pursued as a theorem target in its current form; it is refuted in-module.
+- Downstream users should rely on local `interpolationProp` hypotheses or `interpolationCase_eq_true_iff` instead.
 
 ## Assumption Ledger
 
-- `interpolationAssumption` [Boundary]: polynomial interpolation correctness. Closure strategy: formalize Lagrange interpolation over F.
+- `interpolationAssumption` [Legacy Boundary / Refuted]: false as currently stated; do not thread it as a real closure target.
 
 ## Dependency and Consumer Map
 
@@ -54,11 +59,11 @@ Downstream consumers:
 
 ## Implementation Plan
 
-Full interpolation correctness (Lagrange interpolation formalization) is out of scope for this module.
+Full interpolation correctness (Lagrange interpolation formalization) is out of scope for this scaffold module. If needed later, it must be introduced under a different, semantically correct proposition.
 
 ## Quality Expectations
 
-Sound/complete pair must form a true biconditional. The module must not silently assume nontrivial mathematical content — the `interpolationAssumption` boundary makes the gap explicit.
+Sound/complete pair must form a true biconditional. The module must not silently assume nontrivial mathematical content; the old universal boundary is explicitly refuted.
 
 ## Acceptance Criteria
 

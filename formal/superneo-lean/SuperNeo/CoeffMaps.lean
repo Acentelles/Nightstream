@@ -53,6 +53,13 @@ theorem coeffMapRoundTrip_sound
   unfold coeffMapRoundTrip at hOk
   exact decide_eq_true_eq.mp hOk
 
+theorem coeffMapRoundTrip_complete
+  {v : Coeffs}
+  (hProp : coeffMapRoundTripProp v) :
+  coeffMapRoundTrip v = true := by
+  unfold coeffMapRoundTrip
+  exact decide_eq_true hProp
+
 theorem coeffMapRoundTrip_theorem (v : Coeffs) : coeffMapRoundTripProp v := by
   exact ⟨cfInv_cf v, cf_cfInv v⟩
 
@@ -60,7 +67,18 @@ theorem coeffMapRoundTrip_true (v : Coeffs) : coeffMapRoundTrip v = true := by
   unfold coeffMapRoundTrip
   exact decide_eq_true (coeffMapRoundTrip_theorem v)
 
+theorem coeffMapRoundTrip_eq_true_iff
+  {v : Coeffs} :
+  coeffMapRoundTrip v = true ↔ coeffMapRoundTripProp v := by
+  constructor
+  · exact coeffMapRoundTrip_sound
+  · exact coeffMapRoundTrip_complete
+
 theorem ct_cfInv_cf (v : Coeffs) : ct (cfInv (cf v)) = ct v := by
   simpa [cfInv_cf] using congrArg ct (cfInv_cf v)
+
+theorem ringMulShapeProp_cfInv_iff (a b : Array F) :
+  ringMulShapeProp (cfInv a) (cfInv b) ↔ ringMulShapeProp a b := by
+  rfl
 
 end SuperNeo

@@ -1,4 +1,4 @@
-import SuperNeo.Decomp
+import SuperNeo.DecompBase2
 
 /-!
 Contract interface for `SuperNeo.Decomp`.
@@ -41,6 +41,12 @@ abbrev bitAt_lt_two := SuperNeo.bitAt_lt_two
 abbrev splitBase2DecompositionNat := SuperNeo.splitBase2DecompositionNat
 abbrev splitBase2DigitsWithinBound := SuperNeo.splitBase2DigitsWithinBound
 abbrev splitBase2RowsWithinBound := SuperNeo.splitBase2RowsWithinBound
+abbrev recomposeBase2Coeffs_splitBase2Coeffs_entry :=
+  SuperNeo.recomposeBase2Coeffs_splitBase2Coeffs_entry
+abbrev recomposeBase2Coeffs_splitBase2Coeffs_eq_of_terminal_zero :=
+  SuperNeo.recomposeBase2Coeffs_splitBase2Coeffs_eq_of_terminal_zero
+abbrev recomposeBase2Coeffs_splitBase2Coeffs_eq_of_val_lt_pow :=
+  SuperNeo.recomposeBase2Coeffs_splitBase2Coeffs_eq_of_val_lt_pow
 
 /-! ## Balanced Decomposition Theorem Surfaces -/
 

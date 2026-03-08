@@ -47,6 +47,15 @@ abbrev ct_cf := SuperNeo.ct_cf
 /-- [Role: Theorem-Target] Curated theorem surface `ct_cfInv`. -/
 abbrev ct_cfInv := SuperNeo.ct_cfInv
 
+/-- [Role: Theorem-Target] Curated theorem surface `coeffMapRoundTrip_complete`. -/
+abbrev coeffMapRoundTrip_complete := SuperNeo.coeffMapRoundTrip_complete
+
+/-- [Role: Theorem-Target] Curated theorem surface `coeffMapRoundTrip_eq_true_iff`. -/
+abbrev coeffMapRoundTrip_eq_true_iff := SuperNeo.coeffMapRoundTrip_eq_true_iff
+
+/-- [Role: Theorem-Target] Curated theorem surface `ringMulShapeProp_cfInv_iff`. -/
+abbrev ringMulShapeProp_cfInv_iff := SuperNeo.ringMulShapeProp_cfInv_iff
+
 end CoeffMapsInterface
 
 end SuperNeo

@@ -37,11 +37,15 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 | Evaluators | `mleInnerProductForm` | def | Definitional | Unguarded sum form |
 | Evaluators | `mleByInnerProduct` | def | Definitional | Inner-product route |
 | Evaluators | `mleByFolding`, `mleByFoldingExec` | def | Definitional | Iterative folding route |
+| Executable check | `mleIdentity` | def | Definitional | executable inner-vs-folding identity check |
 | Chi weights | `chiWeight`, `chi` | def | Definitional | Basis-weight selector |
 | Chi dot | `mleViaChiDot`, `dot` | def | Definitional | Chi/dot evaluation route |
 | Table ops | `linComb` | def | Definitional | `f + δ·g` pointwise |
 | Compatibility | `rHat` | def | Definitional | Compatibility vector |
 | Identity | `mleEval_eq_innerProductForm_of_size` | theorem | Theorem-Target | Exec = sum when `|f| = 2^|r|` |
+| Executable check | `mleIdentity_sound` | theorem | Theorem-Target | `mleIdentity = true → size guard ∧ inner = folding` |
+| Executable check | `mleIdentity_complete` | theorem | Theorem-Target | proposition implies `mleIdentity = true` |
+| Executable check | `mleIdentity_eq_true_iff` | theorem | Theorem-Target | Bool↔Prop closure for executable identity |
 | Folding equiv | `mleByInnerProduct_eq_mleByFolding_of_size` | theorem | Theorem-Target | Inner = folding |
 | Chi equiv | `mleInnerProductForm_eq_mleViaChiDot_of_size` | theorem | Theorem-Target | Sum = chi/dot |
 | Linearity | `mleEval_linComb_of_assumptions` | theorem | Theorem-Target | Table-linear under packages |

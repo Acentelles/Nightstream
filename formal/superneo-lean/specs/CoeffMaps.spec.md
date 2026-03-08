@@ -42,10 +42,13 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 | Shape | `ringMulShapeProp_cf_iff` | theorem | Theorem-Target | Multiplication shape preserved |
 | Bundle | `coeffMapRoundTripProp` | def | Definitional | Conjunction of both round-trips |
 | Bundle | `coeffMapRoundTrip_theorem` | theorem | Theorem-Target | `coeffMapRoundTripProp v` for all `v` |
+| Bundle | `coeffMapRoundTrip_complete` | theorem | Theorem-Target | `coeffMapRoundTripProp v → coeffMapRoundTrip v = true` |
+| Bundle | `coeffMapRoundTrip_eq_true_iff` | theorem | Theorem-Target | executable round-trip iff proposition |
+| Shape | `ringMulShapeProp_cfInv_iff` | theorem | Theorem-Target | multiplication shape preserved through `cfInv` |
 
 ## Proof Obligations and Closure Plan
 
-All obligations closed. Every theorem reduces to `rfl` since `cf` and `cfInv` are the identity function on the shared representation.
+All obligations closed. The remaining useful closure is the full Bool↔Prop round-trip surface around `coeffMapRoundTrip`.
 
 ## Assumption Ledger
 

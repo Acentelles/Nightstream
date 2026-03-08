@@ -80,6 +80,15 @@ abbrev linComb_size := SuperNeo.linComb_size
 /-- [Role: Theorem-Target] Package-level executable-vs-sum identity is closed. -/
 abbrev mleIdentityAssumption_holds := SuperNeo.mleIdentityAssumption_holds
 
+/-- [Role: Theorem-Target] Executable identity check is sound. -/
+abbrev mleIdentity_sound := SuperNeo.mleIdentity_sound
+
+/-- [Role: Theorem-Target] Executable identity check is complete. -/
+abbrev mleIdentity_complete := SuperNeo.mleIdentity_complete
+
+/-- [Role: Theorem-Target] Executable identity check iff theorem. -/
+abbrev mleIdentity_eq_true_iff := SuperNeo.mleIdentity_eq_true_iff
+
 /-- [Role: Theorem-Target] Size-guarded identity between theorem-facing inner and folding forms. -/
 abbrev mleByInnerProduct_eq_mleByFolding_of_size :=
   SuperNeo.mleByInnerProduct_eq_mleByFolding_of_size
