@@ -10,6 +10,26 @@ pub enum DecompStyle {
     NonNegative,
 }
 
+#[inline]
+fn balanced_digit_and_next(a: i64, b_i64: i64) -> (i64, i64) {
+    debug_assert!(b_i64 >= 2);
+    let half = b_i64 / 2;
+    let residue = a.rem_euclid(b_i64);
+    let digit = if residue < half {
+        residue
+    } else if residue == half {
+        if a < 0 {
+            residue - b_i64
+        } else {
+            residue
+        }
+    } else {
+        residue - b_i64
+    };
+    let next = (a - digit) / b_i64;
+    (digit, next)
+}
+
 /// decomp_b: vector z ∈ F_q^m → Z ∈ F_q^{d×m} with ||Z||_∞ < b (Def. 11).
 #[allow(non_snake_case)]
 pub fn decomp_b(z: &[Fq], b: u32, d: usize, style: DecompStyle) -> Vec<Fq> {
@@ -81,26 +101,18 @@ pub fn decomp_b(z: &[Fq], b: u32, d: usize, style: DecompStyle) -> Vec<Fq> {
             }
         }
         DecompStyle::Balanced => {
-            // Balanced in [-(b-1)..(b-1)]; choose residue with smallest absolute value.
-            let half = b_i64 / 2;
             for &zij in z {
                 let mut a = to_balanced_i64(zij);
                 for _ in 0..d {
                     // Constant-time: always compute digit even if a == 0 to prevent timing side-channel
-                    let mut r = a % b_i64;
-                    if r > half {
-                        r -= b_i64;
-                    }
-                    if r < -half {
-                        r += b_i64;
-                    }
-                    let digit = r as i32;
+                    let (digit_i64, next_a) = balanced_digit_and_next(a, b_i64);
+                    let digit = digit_i64 as i32;
                     Z.push(if digit >= 0 {
                         Fq::from_u64(digit as u64)
                     } else {
                         Fq::ZERO - Fq::from_u64((-digit) as u64)
                     });
-                    a = (a - r) / b_i64; // if a was 0 this just propagates zeros
+                    a = next_a; // if a was 0 this just propagates zeros
                 }
                 // remaining digits already zero
             }
@@ -225,8 +237,6 @@ pub fn decomp_b_row_major_into(z: &[Fq], b: u32, d: usize, style: DecompStyle, o
                 }
             }
             DecompStyle::Balanced => {
-                let one = Fq::ONE;
-                let neg_one = Fq::ZERO - one;
                 for row in 0..d {
                     let mut any_next_nonzero = false;
                     for a in a_vals.iter_mut() {
@@ -234,20 +244,14 @@ pub fn decomp_b_row_major_into(z: &[Fq], b: u32, d: usize, style: DecompStyle, o
                             out.push(Fq::ZERO);
                             continue;
                         }
-                        let mut r = *a % 3;
-                        if r > 1 {
-                            r -= 3;
-                        }
-                        if r < -1 {
-                            r += 3;
-                        }
-                        out.push(match r {
+                        let (digit, next_a) = balanced_digit_and_next(*a, 3);
+                        out.push(match digit {
                             -1 => neg_one,
                             0 => Fq::ZERO,
                             1 => one,
                             _ => unreachable!("balanced mod 3 digit must be -1/0/1"),
                         });
-                        *a = (*a - r) / 3;
+                        *a = next_a;
                         any_next_nonzero |= *a != 0;
                     }
                     if !any_next_nonzero {
@@ -297,8 +301,6 @@ pub fn decomp_b_row_major_into(z: &[Fq], b: u32, d: usize, style: DecompStyle, o
             }
         }
         DecompStyle::Balanced => {
-            // Balanced in [-(b-1)..(b-1)]; choose residue with smallest absolute value.
-            let half = b_i64 / 2;
             for row in 0..d {
                 let mut any_next_nonzero = false;
                 for a in a_vals.iter_mut() {
@@ -306,20 +308,14 @@ pub fn decomp_b_row_major_into(z: &[Fq], b: u32, d: usize, style: DecompStyle, o
                         out.push(Fq::ZERO);
                         continue;
                     }
-                    let mut r = *a % b_i64;
-                    if r > half {
-                        r -= b_i64;
-                    }
-                    if r < -half {
-                        r += b_i64;
-                    }
-                    let digit = r as i32;
+                    let (digit_i64, next_a) = balanced_digit_and_next(*a, b_i64);
+                    let digit = digit_i64 as i32;
                     out.push(if digit >= 0 {
                         Fq::from_u64(digit as u64)
                     } else {
                         Fq::ZERO - Fq::from_u64((-digit) as u64)
                     });
-                    *a = (*a - r) / b_i64;
+                    *a = next_a;
                     any_next_nonzero |= *a != 0;
                 }
                 if !any_next_nonzero {
