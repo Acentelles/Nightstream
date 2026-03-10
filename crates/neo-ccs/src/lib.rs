@@ -27,8 +27,6 @@ pub mod traits;
 /// Utility functions for tensor products and matrix operations.
 pub mod utils;
 
-// Tests are now in tests/ccs_property_tests.rs as integration tests
-
 // Re-export core types
 pub use error::{CcsError, DimMismatch, RelationError};
 pub use matrix::{CsrMatrix, Mat, MatRef};
@@ -36,7 +34,7 @@ pub use poly::{SparsePoly, Term};
 pub use r1cs::r1cs_to_ccs;
 pub use sparse::{CcsMatrix, CscMat, SparseCache};
 
-// 🔒 SECURITY FIX: Use the cancellation-resistant implementation from utils
+// Cancellation-resistant direct sum (recommended for production)
 pub use utils::direct_sum_transcript_mixed;
 // Main CCS types and functions (audit-ready)
 pub use relations::{
