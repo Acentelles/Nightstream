@@ -172,6 +172,7 @@ fn minimal_bus_steps(
         ell: shout_ell,
         table_spec: None,
         table: Vec::new(),
+        table_digest: None,
         addr_group: None,
         selector_group: None,
     };
@@ -186,6 +187,8 @@ fn minimal_bus_steps(
         lanes: 1,
         ell: twist_ell,
         init: MemInit::Zero,
+        init_digest: None,
+        guest_addr_remap: None,
     };
 
     let mut step: StepInstanceBundle<Commitment, F, K> = StepInstanceBundle::from(mcs_inst);

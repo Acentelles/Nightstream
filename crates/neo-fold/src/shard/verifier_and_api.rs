@@ -424,6 +424,9 @@ where
 
         let include_ob = ob_cfg.is_some() && (idx + 1 == steps.len());
         let mut ob_state: Option<neo_memory::output_check::OutputSumcheckState> = None;
+        let mut ob_sparse_addr_weights: Option<Vec<(Vec<K>, K)>> = None;
+        let mut ob_sparse_val_offset: Option<K> = None;
+        let mut ob_reg_exact_linkage_degree_bound: Option<usize> = None;
         let mut ob_inc_total_degree_bound: Option<usize> = None;
 
         if include_ob {
@@ -457,20 +460,47 @@ where
                     cfg.num_bits, ell_addr
                 )));
             }
+            if mem_inst.mem_id == neo_memory::riscv::lookups::REG_EXACT_ID.0 {
+                ob_reg_exact_linkage_degree_bound =
+                    Some(crate::memory_sidecar::memory::RV64_REG_EXACT_LINKAGE_DEGREE_BOUND);
+            }
 
             tr.append_message(b"shard/output_binding_start", &(step_idx as u64).to_le_bytes());
             tr.append_u64s(b"output_binding/mem_idx", &[cfg.mem_idx as u64]);
             tr.append_u64s(b"output_binding/num_bits", &[cfg.num_bits as u64]);
 
-            let state = neo_memory::output_check::verify_output_sumcheck_rounds_get_state(
-                tr,
-                cfg.num_bits,
-                cfg.program_io.clone(),
-                &ob_proof.output_sc,
-            )
-            .map_err(|e| PiCcsError::ProtocolError(format!("output sumcheck failed: {e:?}")))?;
+            let use_dense_output_sumcheck = cfg.num_bits <= neo_memory::output_check::OUTPUT_SUMCHECK_MAX_NUM_BITS;
+            if use_dense_output_sumcheck {
+                let state = neo_memory::output_check::verify_output_sumcheck_rounds_get_state(
+                    tr,
+                    cfg.num_bits,
+                    cfg.program_io.clone(),
+                    &ob_proof.output_sc,
+                )
+                .map_err(|e| PiCcsError::ProtocolError(format!("output sumcheck failed: {e:?}")))?;
+                ob_state = Some(state);
+            } else {
+                if !ob_proof.output_sc.round_polys.is_empty() {
+                    return Err(PiCcsError::ProtocolError(
+                        "output sparse binding expects empty output sumcheck rounds".into(),
+                    ));
+                }
+                let sampled = crate::output_binding::sample_output_lincomb_weights(tr, &cfg.program_io);
+                let mut addr_weights = Vec::with_capacity(sampled.len());
+                let mut val_offset = K::ZERO;
+                for (addr, claimed_value, alpha) in sampled {
+                    let addr_bits = crate::output_binding::addr_bits_as_k(addr, cfg.num_bits);
+                    let val_init =
+                        crate::output_binding::val_init_from_mem_init(&mem_inst.init, mem_inst.k, &addr_bits)
+                            .map_err(|e| PiCcsError::ProtocolError(format!("MemInit eval failed: {e:?}")))?;
+                    addr_weights.push((addr_bits, alpha));
+                    let claimed_k: K = claimed_value.into();
+                    val_offset += alpha * (val_init - claimed_k);
+                }
+                ob_sparse_addr_weights = Some(addr_weights);
+                ob_sparse_val_offset = Some(val_offset);
+            }
             ob_inc_total_degree_bound = Some(2 + ell_addr);
-            ob_state = Some(state);
         }
 
         let mcs_inst = &step.mcs_inst;
@@ -624,6 +654,12 @@ where
         }
         tr.append_fields(b"sumcheck/initial_sum", &claimed_initial.as_coeffs());
 
+        let poseidon_runtime = prepare_poseidon_verifier_runtime(tr, step, step_proof, step_idx)?;
+        let poseidon_cycle_enabled = poseidon_runtime.cycle_enabled;
+        let poseidon_verify_setup = poseidon_runtime.verify_setup;
+        let poseidon_link_chals = poseidon_runtime.link_chals;
+        let poseidon_cont_chals = poseidon_runtime.cont_chals;
+
         // Route A memory checks use a separate transcript-derived cycle point `r_cycle`
         // to form χ_{r_cycle}(t) weights inside their sum-check polynomials.
         let route_steps = {
@@ -653,7 +689,11 @@ where
         let wb_enabled = crate::memory_sidecar::memory::wb_wp_required_for_step_instance(step);
         let wp_enabled = crate::memory_sidecar::memory::wb_wp_required_for_step_instance(step);
         let decode_stage_enabled = crate::memory_sidecar::memory::decode_stage_required_for_step_instance(step);
-        let width_stage_enabled = crate::memory_sidecar::memory::width_stage_required_for_step_instance(step);
+        let width_stage_enabled = crate::memory_sidecar::memory::width_stage_required_for_step_instance(step)
+            || crate::memory_sidecar::memory::rv64_fullword_width_stage_required_from_proof(
+                step,
+                &step_proof.batched_time,
+            );
         let control_stage_enabled = crate::memory_sidecar::memory::control_stage_required_for_step_instance(step);
         let crate::memory_sidecar::route_a_time::RouteABatchedTimeVerifyOutput {
             r_time: route_r_time,
@@ -669,6 +709,8 @@ where
             decode_stage_enabled,
             width_stage_enabled,
             control_stage_enabled,
+            poseidon_cycle_enabled,
+            ob_reg_exact_linkage_degree_bound,
             ob_inc_total_degree_bound,
         )?;
         if route_r_time.len() != ell_t {
@@ -678,6 +720,14 @@ where
                 route_r_time.len()
             )));
         }
+
+        let poseidon_local_checked =
+            verify_poseidon_local_time_from_setup(tr, step_proof, step_idx, &poseidon_verify_setup)?;
+        ensure_poseidon_link_sums_match_verify(
+            poseidon_cycle_enabled,
+            &step_proof.batched_time,
+            step_proof.poseidon_local_time.as_ref(),
+        )?;
 
         // CCS proof structure consistency.
         let want_rounds_total = ell_n + ell_d;
@@ -1006,6 +1056,10 @@ where
             &r_cycle,
             &final_values,
             &step_proof.batched_time.claimed_sums,
+            crate::memory_sidecar::memory::rv64_fullword_width_stage_required_from_proof(
+                step,
+                &step_proof.batched_time,
+            ),
             0,
             &step_proof.mem,
             &step_proof.fold.openings,
@@ -1013,9 +1067,20 @@ where
             &shout_pre,
             &twist_pre,
             step_idx,
+            poseidon_link_chals.as_ref(),
+            poseidon_cont_chals.as_ref(),
         )?;
 
-        let expected_consumed = if include_ob {
+        let exact_reg_output_binding_active = include_ob
+            && ob_cfg
+                .map(|cfg| step.mem_insts[cfg.mem_idx].mem_id == neo_memory::riscv::lookups::REG_EXACT_ID.0)
+                .unwrap_or(false);
+        let expected_consumed = if exact_reg_output_binding_active {
+            final_values
+                .len()
+                .checked_sub(2)
+                .ok_or_else(|| PiCcsError::ProtocolError("missing output binding claims".into()))?
+        } else if include_ob {
             final_values
                 .len()
                 .checked_sub(1)
@@ -1029,19 +1094,60 @@ where
                 idx, mem_out.claim_idx_end, expected_consumed
             )));
         }
+        if let Some((r_local, local_final_values, local_anchor)) = poseidon_local_checked.as_ref() {
+            crate::memory_sidecar::memory::verify_route_a_poseidon_local_terminals(
+                s.t(),
+                ell_n,
+                r_local,
+                local_anchor,
+                local_final_values,
+                &step_proof.mem,
+                poseidon_link_chals.as_ref(),
+            )?;
+        }
 
         if include_ob {
             let cfg =
                 ob_cfg.ok_or_else(|| PiCcsError::InvalidInput("output binding enabled but config missing".into()))?;
-            let ob_state = ob_state
-                .take()
-                .ok_or_else(|| PiCcsError::ProtocolError("output sumcheck state missing".into()))?;
+            let use_dense_output_sumcheck = cfg.num_bits <= neo_memory::output_check::OUTPUT_SUMCHECK_MAX_NUM_BITS;
 
             let inc_idx = final_values
                 .len()
                 .checked_sub(1)
                 .ok_or_else(|| PiCcsError::ProtocolError("missing inc_total claim".into()))?;
-            if step_proof.batched_time.labels.get(inc_idx).copied() != Some(crate::output_binding::OB_INC_TOTAL_LABEL) {
+            if exact_reg_output_binding_active {
+                let exact_idx = inc_idx
+                    .checked_sub(1)
+                    .ok_or_else(|| PiCcsError::ProtocolError("missing reg_exact linkage claim".into()))?;
+                if step_proof
+                    .batched_time
+                    .labels
+                    .get(exact_idx)
+                    .map(|l| l.as_slice())
+                    != Some(crate::output_binding::OB_REG_EXACT_LINKAGE_LABEL)
+                {
+                    return Err(PiCcsError::ProtocolError(
+                        "output binding exact-register linkage claim must be penultimate".into(),
+                    ));
+                }
+                crate::memory_sidecar::memory::verify_rv64_reg_exact_output_linkage_terminal(
+                    step,
+                    &route_r_time,
+                    &r_cycle,
+                    &final_values,
+                    exact_idx,
+                    &step_proof.fold.openings,
+                    &mem_out.twist_time_openings,
+                    cfg.mem_idx,
+                )?;
+            }
+            if step_proof
+                .batched_time
+                .labels
+                .get(inc_idx)
+                .map(|l| l.as_slice())
+                != Some(crate::output_binding::OB_INC_TOTAL_LABEL)
+            {
                 return Err(PiCcsError::ProtocolError("output binding claim not last".into()));
             }
 
@@ -1058,39 +1164,62 @@ where
                 .twist_time_openings
                 .get(cfg.mem_idx)
                 .ok_or_else(|| PiCcsError::ProtocolError("missing twist_time_openings for mem_idx".into()))?;
-            let inc_terminal = crate::output_binding::inc_terminal_from_time_openings(twist_open, &ob_state.r_prime)
-                .map_err(|e| PiCcsError::ProtocolError(format!("inc_total terminal mismatch: {e:?}")))?;
-            if inc_total_final != inc_terminal {
-                return Err(PiCcsError::ProtocolError("inc_total terminal mismatch".into()));
-            }
+            if use_dense_output_sumcheck {
+                let ob_state = ob_state
+                    .take()
+                    .ok_or_else(|| PiCcsError::ProtocolError("output sumcheck state missing".into()))?;
+                let inc_terminal =
+                    crate::output_binding::inc_terminal_from_time_openings(twist_open, &ob_state.r_prime)
+                        .map_err(|e| PiCcsError::ProtocolError(format!("inc_total terminal mismatch: {e:?}")))?;
+                if inc_total_final != inc_terminal {
+                    return Err(PiCcsError::ProtocolError("inc_total terminal mismatch".into()));
+                }
 
-            let mem_inst = step
-                .mem_insts
-                .get(cfg.mem_idx)
-                .ok_or_else(|| PiCcsError::InvalidInput("output binding mem_idx out of range".into()))?;
-            let expected_k = 1usize
-                .checked_shl(cfg.num_bits as u32)
-                .ok_or_else(|| PiCcsError::InvalidInput("output binding: 2^num_bits overflow".into()))?;
-            if mem_inst.k != expected_k {
-                return Err(PiCcsError::InvalidInput(format!(
-                    "output binding: cfg.num_bits implies k={}, but mem_inst.k={}",
-                    expected_k, mem_inst.k
-                )));
-            }
-            let ell_addr = mem_inst.twist_layout().lanes[0].ell_addr;
-            if ell_addr != cfg.num_bits {
-                return Err(PiCcsError::InvalidInput(format!(
-                    "output binding: cfg.num_bits={}, but twist_layout.ell_addr={}",
-                    cfg.num_bits, ell_addr
-                )));
-            }
-            let val_init = crate::output_binding::val_init_from_mem_init(&mem_inst.init, mem_inst.k, &ob_state.r_prime)
-                .map_err(|e| PiCcsError::ProtocolError(format!("MemInit eval failed: {e:?}")))?;
-
-            let val_final_at_r_prime = val_init + inc_total_claim;
-            let expected_out = ob_state.eq_eval * ob_state.io_mask_eval * (val_final_at_r_prime - ob_state.val_io_eval);
-            if expected_out != ob_state.output_final {
-                return Err(PiCcsError::ProtocolError("output binding final check failed".into()));
+                let mem_inst = step
+                    .mem_insts
+                    .get(cfg.mem_idx)
+                    .ok_or_else(|| PiCcsError::InvalidInput("output binding mem_idx out of range".into()))?;
+                let expected_k = 1usize
+                    .checked_shl(cfg.num_bits as u32)
+                    .ok_or_else(|| PiCcsError::InvalidInput("output binding: 2^num_bits overflow".into()))?;
+                if mem_inst.k != expected_k {
+                    return Err(PiCcsError::InvalidInput(format!(
+                        "output binding: cfg.num_bits implies k={}, but mem_inst.k={}",
+                        expected_k, mem_inst.k
+                    )));
+                }
+                let ell_addr = mem_inst.twist_layout().lanes[0].ell_addr;
+                if ell_addr != cfg.num_bits {
+                    return Err(PiCcsError::InvalidInput(format!(
+                        "output binding: cfg.num_bits={}, but twist_layout.ell_addr={}",
+                        cfg.num_bits, ell_addr
+                    )));
+                }
+                let val_init =
+                    crate::output_binding::val_init_from_mem_init(&mem_inst.init, mem_inst.k, &ob_state.r_prime)
+                        .map_err(|e| PiCcsError::ProtocolError(format!("MemInit eval failed: {e:?}")))?;
+                let val_final_at_r_prime = val_init + inc_total_claim;
+                let expected_out =
+                    ob_state.eq_eval * ob_state.io_mask_eval * (val_final_at_r_prime - ob_state.val_io_eval);
+                if expected_out != ob_state.output_final {
+                    return Err(PiCcsError::ProtocolError("output binding final check failed".into()));
+                }
+            } else {
+                let addr_weights = ob_sparse_addr_weights
+                    .take()
+                    .ok_or_else(|| PiCcsError::ProtocolError("output sparse addr/weight set missing".into()))?;
+                let val_offset = ob_sparse_val_offset
+                    .take()
+                    .ok_or_else(|| PiCcsError::ProtocolError("output sparse value offset missing".into()))?;
+                let inc_terminal =
+                    crate::output_binding::weighted_inc_terminal_from_time_openings(twist_open, &addr_weights)
+                        .map_err(|e| PiCcsError::ProtocolError(format!("inc_total terminal mismatch: {e:?}")))?;
+                if inc_total_final != inc_terminal {
+                    return Err(PiCcsError::ProtocolError("inc_total terminal mismatch".into()));
+                }
+                if val_offset + inc_total_claim != K::ZERO {
+                    return Err(PiCcsError::ProtocolError("output sparse final check failed".into()));
+                }
             }
         }
 
@@ -1273,6 +1402,19 @@ where
                 val_lane_obligations.extend_from_slice(&proof.dec_children);
             }
         }
+
+        verify_poseidon_fold_lanes(
+            tr,
+            params,
+            &s,
+            &ring,
+            ell_d,
+            mixers,
+            step_idx,
+            idx,
+            step_proof,
+            &mut val_lane_obligations,
+        )?;
 
         if has_stage8_artifacts || requires_stage8_openings {
             validate_step_time_opening_batches_with_transcript(tr, params, step_idx, step, step_proof, &cpu_bus)?;

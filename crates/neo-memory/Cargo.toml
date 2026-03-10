@@ -9,6 +9,7 @@ description = "Memory and Lookup arguments (Twist/Shout) for Neo"
 [features]
 default = []
 debug-logs = ["neo-reductions/debug-logs"]
+poseidon-precompile = []
 
 [dependencies]
 serde = { workspace = true }
@@ -23,6 +24,13 @@ neo-reductions = { path = "../neo-reductions" }
 p3-field = { workspace = true }
 p3-matrix = { workspace = true }
 p3-goldilocks = { workspace = true }
+p3-symmetric = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rayon = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { workspace = true, features = ["wasm_js"] }
 
 [dev-dependencies]
 rand = { workspace = true }

@@ -9,25 +9,24 @@ pub(crate) fn bind_shout_table_spec(tr: &mut Poseidon2Transcript, spec: &Option<
         return;
     };
 
-    tr.append_message(b"shout/table_spec/tag", &[1u8]);
     match spec {
         LutTableSpec::RiscvOpcode { opcode, xlen } => {
             let opcode_id = neo_memory::riscv::lookups::RiscvShoutTables::new(*xlen)
                 .opcode_to_id(*opcode)
                 .0 as u64;
-
-            tr.append_message(b"shout/table_spec/riscv/tag", &[1u8]);
-            tr.append_message(b"shout/table_spec/riscv/opcode_id", &opcode_id.to_le_bytes());
-            tr.append_message(b"shout/table_spec/riscv/xlen", &(*xlen as u64).to_le_bytes());
+            tr.append_u64s(
+                b"shout/table_spec/meta_u64",
+                &[1u64 /* riscv */, opcode_id, *xlen as u64, 0u64],
+            );
         }
         LutTableSpec::RiscvOpcodePacked { opcode, xlen } => {
             let opcode_id = neo_memory::riscv::lookups::RiscvShoutTables::new(*xlen)
                 .opcode_to_id(*opcode)
                 .0 as u64;
-
-            tr.append_message(b"shout/table_spec/riscv_packed/tag", &[1u8]);
-            tr.append_message(b"shout/table_spec/riscv_packed/opcode_id", &opcode_id.to_le_bytes());
-            tr.append_message(b"shout/table_spec/riscv_packed/xlen", &(*xlen as u64).to_le_bytes());
+            tr.append_u64s(
+                b"shout/table_spec/meta_u64",
+                &[2u64 /* riscv_packed */, opcode_id, *xlen as u64, 0u64],
+            );
         }
         LutTableSpec::RiscvOpcodeEventTablePacked {
             opcode,
@@ -37,23 +36,33 @@ pub(crate) fn bind_shout_table_spec(tr: &mut Poseidon2Transcript, spec: &Option<
             let opcode_id = neo_memory::riscv::lookups::RiscvShoutTables::new(*xlen)
                 .opcode_to_id(*opcode)
                 .0 as u64;
-
-            tr.append_message(b"shout/table_spec/riscv_event_table_packed/tag", &[1u8]);
-            tr.append_message(
-                b"shout/table_spec/riscv_event_table_packed/opcode_id",
-                &opcode_id.to_le_bytes(),
-            );
-            tr.append_message(
-                b"shout/table_spec/riscv_event_table_packed/xlen",
-                &(*xlen as u64).to_le_bytes(),
-            );
-            tr.append_message(
-                b"shout/table_spec/riscv_event_table_packed/time_bits",
-                &(*time_bits as u64).to_le_bytes(),
+            tr.append_u64s(
+                b"shout/table_spec/meta_u64",
+                &[
+                    3u64, /* riscv_event_table_packed */
+                    opcode_id,
+                    *xlen as u64,
+                    *time_bits as u64,
+                ],
             );
         }
         LutTableSpec::IdentityU32 => {
-            tr.append_message(b"shout/table_spec/identity_u32/tag", &[1u8]);
+            tr.append_u64s(b"shout/table_spec/meta_u64", &[4u64 /* identity_u32 */, 0, 0, 0]);
+        }
+    }
+}
+
+#[inline]
+fn compute_mem_init_digest(init: &MemInit<F>) -> [u8; 32] {
+    match init {
+        MemInit::Zero => digest_fields(b"twist/init/zero", &[]),
+        MemInit::Sparse(pairs) => {
+            let mut fs = Vec::with_capacity(2 * pairs.len());
+            for (addr, val) in pairs.iter() {
+                fs.push(F::from_u64(*addr));
+                fs.push(*val);
+            }
+            digest_fields(b"twist/init/sparse", &fs)
         }
     }
 }
@@ -64,57 +73,87 @@ where
     MI: ExactSizeIterator<Item = &'a MemInstance<Cmt, F>>,
 {
     tr.append_message(b"step/absorb_memory_start", &[]);
-    tr.append_message(b"step/lut_count", &(lut_insts.len() as u64).to_le_bytes());
+    tr.append_u64s(b"step/lut_count", &[lut_insts.len() as u64]);
     for (i, inst) in lut_insts.by_ref().enumerate() {
         // Bind public LUT parameters before any challenges.
-        tr.append_message(b"step/lut_idx", &(i as u64).to_le_bytes());
-        tr.append_message(b"shout/table_id", &(inst.table_id as u64).to_le_bytes());
-        tr.append_message(b"shout/k", &(inst.k as u64).to_le_bytes());
-        tr.append_message(b"shout/d", &(inst.d as u64).to_le_bytes());
-        tr.append_message(b"shout/n_side", &(inst.n_side as u64).to_le_bytes());
-        tr.append_message(b"shout/steps", &(inst.steps as u64).to_le_bytes());
-        tr.append_message(b"shout/ell", &(inst.ell as u64).to_le_bytes());
-        tr.append_message(b"shout/lanes", &(inst.lanes.max(1) as u64).to_le_bytes());
+        tr.append_u64s(
+            b"step/lut_meta_u64",
+            &[
+                i as u64,
+                inst.table_id as u64,
+                inst.k as u64,
+                inst.d as u64,
+                inst.n_side as u64,
+                inst.steps as u64,
+                inst.ell as u64,
+                inst.lanes.max(1) as u64,
+            ],
+        );
         bind_shout_table_spec(tr, &inst.table_spec);
         let table_digest = digest_fields(b"shout/table", &inst.table);
-        tr.append_message(b"shout/table_digest", &table_digest);
+        tr.append_bytes_packed(b"shout/table_digest", &table_digest);
 
         // Bind commitments so Route-A challenges (r_cycle, addr/time points) are sampled after them.
-        tr.append_message(b"shout/comms_len", &(inst.comms.len() as u64).to_le_bytes());
-        for (j, comm) in inst.comms.iter().enumerate() {
-            tr.append_message(b"shout/comm_idx", &(j as u64).to_le_bytes());
-            tr.append_fields(b"shout/comm_data", &comm.data);
+        tr.append_u64s(b"shout/comms_len", &[inst.comms.len() as u64]);
+        if !inst.comms.is_empty() {
+            let comm_lens: Vec<u64> = inst
+                .comms
+                .iter()
+                .map(|comm| comm.data.len() as u64)
+                .collect();
+            tr.append_u64s(b"shout/comm_lens", &comm_lens);
+            let total_fields = inst.comms.iter().map(|comm| comm.data.len()).sum::<usize>();
+            #[cfg(debug_assertions)]
+            {
+                let lens_sum: usize = comm_lens.iter().map(|&x| x as usize).sum();
+                debug_assert_eq!(lens_sum, total_fields, "shout/comm_lens sum mismatch");
+            }
+            tr.append_fields_iter(
+                b"shout/comm_data_flat",
+                total_fields,
+                inst.comms.iter().flat_map(|comm| comm.data.iter().copied()),
+            );
         }
     }
-    tr.append_message(b"step/mem_count", &(mem_insts.len() as u64).to_le_bytes());
+    tr.append_u64s(b"step/mem_count", &[mem_insts.len() as u64]);
     for (i, inst) in mem_insts.by_ref().enumerate() {
         // Bind public memory parameters before any challenges.
-        tr.append_message(b"step/mem_idx", &(i as u64).to_le_bytes());
-        tr.append_message(b"twist/mem_id", &(inst.mem_id as u64).to_le_bytes());
-        tr.append_message(b"twist/k", &(inst.k as u64).to_le_bytes());
-        tr.append_message(b"twist/d", &(inst.d as u64).to_le_bytes());
-        tr.append_message(b"twist/n_side", &(inst.n_side as u64).to_le_bytes());
-        tr.append_message(b"twist/steps", &(inst.steps as u64).to_le_bytes());
-        tr.append_message(b"twist/ell", &(inst.ell as u64).to_le_bytes());
-        tr.append_message(b"twist/lanes", &(inst.lanes.max(1) as u64).to_le_bytes());
-        let init_digest = match &inst.init {
-            MemInit::Zero => digest_fields(b"twist/init/zero", &[]),
-            MemInit::Sparse(pairs) => {
-                let mut fs = Vec::with_capacity(2 * pairs.len());
-                for (addr, val) in pairs.iter() {
-                    fs.push(F::from_u64(*addr));
-                    fs.push(*val);
-                }
-                digest_fields(b"twist/init/sparse", &fs)
-            }
-        };
-        tr.append_message(b"twist/init_digest", &init_digest);
+        tr.append_u64s(
+            b"step/mem_meta_u64",
+            &[
+                i as u64,
+                inst.mem_id as u64,
+                inst.k as u64,
+                inst.d as u64,
+                inst.n_side as u64,
+                inst.steps as u64,
+                inst.ell as u64,
+                inst.lanes.max(1) as u64,
+            ],
+        );
+        let init_digest = compute_mem_init_digest(&inst.init);
+        tr.append_bytes_packed(b"twist/init_digest", &init_digest);
 
         // Bind commitments so Route-A challenges (r_cycle, addr/time points) are sampled after them.
-        tr.append_message(b"twist/comms_len", &(inst.comms.len() as u64).to_le_bytes());
-        for (j, comm) in inst.comms.iter().enumerate() {
-            tr.append_message(b"twist/comm_idx", &(j as u64).to_le_bytes());
-            tr.append_fields(b"twist/comm_data", &comm.data);
+        tr.append_u64s(b"twist/comms_len", &[inst.comms.len() as u64]);
+        if !inst.comms.is_empty() {
+            let comm_lens: Vec<u64> = inst
+                .comms
+                .iter()
+                .map(|comm| comm.data.len() as u64)
+                .collect();
+            tr.append_u64s(b"twist/comm_lens", &comm_lens);
+            let total_fields = inst.comms.iter().map(|comm| comm.data.len()).sum::<usize>();
+            #[cfg(debug_assertions)]
+            {
+                let lens_sum: usize = comm_lens.iter().map(|&x| x as usize).sum();
+                debug_assert_eq!(lens_sum, total_fields, "twist/comm_lens sum mismatch");
+            }
+            tr.append_fields_iter(
+                b"twist/comm_data_flat",
+                total_fields,
+                inst.comms.iter().flat_map(|comm| comm.data.iter().copied()),
+            );
         }
     }
     tr.append_message(b"step/absorb_memory_done", &[]);
@@ -125,11 +164,108 @@ pub fn absorb_step_memory(tr: &mut Poseidon2Transcript, step: &StepInstanceBundl
 }
 
 pub(crate) fn absorb_step_memory_witness(tr: &mut Poseidon2Transcript, step: &StepWitnessBundle<Cmt, F, K>) {
-    absorb_step_memory_impl(
-        tr,
-        step.lut_instances.iter().map(|(inst, _)| inst),
-        step.mem_instances.iter().map(|(inst, _)| inst),
-    );
+    tr.append_message(b"step/absorb_memory_start", &[]);
+    tr.append_u64s(b"step/lut_count", &[step.lut_instances.len() as u64]);
+    for (i, (inst, _)) in step.lut_instances.iter().enumerate() {
+        tr.append_u64s(
+            b"step/lut_meta_u64",
+            &[
+                i as u64,
+                inst.table_id as u64,
+                inst.k as u64,
+                inst.d as u64,
+                inst.n_side as u64,
+                inst.steps as u64,
+                inst.ell as u64,
+                inst.lanes.max(1) as u64,
+            ],
+        );
+        bind_shout_table_spec(tr, &inst.table_spec);
+        let table_digest = match inst.table_digest {
+            Some(d) => {
+                #[cfg(debug_assertions)]
+                {
+                    let computed = digest_fields(b"shout/table", &inst.table);
+                    debug_assert_eq!(d, computed, "LutInstance.table_digest mismatch");
+                }
+                d
+            }
+            None => digest_fields(b"shout/table", &inst.table),
+        };
+        tr.append_bytes_packed(b"shout/table_digest", &table_digest);
+
+        tr.append_u64s(b"shout/comms_len", &[inst.comms.len() as u64]);
+        if !inst.comms.is_empty() {
+            let comm_lens: Vec<u64> = inst
+                .comms
+                .iter()
+                .map(|comm| comm.data.len() as u64)
+                .collect();
+            tr.append_u64s(b"shout/comm_lens", &comm_lens);
+            let total_fields = inst.comms.iter().map(|comm| comm.data.len()).sum::<usize>();
+            #[cfg(debug_assertions)]
+            {
+                let lens_sum: usize = comm_lens.iter().map(|&x| x as usize).sum();
+                debug_assert_eq!(lens_sum, total_fields, "shout/comm_lens sum mismatch");
+            }
+            tr.append_fields_iter(
+                b"shout/comm_data_flat",
+                total_fields,
+                inst.comms.iter().flat_map(|comm| comm.data.iter().copied()),
+            );
+        }
+    }
+
+    tr.append_u64s(b"step/mem_count", &[step.mem_instances.len() as u64]);
+    for (i, (inst, _)) in step.mem_instances.iter().enumerate() {
+        tr.append_u64s(
+            b"step/mem_meta_u64",
+            &[
+                i as u64,
+                inst.mem_id as u64,
+                inst.k as u64,
+                inst.d as u64,
+                inst.n_side as u64,
+                inst.steps as u64,
+                inst.ell as u64,
+                inst.lanes.max(1) as u64,
+            ],
+        );
+        let init_digest = match inst.init_digest {
+            Some(d) => {
+                #[cfg(debug_assertions)]
+                {
+                    let computed = compute_mem_init_digest(&inst.init);
+                    debug_assert_eq!(d, computed, "MemInstance.init_digest mismatch");
+                }
+                d
+            }
+            None => compute_mem_init_digest(&inst.init),
+        };
+        tr.append_bytes_packed(b"twist/init_digest", &init_digest);
+
+        tr.append_u64s(b"twist/comms_len", &[inst.comms.len() as u64]);
+        if !inst.comms.is_empty() {
+            let comm_lens: Vec<u64> = inst
+                .comms
+                .iter()
+                .map(|comm| comm.data.len() as u64)
+                .collect();
+            tr.append_u64s(b"twist/comm_lens", &comm_lens);
+            let total_fields = inst.comms.iter().map(|comm| comm.data.len()).sum::<usize>();
+            #[cfg(debug_assertions)]
+            {
+                let lens_sum: usize = comm_lens.iter().map(|&x| x as usize).sum();
+                debug_assert_eq!(lens_sum, total_fields, "twist/comm_lens sum mismatch");
+            }
+            tr.append_fields_iter(
+                b"twist/comm_data_flat",
+                total_fields,
+                inst.comms.iter().flat_map(|comm| comm.data.iter().copied()),
+            );
+        }
+    }
+    tr.append_message(b"step/absorb_memory_done", &[]);
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -159,7 +295,7 @@ pub(crate) enum Rv32PackedShoutOp {
 
 pub(crate) fn rv32_packed_shout_layout(
     spec: &Option<LutTableSpec>,
-) -> Result<Option<(Rv32PackedShoutOp, usize)>, PiCcsError> {
+) -> Result<Option<(Rv32PackedShoutOp, usize, usize)>, PiCcsError> {
     let (opcode, xlen, time_bits) = match spec {
         Some(LutTableSpec::RiscvOpcodePacked { opcode, xlen }) => (*opcode, *xlen, 0usize),
         Some(LutTableSpec::RiscvOpcodeEventTablePacked {
@@ -170,9 +306,9 @@ pub(crate) fn rv32_packed_shout_layout(
         _ => return Ok(None),
     };
 
-    if xlen != 32 {
+    if !matches!(xlen, 32 | 64) {
         return Err(PiCcsError::InvalidInput(format!(
-            "packed RISC-V Shout is only supported for RV32 (xlen=32) in Route A (got xlen={xlen})"
+            "packed RISC-V Shout requires xlen=32 or 64 in Route A (got xlen={xlen})"
         )));
     }
     if time_bits == 0 {
@@ -182,38 +318,70 @@ pub(crate) fn rv32_packed_shout_layout(
                 "RiscvOpcodeEventTablePacked requires time_bits >= 1".into(),
             ));
         }
+    } else if xlen != 32 {
+        return Err(PiCcsError::InvalidInput(
+            "packed RV64 Shout does not support event-table mode in Route A".into(),
+        ));
     }
 
-    let op = match opcode {
-        neo_memory::riscv::lookups::RiscvOpcode::And => Rv32PackedShoutOp::And,
-        neo_memory::riscv::lookups::RiscvOpcode::Andn => Rv32PackedShoutOp::Andn,
-        neo_memory::riscv::lookups::RiscvOpcode::Add => Rv32PackedShoutOp::Add,
-        neo_memory::riscv::lookups::RiscvOpcode::Or => Rv32PackedShoutOp::Or,
-        neo_memory::riscv::lookups::RiscvOpcode::Sub => Rv32PackedShoutOp::Sub,
-        neo_memory::riscv::lookups::RiscvOpcode::Xor => Rv32PackedShoutOp::Xor,
-        neo_memory::riscv::lookups::RiscvOpcode::Eq => Rv32PackedShoutOp::Eq,
-        neo_memory::riscv::lookups::RiscvOpcode::Neq => Rv32PackedShoutOp::Neq,
-        neo_memory::riscv::lookups::RiscvOpcode::Slt => Rv32PackedShoutOp::Slt,
-        neo_memory::riscv::lookups::RiscvOpcode::Sll => Rv32PackedShoutOp::Sll,
-        neo_memory::riscv::lookups::RiscvOpcode::Srl => Rv32PackedShoutOp::Srl,
-        neo_memory::riscv::lookups::RiscvOpcode::Sra => Rv32PackedShoutOp::Sra,
-        neo_memory::riscv::lookups::RiscvOpcode::Sltu => Rv32PackedShoutOp::Sltu,
-        neo_memory::riscv::lookups::RiscvOpcode::Mul => Rv32PackedShoutOp::Mul,
-        neo_memory::riscv::lookups::RiscvOpcode::Mulh => Rv32PackedShoutOp::Mulh,
-        neo_memory::riscv::lookups::RiscvOpcode::Mulhu => Rv32PackedShoutOp::Mulhu,
-        neo_memory::riscv::lookups::RiscvOpcode::Mulhsu => Rv32PackedShoutOp::Mulhsu,
-        neo_memory::riscv::lookups::RiscvOpcode::Div => Rv32PackedShoutOp::Div,
-        neo_memory::riscv::lookups::RiscvOpcode::Divu => Rv32PackedShoutOp::Divu,
-        neo_memory::riscv::lookups::RiscvOpcode::Rem => Rv32PackedShoutOp::Rem,
-        neo_memory::riscv::lookups::RiscvOpcode::Remu => Rv32PackedShoutOp::Remu,
-        _ => {
-            return Err(PiCcsError::InvalidInput(format!(
-                "packed RISC-V Shout is only supported for selected RV32 ops in Route A (got opcode={opcode:?})"
-            )));
-        }
-    };
+    let op =
+        match opcode {
+            neo_memory::riscv::lookups::RiscvOpcode::And => Rv32PackedShoutOp::And,
+            neo_memory::riscv::lookups::RiscvOpcode::Andn => Rv32PackedShoutOp::Andn,
+            neo_memory::riscv::lookups::RiscvOpcode::Add => Rv32PackedShoutOp::Add,
+            neo_memory::riscv::lookups::RiscvOpcode::Or => Rv32PackedShoutOp::Or,
+            neo_memory::riscv::lookups::RiscvOpcode::Sub => Rv32PackedShoutOp::Sub,
+            neo_memory::riscv::lookups::RiscvOpcode::Xor => Rv32PackedShoutOp::Xor,
+            neo_memory::riscv::lookups::RiscvOpcode::Eq => Rv32PackedShoutOp::Eq,
+            neo_memory::riscv::lookups::RiscvOpcode::Neq => Rv32PackedShoutOp::Neq,
+            neo_memory::riscv::lookups::RiscvOpcode::Slt => Rv32PackedShoutOp::Slt,
+            neo_memory::riscv::lookups::RiscvOpcode::Sll => Rv32PackedShoutOp::Sll,
+            neo_memory::riscv::lookups::RiscvOpcode::Srl => Rv32PackedShoutOp::Srl,
+            neo_memory::riscv::lookups::RiscvOpcode::Sra
+            | neo_memory::riscv::lookups::RiscvOpcode::VirtualMovsignWord => Rv32PackedShoutOp::Sra,
+            neo_memory::riscv::lookups::RiscvOpcode::Sltu => Rv32PackedShoutOp::Sltu,
+            neo_memory::riscv::lookups::RiscvOpcode::Mul | neo_memory::riscv::lookups::RiscvOpcode::VirtualMulWord => {
+                Rv32PackedShoutOp::Mul
+            }
+            neo_memory::riscv::lookups::RiscvOpcode::Mulh => Rv32PackedShoutOp::Mulh,
+            neo_memory::riscv::lookups::RiscvOpcode::Mulhu => Rv32PackedShoutOp::Mulhu,
+            neo_memory::riscv::lookups::RiscvOpcode::Mulhsu => Rv32PackedShoutOp::Mulhsu,
+            neo_memory::riscv::lookups::RiscvOpcode::Div | neo_memory::riscv::lookups::RiscvOpcode::VirtualDivWord => {
+                Rv32PackedShoutOp::Div
+            }
+            neo_memory::riscv::lookups::RiscvOpcode::Divu
+            | neo_memory::riscv::lookups::RiscvOpcode::VirtualDivuWord => Rv32PackedShoutOp::Divu,
+            neo_memory::riscv::lookups::RiscvOpcode::Rem | neo_memory::riscv::lookups::RiscvOpcode::VirtualRemWord => {
+                Rv32PackedShoutOp::Rem
+            }
+            neo_memory::riscv::lookups::RiscvOpcode::Remu
+            | neo_memory::riscv::lookups::RiscvOpcode::VirtualRemuWord => Rv32PackedShoutOp::Remu,
+            _ => {
+                return Err(PiCcsError::InvalidInput(format!(
+                    "packed RISC-V Shout is unsupported in Route A for opcode={opcode:?}, xlen={xlen}"
+                )));
+            }
+        };
 
-    Ok(Some((op, time_bits)))
+    if xlen == 64
+        && !matches!(
+            opcode,
+            neo_memory::riscv::lookups::RiscvOpcode::Mul
+                | neo_memory::riscv::lookups::RiscvOpcode::Mulh
+                | neo_memory::riscv::lookups::RiscvOpcode::Mulhu
+                | neo_memory::riscv::lookups::RiscvOpcode::Mulhsu
+                | neo_memory::riscv::lookups::RiscvOpcode::Div
+                | neo_memory::riscv::lookups::RiscvOpcode::Divu
+                | neo_memory::riscv::lookups::RiscvOpcode::Rem
+                | neo_memory::riscv::lookups::RiscvOpcode::Remu
+        )
+    {
+        return Err(PiCcsError::InvalidInput(format!(
+            "packed RV64 Shout is currently only supported for exact base M-family ops in Route A (got opcode={opcode:?})"
+        )));
+    }
+
+    Ok(Some((op, xlen, time_bits)))
 }
 
 pub(crate) fn rv32_shout_table_id_from_spec(spec: &Option<LutTableSpec>) -> Result<u32, PiCcsError> {
@@ -233,9 +401,9 @@ pub(crate) fn rv32_shout_table_id_from_spec(spec: &Option<LutTableSpec>) -> Resu
         }
     };
 
-    if xlen != 32 {
+    if !matches!(xlen, 32 | 64) {
         return Err(PiCcsError::InvalidInput(format!(
-            "trace linkage expects RV32 shout specs (got xlen={xlen})"
+            "trace linkage expects RISC-V shout specs with xlen=32 or 64 (got xlen={xlen})"
         )));
     }
     Ok(neo_memory::riscv::lookups::RiscvShoutTables::new(xlen)
@@ -271,13 +439,13 @@ pub(crate) struct TwistDecodedColsSparse {
 }
 
 pub(crate) struct SumRoundOracle {
-    oracles: Vec<Box<dyn RoundOracle>>,
+    oracles: Vec<Box<dyn RoundOracle + Send>>,
     num_rounds: usize,
     degree_bound: usize,
 }
 
 impl SumRoundOracle {
-    pub(crate) fn new(oracles: Vec<Box<dyn RoundOracle>>) -> Result<Self, PiCcsError> {
+    pub(crate) fn new(oracles: Vec<Box<dyn RoundOracle + Send>>) -> Result<Self, PiCcsError> {
         if oracles.is_empty() {
             return Err(PiCcsError::ProtocolError(
                 "SumRoundOracle requires at least one oracle".into(),
@@ -591,34 +759,34 @@ pub(crate) fn build_twist_inc_terms_at_r_addr(lanes: &[TwistLaneSparseCols], r_a
 
 pub struct RouteAShoutTimeOracles {
     pub lanes: Vec<RouteAShoutTimeLaneOracles>,
-    pub bitness: Vec<Box<dyn RoundOracle>>,
+    pub bitness: Vec<Box<dyn RoundOracle + Send>>,
 }
 
 pub struct RouteAShoutTimeLaneOracles {
-    pub value: Box<dyn RoundOracle>,
+    pub value: Box<dyn RoundOracle + Send>,
     pub value_claim: K,
-    pub adapter: Box<dyn RoundOracle>,
+    pub adapter: Box<dyn RoundOracle + Send>,
     pub adapter_claim: K,
-    pub event_table_hash: Option<Box<dyn RoundOracle>>,
+    pub event_table_hash: Option<Box<dyn RoundOracle + Send>>,
     pub event_table_hash_claim: Option<K>,
     pub gamma_group: Option<usize>,
     pub transport_only: bool,
 }
 
 pub struct RouteAShoutGammaGroupOracles {
-    pub value: Box<dyn RoundOracle>,
+    pub value: Box<dyn RoundOracle + Send>,
     pub value_claim: K,
-    pub adapter: Box<dyn RoundOracle>,
+    pub adapter: Box<dyn RoundOracle + Send>,
     pub adapter_claim: K,
-    pub bitness: Box<dyn RoundOracle>,
+    pub bitness: Box<dyn RoundOracle + Send>,
 }
 
 pub struct RouteATwistTimeOracles {
-    pub read_check: Box<dyn RoundOracle>,
-    pub write_check: Box<dyn RoundOracle>,
-    pub bitness: Vec<Box<dyn RoundOracle>>,
-    pub virtual_write_domain: Option<Box<dyn RoundOracle>>,
-    pub nonvirtual_arch_domain: Option<Box<dyn RoundOracle>>,
+    pub read_check: Box<dyn RoundOracle + Send>,
+    pub write_check: Box<dyn RoundOracle + Send>,
+    pub bitness: Vec<Box<dyn RoundOracle + Send>>,
+    pub virtual_write_domain: Option<Box<dyn RoundOracle + Send>>,
+    pub nonvirtual_arch_domain: Option<Box<dyn RoundOracle + Send>>,
 }
 
 pub struct RouteAMemoryOracles {
@@ -629,7 +797,7 @@ pub struct RouteAMemoryOracles {
 }
 
 pub struct RouteAShoutEventTraceHashOracle {
-    pub oracle: Box<dyn RoundOracle>,
+    pub oracle: Box<dyn RoundOracle + Send>,
     pub claim: K,
 }
 
@@ -676,8 +844,10 @@ pub struct TwistAddrPreVerifyData {
 
 #[derive(Clone, Debug)]
 pub struct TwistTimeLaneOpeningsLane {
+    pub has_read: K,
     pub wa_bits: Vec<K>,
     pub has_write: K,
+    pub wv: K,
     pub inc_at_write_addr: K,
 }
 
@@ -839,10 +1009,15 @@ pub(crate) fn rv32_trace_wb_columns(layout: &Rv32TraceLayout) -> Vec<usize> {
     vec![layout.active, layout.halted, layout.shout_has_lookup]
 }
 
-// Selector(8) + bitness(20) + ALU/branch/decomposition(682).
-pub(crate) const W2_FIELDS_RESIDUAL_COUNT: usize = 710;
+#[inline]
+pub(crate) fn riscv_trace_wb_columns(layout: &Rv32TraceLayout) -> Vec<usize> {
+    rv32_trace_wb_columns(layout)
+}
+
+// Selector(8) + bitness(20) + ALU/branch/decomposition(824).
+pub(crate) const W2_FIELDS_RESIDUAL_COUNT: usize = 852;
 // Virtual DIV/REM stage selectors (up to rem=19) raise decode/fields multiplicative degree.
-pub(crate) const W2_FIELDS_DEGREE_BOUND: usize = 25;
+pub(crate) const W2_FIELDS_DEGREE_BOUND: usize = 64;
 pub(crate) const W2_IMM_RESIDUAL_COUNT: usize = 4;
 
 #[inline]
@@ -864,11 +1039,12 @@ pub(crate) fn w2_decode_selector_residuals(
     active: K,
     decode_opcode: K,
     opcode_flags: [K; 12],
+    op_custom: K,
     funct3_is: [K; 8],
     funct3_bits: [K; 3],
     op_amo: K,
 ) -> [K; 8] {
-    let opcode_one_hot = opcode_flags.into_iter().fold(K::ZERO, |acc, v| acc + v) - active;
+    let opcode_one_hot = opcode_flags.into_iter().fold(K::ZERO, |acc, v| acc + v) + op_custom - active;
     let funct3_one_hot = funct3_is.into_iter().fold(K::ZERO, |acc, v| acc + v) - active;
     let funct3_bit0_link = (funct3_is[1] + funct3_is[3] + funct3_is[5] + funct3_is[7]) - funct3_bits[0];
     let funct3_bit1_link = (funct3_is[2] + funct3_is[3] + funct3_is[6] + funct3_is[7]) - funct3_bits[1];
@@ -876,19 +1052,19 @@ pub(crate) fn w2_decode_selector_residuals(
     let branch_f3b1_link = (funct3_is[6] + funct3_is[7]) - (funct3_bits[1] * funct3_bits[2]);
     // Tier-2.1 trace mode lock: op_amo must be zero on every row.
     let amo_forbidden = op_amo;
-    let opcode_value_link = opcode_flags[0] * K::from(F::from_u64(0x37))
-        + opcode_flags[1] * K::from(F::from_u64(0x17))
-        + opcode_flags[2] * K::from(F::from_u64(0x6f))
-        + opcode_flags[3] * K::from(F::from_u64(0x67))
-        + opcode_flags[4] * K::from(F::from_u64(0x63))
-        + opcode_flags[5] * K::from(F::from_u64(0x03))
-        + opcode_flags[6] * K::from(F::from_u64(0x23))
-        + opcode_flags[7] * K::from(F::from_u64(0x13))
-        + opcode_flags[8] * K::from(F::from_u64(0x33))
-        + opcode_flags[9] * K::from(F::from_u64(0x0f))
-        + opcode_flags[10] * K::from(F::from_u64(0x73))
-        + opcode_flags[11] * K::from(F::from_u64(0x2f))
-        - decode_opcode;
+    let opcode_value_link = opcode_flags[0] * (decode_opcode - K::from(F::from_u64(0x37)))
+        + opcode_flags[1] * (decode_opcode - K::from(F::from_u64(0x17)))
+        + opcode_flags[2] * (decode_opcode - K::from(F::from_u64(0x6f)))
+        + opcode_flags[3] * (decode_opcode - K::from(F::from_u64(0x67)))
+        + opcode_flags[4] * (decode_opcode - K::from(F::from_u64(0x63)))
+        + opcode_flags[5] * (decode_opcode - K::from(F::from_u64(0x03)))
+        + opcode_flags[6] * (decode_opcode - K::from(F::from_u64(0x23)))
+        + opcode_flags[7] * (decode_opcode - K::from(F::from_u64(0x13))) * (decode_opcode - K::from(F::from_u64(0x1b)))
+        + opcode_flags[8] * (decode_opcode - K::from(F::from_u64(0x33))) * (decode_opcode - K::from(F::from_u64(0x3b)))
+        + opcode_flags[9] * (decode_opcode - K::from(F::from_u64(0x0f)))
+        + opcode_flags[10] * (decode_opcode - K::from(F::from_u64(0x73)))
+        + opcode_flags[11] * (decode_opcode - K::from(F::from_u64(0x2f)))
+        + op_custom * (decode_opcode - K::from(F::from_u64(0x0b)));
 
     [
         opcode_one_hot,
@@ -1171,6 +1347,23 @@ pub(crate) fn control_imm_u_from_bits(
 }
 
 #[inline]
+pub(crate) fn control_imm_u_value_from_bits(
+    funct3_bits: [K; 3],
+    rs1_bits: [K; 5],
+    rs2_bits: [K; 5],
+    funct7_bits: [K; 7],
+    machine_xlen: usize,
+) -> K {
+    let imm_u = control_imm_u_from_bits(funct3_bits, rs1_bits, rs2_bits, funct7_bits);
+    if machine_xlen != 64 {
+        return imm_u;
+    }
+    let two32 = K::from(F::from_u64(1u64 << 32));
+    let sign_fill_hi32 = (two32 - K::ONE) * funct7_bits[6];
+    imm_u + sign_fill_hi32 * two32
+}
+
+#[inline]
 pub(crate) fn control_next_pc_linear_residual(
     pc_before: K,
     pc_after: K,
@@ -1184,8 +1377,10 @@ pub(crate) fn control_next_pc_linear_residual(
     op_misc_mem: K,
     op_system: K,
     op_amo: K,
+    op_custom: K,
 ) -> K {
-    let op_linear = op_lui + op_auipc + op_load + op_store + op_alu_imm + op_alu_reg + op_misc_mem + op_system + op_amo;
+    let op_linear =
+        op_lui + op_auipc + op_load + op_store + op_alu_imm + op_alu_reg + op_misc_mem + op_system + op_amo + op_custom;
     let non_virtual = K::ONE - is_virtual;
     non_virtual * op_linear * (pc_after - pc_before - K::from(F::from_u64(4)))
 }
@@ -1266,6 +1461,7 @@ pub(crate) fn rv32_trace_wp_columns(layout: &Rv32TraceLayout) -> Vec<usize> {
     vec![
         layout.is_virtual,
         layout.virtual_sequence_remaining,
+        layout.virtual_commit_from_prev,
         layout.instr_word,
         layout.rs1_addr,
         layout.rs1_val,
@@ -1287,6 +1483,31 @@ pub(crate) fn rv32_trace_wp_columns(layout: &Rv32TraceLayout) -> Vec<usize> {
     ]
 }
 
+#[inline]
+pub(crate) fn riscv_trace_wp_columns(layout: &Rv32TraceLayout) -> Vec<usize> {
+    rv32_trace_wp_columns(layout)
+}
+
+#[inline]
+pub(crate) fn trace_uses_rv64_exact_words(cpu_cols_len: usize) -> bool {
+    neo_memory::riscv::trace::infer_riscv_trace_machine_xlen(cpu_cols_len) == Some(64)
+}
+
+pub(crate) fn rv64_trace_exact_word_opening_columns() -> Vec<usize> {
+    let layout = neo_memory::riscv::trace::Rv64TraceLayout::new();
+    vec![
+        layout.rs1_val_lo32,
+        layout.rs2_val_lo32,
+        layout.rd_val_lo32,
+        layout.shout_lhs_lo32,
+        layout.shout_lhs_hi32,
+        layout.shout_rhs_lo32,
+        layout.shout_rhs_hi32,
+        layout.shout_add_sub_key_lo32,
+        layout.shout_add_sub_key_hi32,
+    ]
+}
+
 pub(crate) fn rv32_trace_wp_opening_columns(layout: &Rv32TraceLayout) -> Vec<usize> {
     let mut out = Vec::with_capacity(1 + layout.cols);
     out.push(layout.active);
@@ -1294,8 +1515,18 @@ pub(crate) fn rv32_trace_wp_opening_columns(layout: &Rv32TraceLayout) -> Vec<usi
     out
 }
 
+#[inline]
+pub(crate) fn riscv_trace_wp_opening_columns(layout: &Rv32TraceLayout) -> Vec<usize> {
+    rv32_trace_wp_opening_columns(layout)
+}
+
 pub(crate) fn rv32_trace_control_extra_opening_columns(layout: &Rv32TraceLayout) -> Vec<usize> {
     vec![layout.pc_before, layout.pc_after]
+}
+
+#[inline]
+pub(crate) fn riscv_trace_control_extra_opening_columns(layout: &Rv32TraceLayout) -> Vec<usize> {
+    rv32_trace_control_extra_opening_columns(layout)
 }
 
 #[inline]
@@ -1498,9 +1729,9 @@ pub(crate) fn infer_rv32_trace_t_len_for_wb_wp(
             "WB/WP requires canonical time columns with t >= 1".into(),
         ));
     }
-    if step.time_columns.cpu_cols.len() != trace.cols {
+    if step.time_columns.cpu_cols.len() < trace.cols {
         return Err(PiCcsError::InvalidInput(format!(
-            "WB/WP requires canonical RV32 time cpu columns (got {}, expected {})",
+            "WB/WP requires canonical RV32 time cpu prefix columns (got {}, expected at least {})",
             step.time_columns.cpu_cols.len(),
             trace.cols
         )));

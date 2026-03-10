@@ -1,10 +1,15 @@
-//! Convenience runner for RV32 trace-wiring CCS (time-in-rows).
+//! Legacy convenience runner for RV32 trace-wiring CCS (time-in-rows).
 //!
 //! This is an ergonomic wrapper around the existing trace wiring artifacts:
 //! - `neo_memory::riscv::trace` for execution-table extraction, and
 //! - `neo_memory::riscv::ccs::trace` for fixed-width trace wiring CCS.
 //!
-//! The runner intentionally targets the current Tier 2.1 scope:
+//! It remains useful for RV32-specific internal regression/reference coverage,
+//! but it is not a supported product-facing path. The maintained note repros go
+//! through `crate::rv64_trace_shard::Rv64TraceWiring::from_elf` and target the
+//! RV64IM-only product contract.
+//!
+//! The runner intentionally targets the retained Tier 2.1 scope:
 //! - fixed-width trace-wiring CCS steps with PROG/REG/RAM sidecar instances,
 //! - no decode/semantics sidecar proofs in this wrapper yet.
 
@@ -283,8 +288,8 @@ fn boundary_splits_virtual_sequence(exec: &Rv32ExecTable, chunk_rows: usize) -> 
 
 fn rv32_trace_chunk_to_witness(
     layout: Rv32TraceCcsLayout,
-) -> Box<dyn Fn(&[StepTrace<u64, u64>]) -> Vec<F> + Send + Sync> {
-    Box::new(move |chunk: &[StepTrace<u64, u64>]| {
+) -> Box<dyn Fn(&[StepTrace<u64, u64, u128>]) -> Vec<F> + Send + Sync> {
+    Box::new(move |chunk: &[StepTrace<u64, u64, u128>]| {
         rv32_trace_chunk_to_witness_checked(&layout, chunk)
             .unwrap_or_else(|e| panic!("rv32_trace_chunk_to_witness failed for chunk_len={}: {e}", chunk.len()))
     })
@@ -292,7 +297,7 @@ fn rv32_trace_chunk_to_witness(
 
 fn rv32_trace_chunk_to_witness_checked(
     layout: &Rv32TraceCcsLayout,
-    chunk: &[StepTrace<u64, u64>],
+    chunk: &[StepTrace<u64, u64, u128>],
 ) -> Result<Vec<F>, String> {
     if chunk.is_empty() {
         return Err("trace chunk witness: chunk must contain at least one step".into());
@@ -373,7 +378,7 @@ fn rv32_canonical_shout_opcode_families() -> &'static [RiscvOpcode] {
     ]
 }
 
-fn validate_trace_opcode_lookup_one_hot(trace: &VmTrace<u64, u64>, xlen: usize) -> Result<(), PiCcsError> {
+fn validate_trace_opcode_lookup_one_hot(trace: &VmTrace<u64, u64, u128>, xlen: usize) -> Result<(), PiCcsError> {
     let shout = RiscvShoutTables::new(xlen);
     for (step_idx, step) in trace.steps.iter().enumerate() {
         let mut seen_table_id: Option<u32> = None;
@@ -564,6 +569,17 @@ fn estimate_route_a_bus_cols(
     Ok(layout.bus_cols)
 }
 
+fn program_requires_poseidon_stage(program: &[RiscvInstruction]) -> bool {
+    program.iter().any(|instr| {
+        matches!(
+            instr,
+            RiscvInstruction::Poseidon2AbsorbElem { .. }
+                | RiscvInstruction::Poseidon2Finalize
+                | RiscvInstruction::Poseidon2SqueezeWord { .. }
+        )
+    })
+}
+
 fn rv32_trace_table_specs(shout_ops: &HashSet<RiscvOpcode>) -> Result<HashMap<u32, LutTableSpec>, PiCcsError> {
     let shout = RiscvShoutTables::new(32);
     let mut table_specs = HashMap::new();
@@ -665,7 +681,7 @@ fn build_rv32_decode_lookup_tables(
 }
 
 fn inject_rv32_decode_lookup_events_into_trace(
-    trace: &mut VmTrace<u64, u64>,
+    trace: &mut VmTrace<u64, u64, u128>,
     prog_layout: &PlainMemLayout,
     prog_init_words: &HashMap<(u32, u64), F>,
 ) -> Result<(), PiCcsError> {
@@ -697,7 +713,7 @@ fn inject_rv32_decode_lookup_events_into_trace(
         for &col_id in decode_cols.iter() {
             step.shout_events.push(ShoutEvent {
                 shout_id: ShoutId(rv32_decode_lookup_table_id_for_col(col_id)),
-                key: addr,
+                key: u128::from(addr),
                 value: row[col_id].as_canonical_u64(),
             });
         }
@@ -798,7 +814,7 @@ fn build_rv32_width_lookup_tables(
 }
 
 fn inject_rv32_width_lookup_events_into_trace(
-    trace: &mut VmTrace<u64, u64>,
+    trace: &mut VmTrace<u64, u64, u128>,
     exec: &Rv32ExecTable,
     width_layout: &Rv32WidthSidecarLayout,
 ) -> Result<(), PiCcsError> {
@@ -820,7 +836,7 @@ fn inject_rv32_width_lookup_events_into_trace(
         for &col_id in width_cols.iter() {
             step.shout_events.push(ShoutEvent {
                 shout_id: ShoutId(rv32_width_lookup_table_id_for_col(col_id)),
-                key: cycle,
+                key: u128::from(cycle),
                 value: wit.cols[col_id][i].as_canonical_u64(),
             });
         }
@@ -1037,6 +1053,12 @@ impl Rv32TraceWiring {
 
         let program = decode_program(&self.program_bytes)
             .map_err(|e| PiCcsError::InvalidInput(format!("decode_program failed: {e}")))?;
+        let requires_poseidon_stage = program_requires_poseidon_stage(&program);
+        if requires_poseidon_stage && !cfg!(feature = "poseidon-precompile") {
+            return Err(PiCcsError::InvalidInput(
+                "program uses Poseidon2 precompile instructions, but feature `poseidon-precompile` is disabled".into(),
+            ));
+        }
         let using_default_max_steps = self.max_steps.is_none();
         let max_steps = match self.max_steps {
             Some(n) => {
@@ -1126,7 +1148,14 @@ impl Rv32TraceWiring {
             (HashMap::new(), 0usize)
         };
 
-        let requested_chunk_rows_arch = self.chunk_rows.unwrap_or(DEFAULT_RV32_TRACE_CHUNK_ROWS);
+        // Default policy:
+        // - Poseidon-precompile programs should try a single-fold geometry first.
+        // - Other programs keep the historical default chunk size.
+        let requested_chunk_rows_arch = match self.chunk_rows {
+            Some(rows) => rows,
+            None if requires_poseidon_stage => exec.rows.len().max(1),
+            None => DEFAULT_RV32_TRACE_CHUNK_ROWS,
+        };
         if requested_chunk_rows_arch == 0 {
             return Err(PiCcsError::InvalidInput("trace chunk_rows must be non-zero".into()));
         }
@@ -1508,19 +1537,45 @@ impl Rv32TraceWiring {
         let (proof, output_binding_cfg) = if output_claims.is_empty() {
             (session.fold_and_prove(&ccs)?, None)
         } else {
-            let (ob_mem_idx, ob_num_bits, final_memory_state) = match output_target {
+            let (ob_mem_idx, ob_num_bits, ob_max_addr) = match output_target {
                 OutputTarget::Ram => (
                     ram_ob_mem_idx.ok_or_else(|| {
                         PiCcsError::ProtocolError("missing RAM mem instance for output binding".into())
                     })?,
                     ram_d,
-                    final_ram_state_dense(&exec, &ram_init_map, ram_k)?,
+                    max_ram_addr,
                 ),
-                OutputTarget::Reg => (
-                    reg_ob_mem_idx,
-                    reg_d,
-                    final_reg_state_dense(&exec, &reg_init_map, reg_k)?,
-                ),
+                OutputTarget::Reg => (reg_ob_mem_idx, reg_d, max_reg_addr),
+            };
+            let use_dense_output_sumcheck = ob_num_bits <= neo_memory::output_check::OUTPUT_SUMCHECK_MAX_NUM_BITS;
+            if use_dense_output_sumcheck {
+                output_claims.validate(ob_num_bits).map_err(|e| {
+                    let target = match output_target {
+                        OutputTarget::Ram => "RAM",
+                        OutputTarget::Reg => "REG",
+                    };
+                    PiCcsError::InvalidInput(format!(
+                        "output binding invalid for {target} target (num_bits={ob_num_bits}, max_addr={ob_max_addr}): {e}"
+                    ))
+                })?;
+            } else {
+                neo_memory::output_check::validate_output_binding_domain(&output_claims, ob_num_bits).map_err(|e| {
+                    let target = match output_target {
+                        OutputTarget::Ram => "RAM",
+                        OutputTarget::Reg => "REG",
+                    };
+                    PiCcsError::InvalidInput(format!(
+                        "output binding invalid for {target} target (num_bits={ob_num_bits}, max_addr={ob_max_addr}) in sparse point-check mode: {e}"
+                    ))
+                })?;
+            }
+            let final_memory_state = if use_dense_output_sumcheck {
+                match output_target {
+                    OutputTarget::Ram => final_ram_state_dense(&exec, &ram_init_map, ram_k)?,
+                    OutputTarget::Reg => final_reg_state_dense(&exec, &reg_init_map, reg_k)?,
+                }
+            } else {
+                Vec::new()
             };
             let ob_cfg = OutputBindingConfig::new(ob_num_bits, output_claims).with_mem_idx(ob_mem_idx);
             let proof = session.fold_and_prove_with_output_binding_simple(&ccs, &ob_cfg, &final_memory_state)?;
@@ -1553,6 +1608,7 @@ impl Rv32TraceWiring {
             used_mem_ids,
             used_shout_table_ids,
             output_binding_cfg,
+            requires_poseidon_stage,
             prove_duration,
             prove_phase_durations,
             verify_duration: None,
@@ -1570,6 +1626,7 @@ pub struct Rv32TraceWiringRun {
     used_mem_ids: Vec<u32>,
     used_shout_table_ids: Vec<u32>,
     output_binding_cfg: Option<OutputBindingConfig>,
+    requires_poseidon_stage: bool,
     prove_duration: Duration,
     prove_phase_durations: Rv32TraceProvePhaseDurations,
     verify_duration: Option<Duration>,
@@ -1610,7 +1667,27 @@ impl Rv32TraceWiringRun {
         &self.used_shout_table_ids
     }
 
+    /// Whether static program scan requires Poseidon sidecar proof lanes.
+    pub fn requires_poseidon_stage(&self) -> bool {
+        self.requires_poseidon_stage
+    }
+
     pub fn verify_proof(&self, proof: &ShardProof) -> Result<(), PiCcsError> {
+        if !self.requires_poseidon_stage {
+            for (step_idx, step) in proof.steps.iter().enumerate() {
+                if step.poseidon_local_time.is_some()
+                    || !step.mem.poseidon_cycle_me_claims.is_empty()
+                    || !step.mem.poseidon_local_me_claims.is_empty()
+                    || !step.poseidon_cycle_fold.is_empty()
+                    || !step.poseidon_local_fold.is_empty()
+                {
+                    return Err(PiCcsError::ProtocolError(format!(
+                        "step {}: poseidon proof artifacts present but stage is not required",
+                        step_idx
+                    )));
+                }
+            }
+        }
         let ok = match &self.output_binding_cfg {
             None => self.session.verify_collected(&self.ccs, proof)?,
             Some(cfg) => self

@@ -30,6 +30,7 @@ fn build_claim_witness_from_step(
 ) -> Result<Mat<F>, PiCcsError> {
     let t = step.time_columns.t;
     let mut out = Mat::zero(D, t, F::ZERO);
+    let mut z_col_row_major = Vec::new();
     for (i, &col_id) in open_pf.col_ids.iter().enumerate() {
         let abs_pos = logical_col_pos.get(&col_id).copied().ok_or_else(|| {
             PiCcsError::ProtocolError(format!("time/opening joint/prove: logical col_id={} missing", col_id))
@@ -63,18 +64,24 @@ fn build_claim_witness_from_step(
                 ))
             })?
         };
-        let z_col = neo_memory::ajtai::encode_vector_balanced_to_mat_with_base(
+        neo_memory::ajtai::encode_vector_balanced_to_row_major_with_base_into(
             params,
             col,
             crate::time_opening::STAGE8_TIME_DECOMP_BASE,
+            &mut z_col_row_major,
         );
-        left_mul_add_into(&mut out, &coeffs[i], &z_col)?;
+        left_mul_add_row_major_into(&mut out, &coeffs[i], z_col_row_major.as_slice(), t)?;
     }
     Ok(out)
 }
 
 #[inline]
 fn left_mul_add_into(dst: &mut Mat<F>, rho: &Mat<F>, src: &Mat<F>) -> Result<(), PiCcsError> {
+    left_mul_add_row_major_into(dst, rho, src.as_slice(), src.cols())
+}
+
+#[inline]
+fn left_mul_add_row_major_into(dst: &mut Mat<F>, rho: &Mat<F>, src_data: &[F], m: usize) -> Result<(), PiCcsError> {
     if rho.rows() != D || rho.cols() != D {
         return Err(PiCcsError::InvalidInput(format!(
             "time/opening joint: rho must be {D}x{D} (got {}x{})",
@@ -82,22 +89,19 @@ fn left_mul_add_into(dst: &mut Mat<F>, rho: &Mat<F>, src: &Mat<F>) -> Result<(),
             rho.cols()
         )));
     }
-    if src.rows() != D || dst.rows() != D || src.cols() != dst.cols() {
+    if dst.rows() != D || dst.cols() != m || src_data.len() != D * m {
         return Err(PiCcsError::InvalidInput(format!(
-            "time/opening joint: matrix shape mismatch (dst={}x{}, src={}x{})",
+            "time/opening joint: matrix shape mismatch (dst={}x{}, src={} entries)",
             dst.rows(),
             dst.cols(),
-            src.rows(),
-            src.cols()
+            src_data.len(),
         )));
     }
-    let m = src.cols();
     if m == 0 {
         return Ok(());
     }
     let rho_data = rho.as_slice();
-    let src_data = src.as_slice();
-    const BLOCK_COLS: usize = 1024;
+    const BLOCK_COLS: usize = 512;
 
     #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-threads"))]
     {
@@ -106,17 +110,41 @@ fn left_mul_add_into(dst: &mut Mat<F>, rho: &Mat<F>, src: &Mat<F>) -> Result<(),
             .enumerate()
             .for_each(|(rr, row_out)| {
                 let rho_off = rr * D;
+                let mut nz_coeffs = [F::ZERO; D];
+                let mut nz_rows = [0usize; D];
+                let mut nz_len = 0usize;
+                for kk in 0..D {
+                    let coeff = rho_data[rho_off + kk];
+                    if coeff != F::ZERO {
+                        nz_coeffs[nz_len] = coeff;
+                        nz_rows[nz_len] = kk;
+                        nz_len += 1;
+                    }
+                }
+                if nz_len == 0 {
+                    return;
+                }
+
+                if m <= BLOCK_COLS {
+                    for nz in 0..nz_len {
+                        let coeff = nz_coeffs[nz];
+                        let in_row = &src_data[nz_rows[nz] * m..(nz_rows[nz] + 1) * m];
+                        for (out, &inp) in row_out.iter_mut().zip(in_row.iter()) {
+                            *out += coeff * inp;
+                        }
+                    }
+                    return;
+                }
+
                 for col0 in (0..m).step_by(BLOCK_COLS) {
                     let len = core::cmp::min(BLOCK_COLS, m - col0);
-                    for kk in 0..D {
-                        let coeff = rho_data[rho_off + kk];
-                        if coeff == F::ZERO {
-                            continue;
-                        }
-                        let in_off = kk * m + col0;
+                    let row_block = &mut row_out[col0..col0 + len];
+                    for nz in 0..nz_len {
+                        let coeff = nz_coeffs[nz];
+                        let in_off = nz_rows[nz] * m + col0;
                         let in_row = &src_data[in_off..in_off + len];
-                        for t in 0..len {
-                            row_out[col0 + t] += coeff * in_row[t];
+                        for (out, &inp) in row_block.iter_mut().zip(in_row.iter()) {
+                            *out += coeff * inp;
                         }
                     }
                 }
@@ -128,16 +156,42 @@ fn left_mul_add_into(dst: &mut Mat<F>, rho: &Mat<F>, src: &Mat<F>) -> Result<(),
         for rr in 0..D {
             let out_off = rr * m;
             let rho_off = rr * D;
+            let mut nz_coeffs = [F::ZERO; D];
+            let mut nz_rows = [0usize; D];
+            let mut nz_len = 0usize;
+            for kk in 0..D {
+                let coeff = rho_data[rho_off + kk];
+                if coeff != F::ZERO {
+                    nz_coeffs[nz_len] = coeff;
+                    nz_rows[nz_len] = kk;
+                    nz_len += 1;
+                }
+            }
+            if nz_len == 0 {
+                continue;
+            }
+
+            if m <= BLOCK_COLS {
+                let row_out = &mut dst_data[out_off..out_off + m];
+                for nz in 0..nz_len {
+                    let coeff = nz_coeffs[nz];
+                    let in_row = &src_data[nz_rows[nz] * m..(nz_rows[nz] + 1) * m];
+                    for (out, &inp) in row_out.iter_mut().zip(in_row.iter()) {
+                        *out += coeff * inp;
+                    }
+                }
+                continue;
+            }
+
             for col0 in (0..m).step_by(BLOCK_COLS) {
                 let len = core::cmp::min(BLOCK_COLS, m - col0);
-                for kk in 0..D {
-                    let coeff = rho_data[rho_off + kk];
-                    if coeff == F::ZERO {
-                        continue;
-                    }
-                    let in_off = kk * m + col0;
-                    for t in 0..len {
-                        dst_data[out_off + col0 + t] += coeff * src_data[in_off + t];
+                let row_block = &mut dst_data[out_off + col0..out_off + col0 + len];
+                for nz in 0..nz_len {
+                    let coeff = nz_coeffs[nz];
+                    let in_off = nz_rows[nz] * m + col0;
+                    let in_row = &src_data[in_off..in_off + len];
+                    for (out, &inp) in row_block.iter_mut().zip(in_row.iter()) {
+                        *out += coeff * inp;
                     }
                 }
             }
@@ -154,12 +208,13 @@ pub struct Stage8FoldLanePlan {
 
 fn unified_fold_digest(groups: &[JointOpeningGroupProof]) -> [u8; 32] {
     let mut tr = neo_transcript::Poseidon2Transcript::new(b"stage8/unified_fold_digest");
-    tr.append_message(b"stage8/unified_fold_digest/version", b"v1");
+    tr.append_message(b"stage8/unified_fold_digest/version", b"v2");
     tr.append_u64s(b"stage8/unified_fold_digest/groups_len", &[groups.len() as u64]);
-    for (idx, g) in groups.iter().enumerate() {
-        tr.append_u64s(b"stage8/unified_fold_digest/group_idx", &[idx as u64]);
-        tr.append_message(b"stage8/unified_fold_digest/group_digest", &g.group_digest);
+    let mut group_digests_flat = Vec::with_capacity(groups.len() * 32);
+    for g in groups {
+        group_digests_flat.extend_from_slice(&g.group_digest);
     }
+    tr.append_bytes_packed(b"stage8/unified_fold_digest/group_digests_flat", &group_digests_flat);
     tr.digest32()
 }
 
@@ -170,34 +225,50 @@ fn bind_and_sample_unified_fold_mixers(
     groups: &[JointOpeningGroupProof],
     opening_unification: &OpeningUnificationProof,
 ) -> Result<Vec<Mat<F>>, PiCcsError> {
-    tr.append_message(b"stage8/unified_fold_bind/v1", &[]);
-    tr.append_u64s(b"stage8/unified_fold_bind/step_idx", &[step_idx as u64]);
-    tr.append_u64s(b"stage8/unified_fold_bind/groups_len", &[groups.len() as u64]);
-    for (idx, g) in groups.iter().enumerate() {
-        tr.append_u64s(b"stage8/unified_fold_bind/group_idx", &[idx as u64]);
-        tr.append_message(b"stage8/unified_fold_bind/group_digest", &g.group_digest);
+    tr.append_message(b"stage8/unified_fold_bind/v2", &[]);
+    tr.append_u64s(
+        b"stage8/unified_fold_bind/header",
+        &[
+            step_idx as u64,
+            groups.len() as u64,
+            opening_unification.round_polys.len() as u64,
+            opening_unification.r_unify.len() as u64,
+        ],
+    );
+    let mut group_digests_flat = Vec::with_capacity(groups.len() * 32);
+    for g in groups {
+        group_digests_flat.extend_from_slice(&g.group_digest);
     }
+    tr.append_bytes_packed(b"stage8/unified_fold_bind/group_digests_flat", &group_digests_flat);
     tr.append_message(b"stage8/unified_fold_bind/digest", &unified_fold_digest(groups));
     tr.append_fields(
         b"stage8/unified_fold_bind/opening_unify_claimed_sum",
         &opening_unification.claimed_sum.as_coeffs(),
     );
-    tr.append_u64s(
-        b"stage8/unified_fold_bind/opening_unify_round_count",
-        &[opening_unification.round_polys.len() as u64],
-    );
-    for (round_idx, coeffs) in opening_unification.round_polys.iter().enumerate() {
-        tr.append_u64s(b"stage8/unified_fold_bind/opening_unify_round_idx", &[round_idx as u64]);
+    let mut round_field_lens = Vec::with_capacity(opening_unification.round_polys.len());
+    let mut total_round_fields = 0usize;
+    for coeffs in &opening_unification.round_polys {
         let per_elem = coeffs.first().map(|v| v.as_coeffs().len()).unwrap_or(0);
-        tr.append_fields_iter(
-            b"stage8/unified_fold_bind/opening_unify_round_coeffs",
-            coeffs.len().saturating_mul(per_elem),
-            coeffs.iter().flat_map(|v| v.as_coeffs()),
-        );
+        let round_len = coeffs.len().checked_mul(per_elem).ok_or_else(|| {
+            PiCcsError::ProtocolError("stage8 unified fold bind: round coefficient length overflow".into())
+        })?;
+        round_field_lens.push(round_len as u64);
+        total_round_fields = total_round_fields.checked_add(round_len).ok_or_else(|| {
+            PiCcsError::ProtocolError("stage8 unified fold bind: total round coefficient length overflow".into())
+        })?;
     }
     tr.append_u64s(
-        b"stage8/unified_fold_bind/opening_unify_r_len",
-        &[opening_unification.r_unify.len() as u64],
+        b"stage8/unified_fold_bind/opening_unify_round_field_lens",
+        &round_field_lens,
+    );
+    tr.append_fields_iter(
+        b"stage8/unified_fold_bind/opening_unify_round_coeffs_flat",
+        total_round_fields,
+        opening_unification
+            .round_polys
+            .iter()
+            .flat_map(|coeffs| coeffs.iter())
+            .flat_map(|v| v.as_coeffs()),
     );
     let r_coeffs = opening_unification
         .r_unify

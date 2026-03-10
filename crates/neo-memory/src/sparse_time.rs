@@ -62,6 +62,38 @@ where
         }
     }
 
+    /// Monotonic lookup helper for sequential index scans.
+    ///
+    /// `hint` stores the current cursor into `entries`. For nondecreasing `idx` queries,
+    /// this runs in amortized O(1) per lookup instead of binary search.
+    #[inline]
+    pub fn get_with_hint(&self, idx: usize, hint: &mut usize) -> R {
+        let entries = self.entries.as_slice();
+        #[cfg(debug_assertions)]
+        {
+            debug_assert!(
+                *hint <= entries.len(),
+                "SparseIdxVec::get_with_hint invalid cursor (hint={}, len={})",
+                *hint,
+                entries.len()
+            );
+            if *hint > 0 {
+                debug_assert!(
+                    idx >= entries[*hint - 1].0,
+                    "SparseIdxVec::get_with_hint requires nondecreasing idx for a shared hint cursor"
+                );
+            }
+        }
+        while *hint < entries.len() && entries[*hint].0 < idx {
+            *hint += 1;
+        }
+        if *hint < entries.len() && entries[*hint].0 == idx {
+            entries[*hint].1
+        } else {
+            R::ZERO
+        }
+    }
+
     /// One multilinear folding round on the least-significant index bit:
     ///
     /// For each parent index `p`:
@@ -71,47 +103,74 @@ where
         debug_assert!(self.len >= 2, "cannot fold len < 2");
 
         let one_minus_r = R::ONE - r;
-        let mut out: Vec<(usize, R)> = Vec::with_capacity(self.entries.len());
+        let in_len = self.entries.len();
+        let mut read = 0usize;
+        let mut write = 0usize;
 
-        let mut i = 0usize;
-        while i < self.entries.len() {
-            let (idx, v) = self.entries[i];
+        while read < in_len {
+            let (idx, v) = self.entries[read];
             let parent = idx >> 1;
 
             let mut acc = R::ZERO;
             if (idx & 1) == 0 {
                 // Even child present.
                 acc += v * one_minus_r;
-                i += 1;
+                read += 1;
 
                 // If odd sibling is present, include it.
-                if i < self.entries.len() {
-                    let (idx2, v2) = self.entries[i];
+                if read < in_len {
+                    let (idx2, v2) = self.entries[read];
                     if idx2 == idx + 1 {
                         acc += v2 * r;
-                        i += 1;
+                        read += 1;
                     }
                 }
             } else {
                 // Odd child present without even sibling.
                 acc += v * r;
-                i += 1;
+                read += 1;
             }
 
             if acc != R::ZERO {
-                if let Some((last_p, last_v)) = out.last_mut() {
-                    if *last_p == parent {
-                        *last_v += acc;
-                    } else {
-                        out.push((parent, acc));
-                    }
+                if write > 0 && self.entries[write - 1].0 == parent {
+                    self.entries[write - 1].1 += acc;
                 } else {
-                    out.push((parent, acc));
+                    self.entries[write] = (parent, acc);
+                    write += 1;
                 }
             }
         }
 
-        self.entries = out;
+        self.entries.truncate(write);
+        self.len >>= 1;
+    }
+
+    /// Structural folding for support sets.
+    ///
+    /// Unlike `fold_round_in_place`, this ignores entry values and keeps one
+    /// parent entry for every parent index that had at least one child present.
+    /// This is the correct operation for sparse support masks used only to
+    /// enumerate active parent pairs during sumcheck evaluation.
+    pub fn fold_support_round_in_place(&mut self) {
+        debug_assert!(self.len.is_power_of_two());
+        debug_assert!(self.len >= 2, "cannot fold len < 2");
+
+        let in_len = self.entries.len();
+        let mut read = 0usize;
+        let mut write = 0usize;
+
+        while read < in_len {
+            let (idx, _) = self.entries[read];
+            let parent = idx >> 1;
+            read += 1;
+            while read < in_len && (self.entries[read].0 >> 1) == parent {
+                read += 1;
+            }
+            self.entries[write] = (parent, R::ONE);
+            write += 1;
+        }
+
+        self.entries.truncate(write);
         self.len >>= 1;
     }
 

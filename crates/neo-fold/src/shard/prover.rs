@@ -37,7 +37,7 @@ fn shift_sumcheck_from_batched_time(
     let control_idx = batched_time
         .labels
         .iter()
-        .position(|label| (*label as &[u8]) == b"control/next_pc_linear");
+        .position(|label| label.as_slice() == b"control/next_pc_linear");
     let idx = match (control_required, control_idx) {
         (true, Some(i)) | (false, Some(i)) => i,
         (true, None) => {
@@ -69,6 +69,39 @@ fn shift_sumcheck_from_batched_time(
     })
 }
 
+#[inline]
+fn commit_poseidon_lane_wits_batched(params: &NeoParams, wits: &[Mat<F>], label: &str) -> Result<Vec<Cmt>, PiCcsError> {
+    if wits.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut by_cols: std::collections::BTreeMap<usize, Vec<(usize, &Mat<F>)>> = std::collections::BTreeMap::new();
+    for (idx, z) in wits.iter().enumerate() {
+        by_cols.entry(z.cols()).or_default().push((idx, z));
+    }
+    let mut out: Vec<Option<Cmt>> = vec![None; wits.len()];
+    for (cols, grouped) in by_cols.into_iter() {
+        let committer = crate::shard::poseidon_lane_helpers::poseidon_lane_committer(params, cols, label)?;
+        let refs: Vec<&Mat<F>> = grouped.iter().map(|(_, z)| *z).collect();
+        let commits = committer.commit_many(&refs);
+        if commits.len() != refs.len() {
+            return Err(PiCcsError::ProtocolError(format!(
+                "{label}: commit_many returned {} commitments for {} matrices",
+                commits.len(),
+                refs.len()
+            )));
+        }
+        for ((idx, _), c) in grouped.into_iter().zip(commits.into_iter()) {
+            out[idx] = Some(c);
+        }
+    }
+    out.into_iter()
+        .enumerate()
+        .map(|(idx, c)| {
+            c.ok_or_else(|| PiCcsError::ProtocolError(format!("{label}: missing commitment at index {idx}")))
+        })
+        .collect()
+}
+
 pub(crate) fn fold_shard_prove_impl<L, MR, MB>(
     collect_val_lane_wits: bool,
     mode: FoldingMode,
@@ -86,12 +119,14 @@ pub(crate) fn fold_shard_prove_impl<L, MR, MB>(
     mut step_prove_ms_out: Option<&mut Vec<f64>>,
     initial_prev_step: Option<&StepWitnessBundle<Cmt, F, K>>,
     initial_prev_twist_decoded: Option<Vec<crate::memory_sidecar::memory::TwistDecodedColsSparse>>,
+    initial_poseidon_carry: Option<crate::memory_sidecar::memory::PoseidonSidecarCarryState>,
 ) -> Result<
     (
         ShardProof,
         Vec<Mat<F>>,
         Vec<Mat<F>>,
         Option<Vec<crate::memory_sidecar::memory::TwistDecodedColsSparse>>,
+        crate::memory_sidecar::memory::PoseidonSidecarCarryState,
     ),
     PiCcsError,
 >
@@ -164,8 +199,9 @@ where
     let mut step_proofs = Vec::with_capacity(steps.len());
     let mut val_lane_wits: Vec<Mat<F>> = Vec::new();
     let mut prev_twist_decoded = initial_prev_twist_decoded;
+    let mut poseidon_carry =
+        initial_poseidon_carry.unwrap_or_else(crate::memory_sidecar::memory::PoseidonSidecarCarryState::new);
     let mut output_proof: Option<neo_memory::output_check::OutputBindingProof> = None;
-
     if ob.is_some() && steps.is_empty() {
         return Err(PiCcsError::InvalidInput("output binding requires >= 1 step".into()));
     }
@@ -185,6 +221,7 @@ where
             None;
         let mut width_bitness_claim: Option<crate::memory_sidecar::route_a_time::ExtraBatchedTimeClaim> = None;
         let mut width_quiescence_claim: Option<crate::memory_sidecar::route_a_time::ExtraBatchedTimeClaim> = None;
+        let mut width_selector_linkage_claim: Option<crate::memory_sidecar::route_a_time::ExtraBatchedTimeClaim> = None;
         let mut width_load_semantics_claim: Option<crate::memory_sidecar::route_a_time::ExtraBatchedTimeClaim> = None;
         let mut width_store_semantics_claim: Option<crate::memory_sidecar::route_a_time::ExtraBatchedTimeClaim> = None;
         let mut control_next_pc_linear_claim: Option<crate::memory_sidecar::route_a_time::ExtraBatchedTimeClaim> = None;
@@ -194,8 +231,15 @@ where
             None;
         let mut control_control_writeback_claim: Option<crate::memory_sidecar::route_a_time::ExtraBatchedTimeClaim> =
             None;
+        let mut ob_reg_exact_linkage_claim: Option<crate::memory_sidecar::route_a_time::ExtraBatchedTimeClaim> = None;
         let mut ob_time_claim: Option<crate::memory_sidecar::route_a_time::ExtraBatchedTimeClaim> = None;
         let mut ob_r_prime: Option<Vec<K>> = None;
+        let mut ob_sparse_addr_weights: Option<Vec<(Vec<K>, K)>> = None;
+        let exact_reg_output_binding_active = include_ob
+            && ob
+                .as_ref()
+                .map(|(cfg, _)| step.mem_instances[cfg.mem_idx].0.mem_id == neo_memory::riscv::lookups::REG_EXACT_ID.0)
+                .unwrap_or(false);
 
         // Output binding is injected only on the final step, and must run before sampling Route-A `r_time`.
         if include_ob {
@@ -214,13 +258,6 @@ where
             let expected_k = 1usize
                 .checked_shl(cfg.num_bits as u32)
                 .ok_or_else(|| PiCcsError::InvalidInput("output binding: 2^num_bits overflow".into()))?;
-            if final_memory_state.len() != expected_k {
-                return Err(PiCcsError::InvalidInput(format!(
-                    "output binding: final_memory_state.len()={} != 2^num_bits={}",
-                    final_memory_state.len(),
-                    expected_k
-                )));
-            }
             let mem_inst = &step.mem_instances[cfg.mem_idx].0;
             if mem_inst.k != expected_k {
                 return Err(PiCcsError::InvalidInput(format!(
@@ -240,16 +277,37 @@ where
             tr.append_u64s(b"output_binding/mem_idx", &[cfg.mem_idx as u64]);
             tr.append_u64s(b"output_binding/num_bits", &[cfg.num_bits as u64]);
 
-            let (output_sc, r_prime) = neo_memory::output_check::generate_output_sumcheck_proof_and_challenges(
-                tr,
-                cfg.num_bits,
-                cfg.program_io.clone(),
-                final_memory_state,
-            )
-            .map_err(|e| PiCcsError::ProtocolError(format!("output sumcheck failed: {e:?}")))?;
-
-            output_proof = Some(neo_memory::output_check::OutputBindingProof { output_sc });
-            ob_r_prime = Some(r_prime);
+            let use_dense_output_sumcheck = cfg.num_bits <= neo_memory::output_check::OUTPUT_SUMCHECK_MAX_NUM_BITS;
+            if use_dense_output_sumcheck {
+                if final_memory_state.len() != expected_k {
+                    return Err(PiCcsError::InvalidInput(format!(
+                        "output binding: final_memory_state.len()={} != 2^num_bits={}",
+                        final_memory_state.len(),
+                        expected_k
+                    )));
+                }
+                let (output_sc, r_prime) = neo_memory::output_check::generate_output_sumcheck_proof_and_challenges(
+                    tr,
+                    cfg.num_bits,
+                    cfg.program_io.clone(),
+                    final_memory_state,
+                )
+                .map_err(|e| PiCcsError::ProtocolError(format!("output sumcheck failed: {e:?}")))?;
+                output_proof = Some(neo_memory::output_check::OutputBindingProof { output_sc });
+                ob_r_prime = Some(r_prime);
+            } else {
+                let sampled = crate::output_binding::sample_output_lincomb_weights(tr, &cfg.program_io);
+                let addr_weights = sampled
+                    .into_iter()
+                    .map(|(addr, _claim_value, alpha)| {
+                        (crate::output_binding::addr_bits_as_k(addr, cfg.num_bits), alpha)
+                    })
+                    .collect::<Vec<_>>();
+                output_proof = Some(neo_memory::output_check::OutputBindingProof {
+                    output_sc: neo_memory::output_check::OutputSumcheckProof::default(),
+                });
+                ob_sparse_addr_weights = Some(addr_weights);
+            }
         }
 
         let (mcs_inst, mcs_wit) = &step.mcs;
@@ -309,14 +367,6 @@ where
         // --------------------------------------------------------------------
         // Route A: Shared-challenge batched sum-check for time/row rounds.
         // --------------------------------------------------------------------
-        //
-        // 1) Bind CCS header + ME inputs
-        // 2) Sample CCS challenges (α, β, γ) and bind initial sum
-        // 3) Build CCS oracle + lazy Twist/Shout oracles
-        // 4) Run ONE batched sum-check for the first ell_n rounds (row/time)
-        // 5) Finish CCS alone for remaining ell_d Ajtai rounds
-        // 6) Emit CCS + memory ME claims at the shared r_time and fold via RLC/DEC
-
         utils::bind_header_and_instances_with_digest(
             tr,
             params,
@@ -339,6 +389,113 @@ where
         ch.beta_m = utils::sample_beta_m(tr, ell_m)?;
         let ccs_initial_sum = claimed_initial_sum_from_inputs_with_k_mcs(&s, &ch, 1, &accumulator);
         tr.append_fields(b"sumcheck/initial_sum", &ccs_initial_sum.as_coeffs());
+
+        // Build Poseidon lanes and bind their commitments *before* sampling route_a/r_cycle.
+        let poseidon_setup = build_poseidon_prover_setup(tr, params, step, step_idx, ell_n, &mut poseidon_carry)?;
+        let poseidon_cycle_enabled = poseidon_setup.cycle_enabled;
+        let poseidon_sidecar = poseidon_setup.sidecar;
+        let mut poseidon_cycle_wit = poseidon_setup.cycle_wit;
+        let poseidon_cycle_open_spec = poseidon_setup.cycle_open_spec;
+        let mut poseidon_cycle_wits: Option<Vec<Mat<F>>> = None;
+        let mut poseidon_cycle_open_specs: Option<Vec<(usize, usize, Vec<usize>)>> = None;
+        let mut poseidon_local_wit_full = poseidon_setup.local_wit_full;
+        let mut poseidon_local_wits = poseidon_setup.local_wits;
+        let mut poseidon_local_open_specs = poseidon_setup.local_open_specs;
+        let poseidon_local_t_len = poseidon_setup.local_t_len;
+        let poseidon_local_layout = poseidon_setup.local_layout;
+        let poseidon_local_ell = poseidon_setup.local_ell;
+        let mut poseidon_link_chals: Option<crate::memory_sidecar::memory::PoseidonLinkChallenges> = None;
+        let mut poseidon_cont_chals: Option<crate::memory_sidecar::memory::PoseidonContinuityChallenges> = None;
+        if poseidon_cycle_enabled {
+            let sidecar_ref = poseidon_sidecar
+                .as_ref()
+                .ok_or_else(|| PiCcsError::ProtocolError("missing poseidon sidecar table".into()))?;
+            let cycle_open_spec = poseidon_cycle_open_spec
+                .as_ref()
+                .ok_or_else(|| PiCcsError::ProtocolError("missing poseidon cycle opening spec".into()))?;
+            let local_t_len =
+                poseidon_local_t_len.ok_or_else(|| PiCcsError::ProtocolError("missing poseidon local t_len".into()))?;
+            let local_layout = poseidon_local_layout
+                .as_ref()
+                .ok_or_else(|| PiCcsError::ProtocolError("missing poseidon local layout".into()))?;
+            let mcs_logical = neo_memory::ajtai::decode_vector_for_ccs_m(params, s.m, &mcs_wit.Z).map_err(|e| {
+                PiCcsError::ProtocolError(format!(
+                    "failed to decode packed main witness for poseidon lane prefix (m={}): {e}",
+                    s.m
+                ))
+            })?;
+            let link_chals = crate::memory_sidecar::memory::sample_poseidon_link_challenges(tr);
+            let cont_chals = crate::memory_sidecar::memory::sample_poseidon_continuity_challenges(tr);
+
+            let cycle_layout = crate::memory_sidecar::memory::PoseidonCycleTraceLayout::new();
+            let cycle_wit = poseidon_cycle_wit
+                .as_mut()
+                .ok_or_else(|| PiCcsError::ProtocolError("missing poseidon cycle witness".into()))?;
+            crate::memory_sidecar::memory::populate_poseidon_cycle_link_aux_columns(
+                cycle_open_spec.1,
+                cycle_wit,
+                &cycle_layout,
+                sidecar_ref,
+                &link_chals,
+                &cont_chals,
+            )?;
+
+            let local_wit = poseidon_local_wit_full
+                .as_mut()
+                .ok_or_else(|| PiCcsError::ProtocolError("missing poseidon local witness".into()))?;
+            crate::memory_sidecar::memory::populate_poseidon_local_link_aux_column(
+                local_t_len,
+                local_wit,
+                local_layout,
+                sidecar_ref,
+                &link_chals,
+            )?;
+
+            let cycle_wit_ro = poseidon_cycle_wit
+                .as_ref()
+                .ok_or_else(|| PiCcsError::ProtocolError("missing poseidon cycle witness".into()))?;
+            let (cycle_wits_built, cycle_open_specs_built) = split_poseidon_lane_wit_by_time_cols(
+                params,
+                cycle_wit_ro,
+                cycle_open_spec.2.as_slice(),
+                cycle_open_spec.1,
+                cycle_open_spec.0,
+                Some(mcs_logical.as_slice()),
+                s.m,
+            )?;
+            poseidon_cycle_wits = Some(cycle_wits_built);
+            poseidon_cycle_open_specs = Some(cycle_open_specs_built);
+
+            let local_open_cols = crate::memory_sidecar::memory::poseidon_local_open_col_ids(local_layout);
+            let (local_wits_built, local_open_specs_built) = split_poseidon_lane_wit_by_time_cols(
+                params,
+                local_wit,
+                local_open_cols.as_slice(),
+                local_t_len,
+                0,
+                None,
+                s.m,
+            )?;
+            poseidon_local_wits = Some(local_wits_built);
+            poseidon_local_open_specs = Some(local_open_specs_built);
+            poseidon_link_chals = Some(link_chals);
+            poseidon_cont_chals = Some(cont_chals);
+        }
+
+        let (poseidon_cycle_commits, poseidon_local_commits) = if poseidon_cycle_enabled {
+            let cycle_wits_ref = poseidon_cycle_wits
+                .as_ref()
+                .ok_or_else(|| PiCcsError::ProtocolError("missing poseidon cycle witness chunks".into()))?;
+            let local_wits_ref = poseidon_local_wits
+                .as_ref()
+                .ok_or_else(|| PiCcsError::ProtocolError("missing poseidon local witness chunks".into()))?;
+            let cycle_cs = commit_poseidon_lane_wits_batched(params, cycle_wits_ref, "poseidon cycle commit")?;
+            let local_cs = commit_poseidon_lane_wits_batched(params, local_wits_ref, "poseidon local commit")?;
+            absorb_poseidon_lane_commitments_prover(tr, &cycle_cs, &local_cs);
+            (Some(cycle_cs), Some(local_cs))
+        } else {
+            (None, None)
+        };
 
         // Route A memory checks use a separate transcript-derived cycle point `r_cycle`
         // to form χ_{r_cycle}(t) weights inside their sum-check polynomials.
@@ -464,7 +621,7 @@ where
         let (
             width_bitness_built,
             width_quiescence_built,
-            _width_selector_linkage_built,
+            width_selector_linkage_built,
             width_load_semantics_built,
             width_store_semantics_built,
         ) = crate::memory_sidecar::memory::build_route_a_width_time_claims(params, step, &r_cycle)?;
@@ -491,6 +648,13 @@ where
                 oracle,
                 claimed_sum: K::ZERO,
                 label: b"width/quiescence",
+            });
+        }
+        if let Some((oracle, _claimed_sum)) = width_selector_linkage_built {
+            width_selector_linkage_claim = Some(crate::memory_sidecar::route_a_time::ExtraBatchedTimeClaim {
+                oracle,
+                claimed_sum: K::ZERO,
+                label: b"width/selector_linkage",
             });
         }
         if let Some((oracle, _claimed_sum)) = width_load_semantics_built {
@@ -552,13 +716,31 @@ where
                 label: b"control/writeback",
             });
         }
+        let poseidon_cycle_claims = build_poseidon_cycle_time_claims(
+            params,
+            step,
+            &r_cycle,
+            ell_n,
+            poseidon_cycle_enabled,
+            poseidon_sidecar.as_ref(),
+            poseidon_cycle_wit.as_ref(),
+            poseidon_cycle_open_spec.as_ref(),
+            poseidon_link_chals.as_ref(),
+            poseidon_cont_chals.as_ref(),
+        )?;
+        let poseidon_io_link_claim = poseidon_cycle_claims.io_link;
+        let poseidon_bitness_claim = poseidon_cycle_claims.bitness;
+        let poseidon_canonical_u64_claim = poseidon_cycle_claims.canonical_u64;
+        let poseidon_sidecar_link_claim = poseidon_cycle_claims.sidecar_link;
+        let poseidon_mode_claim = poseidon_cycle_claims.mode;
+        let poseidon_link_cycle_inv_claim = poseidon_cycle_claims.link_cycle_inv;
+        let poseidon_link_cycle_sum_claim = poseidon_cycle_claims.link_cycle_sum;
+        let poseidon_cont_inv_claim = poseidon_cycle_claims.cont_inv;
+        let poseidon_cont_sum_claim = poseidon_cycle_claims.cont_sum;
 
         if include_ob {
             let (cfg, _final_memory_state) =
                 ob.ok_or_else(|| PiCcsError::InvalidInput("output binding enabled but config missing".into()))?;
-            let r_prime = ob_r_prime
-                .as_ref()
-                .ok_or_else(|| PiCcsError::ProtocolError("output binding r_prime missing".into()))?;
             let pre = twist_pre
                 .get(cfg.mem_idx)
                 .ok_or_else(|| PiCcsError::ProtocolError("output binding mem_idx out of range for twist_pre".into()))?;
@@ -569,17 +751,57 @@ where
                 ));
             }
 
-            let mut oracles: Vec<Box<dyn RoundOracle>> = Vec::with_capacity(pre.decoded.lanes.len());
+            let mut oracles: Vec<Box<dyn RoundOracle + Send>> = Vec::new();
             let mut claimed_sum = K::ZERO;
-            for lane in pre.decoded.lanes.iter() {
-                let (oracle, claim) = neo_memory::twist_oracle::TwistTotalIncOracleSparseTime::new(
-                    lane.wa_bits.clone(),
-                    lane.has_write.clone(),
-                    lane.inc_at_write_addr.clone(),
-                    r_prime,
-                );
-                oracles.push(Box::new(oracle));
-                claimed_sum += claim;
+            let use_dense_output_sumcheck = cfg.num_bits <= neo_memory::output_check::OUTPUT_SUMCHECK_MAX_NUM_BITS;
+            if use_dense_output_sumcheck {
+                let r_prime = ob_r_prime
+                    .as_ref()
+                    .ok_or_else(|| PiCcsError::ProtocolError("output binding r_prime missing".into()))?;
+                oracles.reserve(pre.decoded.lanes.len());
+                for lane in pre.decoded.lanes.iter() {
+                    let (oracle, claim) = neo_memory::twist_oracle::TwistTotalIncOracleSparseTime::new(
+                        lane.wa_bits.clone(),
+                        lane.has_write.clone(),
+                        lane.inc_at_write_addr.clone(),
+                        r_prime,
+                    );
+                    oracles.push(Box::new(oracle));
+                    claimed_sum += claim;
+                }
+            } else {
+                let addr_weights = ob_sparse_addr_weights
+                    .as_ref()
+                    .ok_or_else(|| PiCcsError::ProtocolError("output binding sparse addr/weight set missing".into()))?;
+                oracles.reserve(pre.decoded.lanes.len().saturating_mul(addr_weights.len()));
+                for lane in pre.decoded.lanes.iter() {
+                    for (r_addr, alpha) in addr_weights.iter() {
+                        if *alpha == K::ZERO {
+                            continue;
+                        }
+                        let scaled_inc = neo_memory::sparse_time::SparseIdxVec::from_entries(
+                            lane.inc_at_write_addr.len(),
+                            lane.inc_at_write_addr
+                                .entries()
+                                .iter()
+                                .map(|(idx, val)| (*idx, *val * *alpha))
+                                .collect(),
+                        );
+                        let (oracle, claim) = neo_memory::twist_oracle::TwistTotalIncOracleSparseTime::new(
+                            lane.wa_bits.clone(),
+                            lane.has_write.clone(),
+                            scaled_inc,
+                            r_addr,
+                        );
+                        oracles.push(Box::new(oracle));
+                        claimed_sum += claim;
+                    }
+                }
+            }
+            if oracles.is_empty() {
+                return Err(PiCcsError::ProtocolError(
+                    "output binding produced zero active Twist increment oracles".into(),
+                ));
             }
             let oracle = crate::memory_sidecar::memory::SumRoundOracle::new(oracles)?;
 
@@ -588,6 +810,20 @@ where
                 claimed_sum,
                 label: crate::output_binding::OB_INC_TOTAL_LABEL,
             });
+            if exact_reg_output_binding_active {
+                let (oracle, claimed_sum) =
+                    crate::memory_sidecar::memory::build_rv64_reg_exact_output_linkage_claim(step, &r_cycle)?
+                        .ok_or_else(|| {
+                            PiCcsError::ProtocolError(
+                                "RV64 exact register output binding requires REG_EXACT linkage oracle".into(),
+                            )
+                        })?;
+                ob_reg_exact_linkage_claim = Some(crate::memory_sidecar::route_a_time::ExtraBatchedTimeClaim {
+                    oracle,
+                    claimed_sum,
+                    label: crate::output_binding::OB_REG_EXACT_LINKAGE_LABEL,
+                });
+            }
         }
 
         let crate::memory_sidecar::route_a_time::RouteABatchedTimeProverOutput {
@@ -607,15 +843,40 @@ where
             decode_decode_immediates_claim,
             width_bitness_claim,
             width_quiescence_claim,
-            None,
+            width_selector_linkage_claim,
             width_load_semantics_claim,
             width_store_semantics_claim,
             control_next_pc_linear_claim,
             control_next_pc_control_claim,
             control_branch_semantics_claim,
             control_control_writeback_claim,
+            poseidon_io_link_claim,
+            poseidon_bitness_claim,
+            poseidon_canonical_u64_claim,
+            poseidon_sidecar_link_claim,
+            poseidon_mode_claim,
+            poseidon_link_cycle_inv_claim,
+            poseidon_link_cycle_sum_claim,
+            poseidon_cont_inv_claim,
+            poseidon_cont_sum_claim,
+            ob_reg_exact_linkage_claim,
             ob_time_claim,
         )?;
+
+        let poseidon_local_artifacts = prove_poseidon_local_time_artifacts(
+            tr,
+            step_idx,
+            poseidon_cycle_enabled,
+            poseidon_local_ell,
+            poseidon_local_open_specs.as_ref(),
+            poseidon_local_t_len,
+            poseidon_local_layout,
+            poseidon_local_wit_full.as_ref(),
+            poseidon_link_chals.as_ref(),
+        )?;
+        let poseidon_local_time = poseidon_local_artifacts.local_time;
+        let poseidon_r_local = poseidon_local_artifacts.r_local;
+        ensure_poseidon_link_sums_match(poseidon_cycle_enabled, &batched_time, poseidon_local_time.as_ref())?;
 
         // Run CCS row rounds independently from Route-A batching.
         let mut ccs_time = RoundOraclePrefix::new(&mut ccs_oracle, ell_n);
@@ -959,7 +1220,27 @@ where
             let t = me.y_ring.len();
             normalize_me_claims(core::slice::from_mut(me), ell_t, ell_d, t)?;
         }
-
+        emit_poseidon_me_claims(
+            tr,
+            params,
+            &s,
+            &r_time,
+            ell_t,
+            ell_d,
+            &mut mem_proof,
+            PoseidonMeClaimsInputs {
+                poseidon_cycle_enabled,
+                poseidon_cycle_wits: poseidon_cycle_wits.as_ref(),
+                poseidon_cycle_commits: poseidon_cycle_commits.as_ref(),
+                poseidon_cycle_open_specs: poseidon_cycle_open_specs.as_ref(),
+                poseidon_local_wits: poseidon_local_wits.as_ref(),
+                poseidon_local_commits: poseidon_local_commits.as_ref(),
+                poseidon_local_open_specs: poseidon_local_open_specs.as_ref(),
+                poseidon_local_t_len,
+                poseidon_local_layout,
+                poseidon_r_local: poseidon_r_local.as_ref(),
+            },
+        )?;
         validate_me_batch_invariants(&ccs_out, "prove step ccs outputs")?;
 
         let want_main_wits = collect_val_lane_wits || idx + 1 < steps.len();
@@ -1221,7 +1502,7 @@ where
         let mut wb_fold: Vec<RlcDecProof> = Vec::new();
         if !mem_proof.wb_me_claims.is_empty() {
             let trace = Rv32TraceLayout::new();
-            let wb_cols = crate::memory_sidecar::memory::rv32_trace_wb_columns(&trace);
+            let wb_cols = crate::memory_sidecar::memory::riscv_trace_wb_columns(&trace);
             let core_t = s.t();
             tr.append_message(b"fold/wb_lane_start", &(step_idx as u64).to_le_bytes());
             for (claim_idx, me) in mem_proof.wb_me_claims.iter().enumerate() {
@@ -1252,39 +1533,68 @@ where
                     mixers.mix_rhos_commits,
                 );
                 let k_dec_lane = core::cmp::max(k_dec, required_dec_digits_for_matrix(params, &z_mix)?);
-                let (dec_wits, digit_nonzero) = ccs::split_b_matrix_k_with_nonzero_flags(&z_mix, k_dec_lane, params.b)?;
-                let zero_c = Cmt::zeros(mcs_inst.c.d, mcs_inst.c.kappa);
-                let mut child_cs: Vec<Cmt> = vec![zero_c.clone(); dec_wits.len()];
-                let nonzero_idx: Vec<usize> = digit_nonzero
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(idx, &nz)| nz.then_some(idx))
-                    .collect();
-                if !nonzero_idx.is_empty() {
-                    let mats: Vec<&Mat<F>> = nonzero_idx.iter().map(|&idx| &dec_wits[idx]).collect();
-                    let commits = l.commit_many(&mats);
-                    if commits.len() != mats.len() {
-                        return Err(PiCcsError::ProtocolError(format!(
-                            "WB DEC commit_many returned {} commitments for {} matrices",
-                            commits.len(),
-                            mats.len()
-                        )));
+                let materialize_wb_lane =
+                    || -> Result<(Vec<Mat<F>>, Vec<CeClaim<Cmt, F, K>>, bool, bool, bool), PiCcsError> {
+                        let (dec_wits, digit_nonzero) =
+                            ccs::split_b_matrix_k_with_nonzero_flags(&z_mix, k_dec_lane, params.b)?;
+                        let zero_c = Cmt::zeros(mcs_inst.c.d, mcs_inst.c.kappa);
+                        let mut child_cs: Vec<Cmt> = vec![zero_c.clone(); dec_wits.len()];
+                        let nonzero_idx: Vec<usize> = digit_nonzero
+                            .iter()
+                            .enumerate()
+                            .filter_map(|(idx, &nz)| nz.then_some(idx))
+                            .collect();
+                        if !nonzero_idx.is_empty() {
+                            let mats: Vec<&Mat<F>> = nonzero_idx.iter().map(|&idx| &dec_wits[idx]).collect();
+                            let commits = l.commit_many(&mats);
+                            if commits.len() != mats.len() {
+                                return Err(PiCcsError::ProtocolError(format!(
+                                    "WB DEC commit_many returned {} commitments for {} matrices",
+                                    commits.len(),
+                                    mats.len()
+                                )));
+                            }
+                            for (pos, &idx) in nonzero_idx.iter().enumerate() {
+                                child_cs[idx] = commits[pos].clone();
+                            }
+                        }
+                        let (dec_children, ok_y, ok_x, ok_c) = ccs::dec_children_with_commit_cached(
+                            mode.clone(),
+                            &s_lane,
+                            params,
+                            &rlc_parent,
+                            &dec_wits,
+                            ell_d,
+                            &child_cs,
+                            mixers.combine_b_pows,
+                            ccs_sparse_cache.as_deref(),
+                        );
+                        Ok((dec_wits, dec_children, ok_y, ok_x, ok_c))
+                    };
+
+                let (mut dec_children, wb_dec_wits, ok_y, ok_x, ok_c) = if !collect_val_lane_wits {
+                    match dec_stream_no_witness(
+                        params,
+                        &s_lane,
+                        &rlc_parent,
+                        &z_mix,
+                        ell_d,
+                        k_dec_lane,
+                        mixers.combine_b_pows,
+                        ccs_sparse_cache.as_deref(),
+                    ) {
+                        Ok((children, _child_cs, ok_y, ok_x, ok_c)) if ok_y && ok_x && ok_c => {
+                            (children, None, ok_y, ok_x, ok_c)
+                        }
+                        Ok(_) | Err(_) => {
+                            let (dec_wits, children, ok_y, ok_x, ok_c) = materialize_wb_lane()?;
+                            (children, Some(dec_wits), ok_y, ok_x, ok_c)
+                        }
                     }
-                    for (pos, &idx) in nonzero_idx.iter().enumerate() {
-                        child_cs[idx] = commits[pos].clone();
-                    }
-                }
-                let (mut dec_children, ok_y, ok_x, ok_c) = ccs::dec_children_with_commit_cached(
-                    mode.clone(),
-                    &s_lane,
-                    params,
-                    &rlc_parent,
-                    &dec_wits,
-                    ell_d,
-                    &child_cs,
-                    mixers.combine_b_pows,
-                    ccs_sparse_cache.as_deref(),
-                );
+                } else {
+                    let (dec_wits, children, ok_y, ok_x, ok_c) = materialize_wb_lane()?;
+                    (children, Some(dec_wits), ok_y, ok_x, ok_c)
+                };
                 if !(ok_y && ok_x && ok_c) {
                     return Err(PiCcsError::ProtocolError(format!(
                         "DEC(wb lane) public check failed at step {} claim_idx={} (y={}, X={}, c={}, me.r.len()={}, parent.r.len()={}, s_lane.n={})",
@@ -1298,13 +1608,24 @@ where
                         s_lane.n
                     )));
                 }
-                if dec_children.len() != dec_wits.len() {
-                    return Err(PiCcsError::ProtocolError(format!(
-                        "step {}: WB fold requires materialized DEC witnesses (children={}, wits={})",
-                        step_idx,
-                        dec_children.len(),
-                        dec_wits.len()
-                    )));
+                if let Some(dec_wits) = wb_dec_wits.as_ref() {
+                    if dec_children.len() != dec_wits.len() {
+                        return Err(PiCcsError::ProtocolError(format!(
+                            "step {}: WB fold requires materialized DEC witnesses (children={}, wits={})",
+                            step_idx,
+                            dec_children.len(),
+                            dec_wits.len()
+                        )));
+                    }
+                }
+                if collect_val_lane_wits {
+                    let dec_wits = wb_dec_wits.as_ref().ok_or_else(|| {
+                        PiCcsError::ProtocolError(format!(
+                            "step {}: WB fold expected materialized DEC witnesses for witness collection",
+                            step_idx
+                        ))
+                    })?;
+                    val_lane_wits.extend(dec_wits.iter().cloned());
                 }
                 let want_len = core_t
                     .checked_add(wb_cols.len())
@@ -1352,9 +1673,6 @@ where
                         )));
                     }
                 }
-                if collect_val_lane_wits {
-                    val_lane_wits.extend(dec_wits.iter().cloned());
-                }
                 wb_fold.push(RlcDecProof {
                     rlc_rhos,
                     rlc_parent,
@@ -1368,11 +1686,14 @@ where
         if !mem_proof.wp_me_claims.is_empty() {
             let trace = Rv32TraceLayout::new();
             let t_len = crate::memory_sidecar::memory::infer_rv32_trace_t_len_for_wb_wp(step, &trace)?;
-            let mut wp_open_cols = crate::memory_sidecar::memory::rv32_trace_wp_opening_columns(&trace);
+            let rv64_exact_words =
+                crate::memory_sidecar::memory::trace_uses_rv64_exact_words(step.time_columns.cpu_cols.len());
+            let mut wp_open_cols = crate::memory_sidecar::memory::riscv_trace_wp_opening_columns(&trace);
+            if rv64_exact_words {
+                wp_open_cols.extend(crate::memory_sidecar::memory::rv64_trace_exact_word_opening_columns());
+            }
             if control_required {
-                wp_open_cols.extend(crate::memory_sidecar::memory::rv32_trace_control_extra_opening_columns(
-                    &trace,
-                ));
+                wp_open_cols.extend(crate::memory_sidecar::memory::riscv_trace_control_extra_opening_columns(&trace));
             }
             if decode_required {
                 let decode_layout = Rv32DecodeSidecarLayout::new();
@@ -1440,10 +1761,15 @@ where
                     wp_open_cols.push(logical_col);
                 }
             }
-            if width_required {
+            if width_required
+                && !crate::memory_sidecar::memory::rv64_fullword_width_stage_required_for_step_witness(step)
+            {
                 wp_open_cols.extend(crate::memory_sidecar::memory::width_lookup_bus_val_cols_witness(
                     step, t_len,
                 )?);
+            }
+            if crate::memory_sidecar::memory::rv64_fullword_width_stage_required_for_step_witness(step) {
+                wp_open_cols.extend(crate::memory_sidecar::memory::rv64_fullword_wp_opening_columns());
             }
             let core_t = s.t();
             tr.append_message(b"fold/wp_lane_start", &(step_idx as u64).to_le_bytes());
@@ -1475,39 +1801,68 @@ where
                     mixers.mix_rhos_commits,
                 );
                 let k_dec_lane = core::cmp::max(k_dec, required_dec_digits_for_matrix(params, &z_mix)?);
-                let (dec_wits, digit_nonzero) = ccs::split_b_matrix_k_with_nonzero_flags(&z_mix, k_dec_lane, params.b)?;
-                let zero_c = Cmt::zeros(mcs_inst.c.d, mcs_inst.c.kappa);
-                let mut child_cs: Vec<Cmt> = vec![zero_c.clone(); dec_wits.len()];
-                let nonzero_idx: Vec<usize> = digit_nonzero
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(idx, &nz)| nz.then_some(idx))
-                    .collect();
-                if !nonzero_idx.is_empty() {
-                    let mats: Vec<&Mat<F>> = nonzero_idx.iter().map(|&idx| &dec_wits[idx]).collect();
-                    let commits = l.commit_many(&mats);
-                    if commits.len() != mats.len() {
-                        return Err(PiCcsError::ProtocolError(format!(
-                            "WP DEC commit_many returned {} commitments for {} matrices",
-                            commits.len(),
-                            mats.len()
-                        )));
+                let materialize_wp_lane =
+                    || -> Result<(Vec<Mat<F>>, Vec<CeClaim<Cmt, F, K>>, bool, bool, bool), PiCcsError> {
+                        let (dec_wits, digit_nonzero) =
+                            ccs::split_b_matrix_k_with_nonzero_flags(&z_mix, k_dec_lane, params.b)?;
+                        let zero_c = Cmt::zeros(mcs_inst.c.d, mcs_inst.c.kappa);
+                        let mut child_cs: Vec<Cmt> = vec![zero_c.clone(); dec_wits.len()];
+                        let nonzero_idx: Vec<usize> = digit_nonzero
+                            .iter()
+                            .enumerate()
+                            .filter_map(|(idx, &nz)| nz.then_some(idx))
+                            .collect();
+                        if !nonzero_idx.is_empty() {
+                            let mats: Vec<&Mat<F>> = nonzero_idx.iter().map(|&idx| &dec_wits[idx]).collect();
+                            let commits = l.commit_many(&mats);
+                            if commits.len() != mats.len() {
+                                return Err(PiCcsError::ProtocolError(format!(
+                                    "WP DEC commit_many returned {} commitments for {} matrices",
+                                    commits.len(),
+                                    mats.len()
+                                )));
+                            }
+                            for (pos, &idx) in nonzero_idx.iter().enumerate() {
+                                child_cs[idx] = commits[pos].clone();
+                            }
+                        }
+                        let (dec_children, ok_y, ok_x, ok_c) = ccs::dec_children_with_commit_cached(
+                            mode.clone(),
+                            &s_lane,
+                            params,
+                            &rlc_parent,
+                            &dec_wits,
+                            ell_d,
+                            &child_cs,
+                            mixers.combine_b_pows,
+                            ccs_sparse_cache.as_deref(),
+                        );
+                        Ok((dec_wits, dec_children, ok_y, ok_x, ok_c))
+                    };
+
+                let (mut dec_children, wp_dec_wits, ok_y, ok_x, ok_c) = if !collect_val_lane_wits {
+                    match dec_stream_no_witness(
+                        params,
+                        &s_lane,
+                        &rlc_parent,
+                        &z_mix,
+                        ell_d,
+                        k_dec_lane,
+                        mixers.combine_b_pows,
+                        ccs_sparse_cache.as_deref(),
+                    ) {
+                        Ok((children, _child_cs, ok_y, ok_x, ok_c)) if ok_y && ok_x && ok_c => {
+                            (children, None, ok_y, ok_x, ok_c)
+                        }
+                        Ok(_) | Err(_) => {
+                            let (dec_wits, children, ok_y, ok_x, ok_c) = materialize_wp_lane()?;
+                            (children, Some(dec_wits), ok_y, ok_x, ok_c)
+                        }
                     }
-                    for (pos, &idx) in nonzero_idx.iter().enumerate() {
-                        child_cs[idx] = commits[pos].clone();
-                    }
-                }
-                let (mut dec_children, ok_y, ok_x, ok_c) = ccs::dec_children_with_commit_cached(
-                    mode.clone(),
-                    &s_lane,
-                    params,
-                    &rlc_parent,
-                    &dec_wits,
-                    ell_d,
-                    &child_cs,
-                    mixers.combine_b_pows,
-                    ccs_sparse_cache.as_deref(),
-                );
+                } else {
+                    let (dec_wits, children, ok_y, ok_x, ok_c) = materialize_wp_lane()?;
+                    (children, Some(dec_wits), ok_y, ok_x, ok_c)
+                };
                 if !(ok_y && ok_x && ok_c) {
                     return Err(PiCcsError::ProtocolError(format!(
                         "DEC(wp lane) public check failed at step {} claim_idx={} (y={}, X={}, c={}, me.r.len()={}, parent.r.len()={}, s_lane.n={})",
@@ -1521,13 +1876,24 @@ where
                         s_lane.n
                     )));
                 }
-                if dec_children.len() != dec_wits.len() {
-                    return Err(PiCcsError::ProtocolError(format!(
-                        "step {}: WP fold requires materialized DEC witnesses (children={}, wits={})",
-                        step_idx,
-                        dec_children.len(),
-                        dec_wits.len()
-                    )));
+                if let Some(dec_wits) = wp_dec_wits.as_ref() {
+                    if dec_children.len() != dec_wits.len() {
+                        return Err(PiCcsError::ProtocolError(format!(
+                            "step {}: WP fold requires materialized DEC witnesses (children={}, wits={})",
+                            step_idx,
+                            dec_children.len(),
+                            dec_wits.len()
+                        )));
+                    }
+                }
+                if collect_val_lane_wits {
+                    let dec_wits = wp_dec_wits.as_ref().ok_or_else(|| {
+                        PiCcsError::ProtocolError(format!(
+                            "step {}: WP fold expected materialized DEC witnesses for witness collection",
+                            step_idx
+                        ))
+                    })?;
+                    val_lane_wits.extend(dec_wits.iter().cloned());
                 }
                 let want_len = core_t
                     .checked_add(wp_open_cols.len())
@@ -1575,9 +1941,6 @@ where
                         )));
                     }
                 }
-                if collect_val_lane_wits {
-                    val_lane_wits.extend(dec_wits.iter().cloned());
-                }
                 wp_fold.push(RlcDecProof {
                     rlc_rhos,
                     rlc_parent,
@@ -1585,6 +1948,26 @@ where
                 });
             }
         }
+
+        let poseidon_fold_lanes = prove_poseidon_fold_lanes(
+            &mode,
+            tr,
+            params,
+            &s,
+            ccs_sparse_cache.as_deref(),
+            &ring,
+            ell_d,
+            step_idx,
+            &mem_proof,
+            poseidon_cycle_wits.as_ref(),
+            poseidon_cycle_open_specs.as_ref(),
+            poseidon_local_wits.as_ref(),
+            poseidon_local_open_specs.as_ref(),
+            l,
+            mixers,
+        )?;
+        let poseidon_cycle_fold = poseidon_fold_lanes.cycle_fold;
+        let poseidon_local_fold = poseidon_fold_lanes.local_fold;
 
         accumulator = children.clone();
         accumulator_wit = if want_main_wits { Z_split } else { Vec::new() };
@@ -1724,7 +2107,7 @@ where
             }
             if let Some(wb_me) = mem_proof.wb_me_claims.first() {
                 let trace = Rv32TraceLayout::new();
-                let wb_cols = crate::memory_sidecar::memory::rv32_trace_wb_columns(&trace);
+                let wb_cols = crate::memory_sidecar::memory::riscv_trace_wb_columns(&trace);
                 let can_use_time_cpu_cols = step.time_columns.t > 0
                     && !step.time_columns.cpu_cols.is_empty()
                     && wb_cols
@@ -1775,11 +2158,17 @@ where
             }
             if let Some(wp_me) = mem_proof.wp_me_claims.first() {
                 let trace = Rv32TraceLayout::new();
-                let mut wp_cols = crate::memory_sidecar::memory::rv32_trace_wp_opening_columns(&trace);
+                let rv64_exact_words =
+                    crate::memory_sidecar::memory::trace_uses_rv64_exact_words(step.time_columns.cpu_cols.len());
+                let mut wp_cols = crate::memory_sidecar::memory::riscv_trace_wp_opening_columns(&trace);
+                if rv64_exact_words {
+                    wp_cols.extend(crate::memory_sidecar::memory::rv64_trace_exact_word_opening_columns());
+                }
                 if control_required {
-                    wp_cols.extend(crate::memory_sidecar::memory::rv32_trace_control_extra_opening_columns(
-                        &trace,
-                    ));
+                    wp_cols.extend(crate::memory_sidecar::memory::riscv_trace_control_extra_opening_columns(&trace));
+                }
+                if crate::memory_sidecar::memory::rv64_fullword_width_stage_required_for_step_witness(step) {
+                    wp_cols.extend(crate::memory_sidecar::memory::rv64_fullword_wp_opening_columns());
                 }
                 let mut seen_wp_cols = std::collections::BTreeSet::new();
                 wp_cols.retain(|col_id| seen_wp_cols.insert(*col_id));
@@ -1827,6 +2216,56 @@ where
                 out.push(crate::shard_proof_types::TimePointOpening {
                     point: wp_me.r.clone(),
                     col_ids: wp_cols,
+                    evals,
+                    source: crate::shard_proof_types::TimeOpeningSource::CommittedOpening,
+                });
+            }
+            if exact_reg_output_binding_active {
+                let trace = neo_memory::riscv::trace::Rv64TraceLayout::new();
+                let reg_exact_cols = vec![
+                    trace.rd_addr,
+                    trace.rd_has_write,
+                    trace.is_virtual,
+                    trace.rd_val_lo32,
+                    trace.rd_val_hi32,
+                ];
+                let can_use_time_cpu_cols = step.time_columns.t > 0
+                    && !step.time_columns.cpu_cols.is_empty()
+                    && reg_exact_cols
+                        .iter()
+                        .all(|&col_id| col_id < step.time_columns.cpu_cols.len());
+                if !can_use_time_cpu_cols {
+                    return Err(PiCcsError::ProtocolError(format!(
+                        "named openings reg_exact: canonical time cpu columns are required (time_t={}, cpu_cols={}, reg_exact_cols={})",
+                        step.time_columns.t,
+                        step.time_columns.cpu_cols.len(),
+                        reg_exact_cols.len()
+                    )));
+                }
+                if !has_committed_time_cpu {
+                    return Err(PiCcsError::ProtocolError(
+                        "named openings reg_exact: canonical time-column path requires committed time cpu columns"
+                            .into(),
+                    ));
+                }
+                let trace_map = crate::memory_sidecar::cpu_bus::time_columns_openings_from_time_columns_at_point(
+                    mcs_inst.m_in,
+                    step.time_columns.t,
+                    &step.time_columns.cpu_cols,
+                    &reg_exact_cols,
+                    r_time.as_slice(),
+                    "named openings reg_exact",
+                )?;
+                let mut evals = Vec::with_capacity(reg_exact_cols.len());
+                for &col_id in reg_exact_cols.iter() {
+                    let v = trace_map.get(&col_id).copied().ok_or_else(|| {
+                        PiCcsError::ProtocolError(format!("named openings reg_exact: missing col_id={col_id}"))
+                    })?;
+                    evals.push(v);
+                }
+                out.push(crate::shard_proof_types::TimePointOpening {
+                    point: r_time.clone(),
+                    col_ids: reg_exact_cols,
                     evals,
                     source: crate::shard_proof_types::TimeOpeningSource::CommittedOpening,
                 });
@@ -2101,7 +2540,7 @@ where
                 time_t: step.time_columns.t,
                 time_declared_len,
                 time_col_ids: step.time_columns.col_ids.clone(),
-                memory_time_proofs: batched_time.labels.iter().copied().collect(),
+                memory_time_proofs: batched_time.labels.clone(),
                 openings: fold_openings,
                 opening_proofs,
                 opening_manifest,
@@ -2118,6 +2557,9 @@ where
             },
             mem: mem_proof,
             batched_time,
+            poseidon_local_time,
+            poseidon_cycle_fold,
+            poseidon_local_fold,
             val_fold,
             wb_fold,
             wp_fold,
@@ -2135,10 +2577,13 @@ where
         ShardProof {
             steps: step_proofs,
             output_proof,
+            riscv_profile: None,
+            riscv_memory_layout: None,
             segment_meta: None,
         },
         accumulator_wit,
         val_lane_wits,
         prev_twist_decoded,
+        poseidon_carry,
     ))
 }

@@ -68,6 +68,17 @@ fn balanced_divrem_i64(v: i64, b: i64) -> (i64, i64) {
 }
 
 #[inline]
+fn balanced_divrem_i64_base2(v: i64) -> (i64, i64) {
+    if (v & 1) == 0 {
+        (0, v >> 1)
+    } else if v > 0 {
+        (1, (v - 1) >> 1)
+    } else {
+        (-1, (v + 1) >> 1)
+    }
+}
+
+#[inline]
 fn build_balanced_digit_lut(b: u32) -> (i64, Vec<F>) {
     let half = (b as i64) / 2;
     let mut lut = Vec::with_capacity((2 * half + 1) as usize);
@@ -119,6 +130,7 @@ pub fn split_b_matrix_k_with_nonzero_flags(
 
         if B_u <= i64::MAX as u128 {
             let b_i64 = b as i64;
+            let fast_base2 = b == 2;
             for idx in 0..total {
                 let z_entry = z_data[idx];
                 if z_entry == F::ZERO {
@@ -166,7 +178,11 @@ pub fn split_b_matrix_k_with_nonzero_flags(
                     if v == 0 {
                         break;
                     }
-                    let (r_i, q) = balanced_divrem_i64(v, b_i64);
+                    let (r_i, q) = if fast_base2 {
+                        balanced_divrem_i64_base2(v)
+                    } else {
+                        balanced_divrem_i64(v, b_i64)
+                    };
                     if r_i != 0 {
                         debug_assert!(r_i >= -digit_half && r_i <= digit_half);
                         let digit_f = digit_lut[(r_i + digit_half) as usize];
@@ -203,6 +219,7 @@ pub fn split_b_matrix_k_with_nonzero_flags(
             }
         } else {
             let b_i64 = b as i64;
+            let fast_base2 = b == 2;
             for idx in 0..total {
                 let z_entry = z_data[idx];
                 if z_entry == F::ZERO {
@@ -253,7 +270,11 @@ pub fn split_b_matrix_k_with_nonzero_flags(
                         if v64 == 0 {
                             break;
                         }
-                        let (r_i, q) = balanced_divrem_i64(v64, b_i64);
+                        let (r_i, q) = if fast_base2 {
+                            balanced_divrem_i64_base2(v64)
+                        } else {
+                            balanced_divrem_i64(v64, b_i64)
+                        };
                         if r_i != 0 {
                             debug_assert!(r_i >= -digit_half && r_i <= digit_half);
                             let digit_f = digit_lut[(r_i + digit_half) as usize];
@@ -554,7 +575,7 @@ where
 }
 
 /// Typed Π_RLC challenge: a validated ring-scalar rotation matrix.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RotRho(pub(crate) Mat<F>);
 
 impl RotRho {
@@ -881,9 +902,27 @@ where
 {
     let layout = witness_mat_layout(Z, expected_m)?;
     let mut X = Mat::zero(D, m_in, Ff::ZERO);
-    for rho in 0..D {
-        for c in 0..m_in {
-            X[(rho, c)] = witness_mat_get_f(Z, layout, expected_m, rho, c);
+    let active_cols = core::cmp::min(m_in, expected_m);
+    match layout {
+        WitnessMatLayout::SuperneoPacked => {
+            let max_blk = core::cmp::min(active_cols.div_ceil(D), Z.cols());
+            for blk in 0..max_blk {
+                let c0 = blk * D;
+                for rho in 0..D {
+                    let c = c0 + rho;
+                    if c >= active_cols {
+                        break;
+                    }
+                    X[(rho, c)] = Z[(rho, blk)];
+                }
+            }
+        }
+        WitnessMatLayout::DenseUnpacked => {
+            for rho in 0..D {
+                let dst = X.row_mut(rho);
+                let src = Z.row(rho);
+                dst[..active_cols].copy_from_slice(&src[..active_cols]);
+            }
         }
     }
     Ok(X)
@@ -1206,19 +1245,38 @@ where
     Ff: Field + PrimeCharacteristicRing + Copy + Send + Sync,
     K: From<Ff>,
 {
+    let rb = neo_ccs::utils::tensor_point::<K>(r);
+    let superneo_cache = crate::superneo_eval::build_superneo_eval_cache(s);
+    compute_y_from_Z_and_rb_with_cache(s, Z, &rb, ell_d, superneo_cache.as_ref())
+}
+
+/// Compute y from Z and a precomputed row tensor point `r^b`.
+///
+/// This variant enables callers to amortize the tensor-point and SuperNeo matrix-cache
+/// construction across many ME claims that share `(s, r)`.
+pub fn compute_y_from_Z_and_rb_with_cache<Ff>(
+    s: &CcsStructure<Ff>,
+    Z: &Mat<Ff>,
+    rb: &[K],
+    ell_d: usize,
+    superneo_cache: Option<&crate::superneo_eval::SuperneoEvalCache>,
+) -> (Vec<Vec<K>>, Vec<K>)
+where
+    Ff: Field + PrimeCharacteristicRing + Copy + Send + Sync,
+    K: From<Ff>,
+{
     use neo_ccs::CcsMatrix;
     let d_pad = 1usize << ell_d;
     let mut y_new: Vec<Vec<K>> = Vec::with_capacity(s.t());
     let z_layout = witness_mat_layout(Z, s.m)
         .unwrap_or_else(|e| panic!("compute_y_from_Z_and_r: invalid witness shape for m={}: {e}", s.m));
-    // Build r^b over rows
-    let rb = neo_ccs::utils::tensor_point::<K>(r);
-    if let Some(cache) = crate::superneo_eval::build_superneo_eval_cache(s) {
+    if let Some(cache) = superneo_cache {
         // SuperNeo fast path: evaluate cached transformed rows against decoded packed witness.
         let n_eff = core::cmp::min(s.n, rb.len());
         let z_vec = decode_superneo_coeffs_from_witness_mat(Z, s.m)
             .unwrap_or_else(|e| panic!("compute_y_from_Z_and_r: failed to decode packed witness coefficients: {e}"));
-        let y_ring = crate::superneo_eval::eval_all_mats_ring_cached(&cache, &z_vec, &rb, n_eff);
+        let z_blocks = crate::superneo_eval::SuperneoZBlocks::from_z(&z_vec);
+        let y_ring = crate::superneo_eval::eval_all_mats_ring_cached_with_blocks(cache, &z_blocks, rb, n_eff);
         for coeffs in y_ring.into_iter().take(s.t()) {
             let mut yj_pad = coeffs.to_vec();
             if d_pad > yj_pad.len() {

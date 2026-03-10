@@ -1,5 +1,33 @@
 use super::*;
 
+#[inline]
+fn packed_trace_link_operands(op: Rv32PackedShoutOp, addr_bits: &[K]) -> Result<(K, K), PiCcsError> {
+    let lhs = *addr_bits
+        .first()
+        .ok_or_else(|| PiCcsError::InvalidInput("packed Shout trace linkage requires lhs in addr_bits[0]".into()))?;
+    let rhs = match op {
+        Rv32PackedShoutOp::Sll | Rv32PackedShoutOp::Srl | Rv32PackedShoutOp::Sra => {
+            if addr_bits.len() < 6 {
+                return Err(PiCcsError::InvalidInput(
+                    "packed shift trace linkage requires 5 shamt bits after lhs".into(),
+                ));
+            }
+            let two = K::from(F::from_u64(2));
+            let mut pow = K::ONE;
+            let mut acc = K::ZERO;
+            for bit in addr_bits.iter().skip(1).take(5) {
+                acc += pow * *bit;
+                pow *= two;
+            }
+            acc
+        }
+        _ => *addr_bits.get(1).ok_or_else(|| {
+            PiCcsError::InvalidInput("packed Shout trace linkage requires rhs in addr_bits[1]".into())
+        })?,
+    };
+    Ok((lhs, rhs))
+}
+
 pub fn verify_route_a_memory_step(
     tr: &mut Poseidon2Transcript,
     cpu_bus: &BusLayout,
@@ -12,6 +40,7 @@ pub fn verify_route_a_memory_step(
     r_cycle: &[K],
     batched_final_values: &[K],
     batched_claimed_sums: &[K],
+    rv64_fullword_width_stage_from_proof: bool,
     claim_idx_start: usize,
     mem_proof: &MemSidecarProof<Cmt, F, K>,
     step_time_openings: &[crate::shard_proof_types::TimePointOpening],
@@ -19,6 +48,8 @@ pub fn verify_route_a_memory_step(
     shout_pre: &[ShoutAddrPreVerifyData],
     twist_pre: &[TwistAddrPreVerifyData],
     step_idx: usize,
+    poseidon_link_chals: Option<&PoseidonLinkChallenges>,
+    poseidon_cont_chals: Option<&PoseidonContinuityChallenges>,
 ) -> Result<RouteAMemoryVerifyOutput, PiCcsError> {
     let chi_cycle_at_r_time = eq_points(r_time, r_cycle);
     let trace_mode = wb_wp_required_for_step_instance(step);
@@ -150,8 +181,9 @@ pub fn verify_route_a_memory_step(
     let wb_enabled = wb_wp_required_for_step_instance(step);
     let wp_enabled = wb_wp_required_for_step_instance(step);
     let w2_enabled = decode_stage_required_for_step_instance(step);
-    let w3_enabled = width_stage_required_for_step_instance(step);
+    let w3_enabled = width_stage_required_for_step_instance(step) || rv64_fullword_width_stage_from_proof;
     let control_enabled = control_stage_required_for_step_instance(step);
+    let poseidon_cycle_enabled = RouteATimeClaimPlan::poseidon_stage_required_for_step_instance(step)?;
     let claim_plan = RouteATimeClaimPlan::build(
         step,
         claim_idx_start,
@@ -160,6 +192,7 @@ pub fn verify_route_a_memory_step(
         w2_enabled,
         w3_enabled,
         control_enabled,
+        poseidon_cycle_enabled,
     )?;
     if claim_plan.claim_idx_end > batched_final_values.len() {
         return Err(PiCcsError::InvalidInput(format!(
@@ -199,7 +232,7 @@ pub fn verify_route_a_memory_step(
             ));
         }
         let trace_layout = Rv32TraceLayout::new();
-        let wp_cols = rv32_trace_wp_opening_columns(&trace_layout);
+        let wp_cols = riscv_trace_wp_opening_columns(&trace_layout);
         let (wp_entry, wp_openings) =
             require_time_openings_covering_point(step_time_openings, r_time, &wp_cols, "virtual-domain check/WP")?;
         if wp_entry.source != crate::shard_proof_types::TimeOpeningSource::CommittedOpening {
@@ -280,22 +313,24 @@ pub fn verify_route_a_memory_step(
             _ => return Err(PiCcsError::InvalidInput("expected Shout proof".into())),
         }
         let packed_layout = rv32_packed_shout_layout(&inst.table_spec)?;
-        if matches!(packed_layout, Some((_op, time_bits)) if time_bits != 0) {
+        if matches!(packed_layout, Some((_op, _xlen, time_bits)) if time_bits != 0) {
             return Err(PiCcsError::InvalidInput(
                 "RiscvOpcodeEventTablePacked is not supported in shared-bus Route-A verification".into(),
             ));
         }
+        let packed_xlen = packed_layout.map(|(_op, xlen, _)| xlen).unwrap_or(0);
         let packed_opcode = match &inst.table_spec {
             Some(LutTableSpec::RiscvOpcodePacked { opcode, xlen }) => {
-                if *xlen != 32 {
+                if !neo_memory::riscv::packed::rv_packed_supported_opcode(*opcode, *xlen) {
                     return Err(PiCcsError::InvalidInput(format!(
-                        "RiscvOpcodePacked requires xlen=32 in Route-A verification (got xlen={xlen})"
+                        "unsupported packed RISC-V shout spec in Route-A verification: opcode={opcode:?}, xlen={xlen}"
                     )));
                 }
                 Some(*opcode)
             }
             _ => None,
         };
+        let packed_trace_op = packed_layout.map(|(op, _, _)| op);
 
         let ell_addr = inst.d * inst.ell;
         let expected_lanes = inst.lanes.max(1);
@@ -427,8 +462,9 @@ pub fn verify_route_a_memory_step(
                     if lane_claims.gamma_group.is_some() {
                         continue;
                     }
-                    let mut lane_terms = neo_memory::riscv::packed::rv32_collect_packed_bitness_terms(
+                    let mut lane_terms = neo_memory::riscv::packed::rv_collect_packed_bitness_terms(
                         op,
+                        packed_xlen,
                         lane.addr_bits.as_slice(),
                         lane.has_lookup,
                         lane.val,
@@ -503,14 +539,8 @@ pub fn verify_route_a_memory_step(
                         shout_trace_sums.add_sub_key += key;
                     }
                 } else {
-                    let (lhs, rhs) = if packed_opcode.is_some() {
-                        let lhs = *lane.addr_bits.first().ok_or_else(|| {
-                            PiCcsError::InvalidInput("packed Shout trace linkage requires lhs in addr_bits[0]".into())
-                        })?;
-                        let rhs = *lane.addr_bits.get(1).ok_or_else(|| {
-                            PiCcsError::InvalidInput("packed Shout trace linkage requires rhs in addr_bits[1]".into())
-                        })?;
-                        (lhs, rhs)
+                    let (lhs, rhs) = if let Some(op) = packed_trace_op {
+                        packed_trace_link_operands(op, lane.addr_bits.as_slice())?
                     } else {
                         unpack_interleaved_halves_lsb(&lane.addr_bits)?
                     };
@@ -922,8 +952,10 @@ pub fn verify_route_a_memory_step(
             lanes: lane_opens
                 .into_iter()
                 .map(|lane| TwistTimeLaneOpeningsLane {
+                    has_read: lane.has_read,
                     wa_bits: lane.wa_bits,
                     has_write: lane.has_write,
+                    wv: lane.wv,
                     inc_at_write_addr: lane.inc,
                 })
                 .collect(),
@@ -1333,6 +1365,7 @@ pub fn verify_route_a_memory_step(
         &claim_plan,
         mem_proof,
         step_time_openings,
+        rv64_fullword_width_stage_from_proof,
     )?;
     verify_route_a_control_terminals(
         cpu_bus,
@@ -1344,7 +1377,19 @@ pub fn verify_route_a_memory_step(
         mem_proof,
         step_time_openings,
     )?;
-
+    verify_route_a_poseidon_cycle_terminals(
+        core_t,
+        cpu_bus,
+        step,
+        r_time,
+        r_cycle,
+        batched_final_values,
+        &claim_plan,
+        mem_proof,
+        step_time_openings,
+        poseidon_link_chals,
+        poseidon_cont_chals,
+    )?;
     Ok(RouteAMemoryVerifyOutput {
         claim_idx_end: claim_plan.claim_idx_end,
         twist_time_openings,

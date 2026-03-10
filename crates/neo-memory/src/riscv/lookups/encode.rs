@@ -1,4 +1,5 @@
 use super::isa::{BranchCondition, RiscvInstruction, RiscvMemOp, RiscvOpcode};
+use super::{POSEIDON2_ABSORB_FUNCT7, POSEIDON2_CUSTOM_OPCODE, POSEIDON2_FINALIZE_FUNCT7, POSEIDON2_SQUEEZE_FUNCT7};
 
 /// Assemble a single RISC-V instruction to its 32-bit encoding.
 ///
@@ -25,7 +26,7 @@ pub fn encode_instruction(instr: &RiscvInstruction) -> u32 {
                 RiscvOpcode::Divu => (0b101, 0b0000001),
                 RiscvOpcode::Rem => (0b110, 0b0000001),
                 RiscvOpcode::Remu => (0b111, 0b0000001),
-                _ => (0, 0), // Not R-type
+                _ => panic!("unsupported R-type opcode for encoder: {op:?}"),
             };
             0b0110011
                 | ((*rd as u32) << 7)
@@ -46,7 +47,7 @@ pub fn encode_instruction(instr: &RiscvInstruction) -> u32 {
                 RiscvOpcode::Sll => 0b001,
                 RiscvOpcode::Srl => 0b101,
                 RiscvOpcode::Sra => 0b101,
-                _ => 0,
+                _ => panic!("unsupported I-type ALU opcode for encoder: {op:?}"),
             };
             let imm_bits = (*imm as u32) & 0xFFF;
             // For SRA, set the special bit
@@ -67,7 +68,7 @@ pub fn encode_instruction(instr: &RiscvInstruction) -> u32 {
                 RiscvMemOp::Lbu => 0b100,
                 RiscvMemOp::Lhu => 0b101,
                 RiscvMemOp::Lwu => 0b110,
-                _ => 0,
+                _ => panic!("unsupported load opcode for encoder: {op:?}"),
             };
             let imm_bits = (*imm as u32) & 0xFFF;
             0b0000011 | ((*rd as u32) << 7) | (funct3 << 12) | ((*rs1 as u32) << 15) | (imm_bits << 20)
@@ -79,7 +80,7 @@ pub fn encode_instruction(instr: &RiscvInstruction) -> u32 {
                 RiscvMemOp::Sh => 0b001,
                 RiscvMemOp::Sw => 0b010,
                 RiscvMemOp::Sd => 0b011,
-                _ => 0,
+                _ => panic!("unsupported store opcode for encoder: {op:?}"),
             };
             let imm_bits = *imm as u32;
             let imm_4_0 = imm_bits & 0x1F;
@@ -163,7 +164,7 @@ pub fn encode_instruction(instr: &RiscvInstruction) -> u32 {
                 RiscvOpcode::Divuw => (0b101, 0b0000001),
                 RiscvOpcode::Remw => (0b110, 0b0000001),
                 RiscvOpcode::Remuw => (0b111, 0b0000001),
-                _ => (0, 0),
+                _ => panic!("unsupported RV64 R-type W opcode for encoder: {op:?}"),
             };
             0b0111011
                 | ((*rd as u32) << 7)
@@ -179,7 +180,7 @@ pub fn encode_instruction(instr: &RiscvInstruction) -> u32 {
                 RiscvOpcode::Sllw => 0b001,
                 RiscvOpcode::Srlw => 0b101,
                 RiscvOpcode::Sraw => 0b101,
-                _ => 0,
+                _ => panic!("unsupported RV64 I-type W opcode for encoder: {op:?}"),
             };
             let imm_bits = (*imm as u32) & 0xFFF;
             let imm_bits = if *op == RiscvOpcode::Sraw {
@@ -195,7 +196,7 @@ pub fn encode_instruction(instr: &RiscvInstruction) -> u32 {
             let (funct3, funct5) = match op {
                 RiscvMemOp::LrW => (0b010, 0b00010),
                 RiscvMemOp::LrD => (0b011, 0b00010),
-                _ => (0, 0),
+                _ => panic!("unsupported load-reserved opcode for encoder: {op:?}"),
             };
             // AMO format: funct5 | aq | rl | rs2 | rs1 | funct3 | rd | opcode
             0b0101111 | ((*rd as u32) << 7) | (funct3 << 12) | ((*rs1 as u32) << 15) | (0 << 20) | (funct5 << 27)
@@ -205,7 +206,7 @@ pub fn encode_instruction(instr: &RiscvInstruction) -> u32 {
             let (funct3, funct5) = match op {
                 RiscvMemOp::ScW => (0b010, 0b00011),
                 RiscvMemOp::ScD => (0b011, 0b00011),
-                _ => (0, 0),
+                _ => panic!("unsupported store-conditional opcode for encoder: {op:?}"),
             };
             0b0101111
                 | ((*rd as u32) << 7)
@@ -235,7 +236,7 @@ pub fn encode_instruction(instr: &RiscvInstruction) -> u32 {
                 RiscvMemOp::AmominuD => (0b011, 0b11000),
                 RiscvMemOp::AmomaxuW => (0b010, 0b11100),
                 RiscvMemOp::AmomaxuD => (0b011, 0b11100),
-                _ => (0, 0),
+                _ => panic!("unsupported atomic AMO opcode for encoder: {op:?}"),
             };
             0b0101111
                 | ((*rd as u32) << 7)
@@ -243,6 +244,24 @@ pub fn encode_instruction(instr: &RiscvInstruction) -> u32 {
                 | ((*rs1 as u32) << 15)
                 | ((*rs2 as u32) << 20)
                 | (funct5 << 27)
+        }
+
+        // === Custom Precompile Instructions (CUSTOM-0) ===
+        RiscvInstruction::Poseidon2AbsorbElem { rs1, rs2 } => {
+            // opcode=0x0B, funct7=0x00, funct3=0, rd=x0
+            POSEIDON2_CUSTOM_OPCODE | ((*rs1 as u32) << 15) | ((*rs2 as u32) << 20) | (POSEIDON2_ABSORB_FUNCT7 << 25)
+        }
+
+        RiscvInstruction::Poseidon2Finalize => {
+            // opcode=0x0B, funct7=0x01, funct3=0, rs1=x0, rs2=x0, rd=x0
+            POSEIDON2_CUSTOM_OPCODE | (POSEIDON2_FINALIZE_FUNCT7 << 25)
+        }
+
+        RiscvInstruction::Poseidon2SqueezeWord { rd, idx } => {
+            // opcode=0x0B, funct7=0x02, funct3=idx[2:0]
+            assert!(*idx < 8, "Poseidon2SqueezeWord idx must be in 0..=7 (got {})", idx);
+            let funct3 = *idx as u32;
+            POSEIDON2_CUSTOM_OPCODE | ((*rd as u32) << 7) | (funct3 << 12) | (POSEIDON2_SQUEEZE_FUNCT7 << 25)
         }
 
         // === System Instructions ===

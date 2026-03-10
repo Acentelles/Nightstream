@@ -1,4 +1,5 @@
 use super::isa::{BranchCondition, RiscvInstruction, RiscvMemOp, RiscvOpcode};
+use super::{POSEIDON2_ABSORB_FUNCT7, POSEIDON2_CUSTOM_OPCODE, POSEIDON2_FINALIZE_FUNCT7, POSEIDON2_SQUEEZE_FUNCT7};
 
 /// RISC-V instruction format types.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -36,6 +37,13 @@ pub enum RiscvFormat {
 /// assert!(matches!(decoded, RiscvInstruction::IAlu { op: RiscvOpcode::Add, rd: 1, rs1: 0, imm: 42 }));
 /// ```
 pub fn decode_instruction(instr: u32) -> Result<RiscvInstruction, String> {
+    decode_instruction_with_xlen(instr, 32)
+}
+
+pub fn decode_instruction_with_xlen(instr: u32, xlen: usize) -> Result<RiscvInstruction, String> {
+    if xlen != 32 && xlen != 64 {
+        return Err(format!("unsupported xlen for decode: {xlen}"));
+    }
     // Extract common fields
     let opcode = instr & 0x7F;
     let rd = ((instr >> 7) & 0x1F) as u8;
@@ -84,24 +92,41 @@ pub fn decode_instruction(instr: u32) -> Result<RiscvInstruction, String> {
                 0b111 => RiscvOpcode::And,  // ANDI
                 0b001 => {
                     // SLLI
-                    if funct7 != 0b0000000 {
+                    if xlen == 64 {
+                        let funct6 = (instr >> 26) & 0x3F;
+                        if funct6 != 0b000000 {
+                            return Err(format!("Invalid RV64 SLLI funct6={:#x}", funct6));
+                        }
+                    } else if funct7 != 0b0000000 {
                         return Err(format!("Invalid SLLI funct7={:#x}", funct7));
                     }
                     RiscvOpcode::Sll
                 }
                 0b101 => {
                     // SRLI or SRAI
-                    match funct7 {
-                        0b0000000 => RiscvOpcode::Srl,
-                        0b0100000 => RiscvOpcode::Sra,
-                        _ => return Err(format!("Invalid SRLI/SRAI funct7={:#x}", funct7)),
+                    if xlen == 64 {
+                        match (instr >> 26) & 0x3F {
+                            0b000000 => RiscvOpcode::Srl,
+                            0b010000 => RiscvOpcode::Sra,
+                            funct6 => return Err(format!("Invalid RV64 SRLI/SRAI funct6={:#x}", funct6)),
+                        }
+                    } else {
+                        match funct7 {
+                            0b0000000 => RiscvOpcode::Srl,
+                            0b0100000 => RiscvOpcode::Sra,
+                            _ => return Err(format!("Invalid SRLI/SRAI funct7={:#x}", funct7)),
+                        }
                     }
                 }
                 _ => return Err(format!("Unknown I-type OP-IMM: funct3={:#x}", funct3)),
             };
             // For shifts, extract shamt properly
             let imm = if funct3 == 0b001 || funct3 == 0b101 {
-                (instr >> 20) & 0x1F // shamt for shifts (RV32)
+                if xlen == 64 {
+                    (instr >> 20) & 0x3F
+                } else {
+                    (instr >> 20) & 0x1F
+                }
             } else {
                 imm as u32
             };
@@ -179,6 +204,67 @@ pub fn decode_instruction(instr: u32) -> Result<RiscvInstruction, String> {
         0b0010111 => {
             let imm = (instr >> 12) as i32;
             Ok(RiscvInstruction::Auipc { rd, imm })
+        }
+
+        // CUSTOM-0 (0001011) - Poseidon2 precompile instruction family
+        POSEIDON2_CUSTOM_OPCODE => {
+            if !cfg!(feature = "poseidon-precompile") {
+                return Err("Unsupported CUSTOM-0 instruction: poseidon-precompile feature is disabled".into());
+            }
+            match funct7 {
+                // P2_ABSORB_ELEM: funct7=0x00, funct3=0, rd=x0
+                POSEIDON2_ABSORB_FUNCT7 => {
+                    if funct3 != 0 {
+                        return Err(format!(
+                            "Invalid P2_ABSORB_ELEM encoding: funct3 must be 0 (got {:#x}, instr={:#x})",
+                            funct3, instr
+                        ));
+                    }
+                    if rd != 0 {
+                        return Err(format!(
+                            "Invalid P2_ABSORB_ELEM encoding: rd must be x0 (got x{}, instr={:#x})",
+                            rd, instr
+                        ));
+                    }
+                    Ok(RiscvInstruction::Poseidon2AbsorbElem { rs1, rs2 })
+                }
+                // P2_FINALIZE: funct7=0x01, funct3=0, rd=x0
+                POSEIDON2_FINALIZE_FUNCT7 => {
+                    if funct3 != 0 {
+                        return Err(format!(
+                            "Invalid P2_FINALIZE encoding: funct3 must be 0 (got {:#x}, instr={:#x})",
+                            funct3, instr
+                        ));
+                    }
+                    if rd != 0 {
+                        return Err(format!(
+                            "Invalid P2_FINALIZE encoding: rd must be x0 (got x{}, instr={:#x})",
+                            rd, instr
+                        ));
+                    }
+                    if rs1 != 0 || rs2 != 0 {
+                        return Err(format!(
+                            "Invalid P2_FINALIZE encoding: rs1/rs2 must be x0 (got rs1=x{}, rs2=x{}, instr={:#x})",
+                            rs1, rs2, instr
+                        ));
+                    }
+                    Ok(RiscvInstruction::Poseidon2Finalize)
+                }
+                // P2_SQUEEZE_WORD: funct7=0x02, funct3=idx[2:0], rd=destination
+                POSEIDON2_SQUEEZE_FUNCT7 => {
+                    if rs1 != 0 || rs2 != 0 {
+                        return Err(format!(
+                            "Invalid P2_SQUEEZE_WORD encoding: rs1/rs2 must be x0 (got rs1=x{}, rs2=x{}, instr={:#x})",
+                            rs1, rs2, instr
+                        ));
+                    }
+                    Ok(RiscvInstruction::Poseidon2SqueezeWord { rd, idx: funct3 as u8 })
+                }
+                _ => Err(format!(
+                    "Unsupported CUSTOM-0 instruction: funct7={:#x}, funct3={:#x}, instr={:#x}",
+                    funct7, funct3, instr
+                )),
+            }
         }
 
         // SYSTEM (1110011) - ECALL (trap/terminate in this VM)

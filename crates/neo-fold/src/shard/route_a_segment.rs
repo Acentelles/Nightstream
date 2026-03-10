@@ -153,6 +153,8 @@ where
             ShardProof {
                 steps: Vec::new(),
                 output_proof: None,
+                riscv_profile: None,
+                riscv_memory_layout: None,
                 segment_meta: None,
             },
             acc_wit_init.to_vec(),
@@ -168,6 +170,7 @@ where
     let mut merged_output_proof: Option<neo_memory::output_check::OutputBindingProof> = None;
     let mut prev_step_ctx: Option<&StepWitnessBundle<Cmt, F, K>> = None;
     let mut prev_twist_decoded: Option<Vec<crate::memory_sidecar::memory::TwistDecodedColsSparse>> = None;
+    let mut poseidon_carry = crate::memory_sidecar::memory::PoseidonSidecarCarryState::new();
     let mut route_chunk_meta: Vec<ShardSegmentMeta> = Vec::new();
 
     let mut cursor = 0usize;
@@ -179,28 +182,32 @@ where
             .ok_or_else(|| PiCcsError::InvalidInput("step index overflow".into()))?;
         let chunk_ob = if end == steps.len() { ob } else { None };
 
-        let (chunk_proof, next_main_wits, mut chunk_val_lane_wits, next_prev_twist_decoded) = fold_shard_prove_impl(
-            true,
-            mode.clone(),
-            tr,
-            params,
-            s_me,
-            chunk,
-            chunk_step_offset,
-            &accumulator,
-            &accumulator_wit,
-            l,
-            mixers,
-            chunk_ob,
-            prover_ctx,
-            None,
-            prev_step_ctx,
-            prev_twist_decoded.take(),
-        )?;
+        let (chunk_proof, next_main_wits, mut chunk_val_lane_wits, next_prev_twist_decoded, next_poseidon_carry) =
+            fold_shard_prove_impl(
+                true,
+                mode.clone(),
+                tr,
+                params,
+                s_me,
+                chunk,
+                chunk_step_offset,
+                &accumulator,
+                &accumulator_wit,
+                l,
+                mixers,
+                chunk_ob,
+                prover_ctx,
+                None,
+                prev_step_ctx,
+                prev_twist_decoded.take(),
+                Some(poseidon_carry),
+            )?;
         let next_accumulator = chunk_proof.compute_final_main_children(&accumulator);
         let ShardProof {
             steps: chunk_steps,
             output_proof: chunk_output_proof,
+            riscv_profile: _,
+            riscv_memory_layout: _,
             segment_meta: _,
         } = chunk_proof;
         if chunk_steps.len() != chunk.len() {
@@ -237,12 +244,15 @@ where
         merged_steps.push(compressed_step);
         prev_step_ctx = chunk.last();
         prev_twist_decoded = next_prev_twist_decoded;
+        poseidon_carry = next_poseidon_carry;
         cursor = end;
     }
 
     let proof = ShardProof {
         steps: merged_steps,
         output_proof: merged_output_proof,
+        riscv_profile: None,
+        riscv_memory_layout: None,
         segment_meta: Some(route_chunk_meta),
     };
     if ob.is_some() != proof.output_proof.is_some() {
@@ -369,6 +379,8 @@ where
             } else {
                 None
             },
+            riscv_profile: None,
+            riscv_memory_layout: None,
             segment_meta: None,
         };
         let chunk_ob_cfg = if chunk_is_final { ob_cfg } else { None };

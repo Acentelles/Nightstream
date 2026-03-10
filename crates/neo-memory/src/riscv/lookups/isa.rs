@@ -81,6 +81,39 @@ pub enum RiscvOpcode {
     /// Remainder Word (unsigned): rd = sext((rs1 % rs2)[31:0])
     Remuw,
 
+    // === Internal helper lookup ops used by decomposition ===
+    /// Internal helper: low 32-bit multiply, zero-extended to u64.
+    ///
+    /// This is not an architectural RISC-V opcode. It exists so RV64 `Mulw`
+    /// can be proven via helper lookups on the existing packed RV32 multiply path.
+    VirtualMulWord,
+    /// Internal helper: low 32-bit unsigned divide, zero-extended to u64.
+    ///
+    /// This is not an architectural RISC-V opcode. It exists so RV64 `Divuw`
+    /// can be proven via helper lookups on the existing packed RV32 unsigned divide path.
+    VirtualDivuWord,
+    /// Internal helper: low 32-bit unsigned remainder, zero-extended to u64.
+    ///
+    /// This is not an architectural RISC-V opcode. It exists so RV64 `Remuw`
+    /// can be proven via helper lookups on the existing packed RV32 unsigned remainder path.
+    VirtualRemuWord,
+    /// Internal helper: low 32-bit signed divide, returned as raw low-word bits.
+    ///
+    /// This is not an architectural RISC-V opcode. It exists so RV64 `Divw`
+    /// can be proven via helper lookups on the existing packed RV32 signed divide path.
+    VirtualDivWord,
+    /// Internal helper: low 32-bit signed remainder, returned as raw low-word bits.
+    ///
+    /// This is not an architectural RISC-V opcode. It exists so RV64 `Remw`
+    /// can be proven via helper lookups on the existing packed RV32 signed remainder path.
+    VirtualRemWord,
+    /// Internal helper: low 32-bit sign-mask extraction (`0` or `0xffff_ffff`).
+    ///
+    /// This is not an architectural RISC-V opcode. It exists so RV64 W-family
+    /// decompositions can keep Shout outputs inside an injective 32-bit domain
+    /// and compose the final sign-extended 64-bit value locally.
+    VirtualMovsignWord,
+
     // === Bitmanip (Zbb subset, as used by Jolt) ===
     /// AND with NOT: rd = rs1 & ~rs2
     Andn,
@@ -119,6 +152,12 @@ impl fmt::Display for RiscvOpcode {
             RiscvOpcode::Divuw => write!(f, "DIVUW"),
             RiscvOpcode::Remw => write!(f, "REMW"),
             RiscvOpcode::Remuw => write!(f, "REMUW"),
+            RiscvOpcode::VirtualMulWord => write!(f, "VMULW"),
+            RiscvOpcode::VirtualDivuWord => write!(f, "VDIVUW"),
+            RiscvOpcode::VirtualRemuWord => write!(f, "VREMUW"),
+            RiscvOpcode::VirtualDivWord => write!(f, "VDIVW"),
+            RiscvOpcode::VirtualRemWord => write!(f, "VREMW"),
+            RiscvOpcode::VirtualMovsignWord => write!(f, "VMOVSIGNW"),
             RiscvOpcode::Andn => write!(f, "ANDN"),
         }
     }
@@ -408,7 +447,7 @@ impl BranchCondition {
 ///
 /// Based on Jolt's instruction representation (MIT/Apache-2.0 license).
 /// Credit: <https://github.com/a16z/jolt>
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RiscvInstruction {
     /// R-type ALU operation: rd = rs1 op rs2
     RAlu {
@@ -491,6 +530,36 @@ pub enum RiscvInstruction {
         rs1: u8,
         rs2: u8,
     },
+
+    // === Custom Precompiles (CUSTOM-0 / opcode 0x0B) ===
+    /// Poseidon2 precompile absorb step.
+    ///
+    /// Fixed encoding:
+    /// - opcode: CUSTOM-0 (0x0B)
+    /// - funct7: 0x00
+    /// - funct3: 0b000
+    /// - rd: x0
+    ///
+    /// Semantics: absorb one Goldilocks element reconstructed from
+    /// `rs1` (low 32 bits) and `rs2` (high 32 bits).
+    Poseidon2AbsorbElem { rs1: u8, rs2: u8 },
+    /// Poseidon2 precompile finalize step.
+    ///
+    /// Fixed encoding:
+    /// - opcode: CUSTOM-0 (0x0B)
+    /// - funct7: 0x01
+    /// - funct3: 0b000
+    /// - rd: x0
+    Poseidon2Finalize,
+    /// Poseidon2 precompile squeeze word.
+    ///
+    /// Fixed encoding:
+    /// - opcode: CUSTOM-0 (0x0B)
+    /// - funct7: 0x02
+    /// - funct3: idx (0..=7)
+    ///
+    /// Semantics: write digest word `idx` to register `rd`.
+    Poseidon2SqueezeWord { rd: u8, idx: u8 },
 
     // === System Instructions ===
     /// Environment Call (syscall)

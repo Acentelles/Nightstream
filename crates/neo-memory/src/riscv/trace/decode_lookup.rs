@@ -39,6 +39,7 @@ pub struct Rv32DecodeSidecarLayout {
     pub op_misc_mem: usize,
     pub op_system: usize,
     pub op_amo: usize,
+    pub op_custom: usize,
     pub op_lui_write: usize,
     pub op_auipc_write: usize,
     pub op_jal_write: usize,
@@ -99,6 +100,7 @@ impl Rv32DecodeSidecarLayout {
         let op_misc_mem = take();
         let op_system = take();
         let op_amo = take();
+        let op_custom = take();
         let op_lui_write = take();
         let op_auipc_write = take();
         let op_jal_write = take();
@@ -154,7 +156,7 @@ impl Rv32DecodeSidecarLayout {
         let rd_is_zero_012 = take();
         let rd_is_zero_0123 = take();
         let rd_is_zero = take();
-        debug_assert_eq!(next, 77);
+        debug_assert_eq!(next, 78);
         Self {
             cols: next,
             opcode,
@@ -179,6 +181,7 @@ impl Rv32DecodeSidecarLayout {
             op_misc_mem,
             op_system,
             op_amo,
+            op_custom,
             op_lui_write,
             op_auipc_write,
             op_jal_write,
@@ -224,7 +227,7 @@ impl Rv32DecodeSidecarLayout {
 
 #[inline]
 pub fn rv32_decode_lookup_backed_cols(layout: &Rv32DecodeSidecarLayout) -> Vec<usize> {
-    let mut out = Vec::with_capacity(56);
+    let mut out = Vec::with_capacity(57);
     out.push(layout.opcode);
     out.push(layout.rs2);
     out.push(layout.rd_has_write);
@@ -244,6 +247,7 @@ pub fn rv32_decode_lookup_backed_cols(layout: &Rv32DecodeSidecarLayout) -> Vec<u
         layout.op_misc_mem,
         layout.op_system,
         layout.op_amo,
+        layout.op_custom,
     ]);
     out.extend_from_slice(&layout.funct3_is);
     out.extend_from_slice(&[layout.imm_i, layout.imm_s, layout.imm_b, layout.imm_j]);
@@ -350,7 +354,7 @@ fn imm_j_from_word(instr_word: u32) -> u32 {
 
 #[inline]
 fn opcode_writes_rd(opcode_u64: u64) -> bool {
-    matches!(opcode_u64, 0x37 | 0x17 | 0x6F | 0x67 | 0x03 | 0x13 | 0x33)
+    matches!(opcode_u64, 0x37 | 0x17 | 0x6F | 0x67 | 0x03 | 0x13 | 0x1B | 0x33 | 0x3B)
 }
 
 pub fn rv32_decode_lookup_backed_row_from_instr_word(
@@ -409,13 +413,23 @@ pub fn rv32_decode_lookup_backed_row_from_instr_word(
     row[layout.op_branch] = is(0x63);
     row[layout.op_load] = is(0x03);
     row[layout.op_store] = is(0x23);
-    row[layout.op_alu_imm] = is(0x13);
-    row[layout.op_alu_reg] = is(0x33);
+    row[layout.op_alu_imm] = if opcode_u64 == 0x13 || opcode_u64 == 0x1B {
+        F::ONE
+    } else {
+        F::ZERO
+    };
+    row[layout.op_alu_reg] = if opcode_u64 == 0x33 || opcode_u64 == 0x3B {
+        F::ONE
+    } else {
+        F::ZERO
+    };
     row[layout.op_misc_mem] = is(0x0F);
     row[layout.op_system] = is(0x73);
     row[layout.op_amo] = is(0x2F);
+    row[layout.op_custom] = is(0x0B);
 
-    let rd_has_write_f = if opcode_writes_rd(opcode_u64) && rd_u64 != 0 {
+    let custom_squeeze_writes_rd = opcode_u64 == 0x0B && funct7_u64 == 0x02;
+    let rd_has_write_f = if (opcode_writes_rd(opcode_u64) || custom_squeeze_writes_rd) && rd_u64 != 0 {
         F::ONE
     } else {
         F::ZERO
@@ -486,10 +500,26 @@ pub fn rv32_decode_lookup_backed_row_from_instr_word(
     };
     let branch_table_expected: u64 =
         10 - 5 * ((funct3_u64 >> 2) & 1) + (((funct3_u64 >> 1) & 1) * ((funct3_u64 >> 2) & 1));
+    let alu_reg_w_table_id = match funct3_u64 {
+        0 => 20 + funct7_b5,
+        1 => 22,
+        5 => 23 + funct7_b5,
+        _ => 0,
+    };
+    let alu_imm_w_table_id = match funct3_u64 {
+        0 => 20,
+        1 => 22,
+        5 => 23 + funct7_b5,
+        _ => 0,
+    };
     row[layout.shout_table_id] = if opcode_u64 == 0x33 {
         F::from_u64(alu_reg_table_id)
+    } else if opcode_u64 == 0x3B {
+        F::from_u64(alu_reg_w_table_id)
     } else if opcode_u64 == 0x13 {
         F::from_u64(alu_table_base + (funct7_b5 * f3_is_5))
+    } else if opcode_u64 == 0x1B {
+        F::from_u64(alu_imm_w_table_id)
     } else if opcode_u64 == 0x63 {
         F::from_u64(branch_table_expected)
     } else if matches!(opcode_u64, 0x03 | 0x23 | 0x67 | 0x17) {

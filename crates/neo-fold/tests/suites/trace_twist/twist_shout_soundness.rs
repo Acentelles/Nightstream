@@ -337,7 +337,7 @@ fn tamper_batched_time_label_fails() {
     )
     .expect("prove should succeed");
 
-    proof.steps[0].batched_time.labels[0] = b"bad/label".as_slice();
+    proof.steps[0].batched_time.labels[0] = b"bad/label".to_vec();
 
     let mut tr_verify = Poseidon2Transcript::new(b"soundness/tamper-batched-time-label");
     let steps_public = [StepInstanceBundle::from(&step_bundle)];
@@ -414,7 +414,9 @@ fn tamper_batched_time_static_claim_sum_nonzero_fails() {
     .expect("prove should succeed");
 
     let step_inst = StepInstanceBundle::from(&step_bundle);
-    let metas = RouteATimeClaimPlan::time_claim_metas_for_step(&step_inst, false, false, false, false, false, None);
+    let metas = RouteATimeClaimPlan::time_claim_metas_for_step(
+        &step_inst, false, false, false, false, false, false, None, None,
+    );
     let static_idx = metas
         .iter()
         .enumerate()

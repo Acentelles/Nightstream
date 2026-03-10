@@ -1,64 +1,19 @@
-//! RV64IMAC Validation Test Suite
+//! RV64IM Validation Test Suite
 //!
-//! Validates that all RISC-V extensions are correctly implemented:
+//! Validates the supported RV64IM execution surface:
 //! - I: Base Integer
 //! - M: Multiply/Divide
-//! - A: Atomics
-//! - C: Compressed Instructions
+//!
+//! Legacy internal A/C coverage lives in `riscv_legacy_ac_validation.rs`.
 
 use neo_memory::riscv::lookups::*;
-use neo_vm_trace::{trace_program, Twist, TwistId, TwistOpKind};
+use neo_memory::riscv::packed::{build_rv_packed_cols, rv_packed_supported_opcode};
+use neo_memory::RiscvProofProfile;
+use p3_goldilocks::Goldilocks;
+#[path = "common/riscv_exec_helpers.rs"]
+mod riscv_exec_helpers;
 
-// =============================================================================
-// Helper: Execute a program and return final register state
-// =============================================================================
-
-fn run_program(instructions: Vec<RiscvInstruction>, xlen: usize) -> Vec<u64> {
-    let program_bytes = encode_program(&instructions);
-    let mut cpu = RiscvCpu::new(xlen);
-    cpu.load_program(0, instructions);
-    let memory = RiscvMemory::with_program_in_twist(xlen, TwistId(1), 0, &program_bytes);
-    let shout = RiscvShoutTables::new(xlen);
-
-    let trace = trace_program(cpu, memory, shout, 1000).expect("execution failed");
-    assert!(trace.did_halt(), "program should halt");
-
-    trace.steps.last().unwrap().regs_after.clone()
-}
-
-#[allow(dead_code)]
-fn run_program_with_memory(
-    instructions: Vec<RiscvInstruction>,
-    xlen: usize,
-    initial_memory: Vec<(u64, u64)>,
-) -> (Vec<u64>, RiscvMemory) {
-    let program_bytes = encode_program(&instructions);
-    let mut cpu = RiscvCpu::new(xlen);
-    cpu.load_program(0, instructions);
-    let mut memory = RiscvMemory::with_program_in_twist(xlen, TwistId(1), 0, &program_bytes);
-
-    // Initialize memory
-    for (addr, val) in initial_memory {
-        memory.store(neo_vm_trace::TwistId(0), addr, val);
-    }
-
-    let shout = RiscvShoutTables::new(xlen);
-    let trace = trace_program(cpu, memory, shout, 1000).expect("execution failed");
-
-    let final_regs = trace.steps.last().unwrap().regs_after.clone();
-
-    // Reconstruct final memory state
-    let mut final_memory = RiscvMemory::new(xlen);
-    for step in &trace.steps {
-        for event in &step.twist_events {
-            if matches!(event.kind, TwistOpKind::Write) {
-                final_memory.store(event.twist_id, event.addr, event.value);
-            }
-        }
-    }
-
-    (final_regs, final_memory)
-}
+use riscv_exec_helpers::run_program;
 
 // =============================================================================
 // I Extension: Base Integer
@@ -446,26 +401,44 @@ fn test_m_multiply() {
 }
 
 #[test]
-fn test_m_mulh_unsigned() {
-    // Test high bits of unsigned multiplication with large numbers
+fn test_m_mulhu_unsigned() {
+    // Test high bits of unsigned multiplication.
+    // Use values large enough that the 128-bit product has non-zero upper 64 bits.
+    // 0x1_0000_0000 * 0x1_0000_0000 = 0x1_0000_0000_0000_0000 (upper 64 bits = 1).
     let program = vec![
-        RiscvInstruction::Lui { rd: 1, imm: 0x10000 }, // x1 = 0x10000_000
-        RiscvInstruction::Lui { rd: 2, imm: 0x10000 }, // x2 = 0x10000_000
+        // Build 0x1_0000_0000 in x1:  ADDI x1, x0, 1  then  SLLI x1, x1, 32
+        RiscvInstruction::IAlu {
+            op: RiscvOpcode::Add,
+            rd: 1,
+            rs1: 0,
+            imm: 1,
+        },
+        RiscvInstruction::IAlu {
+            op: RiscvOpcode::Sll,
+            rd: 1,
+            rs1: 1,
+            imm: 32,
+        }, // x1 = 0x1_0000_0000
+        // Copy to x2
+        RiscvInstruction::RAlu {
+            op: RiscvOpcode::Add,
+            rd: 2,
+            rs1: 1,
+            rs2: 0,
+        }, // x2 = 0x1_0000_0000
         RiscvInstruction::RAlu {
             op: RiscvOpcode::Mulhu,
             rd: 3,
             rs1: 1,
             rs2: 2,
-        }, // high bits
+        }, // x3 = upper 64 bits of (0x1_0000_0000 * 0x1_0000_0000) = 1
         RiscvInstruction::Halt,
     ];
 
     let regs = run_program(program, 64);
-    // Large multiplication should produce non-zero high bits
-    // 0x10000000 * 0x10000000 = 0x100_0000_0000_0000 in 128 bits
-    // Upper 64 bits would be 0x100 = 256 (if using 32-bit interpretation)
-    // Just check it computed something
-    assert!(regs[1] != 0 && regs[2] != 0, "Operands loaded");
+    assert_eq!(regs[1], 0x1_0000_0000u64, "x1 operand");
+    assert_eq!(regs[2], 0x1_0000_0000u64, "x2 operand");
+    assert_eq!(regs[3], 1u64, "MULHU result: upper 64 bits of 2^64 should be 1");
 }
 
 #[test]
@@ -665,295 +638,6 @@ fn test_rv64_sllw_basic() {
 }
 
 // =============================================================================
-// A Extension: Atomics
-// =============================================================================
-
-#[test]
-fn test_a_load_reserved_store_conditional() {
-    let program = vec![
-        RiscvInstruction::IAlu {
-            op: RiscvOpcode::Add,
-            rd: 1,
-            rs1: 0,
-            imm: 0x200,
-        }, // addr
-        RiscvInstruction::IAlu {
-            op: RiscvOpcode::Add,
-            rd: 2,
-            rs1: 0,
-            imm: 42,
-        }, // initial value
-        RiscvInstruction::Store {
-            op: RiscvMemOp::Sw,
-            rs1: 1,
-            rs2: 2,
-            imm: 0,
-        }, // mem[0x200] = 42
-        RiscvInstruction::LoadReserved {
-            op: RiscvMemOp::LrW,
-            rd: 3,
-            rs1: 1,
-        }, // x3 = 42, reserve
-        RiscvInstruction::IAlu {
-            op: RiscvOpcode::Add,
-            rd: 4,
-            rs1: 0,
-            imm: 100,
-        }, // new value
-        RiscvInstruction::StoreConditional {
-            op: RiscvMemOp::ScW,
-            rd: 5,
-            rs1: 1,
-            rs2: 4,
-        }, // x5 = 0 (success)
-        RiscvInstruction::Load {
-            op: RiscvMemOp::Lw,
-            rd: 6,
-            rs1: 1,
-            imm: 0,
-        }, // x6 = 100
-        RiscvInstruction::Halt,
-    ];
-
-    let regs = run_program(program, 64);
-    assert_eq!(regs[3], 42, "LR.W loads value");
-    assert_eq!(regs[5], 0, "SC.W returns 0 on success");
-    assert_eq!(regs[6], 100, "SC.W stored new value");
-}
-
-#[test]
-fn test_a_amoadd() {
-    let program = vec![
-        RiscvInstruction::IAlu {
-            op: RiscvOpcode::Add,
-            rd: 1,
-            rs1: 0,
-            imm: 0x200,
-        },
-        RiscvInstruction::IAlu {
-            op: RiscvOpcode::Add,
-            rd: 2,
-            rs1: 0,
-            imm: 10,
-        },
-        RiscvInstruction::Store {
-            op: RiscvMemOp::Sw,
-            rs1: 1,
-            rs2: 2,
-            imm: 0,
-        }, // mem = 10
-        RiscvInstruction::IAlu {
-            op: RiscvOpcode::Add,
-            rd: 3,
-            rs1: 0,
-            imm: 5,
-        },
-        RiscvInstruction::Amo {
-            op: RiscvMemOp::AmoaddW,
-            rd: 4,
-            rs1: 1,
-            rs2: 3,
-        }, // x4 = 10, mem = 15
-        RiscvInstruction::Load {
-            op: RiscvMemOp::Lw,
-            rd: 5,
-            rs1: 1,
-            imm: 0,
-        }, // x5 = 15
-        RiscvInstruction::Halt,
-    ];
-
-    let regs = run_program(program, 64);
-    assert_eq!(regs[4], 10, "AMOADD returns old value");
-    assert_eq!(regs[5], 15, "AMOADD stores sum");
-}
-
-#[test]
-fn test_a_amoswap() {
-    let program = vec![
-        RiscvInstruction::IAlu {
-            op: RiscvOpcode::Add,
-            rd: 1,
-            rs1: 0,
-            imm: 0x200,
-        },
-        RiscvInstruction::IAlu {
-            op: RiscvOpcode::Add,
-            rd: 2,
-            rs1: 0,
-            imm: 42,
-        },
-        RiscvInstruction::Store {
-            op: RiscvMemOp::Sw,
-            rs1: 1,
-            rs2: 2,
-            imm: 0,
-        },
-        RiscvInstruction::IAlu {
-            op: RiscvOpcode::Add,
-            rd: 3,
-            rs1: 0,
-            imm: 100,
-        },
-        RiscvInstruction::Amo {
-            op: RiscvMemOp::AmoswapW,
-            rd: 4,
-            rs1: 1,
-            rs2: 3,
-        }, // x4 = 42, mem = 100
-        RiscvInstruction::Load {
-            op: RiscvMemOp::Lw,
-            rd: 5,
-            rs1: 1,
-            imm: 0,
-        },
-        RiscvInstruction::Halt,
-    ];
-
-    let regs = run_program(program, 64);
-    assert_eq!(regs[4], 42, "AMOSWAP returns old value");
-    assert_eq!(regs[5], 100, "AMOSWAP stores new value");
-}
-
-#[test]
-fn test_a_amoand_amoor() {
-    let program = vec![
-        RiscvInstruction::IAlu {
-            op: RiscvOpcode::Add,
-            rd: 1,
-            rs1: 0,
-            imm: 0x200,
-        },
-        RiscvInstruction::IAlu {
-            op: RiscvOpcode::Add,
-            rd: 2,
-            rs1: 0,
-            imm: 0b1111,
-        },
-        RiscvInstruction::Store {
-            op: RiscvMemOp::Sw,
-            rs1: 1,
-            rs2: 2,
-            imm: 0,
-        },
-        RiscvInstruction::IAlu {
-            op: RiscvOpcode::Add,
-            rd: 3,
-            rs1: 0,
-            imm: 0b1010,
-        },
-        RiscvInstruction::Amo {
-            op: RiscvMemOp::AmoandW,
-            rd: 4,
-            rs1: 1,
-            rs2: 3,
-        }, // mem = 0b1010
-        RiscvInstruction::Load {
-            op: RiscvMemOp::Lw,
-            rd: 5,
-            rs1: 1,
-            imm: 0,
-        },
-        RiscvInstruction::Halt,
-    ];
-
-    let regs = run_program(program, 64);
-    assert_eq!(regs[4], 0b1111, "AMOAND returns old value");
-    assert_eq!(regs[5], 0b1010, "AMOAND stores AND result");
-}
-
-// =============================================================================
-// C Extension: Compressed Instructions
-// =============================================================================
-
-#[test]
-fn test_c_decode_nop() {
-    // C.NOP = addi x0, x0, 0
-    // Encoding: 000 | 0 | 00000 | 00000 | 01 = 0x0001
-    let instr = decode_compressed_instruction(0x0001).expect("decode failed");
-
-    match instr {
-        RiscvInstruction::Nop => {}
-        _ => panic!("Expected C.NOP, got {:?}", instr),
-    }
-}
-
-#[test]
-fn test_c_decode_produces_valid_instructions() {
-    // Test that various C extension patterns decode without error
-    // and produce valid instruction types
-
-    // C.NOP (0x0001)
-    let nop = decode_compressed_instruction(0x0001).unwrap();
-    assert!(matches!(nop, RiscvInstruction::Nop));
-
-    // C.EBREAK (0x9002) = 100 | 1 | 00000 | 00000 | 10
-    let ebreak = decode_compressed_instruction(0x9002).unwrap();
-    assert!(matches!(ebreak, RiscvInstruction::Ebreak));
-}
-
-#[test]
-fn test_c_compressed_detection() {
-    // Test that 16-bit instructions are correctly identified
-    // Lower 2 bits != 0b11 indicates compressed instruction
-
-    // 0x0001 = C.NOP, lower bits = 01 (compressed)
-    assert_ne!(0x0001u16 & 0b11, 0b11);
-
-    // 0x9002 = C.EBREAK, lower bits = 10 (compressed)
-    assert_ne!(0x9002u16 & 0b11, 0b11);
-
-    // A 32-bit instruction would have lower bits = 11
-    let addi_32bit = encode_instruction(&RiscvInstruction::IAlu {
-        op: RiscvOpcode::Add,
-        rd: 1,
-        rs1: 0,
-        imm: 42,
-    });
-    assert_eq!(addi_32bit & 0b11, 0b11);
-}
-
-#[test]
-fn test_c_mixed_program() {
-    // Test that decode_program correctly handles mixed 16/32-bit instructions
-    // We'll encode: 32-bit ADDI, then manually insert a 16-bit C.NOP pattern
-
-    let mut bytes = Vec::new();
-
-    // 32-bit: ADDI x1, x0, 42
-    let addi = encode_instruction(&RiscvInstruction::IAlu {
-        op: RiscvOpcode::Add,
-        rd: 1,
-        rs1: 0,
-        imm: 42,
-    });
-    bytes.extend_from_slice(&addi.to_le_bytes());
-
-    // 16-bit C.ADDI x1, 1 = 0x0085 (assuming rd=1, imm=1)
-    // Actually let's use C.NOP which is 0x0001
-    bytes.extend_from_slice(&0x0001u16.to_le_bytes());
-
-    // 32-bit: HALT
-    let halt = encode_instruction(&RiscvInstruction::Halt);
-    bytes.extend_from_slice(&halt.to_le_bytes());
-
-    let program = decode_program(&bytes).expect("decode mixed program");
-
-    assert_eq!(program.len(), 3, "Should have 3 instructions");
-    assert!(matches!(
-        program[0],
-        RiscvInstruction::IAlu {
-            op: RiscvOpcode::Add,
-            rd: 1,
-            rs1: 0,
-            imm: 42
-        }
-    ));
-    assert!(matches!(program[1], RiscvInstruction::Nop));
-    assert!(matches!(program[2], RiscvInstruction::Halt));
-}
-
-// =============================================================================
 // System Instructions
 // =============================================================================
 
@@ -980,6 +664,65 @@ fn test_fence_nop() {
     let regs = run_program(program, 64);
     assert_eq!(regs[1], 42);
     assert_eq!(regs[2], 100);
+}
+
+#[test]
+fn test_rv64im_profile_accepts_mulh_and_mulhsu() {
+    let profile = RiscvProofProfile::rv64im();
+    for op in [RiscvOpcode::Mulh, RiscvOpcode::Mulhsu] {
+        let inst = RiscvInstruction::RAlu {
+            op,
+            rd: 1,
+            rs1: 2,
+            rs2: 3,
+        };
+        assert!(
+            profile.supports_instruction(&inst),
+            "helper-owned RV64 multiply-high op should be part of the current RV64IM proving profile: {op:?}"
+        );
+    }
+}
+
+#[test]
+fn test_rv64im_profile_accepts_base_div_rem_ops() {
+    let profile = RiscvProofProfile::rv64im();
+    for op in [RiscvOpcode::Div, RiscvOpcode::Divu, RiscvOpcode::Rem, RiscvOpcode::Remu] {
+        let inst = RiscvInstruction::RAlu {
+            op,
+            rd: 1,
+            rs1: 2,
+            rs2: 3,
+        };
+        assert!(
+            profile.supports_instruction(&inst),
+            "base RV64 div/rem op should be part of the current RV64IM proving profile: {op:?}"
+        );
+    }
+}
+
+#[test]
+fn test_rv64_packed_support_covers_exact_base_m_path() {
+    assert!(rv_packed_supported_opcode(RiscvOpcode::Mul, 64));
+    assert!(rv_packed_supported_opcode(RiscvOpcode::Mulh, 64));
+    assert!(rv_packed_supported_opcode(RiscvOpcode::Mulhu, 64));
+    assert!(rv_packed_supported_opcode(RiscvOpcode::Mulhsu, 64));
+    assert!(rv_packed_supported_opcode(RiscvOpcode::Div, 64));
+    assert!(rv_packed_supported_opcode(RiscvOpcode::Divu, 64));
+    assert!(rv_packed_supported_opcode(RiscvOpcode::Rem, 64));
+    assert!(rv_packed_supported_opcode(RiscvOpcode::Remu, 64));
+
+    assert!(!rv_packed_supported_opcode(RiscvOpcode::Add, 64));
+}
+
+#[test]
+fn test_rv64_packed_mul_cols_allow_non_injective_transport_values() {
+    let lhs = (-2i64) as u64;
+    let rhs = 3u64;
+    let val = lhs.wrapping_mul(rhs);
+
+    let cols = build_rv_packed_cols::<Goldilocks>(RiscvOpcode::Mul, lhs, rhs, val, 64)
+        .expect("rv64 packed mul cols should use exact field transport for non-injective words");
+    assert_eq!(cols.len(), 66);
 }
 
 // =============================================================================

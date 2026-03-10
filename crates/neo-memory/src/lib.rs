@@ -31,6 +31,7 @@ pub mod mem_init;
 pub mod mle;
 pub mod output_check;
 pub mod plain;
+pub mod public_digest;
 pub mod riscv;
 pub mod shout;
 pub mod sparse_matrix;
@@ -52,5 +53,12 @@ pub use output_check::{
     OutputSumcheckProof, OutputSumcheckProver, OutputSumcheckState, ProgramIO,
 };
 pub use plain::*;
+pub use public_digest::memory_public_digest_fields;
+pub use riscv::lowering::{lower_loaded_program, LoweredInstruction, LoweredProgram, LoweringError, LoweringProfile};
+pub use riscv::memory_layout::{
+    AffineWordAddressRemap, ProofAddressRemapKind, RiscvGuestMemoryLayout, RiscvGuestMemoryRegion,
+    RiscvMemoryLayoutError,
+};
+pub use riscv::profile::{RiscvProofProfile, RiscvProofProfileConfig, RiscvProofProfileError, RiscvTraceProfileKind};
 pub use sumcheck_proof::BatchedAddrProof;
 pub use witness::*;
