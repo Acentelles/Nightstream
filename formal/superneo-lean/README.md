@@ -108,13 +108,19 @@ The module structure mirrors the paper's four main sections.
 - `SuperNeo/ProtocolReduction.lean`: medium-term theorem skeletons
 - `SuperNeo/Checks.lean`: cross-check predicates against generated vectors
 - `SuperNeo/Regression.lean`: regression harness
+- `SuperNeo/OracleExport.lean`: Lean-authored JSON oracle export for Rust conformance
 - `SuperNeo/Generated/Vectors.lean`: Rust-generated constants (bar matrix + cases)
+- `SuperNeo/Generated/Cases.lean`: structured Rust-generated case families for Lean regression checks
+- `SuperNeo/Generated/ProtocolArtifacts.lean`: Rust-generated protocol artifact families for Lean validation
+- `SuperNeo/Generated/NeoFoldArtifacts.lean`: Rust-generated optimized `neo-fold` artifact families for Lean validation
+- `SuperNeo/RustRefinement/`: Rust-only refinement surfaces that separate
+  implementation-sidecar semantics from the paper CE / folding semantics
 - `rust-vectors/`: standalone Rust generator crate
 
 ## Regenerate vectors from Rust
 
 ```bash
-cargo run --manifest-path formal/superneo-lean/rust-vectors/Cargo.toml
+cargo run --manifest-path formal/superneo-lean/rust-vectors/Cargo.toml --bin superneo-rust-vectors
 ```
 
 ## Run Lean checks
@@ -124,6 +130,100 @@ cd formal/superneo-lean
 lake build
 lake exe check
 ```
+
+## Export Lean-authored Rust oracles
+
+```bash
+cd formal/superneo-lean
+lake exe export-oracles
+```
+
+This writes deterministic JSON fixtures under `formal/superneo-lean/generated-oracles/`.
+
+## Validate Rust-exported protocol artifacts in Lean
+
+```bash
+cd formal/superneo-lean
+lake env lean --run ValidateProtocolArtifacts.lean
+```
+
+Expected output is:
+
+```text
+protocol_artifact_checks=true
+tampered_protocol_artifact_checks=false
+```
+
+## Validate Rust-exported `neo-fold` artifacts in Lean
+
+```bash
+cd formal/superneo-lean
+lake env lean --run ValidateNeoFoldArtifacts.lean
+```
+
+Expected output is:
+
+```text
+neo_fold_artifact_checks=true
+tampered_neo_fold_artifact_checks=false
+```
+
+The current real Rust `neo-fold` artifact families include:
+
+- `starstream_leaf`: one exported optimized leaf proof
+- `twist_shout_2step`: a real multi-step Route-A proof
+- `twist_shout_4step`: a longer real multi-step Route-A proof
+- `twist_shout_continuation_suffix`: a continuation export with nonzero step offset
+- `mixed_ccs_route_a_segments`: a mixed CCS-only / Route-A segmented proof family
+
+Each valid family has a matching tampered family that Lean rejects.
+
+The Lean validator checks:
+
+- stored `Π_CCS` FE transcript recurrence/final sums
+- stored `Π_CCS` NC transcript recurrence/final sums
+- Route-A batched-time transcript shape and per-claim recurrence
+- CPU and shift metadata wrappers against the exported transcripts
+- exported `Π_RLC` / `Π_DEC` lane summaries for the main lane and auxiliary lanes
+- exported CE-claim semantics for current, carried, parent, and child witnesses on the main and auxiliary lanes
+- cross-step chain shape on multi-step proof families
+- segment metadata consistency on mixed CCS-only / Route-A exports
+- `ccs_out.r` agreement with the exported `Π_CCS` challenge prefix
+
+The implementation-sidecar checks used by the Rust artifact validators are not
+paper theorems by themselves. Their intended formal contract lives under
+`specs/RustRefinement/` and requires any stronger Rust-side acceptance predicate
+to conservatively refine the projected paper-core CE / `Π_RLC` / `Π_DEC`
+relations.
+
+## Validate Rust-exported `neo-fold` artifacts against the projected paper-core predicate
+
+```bash
+cd formal/superneo-lean
+lake exe validate-neo-fold-refinement
+```
+
+Expected output is:
+
+```text
+neo_fold_paper_refinement_checks=true
+```
+
+This executable reports the strongest current Rust-refinement result over the
+generated valid `neo-fold` corpus: every exported valid scenario satisfies the
+projected paper-core artifact predicate after erasing Rust-only sidecar fields.
+
+## Run the full Lean↔Rust conformance gate
+
+```bash
+bash scripts/check_lean_rust_conformance.sh
+```
+
+This regenerates the Lean fixtures/artifacts, runs `lake build`, runs the real
+Lean regression gate, validates both compact protocol artifacts and real
+optimized `neo-fold` artifacts inside Lean,
+runs the Rust release-mode oracle tests, audits Lean sources for trusted holes,
+and fails if any generated artifact would change.
 
 ## Run SumCheck tests
 
