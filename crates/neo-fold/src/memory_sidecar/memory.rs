@@ -17,10 +17,11 @@ use neo_memory::identity::shout_oracle::IdentityAddressLookupOracleSparse;
 use neo_memory::mle::{eq_points, lt_eval};
 use neo_memory::riscv::shout_oracle::RiscvAddressLookupOracleSparse;
 use neo_memory::riscv::trace::{
-    rv32_decode_lookup_backed_row_from_instr_word, rv32_decode_lookup_table_id_for_col,
-    rv32_decode_lookup_transport_cols, rv32_decode_lookup_val_slot_for_col, rv32_is_decode_lookup_table_id,
-    rv32_is_width_lookup_table_id, rv32_width_lookup_backed_cols, rv32_width_lookup_table_id_for_col,
-    rv32_width_lookup_val_slot_for_col, Rv32DecodeSidecarLayout, Rv32TraceLayout, Rv32WidthSidecarLayout,
+    riscv_decode_lookup_backed_row_from_instr_word, riscv_decode_lookup_table_id_for_col,
+    riscv_decode_lookup_transport_cols, riscv_decode_lookup_val_slot_for_col, riscv_is_decode_lookup_table_id,
+    riscv_trace_is_width_lookup_table_id, riscv_trace_shared_width_lookup_backed_cols,
+    riscv_trace_shared_width_lookup_table_id_for_col, riscv_trace_shared_width_lookup_val_slot_for_col,
+    riscv_trace_uses_shared_width_lookup_table_id, Rv32DecodeSidecarLayout, Rv32TraceLayout, Rv32WidthSidecarLayout,
 };
 use neo_memory::sparse_time::SparseIdxVec;
 use neo_memory::ts_common as ts;
@@ -71,6 +72,10 @@ mod route_a_claims;
 mod route_a_finalize;
 #[path = "memory/route_a_oracles.rs"]
 mod route_a_oracles;
+#[path = "memory/route_a_rv64_fullword.rs"]
+mod route_a_rv64_fullword;
+#[path = "memory/route_a_rv64_reg_output.rs"]
+mod route_a_rv64_reg_output;
 #[path = "memory/route_a_terminal_checks.rs"]
 mod route_a_terminal_checks;
 #[path = "memory/route_a_verify.rs"]
@@ -96,6 +101,8 @@ pub(crate) use route_a_claim_builders::*;
 pub(crate) use route_a_claims::*;
 pub(crate) use route_a_finalize::*;
 pub(crate) use route_a_oracles::*;
+pub(crate) use route_a_rv64_fullword::*;
+pub(crate) use route_a_rv64_reg_output::*;
 pub(crate) use route_a_terminal_checks::*;
 pub(crate) use sparse_oracles_and_twist_pre::*;
 pub(crate) use transcript_and_common::*;

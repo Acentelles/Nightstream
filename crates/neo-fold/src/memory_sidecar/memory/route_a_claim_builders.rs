@@ -159,6 +159,9 @@ pub(crate) fn build_route_a_width_time_claims(
     step: &StepWitnessBundle<Cmt, F, K>,
     r_cycle: &[K],
 ) -> Result<W3TimeClaims, PiCcsError> {
+    if rv64_fullword_width_stage_required_for_step_witness(step) {
+        return build_route_a_rv64_fullword_time_claims(params, step, r_cycle);
+    }
     if !width_stage_required_for_step_witness(step) {
         return Ok((None, None, None, None, None));
     }
@@ -181,7 +184,7 @@ pub(crate) fn build_route_a_width_time_claims(
         trace.rs2_val,
     ];
     let main_decoded = decode_trace_col_values_batch(params, step, t_len, &main_col_ids)?;
-    let width_col_ids = rv32_width_lookup_backed_cols(&width);
+    let width_col_ids = riscv_trace_shared_width_lookup_backed_cols(&width);
     let width_decoded: DenseCols<K> = {
         let width_bus_abs_cols = width_lookup_bus_val_cols_witness(step, t_len)?;
         let bus = build_bus_layout_for_step_witness(step, t_len)?;
@@ -242,7 +245,7 @@ pub(crate) fn build_route_a_width_time_claims(
         for j in 0..t_len {
             let instr_word = decode_k_to_u32(instr_vals[j], "W3(shared)/instr_word")?;
             let active = active_vals[j] != K::ZERO;
-            let mut row = rv32_decode_lookup_backed_row_from_instr_word(&decode, instr_word, active);
+            let mut row = riscv_decode_lookup_backed_row_from_instr_word(&decode, instr_word, active);
             if !active {
                 row.fill(F::ZERO);
             }
@@ -643,25 +646,78 @@ pub(crate) fn build_route_a_control_time_claims(
     if !control_stage_required_for_step_witness(step) {
         return Ok((None, None, None, None));
     }
-    let trace = Rv32TraceLayout::new();
+    let machine_xlen =
+        neo_memory::riscv::trace::infer_riscv_trace_machine_xlen(step.time_columns.cpu_cols.len()).unwrap_or(32);
+    let (
+        trace_cols,
+        trace_active,
+        trace_is_virtual,
+        trace_instr_word,
+        trace_pc_before,
+        trace_pc_after,
+        trace_rs1_val,
+        trace_rd_val,
+        trace_shout_val,
+        trace_jalr_drop_bit,
+    ) = if machine_xlen == 64 {
+        let trace = neo_memory::riscv::trace::Rv64TraceLayout::new();
+        (
+            trace.cols,
+            trace.active,
+            trace.is_virtual,
+            trace.instr_word,
+            trace.pc_before,
+            trace.pc_after,
+            trace.rs1_val,
+            trace.rd_val,
+            trace.shout_val,
+            trace.jalr_drop_bit,
+        )
+    } else {
+        let trace = Rv32TraceLayout::new();
+        (
+            trace.cols,
+            trace.active,
+            trace.is_virtual,
+            trace.instr_word,
+            trace.pc_before,
+            trace.pc_after,
+            trace.rs1_val,
+            trace.rd_val,
+            trace.shout_val,
+            trace.jalr_drop_bit,
+        )
+    };
     let decode = Rv32DecodeSidecarLayout::new();
     let m_in = step.mcs.0.m_in;
     let ell_n = r_cycle.len();
-    let t_len = infer_rv32_trace_t_len_for_wb_wp(step, &trace)?;
+    let t_len = step.time_columns.t;
+    if t_len == 0 {
+        return Err(PiCcsError::InvalidInput(
+            "WB/WP requires canonical time columns with t >= 1".into(),
+        ));
+    }
+    if step.time_columns.cpu_cols.len() < trace_cols {
+        return Err(PiCcsError::InvalidInput(format!(
+            "WB/WP requires canonical RV{machine_xlen} time cpu prefix columns (got {}, expected at least {})",
+            step.time_columns.cpu_cols.len(),
+            trace_cols
+        )));
+    }
     if t_len == 0 {
         return Err(PiCcsError::InvalidInput("control stage: t_len must be >= 1".into()));
     }
 
     let main_col_ids = vec![
-        trace.active,
-        trace.is_virtual,
-        trace.instr_word,
-        trace.pc_before,
-        trace.pc_after,
-        trace.rs1_val,
-        trace.rd_val,
-        trace.shout_val,
-        trace.jalr_drop_bit,
+        trace_active,
+        trace_is_virtual,
+        trace_instr_word,
+        trace_pc_before,
+        trace_pc_after,
+        trace_rs1_val,
+        trace_rd_val,
+        trace_shout_val,
+        trace_jalr_drop_bit,
     ];
     let decode_col_ids = vec![
         decode.op_lui,
@@ -712,10 +768,10 @@ pub(crate) fn build_route_a_control_time_claims(
     let main_decoded = decode_trace_col_values_batch(params, step, t_len, &main_col_ids)?;
     let decode_decoded = {
         let instr_vals = main_decoded
-            .get(&trace.instr_word)
+            .get(&trace_instr_word)
             .ok_or_else(|| PiCcsError::ProtocolError("control(shared): missing instr_word decode column".into()))?;
         let active_vals = main_decoded
-            .get(&trace.active)
+            .get(&trace_active)
             .ok_or_else(|| PiCcsError::ProtocolError("control(shared): missing active decode column".into()))?;
         if instr_vals.len() != t_len || active_vals.len() != t_len {
             return Err(PiCcsError::ProtocolError(format!(
@@ -731,7 +787,7 @@ pub(crate) fn build_route_a_control_time_claims(
         for j in 0..t_len {
             let instr_word = decode_k_to_u32(instr_vals[j], "control(shared)/instr_word")?;
             let active = active_vals[j] != K::ZERO;
-            let mut row = rv32_decode_lookup_backed_row_from_instr_word(&decode, instr_word, active);
+            let mut row = riscv_decode_lookup_backed_row_from_instr_word(&decode, instr_word, active);
             if !active {
                 row.fill(F::ZERO);
             }
@@ -764,19 +820,19 @@ pub(crate) fn build_route_a_control_time_claims(
     #[cfg(debug_assertions)]
     for j in 0..t_len {
         let is_virtual = *main_decoded
-            .get(&trace.is_virtual)
+            .get(&trace_is_virtual)
             .and_then(|v| v.get(j))
             .ok_or_else(|| {
                 PiCcsError::ProtocolError("control(shared): missing is_virtual row while validating".into())
             })?;
         let pc_before = *main_decoded
-            .get(&trace.pc_before)
+            .get(&trace_pc_before)
             .and_then(|v| v.get(j))
             .ok_or_else(|| {
                 PiCcsError::ProtocolError("control(shared): missing pc_before row while validating".into())
             })?;
         let pc_after = *main_decoded
-            .get(&trace.pc_after)
+            .get(&trace_pc_after)
             .and_then(|v| v.get(j))
             .ok_or_else(|| {
                 PiCcsError::ProtocolError("control(shared): missing pc_after row while validating".into())
@@ -857,36 +913,35 @@ pub(crate) fn build_route_a_control_time_claims(
         }
     }
 
-    #[cfg(debug_assertions)]
     for j in 0..t_len {
         let active = *main_decoded
-            .get(&trace.active)
+            .get(&trace_active)
             .and_then(|v| v.get(j))
             .ok_or_else(|| PiCcsError::ProtocolError("control(shared): missing active row while validating".into()))?;
         let pc_before = *main_decoded
-            .get(&trace.pc_before)
+            .get(&trace_pc_before)
             .and_then(|v| v.get(j))
             .ok_or_else(|| {
                 PiCcsError::ProtocolError("control(shared): missing pc_before row while validating".into())
             })?;
         let pc_after = *main_decoded
-            .get(&trace.pc_after)
+            .get(&trace_pc_after)
             .and_then(|v| v.get(j))
             .ok_or_else(|| {
                 PiCcsError::ProtocolError("control(shared): missing pc_after row while validating".into())
             })?;
         let rs1_val = *main_decoded
-            .get(&trace.rs1_val)
+            .get(&trace_rs1_val)
             .and_then(|v| v.get(j))
             .ok_or_else(|| PiCcsError::ProtocolError("control(shared): missing rs1_val row while validating".into()))?;
         let jalr_drop_bit = *main_decoded
-            .get(&trace.jalr_drop_bit)
+            .get(&trace_jalr_drop_bit)
             .and_then(|v| v.get(j))
             .ok_or_else(|| {
                 PiCcsError::ProtocolError("control(shared): missing jalr_drop_bit row while validating".into())
             })?;
         let shout_val = *main_decoded
-            .get(&trace.shout_val)
+            .get(&trace_shout_val)
             .and_then(|v| v.get(j))
             .ok_or_else(|| {
                 PiCcsError::ProtocolError("control(shared): missing shout_val row while validating".into())
@@ -955,11 +1010,11 @@ pub(crate) fn build_route_a_control_time_claims(
     #[cfg(debug_assertions)]
     for j in 0..t_len {
         let rd_val = *main_decoded
-            .get(&trace.rd_val)
+            .get(&trace_rd_val)
             .and_then(|v| v.get(j))
             .ok_or_else(|| PiCcsError::ProtocolError("control(shared): missing rd_val row while validating".into()))?;
         let pc_before = *main_decoded
-            .get(&trace.pc_before)
+            .get(&trace_pc_before)
             .and_then(|v| v.get(j))
             .ok_or_else(|| {
                 PiCcsError::ProtocolError("control(shared): missing pc_before row while validating".into())
@@ -1076,7 +1131,7 @@ pub(crate) fn build_route_a_control_time_claims(
                 .and_then(|v| v.get(j))
                 .ok_or_else(|| PiCcsError::ProtocolError("control(shared): missing funct7_bit[6] row".into()))?,
         ];
-        let imm_u = control_imm_u_from_bits(funct3_bits, rs1_bits, rs2_bits, funct7_bits);
+        let imm_u = control_imm_u_value_from_bits(funct3_bits, rs1_bits, rs2_bits, funct7_bits, machine_xlen);
         let op_lui_write = op_lui * (K::ONE - rd_is_zero);
         let op_auipc_write = op_auipc * (K::ONE - rd_is_zero);
         let op_jal_write = op_jal * (K::ONE - rd_is_zero);
@@ -1126,9 +1181,9 @@ pub(crate) fn build_route_a_control_time_claims(
     };
 
     let linear_sparse = vec![
-        main_col(trace.pc_before)?,
-        main_col(trace.pc_after)?,
-        main_col(trace.is_virtual)?,
+        main_col(trace_pc_before)?,
+        main_col(trace_pc_after)?,
+        main_col(trace_is_virtual)?,
         decode_col(decode.op_lui)?,
         decode_col(decode.op_auipc)?,
         decode_col(decode.op_load)?,
@@ -1150,12 +1205,12 @@ pub(crate) fn build_route_a_control_time_claims(
     });
 
     let control_sparse = vec![
-        main_col(trace.active)?,
-        main_col(trace.pc_before)?,
-        main_col(trace.pc_after)?,
-        main_col(trace.rs1_val)?,
-        main_col(trace.jalr_drop_bit)?,
-        main_col(trace.shout_val)?,
+        main_col(trace_active)?,
+        main_col(trace_pc_before)?,
+        main_col(trace_pc_after)?,
+        main_col(trace_rs1_val)?,
+        main_col(trace_jalr_drop_bit)?,
+        main_col(trace_shout_val)?,
         decode_col(decode.funct3_bit[0])?,
         decode_col(decode.op_jal)?,
         decode_col(decode.op_jalr)?,
@@ -1180,7 +1235,7 @@ pub(crate) fn build_route_a_control_time_claims(
 
     let branch_sparse = vec![
         decode_col(decode.op_branch)?,
-        main_col(trace.shout_val)?,
+        main_col(trace_shout_val)?,
         decode_col(decode.funct3_bit[0])?,
         decode_col(decode.funct3_bit[1])?,
         decode_col(decode.funct3_bit[2])?,
@@ -1199,8 +1254,8 @@ pub(crate) fn build_route_a_control_time_claims(
     });
 
     let mut write_sparse = vec![
-        main_col(trace.rd_val)?,
-        main_col(trace.pc_before)?,
+        main_col(trace_rd_val)?,
+        main_col(trace_pc_before)?,
         decode_col(decode.op_lui)?,
         decode_col(decode.op_auipc)?,
         decode_col(decode.op_jal)?,
@@ -1236,7 +1291,7 @@ pub(crate) fn build_route_a_control_time_claims(
         let rs1_bits = [vals[10], vals[11], vals[12], vals[13], vals[14]];
         let rs2_bits = [vals[15], vals[16], vals[17], vals[18], vals[19]];
         let funct7_bits = [vals[20], vals[21], vals[22], vals[23], vals[24], vals[25], vals[26]];
-        let imm_u = control_imm_u_from_bits(funct3_bits, rs1_bits, rs2_bits, funct7_bits);
+        let imm_u = control_imm_u_value_from_bits(funct3_bits, rs1_bits, rs2_bits, funct7_bits, machine_xlen);
         let residuals = control_writeback_residuals(
             rd_val,
             pc_before,
@@ -1277,7 +1332,7 @@ pub(crate) fn emit_route_a_wb_wp_me_claims(
     let core_t = s.t();
     let (mcs_inst, mcs_wit) = &step.mcs;
 
-    let wb_cols = rv32_trace_wb_columns(&trace);
+    let wb_cols = riscv_trace_wb_columns(&trace);
     let mut wb_claims = ts::emit_me_claims_for_mats(
         tr,
         b"cpu/me_digest_wb_time",
@@ -1328,9 +1383,13 @@ pub(crate) fn emit_route_a_wb_wp_me_claims(
         &mut wb_claims[0],
     )?;
 
-    let mut wp_cols = rv32_trace_wp_opening_columns(&trace);
+    let rv64_exact_words = trace_uses_rv64_exact_words(step.time_columns.cpu_cols.len());
+    let mut wp_cols = riscv_trace_wp_opening_columns(&trace);
+    if rv64_exact_words {
+        wp_cols.extend(rv64_trace_exact_word_opening_columns());
+    }
     if control_stage_required_for_step_witness(step) {
-        wp_cols.extend(rv32_trace_control_extra_opening_columns(&trace));
+        wp_cols.extend(riscv_trace_control_extra_opening_columns(&trace));
     }
     if decode_stage_required_for_step_witness(step) {
         let decode_layout = Rv32DecodeSidecarLayout::new();
@@ -1360,8 +1419,11 @@ pub(crate) fn emit_route_a_wb_wp_me_claims(
             wp_cols.push(logical_bus_col);
         }
     }
-    if width_stage_required_for_step_witness(step) {
+    if width_stage_required_for_step_witness(step) && !rv64_fullword_width_stage_required_for_step_witness(step) {
         wp_cols.extend(width_lookup_bus_val_cols_witness(step, t_len)?);
+    }
+    if rv64_fullword_width_stage_required_for_step_witness(step) {
+        wp_cols.extend(rv64_fullword_wp_opening_columns());
     }
     let wp_use_time_cols = step.time_columns.t == t_len
         && !step.time_columns.cpu_cols.is_empty()
@@ -1448,7 +1510,7 @@ pub(crate) fn verify_route_a_wb_wp_terminals(
             return Err(PiCcsError::ProtocolError("WB ME claim m_in mismatch".into()));
         }
 
-        let wb_bool_cols = rv32_trace_wb_columns(&trace);
+        let wb_bool_cols = riscv_trace_wb_columns(&trace);
         let (wb_open_entry, wb_open_map) =
             require_time_openings_covering_point(step_time_openings, r_time, &wb_bool_cols, "WB")?;
         if wb_open_entry.source != crate::shard_proof_types::TimeOpeningSource::CommittedOpening {
@@ -1502,7 +1564,11 @@ pub(crate) fn verify_route_a_wb_wp_terminals(
             return Err(PiCcsError::ProtocolError("WP ME claim m_in mismatch".into()));
         }
 
-        let wp_open_cols = rv32_trace_wp_opening_columns(&trace);
+        let rv64_exact_words = trace_uses_rv64_exact_words(step.time_columns.cpu_cols.len());
+        let mut wp_open_cols = riscv_trace_wp_opening_columns(&trace);
+        if rv64_exact_words {
+            wp_open_cols.extend(rv64_trace_exact_word_opening_columns());
+        }
         let (wp_open_entry, wp_open_map) =
             require_time_openings_covering_point(step_time_openings, r_time, &wp_open_cols, "WP")?;
         if wp_open_entry.source != crate::shard_proof_types::TimeOpeningSource::CommittedOpening {
@@ -1512,7 +1578,7 @@ pub(crate) fn verify_route_a_wb_wp_terminals(
             )));
         }
         let active_open = named_opening(&wp_open_map, trace.active, "WP")?;
-        let wp_cols_no_active = &wp_open_cols[1..];
+        let wp_cols_no_active = riscv_trace_wp_columns(&trace);
         let wp_weights = wp_weight_vector(r_cycle, wp_cols_no_active.len());
         let mut wp_weighted_sum = K::ZERO;
         for (&col_id, &w) in wp_cols_no_active.iter().zip(wp_weights.iter()) {

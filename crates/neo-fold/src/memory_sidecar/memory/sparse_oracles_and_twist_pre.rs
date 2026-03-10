@@ -52,10 +52,10 @@ pub(crate) fn resolve_shared_decode_lookup_lut_indices(
     step: &StepWitnessBundle<Cmt, F, K>,
     decode_layout: &Rv32DecodeSidecarLayout,
 ) -> Result<(Vec<usize>, Vec<(usize, usize)>), PiCcsError> {
-    let decode_open_cols = rv32_decode_lookup_transport_cols(decode_layout);
+    let decode_open_cols = riscv_decode_lookup_transport_cols(decode_layout);
     let mut decode_lut_slots = Vec::with_capacity(decode_open_cols.len());
     for &col_id in decode_open_cols.iter() {
-        let table_id = rv32_decode_lookup_table_id_for_col(col_id);
+        let table_id = riscv_decode_lookup_table_id_for_col(col_id);
         let lut_idx = step
             .lut_instances
             .iter()
@@ -65,7 +65,7 @@ pub(crate) fn resolve_shared_decode_lookup_lut_indices(
                     "W2(shared): missing decode lookup table_id={table_id} for col_id={col_id}"
                 ))
             })?;
-        let val_slot = rv32_decode_lookup_val_slot_for_col(col_id).ok_or_else(|| {
+        let val_slot = riscv_decode_lookup_val_slot_for_col(col_id).ok_or_else(|| {
             PiCcsError::ProtocolError(format!(
                 "W2(shared): decode col_id={col_id} is not part of decode lookup transport slot map"
             ))
@@ -80,10 +80,10 @@ pub(crate) fn resolve_shared_width_lookup_lut_indices(
     step: &StepWitnessBundle<Cmt, F, K>,
     width_layout: &Rv32WidthSidecarLayout,
 ) -> Result<(Vec<usize>, Vec<(usize, usize)>), PiCcsError> {
-    let width_open_cols = rv32_width_lookup_backed_cols(width_layout);
+    let width_open_cols = riscv_trace_shared_width_lookup_backed_cols(width_layout);
     let mut width_lut_slots = Vec::with_capacity(width_open_cols.len());
     for &col_id in width_open_cols.iter() {
-        let table_id = rv32_width_lookup_table_id_for_col(col_id);
+        let table_id = riscv_trace_shared_width_lookup_table_id_for_col(col_id);
         let lut_idx = step
             .lut_instances
             .iter()
@@ -93,7 +93,7 @@ pub(crate) fn resolve_shared_width_lookup_lut_indices(
                     "W3(shared): missing width lookup table_id={table_id} for col_id={col_id}"
                 ))
             })?;
-        let val_slot = rv32_width_lookup_val_slot_for_col(col_id).ok_or_else(|| {
+        let val_slot = riscv_trace_shared_width_lookup_val_slot_for_col(col_id).ok_or_else(|| {
             PiCcsError::ProtocolError(format!(
                 "W3(shared): width col_id={col_id} is not part of width lookup transport slot map"
             ))
@@ -207,7 +207,7 @@ impl RoundOracle for WeightedMaskOracleSparseTime {
         for col in self.cols.iter_mut() {
             col.fold_round_in_place(r);
         }
-        self.support.fold_round_in_place(r);
+        self.support.fold_support_round_in_place();
         self.bit_idx += 1;
     }
 }
@@ -363,7 +363,7 @@ where
         for col in self.cols.iter_mut() {
             col.fold_round_in_place(r);
         }
-        self.support.fold_round_in_place(r);
+        self.support.fold_support_round_in_place();
         self.bit_idx += 1;
     }
 }
@@ -511,7 +511,7 @@ impl RoundOracle for ShoutGammaValueSharedOracleSparseTime {
         for col in self.val_cols.iter_mut() {
             col.fold_round_in_place(r);
         }
-        self.support.fold_round_in_place(r);
+        self.support.fold_support_round_in_place();
         self.bit_idx += 1;
     }
 }
@@ -670,7 +670,7 @@ impl RoundOracle for ShoutGammaValueOracleSparseTime {
         for col in self.val_cols.iter_mut() {
             col.fold_round_in_place(r);
         }
-        self.support.fold_round_in_place(r);
+        self.support.fold_support_round_in_place();
         self.bit_idx += 1;
     }
 }
@@ -766,17 +766,19 @@ impl RoundOracle for ShoutGammaAdapterSharedOracleSparseTime {
         }
 
         let mut ys = vec![K::ZERO; points.len()];
+        let mut addr_hints = vec![0usize; self.addr_cols.len()];
+        let mut has_hint = 0usize;
         for &pair in self.pair_scratch.iter() {
             let child0 = 2 * pair;
             let child1 = child0 + 1;
-            let has0 = self.has_col.get(child0);
-            let has1 = self.has_col.get(child1);
+            let has0 = self.has_col.get_with_hint(child0, &mut has_hint);
+            let has1 = self.has_col.get_with_hint(child1, &mut has_hint);
             if has0 == K::ZERO && has1 == K::ZERO {
                 continue;
             }
             for i in 0..self.addr_cols.len() {
-                self.addr_child0[i] = self.addr_cols[i].get(child0);
-                self.addr_child1[i] = self.addr_cols[i].get(child1);
+                self.addr_child0[i] = self.addr_cols[i].get_with_hint(child0, &mut addr_hints[i]);
+                self.addr_child1[i] = self.addr_cols[i].get_with_hint(child1, &mut addr_hints[i]);
             }
             let (chi0, chi1) = chi_cycle_children(&self.r_cycle, self.bit_idx, self.prefix_eq, pair);
             for (pi, &x) in points.iter().enumerate() {
@@ -828,7 +830,7 @@ impl RoundOracle for ShoutGammaAdapterSharedOracleSparseTime {
         for col in self.addr_cols.iter_mut() {
             col.fold_round_in_place(r);
         }
-        self.support.fold_round_in_place(r);
+        self.support.fold_support_round_in_place();
         self.bit_idx += 1;
     }
 }
@@ -953,16 +955,18 @@ impl RoundOracle for ShoutGammaAdapterOracleSparseTime {
         }
 
         let mut ys = vec![K::ZERO; point_len];
+        let mut addr_hints = vec![0usize; self.addr_cols.len()];
+        let mut has_hints = vec![0usize; self.has_cols.len()];
         for &pair in self.pair_scratch.iter() {
             let child0 = 2 * pair;
             let child1 = child0 + 1;
             for i in 0..self.addr_cols.len() {
-                self.addr_child0[i] = self.addr_cols[i].get(child0);
-                self.addr_child1[i] = self.addr_cols[i].get(child1);
+                self.addr_child0[i] = self.addr_cols[i].get_with_hint(child0, &mut addr_hints[i]);
+                self.addr_child1[i] = self.addr_cols[i].get_with_hint(child1, &mut addr_hints[i]);
             }
             for i in 0..self.has_cols.len() {
-                self.has_child0[i] = self.has_cols[i].get(child0);
-                self.has_child1[i] = self.has_cols[i].get(child1);
+                self.has_child0[i] = self.has_cols[i].get_with_hint(child0, &mut has_hints[i]);
+                self.has_child1[i] = self.has_cols[i].get_with_hint(child1, &mut has_hints[i]);
             }
 
             let (chi0, chi1) = chi_cycle_children(&self.r_cycle, self.bit_idx, self.prefix_eq, pair);
@@ -1096,7 +1100,7 @@ impl RoundOracle for ShoutGammaAdapterOracleSparseTime {
         for col in self.has_cols.iter_mut() {
             col.fold_round_in_place(r);
         }
-        self.support.fold_round_in_place(r);
+        self.support.fold_support_round_in_place();
         self.bit_idx += 1;
     }
 }
@@ -1295,7 +1299,7 @@ pub(crate) fn expected_trace_shout_table_id_from_openings(
     }
 
     let trace_layout = Rv32TraceLayout::new();
-    let wp_cols = rv32_trace_wp_opening_columns(&trace_layout);
+    let wp_cols = riscv_trace_wp_opening_columns(&trace_layout);
     let (wp_entry, wp_open_map) = require_time_openings_covering_point(
         step_time_openings,
         r_time,

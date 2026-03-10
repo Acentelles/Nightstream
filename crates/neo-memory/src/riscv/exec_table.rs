@@ -6,12 +6,12 @@ use p3_symmetric::Permutation;
 use crate::riscv::decomposition_semantics::{expected_virtual_decomposed_op, validate_virtual_row_semantics};
 use crate::riscv::instruction::{encode_lookup_key, operand_mode_keys_enabled, try_decode_lookup_operands};
 use crate::riscv::lookups::{
-    compute_op, decode_instruction, RiscvInstruction, RiscvOpcode, RiscvShoutTables, PROG_ID, RAM_ID, REG_ID,
+    compute_op, decode_instruction_with_xlen, RiscvInstruction, RiscvOpcode, RiscvShoutTables, PROG_ID, RAM_ID, REG_ID,
 };
 use std::collections::HashMap;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Rv32InstrFields {
+pub struct RiscvInstrFields {
     pub opcode: u32,
     pub rd: u8,
     pub funct3: u32,
@@ -20,7 +20,7 @@ pub struct Rv32InstrFields {
     pub funct7: u32,
 }
 
-impl Rv32InstrFields {
+impl RiscvInstrFields {
     pub fn from_word(instr_word: u32) -> Self {
         Self {
             opcode: instr_word & 0x7f,
@@ -34,13 +34,13 @@ impl Rv32InstrFields {
 }
 
 #[derive(Clone, Debug)]
-pub struct Rv32RegLaneIo {
+pub struct RiscvRegLaneIo {
     pub addr: u64,
     pub value: u64,
 }
 
 #[derive(Clone, Debug)]
-pub struct Rv32ExecRow {
+pub struct RiscvExecRow {
     /// True for real trace rows; false for padded/inactive rows.
     pub active: bool,
 
@@ -58,7 +58,7 @@ pub struct Rv32ExecRow {
     pub pc_before: u64,
     pub pc_after: u64,
     pub instr_word: u32,
-    pub fields: Rv32InstrFields,
+    pub fields: RiscvInstrFields,
     pub halted: bool,
 
     /// Decoded instruction (for semantic context; derived from `instr_word`).
@@ -68,28 +68,29 @@ pub struct Rv32ExecRow {
     pub prog_read: Option<TwistEvent<u64, u64>>,
 
     /// REG lane 0 read (`REG_ID`, lane=0): rs1_field → rs1_val.
-    pub reg_read_lane0: Option<Rv32RegLaneIo>,
+    pub reg_read_lane0: Option<RiscvRegLaneIo>,
 
     /// REG lane 1 read (`REG_ID`, lane=1): rs2_field → rs2_val.
-    pub reg_read_lane1: Option<Rv32RegLaneIo>,
+    pub reg_read_lane1: Option<RiscvRegLaneIo>,
 
     /// Optional REG lane 0 write (`REG_ID`, lane=0): rd_field → rd_write_val.
-    pub reg_write_lane0: Option<Rv32RegLaneIo>,
+    pub reg_write_lane0: Option<RiscvRegLaneIo>,
 
     /// RAM twist events (`RAM_ID`) for this step.
     pub ram_events: Vec<TwistEvent<u64, u64>>,
 
     /// Shout events for this step.
-    pub shout_events: Vec<ShoutEvent<u64>>,
+    pub shout_events: Vec<ShoutEvent<u128, u64>>,
 }
 
 #[derive(Clone, Debug)]
-pub struct Rv32ExecColumns {
+pub struct RiscvExecColumns {
     pub active: Vec<bool>,
     pub is_virtual: Vec<bool>,
     pub virtual_sequence_remaining: Vec<u64>,
     pub virtual_transition: Vec<bool>,
     pub virtual_commit_link: Vec<bool>,
+    pub virtual_commit_from_prev: Vec<bool>,
     pub cycle: Vec<u64>,
     pub pc_before: Vec<u64>,
     pub pc_after: Vec<u64>,
@@ -112,29 +113,65 @@ pub struct Rv32ExecColumns {
     pub rd_val: Vec<u64>,
 }
 
-impl Rv32ExecColumns {
+impl RiscvExecColumns {
     pub fn len(&self) -> usize {
         self.cycle.len()
     }
 }
 
 #[derive(Clone, Debug)]
-pub struct Rv32ExecTable {
-    pub rows: Vec<Rv32ExecRow>,
+pub struct RiscvExecTable {
+    pub rows: Vec<RiscvExecRow>,
 }
 
-impl Rv32ExecTable {
-    pub fn from_trace(trace: &VmTrace<u64, u64>) -> Result<Self, String> {
+// Compatibility aliases while the shared RISC-V trace layer is migrated away
+// from legacy RV32 naming.
+pub type Rv32InstrFields = RiscvInstrFields;
+pub type Rv32RegLaneIo = RiscvRegLaneIo;
+pub type Rv32ExecRow = RiscvExecRow;
+pub type Rv32ExecColumns = RiscvExecColumns;
+pub type Rv32ExecTable = RiscvExecTable;
+
+impl RiscvExecTable {
+    pub fn from_trace<Key>(trace: &VmTrace<u64, u64, Key>) -> Result<Self, String>
+    where
+        Key: Copy + TryInto<u128>,
+        <Key as TryInto<u128>>::Error: std::fmt::Debug,
+    {
+        Self::from_trace_with_xlen(trace, /*machine_xlen=*/ 32)
+    }
+
+    pub fn from_trace_with_xlen<Key>(trace: &VmTrace<u64, u64, Key>, machine_xlen: usize) -> Result<Self, String>
+    where
+        Key: Copy + TryInto<u128>,
+        <Key as TryInto<u128>>::Error: std::fmt::Debug,
+    {
         let mut rows = Vec::with_capacity(trace.steps.len());
         for step in &trace.steps {
-            rows.push(Rv32ExecRow::from_step(step)?);
+            rows.push(RiscvExecRow::from_step_with_xlen(step, machine_xlen)?);
         }
         let out = Self { rows };
-        out.validate_virtual_decomposition_semantics()?;
+        out.validate_virtual_decomposition_semantics(machine_xlen)?;
         Ok(out)
     }
 
-    pub fn from_trace_padded(trace: &VmTrace<u64, u64>, padded_len: usize) -> Result<Self, String> {
+    pub fn from_trace_padded<Key>(trace: &VmTrace<u64, u64, Key>, padded_len: usize) -> Result<Self, String>
+    where
+        Key: Copy + TryInto<u128>,
+        <Key as TryInto<u128>>::Error: std::fmt::Debug,
+    {
+        Self::from_trace_padded_with_xlen(trace, padded_len, /*machine_xlen=*/ 32)
+    }
+
+    pub fn from_trace_padded_with_xlen<Key>(
+        trace: &VmTrace<u64, u64, Key>,
+        padded_len: usize,
+        machine_xlen: usize,
+    ) -> Result<Self, String>
+    where
+        Key: Copy + TryInto<u128>,
+        <Key as TryInto<u128>>::Error: std::fmt::Debug,
+    {
         if padded_len < trace.steps.len() {
             return Err(format!(
                 "padded_len must be >= trace length (padded_len={} trace_len={})",
@@ -145,7 +182,7 @@ impl Rv32ExecTable {
 
         let mut rows = Vec::with_capacity(padded_len);
         for step in &trace.steps {
-            rows.push(Rv32ExecRow::from_step(step)?);
+            rows.push(RiscvExecRow::from_step_with_xlen(step, machine_xlen)?);
         }
         if rows.is_empty() {
             if padded_len == 0 {
@@ -163,18 +200,34 @@ impl Rv32ExecTable {
             cycle = cycle
                 .checked_add(1)
                 .ok_or_else(|| "cycle overflow while padding".to_string())?;
-            rows.push(Rv32ExecRow::inactive(cycle, pad_pc, pad_halted));
+            rows.push(RiscvExecRow::inactive(cycle, pad_pc, pad_halted));
         }
 
         let out = Self { rows };
-        out.validate_virtual_decomposition_semantics()?;
+        out.validate_virtual_decomposition_semantics(machine_xlen)?;
         Ok(out)
     }
 
-    pub fn from_trace_padded_pow2(trace: &VmTrace<u64, u64>, min_len: usize) -> Result<Self, String> {
+    pub fn from_trace_padded_pow2<Key>(trace: &VmTrace<u64, u64, Key>, min_len: usize) -> Result<Self, String>
+    where
+        Key: Copy + TryInto<u128>,
+        <Key as TryInto<u128>>::Error: std::fmt::Debug,
+    {
+        Self::from_trace_padded_pow2_with_xlen(trace, min_len, /*machine_xlen=*/ 32)
+    }
+
+    pub fn from_trace_padded_pow2_with_xlen<Key>(
+        trace: &VmTrace<u64, u64, Key>,
+        min_len: usize,
+        machine_xlen: usize,
+    ) -> Result<Self, String>
+    where
+        Key: Copy + TryInto<u128>,
+        <Key as TryInto<u128>>::Error: std::fmt::Debug,
+    {
         let steps = trace.steps.len();
         let target = steps.max(min_len).next_power_of_two();
-        Self::from_trace_padded(trace, target)
+        Self::from_trace_padded_with_xlen(trace, target, machine_xlen)
     }
 
     pub fn validate_pc_chain(&self) -> Result<(), String> {
@@ -264,8 +317,8 @@ impl Rv32ExecTable {
     /// Validate virtual decomposition micro-op semantics row-by-row.
     ///
     /// This is a trace extraction hardening check and mirrors the virtual-op
-    /// semantics enforced by `Rv32TraceAir`.
-    pub fn validate_virtual_decomposition_semantics(&self) -> Result<(), String> {
+    /// semantics enforced by `RiscvTraceAir`.
+    pub fn validate_virtual_decomposition_semantics(&self, machine_xlen: usize) -> Result<(), String> {
         for (row_idx, r) in self.rows.iter().enumerate() {
             if !r.active || !r.is_virtual {
                 continue;
@@ -273,8 +326,8 @@ impl Rv32ExecTable {
             let remaining = r
                 .virtual_sequence_remaining
                 .ok_or_else(|| format!("row {row_idx}: virtual row missing virtual_sequence_remaining"))?;
-            let op =
-                expected_virtual_decomposed_op(r.instr_word, remaining).map_err(|e| format!("row {row_idx}: {e}"))?;
+            let op = expected_virtual_decomposed_op(r.instr_word, remaining, machine_xlen)
+                .map_err(|e| format!("row {row_idx}: {e}"))?;
             let rs1 = r
                 .reg_read_lane0
                 .as_ref()
@@ -297,6 +350,7 @@ impl Rv32ExecTable {
                 rd_has_write,
                 rd_addr,
                 rd_val,
+                machine_xlen,
             )
             .map_err(|e| format!("row {row_idx}: {e}"))?;
         }
@@ -436,15 +490,16 @@ impl Rv32ExecTable {
         Ok(())
     }
 
-    pub fn to_columns(&self) -> Rv32ExecColumns {
+    pub fn to_columns(&self) -> RiscvExecColumns {
         let n = self.rows.len();
 
-        let mut out = Rv32ExecColumns {
+        let mut out = RiscvExecColumns {
             active: Vec::with_capacity(n),
             is_virtual: Vec::with_capacity(n),
             virtual_sequence_remaining: Vec::with_capacity(n),
             virtual_transition: Vec::with_capacity(n),
             virtual_commit_link: Vec::with_capacity(n),
+            virtual_commit_from_prev: Vec::with_capacity(n),
             cycle: Vec::with_capacity(n),
             pc_before: Vec::with_capacity(n),
             pc_after: Vec::with_capacity(n),
@@ -539,16 +594,32 @@ impl Rv32ExecTable {
             let next_has_write = if i + 1 < n { out.rd_has_write[i + 1] } else { false };
             out.virtual_commit_link.push(transition && next_has_write);
         }
+        for i in 0..n {
+            let from_prev = if i > 0 { out.virtual_commit_link[i - 1] } else { false };
+            out.virtual_commit_from_prev.push(from_prev);
+        }
 
         out
     }
 }
 
-impl Rv32ExecRow {
-    pub fn from_step(step: &StepTrace<u64, u64>) -> Result<Self, String> {
+impl RiscvExecRow {
+    pub fn from_step<Key>(step: &StepTrace<u64, u64, Key>) -> Result<Self, String>
+    where
+        Key: Copy + TryInto<u128>,
+        <Key as TryInto<u128>>::Error: std::fmt::Debug,
+    {
+        Self::from_step_with_xlen(step, /*machine_xlen=*/ 32)
+    }
+
+    pub fn from_step_with_xlen<Key>(step: &StepTrace<u64, u64, Key>, machine_xlen: usize) -> Result<Self, String>
+    where
+        Key: Copy + TryInto<u128>,
+        <Key as TryInto<u128>>::Error: std::fmt::Debug,
+    {
         let instr_word = step.opcode;
-        let fields = Rv32InstrFields::from_word(instr_word);
-        let decoded = decode_instruction(instr_word).map_err(|e| {
+        let fields = RiscvInstrFields::from_word(instr_word);
+        let decoded = decode_instruction_with_xlen(instr_word, machine_xlen).map_err(|e| {
             format!(
                 "decode_instruction failed at cycle {} pc={:#x} word={:#x}: {e}",
                 step.cycle, step.pc_before, instr_word
@@ -596,9 +667,9 @@ impl Rv32ExecRow {
         }
 
         // REG reads (lane 0 and lane 1)
-        let mut reg_read_lane0: Option<Rv32RegLaneIo> = None;
-        let mut reg_read_lane1: Option<Rv32RegLaneIo> = None;
-        let mut reg_write_lane0: Option<Rv32RegLaneIo> = None;
+        let mut reg_read_lane0: Option<RiscvRegLaneIo> = None;
+        let mut reg_read_lane1: Option<RiscvRegLaneIo> = None;
+        let mut reg_write_lane0: Option<RiscvRegLaneIo> = None;
         for e in step.twist_events.iter().filter(|e| e.twist_id == REG_ID) {
             match e.kind {
                 TwistOpKind::Read => match e.lane {
@@ -609,7 +680,7 @@ impl Rv32ExecRow {
                                 step.cycle, step.pc_before
                             ));
                         }
-                        reg_read_lane0 = Some(Rv32RegLaneIo {
+                        reg_read_lane0 = Some(RiscvRegLaneIo {
                             addr: e.addr,
                             value: e.value,
                         });
@@ -621,7 +692,7 @@ impl Rv32ExecRow {
                                 step.cycle, step.pc_before
                             ));
                         }
-                        reg_read_lane1 = Some(Rv32RegLaneIo {
+                        reg_read_lane1 = Some(RiscvRegLaneIo {
                             addr: e.addr,
                             value: e.value,
                         });
@@ -641,7 +712,7 @@ impl Rv32ExecRow {
                                 step.cycle, step.pc_before
                             ));
                         }
-                        reg_write_lane0 = Some(Rv32RegLaneIo {
+                        reg_write_lane0 = Some(RiscvRegLaneIo {
                             addr: e.addr,
                             value: e.value,
                         });
@@ -741,7 +812,22 @@ impl Rv32ExecRow {
             .collect();
 
         // Shout events
-        let mut shout_events = step.shout_events.clone();
+        let mut shout_events: Vec<ShoutEvent<u128, u64>> = step
+            .shout_events
+            .iter()
+            .map(|ev| {
+                Ok(ShoutEvent {
+                    shout_id: ev.shout_id,
+                    key: ev.key.try_into().map_err(|_| {
+                        format!(
+                            "shout key does not fit u128 at cycle {} pc={:#x}",
+                            step.cycle, step.pc_before
+                        )
+                    })?,
+                    value: ev.value,
+                })
+            })
+            .collect::<Result<_, String>>()?;
         if shout_events.is_empty() && !relax_reg_field_checks {
             // Backfill RV32M shout events for trace/event-table consumers.
             //
@@ -800,7 +886,7 @@ impl Rv32ExecRow {
             pc_before: pc,
             pc_after: pc,
             instr_word: 0,
-            fields: Rv32InstrFields::from_word(0),
+            fields: RiscvInstrFields::from_word(0),
             halted,
             decoded: None,
             prog_read: None,
@@ -822,7 +908,7 @@ pub struct Rv32ShoutEventRow {
     pub shout_id: u32,
     pub opcode: Option<RiscvOpcode>,
     /// Canonicalized key: for shift ops, `rhs` is masked to 5 bits.
-    pub key: u64,
+    pub key: u128,
     pub lhs: u64,
     pub rhs: u64,
     pub value: u64,
@@ -834,7 +920,7 @@ pub struct Rv32ShoutEventTable {
 }
 
 impl Rv32ShoutEventTable {
-    pub fn from_exec_table(exec: &Rv32ExecTable) -> Result<Self, String> {
+    pub fn from_exec_table(exec: &RiscvExecTable) -> Result<Self, String> {
         let shout_tables = RiscvShoutTables::new(/*xlen=*/ 32);
         let mut rows = Vec::new();
 
@@ -847,7 +933,7 @@ impl Rv32ShoutEventTable {
                 let fallback_lhs = r.reg_read_lane0.as_ref().map(|io| io.value).unwrap_or(0);
                 let fallback_rhs = r.reg_read_lane1.as_ref().map(|io| io.value).unwrap_or(0);
                 let (lhs, rhs_raw) = if let Some(op) = opcode {
-                    try_decode_lookup_operands(op, ev.key, operand_mode_keys_enabled())
+                    try_decode_lookup_operands(op, ev.key, operand_mode_keys_enabled(), /*xlen=*/ 32)
                         .unwrap_or((fallback_lhs, fallback_rhs))
                 } else {
                     (fallback_lhs, fallback_rhs)
@@ -868,6 +954,78 @@ impl Rv32ShoutEventTable {
                 };
 
                 rows.push(Rv32ShoutEventRow {
+                    row_idx,
+                    cycle: r.cycle,
+                    pc: r.pc_before,
+                    shout_id: ev.shout_id.0,
+                    opcode,
+                    key,
+                    lhs,
+                    rhs,
+                    value: ev.value,
+                });
+            }
+        }
+
+        Ok(Self { rows })
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Rv64ShoutEventRow {
+    /// Row index within the padded exec table (0..t).
+    pub row_idx: usize,
+    pub cycle: u64,
+    pub pc: u64,
+    pub shout_id: u32,
+    pub opcode: Option<RiscvOpcode>,
+    /// Canonicalized key: base shifts use 6-bit rhs masking, W-shifts use 5-bit rhs masking.
+    pub key: u128,
+    pub lhs: u64,
+    pub rhs: u64,
+    pub value: u64,
+}
+
+#[derive(Clone, Debug)]
+pub struct Rv64ShoutEventTable {
+    pub rows: Vec<Rv64ShoutEventRow>,
+}
+
+impl Rv64ShoutEventTable {
+    pub fn from_exec_table(exec: &RiscvExecTable) -> Result<Self, String> {
+        let shout_tables = RiscvShoutTables::new(/*xlen=*/ 64);
+        let mut rows = Vec::new();
+
+        for (row_idx, r) in exec.rows.iter().enumerate() {
+            if !r.active {
+                continue;
+            }
+            for ev in &r.shout_events {
+                let opcode = shout_tables.id_to_opcode(ev.shout_id);
+                let fallback_lhs = r.reg_read_lane0.as_ref().map(|io| io.value).unwrap_or(0);
+                let fallback_rhs = r.reg_read_lane1.as_ref().map(|io| io.value).unwrap_or(0);
+                let (lhs, rhs_raw) = if let Some(op) = opcode {
+                    try_decode_lookup_operands(op, ev.key, operand_mode_keys_enabled(), /*xlen=*/ 64)
+                        .unwrap_or((fallback_lhs, fallback_rhs))
+                } else {
+                    (fallback_lhs, fallback_rhs)
+                };
+                let rhs = match opcode {
+                    Some(RiscvOpcode::Sll | RiscvOpcode::Srl | RiscvOpcode::Sra) => rhs_raw & 0x3F,
+                    Some(RiscvOpcode::Sllw | RiscvOpcode::Srlw | RiscvOpcode::Sraw) => rhs_raw & 0x1F,
+                    _ => rhs_raw,
+                };
+                let key = if rhs != rhs_raw {
+                    if let Some(op) = opcode {
+                        encode_lookup_key(op, lhs, rhs, /*xlen=*/ 64)
+                    } else {
+                        ev.key
+                    }
+                } else {
+                    ev.key
+                };
+
+                rows.push(Rv64ShoutEventRow {
                     row_idx,
                     cycle: r.cycle,
                     pc: r.pc_before,
@@ -908,7 +1066,7 @@ pub struct Rv32RegEventTable {
 }
 
 impl Rv32RegEventTable {
-    pub fn from_exec_table(exec: &Rv32ExecTable, init_regs: &HashMap<u64, u64>) -> Result<Self, String> {
+    pub fn from_exec_table(exec: &RiscvExecTable, init_regs: &HashMap<u64, u64>) -> Result<Self, String> {
         let mut regs: HashMap<u64, u64> = HashMap::new();
         for (&addr, &value) in init_regs {
             if addr == 0 && value != 0 {
@@ -1025,7 +1183,7 @@ pub struct Rv32RamEventTable {
 }
 
 impl Rv32RamEventTable {
-    pub fn from_exec_table(exec: &Rv32ExecTable, init_ram: &HashMap<u64, u64>) -> Result<Self, String> {
+    pub fn from_exec_table(exec: &RiscvExecTable, init_ram: &HashMap<u64, u64>) -> Result<Self, String> {
         let mut mem: HashMap<u64, u64> = HashMap::new();
         for (&addr, &value) in init_ram {
             if value == 0 {
@@ -1092,7 +1250,7 @@ enum PoseidonSidecarMode {
 }
 
 #[derive(Clone, Debug)]
-pub struct Rv32PoseidonCycleEventRow {
+pub struct RiscvPoseidonCycleEventRow {
     pub cycle: u64,
     pub op_absorb: bool,
     pub op_finalize: bool,
@@ -1117,7 +1275,7 @@ pub struct Rv32PoseidonCycleEventRow {
 }
 
 #[derive(Clone, Debug)]
-pub struct Rv32PoseidonPermSlotMetaRow {
+pub struct RiscvPoseidonPermSlotMetaRow {
     pub cycle: u64,
     pub slot: u8,
     pub call_ctr: u64,
@@ -1126,9 +1284,9 @@ pub struct Rv32PoseidonPermSlotMetaRow {
 }
 
 #[derive(Clone, Debug)]
-pub struct Rv32PoseidonSidecarTable {
-    pub cycle_rows: Vec<Rv32PoseidonCycleEventRow>,
-    pub perm_rows: Vec<Rv32PoseidonPermSlotMetaRow>,
+pub struct RiscvPoseidonSidecarTable {
+    pub cycle_rows: Vec<RiscvPoseidonCycleEventRow>,
+    pub perm_rows: Vec<RiscvPoseidonPermSlotMetaRow>,
 }
 
 #[inline]
@@ -1149,8 +1307,8 @@ fn canonical_u64_lt_goldilocks_aux(v: u64) -> (u32, u32, u32, u32) {
     (lo_sum, hi_sum, u32::from(c0), u32::from(c1))
 }
 
-impl Rv32PoseidonSidecarTable {
-    pub fn from_exec_table(exec: &Rv32ExecTable) -> Result<Self, String> {
+impl RiscvPoseidonSidecarTable {
+    pub fn from_exec_table(exec: &RiscvExecTable) -> Result<Self, String> {
         const WIDTH: usize = neo_ccs::crypto::poseidon2_goldilocks::WIDTH;
         const RATE: usize = neo_ccs::crypto::poseidon2_goldilocks::RATE;
         const DIGEST_LEN: usize = neo_ccs::crypto::poseidon2_goldilocks::DIGEST_LEN;
@@ -1163,11 +1321,11 @@ impl Rv32PoseidonSidecarTable {
         let mut call_ctr = 0u64;
 
         let mut cycle_rows = Vec::with_capacity(exec.rows.len());
-        let mut perm_rows: Vec<Rv32PoseidonPermSlotMetaRow> = Vec::new();
+        let mut perm_rows: Vec<RiscvPoseidonPermSlotMetaRow> = Vec::new();
 
         for row in exec.rows.iter().filter(|r| r.active) {
             let state_pre = poseidon_state_to_u64(&state);
-            let mut out = Rv32PoseidonCycleEventRow {
+            let mut out = RiscvPoseidonCycleEventRow {
                 cycle: row.cycle,
                 op_absorb: false,
                 op_finalize: false,
@@ -1228,7 +1386,7 @@ impl Rv32PoseidonSidecarTable {
                             let in_state = poseidon_state_to_u64(&state);
                             state = perm.permute(state);
                             let out_state = poseidon_state_to_u64(&state);
-                            perm_rows.push(Rv32PoseidonPermSlotMetaRow {
+                            perm_rows.push(RiscvPoseidonPermSlotMetaRow {
                                 cycle: row.cycle,
                                 slot: 0,
                                 call_ctr,
@@ -1252,7 +1410,7 @@ impl Rv32PoseidonSidecarTable {
                             let in_state = poseidon_state_to_u64(&state);
                             state = perm.permute(state);
                             let out_state = poseidon_state_to_u64(&state);
-                            perm_rows.push(Rv32PoseidonPermSlotMetaRow {
+                            perm_rows.push(RiscvPoseidonPermSlotMetaRow {
                                 cycle: row.cycle,
                                 slot: 0,
                                 call_ctr,
@@ -1267,7 +1425,7 @@ impl Rv32PoseidonSidecarTable {
                         let in_state = poseidon_state_to_u64(&state);
                         state = perm.permute(state);
                         let out_state = poseidon_state_to_u64(&state);
-                        perm_rows.push(Rv32PoseidonPermSlotMetaRow {
+                        perm_rows.push(RiscvPoseidonPermSlotMetaRow {
                             cycle: row.cycle,
                             slot: 1,
                             call_ctr,
@@ -1337,3 +1495,7 @@ impl Rv32PoseidonSidecarTable {
         Ok(Self { cycle_rows, perm_rows })
     }
 }
+
+pub type Rv32PoseidonCycleEventRow = RiscvPoseidonCycleEventRow;
+pub type Rv32PoseidonPermSlotMetaRow = RiscvPoseidonPermSlotMetaRow;
+pub type Rv32PoseidonSidecarTable = RiscvPoseidonSidecarTable;
