@@ -185,7 +185,7 @@ pub fn setup_par<R: RngCore + CryptoRng>(rng: &mut R, d: usize, kappa: usize, m:
     // Deterministic chunking: must NOT depend on runtime thread count, so a verifier can
     // re-derive the same PP from the same seed across environments.
     let chunk_size = core::cmp::min(m, 1 << 15).max(1024);
-    let num_chunks = (m + chunk_size - 1) / chunk_size;
+    let num_chunks = m.div_ceil(chunk_size);
 
     let mut rows = Vec::with_capacity(kappa);
     for row_seed in row_seeds {
@@ -235,7 +235,7 @@ pub fn setup_par<R: RngCore + CryptoRng>(rng: &mut R, d: usize, kappa: usize, m:
 #[inline]
 fn seeded_pp_chunking(m: usize) -> (usize, usize) {
     let chunk_size = core::cmp::min(m, 1 << 15).max(1024);
-    let num_chunks = (m + chunk_size - 1) / chunk_size;
+    let num_chunks = m.div_ceil(chunk_size);
     (chunk_size, num_chunks)
 }
 
