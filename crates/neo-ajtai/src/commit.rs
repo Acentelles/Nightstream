@@ -60,21 +60,12 @@ fn rot_step_phi_81(cur: &[Fq; D], next: &mut [Fq; D]) {
     next[27] -= last; // -X^27 * last
 }
 
-/// Rotation step for internal use by commit implementations
+/// Rotation step for internal use by commit implementations.
+///
 /// This implementation is specialized for η=81 (D=54) as enforced by compile-time assertions.
+/// Re-exported publicly only when the `testing` feature is enabled (see lib.rs).
 #[inline(always)]
-#[cfg(not(feature = "testing"))]
-pub(crate) fn rot_step(cur: &[Fq; D], next: &mut [Fq; D]) {
-    // Note: ETA == 81 is guaranteed at compile-time by const assertions at module top
-    rot_step_phi_81(cur, next)
-}
-
-/// Rotation step for internal use by commit implementations
-/// This implementation is specialized for η=81 (D=54) as enforced by compile-time assertions.
-#[inline(always)]
-#[cfg(feature = "testing")]
 pub fn rot_step(cur: &[Fq; D], next: &mut [Fq; D]) {
-    // Note: ETA == 81 is guaranteed at compile-time by const assertions at module top
     rot_step_phi_81(cur, next)
 }
 
