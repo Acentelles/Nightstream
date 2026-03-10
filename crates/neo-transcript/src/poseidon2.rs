@@ -329,7 +329,6 @@ impl Poseidon2Transcript {
             &self.st,
         ));
     }
-
     pub fn challenge_fields(&mut self, label: &'static [u8], n: usize) -> Vec<F> {
         self.append_message(b"chal/label", label);
         let mut out = Vec::with_capacity(n);
@@ -344,12 +343,6 @@ impl Poseidon2Transcript {
         if std::env::var("NEO_TRANSCRIPT_DUMP").ok().as_deref() == Some("1") {
             self.dump_and_clear("challenge_fields");
         }
-        out
-    }
-
-    pub fn challenge_bytes_vec(&mut self, label: &'static [u8], len: usize) -> Vec<u8> {
-        let mut out = vec![0u8; len];
-        self.challenge_bytes(label, &mut out);
         out
     }
 
