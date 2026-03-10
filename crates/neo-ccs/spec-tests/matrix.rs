@@ -255,3 +255,268 @@ fn is_column_selector_detection() {
         "matrix with entry != 0 or 1 should not be a column selector"
     );
 }
+
+// ---------------------------------------------------------------------------
+// 9. csr_round_trip
+// ---------------------------------------------------------------------------
+#[test]
+fn csr_round_trip() {
+    // Build a sparse 3x4 dense matrix using neo_math::F (CsrMatrix is F-specific).
+    use neo_math::F as Fq;
+
+    let m = Mat::from_row_major(
+        3,
+        4,
+        vec![
+            Fq::from_u64(2u64), Fq::ZERO,      Fq::ONE,       Fq::ZERO,
+            Fq::ZERO,       Fq::from_u64(3u64), Fq::ZERO,      Fq::ZERO,
+            Fq::from_u64(4u64), Fq::ZERO,       Fq::from_u64(5u64), Fq::from_u64(7u64),
+        ],
+    );
+
+    let csr = m.to_csr();
+
+    // Verify dimensions preserved.
+    assert_eq!(csr.rows, 3);
+    assert_eq!(csr.cols, 4);
+
+    // spmv_transpose: compute M^T * r  where r is given as (re, im) pairs.
+    // Using r = [(1,0), (2,0), (3,0)] (real-only):
+    //   M^T * [1,2,3] = [2*1+0*2+4*3, 0*1+3*2+0*3, 1*1+0*2+5*3, 0*1+0*2+7*3]
+    //                  = [14, 6, 16, 21]
+    let r_pairs: Vec<(Fq, Fq)> = vec![
+        (Fq::ONE, Fq::ZERO),
+        (Fq::from_u64(2u64), Fq::ZERO),
+        (Fq::from_u64(3u64), Fq::ZERO),
+    ];
+
+    let (v_re, v_im) = csr.spmv_transpose(&r_pairs);
+
+    assert_eq!(v_re[0], Fq::from_u64(14u64), "M^T*r[0]");
+    assert_eq!(v_re[1], Fq::from_u64(6u64), "M^T*r[1]");
+    assert_eq!(v_re[2], Fq::from_u64(16u64), "M^T*r[2]");
+    assert_eq!(v_re[3], Fq::from_u64(21u64), "M^T*r[3]");
+    // Imaginary parts should all be zero.
+    for (i, &vi) in v_im.iter().enumerate() {
+        assert_eq!(vi, Fq::ZERO, "v_im[{i}] should be zero");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 10. csr_row_nz_and_nnz
+// ---------------------------------------------------------------------------
+#[test]
+fn csr_row_nz_and_nnz() {
+    use neo_math::F as Fq;
+
+    let m = Mat::from_row_major(
+        3,
+        3,
+        vec![
+            Fq::from_u64(2u64), Fq::ZERO,       Fq::ONE,
+            Fq::ZERO,       Fq::ZERO,       Fq::ZERO,      // all-zero row
+            Fq::from_u64(4u64), Fq::ZERO,       Fq::from_u64(5u64),
+        ],
+    );
+
+    let csr = m.to_csr();
+
+    // Row 0: two non-zeros at cols 0 and 2.
+    let (cols, vals) = csr.row_nz(0);
+    assert_eq!(cols, &[0, 2]);
+    assert_eq!(vals, &[Fq::from_u64(2u64), Fq::ONE]);
+    assert_eq!(csr.row_nnz(0), 2);
+
+    // Row 1: all zeros.
+    let (cols1, vals1) = csr.row_nz(1);
+    assert!(cols1.is_empty());
+    assert!(vals1.is_empty());
+    assert_eq!(csr.row_nnz(1), 0);
+
+    // Row 2: two non-zeros.
+    assert_eq!(csr.row_nnz(2), 2);
+
+    // Total nnz.
+    assert_eq!(csr.nnz(), 4);
+
+    // Also test the dense Mat methods.
+    assert_eq!(m.nnz(), 4);
+    assert_eq!(m.row_nnz(0), 2);
+    assert_eq!(m.row_nnz(1), 0);
+    assert_eq!(m.row_nnz(2), 2);
+
+    // Dense row_nz iterator.
+    let dense_nz: Vec<(usize, &Fq)> = m.row_nz(0).collect();
+    assert_eq!(dense_nz.len(), 2);
+    assert_eq!(dense_nz[0].0, 0); // col 0
+    assert_eq!(dense_nz[1].0, 2); // col 2
+}
+
+// ---------------------------------------------------------------------------
+// 11. n_eff_limits_rows
+// ---------------------------------------------------------------------------
+#[test]
+fn n_eff_limits_rows() {
+    // Build a 4x3 matrix and verify that n_eff < nrows restricts which rows are processed.
+    //
+    // M = [1, 0, 0]
+    //     [0, 2, 0]
+    //     [0, 0, 3]
+    //     [4, 4, 4]
+    let m = Mat::from_row_major(
+        4,
+        3,
+        vec![
+            F::ONE,         F::ZERO,        F::ZERO,
+            F::ZERO,        F::from_u64(2), F::ZERO,
+            F::ZERO,        F::ZERO,        F::from_u64(3),
+            F::from_u64(4), F::from_u64(4), F::from_u64(4),
+        ],
+    );
+
+    let csc = CscMat::from_dense_row_major(&m);
+    let x = vec![F::ONE, F::ONE, F::ONE];
+
+    // Full mul: y = M*x = [1, 2, 3, 12]
+    let mut y_full = vec![F::ZERO; 4];
+    csc.add_mul_into(&x, &mut y_full, 4);
+    assert_eq!(y_full[0], F::ONE);
+    assert_eq!(y_full[1], F::from_u64(2));
+    assert_eq!(y_full[2], F::from_u64(3));
+    assert_eq!(y_full[3], F::from_u64(12));
+
+    // n_eff = 2: only update y[0..2], rows 2 and 3 are excluded.
+    let mut y_limited = vec![F::ZERO; 4];
+    csc.add_mul_into(&x, &mut y_limited, 2);
+    assert_eq!(y_limited[0], F::ONE, "row 0 should be computed");
+    assert_eq!(y_limited[1], F::from_u64(2), "row 1 should be computed");
+    assert_eq!(y_limited[2], F::ZERO, "row 2 should be untouched");
+    assert_eq!(y_limited[3], F::ZERO, "row 3 should be untouched");
+
+    // Transpose with n_eff = 2: y = M^T * x[0..2]
+    // Only rows 0 and 1 of M contribute:
+    //   M^T * [1, 1, -, -] = [1*1+0*1, 0*1+2*1, 0*1+0*1] = [1, 2, 0]
+    let x4 = vec![F::ONE, F::ONE, F::from_u64(99), F::from_u64(99)];
+    let mut y_t = vec![F::ZERO; 3];
+    csc.add_mul_transpose_into(&x4, &mut y_t, 2);
+    assert_eq!(y_t[0], F::ONE, "M^T col 0 from rows 0..2");
+    assert_eq!(y_t[1], F::from_u64(2), "M^T col 1 from rows 0..2");
+    assert_eq!(y_t[2], F::ZERO, "M^T col 2 from rows 0..2");
+}
+
+// ---------------------------------------------------------------------------
+// 12. append_zero_rows
+// ---------------------------------------------------------------------------
+#[test]
+fn append_zero_rows() {
+    let mut m = Mat::from_row_major(
+        2,
+        3,
+        vec![
+            F::ONE,         F::from_u64(2), F::from_u64(3),
+            F::from_u64(4), F::from_u64(5), F::from_u64(6),
+        ],
+    );
+
+    m.append_zero_rows(2, F::ZERO);
+
+    assert_eq!(m.rows(), 4, "should have 4 rows after appending 2");
+    assert_eq!(m.cols(), 3, "cols unchanged");
+
+    // Original data preserved.
+    assert_eq!(m[(0, 0)], F::ONE);
+    assert_eq!(m[(1, 2)], F::from_u64(6));
+
+    // New rows are zero.
+    for r in 2..4 {
+        for c in 0..3 {
+            assert_eq!(m[(r, c)], F::ZERO, "appended row {r}, col {c} should be zero");
+        }
+    }
+
+    // Appending 0 rows is a noop.
+    let rows_before = m.rows();
+    m.append_zero_rows(0, F::ZERO);
+    assert_eq!(m.rows(), rows_before);
+}
+
+// ---------------------------------------------------------------------------
+// 13. sparse_cache_from_csc
+// ---------------------------------------------------------------------------
+#[test]
+fn sparse_cache_from_csc() {
+    use neo_ccs::SparseCache;
+
+    // Build two CSC matrices: one real, one identity sentinel (None).
+    let real = CscMat::from_dense_row_major(&Mat::from_row_major(
+        2,
+        2,
+        vec![F::from_u64(3), F::ZERO, F::ZERO, F::from_u64(7)],
+    ));
+
+    let cache = SparseCache::from_csc(vec![
+        Some(real),  // matrix 0: real sparse
+        None,        // matrix 1: identity sentinel
+    ]);
+
+    assert_eq!(cache.len(), 2);
+    assert!(!cache.is_empty());
+
+    // matrix 0: accessible as CSC
+    let m0 = cache.csc(0);
+    assert!(m0.is_some(), "matrix 0 should be Some");
+    let m0 = m0.unwrap();
+    let mut y = vec![F::ZERO; 2];
+    m0.add_mul_into(&[F::ONE, F::ONE], &mut y, 2);
+    assert_eq!(y[0], F::from_u64(3));
+    assert_eq!(y[1], F::from_u64(7));
+
+    // matrix 1: identity sentinel returns None
+    assert!(cache.csc(1).is_none(), "identity sentinel should be None");
+
+    // out of bounds: returns None
+    assert!(cache.csc(5).is_none());
+}
+
+// ---------------------------------------------------------------------------
+// 14. sparse_cache_from_triplets
+// ---------------------------------------------------------------------------
+#[test]
+fn sparse_cache_from_triplets() {
+    use neo_ccs::SparseCache;
+
+    let matrices: Vec<Option<Vec<(usize, usize, F)>>> = vec![
+        // matrix 0: 2x2 diagonal [5, 0; 0, 9]
+        Some(vec![
+            (0, 0, F::from_u64(5)),
+            (1, 1, F::from_u64(9)),
+        ]),
+        // matrix 1: identity sentinel
+        None,
+        // matrix 2: single entry at (0, 1)
+        Some(vec![
+            (0, 1, F::from_u64(11)),
+        ]),
+    ];
+
+    let cache = SparseCache::from_triplets(2, 2, matrices);
+
+    assert_eq!(cache.len(), 3);
+
+    // matrix 0: [5,0;0,9] * [1,1] = [5, 9]
+    let m0 = cache.csc(0).unwrap();
+    let mut y = vec![F::ZERO; 2];
+    m0.add_mul_into(&[F::ONE, F::ONE], &mut y, 2);
+    assert_eq!(y[0], F::from_u64(5));
+    assert_eq!(y[1], F::from_u64(9));
+
+    // matrix 1: sentinel
+    assert!(cache.csc(1).is_none());
+
+    // matrix 2: [0,11;0,0] * [1,1] = [11, 0]
+    let m2 = cache.csc(2).unwrap();
+    let mut y2 = vec![F::ZERO; 2];
+    m2.add_mul_into(&[F::ONE, F::ONE], &mut y2, 2);
+    assert_eq!(y2[0], F::from_u64(11));
+    assert_eq!(y2[1], F::ZERO);
+}
