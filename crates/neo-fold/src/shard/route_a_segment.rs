@@ -138,7 +138,7 @@ pub(crate) fn fold_shard_prove_route_a_segment_with_witnesses<L, MR, MB>(
     mixers: CommitMixers<MR, MB>,
     ob: Option<(&crate::output_binding::OutputBindingConfig, &[F])>,
     prover_ctx: Option<&ShardProverContext>,
-) -> Result<(ShardProof, Vec<Mat<F>>, Vec<Mat<F>>), PiCcsError>
+) -> Result<(ShardProof, Vec<Mat<F>>, Vec<Mat<F>>, ShardProofAudit<F>), PiCcsError>
 where
     L: SModuleHomomorphism<F, Cmt> + Sync,
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
@@ -159,6 +159,7 @@ where
             },
             acc_wit_init.to_vec(),
             Vec::new(),
+            ShardProofAudit::default(),
         ));
     }
 
@@ -168,6 +169,7 @@ where
     let mut merged_steps: Vec<StepProof> = Vec::new();
     let mut merged_val_lane_wits: Vec<Mat<F>> = Vec::new();
     let mut merged_output_proof: Option<neo_memory::output_check::OutputBindingProof> = None;
+    let mut merged_audit = ShardProofAudit::default();
     let mut prev_step_ctx: Option<&StepWitnessBundle<Cmt, F, K>> = None;
     let mut prev_twist_decoded: Option<Vec<crate::memory_sidecar::memory::TwistDecodedColsSparse>> = None;
     let mut poseidon_carry = crate::memory_sidecar::memory::PoseidonSidecarCarryState::new();
@@ -182,7 +184,14 @@ where
             .ok_or_else(|| PiCcsError::InvalidInput("step index overflow".into()))?;
         let chunk_ob = if end == steps.len() { ob } else { None };
 
-        let (chunk_proof, next_main_wits, mut chunk_val_lane_wits, next_prev_twist_decoded, next_poseidon_carry) =
+        let (
+            chunk_proof,
+            next_main_wits,
+            mut chunk_val_lane_wits,
+            next_prev_twist_decoded,
+            next_poseidon_carry,
+            chunk_audit,
+        ) =
             fold_shard_prove_impl(
                 true,
                 mode.clone(),
@@ -241,6 +250,7 @@ where
             proof_steps: 1,
         });
         merged_val_lane_wits.append(&mut chunk_val_lane_wits);
+        merged_audit.steps.extend(chunk_audit.steps);
         merged_steps.push(compressed_step);
         prev_step_ctx = chunk.last();
         prev_twist_decoded = next_prev_twist_decoded;
@@ -277,7 +287,7 @@ where
             proof.steps.len()
         )));
     }
-    Ok((proof, accumulator_wit, merged_val_lane_wits))
+    Ok((proof, accumulator_wit, merged_val_lane_wits, merged_audit))
 }
 
 pub(crate) fn fold_shard_verify_route_a_segment<MR, MB>(

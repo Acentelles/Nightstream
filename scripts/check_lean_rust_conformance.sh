@@ -28,9 +28,6 @@ lake env lean --run ValidateProtocolArtifacts.lean
 echo "[conformance] run Lean neo-fold artifact validation"
 lake env lean --run ValidateNeoFoldArtifacts.lean
 
-echo "[conformance] run Lean neo-fold refinement validation"
-lake exe validate-neo-fold-refinement
-
 cd "$ROOT"
 
 echo "[conformance] run Rust release oracle tests"

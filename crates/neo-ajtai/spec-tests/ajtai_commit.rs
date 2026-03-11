@@ -14,7 +14,9 @@ fn test_pp() -> PP<Rq> {
 }
 
 fn random_witness(rng: &mut impl rand::Rng, d: usize, m: usize) -> Vec<Fq> {
-    (0..d * m).map(|_| Fq::from_u64(rng.random::<u64>())).collect()
+    (0..d * m)
+        .map(|_| Fq::from_u64(rng.random::<u64>()))
+        .collect()
 }
 
 /// AjtaiCommit.spec.md: verify_open(pp, commit(pp, Z), Z) == true

@@ -49,7 +49,10 @@ fn rng_binding_changes_on_inputs() {
     // Witness change -> output changes
     assert_ne!(out1, out2, "different witness data must produce different RNG output");
     // External entropy change -> output changes
-    assert_ne!(out1, out3, "different external entropy must produce different RNG output");
+    assert_ne!(
+        out1, out3,
+        "different external entropy must produce different RNG output"
+    );
 }
 
 // ---------------------------------------------------------------------------

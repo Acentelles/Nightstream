@@ -34,6 +34,18 @@ name = "validate-neo-fold-refinement"
 root = "ValidateNeoFoldRefinement"
 
 [[lean_exe]]
+name = "validate-neo-fold-relations"
+root = "ValidateNeoFoldRelations"
+
+[[lean_exe]]
+name = "validate-neo-fold-step-semantics"
+root = "ValidateNeoFoldStepSemantics"
+
+[[lean_exe]]
+name = "validate-neo-fold-sessions"
+root = "ValidateNeoFoldSessions"
+
+[[lean_exe]]
 name = "goldilocks-golden"
 root = "SuperNeo.Golden.GoldilocksGolden"
 

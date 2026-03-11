@@ -1420,7 +1420,8 @@ impl Rv32TraceWiring {
         let pp = neo_ajtai::setup_par(&mut rng, D, params.kappa as usize, m_commit)
             .map_err(|e| PiCcsError::InvalidInput(format!("Ajtai setup failed: {e}")))?;
         let mut session = FoldingSession::new(self.mode.clone(), params, AjtaiSModule::new(Arc::new(pp)));
-        session.set_step_linking(StepLinkingConfig::new(vec![(layout.pc_final, layout.pc0)]));
+        let step_linking_pairs = vec![(layout.pc_final, layout.pc0)];
+        session.set_step_linking(StepLinkingConfig::new(step_linking_pairs.clone()));
 
         let mut prog_init_pairs: Vec<(u64, F)> = prog_init_words
             .into_iter()
@@ -1534,8 +1535,8 @@ impl Rv32TraceWiring {
             .ok_or_else(|| PiCcsError::ProtocolError("missing REG mem instance for output binding".into()))?;
 
         let fold_start = time_now();
-        let (proof, output_binding_cfg) = if output_claims.is_empty() {
-            (session.fold_and_prove(&ccs)?, None)
+        let (proof, output_binding_cfg, output_binding_target_state) = if output_claims.is_empty() {
+            (session.fold_and_prove(&ccs)?, None, None)
         } else {
             let (ob_mem_idx, ob_num_bits, ob_max_addr) = match output_target {
                 OutputTarget::Ram => (
@@ -1579,7 +1580,7 @@ impl Rv32TraceWiring {
             };
             let ob_cfg = OutputBindingConfig::new(ob_num_bits, output_claims).with_mem_idx(ob_mem_idx);
             let proof = session.fold_and_prove_with_output_binding_simple(&ccs, &ob_cfg, &final_memory_state)?;
-            (proof, Some(ob_cfg))
+            (proof, Some(ob_cfg), Some(final_memory_state))
         };
         let fold_and_prove_duration = elapsed_duration(fold_start);
         let prove_duration = elapsed_duration(prove_start);
@@ -1605,10 +1606,12 @@ impl Rv32TraceWiring {
             layout,
             exec,
             proof,
+            step_linking_pairs,
             used_mem_ids,
             used_shout_table_ids,
             output_binding_cfg,
             requires_poseidon_stage,
+            output_binding_target_state,
             prove_duration,
             prove_phase_durations,
             verify_duration: None,
@@ -1623,10 +1626,12 @@ pub struct Rv32TraceWiringRun {
     layout: Rv32TraceCcsLayout,
     exec: Rv32ExecTable,
     proof: ShardProof,
+    step_linking_pairs: Vec<(usize, usize)>,
     used_mem_ids: Vec<u32>,
     used_shout_table_ids: Vec<u32>,
     output_binding_cfg: Option<OutputBindingConfig>,
     requires_poseidon_stage: bool,
+    output_binding_target_state: Option<Vec<F>>,
     prove_duration: Duration,
     prove_phase_durations: Rv32TraceProvePhaseDurations,
     verify_duration: Option<Duration>,
@@ -1657,6 +1662,14 @@ impl Rv32TraceWiringRun {
         &self.proof
     }
 
+    pub fn step_linking_pairs(&self) -> &[(usize, usize)] {
+        &self.step_linking_pairs
+    }
+
+    pub fn step_linking_config(&self) -> StepLinkingConfig {
+        StepLinkingConfig::new(self.step_linking_pairs.clone())
+    }
+
     /// Auto-derived memory sidecar IDs used by this run (`S_memory`).
     pub fn used_memory_ids(&self) -> &[u32] {
         &self.used_mem_ids
@@ -1670,6 +1683,14 @@ impl Rv32TraceWiringRun {
     /// Whether static program scan requires Poseidon sidecar proof lanes.
     pub fn requires_poseidon_stage(&self) -> bool {
         self.requires_poseidon_stage
+    }
+
+    pub fn output_binding_cfg(&self) -> Option<&OutputBindingConfig> {
+        self.output_binding_cfg.as_ref()
+    }
+
+    pub fn output_binding_target_state(&self) -> Option<&[F]> {
+        self.output_binding_target_state.as_deref()
     }
 
     pub fn verify_proof(&self, proof: &ShardProof) -> Result<(), PiCcsError> {
@@ -1785,5 +1806,9 @@ impl Rv32TraceWiringRun {
 
     pub fn steps_public(&self) -> Vec<neo_memory::witness::StepInstanceBundle<neo_ajtai::Commitment, F, K>> {
         self.session.steps_public()
+    }
+
+    pub fn steps_witness(&self) -> &[neo_memory::witness::StepWitnessBundle<neo_ajtai::Commitment, F, K>] {
+        self.session.steps_witness()
     }
 }

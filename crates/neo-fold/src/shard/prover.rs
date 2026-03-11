@@ -127,6 +127,7 @@ pub(crate) fn fold_shard_prove_impl<L, MR, MB>(
         Vec<Mat<F>>,
         Option<Vec<crate::memory_sidecar::memory::TwistDecodedColsSparse>>,
         crate::memory_sidecar::memory::PoseidonSidecarCarryState,
+        ShardProofAudit<F>,
     ),
     PiCcsError,
 >
@@ -202,6 +203,7 @@ where
     let mut poseidon_carry =
         initial_poseidon_carry.unwrap_or_else(crate::memory_sidecar::memory::PoseidonSidecarCarryState::new);
     let mut output_proof: Option<neo_memory::output_check::OutputBindingProof> = None;
+    let mut audit_steps: Vec<StepWitnessAudit<F>> = Vec::with_capacity(steps.len());
     if ob.is_some() && steps.is_empty() {
         return Err(PiCcsError::InvalidInput("output binding requires >= 1 step".into()));
     }
@@ -1244,7 +1246,7 @@ where
         validate_me_batch_invariants(&ccs_out, "prove step ccs outputs")?;
 
         let want_main_wits = collect_val_lane_wits || idx + 1 < steps.len();
-        let (main_fold, Z_split) = prove_rlc_dec_lane(
+        let (main_fold, Z_split, main_parent_wit) = prove_rlc_dec_lane(
             &mode,
             RlcLane::Main,
             tr,
@@ -1268,6 +1270,11 @@ where
             rlc_parent: parent_pub,
             dec_children: children,
         } = main_fold;
+        let main_lane_audit = LaneWitnessAudit::new(
+            outs_Z.iter().map(|wit| (*wit).clone()).collect(),
+            main_parent_wit,
+            Z_split.clone(),
+        );
 
         let has_prev = prev_step.is_some();
 
@@ -1275,6 +1282,7 @@ where
         // Phase 2: Second folding lane for Twist val-eval ME claims at r_val.
         // --------------------------------------------------------------------
         let mut val_fold: Vec<RlcDecProof> = Vec::new();
+        let mut val_lane_audits: Vec<LaneWitnessAudit<F>> = Vec::new();
         if !mem_proof.val_me_claims.is_empty() {
             tr.append_message(b"fold/val_lane_start", &(step_idx as u64).to_le_bytes());
             let expected = 1usize + usize::from(has_prev);
@@ -1472,7 +1480,8 @@ where
                     }
                 }
 
-                let (proof, mut Z_split_val) = prove_rlc_dec_lane(
+                let input_wit = wit.clone();
+                let (proof, mut Z_split_val, parent_wit) = prove_rlc_dec_lane(
                     &mode,
                     RlcLane::Val,
                     tr,
@@ -1491,6 +1500,7 @@ where
                     l,
                     mixers,
                 )?;
+                val_lane_audits.push(LaneWitnessAudit::new(vec![input_wit], parent_wit, Z_split_val.clone()));
                 if collect_val_lane_wits {
                     val_lane_wits.extend(Z_split_val.drain(..));
                 }
@@ -1500,6 +1510,7 @@ where
 
         // Additional WB folding lane(s): CPU ME openings used by wb/booleanity stage.
         let mut wb_fold: Vec<RlcDecProof> = Vec::new();
+        let mut wb_lane_audits: Vec<LaneWitnessAudit<F>> = Vec::new();
         if !mem_proof.wb_me_claims.is_empty() {
             let trace = Rv32TraceLayout::new();
             let wb_cols = crate::memory_sidecar::memory::riscv_trace_wb_columns(&trace);
@@ -1673,6 +1684,10 @@ where
                         )));
                     }
                 }
+                if collect_val_lane_wits {
+                    val_lane_wits.extend(dec_wits.iter().cloned());
+                }
+                wb_lane_audits.push(LaneWitnessAudit::new(vec![mcs_wit.Z.clone()], z_mix, dec_wits.clone()));
                 wb_fold.push(RlcDecProof {
                     rlc_rhos,
                     rlc_parent,
@@ -1683,6 +1698,7 @@ where
 
         // Additional WP folding lane(s): CPU ME openings used by wp/quiescence stage.
         let mut wp_fold: Vec<RlcDecProof> = Vec::new();
+        let mut wp_lane_audits: Vec<LaneWitnessAudit<F>> = Vec::new();
         if !mem_proof.wp_me_claims.is_empty() {
             let trace = Rv32TraceLayout::new();
             let t_len = crate::memory_sidecar::memory::infer_rv32_trace_t_len_for_wb_wp(step, &trace)?;
@@ -1941,6 +1957,10 @@ where
                         )));
                     }
                 }
+                if collect_val_lane_wits {
+                    val_lane_wits.extend(dec_wits.iter().cloned());
+                }
+                wp_lane_audits.push(LaneWitnessAudit::new(vec![mcs_wit.Z.clone()], z_mix, dec_wits.clone()));
                 wp_fold.push(RlcDecProof {
                     rlc_rhos,
                     rlc_parent,
@@ -2490,7 +2510,7 @@ where
                     tr.append_message(b"fold/stage8_lane_start", &(step_idx as u64).to_le_bytes());
                     tr.append_message(b"fold/stage8_lane_group_idx", &0u64.to_le_bytes());
                     let wit_refs: Vec<&Mat<F>> = stage8_joint_wits.iter().collect();
-                    let (stage8_proof, _stage8_wits) = prove_rlc_dec_lane(
+                    let (stage8_proof, _stage8_wits, _stage8_parent_wit) = prove_rlc_dec_lane(
                         &mode,
                         RlcLane::Val,
                         tr,
@@ -2566,6 +2586,12 @@ where
             compressed_substeps: None,
             stage8_fold,
         });
+        audit_steps.push(StepWitnessAudit::new(
+            main_lane_audit,
+            val_lane_audits,
+            wb_lane_audits,
+            wp_lane_audits,
+        ));
 
         tr.append_message(b"fold/step_done", &(step_idx as u64).to_le_bytes());
         if let Some(out) = step_prove_ms_out.as_deref_mut() {
@@ -2585,5 +2611,6 @@ where
         val_lane_wits,
         prev_twist_decoded,
         poseidon_carry,
+        ShardProofAudit { steps: audit_steps },
     ))
 }

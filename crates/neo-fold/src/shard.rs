@@ -79,6 +79,8 @@ fn elapsed_ms(start: TimePoint) -> f64 {
     }
 }
 
+#[path = "shard/audit_types.rs"]
+mod audit_types;
 #[path = "shard/ccs_only_batched.rs"]
 mod ccs_only_batched;
 #[path = "shard/core_utils.rs"]
@@ -98,6 +100,7 @@ mod verifier_and_api;
 #[path = "shard/verify_consistency.rs"]
 mod verify_consistency;
 
+pub use audit_types::{LaneWitnessAudit, ShardProofAudit, StepWitnessAudit};
 pub use ccs_only_batched::{fold_shard_prove_ccs_only_batched, fold_shard_verify_ccs_only_batched};
 pub use core_utils::{absorb_step_memory, check_step_linking, CommitMixers, StepLinkingConfig};
 pub use verifier_and_api::*;

@@ -21,10 +21,7 @@ fn goldilocks_modulus() {
 fn conjugation_involution() {
     let mut rng = seeded_rng(0xCAFE);
     for _ in 0..50 {
-        let x = from_complex(
-            Fq::from_u64(rng.random::<u64>()),
-            Fq::from_u64(rng.random::<u64>()),
-        );
+        let x = from_complex(Fq::from_u64(rng.random::<u64>()), Fq::from_u64(rng.random::<u64>()));
         assert_eq!(x.conj().conj(), x);
     }
 }
@@ -34,10 +31,7 @@ fn conjugation_involution() {
 fn extension_inverse() {
     let mut rng = seeded_rng(0xBEEF);
     for _ in 0..50 {
-        let x = from_complex(
-            Fq::from_u64(rng.random::<u64>()),
-            Fq::from_u64(rng.random::<u64>()),
-        );
+        let x = from_complex(Fq::from_u64(rng.random::<u64>()), Fq::from_u64(rng.random::<u64>()));
         if x == K::ZERO {
             continue;
         }
@@ -51,10 +45,7 @@ fn extension_inverse() {
 fn k_coeffs_roundtrip() {
     let mut rng = seeded_rng(0xFACE);
     for _ in 0..50 {
-        let x = from_complex(
-            Fq::from_u64(rng.random::<u64>()),
-            Fq::from_u64(rng.random::<u64>()),
-        );
+        let x = from_complex(Fq::from_u64(rng.random::<u64>()), Fq::from_u64(rng.random::<u64>()));
         assert_eq!(K::from_coeffs(x.as_coeffs()), x);
     }
 }

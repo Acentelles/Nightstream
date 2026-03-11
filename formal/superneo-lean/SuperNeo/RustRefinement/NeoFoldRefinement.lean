@@ -1,5 +1,7 @@
 import SuperNeo.Generated.NeoFoldArtifactsCases
 import SuperNeo.NeoFoldArtifactValidation
+import SuperNeo.Generated.NeoFoldSessionsCases
+import SuperNeo.RustRefinement.NeoFoldSessionValidation
 
 namespace SuperNeo
 
@@ -517,6 +519,96 @@ refinement layer.
 -/
 def generatedNeoFoldArtifactCases_paperArtifactFullChecks : Array Bool :=
   Generated.neoFoldArtifactCases.map paperArtifactFullChecks
+
+/--
+Paper-core session-glue obligations currently covered by the Rust refinement
+layer.
+
+This captures the session-level statement glue that sits above individual shard
+artifacts:
+- public-step shape,
+- step linking,
+- resumed-segment carry for the main accumulator,
+- output-binding statement consistency.
+-/
+def paperSessionGlueAccepts (session : NeoFoldSessionCase) : Prop :=
+  ((SuperNeo.RustRefinement.sessionShapeChecks session = true ∧
+      SuperNeo.RustRefinement.sessionSegmentCarryChecks session = true) ∧
+    SuperNeo.RustRefinement.sessionStepLinkChecks session = true) ∧
+    SuperNeo.RustRefinement.sessionOutputBindingChecks session = true
+
+/-- Whole-session refinement target for the current Rust-only session layer. -/
+def SessionRefinementStatement
+  (implSessionAccept : NeoFoldSessionCase -> Prop)
+  (paperSessionAccept : NeoFoldSessionCase -> Prop) : Prop :=
+  ∀ session,
+    implSessionAccept session →
+      paperSessionAccept session
+
+/-- Executable Boolean view of the current paper-core session-glue predicate. -/
+def paperSessionGlueChecks (session : NeoFoldSessionCase) : Bool :=
+  SuperNeo.RustRefinement.sessionShapeChecks session &&
+    SuperNeo.RustRefinement.sessionSegmentCarryChecks session &&
+    SuperNeo.RustRefinement.sessionStepLinkChecks session &&
+    SuperNeo.RustRefinement.sessionOutputBindingChecks session
+
+/-- The executable session-glue Boolean lifts to the current session-glue proposition. -/
+theorem paperSessionGlueChecks_implies_paperSessionGlueAccepts
+    (session : NeoFoldSessionCase) :
+    paperSessionGlueChecks session = true ->
+      paperSessionGlueAccepts session := by
+  intro hChecks
+  simpa [paperSessionGlueAccepts, paperSessionGlueChecks, Bool.and_eq_true, and_assoc] using hChecks
+
+/--
+Concrete whole-session refinement theorem for the current Rust-only session
+validator.
+
+If the implementation session checker accepts, then the current paper-core
+session-glue obligations hold for that exported session.
+-/
+theorem implSessionChecks_refines_paperSessionGlueAccepts :
+    SessionRefinementStatement
+      (fun session => SuperNeo.RustRefinement.neoFoldSessionChecks session = true)
+      paperSessionGlueAccepts := by
+  intro session hAccept
+  simpa [SessionRefinementStatement, paperSessionGlueAccepts,
+    SuperNeo.RustRefinement.neoFoldSessionChecks, Bool.and_eq_true, and_assoc] using hAccept
+
+/--
+Executable Boolean view of the current paper-core session-glue predicate over
+the generated session corpus.
+-/
+def generatedNeoFoldSessionCases_paperSessionGlueChecks : Array Bool :=
+  Generated.neoFoldSessionCases.map paperSessionGlueChecks
+
+/--
+Executable Boolean view of the theorem-backed session-glue refinement result
+over the generated valid session corpus.
+
+Tampered session cases are excluded here; their rejection remains part of the
+implementation-side session validator.
+-/
+def validGeneratedNeoFoldSessionCases_paperSessionGlueChecks : Bool :=
+  (List.range Generated.neoFoldSessionCases.size).all fun idx =>
+    let session := Generated.neoFoldSessionCases[idx]!
+    if session.shouldFail then
+      true
+    else
+      paperSessionGlueChecks session
+
+/--
+Combined session-refinement corpus result.
+
+This requires:
+- all valid generated sessions satisfy the theorem-backed paper-core
+  session-glue predicate, and
+- all tampered generated sessions are rejected by the implementation session
+  validator.
+-/
+def generatedNeoFoldSessionRefinementChecks : Bool :=
+  validGeneratedNeoFoldSessionCases_paperSessionGlueChecks &&
+    SuperNeo.RustRefinement.tamperedNeoFoldSessionCasesAllReject
 
 end RustRefinement
 

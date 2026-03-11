@@ -43,7 +43,10 @@ fn identity_construction_and_detection() {
     for n in [1, 2, 3, 5, 8] {
         let id = Mat::<F>::identity(n);
         assert!(id.is_identity(), "Mat::identity({n}) should be detected as identity");
-        assert!(id.is_identity_hint(), "Mat::identity({n}) should have identity hint set");
+        assert!(
+            id.is_identity_hint(),
+            "Mat::identity({n}) should have identity hint set"
+        );
 
         // Verify diagonal is 1, off-diagonal is 0.
         for i in 0..n {
@@ -68,10 +71,7 @@ fn identity_hint_cleared_on_mut() {
 
     // Mutate via set()
     id.set(0, 0, F::ONE); // same value, but set() clears hint unconditionally
-    assert!(
-        !id.is_identity_hint(),
-        "identity_hint should be cleared after set()"
-    );
+    assert!(!id.is_identity_hint(), "identity_hint should be cleared after set()");
 
     // Still structurally identity (data unchanged), so is_identity() should still pass.
     assert!(id.is_identity(), "should still be structurally identity");
@@ -90,9 +90,15 @@ fn csc_round_trip_mul() {
         3,
         3,
         vec![
-            F::from_u64(2), F::ZERO, F::ONE,
-            F::ZERO, F::from_u64(3), F::ZERO,
-            F::from_u64(4), F::ZERO, F::from_u64(5),
+            F::from_u64(2),
+            F::ZERO,
+            F::ONE,
+            F::ZERO,
+            F::from_u64(3),
+            F::ZERO,
+            F::from_u64(4),
+            F::ZERO,
+            F::from_u64(5),
         ],
     );
 
@@ -160,9 +166,15 @@ fn csc_transpose_mul() {
         3,
         3,
         vec![
-            F::from_u64(2), F::ZERO, F::ONE,
-            F::ZERO, F::from_u64(3), F::ZERO,
-            F::from_u64(4), F::ZERO, F::from_u64(5),
+            F::from_u64(2),
+            F::ZERO,
+            F::ONE,
+            F::ZERO,
+            F::from_u64(3),
+            F::ZERO,
+            F::from_u64(4),
+            F::ZERO,
+            F::from_u64(5),
         ],
     );
 
@@ -206,50 +218,22 @@ fn ccs_matrix_identity_mul() {
 fn is_column_selector_detection() {
     // A column selector: each column has exactly one 1, rest 0.
     // 3x2 selector: selects rows 1 and 2
-    let m = Mat::from_row_major(
-        3,
-        2,
-        vec![
-            F::ZERO, F::ZERO,
-            F::ONE, F::ZERO,
-            F::ZERO, F::ONE,
-        ],
-    );
-    assert!(
-        m.is_column_selector(),
-        "valid column selector should be detected"
-    );
+    let m = Mat::from_row_major(3, 2, vec![F::ZERO, F::ZERO, F::ONE, F::ZERO, F::ZERO, F::ONE]);
+    assert!(m.is_column_selector(), "valid column selector should be detected");
 
     // Identity is also a column selector.
     let id = Mat::<F>::identity(3);
-    assert!(
-        id.is_column_selector(),
-        "identity should be a column selector"
-    );
+    assert!(id.is_column_selector(), "identity should be a column selector");
 
     // Not a column selector: column 0 has two 1s.
-    let not_sel = Mat::from_row_major(
-        2,
-        2,
-        vec![
-            F::ONE, F::ZERO,
-            F::ONE, F::ONE,
-        ],
-    );
+    let not_sel = Mat::from_row_major(2, 2, vec![F::ONE, F::ZERO, F::ONE, F::ONE]);
     assert!(
         !not_sel.is_column_selector(),
         "matrix with two 1s in a column should not be a column selector"
     );
 
     // Not a column selector: column has a non-0/1 entry.
-    let not_sel2 = Mat::from_row_major(
-        2,
-        1,
-        vec![
-            F::from_u64(2),
-            F::ZERO,
-        ],
-    );
+    let not_sel2 = Mat::from_row_major(2, 1, vec![F::from_u64(2), F::ZERO]);
     assert!(
         !not_sel2.is_column_selector(),
         "matrix with entry != 0 or 1 should not be a column selector"
@@ -268,9 +252,18 @@ fn csr_round_trip() {
         3,
         4,
         vec![
-            Fq::from_u64(2u64), Fq::ZERO,      Fq::ONE,       Fq::ZERO,
-            Fq::ZERO,       Fq::from_u64(3u64), Fq::ZERO,      Fq::ZERO,
-            Fq::from_u64(4u64), Fq::ZERO,       Fq::from_u64(5u64), Fq::from_u64(7u64),
+            Fq::from_u64(2u64),
+            Fq::ZERO,
+            Fq::ONE,
+            Fq::ZERO,
+            Fq::ZERO,
+            Fq::from_u64(3u64),
+            Fq::ZERO,
+            Fq::ZERO,
+            Fq::from_u64(4u64),
+            Fq::ZERO,
+            Fq::from_u64(5u64),
+            Fq::from_u64(7u64),
         ],
     );
 
@@ -313,9 +306,15 @@ fn csr_row_nz_and_nnz() {
         3,
         3,
         vec![
-            Fq::from_u64(2u64), Fq::ZERO,       Fq::ONE,
-            Fq::ZERO,       Fq::ZERO,       Fq::ZERO,      // all-zero row
-            Fq::from_u64(4u64), Fq::ZERO,       Fq::from_u64(5u64),
+            Fq::from_u64(2u64),
+            Fq::ZERO,
+            Fq::ONE,
+            Fq::ZERO,
+            Fq::ZERO,
+            Fq::ZERO, // all-zero row
+            Fq::from_u64(4u64),
+            Fq::ZERO,
+            Fq::from_u64(5u64),
         ],
     );
 
@@ -367,10 +366,18 @@ fn n_eff_limits_rows() {
         4,
         3,
         vec![
-            F::ONE,         F::ZERO,        F::ZERO,
-            F::ZERO,        F::from_u64(2), F::ZERO,
-            F::ZERO,        F::ZERO,        F::from_u64(3),
-            F::from_u64(4), F::from_u64(4), F::from_u64(4),
+            F::ONE,
+            F::ZERO,
+            F::ZERO,
+            F::ZERO,
+            F::from_u64(2),
+            F::ZERO,
+            F::ZERO,
+            F::ZERO,
+            F::from_u64(3),
+            F::from_u64(4),
+            F::from_u64(4),
+            F::from_u64(4),
         ],
     );
 
@@ -413,8 +420,12 @@ fn append_zero_rows() {
         2,
         3,
         vec![
-            F::ONE,         F::from_u64(2), F::from_u64(3),
-            F::from_u64(4), F::from_u64(5), F::from_u64(6),
+            F::ONE,
+            F::from_u64(2),
+            F::from_u64(3),
+            F::from_u64(4),
+            F::from_u64(5),
+            F::from_u64(6),
         ],
     );
 
@@ -455,8 +466,8 @@ fn sparse_cache_from_csc() {
     ));
 
     let cache = SparseCache::from_csc(vec![
-        Some(real),  // matrix 0: real sparse
-        None,        // matrix 1: identity sentinel
+        Some(real), // matrix 0: real sparse
+        None,       // matrix 1: identity sentinel
     ]);
 
     assert_eq!(cache.len(), 2);
@@ -487,16 +498,11 @@ fn sparse_cache_from_triplets() {
 
     let matrices: Vec<Option<Vec<(usize, usize, F)>>> = vec![
         // matrix 0: 2x2 diagonal [5, 0; 0, 9]
-        Some(vec![
-            (0, 0, F::from_u64(5)),
-            (1, 1, F::from_u64(9)),
-        ]),
+        Some(vec![(0, 0, F::from_u64(5)), (1, 1, F::from_u64(9))]),
         // matrix 1: identity sentinel
         None,
         // matrix 2: single entry at (0, 1)
-        Some(vec![
-            (0, 1, F::from_u64(11)),
-        ]),
+        Some(vec![(0, 1, F::from_u64(11))]),
     ];
 
     let cache = SparseCache::from_triplets(2, 2, matrices);

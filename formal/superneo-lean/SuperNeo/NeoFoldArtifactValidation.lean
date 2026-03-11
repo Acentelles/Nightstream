@@ -2450,6 +2450,28 @@ def paperStepRelationChecks
     (List.range step.stage8Lanes.size).all fun idx =>
       implFoldLaneChecks artifact.kRho (normalizeLaneSidecars (step.stage8Lanes[idx]!))
 
+/--
+Projected paper-core per-step semantic checks for one exported step.
+
+This is strictly stronger than the relation-only predicate. It keeps the
+projected current-step CE semantics and witness-chain obligations that matter
+for the Rust refinement layer, while still staying outside the paper modules.
+-/
+def paperStepSemanticChecks
+    (artifact : NeoFoldArtifactCase)
+    (stepIdx : Nat)
+    (step : NeoFoldStepArtifactCase) : Bool :=
+  let isTerminal := stepIdx + 1 = artifact.steps.size
+  checkCurrentStepCE artifact.ccs artifact.foldBase step &&
+    mainLaneInputWitnessChecks step &&
+    mainLaneParentWitnessChecks step &&
+    mainLaneRlcWitnessChecks step &&
+    mainLaneChildWitnessChecks isTerminal step &&
+    mainLaneDecWitnessChecks isTerminal step &&
+    laneWitnessArrayChecks step.valLanes step.valLaneWitnesses &&
+    laneWitnessArrayChecks step.wbLanes step.wbLaneWitnesses &&
+    laneWitnessArrayChecks step.wpLanes step.wpLaneWitnesses
+
 theorem mainLaneChecks_implies_paperMainLaneRelationChecks
     (kRho : Nat)
     (isTerminal : Bool)
@@ -2612,6 +2634,45 @@ theorem stepChecks_implies_paperStepRelationChecks
     exact ⟨⟨⟨⟨hMainPaper, hValPaper⟩, hWbPaper⟩, hWpPaper⟩, hStage8Norm⟩
   simpa [paperStepRelationChecks, List.all_eq_true] using hGoal
 
+theorem stepChecks_implies_paperStepSemanticChecks
+    (artifact : NeoFoldArtifactCase)
+    (stepIdx : Nat)
+    (step : NeoFoldStepArtifactCase) :
+    stepChecks artifact stepIdx step = true ->
+      paperStepSemanticChecks artifact stepIdx step = true := by
+  intro h
+  have hConj := by
+    simpa [stepChecks, List.all_eq_true] using h
+  have hStage8 := hConj.2
+  have h1 := hConj.1
+  have hWpW := h1.2
+  have h2 := h1.1
+  have hWp := h2.2
+  have h3 := h2.1
+  have hWbW := h3.2
+  have h4 := h3.1
+  have hWb := h4.2
+  have h5 := h4.1
+  have hValW := h5.2
+  have h6 := h5.1
+  have hVal := h6.2
+  have h7 := h6.1
+  have hMain := h7.2
+  have hCurrent := h7.1.2
+  have hGoal :
+      ((((((((checkCurrentStepCE artifact.ccs artifact.foldBase step = true ∧
+                  mainLaneInputWitnessChecks step = true) ∧
+                mainLaneParentWitnessChecks step = true) ∧
+              mainLaneRlcWitnessChecks step = true) ∧
+            mainLaneChildWitnessChecks (decide (stepIdx + 1 = artifact.steps.size)) step = true) ∧
+          mainLaneDecWitnessChecks (decide (stepIdx + 1 = artifact.steps.size)) step = true) ∧
+        laneWitnessArrayChecks step.valLanes step.valLaneWitnesses = true) ∧
+      laneWitnessArrayChecks step.wbLanes step.wbLaneWitnesses = true) ∧
+      laneWitnessArrayChecks step.wpLanes step.wpLaneWitnesses = true := by
+    exact ⟨⟨⟨⟨⟨⟨⟨hCurrent, hMain.1.1.1.1.1⟩, hMain.1.1.1.2⟩,
+      hMain.1.1.2⟩, hMain.2.1⟩, hMain.2.2⟩, hValW⟩, hWbW⟩, hWpW⟩
+  simpa [paperStepSemanticChecks] using hGoal
+
 /--
 Paper-core initial accumulator linkage obtained by erasing Rust-only claim
 sidecars in the degenerate zero-step case.
@@ -2737,6 +2798,26 @@ theorem implArtifactChecks_implies_paperStepRelationChecks
       stepChecks artifact stepIdx (artifact.steps[stepIdx]!) = true := by
     exact hSteps stepIdx hIdx
   exact stepChecks_implies_paperStepRelationChecks artifact stepIdx (artifact.steps[stepIdx]!) hStep
+
+theorem implArtifactChecks_implies_paperStepSemanticChecks
+    (artifact : NeoFoldArtifactCase)
+    (stepIdx : Nat)
+    (hIdx : stepIdx < artifact.steps.size) :
+    implArtifactChecks artifact = true ->
+      paperStepSemanticChecks artifact stepIdx (artifact.steps[stepIdx]!) = true := by
+  intro h
+  have hConj :
+      ((((∀ idx : Nat, idx < artifact.steps.size →
+              stepChecks artifact idx (artifact.steps[idx]!) = true) ∧
+            chainChecks artifact = true) ∧
+          chainWitnessChecks artifact = true) ∧
+        finalObligationChecks artifact = true) ∧
+      segmentMetaChecks artifact = true := by
+    simpa [implArtifactChecks, artifactChecks, List.all_eq_true] using h
+  have hStep :
+      stepChecks artifact stepIdx (artifact.steps[stepIdx]!) = true := by
+    exact hConj.1.1.1.1 stepIdx hIdx
+  exact stepChecks_implies_paperStepSemanticChecks artifact stepIdx (artifact.steps[stepIdx]!) hStep
 
 theorem chainWitnessChecks_implies_initialAccumulatorWitnessChecks
     (artifact : NeoFoldArtifactCase) :
@@ -2961,15 +3042,58 @@ structure NeoFoldArtifactCheckSummary where
   segmentMeta : Bool
 deriving Repr, Inhabited
 
+def artifactCheckSummary (artifact : NeoFoldArtifactCase) : NeoFoldArtifactCheckSummary :=
+  { stepChecks :=
+      (List.range artifact.steps.size).all
+        (fun stepIdx => stepChecks artifact stepIdx artifact.steps[stepIdx]!)
+    chainChecks := chainChecks artifact
+    finalObligations := finalObligationChecks artifact
+    segmentMeta := segmentMetaChecks artifact }
+
+def artifactFirstFail? (artifact : NeoFoldArtifactCase) : Option String :=
+  if !(artifactCheckSummary artifact).stepChecks then
+    let rec findStep? (idx : Nat) : Option String :=
+      if h : idx < artifact.steps.size then
+        let step := artifact.steps[idx]
+        let isTerminal := idx + 1 = artifact.steps.size
+        if !transcriptChecks step.piCcs then some s!"step[{idx}].transcriptPiCcs"
+        else if !transcriptChecks step.piCcsNc then some s!"step[{idx}].transcriptPiCcsNc"
+        else if !transcriptChecks step.cpuSumcheck then some s!"step[{idx}].transcriptCpu"
+        else if !optionalTranscriptChecks step.shiftSumcheck then some s!"step[{idx}].transcriptShift"
+        else if !batchedTimeChecks step.batchedTime then some s!"step[{idx}].batchedTime"
+        else if !ccsOutChecks artifact step then some s!"step[{idx}].ccsOut"
+        else if !cpuMetadataChecks step then some s!"step[{idx}].cpuMetadata"
+        else if !shiftMetadataChecks step then some s!"step[{idx}].shiftMetadata"
+        else if !(decide (step.piCcsNc.claimedSum = { c0 := 0, c1 := 0 })) then some s!"step[{idx}].piCcsNcZero"
+        else if !routeABoolMatches step then some s!"step[{idx}].routeABit"
+        else if !mainLaneChecks artifact.kRho isTerminal step then some s!"step[{idx}].mainLane"
+        else if !(mainLaneRlcWitnessChecks step && mainLaneDecWitnessChecks isTerminal step) then
+          some s!"step[{idx}].mainLaneWitness"
+        else if !laneArrayChecks artifact.kRho step.valInputs step.valLanes true then some s!"step[{idx}].valLanes"
+        else if !laneWitnessArrayChecks step.valLanes step.valLaneWitnesses then some s!"step[{idx}].valLaneWitnesses"
+        else if !laneArrayChecks artifact.kRho step.wbInputs step.wbLanes true then some s!"step[{idx}].wbLanes"
+        else if !laneWitnessArrayChecks step.wbLanes step.wbLaneWitnesses then some s!"step[{idx}].wbLaneWitnesses"
+        else if !laneArrayChecks artifact.kRho step.wpInputs step.wpLanes true then some s!"step[{idx}].wpLanes"
+        else if !laneWitnessArrayChecks step.wpLanes step.wpLaneWitnesses then some s!"step[{idx}].wpLaneWitnesses"
+        else if !((List.range step.stage8Lanes.size).all fun laneIdx =>
+          laneChecks artifact.kRho (step.stage8Lanes[laneIdx]!)) then some s!"step[{idx}].stage8Lanes"
+        else
+          findStep? (idx + 1)
+      else
+        none
+    findStep? 0
+  else if !(artifactCheckSummary artifact).chainChecks then
+    some "chainChecks"
+  else if !(artifactCheckSummary artifact).finalObligations then
+    some "finalObligations"
+  else if !(artifactCheckSummary artifact).segmentMeta then
+    some "segmentMeta"
+  else
+    none
 
 def neoFoldArtifactCheckSummaryAt? (idx : Nat) : Option NeoFoldArtifactCheckSummary :=
   validArtifacts[idx]?.map fun artifact =>
-    { stepChecks :=
-        (List.range artifact.steps.size).all
-          (fun stepIdx => stepChecks artifact stepIdx artifact.steps[stepIdx]!)
-      chainChecks := chainChecks artifact
-      finalObligations := finalObligationChecks artifact
-      segmentMeta := segmentMetaChecks artifact }
+    artifactCheckSummary artifact
 
 def neoFoldArtifactStepCheckSummariesAt? (idx : Nat) : Option (Array NeoFoldStepCheckSummary) :=
   validArtifacts[idx]?.map fun artifact =>

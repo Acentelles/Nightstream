@@ -194,7 +194,10 @@ The implementation-sidecar checks used by the Rust artifact validators are not
 paper theorems by themselves. Their intended formal contract lives under
 `specs/RustRefinement/` and requires any stronger Rust-side acceptance predicate
 to conservatively refine the projected paper-core CE / `Π_RLC` / `Π_DEC`
-relations.
+relations. The slow Rust-refinement lane currently checks three layers:
+- whole-artifact refinement,
+- projected per-step relation validation,
+- whole-session refinement.
 
 ## Validate Rust-exported `neo-fold` artifacts against the projected paper-core predicate
 
@@ -209,9 +212,76 @@ Expected output is:
 neo_fold_paper_refinement_checks=true
 ```
 
-This executable reports the strongest current Rust-refinement result over the
-generated valid `neo-fold` corpus: every exported valid scenario satisfies the
-projected paper-core artifact predicate after erasing Rust-only sidecar fields.
+## Validate Rust-exported `neo-fold` per-step relations against the projected paper-core predicate
+
+```bash
+cd formal/superneo-lean
+lake exe validate-neo-fold-relations
+```
+
+Expected output is:
+
+```text
+neo_fold_relation_checks=true
+```
+
+## Validate Rust-exported `neo-fold` step semantics against the projected paper-core predicate
+
+```bash
+cd formal/superneo-lean
+lake exe validate-neo-fold-step-semantics
+```
+
+Expected output is:
+
+```text
+neo_fold_step_semantic_checks=true
+```
+
+This validator is stronger than the relation-only check. It reuses the exported
+current-step CE and witness-chain semantics already present in the Rust artifact
+corpus and checks:
+
+- current-step CE claim semantics
+- main-lane carried/current/parent/child witness-chain semantics
+- auxiliary-lane witness-chain semantics
+
+This relation layer is enforced only in the slow Rust-refinement lane.
+
+## Validate Rust-exported `neo-fold` session glue in Lean
+
+```bash
+cd formal/superneo-lean
+lake exe validate-neo-fold-sessions
+```
+
+Expected output is:
+
+```text
+neo_fold_session_checks=true
+neo_fold_session_paper_refinement_checks=true
+```
+
+The current session corpus includes:
+
+- ordinary single-run `FoldingSession` families with step linking and output binding
+- resumed / continuation families split into multiple proved segments
+- tampered resumed families with broken accumulator carry metadata
+
+The session validator checks only Rust-side session glue:
+
+- adjacent public-step linking
+- resumed-segment carry sizes across continuation boundaries
+- resumed-segment main-accumulator digest equality across continuation boundaries
+- output-binding claim consistency against the exported final state
+- valid/tampered corpus classification
+
+This executable reports both:
+
+- the implementation-side session validator result over valid and tampered
+  exported sessions, and
+- the theorem-backed paper-core session-refinement result over the valid
+  exported session corpus after erasing Rust-only sidecar fields.
 
 ## Run the full Lean↔Rust conformance gate
 

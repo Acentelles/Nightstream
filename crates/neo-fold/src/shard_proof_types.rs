@@ -295,7 +295,11 @@ pub struct ShardFoldOutputs<C, FF, KK> {
 pub struct ShardFoldWitnesses<FF> {
     /// Witnesses for `ShardFoldOutputs::obligations.main` (one per ME instance).
     pub final_main_wits: Vec<Mat<FF>>,
-    /// Witnesses for `ShardFoldOutputs::obligations.val` (one per ME instance).
+    ///
+    /// This is an exporter/audit surface, not a semantic mirror of
+    /// `ShardFoldOutputs::obligations.val`. The proof object's `val` obligations also
+    /// include WB/WP/stage8 children, while the collected witness material here follows
+    /// the concrete auxiliary witness paths emitted by the prover.
     pub val_lane_wits: Vec<Mat<FF>>,
 }
 

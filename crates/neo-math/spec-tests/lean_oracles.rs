@@ -13,7 +13,12 @@ fn oracle_path(name: &str) -> PathBuf {
 
 fn load_json<T: for<'de> Deserialize<'de>>(name: &str) -> T {
     let path = oracle_path(name);
-    let bytes = fs::read(path).expect("oracle fixture should exist");
+    let bytes = fs::read(&path).unwrap_or_else(|err| {
+        panic!(
+            "oracle fixture should exist at {} (run `cd formal/superneo-lean && lake exe export-oracles`): {err}",
+            path.display()
+        )
+    });
     serde_json::from_slice(&bytes).expect("oracle fixture should parse")
 }
 
@@ -116,11 +121,10 @@ fn lean_ring_ct_oracles_match_neo_math() {
 
         let got_product = a.mul(&b);
         let got_ct_bar_dot = ct(&cf_inv(superneo_bar_block(a.0)).mul(&cf_inv(b.0)));
-        let got_dot = a
-            .0
-            .iter()
-            .zip(b.0.iter())
-            .fold(Fq::ZERO, |acc, (&x, &y)| acc + x * y);
+        let got_dot =
+            a.0.iter()
+                .zip(b.0.iter())
+                .fold(Fq::ZERO, |acc, (&x, &y)| acc + x * y);
 
         assert_eq!(got_product.0, expected_product);
         assert_eq!(got_ct_bar_dot, expected_ct_bar_dot);
@@ -156,10 +160,7 @@ fn lean_embedding_bar_oracles_match_neo_math() {
         .map(|block| fq_array(block))
         .collect();
     let expected_bar_lift = fq_vec(&oracle.vector_case.expected_bar_lift);
-    let got_blocks: Vec<[Fq; D]> = vector_input
-        .chunks_exact(D)
-        .map(fq_block)
-        .collect();
+    let got_blocks: Vec<[Fq; D]> = vector_input.chunks_exact(D).map(fq_block).collect();
     let got_bar_lift = superneo_bar_vec(&vector_input);
     assert_eq!(got_blocks, expected_blocks);
     assert_eq!(got_bar_lift, expected_bar_lift);

@@ -82,6 +82,27 @@ The refinement layer must provide:
 17. A theorem connecting the per-artifact Boolean predicate to the strongest
     current projected paper-core artifact proposition, so a `true` result can
     be lifted back into the mathematical refinement statement.
+18. A paper-core session-glue predicate for exported real `neo-fold` sessions
+    that captures:
+    - public-step shape,
+    - step linking,
+    - resumed-segment main-accumulator carry,
+    - resumed-segment main-accumulator digest equality,
+    - output-binding statement consistency.
+19. A concrete whole-session refinement theorem for the current Rust-only
+    session validator: acceptance of the implementation session predicate must
+    imply the current paper-core session-glue predicate.
+20. An executable Boolean view of the current paper-core session-glue
+    predicate for each generated session scenario, so the slow session lane can
+    report theorem-backed pass/fail results over the exported corpus.
+21. A valid-corpus Boolean view of the theorem-backed paper-core session-glue
+    predicate, so the slow session lane can distinguish valid-session
+    refinement from tampered-session rejection.
+22. A combined session-refinement corpus Boolean that requires both:
+    - valid generated sessions satisfy the theorem-backed paper-core
+      session-glue predicate, and
+    - tampered generated sessions are rejected by the implementation session
+      validator.
 
 ## Safety criterion
 
@@ -103,6 +124,8 @@ the richer Rust artifact format.
 - This spec does not claim that the paper itself contains the sidecar metadata.
 - This spec does not replace the paper-level `Π_CCS`, `Π_RLC`, `Π_DEC`, or
   final theorem.
+- This spec does not modify or reinterpret the paper-semantic Lean modules; it
+  lives entirely in the Rust-refinement layer.
 
 ## Output expectations
 

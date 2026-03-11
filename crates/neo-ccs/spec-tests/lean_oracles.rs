@@ -13,7 +13,12 @@ fn oracle_path(name: &str) -> PathBuf {
 
 fn load_json<T: for<'de> Deserialize<'de>>(name: &str) -> T {
     let path = oracle_path(name);
-    let bytes = fs::read(path).expect("oracle fixture should exist");
+    let bytes = fs::read(&path).unwrap_or_else(|err| {
+        panic!(
+            "oracle fixture should exist at {} (run `cd formal/superneo-lean && lake exe export-oracles`): {err}",
+            path.display()
+        )
+    });
     serde_json::from_slice(&bytes).expect("oracle fixture should parse")
 }
 
@@ -157,7 +162,12 @@ fn lean_matrix_eval_oracles_match_ccs_math() {
     assert_eq!(got_mz, expected_mz);
     assert_eq!(got_ct_bar_mz, expected_ct_bar_mz);
 
-    let eval_link_matrix: Vec<Vec<Fq>> = oracle.eval_link_case.matrix.iter().map(|row| fq_vec(row)).collect();
+    let eval_link_matrix: Vec<Vec<Fq>> = oracle
+        .eval_link_case
+        .matrix
+        .iter()
+        .map(|row| fq_vec(row))
+        .collect();
     let eval_link_z = fq_vec(&oracle.eval_link_case.z);
     let eval_link_r = fq_vec(&oracle.eval_link_case.r);
     let expected_y = fq_vec(&oracle.eval_link_case.expected_y);
@@ -165,7 +175,12 @@ fn lean_matrix_eval_oracles_match_ccs_math() {
     assert_eq!(got_y.0.to_vec(), expected_y);
     assert_eq!(ct(&got_y), Fq::from_u64(oracle.eval_link_case.expected_ct_y));
 
-    let eval_hom_matrix: Vec<Vec<Fq>> = oracle.eval_hom_case.matrix.iter().map(|row| fq_vec(row)).collect();
+    let eval_hom_matrix: Vec<Vec<Fq>> = oracle
+        .eval_hom_case
+        .matrix
+        .iter()
+        .map(|row| fq_vec(row))
+        .collect();
     let z1 = fq_vec(&oracle.eval_hom_case.z1);
     let z2 = fq_vec(&oracle.eval_hom_case.z2);
     let r = fq_vec(&oracle.eval_hom_case.r);

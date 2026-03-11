@@ -63,7 +63,7 @@ where
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {
-    let (proof, _final_main_wits, _val_lane_wits) = fold_shard_prove_mixed_ccs_batched_with_witnesses_internal(
+    let (proof, _final_main_wits, _val_lane_wits, _audit) = fold_shard_prove_mixed_ccs_batched_with_witnesses_internal(
         mode,
         tr,
         params,
@@ -99,7 +99,7 @@ where
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {
-    let (proof, _final_main_wits, _val_lane_wits) = fold_shard_prove_mixed_ccs_batched_with_witnesses_internal(
+    let (proof, _final_main_wits, _val_lane_wits, _audit) = fold_shard_prove_mixed_ccs_batched_with_witnesses_internal(
         mode,
         tr,
         params,
@@ -134,6 +134,41 @@ where
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {
+    let (proof, final_main_wits, val_lane_wits, _audit) = fold_shard_prove_mixed_ccs_batched_with_witnesses_internal(
+        mode,
+        tr,
+        params,
+        s_me,
+        steps,
+        acc_init,
+        acc_wit_init,
+        l,
+        mixers,
+        step_idx_offset,
+        None,
+        prover_ctx,
+    )?;
+    Ok((proof, final_main_wits, val_lane_wits))
+}
+
+pub(crate) fn fold_shard_prove_mixed_ccs_batched_with_witnesses_and_audit<L, MR, MB>(
+    mode: FoldingMode,
+    tr: &mut Poseidon2Transcript,
+    params: &NeoParams,
+    s_me: &CcsStructure<F>,
+    steps: &[StepWitnessBundle<Cmt, F, K>],
+    acc_init: &[CeClaim<Cmt, F, K>],
+    acc_wit_init: &[Mat<F>],
+    l: &L,
+    mixers: CommitMixers<MR, MB>,
+    step_idx_offset: usize,
+    prover_ctx: Option<&ShardProverContext>,
+) -> Result<(ShardProof, Vec<Mat<F>>, Vec<Mat<F>>, ShardProofAudit<F>), PiCcsError>
+where
+    L: SModuleHomomorphism<F, Cmt> + Sync,
+    MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
+    MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
+{
     fold_shard_prove_mixed_ccs_batched_with_witnesses_internal(
         mode,
         tr,
@@ -146,6 +181,41 @@ where
         mixers,
         step_idx_offset,
         None,
+        prover_ctx,
+    )
+}
+
+pub(crate) fn fold_shard_prove_mixed_ccs_batched_with_output_binding_and_audit<L, MR, MB>(
+    mode: FoldingMode,
+    tr: &mut Poseidon2Transcript,
+    params: &NeoParams,
+    s_me: &CcsStructure<F>,
+    steps: &[StepWitnessBundle<Cmt, F, K>],
+    acc_init: &[CeClaim<Cmt, F, K>],
+    acc_wit_init: &[Mat<F>],
+    l: &L,
+    mixers: CommitMixers<MR, MB>,
+    ob_cfg: &crate::output_binding::OutputBindingConfig,
+    final_memory_state: &[F],
+    prover_ctx: Option<&ShardProverContext>,
+) -> Result<(ShardProof, Vec<Mat<F>>, Vec<Mat<F>>, ShardProofAudit<F>), PiCcsError>
+where
+    L: SModuleHomomorphism<F, Cmt> + Sync,
+    MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
+    MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
+{
+    fold_shard_prove_mixed_ccs_batched_with_witnesses_internal(
+        mode,
+        tr,
+        params,
+        s_me,
+        steps,
+        acc_init,
+        acc_wit_init,
+        l,
+        mixers,
+        0,
+        Some((ob_cfg, final_memory_state)),
         prover_ctx,
     )
 }
@@ -163,7 +233,7 @@ fn fold_shard_prove_mixed_ccs_batched_with_witnesses_internal<L, MR, MB>(
     step_idx_offset: usize,
     ob: Option<(&crate::output_binding::OutputBindingConfig, &[F])>,
     prover_ctx: Option<&ShardProverContext>,
-) -> Result<(ShardProof, Vec<Mat<F>>, Vec<Mat<F>>), PiCcsError>
+) -> Result<(ShardProof, Vec<Mat<F>>, Vec<Mat<F>>, ShardProofAudit<F>), PiCcsError>
 where
     L: SModuleHomomorphism<F, Cmt> + Sync,
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
@@ -183,6 +253,7 @@ where
     let mut merged_steps: Vec<StepProof> = Vec::new();
     let mut output_proof: Option<neo_memory::output_check::OutputBindingProof> = None;
     let mut segment_meta: Vec<ShardSegmentMeta> = Vec::new();
+    let mut merged_audit = ShardProofAudit::default();
 
     let mut cursor = 0usize;
     while cursor < steps.len() {
@@ -209,7 +280,7 @@ where
             }
 
             let batch_size = ccs_only_batch_size_for_mode(&mode, params, accumulator.len(), segment.len());
-            let (segment_proof, next_acc, next_wits) =
+            let (segment_proof, next_acc, next_wits, segment_audit) =
                 ccs_only_batched::fold_shard_prove_ccs_only_batched_with_outputs_and_offset(
                     mode.clone(),
                     tr,
@@ -236,11 +307,12 @@ where
                 proof_steps: segment_proof.steps.len(),
             });
             merged_steps.extend(segment_proof.steps);
+            merged_audit.steps.extend(segment_audit.steps);
             cursor = end;
             continue;
         }
 
-        let (mut segment_proof, next_main_wits, segment_val_lane_wits) =
+        let (mut segment_proof, next_main_wits, segment_val_lane_wits, segment_audit) =
             fold_shard_prove_route_a_segment_with_witnesses(
                 mode.clone(),
                 tr,
@@ -295,6 +367,7 @@ where
         val_lane_wits.extend(segment_val_lane_wits);
         segment_meta.extend(route_meta_entries);
         merged_steps.extend(segment_proof.steps);
+        merged_audit.steps.extend(segment_audit.steps);
         cursor = end;
     }
 
@@ -319,6 +392,7 @@ where
         },
         accumulator_wit,
         val_lane_wits,
+        merged_audit,
     ))
 }
 

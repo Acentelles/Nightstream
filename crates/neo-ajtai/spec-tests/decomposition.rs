@@ -3,14 +3,16 @@
 //! Covers: round-trip, digit bounds, col vs row-major equivalence,
 //! split_b round-trip, assert_range_b.
 
-use neo_ajtai::{decomp_b, decomp_b_row_major, split_b, assert_range_b, DecompStyle};
+use neo_ajtai::{assert_range_b, decomp_b, decomp_b_row_major, split_b, DecompStyle};
 use neo_math::Fq;
 use p3_field::PrimeCharacteristicRing;
-use rand_chacha::{rand_core::SeedableRng, ChaCha8Rng};
 use rand::Rng;
+use rand_chacha::{rand_core::SeedableRng, ChaCha8Rng};
 
 fn random_fq_vec(rng: &mut impl Rng, len: usize) -> Vec<Fq> {
-    (0..len).map(|_| Fq::from_u64(rng.random::<u64>())).collect()
+    (0..len)
+        .map(|_| Fq::from_u64(rng.random::<u64>()))
+        .collect()
 }
 
 fn recompose(digits: &[Fq], b: u32, d: usize, m: usize) -> Vec<Fq> {
@@ -69,7 +71,10 @@ fn decomp_digit_bound_balanced() {
         let z = random_fq_vec(&mut rng, 8);
         let d = 64;
         let digits = decomp_b(&z, b, d, DecompStyle::Balanced);
-        assert!(assert_range_b(&digits, b).is_ok(), "balanced digit out of range for b={b}");
+        assert!(
+            assert_range_b(&digits, b).is_ok(),
+            "balanced digit out of range for b={b}"
+        );
     }
 }
 
@@ -105,7 +110,7 @@ fn split_b_round_trip() {
     let m = 3;
     let b = 2u32;
     let k = 64; // enough digits for any Goldilocks balanced value
-    // Use small values so balanced decomposition is well-defined
+                // Use small values so balanced decomposition is well-defined
     let z: Vec<Fq> = (0..d * m)
         .map(|i| Fq::from_u64((i as u64) * 7 + 1))
         .collect();

@@ -18,7 +18,7 @@ pub(crate) fn prove_rlc_dec_lane<L, MR, MB>(
     want_witnesses: bool,
     l: &L,
     mixers: CommitMixers<MR, MB>,
-) -> Result<(RlcDecProof, Vec<Mat<F>>), PiCcsError>
+) -> Result<(RlcDecProof, Vec<Mat<F>>, Mat<F>), PiCcsError>
 where
     L: SModuleHomomorphism<F, Cmt> + Sync,
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
@@ -422,6 +422,7 @@ where
             dec_children,
         },
         maybe_wits,
+        Z_mix.clone(),
     ))
 }
 

@@ -6,7 +6,7 @@
 // Registry tests are already covered in tests/s_module.rs and tests/pp_registry.rs.
 // The spec-test here focuses on the S-module homomorphism property.
 
-use neo_ajtai::{setup, commit, s_mul};
+use neo_ajtai::{commit, s_mul, setup};
 use neo_math::{Fq, Rq, D};
 use p3_field::PrimeCharacteristicRing;
 use rand::Rng;
@@ -20,7 +20,9 @@ fn s_module_homomorphism() {
     let pp = setup(&mut rng, D, 2, 4).unwrap();
 
     // Random witness
-    let z: Vec<Fq> = (0..D * pp.m).map(|_| Fq::from_u64(rng.random::<u64>())).collect();
+    let z: Vec<Fq> = (0..D * pp.m)
+        .map(|_| Fq::from_u64(rng.random::<u64>()))
+        .collect();
     let c = commit(&pp, &z);
 
     // Random ring element for S-action

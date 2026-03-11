@@ -29,7 +29,13 @@ use serde::{Deserialize, Serialize};
 mod fixtures;
 mod neo_fold_artifact_codegen;
 
-use neo_fold_artifact_codegen::{write_case_module, write_generated_module};
+use neo_fold_artifact_codegen::{
+    write_case_module_with_layout, write_generated_module_with_layout, ArtifactCodegenLayout,
+    DEFAULT_ARTIFACT_LAYOUT,
+};
+
+#[path = "neo_fold_integration_artifacts.rs"]
+mod neo_fold_integration_artifacts;
 
 const STARSTREAM_SESSION_SEED: [u8; 32] = [0x53; 32];
 const CONTROL_NEXT_PC_LINEAR_LABEL: &str = "control/next_pc_linear";
@@ -258,7 +264,7 @@ struct StepArtifactRepr {
 }
 
 #[derive(Clone)]
-struct ArtifactRepr {
+pub(crate) struct ArtifactRepr {
     scenario_name: String,
     should_fail: bool,
     fold_base: u32,
@@ -1220,7 +1226,7 @@ fn segment_meta_repr(meta: &[ShardSegmentMeta]) -> Vec<SegmentMetaRepr> {
         .collect()
 }
 
-fn artifact_from_proof<L>(
+pub(crate) fn artifact_from_proof<L>(
     scenario_name: &str,
     should_fail: bool,
     public_step_count: usize,
@@ -1692,32 +1698,53 @@ fn mixed_segment_tampered_artifact(valid: &ArtifactRepr) -> ArtifactRepr {
     tampered
 }
 
+pub(crate) fn write_artifact_family(
+    generated_dir: &Path,
+    layout: &ArtifactCodegenLayout<'_>,
+    cases: &[ArtifactRepr],
+) {
+    for (idx, case) in cases.iter().enumerate() {
+        let case_path = generated_dir.join(format!("{}{}.lean", layout.case_module_prefix, idx));
+        write_case_module_with_layout(&case_path, layout, idx, case);
+    }
+    let out_path = generated_dir.join(format!("{}.lean", layout.generated_module_name));
+    write_generated_module_with_layout(&out_path, layout, cases);
+}
+
+#[allow(dead_code)]
+pub(crate) fn write_session_segment_artifacts(generated_dir: &Path, cases: &[ArtifactRepr]) {
+    let layout = ArtifactCodegenLayout {
+        case_module_prefix: "NeoFoldSessionSegmentArtifactCase",
+        case_def_prefix: "neoFoldSessionSegmentArtifactCase",
+        generated_module_name: "NeoFoldSessionSegmentArtifacts",
+        generated_array_name: "neoFoldSessionSegmentArtifactCases",
+    };
+    write_artifact_family(generated_dir, &layout, cases);
+}
+
 pub fn export_neo_fold_artifacts() {
     let starstream_valid = starstream_valid_artifact();
     let twist_valid = twist_shout_valid_artifact();
     let twist_4step_valid = twist_shout_4step_valid_artifact();
     let twist_continuation_valid = twist_shout_continuation_valid_artifact();
     let mixed_segment_valid = mixed_segment_valid_artifact();
-    let cases = vec![
+    let mut cases = vec![
         starstream_valid,
         twist_valid,
         twist_4step_valid,
         twist_continuation_valid,
         mixed_segment_valid,
     ];
+    cases.extend(neo_fold_integration_artifacts::continuation_sha256_artifacts());
+    cases.extend(neo_fold_integration_artifacts::output_binding_artifacts());
     let generated_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("SuperNeo")
         .join("Generated");
-    for (idx, case) in cases.iter().enumerate() {
-        let case_path = generated_dir.join(format!("NeoFoldArtifactCase{idx}.lean"));
-        write_case_module(&case_path, idx, case);
-    }
-    let out_path = generated_dir.join("NeoFoldArtifacts.lean");
-    write_generated_module(&out_path, &cases);
+    write_artifact_family(&generated_dir, &DEFAULT_ARTIFACT_LAYOUT, &cases);
     println!(
         "wrote {} (label {:?})",
-        out_path.display(),
+        generated_dir.join(format!("{}.lean", DEFAULT_ARTIFACT_LAYOUT.generated_module_name)).display(),
         CONTROL_NEXT_PC_LINEAR_LABEL
     );
 }

@@ -20,6 +20,7 @@
 - Always use `FoldingMode::Optimized` in tests. Never use `FoldingMode::PaperExact` unless the user explicitly approves it. PaperExact is an O(2^ell) brute-force reference engine meant only for correctness cross-checking, not general test usage.
 
 ## Build & Test Commands
+- After modifying Rust code, always run `cargo fmt --all` before finishing unless the user explicitly says not to.
 - When running tests use --release eg cargo test --workspace --release
 - For extra debugs use debug-logs eg --features paper-exact,debug-logs
 

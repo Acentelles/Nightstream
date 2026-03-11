@@ -6,9 +6,7 @@
 #[path = "common/mod.rs"]
 mod common;
 
-use neo_ccs::crypto::poseidon2_goldilocks::{
-    poseidon2_hash, poseidon2_hash_packed_bytes, poseidon2_hash_single,
-};
+use neo_ccs::crypto::poseidon2_goldilocks::{poseidon2_hash, poseidon2_hash_packed_bytes, poseidon2_hash_single};
 use p3_field::PrimeCharacteristicRing;
 use p3_goldilocks::Goldilocks;
 
@@ -51,10 +49,7 @@ fn poseidon2_hash_single_matches() {
     let h_single = poseidon2_hash_single(x);
     let h_array = poseidon2_hash(&[x]);
 
-    assert_eq!(
-        h_single, h_array,
-        "hash_single(x) should equal hash(&[x])"
-    );
+    assert_eq!(h_single, h_array, "hash_single(x) should equal hash(&[x])");
 }
 
 // ---------------------------------------------------------------------------

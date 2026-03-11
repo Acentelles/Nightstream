@@ -69,9 +69,9 @@ fn embed_matrix_triplets<F: Field>(
     col_offset: usize,
 ) -> Vec<(usize, usize, F)> {
     match src {
-        crate::sparse::CcsMatrix::Identity { n } => {
-            (0..*n).map(|i| (row_offset + i, col_offset + i, F::ONE)).collect()
-        }
+        crate::sparse::CcsMatrix::Identity { n } => (0..*n)
+            .map(|i| (row_offset + i, col_offset + i, F::ONE))
+            .collect(),
         crate::sparse::CcsMatrix::Csc(m) => {
             let mut trips = Vec::with_capacity(m.vals.len());
             for col in 0..m.ncols {

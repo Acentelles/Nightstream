@@ -50,16 +50,10 @@ fn eval_known_values() {
     assert_eq!(f.eval(&[F::ONE, F::ONE]), F::from_u64(5));
 
     // f(3, 5) = 2*9 + 3*5 = 18 + 15 = 33
-    assert_eq!(
-        f.eval(&[F::from_u64(3), F::from_u64(5)]),
-        F::from_u64(33)
-    );
+    assert_eq!(f.eval(&[F::from_u64(3), F::from_u64(5)]), F::from_u64(33));
 
     // f(10, 7) = 2*100 + 3*7 = 200 + 21 = 221
-    assert_eq!(
-        f.eval(&[F::from_u64(10), F::from_u64(7)]),
-        F::from_u64(221)
-    );
+    assert_eq!(f.eval(&[F::from_u64(10), F::from_u64(7)]), F::from_u64(221));
 }
 
 // ---------------------------------------------------------------------------
@@ -69,7 +63,7 @@ fn eval_known_values() {
 #[should_panic]
 fn eval_wrong_arity_panics() {
     let f = build_test_poly(); // arity 2
-    // Passing 3 arguments should panic.
+                               // Passing 3 arguments should panic.
     let _ = f.eval(&[F::ONE, F::ONE, F::ONE]);
 }
 
@@ -114,12 +108,7 @@ fn append_zero_vars_preserves_eval() {
 
     // Non-zero trailing vars should still give the same result (they're unused).
     assert_eq!(
-        f2.eval(&[
-            F::from_u64(3),
-            F::from_u64(5),
-            F::from_u64(100),
-            F::from_u64(200)
-        ]),
+        f2.eval(&[F::from_u64(3), F::from_u64(5), F::from_u64(100), F::from_u64(200)]),
         f.eval(&[F::from_u64(3), F::from_u64(5)])
     );
 }

@@ -7,11 +7,11 @@
 mod common;
 
 use common::seeded_rng;
-use neo_ccs::{
-    check_ccs_rowwise_relaxed, check_ccs_rowwise_zero, direct_sum, direct_sum_transcript_mixed,
-    r1cs_to_ccs, validate_power_of_two, CcsStructure, Mat, SparsePoly, Term,
-};
 use neo_ccs::tensor_point;
+use neo_ccs::{
+    check_ccs_rowwise_relaxed, check_ccs_rowwise_zero, direct_sum, direct_sum_transcript_mixed, r1cs_to_ccs,
+    validate_power_of_two, CcsStructure, Mat, SparsePoly, Term,
+};
 use p3_field::PrimeCharacteristicRing;
 use p3_goldilocks::Goldilocks;
 use rand::Rng;
@@ -47,12 +47,7 @@ fn build_simple_r1cs() -> (CcsStructure<F>, Vec<F>, Vec<F>) {
     let ccs = r1cs_to_ccs(a_mat, b_mat, c_mat);
 
     // z = [1, 3, 5, 15] (a=3, b=5, c=15; 3*5=15)
-    let x = vec![
-        F::ONE,
-        F::from_u64(3),
-        F::from_u64(5),
-        F::from_u64(15),
-    ];
+    let x = vec![F::ONE, F::from_u64(3), F::from_u64(5), F::from_u64(15)];
     let w: Vec<F> = vec![];
 
     (ccs, x, w)
@@ -123,10 +118,7 @@ fn structure_rejects_mismatched_shapes() {
     );
 
     let result = CcsStructure::new(vec![m1, m2], f);
-    assert!(
-        result.is_err(),
-        "mismatched matrix shapes should be rejected"
-    );
+    assert!(result.is_err(), "mismatched matrix shapes should be rejected");
 }
 
 // ---------------------------------------------------------------------------
@@ -147,10 +139,7 @@ fn structure_rejects_wrong_poly_arity() {
     );
 
     let result = CcsStructure::new(vec![m1, m2], f);
-    assert!(
-        result.is_err(),
-        "wrong polynomial arity should be rejected"
-    );
+    assert!(result.is_err(), "wrong polynomial arity should be rejected");
 }
 
 // ---------------------------------------------------------------------------
@@ -159,13 +148,7 @@ fn structure_rejects_wrong_poly_arity() {
 #[test]
 fn r1cs_embedding_satisfies() {
     // A*z . B*z = C*z for various known value triples.
-    let test_cases: Vec<(u64, u64, u64)> = vec![
-        (3, 5, 15),
-        (0, 7, 0),
-        (1, 1, 1),
-        (100, 200, 20000),
-        (2, 3, 6),
-    ];
+    let test_cases: Vec<(u64, u64, u64)> = vec![(3, 5, 15), (0, 7, 0), (1, 1, 1), (100, 200, 20000), (2, 3, 6)];
 
     for (a_val, b_val, c_val) in test_cases {
         let n = 1;
@@ -184,12 +167,7 @@ fn r1cs_embedding_satisfies() {
 
         let ccs = r1cs_to_ccs(a_mat, b_mat, c_mat);
 
-        let x = vec![
-            F::ONE,
-            F::from_u64(a_val),
-            F::from_u64(b_val),
-            F::from_u64(c_val),
-        ];
+        let x = vec![F::ONE, F::from_u64(a_val), F::from_u64(b_val), F::from_u64(c_val)];
         let w: Vec<F> = vec![];
 
         check_ccs_rowwise_zero(&ccs, &x, &w)
@@ -204,9 +182,7 @@ fn r1cs_embedding_satisfies() {
 fn tensor_point_sum_is_one() {
     let mut rng = seeded_rng(0xFACE);
     for ell in 1..=6 {
-        let r: Vec<F> = (0..ell)
-            .map(|_| F::from_u64(rng.random::<u64>()))
-            .collect();
+        let r: Vec<F> = (0..ell).map(|_| F::from_u64(rng.random::<u64>())).collect();
         let tp = tensor_point::<F>(&r);
         assert_eq!(tp.len(), 1 << ell, "tensor_point length should be 2^ell");
         let sum: F = tp.iter().copied().fold(F::ZERO, |a, b| a + b);
@@ -308,8 +284,7 @@ fn direct_sum_preserves_satisfaction() {
     let mut w_combined = w1.clone();
     w_combined.extend_from_slice(&w2);
 
-    check_ccs_rowwise_zero(&ccs_sum, &x_combined, &w_combined)
-        .expect("direct sum should preserve satisfaction");
+    check_ccs_rowwise_zero(&ccs_sum, &x_combined, &w_combined).expect("direct sum should preserve satisfaction");
 }
 
 // ---------------------------------------------------------------------------
@@ -324,19 +299,25 @@ fn ensure_identity_first_inserts() {
 
     let f = SparsePoly::new(
         2,
-        vec![
-            Term {
-                coeff: F::ONE,
-                exps: vec![1, 1],
-            },
-        ],
+        vec![Term {
+            coeff: F::ONE,
+            exps: vec![1, 1],
+        }],
     );
 
     let ccs = CcsStructure::new(vec![m0, m1], f).expect("valid CCS");
-    assert!(!ccs.matrices[0].is_identity(), "M0 should NOT be identity before normalization");
+    assert!(
+        !ccs.matrices[0].is_identity(),
+        "M0 should NOT be identity before normalization"
+    );
 
-    let ccs_norm = ccs.ensure_identity_first().expect("normalization should succeed");
-    assert!(ccs_norm.matrices[0].is_identity(), "M0 should be identity after normalization");
+    let ccs_norm = ccs
+        .ensure_identity_first()
+        .expect("normalization should succeed");
+    assert!(
+        ccs_norm.matrices[0].is_identity(),
+        "M0 should be identity after normalization"
+    );
     assert_eq!(ccs_norm.t(), 3, "should have 3 matrices after inserting identity");
 }
 
@@ -351,18 +332,18 @@ fn ensure_identity_first_noop() {
 
     let f = SparsePoly::new(
         2,
-        vec![
-            Term {
-                coeff: F::ONE,
-                exps: vec![1, 1],
-            },
-        ],
+        vec![Term {
+            coeff: F::ONE,
+            exps: vec![1, 1],
+        }],
     );
 
     let ccs = CcsStructure::new(vec![m0, m1], f).expect("valid CCS");
     assert!(ccs.matrices[0].is_identity(), "M0 should already be identity");
 
-    let ccs_norm = ccs.ensure_identity_first().expect("normalization should succeed");
+    let ccs_norm = ccs
+        .ensure_identity_first()
+        .expect("normalization should succeed");
     assert_eq!(ccs_norm.t(), 2, "should still have 2 matrices (no insertion)");
     assert!(ccs_norm.matrices[0].is_identity(), "M0 should remain identity");
 }
@@ -378,17 +359,18 @@ fn assert_m0_identity_rejects() {
 
     let f = SparsePoly::new(
         2,
-        vec![
-            Term {
-                coeff: F::ONE,
-                exps: vec![1, 1],
-            },
-        ],
+        vec![Term {
+            coeff: F::ONE,
+            exps: vec![1, 1],
+        }],
     );
 
     let ccs = CcsStructure::new(vec![m0, m1], f).expect("valid CCS");
     let result = ccs.assert_m0_is_identity_for_nc();
-    assert!(result.is_err(), "non-identity M0 should be rejected by assert_m0_is_identity_for_nc");
+    assert!(
+        result.is_err(),
+        "non-identity M0 should be rejected by assert_m0_is_identity_for_nc"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -398,10 +380,7 @@ fn assert_m0_identity_rejects() {
 fn validate_power_of_two_cases() {
     // Valid powers of two
     for &n in &[1usize, 2, 4, 8, 16, 32, 64, 128, 256, 1024] {
-        assert!(
-            validate_power_of_two(n),
-            "{n} should be recognized as a power of two"
-        );
+        assert!(validate_power_of_two(n), "{n} should be recognized as a power of two");
     }
 
     // Invalid cases
@@ -440,14 +419,12 @@ fn direct_sum_transcript_mixed_beta() {
 
     // Use a non-trivial transcript digest
     let digest: [u8; 32] = [
-        0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF,
-        0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10,
-        0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
-        0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00,
+        0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF, 0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10, 0x11, 0x22,
+        0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00,
     ];
 
-    let ccs_mixed = direct_sum_transcript_mixed(&ccs1, &ccs2, digest)
-        .expect("transcript-mixed direct sum should succeed");
+    let ccs_mixed =
+        direct_sum_transcript_mixed(&ccs1, &ccs2, digest).expect("transcript-mixed direct sum should succeed");
 
     // The combined structure should have t1 + t2 matrices and n1 + n2 rows.
     assert_eq!(ccs_mixed.t(), ccs1.t() + ccs2.t());

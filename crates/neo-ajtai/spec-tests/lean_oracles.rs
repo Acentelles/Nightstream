@@ -13,7 +13,12 @@ fn oracle_path(name: &str) -> PathBuf {
 
 fn load_json<T: for<'de> Deserialize<'de>>(name: &str) -> T {
     let path = oracle_path(name);
-    let bytes = fs::read(path).expect("oracle fixture should exist");
+    let bytes = fs::read(&path).unwrap_or_else(|err| {
+        panic!(
+            "oracle fixture should exist at {} (run `cd formal/superneo-lean && lake exe export-oracles`): {err}",
+            path.display()
+        )
+    });
     serde_json::from_slice(&bytes).expect("oracle fixture should parse")
 }
 

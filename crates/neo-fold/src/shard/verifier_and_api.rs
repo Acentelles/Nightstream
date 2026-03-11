@@ -124,6 +124,66 @@ where
     )
 }
 
+pub fn fold_shard_prove_with_output_binding_and_audit<L, MR, MB>(
+    mode: FoldingMode,
+    tr: &mut Poseidon2Transcript,
+    params: &NeoParams,
+    s_me: &CcsStructure<F>,
+    steps: &[StepWitnessBundle<Cmt, F, K>],
+    acc_init: &[CeClaim<Cmt, F, K>],
+    acc_wit_init: &[Mat<F>],
+    l: &L,
+    mixers: CommitMixers<MR, MB>,
+    ob_cfg: &crate::output_binding::OutputBindingConfig,
+    final_memory_state: &[F],
+) -> Result<
+    (
+        ShardProof,
+        ShardFoldOutputs<Cmt, F, K>,
+        ShardFoldWitnesses<F>,
+        ShardProofAudit<F>,
+    ),
+    PiCcsError,
+>
+where
+    L: SModuleHomomorphism<F, Cmt> + Sync,
+    MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
+    MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
+{
+    let (proof, final_main_wits, val_lane_wits, audit) =
+        fold_shard_prove_mixed_ccs_batched_with_output_binding_and_audit(
+            mode,
+            tr,
+            params,
+            s_me,
+            steps,
+            acc_init,
+            acc_wit_init,
+            l,
+            mixers,
+            ob_cfg,
+            final_memory_state,
+            None,
+        )?;
+    let outputs = proof.compute_fold_outputs(acc_init);
+    if outputs.obligations.main.len() != final_main_wits.len() {
+        return Err(PiCcsError::ProtocolError(format!(
+            "final main witness count mismatch (have {}, need {})",
+            final_main_wits.len(),
+            outputs.obligations.main.len()
+        )));
+    }
+    Ok((
+        proof,
+        outputs,
+        ShardFoldWitnesses {
+            final_main_wits,
+            val_lane_wits,
+        },
+        audit,
+    ))
+}
+
 pub(crate) fn fold_shard_prove_with_output_binding_with_context<L, MR, MB>(
     mode: FoldingMode,
     tr: &mut Poseidon2Transcript,
@@ -196,11 +256,59 @@ where
             outputs.obligations.main.len()
         )));
     }
-    if outputs.obligations.val.len() != val_lane_wits.len() {
+    Ok((
+        proof,
+        outputs,
+        ShardFoldWitnesses {
+            final_main_wits,
+            val_lane_wits,
+        },
+    ))
+}
+
+pub fn fold_shard_prove_with_witnesses_and_audit<L, MR, MB>(
+    mode: FoldingMode,
+    tr: &mut Poseidon2Transcript,
+    params: &NeoParams,
+    s_me: &CcsStructure<F>,
+    steps: &[StepWitnessBundle<Cmt, F, K>],
+    acc_init: &[CeClaim<Cmt, F, K>],
+    acc_wit_init: &[Mat<F>],
+    l: &L,
+    mixers: CommitMixers<MR, MB>,
+) -> Result<
+    (
+        ShardProof,
+        ShardFoldOutputs<Cmt, F, K>,
+        ShardFoldWitnesses<F>,
+        ShardProofAudit<F>,
+    ),
+    PiCcsError,
+>
+where
+    L: SModuleHomomorphism<F, Cmt> + Sync,
+    MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
+    MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
+{
+    let (proof, final_main_wits, val_lane_wits, audit) = fold_shard_prove_mixed_ccs_batched_with_witnesses_and_audit(
+        mode,
+        tr,
+        params,
+        s_me,
+        steps,
+        acc_init,
+        acc_wit_init,
+        l,
+        mixers,
+        0,
+        None,
+    )?;
+    let outputs = proof.compute_fold_outputs(acc_init);
+    if outputs.obligations.main.len() != final_main_wits.len() {
         return Err(PiCcsError::ProtocolError(format!(
-            "val-lane witness count mismatch (have {}, need {})",
-            val_lane_wits.len(),
-            outputs.obligations.val.len()
+            "final main witness count mismatch (have {}, need {})",
+            final_main_wits.len(),
+            outputs.obligations.main.len()
         )));
     }
     Ok((
@@ -210,6 +318,7 @@ where
             final_main_wits,
             val_lane_wits,
         },
+        audit,
     ))
 }
 
@@ -255,11 +364,60 @@ where
             outputs.obligations.main.len()
         )));
     }
-    if outputs.obligations.val.len() != val_lane_wits.len() {
+    Ok((
+        proof,
+        outputs,
+        ShardFoldWitnesses {
+            final_main_wits,
+            val_lane_wits,
+        },
+    ))
+}
+
+pub fn fold_shard_prove_with_witnesses_with_step_offset_and_audit<L, MR, MB>(
+    mode: FoldingMode,
+    tr: &mut Poseidon2Transcript,
+    params: &NeoParams,
+    s_me: &CcsStructure<F>,
+    steps: &[StepWitnessBundle<Cmt, F, K>],
+    acc_init: &[CeClaim<Cmt, F, K>],
+    acc_wit_init: &[Mat<F>],
+    l: &L,
+    mixers: CommitMixers<MR, MB>,
+    step_idx_offset: usize,
+) -> Result<
+    (
+        ShardProof,
+        ShardFoldOutputs<Cmt, F, K>,
+        ShardFoldWitnesses<F>,
+        ShardProofAudit<F>,
+    ),
+    PiCcsError,
+>
+where
+    L: SModuleHomomorphism<F, Cmt> + Sync,
+    MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
+    MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
+{
+    let (proof, final_main_wits, val_lane_wits, audit) = fold_shard_prove_mixed_ccs_batched_with_witnesses_and_audit(
+        mode,
+        tr,
+        params,
+        s_me,
+        steps,
+        acc_init,
+        acc_wit_init,
+        l,
+        mixers,
+        step_idx_offset,
+        None,
+    )?;
+    let outputs = proof.compute_fold_outputs(acc_init);
+    if outputs.obligations.main.len() != final_main_wits.len() {
         return Err(PiCcsError::ProtocolError(format!(
-            "val-lane witness count mismatch (have {}, need {})",
-            val_lane_wits.len(),
-            outputs.obligations.val.len()
+            "final main witness count mismatch (have {}, need {})",
+            final_main_wits.len(),
+            outputs.obligations.main.len()
         )));
     }
     Ok((
@@ -269,6 +427,7 @@ where
             final_main_wits,
             val_lane_wits,
         },
+        audit,
     ))
 }
 

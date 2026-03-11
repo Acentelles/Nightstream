@@ -132,7 +132,7 @@ where
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {
-    let (proof, _next_acc, _next_wits) = fold_shard_prove_ccs_only_batched_with_outputs_and_offset(
+    let (proof, _next_acc, _next_wits, _audit) = fold_shard_prove_ccs_only_batched_with_outputs_and_offset(
         mode,
         tr,
         params,
@@ -160,7 +160,7 @@ pub(crate) fn fold_shard_prove_ccs_only_batched_with_outputs_and_offset<L, MR, M
     mixers: CommitMixers<MR, MB>,
     mcs_batch_size: usize,
     step_idx_offset: usize,
-) -> Result<(ShardProof, Vec<CeClaim<Cmt, F, K>>, Vec<Mat<F>>), PiCcsError>
+) -> Result<(ShardProof, Vec<CeClaim<Cmt, F, K>>, Vec<Mat<F>>, ShardProofAudit<F>), PiCcsError>
 where
     L: SModuleHomomorphism<F, Cmt> + Sync,
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
@@ -200,6 +200,7 @@ where
     let mut accumulator = acc_init.to_vec();
     let mut accumulator_wit = acc_wit_init.to_vec();
     let mut step_proofs: Vec<StepProof> = Vec::new();
+    let mut audit_steps: Vec<StepWitnessAudit<F>> = Vec::new();
 
     let mut cursor = 0usize;
     while cursor < steps.len() {
@@ -259,7 +260,7 @@ where
         outs_Z.extend(mcs_wits.iter().map(|w| &w.Z));
         outs_Z.extend(accumulator_wit.iter());
 
-        let (main_fold, Z_split) = prove_rlc_dec_lane(
+        let (main_fold, Z_split, parent_wit) = prove_rlc_dec_lane(
             &mode,
             RlcLane::Main,
             tr,
@@ -283,6 +284,17 @@ where
             rlc_parent,
             dec_children,
         } = main_fold;
+
+        audit_steps.push(StepWitnessAudit::new(
+            LaneWitnessAudit::new(
+                outs_Z.iter().map(|wit| (*wit).clone()).collect(),
+                parent_wit,
+                Z_split.clone(),
+            ),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        ));
 
         accumulator = dec_children.clone();
         accumulator_wit = Z_split;
@@ -336,6 +348,7 @@ where
         },
         accumulator,
         accumulator_wit,
+        ShardProofAudit { steps: audit_steps },
     ))
 }
 

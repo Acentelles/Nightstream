@@ -139,9 +139,6 @@ abbrev ArtifactRefinementStatement := SuperNeo.RustRefinement.ArtifactRefinement
 /-- [Role: Theorem-Target] Paper-core artifact obligations currently covered by the refinement layer. -/
 abbrev paperArtifactCoreAccepts := SuperNeo.RustRefinement.paperArtifactCoreAccepts
 
-/-- [Role: Theorem-Target] Stronger artifact obligations including initial accumulator CE witnesses. -/
-abbrev paperArtifactCoreWithAccumulatorAccepts := SuperNeo.RustRefinement.paperArtifactCoreWithAccumulatorAccepts
-
 /-- [Role: Theorem-Target] Projected per-step paper-core folding relation obligations. -/
 abbrev paperArtifactStepRelationsAccepts := SuperNeo.RustRefinement.paperArtifactStepRelationsAccepts
 
@@ -171,16 +168,6 @@ theorem implArtifactChecks_refines_paperArtifactCoreAccepts :
   SuperNeo.RustRefinement.implArtifactChecks_refines_paperArtifactCoreAccepts
 
 /--
-[Role: Theorem-Target] Stronger whole-artifact refinement theorem including
-initial accumulator CE witnesses.
--/
-theorem implArtifactChecks_refines_paperArtifactCoreWithAccumulatorAccepts :
-  ArtifactRefinementStatement
-    (fun artifact => SuperNeo.implArtifactChecks artifact = true)
-    paperArtifactCoreWithAccumulatorAccepts :=
-  SuperNeo.RustRefinement.implArtifactChecks_refines_paperArtifactCoreWithAccumulatorAccepts
-
-/--
 [Role: Theorem-Target] Whole-artifact refinement theorem for projected
 per-step folding relations.
 -/
@@ -202,6 +189,41 @@ theorem implArtifactChecks_refines_paperArtifactFullAccepts :
 /-- [Role: Theorem-Target] Boolean view of the strongest current paper-core refinement predicate over the generated valid `neo-fold` corpus. -/
 abbrev generatedNeoFoldArtifactCases_paperArtifactFullChecks :=
   SuperNeo.RustRefinement.generatedNeoFoldArtifactCases_paperArtifactFullChecks
+
+/-- [Role: Theorem-Target] Current paper-core session-glue obligations for exported `neo-fold` sessions. -/
+abbrev paperSessionGlueAccepts := SuperNeo.RustRefinement.paperSessionGlueAccepts
+
+/-- [Role: Theorem-Target] Whole-session refinement target shape for the Rust-only session layer. -/
+abbrev SessionRefinementStatement := SuperNeo.RustRefinement.SessionRefinementStatement
+
+/-- [Role: Theorem-Target] Executable Boolean view of the current paper-core session-glue predicate. -/
+abbrev paperSessionGlueChecks := SuperNeo.RustRefinement.paperSessionGlueChecks
+
+/-- [Role: Theorem-Target] Boolean session-glue checks imply the current session-glue proposition. -/
+theorem paperSessionGlueChecks_implies_paperSessionGlueAccepts
+  (session : SuperNeo.Generated.NeoFoldSessionCase) :
+  paperSessionGlueChecks session = true ->
+    paperSessionGlueAccepts session :=
+  SuperNeo.RustRefinement.paperSessionGlueChecks_implies_paperSessionGlueAccepts session
+
+/-- [Role: Theorem-Target] Concrete whole-session refinement theorem for the current Rust-only session validator. -/
+theorem implSessionChecks_refines_paperSessionGlueAccepts :
+  SessionRefinementStatement
+    (fun session => SuperNeo.RustRefinement.neoFoldSessionChecks session = true)
+    paperSessionGlueAccepts :=
+  SuperNeo.RustRefinement.implSessionChecks_refines_paperSessionGlueAccepts
+
+/-- [Role: Theorem-Target] Executable Boolean view of the current paper-core session-glue predicate over the generated session corpus. -/
+abbrev generatedNeoFoldSessionCases_paperSessionGlueChecks :=
+  SuperNeo.RustRefinement.generatedNeoFoldSessionCases_paperSessionGlueChecks
+
+/-- [Role: Theorem-Target] Valid generated sessions satisfy the theorem-backed paper-core session-glue predicate. -/
+abbrev validGeneratedNeoFoldSessionCases_paperSessionGlueChecks :=
+  SuperNeo.RustRefinement.validGeneratedNeoFoldSessionCases_paperSessionGlueChecks
+
+/-- [Role: Theorem-Target] Combined session-refinement corpus result over valid and tampered generated sessions. -/
+abbrev generatedNeoFoldSessionRefinementChecks :=
+  SuperNeo.RustRefinement.generatedNeoFoldSessionRefinementChecks
 
 end RustRefinementInterface
 

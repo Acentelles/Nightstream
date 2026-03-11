@@ -1,4 +1,5 @@
 import Init
+import SuperNeo.Checks
 
 private def checkProofImportWall : IO Bool := do
   let pattern := "^import SuperNeo\\.(Checks|Generated|Regression|Golden)"
@@ -29,30 +30,27 @@ private def checkProofImportWall : IO Bool := do
 def main : IO UInt32 := do
   let okProofImportWall ← checkProofImportWall
 
-  -- Current scaffold keeps regression checks lightweight while theorem depth is
-  -- built in the proof modules. These flags are still reported explicitly so
-  -- `lake exe check` stays stable for CI/parity consumers.
-  let okSuper := true
-  let okRing := true
-  let okNorm := true
-  let okSplit := true
-  let okEq := true
-  let okMle := true
-  let okEmbeddingVec := true
-  let okEmbeddingMatrix := true
-  let okBarLiftVec := true
-  let okBarLiftMatrix := true
-  let okMatrixTransform := true
-  let okEvalLink := true
-  let okEvalHom := true
-  let okModuleHom := true
-  let okInvertibility := true
-  let okSampling := true
-  let okEqLift := true
-  let okPolyLemmas := true
-  let okCoeffMaps := true
-  let okParams := true
-  let okInterp := true
+  let okSuper := SuperNeo.checkSuperNeoCases
+  let okRing := SuperNeo.checkRingMulCases
+  let okNorm := SuperNeo.checkNormCases
+  let okSplit := SuperNeo.checkSplitCases
+  let okEq := SuperNeo.checkEqCases
+  let okMle := SuperNeo.checkMleCases
+  let okEmbeddingVec := SuperNeo.checkEmbeddingVecCases
+  let okEmbeddingMatrix := SuperNeo.checkEmbeddingMatrixCases
+  let okBarLiftVec := SuperNeo.checkBarLiftVecCases
+  let okBarLiftMatrix := SuperNeo.checkBarLiftMatrixCases
+  let okMatrixTransform := SuperNeo.checkMatrixTransformCases
+  let okEvalLink := SuperNeo.checkEvalLinkCases
+  let okEvalHom := SuperNeo.checkEvalHomCases
+  let okModuleHom := SuperNeo.checkModuleHomCases
+  let okInvertibility := SuperNeo.checkInvertibilityCases
+  let okSampling := SuperNeo.checkSamplingCases
+  let okEqLift := SuperNeo.checkEqLiftCases
+  let okPolyLemmas := SuperNeo.checkPolyLemmaCases
+  let okCoeffMaps := SuperNeo.checkCoeffMapCases
+  let okParams := SuperNeo.checkParameterCases
+  let okInterp := SuperNeo.checkInterpCases
 
   let allOk :=
     okProofImportWall && okSuper && okRing && okNorm && okSplit && okEq && okMle &&

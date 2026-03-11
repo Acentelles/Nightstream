@@ -165,11 +165,7 @@ fn challenge_nonzero_field_never_zero() {
     for i in 0..100u64 {
         t.append_message(b"i", &i.to_le_bytes());
         let c = t.challenge_nonzero_field(b"nz");
-        assert_ne!(
-            c,
-            F::ZERO,
-            "challenge_nonzero_field returned zero at iteration {i}"
-        );
+        assert_ne!(c, F::ZERO, "challenge_nonzero_field returned zero at iteration {i}");
     }
 }
 
@@ -239,9 +235,6 @@ fn challenge_bytes_exact_length() {
         let mut t2 = t.clone();
         t2.challenge_bytes(b"c", &mut out);
         // Verify not all zeros (extremely unlikely for a proper hash)
-        assert!(
-            out.iter().any(|&b| b != 0),
-            "challenge_bytes({len}) produced all zeros"
-        );
+        assert!(out.iter().any(|&b| b != 0), "challenge_bytes({len}) produced all zeros");
     }
 }

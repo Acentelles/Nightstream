@@ -1,143 +1,13 @@
+mod cases;
+
 use std::fmt::Write as _;
 use std::fs;
 use std::path::PathBuf;
 
+use cases::*;
 use neo_math::ring::inf_norm;
 use neo_math::{cf_inv, ct, superneo_bar_block, superneo_bar_matrix, Fq as F, Rq, D};
 use p3_field::{Field, PrimeCharacteristicRing, PrimeField64};
-
-#[derive(Clone)]
-struct SuperNeoCase {
-    a: [F; D],
-    b: [F; D],
-    expected_ct: F,
-    expected_dot: F,
-}
-
-#[derive(Clone)]
-struct RingMulCase {
-    a: [F; D],
-    b: [F; D],
-    expected: [F; D],
-}
-
-#[derive(Clone)]
-struct NormCase {
-    a: [F; D],
-    expected_norm: u64,
-}
-
-#[derive(Clone)]
-struct SplitCase {
-    input: Vec<F>,
-    base: u64,
-    k: u64,
-    expected_digits: Vec<Vec<F>>,
-    expected_recomposed: Vec<F>,
-}
-
-#[derive(Clone)]
-struct EqCase {
-    x: Vec<F>,
-    y: Vec<F>,
-    expected: F,
-}
-
-#[derive(Clone)]
-struct MleCase {
-    v: Vec<F>,
-    r: Vec<F>,
-    expected_inner: F,
-    expected_fold: F,
-}
-
-#[derive(Clone)]
-struct EmbeddingVecCase {
-    input: Vec<F>,
-    expected_blocks: Vec<Vec<F>>,
-}
-
-#[derive(Clone)]
-struct EmbeddingMatrixCase {
-    input: Vec<Vec<F>>,
-    expected_blocks: Vec<Vec<Vec<F>>>,
-}
-
-#[derive(Clone)]
-struct BarLiftVecCase {
-    v: Vec<F>,
-    w: Vec<F>,
-    scalar: F,
-    expected_lift_v: Vec<F>,
-    expected_lift_w: Vec<F>,
-    expected_lift_add: Vec<F>,
-    expected_lift_scale: Vec<F>,
-}
-
-#[derive(Clone)]
-struct BarLiftMatrixCase {
-    input: Vec<Vec<F>>,
-    expected_lifted: Vec<Vec<F>>,
-}
-
-#[derive(Clone)]
-struct MatrixTransformCase {
-    matrix: Vec<Vec<F>>,
-    z: Vec<F>,
-    expected_mz: Vec<F>,
-    expected_ct_bar_mz: Vec<F>,
-}
-
-#[derive(Clone)]
-struct EvalLinkCase {
-    matrix: Vec<Vec<F>>,
-    z: Vec<F>,
-    r: Vec<F>,
-    expected_y: Vec<F>,
-    expected_ct_y: F,
-}
-
-#[derive(Clone)]
-struct EvalHomCase {
-    matrix: Vec<Vec<F>>,
-    z1: Vec<F>,
-    z2: Vec<F>,
-    r: Vec<F>,
-    rho1: F,
-    rho2: F,
-    expected_y1: Vec<F>,
-    expected_y2: Vec<F>,
-    expected_y_lin: Vec<F>,
-    expected_y_direct: Vec<F>,
-}
-
-#[derive(Clone)]
-struct SamplingCase {
-    cset: Vec<Vec<F>>,
-    vectors: Vec<Vec<F>>,
-    expected_strong: bool,
-    expected_max_rho_norm: u64,
-    expected_bound: u64,
-    expected_empirical: u64,
-}
-
-#[derive(Clone)]
-struct EqLiftCase {
-    q_vals: Vec<F>,
-    z: Vec<F>,
-    expected_sum: F,
-    is_boolean_point: bool,
-    expected_at_boolean: F,
-}
-
-#[derive(Clone)]
-struct InterpCase {
-    xs: Vec<F>,
-    ys: Vec<F>,
-    expected_coeffs: Vec<F>,
-    eval_point: F,
-    expected_eval_at: F,
-}
 
 fn deterministic_block(seed: u64) -> [F; D] {
     let mut out = [F::ZERO; D];
@@ -224,15 +94,23 @@ fn split_balanced_scalar(a: F, b: u64, k: usize) -> Vec<F> {
     let mut cur = to_balanced_i128(a);
     let mut out = Vec::with_capacity(k);
     for _ in 0..k {
-        let mut r = cur % bi;
-        if r > half {
-            r -= bi;
+        let mut residue = cur % bi;
+        if residue < 0 {
+            residue += bi;
         }
-        if r < -half {
-            r += bi;
-        }
-        out.push(from_balanced_i128(r));
-        cur = (cur - r) / bi;
+        let digit = if residue < half {
+            residue
+        } else if residue == half {
+            if cur < 0 {
+                residue - bi
+            } else {
+                residue
+            }
+        } else {
+            residue - bi
+        };
+        out.push(from_balanced_i128(digit));
+        cur = (cur - digit) / bi;
     }
     out
 }
@@ -353,6 +231,44 @@ fn add_vec(a: &[F], b: &[F]) -> Vec<F> {
 
 fn scale_vec(a: &[F], s: F) -> Vec<F> {
     a.iter().map(|&x| s * x).collect()
+}
+
+fn vec_add_len_guard(a: &[F], b: &[F]) -> Vec<F> {
+    if a.len() != b.len() {
+        return vec![];
+    }
+    add_vec(a, b)
+}
+
+fn dot_by_size(row: &[F], v: &[F]) -> F {
+    if row.len() != v.len() {
+        return F::ZERO;
+    }
+    dot_vec(row, v)
+}
+
+fn vec_module_map(z: &[F], factor: F, bias: &[F]) -> Vec<F> {
+    vec_add_len_guard(&scale_vec(z, factor), bias)
+}
+
+fn scalar_module_map(z: &[F], weights: &[F], bias: F) -> F {
+    dot_by_size(weights, z) + bias
+}
+
+fn vec_module_check_pair(factor: F, bias: &[F], scalar: F, x: &[F], y: &[F]) -> bool {
+    let add_ok = vec_module_map(&vec_add_len_guard(x, y), factor, bias)
+        == vec_add_len_guard(&vec_module_map(x, factor, bias), &vec_module_map(y, factor, bias));
+    let scale_ok =
+        vec_module_map(&scale_vec(x, scalar), factor, bias) == scale_vec(&vec_module_map(x, factor, bias), scalar);
+    add_ok && scale_ok
+}
+
+fn scalar_module_check_pair(weights: &[F], bias: F, scalar: F, x: &[F], y: &[F]) -> bool {
+    let add_ok = scalar_module_map(&vec_add_len_guard(x, y), weights, bias)
+        == scalar_module_map(x, weights, bias) + scalar_module_map(y, weights, bias);
+    let scale_ok =
+        scalar_module_map(&scale_vec(x, scalar), weights, bias) == scalar * scalar_module_map(x, weights, bias);
+    add_ok && scale_ok
 }
 
 fn to_block(xs: &[F]) -> [F; D] {
@@ -562,7 +478,11 @@ fn fmt_nat_array3(vals: &[Vec<Vec<u64>>]) -> String {
 }
 
 fn fmt_bool(v: bool) -> &'static str {
-    if v { "true" } else { "false" }
+    if v {
+        "true"
+    } else {
+        "false"
+    }
 }
 
 fn fmt_nat_mat(vals: &[[u64; D]; D]) -> String {
@@ -717,10 +637,7 @@ fn main() {
         let blocks = 2 + (round as usize % 2);
         let input = deterministic_vec(0x8888_7777_6666_5555 ^ (round * 19), blocks * D);
         let expected_blocks = chunk_exact(&input, D);
-        embedding_vec_cases.push(EmbeddingVecCase {
-            input,
-            expected_blocks,
-        });
+        embedding_vec_cases.push(EmbeddingVecCase { input, expected_blocks });
     }
 
     let mut embedding_matrix_cases = Vec::new();
@@ -735,10 +652,7 @@ fn main() {
             ));
         }
         let expected_blocks: Vec<Vec<Vec<F>>> = input.iter().map(|row| chunk_exact(row, D)).collect();
-        embedding_matrix_cases.push(EmbeddingMatrixCase {
-            input,
-            expected_blocks,
-        });
+        embedding_matrix_cases.push(EmbeddingMatrixCase { input, expected_blocks });
     }
 
     let mut bar_lift_vec_cases = Vec::new();
@@ -780,10 +694,7 @@ fn main() {
             ));
         }
         let expected_lifted = bar_lift_matrix(&input);
-        bar_lift_matrix_cases.push(BarLiftMatrixCase {
-            input,
-            expected_lifted,
-        });
+        bar_lift_matrix_cases.push(BarLiftMatrixCase { input, expected_lifted });
     }
 
     let mut matrix_transform_cases = Vec::new();
@@ -875,6 +786,7 @@ fn main() {
 
     let mut sampling_cases = Vec::new();
     {
+        let b_inv = 2_500_000_000u64;
         let cset = vec![
             bounded_vec(0x1001_1001_1001_1001, D, 2),
             bounded_vec(0x2002_2002_2002_2002, D, 2),
@@ -886,7 +798,7 @@ fn main() {
             bounded_vec(0xabc2_0000_0000_0000, D, 40),
             bounded_vec(0xabc3_0000_0000_0000, D, 40),
         ];
-        let expected_strong = strong_sampling_set(&cset, 2_500_000_000);
+        let expected_strong = strong_sampling_set(&cset, b_inv);
         let expected_max_rho_norm = max_rho_norm(&cset);
         let expected_bound = 2 * (D as u64) * expected_max_rho_norm;
         let expected_empirical = empirical_expansion(&cset, &vectors);
@@ -894,6 +806,7 @@ fn main() {
         sampling_cases.push(SamplingCase {
             cset,
             vectors,
+            b_inv,
             expected_strong,
             expected_max_rho_norm,
             expected_bound,
@@ -972,6 +885,111 @@ fn main() {
         });
     }
 
+    let mut module_hom_cases = Vec::new();
+    {
+        let scalar = F::from_u64(7);
+        let x = bounded_vec(0x5050_0101_aaaa_bbbb, D, 8);
+        let y = bounded_vec(0x5050_0101_cccc_dddd, D, 8);
+        let vec_factor = F::from_u64(9);
+        let vec_bias = vec![F::ZERO; D];
+        let scalar_weights = bounded_vec(0x1234_5678_aaaa_0001, D, 3);
+        let scalar_bias = F::ZERO;
+        module_hom_cases.push(ModuleHomCase {
+            scalar,
+            x: x.clone(),
+            y: y.clone(),
+            vec_factor,
+            vec_bias: vec_bias.clone(),
+            scalar_weights: scalar_weights.clone(),
+            scalar_bias,
+            expected_vec_check: vec_module_check_pair(vec_factor, &vec_bias, scalar, &x, &y),
+            expected_scalar_check: scalar_module_check_pair(&scalar_weights, scalar_bias, scalar, &x, &y),
+        });
+    }
+    {
+        let scalar = F::from_u64(5);
+        let x = bounded_vec(0x6060_0101_aaaa_bbbb, D, 8);
+        let y = bounded_vec(0x6060_0101_cccc_dddd, D, 8);
+        let vec_factor = F::from_u64(4);
+        let vec_bias = bounded_vec(0x9999_0000_1111_2222, D, 2);
+        let scalar_weights = bounded_vec(0x1234_5678_aaaa_0002, D, 3);
+        let scalar_bias = F::ZERO;
+        module_hom_cases.push(ModuleHomCase {
+            scalar,
+            x: x.clone(),
+            y: y.clone(),
+            vec_factor,
+            vec_bias: vec_bias.clone(),
+            scalar_weights: scalar_weights.clone(),
+            scalar_bias,
+            expected_vec_check: vec_module_check_pair(vec_factor, &vec_bias, scalar, &x, &y),
+            expected_scalar_check: scalar_module_check_pair(&scalar_weights, scalar_bias, scalar, &x, &y),
+        });
+    }
+    {
+        let scalar = F::from_u64(3);
+        let x = bounded_vec(0x7070_0101_aaaa_bbbb, D, 8);
+        let y = bounded_vec(0x7070_0101_cccc_dddd, D, 8);
+        let vec_factor = F::from_u64(6);
+        let vec_bias = vec![F::ZERO; D];
+        let scalar_weights = bounded_vec(0x1234_5678_aaaa_0003, D, 3);
+        let scalar_bias = F::from_u64(11);
+        module_hom_cases.push(ModuleHomCase {
+            scalar,
+            x: x.clone(),
+            y: y.clone(),
+            vec_factor,
+            vec_bias: vec_bias.clone(),
+            scalar_weights: scalar_weights.clone(),
+            scalar_bias,
+            expected_vec_check: vec_module_check_pair(vec_factor, &vec_bias, scalar, &x, &y),
+            expected_scalar_check: scalar_module_check_pair(&scalar_weights, scalar_bias, scalar, &x, &y),
+        });
+    }
+    {
+        let scalar = F::from_u64(2);
+        let x = bounded_vec(0x8080_0101_aaaa_bbbb, D, 8);
+        let y = bounded_vec(0x8080_0101_cccc_dddd, D - 1, 8);
+        let vec_factor = F::from_u64(12);
+        let vec_bias = vec![F::ZERO; D];
+        let scalar_weights = bounded_vec(0x1234_5678_aaaa_0004, D, 3);
+        let scalar_bias = F::ZERO;
+        module_hom_cases.push(ModuleHomCase {
+            scalar,
+            x: x.clone(),
+            y: y.clone(),
+            vec_factor,
+            vec_bias: vec_bias.clone(),
+            scalar_weights: scalar_weights.clone(),
+            scalar_bias,
+            expected_vec_check: vec_module_check_pair(vec_factor, &vec_bias, scalar, &x, &y),
+            expected_scalar_check: scalar_module_check_pair(&scalar_weights, scalar_bias, scalar, &x, &y),
+        });
+    }
+
+    let mut invertibility_cases = Vec::new();
+    for (coeffs, bound) in [
+        (vec![F::ZERO; D], 383u64),
+        (bounded_vec(0x9001_1111_0000_0001, D, 4), 5u64),
+        (bounded_vec(0x9001_1111_0000_0002, D, 382), 383u64),
+        (bounded_vec(0x9001_1111_0000_0003, D, 400), 383u64),
+        (bounded_vec(0x9001_1111_0000_0004, D - 2, 4), 5u64),
+    ] {
+        let max_norm = norm_inf_vec(&coeffs);
+        let expected_shape = coeffs.len() == D;
+        let expected_weak_window = max_norm <= bound;
+        let expected_strict_window = max_norm > 0 && max_norm < bound;
+        let expected_derivable_invertible = expected_shape && expected_strict_window && (bound == 5 || bound == 383);
+        invertibility_cases.push(InvertibilityCase {
+            coeffs,
+            bound,
+            expected_shape,
+            expected_weak_window,
+            expected_strict_window,
+            expected_derivable_invertible,
+        });
+    }
+
     let bar_src = superneo_bar_matrix();
     let mut bar_u64 = [[0u64; D]; D];
     for r in 0..D {
@@ -981,125 +999,9 @@ fn main() {
     }
 
     let mut out = String::new();
-    out.push_str("import SuperNeo.Field\n\n");
+    out.push_str("import SuperNeo.Generated.Cases\n\n");
     out.push_str("set_option maxRecDepth 100000\n\n");
     out.push_str("namespace SuperNeo.Generated\n\n");
-    out.push_str("structure SuperNeoCase where\n");
-    out.push_str("  a : Array Nat\n");
-    out.push_str("  b : Array Nat\n");
-    out.push_str("  expectedCt : Nat\n");
-    out.push_str("  expectedDot : Nat\n");
-    out.push_str("deriving Repr\n\n");
-
-    out.push_str("structure RingMulCase where\n");
-    out.push_str("  a : Array Nat\n");
-    out.push_str("  b : Array Nat\n");
-    out.push_str("  expected : Array Nat\n");
-    out.push_str("deriving Repr\n\n");
-
-    out.push_str("structure NormCase where\n");
-    out.push_str("  a : Array Nat\n");
-    out.push_str("  expectedNorm : Nat\n");
-    out.push_str("deriving Repr\n\n");
-
-    out.push_str("structure SplitCase where\n");
-    out.push_str("  input : Array Nat\n");
-    out.push_str("  base : Nat\n");
-    out.push_str("  k : Nat\n");
-    out.push_str("  expectedDigits : Array (Array Nat)\n");
-    out.push_str("  expectedRecomposed : Array Nat\n");
-    out.push_str("deriving Repr\n\n");
-
-    out.push_str("structure EqCase where\n");
-    out.push_str("  x : Array Nat\n");
-    out.push_str("  y : Array Nat\n");
-    out.push_str("  expected : Nat\n");
-    out.push_str("deriving Repr\n\n");
-
-    out.push_str("structure MleCase where\n");
-    out.push_str("  v : Array Nat\n");
-    out.push_str("  r : Array Nat\n");
-    out.push_str("  expectedInner : Nat\n");
-    out.push_str("  expectedFold : Nat\n");
-    out.push_str("deriving Repr\n\n");
-
-    out.push_str("structure EmbeddingVecCase where\n");
-    out.push_str("  input : Array Nat\n");
-    out.push_str("  expectedBlocks : Array (Array Nat)\n");
-    out.push_str("deriving Repr\n\n");
-
-    out.push_str("structure EmbeddingMatrixCase where\n");
-    out.push_str("  input : Array (Array Nat)\n");
-    out.push_str("  expectedBlocks : Array (Array (Array Nat))\n");
-    out.push_str("deriving Repr\n\n");
-
-    out.push_str("structure BarLiftVecCase where\n");
-    out.push_str("  v : Array Nat\n");
-    out.push_str("  w : Array Nat\n");
-    out.push_str("  scalar : Nat\n");
-    out.push_str("  expectedLiftV : Array Nat\n");
-    out.push_str("  expectedLiftW : Array Nat\n");
-    out.push_str("  expectedLiftAdd : Array Nat\n");
-    out.push_str("  expectedLiftScale : Array Nat\n");
-    out.push_str("deriving Repr\n\n");
-
-    out.push_str("structure BarLiftMatrixCase where\n");
-    out.push_str("  input : Array (Array Nat)\n");
-    out.push_str("  expectedLifted : Array (Array Nat)\n");
-    out.push_str("deriving Repr\n\n");
-
-    out.push_str("structure MatrixTransformCase where\n");
-    out.push_str("  matrix : Array (Array Nat)\n");
-    out.push_str("  z : Array Nat\n");
-    out.push_str("  expectedMz : Array Nat\n");
-    out.push_str("  expectedCtBarMz : Array Nat\n");
-    out.push_str("deriving Repr\n\n");
-
-    out.push_str("structure EvalLinkCase where\n");
-    out.push_str("  matrix : Array (Array Nat)\n");
-    out.push_str("  z : Array Nat\n");
-    out.push_str("  r : Array Nat\n");
-    out.push_str("  expectedY : Array Nat\n");
-    out.push_str("  expectedCtY : Nat\n");
-    out.push_str("deriving Repr\n\n");
-
-    out.push_str("structure EvalHomCase where\n");
-    out.push_str("  matrix : Array (Array Nat)\n");
-    out.push_str("  z1 : Array Nat\n");
-    out.push_str("  z2 : Array Nat\n");
-    out.push_str("  r : Array Nat\n");
-    out.push_str("  rho1 : Nat\n");
-    out.push_str("  rho2 : Nat\n");
-    out.push_str("  expectedY1 : Array Nat\n");
-    out.push_str("  expectedY2 : Array Nat\n");
-    out.push_str("  expectedYLin : Array Nat\n");
-    out.push_str("  expectedYDirect : Array Nat\n");
-    out.push_str("deriving Repr\n\n");
-
-    out.push_str("structure SamplingCase where\n");
-    out.push_str("  cset : Array (Array Nat)\n");
-    out.push_str("  vectors : Array (Array Nat)\n");
-    out.push_str("  expectedStrong : Bool\n");
-    out.push_str("  expectedMaxRhoNorm : Nat\n");
-    out.push_str("  expectedBound : Nat\n");
-    out.push_str("  expectedEmpirical : Nat\n");
-    out.push_str("deriving Repr\n\n");
-
-    out.push_str("structure EqLiftCase where\n");
-    out.push_str("  qVals : Array Nat\n");
-    out.push_str("  z : Array Nat\n");
-    out.push_str("  expectedSum : Nat\n");
-    out.push_str("  isBooleanPoint : Bool\n");
-    out.push_str("  expectedAtBoolean : Nat\n");
-    out.push_str("deriving Repr\n\n");
-
-    out.push_str("structure InterpCase where\n");
-    out.push_str("  xs : Array Nat\n");
-    out.push_str("  ys : Array Nat\n");
-    out.push_str("  expectedCoeffs : Array Nat\n");
-    out.push_str("  evalPoint : Nat\n");
-    out.push_str("  expectedEvalAt : Nat\n");
-    out.push_str("deriving Repr\n\n");
 
     out.push_str("def barMatrixU64 : Array (Array Nat) :=\n");
     out.push_str(&fmt_nat_mat(&bar_u64));
@@ -1370,9 +1272,10 @@ fn main() {
             .collect();
         let _ = writeln!(
             out,
-            "  {{ cset := {}, vectors := {}, expectedStrong := {}, expectedMaxRhoNorm := {}, expectedBound := {}, expectedEmpirical := {} }},",
+            "  {{ cset := {}, vectors := {}, bInv := {}, expectedStrong := {}, expectedMaxRhoNorm := {}, expectedBound := {}, expectedEmpirical := {} }},",
             fmt_nat_array2(&cset),
             fmt_nat_array2(&vectors),
+            c.b_inv,
             fmt_bool(c.expected_strong),
             c.expected_max_rho_norm,
             c.expected_bound,
@@ -1410,6 +1313,44 @@ fn main() {
             fmt_nat_array(&ec),
             f_u64(c.eval_point),
             f_u64(c.expected_eval_at)
+        );
+    }
+    out.push_str("]\n\n");
+
+    out.push_str("def moduleHomCases : Array ModuleHomCase := #[\n");
+    for c in &module_hom_cases {
+        let x: Vec<u64> = c.x.iter().copied().map(f_u64).collect();
+        let y: Vec<u64> = c.y.iter().copied().map(f_u64).collect();
+        let vec_bias: Vec<u64> = c.vec_bias.iter().copied().map(f_u64).collect();
+        let scalar_weights: Vec<u64> = c.scalar_weights.iter().copied().map(f_u64).collect();
+        let _ = writeln!(
+            out,
+            "  {{ scalar := {}, x := {}, y := {}, vecFactor := {}, vecBias := {}, scalarWeights := {}, scalarBias := {}, expectedVecCheck := {}, expectedScalarCheck := {} }},",
+            f_u64(c.scalar),
+            fmt_nat_array(&x),
+            fmt_nat_array(&y),
+            f_u64(c.vec_factor),
+            fmt_nat_array(&vec_bias),
+            fmt_nat_array(&scalar_weights),
+            f_u64(c.scalar_bias),
+            fmt_bool(c.expected_vec_check),
+            fmt_bool(c.expected_scalar_check)
+        );
+    }
+    out.push_str("]\n\n");
+
+    out.push_str("def invertibilityCases : Array InvertibilityCase := #[\n");
+    for c in &invertibility_cases {
+        let coeffs: Vec<u64> = c.coeffs.iter().copied().map(f_u64).collect();
+        let _ = writeln!(
+            out,
+            "  {{ coeffs := {}, bound := {}, expectedShape := {}, expectedWeakWindow := {}, expectedStrictWindow := {}, expectedDerivableInvertible := {} }},",
+            fmt_nat_array(&coeffs),
+            c.bound,
+            fmt_bool(c.expected_shape),
+            fmt_bool(c.expected_weak_window),
+            fmt_bool(c.expected_strict_window),
+            fmt_bool(c.expected_derivable_invertible)
         );
     }
     out.push_str("]\n\n");

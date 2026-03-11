@@ -85,7 +85,10 @@ fn theorem_3_inner_product() {
 
         let bar_a = superneo_bar_block(a);
         let ct_product = ct(&cf_inv(bar_a).mul(&cf_inv(b)));
-        let dot: Fq = a.iter().zip(b.iter()).fold(Fq::ZERO, |acc, (&x, &y)| acc + x * y);
+        let dot: Fq = a
+            .iter()
+            .zip(b.iter())
+            .fold(Fq::ZERO, |acc, (&x, &y)| acc + x * y);
 
         assert_eq!(ct_product, dot);
     }
