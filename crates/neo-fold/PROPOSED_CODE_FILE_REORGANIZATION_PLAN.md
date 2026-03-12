@@ -17,7 +17,7 @@ This plan proposes **conservative structural changes in two phases**:
 
 The key refinement from the initial draft is that **multi-VM support is a real requirement**, but we still should **not** introduce a `RouteAAdapter` trait or generic untyped claim bags yet. The right intermediate shape is a file/module boundary, not an abstraction boundary guessed from one implementation.
 
-## Implementation Status (March 11, 2026)
+## Implementation Status (March 12, 2026)
 
 The structural reorganization is now mostly implemented:
 
@@ -26,14 +26,20 @@ The structural reorganization is now mostly implemented:
 - Packed-op ownership moved into `memory_sidecar/riscv/packed_ops.rs`.
 - The first function-level RISC-V extractions have landed:
   - `memory_sidecar/riscv/trace_openings.rs`
+  - `memory_sidecar/riscv/decode_time_claims.rs`
   - `memory_sidecar/riscv/width_residuals.rs`
   - `memory_sidecar/riscv/control_residuals.rs`
+- The planned lookup-slot extraction from `memory/sparse_oracles_and_twist_pre.rs` has landed in `memory_sidecar/riscv/trace_openings.rs`.
 - `memory_sidecar/route_a/claim_builders.rs` has been fully dissolved; its RISC-V-specific contents now live under `memory_sidecar/riscv/`.
+- The former oversized `memory_sidecar/riscv/decode_residuals.rs` path has been split into shallow sibling files:
+  - `memory_sidecar/riscv/decode_residuals.rs`
+  - `memory_sidecar/riscv/decode_residuals_alu_branch.rs`
+  - `memory_sidecar/riscv/decode_residuals_virtual.rs`
 
 The remaining follow-up work is cleanup rather than directory surgery:
 
-- finish shrinking `route_a/claims.rs`, which still carries the decode time-claim builder and remains oversized
-- split `memory/sparse_oracles_and_twist_pre.rs`, which still mixes generic sparse helpers with RISC-V lookup-slot logic
+- split any remaining oversized RISC-V files, especially `riscv/oracles.rs`
+- finish slimming `memory/sparse_oracles_and_twist_pre.rs`, which now keeps generic sparse helpers but still carries some decode-specific helper context
 - remove the temporary broad re-export/import-facade behavior after the moved modules stabilize
 
 ### Comparison with Jolt's Organization
@@ -253,6 +259,7 @@ src/
     │   ├── trace_semantics.rs      ← was transcript_and_common/trace_semantics.rs
     │   ├── packed_ops.rs           ← packed-op enums and packed Route-A binding helpers extracted from transcript_and_common.rs
     │   ├── decode_residuals.rs     ← was memory/w2_virtual_constraints.rs
+    │   ├── decode_time_claims.rs   ← decode-stage time-claim builder extracted from route_a/claims.rs
     │   ├── width_residuals.rs      ← width-stage residual helpers extracted from mixed Route-A files
     │   ├── control_residuals.rs    ← control-stage residual helpers extracted from mixed Route-A files
     │   ├── rv64_width_residuals.rs ← was memory/route_a_rv64_fullword.rs
@@ -364,7 +371,7 @@ This pass is now partially implemented:
 
 - `route_a/claim_builders.rs` is gone; its WB/WP, width, and control responsibilities now live under `riscv/`.
 - `route_a/terminal_checks.rs` now keeps the decode terminal verifier and decode opening-map helpers, while width/control terminal verification moved under `riscv/`.
-- `route_a/claims.rs` still contains the decode time-claim builder and remains the main oversized mixed file.
+- `route_a/claims.rs` now keeps only the generic shout/twist claim guards; the decode-stage time-claim builder moved to `riscv/decode_time_claims.rs`.
 
 **Pattern**: each extraction follows the same shape:
 
@@ -505,16 +512,14 @@ This is the largest file in the crate. It handles:
 
 **Potential split**: `cpu_bus/mod.rs` + `cpu_bus/layout.rs` + `cpu_bus/ccs_extension.rs` + `cpu_bus/decode.rs` + `cpu_bus/time_sparse.rs`. However, many internal functions cross-reference each other, so the split boundaries need careful analysis.
 
-### `riscv/decode_residuals.rs` (currently `w2_virtual_constraints.rs`) — 2,241 lines
+### `riscv/decode_residuals.rs` (formerly `w2_virtual_constraints.rs`) — split completed
 
-This file defines RISC-V virtual instruction constraint residuals. It's essentially a big dispatch table by opcode:
-- Selector residuals (~400 lines)
-- Bitness/shift residuals (~400 lines)
-- ALU residuals (add/sub/mul/div) (~800 lines)
-- Branch/jump residuals (~400 lines)
-- Table ID caching (~200 lines)
+The old 2,241-line decode-residual owner has already been split into shallow sibling files:
+- `riscv/decode_residuals.rs`
+- `riscv/decode_residuals_alu_branch.rs`
+- `riscv/decode_residuals_virtual.rs`
 
-**Potential split by instruction category**: `w2_virtual/mod.rs` + `w2_virtual/alu.rs` + `w2_virtual/branch.rs` + `w2_virtual/bitness.rs` + `w2_virtual/selectors.rs`. This is cleaner than cpu_bus because the different opcode families are fairly independent.
+No additional follow-up is required here unless one of the new files grows back past the repo limit.
 
 ### `sparse_oracles_and_twist_pre.rs` — 1,599 lines
 
@@ -526,6 +531,9 @@ This file is mixed in a way that cuts directly across the planned `route_a/` vs 
 **Near-term plan**:
 - keep the generic sparse-oracle types here during Phase 1
 - extract the clearly RISC-V-specific lookup-slot resolvers during Phase 2 into `riscv/trace_openings.rs`
+
+**Status**:
+- completed for the decode/width lookup-slot resolvers
 
 **Potential follow-up split**:
 - `memory/sparse_oracles.rs` — generic sparse-time oracle types
