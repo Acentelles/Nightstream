@@ -636,65 +636,31 @@ where
             .as_ref()
             .filter(|cfg| !cfg.prev_next_equalities.is_empty());
 
+        let mut verify_outputs = |step_linking: Option<&crate::shard::StepLinkingConfig>| {
+            if let Some(cfg) = step_linking {
+                shard::check_step_linking(&steps_public, cfg)?;
+            }
+            shard::fold_shard_verify_with_options_and_prover_ctx(
+                self.mode.clone(),
+                tr,
+                &self.params,
+                s,
+                &steps_public,
+                seed_me,
+                run,
+                self.mixers,
+                shard::ShardVerifyApiOptions {
+                    step_linking,
+                    ..shard::ShardVerifyApiOptions::default()
+                },
+                verifier_ctx,
+            )
+        };
+
         let outputs = if steps_public.len() > 1 {
             match step_linking {
-                Some(cfg) => match verifier_ctx {
-                    Some(ctx) => shard::fold_shard_verify_with_internal_options(
-                        self.mode.clone(),
-                        tr,
-                        &self.params,
-                        s,
-                        &steps_public,
-                        seed_me,
-                        run,
-                        self.mixers,
-                        shard::ShardVerifyInternalOptions {
-                            step_linking: Some(cfg),
-                            prover_ctx: Some(ctx),
-                            ..shard::ShardVerifyInternalOptions::default()
-                        },
-                    )?,
-                    None => shard::fold_shard_verify_with_options(
-                        self.mode.clone(),
-                        tr,
-                        &self.params,
-                        s,
-                        &steps_public,
-                        seed_me,
-                        run,
-                        self.mixers,
-                        shard::ShardVerifyApiOptions {
-                            step_linking: Some(cfg),
-                            ..shard::ShardVerifyApiOptions::default()
-                        },
-                    )?,
-                },
-                None if self.allow_unlinked_steps => match verifier_ctx {
-                    Some(ctx) => shard::fold_shard_verify_with_internal_options(
-                        self.mode.clone(),
-                        tr,
-                        &self.params,
-                        s,
-                        &steps_public,
-                        seed_me,
-                        run,
-                        self.mixers,
-                        shard::ShardVerifyInternalOptions {
-                            prover_ctx: Some(ctx),
-                            ..shard::ShardVerifyInternalOptions::default()
-                        },
-                    )?,
-                    None => shard::fold_shard_verify(
-                        self.mode.clone(),
-                        tr,
-                        &self.params,
-                        s,
-                        &steps_public,
-                        seed_me,
-                        run,
-                        self.mixers,
-                    )?,
-                },
+                Some(cfg) => verify_outputs(Some(cfg))?,
+                None if self.allow_unlinked_steps => verify_outputs(None)?,
                 None => {
                     let mut msg =
                         "multi-step verification requires step linking; call FoldingSession::set_step_linking(...)"
@@ -706,32 +672,7 @@ where
                 }
             }
         } else {
-            match verifier_ctx {
-                Some(ctx) => shard::fold_shard_verify_with_internal_options(
-                    self.mode.clone(),
-                    tr,
-                    &self.params,
-                    s,
-                    &steps_public,
-                    seed_me,
-                    run,
-                    self.mixers,
-                    shard::ShardVerifyInternalOptions {
-                        prover_ctx: Some(ctx),
-                        ..shard::ShardVerifyInternalOptions::default()
-                    },
-                )?,
-                None => shard::fold_shard_verify(
-                    self.mode.clone(),
-                    tr,
-                    &self.params,
-                    s,
-                    &steps_public,
-                    seed_me,
-                    run,
-                    self.mixers,
-                )?,
-            }
+            verify_outputs(None)?
         };
 
         // Val-lane obligations are expected when the session carries any sidecar val lane:
@@ -817,72 +758,32 @@ where
             .as_ref()
             .filter(|cfg| !cfg.prev_next_equalities.is_empty());
 
+        let mut verify_outputs = |step_linking: Option<&crate::shard::StepLinkingConfig>| {
+            if let Some(cfg) = step_linking {
+                shard::check_step_linking(&steps_public, cfg)?;
+            }
+            shard::fold_shard_verify_with_options_and_prover_ctx(
+                self.mode.clone(),
+                tr,
+                &self.params,
+                s,
+                &steps_public,
+                seed_me,
+                run,
+                self.mixers,
+                shard::ShardVerifyApiOptions {
+                    step_linking,
+                    output_binding: Some(ob_cfg),
+                    ..shard::ShardVerifyApiOptions::default()
+                },
+                verifier_ctx,
+            )
+        };
+
         let outputs = if steps_public.len() > 1 {
             match step_linking {
-                Some(cfg) => match verifier_ctx {
-                    Some(ctx) => shard::fold_shard_verify_with_internal_options(
-                        self.mode.clone(),
-                        tr,
-                        &self.params,
-                        s,
-                        &steps_public,
-                        seed_me,
-                        run,
-                        self.mixers,
-                        shard::ShardVerifyInternalOptions {
-                            step_linking: Some(cfg),
-                            output_binding: Some(ob_cfg),
-                            prover_ctx: Some(ctx),
-                            ..shard::ShardVerifyInternalOptions::default()
-                        },
-                    )?,
-                    None => shard::fold_shard_verify_with_options(
-                        self.mode.clone(),
-                        tr,
-                        &self.params,
-                        s,
-                        &steps_public,
-                        seed_me,
-                        run,
-                        self.mixers,
-                        shard::ShardVerifyApiOptions {
-                            step_linking: Some(cfg),
-                            output_binding: Some(ob_cfg),
-                            ..shard::ShardVerifyApiOptions::default()
-                        },
-                    )?,
-                },
-                None if self.allow_unlinked_steps => match verifier_ctx {
-                    Some(ctx) => shard::fold_shard_verify_with_internal_options(
-                        self.mode.clone(),
-                        tr,
-                        &self.params,
-                        s,
-                        &steps_public,
-                        seed_me,
-                        run,
-                        self.mixers,
-                        shard::ShardVerifyInternalOptions {
-                            output_binding: Some(ob_cfg),
-                            prover_ctx: Some(ctx),
-                            ..shard::ShardVerifyInternalOptions::default()
-                        },
-                    )?,
-                    None => shard::fold_shard_verify_with_options(
-                        self.mode.clone(),
-                        tr,
-                        &self.params,
-                        s,
-                        &steps_public,
-                        seed_me,
-                        run,
-                        self.mixers,
-                        shard::ShardVerifyApiOptions {
-                            output_binding: Some(ob_cfg),
-                            ..shard::ShardVerifyApiOptions::default()
-                        },
-                    )?,
-                },
+                Some(cfg) => verify_outputs(Some(cfg))?,
+                None if self.allow_unlinked_steps => verify_outputs(None)?,
                 None => {
                     let mut msg =
                         "multi-step verification requires step linking; call FoldingSession::set_step_linking(...)"
@@ -894,37 +795,7 @@ where
                 }
             }
         } else {
-            match verifier_ctx {
-                Some(ctx) => shard::fold_shard_verify_with_internal_options(
-                    self.mode.clone(),
-                    tr,
-                    &self.params,
-                    s,
-                    &steps_public,
-                    seed_me,
-                    run,
-                    self.mixers,
-                    shard::ShardVerifyInternalOptions {
-                        output_binding: Some(ob_cfg),
-                        prover_ctx: Some(ctx),
-                        ..shard::ShardVerifyInternalOptions::default()
-                    },
-                )?,
-                None => shard::fold_shard_verify_with_options(
-                    self.mode.clone(),
-                    tr,
-                    &self.params,
-                    s,
-                    &steps_public,
-                    seed_me,
-                    run,
-                    self.mixers,
-                    shard::ShardVerifyApiOptions {
-                        output_binding: Some(ob_cfg),
-                        ..shard::ShardVerifyApiOptions::default()
-                    },
-                )?,
-            }
+            verify_outputs(None)?
         };
 
         let has_twist_or_shout = self.has_twist_instances() || self.has_shout_instances();

@@ -14,14 +14,6 @@ pub struct ShardVerifyApiOptions<'a> {
     pub output_binding: Option<&'a crate::output_binding::OutputBindingConfig>,
 }
 
-#[derive(Clone, Copy, Default)]
-pub(crate) struct ShardVerifyInternalOptions<'a> {
-    pub step_idx_offset: usize,
-    pub step_linking: Option<&'a StepLinkingConfig>,
-    pub output_binding: Option<&'a crate::output_binding::OutputBindingConfig>,
-    pub prover_ctx: Option<&'a ShardProverContext>,
-}
-
 pub fn fold_shard_verify_with_options<MR, MB>(
     mode: FoldingMode,
     tr: &mut Poseidon2Transcript,
@@ -37,25 +29,10 @@ where
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {
-    fold_shard_verify_with_internal_options(
-        mode,
-        tr,
-        params,
-        s_me,
-        steps,
-        acc_init,
-        proof,
-        mixers,
-        ShardVerifyInternalOptions {
-            step_idx_offset: options.step_idx_offset,
-            step_linking: options.step_linking,
-            output_binding: options.output_binding,
-            prover_ctx: None,
-        },
-    )
+    fold_shard_verify_with_options_and_prover_ctx(mode, tr, params, s_me, steps, acc_init, proof, mixers, options, None)
 }
 
-pub(crate) fn fold_shard_verify_with_internal_options<MR, MB>(
+pub(crate) fn fold_shard_verify_with_options_and_prover_ctx<MR, MB>(
     mode: FoldingMode,
     tr: &mut Poseidon2Transcript,
     params: &NeoParams,
@@ -64,7 +41,8 @@ pub(crate) fn fold_shard_verify_with_internal_options<MR, MB>(
     acc_init: &[CeClaim<Cmt, F, K>],
     proof: &ShardProof,
     mixers: CommitMixers<MR, MB>,
-    options: ShardVerifyInternalOptions<'_>,
+    options: ShardVerifyApiOptions<'_>,
+    prover_ctx: Option<&ShardProverContext>,
 ) -> Result<ShardFoldOutputs<Cmt, F, K>, PiCcsError>
 where
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
@@ -86,7 +64,7 @@ where
             proof,
             mixers,
             ob_cfg,
-            options.prover_ctx,
+            prover_ctx,
         )
     } else {
         fold_shard_verify_mixed_ccs_batched(
@@ -99,7 +77,7 @@ where
             acc_init,
             proof,
             mixers,
-            options.prover_ctx,
+            prover_ctx,
         )
     }
 }
@@ -118,7 +96,7 @@ where
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {
-    fold_shard_verify_with_internal_options(
+    fold_shard_verify_with_options(
         mode,
         tr,
         params,
@@ -127,7 +105,7 @@ where
         acc_init,
         proof,
         mixers,
-        ShardVerifyInternalOptions::default(),
+        ShardVerifyApiOptions::default(),
     )
 }
 
