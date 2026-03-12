@@ -1,12 +1,12 @@
 #![allow(non_snake_case)]
 
-use super::cpu_bus::append_bus_openings_to_me_instance;
-use super::cpu_bus::decode_cpu_z_to_k;
-use super::cpu_bus::prepare_ccs_for_shared_cpu_bus_steps;
 use neo_ajtai::Commitment;
 use neo_ccs::poly::{SparsePoly, Term};
 use neo_ccs::relations::CcsStructure;
 use neo_ccs::Mat;
+use neo_fold::memory_sidecar::cpu_bus::{
+    append_bus_openings_to_me_instance, decode_cpu_z_to_k, prepare_ccs_for_shared_cpu_bus_step_instances,
+};
 use neo_math::{D, F, K};
 use neo_memory::ajtai::encode_vector_for_ccs_m;
 use neo_memory::cpu::build_bus_layout_for_instances;
@@ -262,7 +262,7 @@ fn shared_cpu_bus_padding_validator_accepts_implied_addr_bit_padding() {
     let ccs = build_identity_first_r1cs_ccs_from_cpu_constraints(n, m, const_one_col, &constraints);
 
     let steps = minimal_bus_steps(m_in, chunk_size, shout_d, shout_ell, twist_d, twist_ell);
-    prepare_ccs_for_shared_cpu_bus_steps(&ccs, &steps).expect("padding validator should accept");
+    prepare_ccs_for_shared_cpu_bus_step_instances(&ccs, &steps).expect("padding validator should accept");
 }
 
 #[test]
@@ -331,7 +331,7 @@ fn shared_cpu_bus_padding_validator_requires_flag_boolean_for_implied_padding() 
 
     let steps = minimal_bus_steps(m_in, chunk_size, shout_d, shout_ell, twist_d, twist_ell);
     assert!(
-        prepare_ccs_for_shared_cpu_bus_steps(&ccs, &steps).is_err(),
+        prepare_ccs_for_shared_cpu_bus_step_instances(&ccs, &steps).is_err(),
         "validator unexpectedly accepted implied padding without a boolean constraint on has_lookup"
     );
 }
@@ -401,7 +401,7 @@ fn shared_cpu_bus_padding_validator_requires_explicit_padding_for_nonbit_fields(
 
     let steps = minimal_bus_steps(m_in, chunk_size, shout_d, shout_ell, twist_d, twist_ell);
     assert!(
-        prepare_ccs_for_shared_cpu_bus_steps(&ccs, &steps).is_err(),
+        prepare_ccs_for_shared_cpu_bus_step_instances(&ccs, &steps).is_err(),
         "validator unexpectedly accepted missing explicit padding for rv"
     );
 }

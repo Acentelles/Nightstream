@@ -351,6 +351,13 @@ pub(crate) fn prepare_ccs_for_shared_cpu_bus_steps<'a, Cmt, S: BusStepView<Cmt>>
     Ok((s0, bus))
 }
 
+pub fn prepare_ccs_for_shared_cpu_bus_step_instances<'a, Cmt, KK>(
+    s0: &'a CcsStructure<F>,
+    steps: &'a [StepInstanceBundle<Cmt, F, KK>],
+) -> Result<(&'a CcsStructure<F>, BusLayout), PiCcsError> {
+    prepare_ccs_for_shared_cpu_bus_steps(s0, steps)
+}
+
 #[inline]
 fn chi_for_row_index(r: &[K], idx: usize) -> K {
     // Multilinear basis polynomial χ_r(idx) where idx is interpreted in little-endian bits:
@@ -426,7 +433,7 @@ pub(crate) fn point_covers_bus_time_rows(bus: &BusLayout, point: &[K]) -> Result
     Ok(end_row <= n_pad)
 }
 
-pub(crate) fn append_bus_openings_to_me_instance<Cmt>(
+pub fn append_bus_openings_to_me_instance<Cmt>(
     params: &NeoParams,
     bus: &BusLayout,
     core_t: usize,
@@ -2390,7 +2397,7 @@ fn ensure_ccs_has_shared_bus_padding_for_steps<Cmt, S: BusStepView<Cmt>>(
     ensure_ccs_has_bus_padding_constraints(s, bus, &const_one_cols, &required)
 }
 
-pub(crate) fn decode_cpu_z_to_k(params: &NeoParams, Z: &Mat<F>, expected_m: usize) -> Result<Vec<K>, PiCcsError> {
+pub fn decode_cpu_z_to_k(params: &NeoParams, Z: &Mat<F>, expected_m: usize) -> Result<Vec<K>, PiCcsError> {
     neo_reductions::common::decode_z_from_witness_mat(params, Z, expected_m)
 }
 
