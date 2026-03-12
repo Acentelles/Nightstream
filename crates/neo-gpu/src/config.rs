@@ -1,5 +1,23 @@
 use std::path::PathBuf;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BackendActivationThresholds {
+    pub poseidon2_batch_min_states: usize,
+    pub fe_row_min_tasks: usize,
+    pub nc_col_min_tasks: usize,
+}
+
+impl BackendActivationThresholds {
+    #[inline]
+    pub const fn new(poseidon2_batch_min_states: usize, fe_row_min_tasks: usize, nc_col_min_tasks: usize) -> Self {
+        Self {
+            poseidon2_batch_min_states,
+            fe_row_min_tasks,
+            nc_col_min_tasks,
+        }
+    }
+}
+
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum DeviceApi {
@@ -15,6 +33,17 @@ impl DeviceApi {
     #[inline]
     pub const fn as_u32(self) -> u32 {
         self as u32
+    }
+
+    #[inline]
+    pub const fn activation_thresholds(self) -> BackendActivationThresholds {
+        match self {
+            DeviceApi::Auto => BackendActivationThresholds::new(usize::MAX, usize::MAX, usize::MAX),
+            DeviceApi::Cpu => BackendActivationThresholds::new(0, 0, 0),
+            DeviceApi::Metal => BackendActivationThresholds::new(128, usize::MAX, usize::MAX),
+            DeviceApi::Cuda => BackendActivationThresholds::new(32, 256, 256),
+            DeviceApi::Hip => BackendActivationThresholds::new(32, 256, 256),
+        }
     }
 
     #[inline]

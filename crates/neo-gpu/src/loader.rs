@@ -14,7 +14,7 @@ use crate::abi::{
     FE_FOLD_SYMBOL, NC_CREATE_SYMBOL, NC_DESTROY_SYMBOL, NC_EVALS_AT_SYMBOL, NC_FOLD_SYMBOL,
     POSEIDON2_PERMUTE_BATCH_SYMBOL, POSEIDON2_PERMUTE_SYMBOL, SESSION_CLOSE_SYMBOL, SESSION_OPEN_SYMBOL,
 };
-use crate::{DeviceApi, MojoBackendConfig, NeoGpuError};
+use crate::{BackendActivationThresholds, DeviceApi, MojoBackendConfig, NeoGpuError};
 
 #[cfg(not(target_arch = "wasm32"))]
 type AbiVersionFn = unsafe extern "C" fn() -> u32;
@@ -37,9 +37,6 @@ const SPLIT_NC_SNAPSHOT_MAGIC: u64 = 0x4E53_504C_4954_4E43;
 const SPLIT_NC_SNAPSHOT_VERSION: u64 = 1;
 const SPLIT_NC_FE_ROW_V1: u64 = 1;
 const SPLIT_NC_NC_COL_V1: u64 = 2;
-const POSEIDON2_GPU_MIN_STATES: usize = 128;
-const SPLIT_NC_GPU_MIN_TASKS: usize = 256;
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ExecutionMode {
     Cpu,
@@ -499,9 +496,36 @@ impl MojoSession {
 
     #[inline]
     pub fn poseidon2_batch_execution_mode(&self, num_states: usize) -> ExecutionMode {
+        let thresholds = self.activation_thresholds();
         match self.device_api {
             DeviceApi::Cpu => ExecutionMode::Cpu,
-            DeviceApi::Cuda | DeviceApi::Metal | DeviceApi::Hip if num_states >= POSEIDON2_GPU_MIN_STATES => {
+            DeviceApi::Cuda | DeviceApi::Metal | DeviceApi::Hip
+                if num_states >= thresholds.poseidon2_batch_min_states =>
+            {
+                ExecutionMode::Accelerator
+            }
+            DeviceApi::Cuda | DeviceApi::Metal | DeviceApi::Hip | DeviceApi::Auto => ExecutionMode::HostFallback,
+        }
+    }
+
+    #[inline]
+    pub fn fe_row_execution_mode(&self, total_tasks: usize) -> ExecutionMode {
+        let thresholds = self.activation_thresholds();
+        match self.device_api {
+            DeviceApi::Cpu => ExecutionMode::Cpu,
+            DeviceApi::Cuda | DeviceApi::Hip if total_tasks >= thresholds.fe_row_min_tasks => {
+                ExecutionMode::Accelerator
+            }
+            DeviceApi::Cuda | DeviceApi::Metal | DeviceApi::Hip | DeviceApi::Auto => ExecutionMode::HostFallback,
+        }
+    }
+
+    #[inline]
+    pub fn nc_col_execution_mode(&self, total_tasks: usize) -> ExecutionMode {
+        let thresholds = self.activation_thresholds();
+        match self.device_api {
+            DeviceApi::Cpu => ExecutionMode::Cpu,
+            DeviceApi::Cuda | DeviceApi::Hip if total_tasks >= thresholds.nc_col_min_tasks => {
                 ExecutionMode::Accelerator
             }
             DeviceApi::Cuda | DeviceApi::Metal | DeviceApi::Hip | DeviceApi::Auto => ExecutionMode::HostFallback,
@@ -510,11 +534,12 @@ impl MojoSession {
 
     #[inline]
     pub fn split_nc_execution_mode(&self, total_tasks: usize) -> ExecutionMode {
-        match self.device_api {
-            DeviceApi::Cpu => ExecutionMode::Cpu,
-            DeviceApi::Cuda | DeviceApi::Hip if total_tasks >= SPLIT_NC_GPU_MIN_TASKS => ExecutionMode::Accelerator,
-            DeviceApi::Cuda | DeviceApi::Metal | DeviceApi::Hip | DeviceApi::Auto => ExecutionMode::HostFallback,
-        }
+        self.fe_row_execution_mode(total_tasks)
+    }
+
+    #[inline]
+    pub fn activation_thresholds(&self) -> BackendActivationThresholds {
+        self.device_api.activation_thresholds()
     }
 
     pub fn create_fe_evaluator(&self, snapshot: &[u8]) -> Result<MojoSplitNcEvaluator<'_>, NeoGpuError> {

@@ -12,16 +12,10 @@ use crate::engines::optimized_engine::oracle::{NcOracle, OptimizedOracle, Sparse
 use crate::sumcheck::RoundOracle;
 use crate::PiCcsError;
 
-const POSEIDON2_MIN_PERMUTATIONS_CPU_DIRECT: usize = 32;
-const POSEIDON2_MIN_PERMUTATIONS_METAL: usize = 128;
-const POSEIDON2_MIN_PERMUTATIONS_CUDA: usize = 32;
-const POSEIDON2_MIN_PERMUTATIONS_HIP: usize = 32;
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BackendExecutionStatus {
     RustCpu,
     MojoCpu,
-    MojoHostFallback(DeviceApi),
     MojoAccelerator(DeviceApi),
 }
 
@@ -141,11 +135,8 @@ impl BackendContext {
     #[inline]
     pub fn poseidon2_min_permutations(&self) -> usize {
         match self.poseidon_session().map(MojoSession::device_api) {
-            Some(DeviceApi::Metal) => POSEIDON2_MIN_PERMUTATIONS_METAL,
-            Some(DeviceApi::Cuda) => POSEIDON2_MIN_PERMUTATIONS_CUDA,
-            Some(DeviceApi::Hip) => POSEIDON2_MIN_PERMUTATIONS_HIP,
-            Some(DeviceApi::Cpu) => POSEIDON2_MIN_PERMUTATIONS_CPU_DIRECT,
-            Some(DeviceApi::Auto) | None => usize::MAX,
+            Some(api) => api.activation_thresholds().poseidon2_batch_min_states,
+            None => usize::MAX,
         }
     }
 
@@ -158,25 +149,37 @@ impl BackendContext {
         let Some(session) = self.poseidon_session() else {
             return BackendExecutionStatus::RustCpu;
         };
-        if total_permutations < self.poseidon2_min_permutations() {
-            return BackendExecutionStatus::RustCpu;
-        }
         match session.poseidon2_batch_execution_mode(total_permutations) {
             ExecutionMode::Cpu => BackendExecutionStatus::MojoCpu,
-            ExecutionMode::HostFallback => BackendExecutionStatus::MojoHostFallback(session.device_api()),
+            ExecutionMode::HostFallback => BackendExecutionStatus::RustCpu,
+            ExecutionMode::Accelerator => BackendExecutionStatus::MojoAccelerator(session.device_api()),
+        }
+    }
+
+    pub fn fe_row_execution_status(&self, total_tasks: usize) -> BackendExecutionStatus {
+        let Ok(Some(session)) = self.split_nc_session() else {
+            return BackendExecutionStatus::RustCpu;
+        };
+        match session.fe_row_execution_mode(total_tasks) {
+            ExecutionMode::Cpu => BackendExecutionStatus::MojoCpu,
+            ExecutionMode::HostFallback => BackendExecutionStatus::RustCpu,
+            ExecutionMode::Accelerator => BackendExecutionStatus::MojoAccelerator(session.device_api()),
+        }
+    }
+
+    pub fn nc_col_execution_status(&self, total_tasks: usize) -> BackendExecutionStatus {
+        let Ok(Some(session)) = self.split_nc_session() else {
+            return BackendExecutionStatus::RustCpu;
+        };
+        match session.nc_col_execution_mode(total_tasks) {
+            ExecutionMode::Cpu => BackendExecutionStatus::MojoCpu,
+            ExecutionMode::HostFallback => BackendExecutionStatus::RustCpu,
             ExecutionMode::Accelerator => BackendExecutionStatus::MojoAccelerator(session.device_api()),
         }
     }
 
     pub fn split_nc_execution_status(&self, total_tasks: usize) -> BackendExecutionStatus {
-        let Ok(Some(session)) = self.split_nc_session() else {
-            return BackendExecutionStatus::RustCpu;
-        };
-        match session.split_nc_execution_mode(total_tasks) {
-            ExecutionMode::Cpu => BackendExecutionStatus::MojoCpu,
-            ExecutionMode::HostFallback => BackendExecutionStatus::MojoHostFallback(session.device_api()),
-            ExecutionMode::Accelerator => BackendExecutionStatus::MojoAccelerator(session.device_api()),
-        }
+        self.fe_row_execution_status(total_tasks)
     }
 }
 
@@ -208,7 +211,10 @@ pub fn poseidon2_digest32_many_with_context(
         .iter()
         .map(|input| input.len().div_ceil(p2::RATE) + 1)
         .sum::<usize>();
-    if total_permutations < backend_ctx.poseidon2_min_permutations() {
+    if matches!(
+        backend_ctx.poseidon2_execution_status(total_permutations),
+        BackendExecutionStatus::RustCpu
+    ) {
         return Ok(None);
     }
 
@@ -278,6 +284,7 @@ where
 {
     inner: OptimizedOracle<'a, Ff>,
     fe_evaluator: Option<MojoSplitNcEvaluator<'ctx>>,
+    split_nc_device_api: Option<DeviceApi>,
     split_nc_required: bool,
 }
 
@@ -313,7 +320,9 @@ where
             sparse,
         );
         let split_nc_required = backend_ctx.split_nc_required();
-        let fe_evaluator = match backend_ctx.split_nc_session()? {
+        let split_nc_session = backend_ctx.split_nc_session()?;
+        let split_nc_device_api = split_nc_session.map(MojoSession::device_api);
+        let fe_evaluator = match split_nc_session {
             Some(session) => match session.create_fe_evaluator(&inner.fe_row_snapshot_bytes()) {
                 Ok(evaluator) => Some(evaluator),
                 Err(err) if split_nc_required => {
@@ -328,6 +337,7 @@ where
         Ok(Self {
             inner,
             fe_evaluator,
+            split_nc_device_api,
             split_nc_required,
         })
     }
@@ -354,8 +364,18 @@ where
     K: From<Ff>,
 {
     #[inline]
-    fn should_use_gpu(&self) -> bool {
-        self.fe_evaluator.is_some() && self.inner.round_idx < self.inner.ell_n
+    fn should_use_backend(&self, point_count: usize) -> bool {
+        let Some(api) = self.split_nc_device_api else {
+            return false;
+        };
+        let Some(total_tasks) = self.inner.fe_row_total_tasks(point_count) else {
+            return false;
+        };
+        self.fe_evaluator.is_some()
+            && matches!(
+                split_nc_execution_mode_for(api, total_tasks, api.activation_thresholds().fe_row_min_tasks),
+                ExecutionMode::Cpu | ExecutionMode::Accelerator
+            )
     }
 
     fn drop_fe_evaluator(&mut self, context: &str, err: impl std::fmt::Display) {
@@ -372,7 +392,7 @@ where
     K: From<Ff>,
 {
     fn evals_at(&mut self, points: &[K]) -> Vec<K> {
-        if self.should_use_gpu() {
+        if self.should_use_backend(points.len()) {
             let flat_points = points
                 .iter()
                 .copied()
@@ -402,13 +422,10 @@ where
     }
 
     fn fold(&mut self, r: K) {
-        if self.should_use_gpu() {
+        if self.fe_evaluator.is_some() && self.inner.round_idx < self.inner.ell_n {
             let challenge = flat_k_from_ext(r);
             let gpu_result = {
-                let evaluator = self
-                    .fe_evaluator
-                    .as_mut()
-                    .expect("checked by should_use_gpu");
+                let evaluator = self.fe_evaluator.as_mut().expect("checked by round bounds");
                 evaluator.fold(challenge)
             };
             if let Err(err) = gpu_result {
@@ -429,6 +446,7 @@ where
 {
     inner: NcOracle<'a, Ff>,
     nc_evaluator: Option<MojoSplitNcEvaluator<'ctx>>,
+    split_nc_device_api: Option<DeviceApi>,
     split_nc_required: bool,
 }
 
@@ -451,7 +469,9 @@ where
     ) -> Result<Self, PiCcsError> {
         let inner = NcOracle::new(s, params, mcs_witnesses, me_witnesses, ch, ell_d, ell_m, d_sc);
         let split_nc_required = backend_ctx.split_nc_required();
-        let nc_evaluator = match backend_ctx.split_nc_session()? {
+        let split_nc_session = backend_ctx.split_nc_session()?;
+        let split_nc_device_api = split_nc_session.map(MojoSession::device_api);
+        let nc_evaluator = match split_nc_session {
             Some(session) => match session.create_nc_evaluator(&inner.nc_col_snapshot_bytes()) {
                 Ok(evaluator) => Some(evaluator),
                 Err(err) if split_nc_required => {
@@ -466,6 +486,7 @@ where
         Ok(Self {
             inner,
             nc_evaluator,
+            split_nc_device_api,
             split_nc_required,
         })
     }
@@ -477,8 +498,18 @@ where
     K: From<Ff>,
 {
     #[inline]
-    fn should_use_gpu(&self) -> bool {
-        self.nc_evaluator.is_some() && self.inner.round_idx < self.inner.ell_m
+    fn should_use_backend(&self, point_count: usize) -> bool {
+        let Some(api) = self.split_nc_device_api else {
+            return false;
+        };
+        let Some(total_tasks) = self.inner.nc_col_total_tasks(point_count) else {
+            return false;
+        };
+        self.nc_evaluator.is_some()
+            && matches!(
+                split_nc_execution_mode_for(api, total_tasks, api.activation_thresholds().nc_col_min_tasks),
+                ExecutionMode::Cpu | ExecutionMode::Accelerator
+            )
     }
 
     fn drop_nc_evaluator(&mut self, context: &str, err: impl std::fmt::Display) {
@@ -495,7 +526,7 @@ where
     K: From<Ff>,
 {
     fn evals_at(&mut self, points: &[K]) -> Vec<K> {
-        if self.should_use_gpu() {
+        if self.should_use_backend(points.len()) {
             let flat_points = points
                 .iter()
                 .copied()
@@ -525,13 +556,10 @@ where
     }
 
     fn fold(&mut self, r: K) {
-        if self.should_use_gpu() {
+        if self.nc_evaluator.is_some() && self.inner.round_idx < self.inner.ell_m {
             let challenge = flat_k_from_ext(r);
             let gpu_result = {
-                let evaluator = self
-                    .nc_evaluator
-                    .as_mut()
-                    .expect("checked by should_use_gpu");
+                let evaluator = self.nc_evaluator.as_mut().expect("checked by round bounds");
                 evaluator.fold(challenge)
             };
             if let Err(err) = gpu_result {
@@ -542,5 +570,14 @@ where
         if self.inner.round_idx >= self.inner.ell_m {
             self.nc_evaluator = None;
         }
+    }
+}
+
+#[inline]
+fn split_nc_execution_mode_for(api: DeviceApi, total_tasks: usize, min_tasks: usize) -> ExecutionMode {
+    match api {
+        DeviceApi::Cpu => ExecutionMode::Cpu,
+        DeviceApi::Cuda | DeviceApi::Hip if total_tasks >= min_tasks => ExecutionMode::Accelerator,
+        DeviceApi::Cuda | DeviceApi::Metal | DeviceApi::Hip | DeviceApi::Auto => ExecutionMode::HostFallback,
     }
 }

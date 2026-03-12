@@ -2,6 +2,7 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex, OnceLock};
+use std::time::Instant;
 
 use libloading::Library;
 use neo_ajtai::{setup as ajtai_setup, AjtaiSModule, Commitment};
@@ -16,6 +17,7 @@ use neo_reductions::engines::optimized_engine::oracle::{NcOracle, OptimizedOracl
 use neo_reductions::engines::optimized_engine::{Challenges, PiCcsProof};
 use neo_reductions::engines::utils::build_dims_and_policy;
 use neo_reductions::sumcheck::RoundOracle;
+use neo_reductions::test_exports::{fe_row_total_tasks_for_testing, nc_col_total_tasks_for_testing};
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::PrimeCharacteristicRing;
 use rand_chacha::rand_core::SeedableRng;
@@ -159,6 +161,11 @@ fn k_probe_points(round: usize, count: usize, re_base: u64, im_base: u64) -> Vec
 
 fn probe_count_for_round(round: usize, counts: &[usize]) -> usize {
     counts[round % counts.len()]
+}
+
+fn perf_iters_for(point_count: usize) -> usize {
+    let target_points = 16_384usize;
+    (target_points / point_count.max(1)).max(1)
 }
 
 fn dense_mat<Ff: PrimeCharacteristicRing + Copy>(rows: usize, cols: usize, seed: u64) -> Mat<Ff> {
@@ -522,6 +529,54 @@ fn split_nc_metal_backend_falls_back_to_mojo_cpu_for_sumcheck() {
 }
 
 #[test]
+fn split_nc_fe_row_cuda_backend_skips_small_task_batches() {
+    let _guard = lock_mock_backend();
+    let fixture = build_oracle_fixture();
+    let backend = mock_backend();
+    let backend_ctx = BackendContext::new(&backend).expect("backend context");
+
+    let mock_library = build_mock_library();
+    let lib = unsafe { Library::new(mock_library) }.expect("load mock mojo gpu library");
+    reset_mock_counters(&lib);
+
+    let mut cpu = OptimizedOracle::new_with_sparse(
+        &fixture.s,
+        &fixture.params,
+        &fixture.mcs_witnesses,
+        &fixture.me_witnesses,
+        fixture.ch.clone(),
+        fixture.ell_d,
+        fixture.ell_n,
+        fixture.d_sc,
+        Some(&fixture.r_inputs),
+        fixture.sparse.clone(),
+    );
+    let mut mojo = SplitNcOptimizedOracle::new_with_sparse(
+        &fixture.s,
+        &fixture.params,
+        &fixture.mcs_witnesses,
+        &fixture.me_witnesses,
+        fixture.ch.clone(),
+        fixture.ell_d,
+        fixture.ell_n,
+        fixture.d_sc,
+        Some(&fixture.r_inputs),
+        fixture.sparse.clone(),
+        &backend_ctx,
+    )
+    .expect("split-nc mojo oracle");
+
+    let xs = vec![K::ZERO, K::ONE];
+    assert_eq!(backend_ctx.fe_row_execution_status(16), BackendExecutionStatus::RustCpu);
+    assert_eq!(cpu.evals_at(&xs), mojo.evals_at(&xs));
+    assert_eq!(
+        counter(&lib, b"nightstream_gpu_test_fe_evals_at_calls\0"),
+        0,
+        "small FE workloads should stay on Rust CPU below the CUDA cutover"
+    );
+}
+
+#[test]
 fn split_nc_nc_col_mojo_backend_matches_cpu_across_rounds() {
     let _guard = lock_mock_backend();
     let fixture = build_oracle_fixture();
@@ -571,6 +626,50 @@ fn split_nc_nc_col_mojo_backend_matches_cpu_across_rounds() {
     assert!(
         counter(&lib, b"nightstream_gpu_test_nc_evals_at_calls\0") > 0,
         "expected NC column-phase to exercise the mock Split-NC evaluator"
+    );
+}
+
+#[test]
+fn split_nc_nc_col_cuda_backend_skips_small_task_batches() {
+    let _guard = lock_mock_backend();
+    let fixture = build_oracle_fixture();
+    let backend = mock_backend();
+    let backend_ctx = BackendContext::new(&backend).expect("backend context");
+
+    let mock_library = build_mock_library();
+    let lib = unsafe { Library::new(mock_library) }.expect("load mock mojo gpu library");
+    reset_mock_counters(&lib);
+
+    let mut cpu = NcOracle::new(
+        &fixture.s,
+        &fixture.params,
+        &fixture.mcs_witnesses,
+        &fixture.me_witnesses,
+        fixture.ch.clone(),
+        fixture.ell_d,
+        fixture.ell_m,
+        fixture.d_sc,
+    );
+    let mut mojo = SplitNcNcOracle::new(
+        &fixture.s,
+        &fixture.params,
+        &fixture.mcs_witnesses,
+        &fixture.me_witnesses,
+        fixture.ch.clone(),
+        fixture.ell_d,
+        fixture.ell_m,
+        fixture.d_sc,
+        &backend_ctx,
+    )
+    .expect("split-nc mojo nc oracle");
+
+    let xs = vec![K::ZERO, K::ONE];
+    assert_eq!(backend_ctx.nc_col_execution_status(16), BackendExecutionStatus::RustCpu);
+    assert_eq!(cpu.evals_at(&xs), mojo.evals_at(&xs));
+    assert_eq!(
+        counter(&lib, b"nightstream_gpu_test_nc_evals_at_calls\0"),
+        0,
+        "small NC workloads should stay on Rust CPU below the CUDA cutover"
     );
 }
 
@@ -1026,4 +1125,171 @@ fn real_mojo_cuda_split_nc_optimized_prove_matches_cpu_and_verifies() {
     )
     .expect("real mojo cuda verify");
     assert!(ok);
+}
+
+#[test]
+#[ignore = "perf-style threshold sweep: cargo test -p neo-reductions --release --test split_nc_gpu_parity report_fe_row_threshold_sweep -- --ignored --nocapture"]
+fn report_fe_row_threshold_sweep() {
+    let fixture = build_oracle_fixture();
+    let backend = ProverComputeBackend::Mojo(
+        MojoBackendConfig::new(DeviceApi::Cuda).with_library_path(build_real_mojo_library()),
+    );
+    let backend_ctx = match BackendContext::new(&backend) {
+        Ok(ctx) => ctx,
+        Err(err) => {
+            eprintln!("skipping: real Mojo CUDA backend is unavailable: {err}");
+            return;
+        }
+    };
+
+    let thresholds = backend_ctx
+        .split_nc_session()
+        .expect("split-nc session")
+        .map(|session| session.activation_thresholds())
+        .expect("cuda split-nc session");
+    eprintln!(
+        "[fe-row-threshold-sweep] device={:?} thresholds={:?}",
+        backend_ctx.selected_device_api(),
+        thresholds
+    );
+
+    for &point_count in &[1usize, 2, 4, 8, 16, 32, 64, 128] {
+        let xs = k_probe_points(0, point_count, 11_000, 12_000);
+        let mut cpu = OptimizedOracle::new_with_sparse(
+            &fixture.s,
+            &fixture.params,
+            &fixture.mcs_witnesses,
+            &fixture.me_witnesses,
+            fixture.ch.clone(),
+            fixture.ell_d,
+            fixture.ell_n,
+            fixture.d_sc,
+            Some(&fixture.r_inputs),
+            fixture.sparse.clone(),
+        );
+        let mut mojo = SplitNcOptimizedOracle::new_with_sparse(
+            &fixture.s,
+            &fixture.params,
+            &fixture.mcs_witnesses,
+            &fixture.me_witnesses,
+            fixture.ch.clone(),
+            fixture.ell_d,
+            fixture.ell_n,
+            fixture.d_sc,
+            Some(&fixture.r_inputs),
+            fixture.sparse.clone(),
+            &backend_ctx,
+        )
+        .expect("real mojo fe oracle");
+
+        let total_tasks = fe_row_total_tasks_for_testing(&cpu, xs.len()).expect("row phase tasks");
+        assert_eq!(
+            cpu.evals_at(&xs),
+            mojo.evals_at(&xs),
+            "parity failed for points={point_count}"
+        );
+
+        let iters = perf_iters_for(point_count);
+        let cpu_start = Instant::now();
+        for _ in 0..iters {
+            let _ = cpu.evals_at(&xs);
+        }
+        let cpu_elapsed = cpu_start.elapsed();
+
+        let mojo_start = Instant::now();
+        for _ in 0..iters {
+            let _ = mojo.evals_at(&xs);
+        }
+        let mojo_elapsed = mojo_start.elapsed();
+
+        eprintln!(
+            "[fe-row-threshold-sweep] points={} tasks={} mode={:?} cpu_ns_per_eval={} mojo_ns_per_eval={}",
+            point_count,
+            total_tasks,
+            backend_ctx.fe_row_execution_status(total_tasks),
+            cpu_elapsed.as_nanos() / (iters as u128),
+            mojo_elapsed.as_nanos() / (iters as u128),
+        );
+    }
+}
+
+#[test]
+#[ignore = "perf-style threshold sweep: cargo test -p neo-reductions --release --test split_nc_gpu_parity report_nc_col_threshold_sweep -- --ignored --nocapture"]
+fn report_nc_col_threshold_sweep() {
+    let fixture = build_oracle_fixture();
+    let backend = ProverComputeBackend::Mojo(
+        MojoBackendConfig::new(DeviceApi::Cuda).with_library_path(build_real_mojo_library()),
+    );
+    let backend_ctx = match BackendContext::new(&backend) {
+        Ok(ctx) => ctx,
+        Err(err) => {
+            eprintln!("skipping: real Mojo CUDA backend is unavailable: {err}");
+            return;
+        }
+    };
+
+    let thresholds = backend_ctx
+        .split_nc_session()
+        .expect("split-nc session")
+        .map(|session| session.activation_thresholds())
+        .expect("cuda split-nc session");
+    eprintln!(
+        "[nc-col-threshold-sweep] device={:?} thresholds={:?}",
+        backend_ctx.selected_device_api(),
+        thresholds
+    );
+
+    for &point_count in &[1usize, 2, 4, 8, 16, 32, 64, 128] {
+        let xs = k_probe_points(0, point_count, 21_000, 22_000);
+        let mut cpu = NcOracle::new(
+            &fixture.s,
+            &fixture.params,
+            &fixture.mcs_witnesses,
+            &fixture.me_witnesses,
+            fixture.ch.clone(),
+            fixture.ell_d,
+            fixture.ell_m,
+            fixture.d_sc,
+        );
+        let mut mojo = SplitNcNcOracle::new(
+            &fixture.s,
+            &fixture.params,
+            &fixture.mcs_witnesses,
+            &fixture.me_witnesses,
+            fixture.ch.clone(),
+            fixture.ell_d,
+            fixture.ell_m,
+            fixture.d_sc,
+            &backend_ctx,
+        )
+        .expect("real mojo nc oracle");
+
+        let total_tasks = nc_col_total_tasks_for_testing(&cpu, xs.len()).expect("column phase tasks");
+        assert_eq!(
+            cpu.evals_at(&xs),
+            mojo.evals_at(&xs),
+            "parity failed for points={point_count}"
+        );
+
+        let iters = perf_iters_for(point_count);
+        let cpu_start = Instant::now();
+        for _ in 0..iters {
+            let _ = cpu.evals_at(&xs);
+        }
+        let mojo_start = Instant::now();
+        for _ in 0..iters {
+            let _ = mojo.evals_at(&xs);
+        }
+        let cpu_elapsed = cpu_start.elapsed();
+        let mojo_elapsed = mojo_start.elapsed();
+
+        eprintln!(
+            "[nc-col-threshold-sweep] points={} tasks={} mode={:?} cpu_ns_per_eval={} mojo_ns_per_eval={}",
+            point_count,
+            total_tasks,
+            backend_ctx.nc_col_execution_status(total_tasks),
+            cpu_elapsed.as_nanos() / (iters as u128),
+            mojo_elapsed.as_nanos() / (iters as u128),
+        );
+    }
 }

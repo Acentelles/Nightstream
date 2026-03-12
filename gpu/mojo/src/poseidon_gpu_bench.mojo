@@ -7,10 +7,10 @@ from sys import has_accelerator
 from nightstream_gpu import poseidon
 
 
-alias GPU_BLOCK_SIZE = 64
-alias WIDTH = poseidon.POSEIDON2_WIDTH
-alias TARGET_TOTAL_STATES = 131072
-alias TARGET_ROUNDTRIP_STATES = 4096
+comptime GPU_BLOCK_SIZE = 64
+comptime WIDTH = poseidon.POSEIDON2_WIDTH
+comptime TARGET_TOTAL_STATES = 131072
+comptime TARGET_ROUNDTRIP_STATES = 4096
 
 
 fn words_for_states(num_states: Int) -> Int:
@@ -92,7 +92,7 @@ fn bench_batch(num_states: Int) raises:
         for state_idx in range(num_states):
             poseidon.permute_state_at_offset(cpu_words, state_idx * WIDTH)
     var cpu_end = time.perf_counter_ns()
-    print_stats("cpu", num_states, iters, Int(cpu_end - cpu_start))
+    print_stats("cpu", num_states, iters, Int(py=cpu_end) - Int(py=cpu_start))
     cpu_words.free()
 
     @parameter
@@ -138,7 +138,7 @@ fn bench_batch(num_states: Int) raises:
         )
     ctx.synchronize()
     var gpu_end = time.perf_counter_ns()
-    print_stats("gpu_steady", num_states, iters, Int(gpu_end - gpu_start))
+    print_stats("gpu_steady", num_states, iters, Int(py=gpu_end) - Int(py=gpu_start))
 
     for state_idx in range(num_states):
         var base = state_idx * WIDTH
@@ -168,7 +168,7 @@ fn bench_batch(num_states: Int) raises:
         "gpu_roundtrip",
         num_states,
         roundtrip_iters,
-        Int(roundtrip_end - roundtrip_start),
+        Int(py=roundtrip_end) - Int(py=roundtrip_start),
     )
 
 

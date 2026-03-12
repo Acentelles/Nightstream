@@ -162,25 +162,25 @@ Assumptions:
 
 ### Milestone 6: Thresholds And Backend Policy
 
-- [ ] add threshold sweep benches for Poseidon batch,
-- [ ] add threshold sweep benches for FE row phase,
-- [ ] add threshold sweep benches for NC column phase,
-- [ ] store measured cutovers in one place in Rust instead of scattering ad hoc constants,
-- [ ] make backend activation policy threshold-driven and backend-specific,
-- [ ] keep CPU fallback as the default below cutover sizes.
+- [x] add threshold sweep benches for Poseidon batch,
+- [x] add threshold sweep benches for FE row phase,
+- [x] add threshold sweep benches for NC column phase,
+- [x] store measured cutovers in one place in Rust instead of scattering ad hoc constants,
+- [x] make backend activation policy threshold-driven and backend-specific,
+- [x] keep CPU fallback as the default below cutover sizes.
 
 ### Milestone 7: Remaining Mojo Modules
 
-- [ ] finish `src/nightstream_gpu/ring.mojo`,
-- [ ] finish `src/nightstream_gpu/superneo.mojo`,
-- [ ] connect those modules to Ajtai/commit-side acceleration only after Split-NC is stable,
-- [ ] keep proof-compatible transcript binding on the Rust side while those modules land.
+- [x] finish `src/nightstream_gpu/ring.mojo`,
+- [x] finish `src/nightstream_gpu/superneo.mojo`,
+- [x] connect those modules to Ajtai/commit-side acceleration only after Split-NC is stable,
+- [x] keep proof-compatible transcript binding on the Rust side while those modules land.
 
 ### Milestone 8: End-To-End Performance Promotion
 
-- [ ] add one backend-compare performance test for a real `neo-fold` multi-step proof on CUDA,
-- [ ] report CPU baseline, GPU steady-state, GPU roundtrip, and end-to-end prove time,
-- [ ] promote a GPU path only when it improves the real prover flow rather than only microbench
+- [x] add one backend-compare performance test for a real `neo-fold` multi-step proof on CUDA,
+- [x] report CPU baseline, GPU steady-state, GPU roundtrip, and end-to-end prove time,
+- [x] promote a GPU path only when it improves the real prover flow rather than only microbench
   numbers,
-- [ ] revisit Metal Split-NC only after CUDA is stable and the shared-lib Metal runtime issue is
+- [x] revisit Metal Split-NC only after CUDA is stable and the shared-lib Metal runtime issue is
   isolated.

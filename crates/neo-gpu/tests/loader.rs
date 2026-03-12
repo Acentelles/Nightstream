@@ -2,6 +2,7 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
+use std::time::Instant;
 
 use libloading::Library;
 use neo_ccs::crypto::poseidon2_goldilocks as p2;
@@ -182,6 +183,11 @@ fn poseidon2_batch_cpu_reference(num_states: usize) -> Vec<[u64; 8]> {
                 .map(|x| x.as_canonical_u64())
         })
         .collect()
+}
+
+fn poseidon2_iters_for(num_states: usize) -> usize {
+    let target_states = 65_536usize;
+    (target_states / num_states.max(1)).max(1)
 }
 
 fn push_u64_le(out: &mut Vec<u8>, word: u64) {
@@ -498,12 +504,14 @@ fn poseidon2_execution_mode_reports_cpu_host_fallback_and_accelerator() {
 
     let cuda = connect(&MojoBackendConfig::new(DeviceApi::Cuda).with_library_path(build_mock_library()))
         .expect("connect cuda mock mojo session");
-    assert_eq!(cuda.poseidon2_batch_execution_mode(32), ExecutionMode::HostFallback);
+    assert_eq!(cuda.poseidon2_batch_execution_mode(16), ExecutionMode::HostFallback);
+    assert_eq!(cuda.poseidon2_batch_execution_mode(32), ExecutionMode::Accelerator);
     assert_eq!(cuda.poseidon2_batch_execution_mode(256), ExecutionMode::Accelerator);
 
     let hip = connect(&MojoBackendConfig::new(DeviceApi::Hip).with_library_path(build_mock_library()))
         .expect("connect hip mock mojo session");
-    assert_eq!(hip.poseidon2_batch_execution_mode(32), ExecutionMode::HostFallback);
+    assert_eq!(hip.poseidon2_batch_execution_mode(16), ExecutionMode::HostFallback);
+    assert_eq!(hip.poseidon2_batch_execution_mode(32), ExecutionMode::Accelerator);
     assert_eq!(hip.poseidon2_batch_execution_mode(256), ExecutionMode::Accelerator);
 }
 
@@ -1217,4 +1225,61 @@ fn mojo_gpu_bench_script_runs() {
         .status()
         .expect("spawn mojo gpu bench script");
     assert!(status.success(), "mojo gpu bench script failed");
+}
+
+#[test]
+#[ignore = "perf-style threshold sweep: cargo test -p neo-gpu --release --test loader report_poseidon2_batch_threshold_sweep -- --ignored --nocapture"]
+fn report_poseidon2_batch_threshold_sweep() {
+    let library_path = build_real_mojo_library();
+    let cfg = MojoBackendConfig::auto().with_library_path(library_path);
+    let Ok(session) = connect(&cfg) else {
+        eprintln!("skipping: real Mojo backend is unavailable");
+        return;
+    };
+
+    eprintln!(
+        "[poseidon2-threshold-sweep] device={:?} thresholds={:?}",
+        session.device_api(),
+        session.activation_thresholds()
+    );
+
+    for &num_states in &[1usize, 8, 16, 32, 64, 128, 256, 512, 2048] {
+        let expected = poseidon2_batch_cpu_reference(num_states);
+        let mut backend_once = poseidon2_batch_fixture(num_states);
+        session
+            .permute_poseidon2_batch_u64x8(&mut backend_once)
+            .expect("batch permutation");
+        assert_eq!(backend_once, expected, "parity failed for batch={num_states}");
+
+        let iters = poseidon2_iters_for(num_states);
+
+        let cpu_start = Instant::now();
+        for _ in 0..iters {
+            let mut cpu_states = poseidon2_batch_fixture(num_states);
+            for state in &mut cpu_states {
+                *state = p2::permutation()
+                    .permute(state.map(Goldilocks::from_u64))
+                    .map(|x| x.as_canonical_u64());
+            }
+        }
+        let cpu_elapsed = cpu_start.elapsed();
+
+        let gpu_start = Instant::now();
+        for _ in 0..iters {
+            let mut backend_states = poseidon2_batch_fixture(num_states);
+            session
+                .permute_poseidon2_batch_u64x8(&mut backend_states)
+                .expect("batch permutation");
+        }
+        let gpu_elapsed = gpu_start.elapsed();
+
+        let total_states = (iters * num_states) as u128;
+        eprintln!(
+            "[poseidon2-threshold-sweep] batch={} mode={:?} cpu_ns_per_state={} mojo_ns_per_state={}",
+            num_states,
+            session.poseidon2_batch_execution_mode(num_states),
+            cpu_elapsed.as_nanos() / total_states,
+            gpu_elapsed.as_nanos() / total_states,
+        );
+    }
 }

@@ -1,4 +1,5 @@
 mod memory_adversarial_tests;
+mod mojo_cuda_backend_compare;
 #[cfg(feature = "poseidon-precompile")]
 mod poseidon_precompile_perf;
 mod prefix_scaling;

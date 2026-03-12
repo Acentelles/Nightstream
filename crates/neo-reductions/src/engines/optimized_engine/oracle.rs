@@ -67,6 +67,17 @@ where
     F: Field + PrimeCharacteristicRing + PrimeField64 + Copy + Send + Sync,
     K: From<F>,
 {
+    #[inline]
+    pub(crate) fn nc_col_tail_len(&self) -> Option<usize> {
+        (self.round_idx < self.ell_m).then_some(self.cur_len / 2)
+    }
+
+    #[inline]
+    pub(crate) fn nc_col_total_tasks(&self, point_count: usize) -> Option<usize> {
+        self.nc_col_tail_len()
+            .map(|tail_len| tail_len.saturating_mul(point_count))
+    }
+
     pub(crate) fn nc_col_snapshot(&self) -> NcColSnapshot {
         let num_tables = self.digits_tables.len() as u64;
         let table_len = self.cur_len as u64;
@@ -2084,6 +2095,17 @@ where
     F: Field + PrimeCharacteristicRing + PrimeField64 + Copy + Send + Sync,
     K: From<F>,
 {
+    #[inline]
+    pub(crate) fn fe_row_tail_len(&self) -> Option<usize> {
+        (self.round_idx < self.ell_n).then_some(self.row_stream.cur_len / 2)
+    }
+
+    #[inline]
+    pub(crate) fn fe_row_total_tasks(&self, point_count: usize) -> Option<usize> {
+        self.fe_row_tail_len()
+            .map(|tail_len| tail_len.saturating_mul(point_count))
+    }
+
     pub(crate) fn fe_row_snapshot(&self) -> FeRowSnapshot {
         self.row_stream.snapshot(self.d_sc)
     }

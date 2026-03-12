@@ -32,6 +32,15 @@ where
 }
 
 #[doc(hidden)]
+pub fn fe_row_total_tasks_for_testing<'a, F>(oracle: &OptimizedOracle<'a, F>, point_count: usize) -> Option<usize>
+where
+    F: Field + PrimeCharacteristicRing + PrimeField64 + Copy + Send + Sync,
+    K: From<F>,
+{
+    oracle.fe_row_total_tasks(point_count)
+}
+
+#[doc(hidden)]
 pub fn nc_col_snapshot_bytes_for_testing<'a, F>(oracle: &NcOracle<'a, F>) -> Vec<u8>
 where
     F: Field + PrimeCharacteristicRing + PrimeField64 + Copy + Send + Sync,
@@ -56,4 +65,13 @@ where
     K: From<F>,
 {
     oracle.nc_col_snapshot().num_tables as usize
+}
+
+#[doc(hidden)]
+pub fn nc_col_total_tasks_for_testing<'a, F>(oracle: &NcOracle<'a, F>, point_count: usize) -> Option<usize>
+where
+    F: Field + PrimeCharacteristicRing + PrimeField64 + Copy + Send + Sync,
+    K: From<F>,
+{
+    oracle.nc_col_total_tasks(point_count)
 }

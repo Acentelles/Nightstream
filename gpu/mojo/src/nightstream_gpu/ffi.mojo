@@ -170,3 +170,40 @@ fn poseidon2_permute_batch_u64x8(
     width: UInt32,
 ) -> Int32:
     return poseidon.poseidon2_permute_batch_u64x8(session, state_words, num_states, width)
+
+
+fn rq_mul_u64x54(
+    lhs_words: UnsafePointer[UInt64],
+    rhs_words: UnsafePointer[UInt64],
+    out_words: UnsafePointer[mut=True, UInt64],
+) -> Int32:
+    ring.rq_mul_words(lhs_words, rhs_words, out_words)
+    return STATUS_OK
+
+
+fn rq_ct_u64x54(
+    words: UnsafePointer[UInt64],
+    out_words: UnsafePointer[mut=True, UInt64],
+) -> Int32:
+    out_words[0] = ring.rq_ct_words(words)
+    return STATUS_OK
+
+
+fn superneo_bar_block_u64x54(
+    matrix_words: UnsafePointer[UInt64],
+    block_words: UnsafePointer[UInt64],
+    out_words: UnsafePointer[mut=True, UInt64],
+) -> Int32:
+    superneo.superneo_bar_block_from_matrix_words(matrix_words, block_words, out_words)
+    return STATUS_OK
+
+
+fn superneo_row_dot_blocks(
+    bar_blocks_words: UnsafePointer[UInt64],
+    num_blocks: UInt64,
+    z_words: UnsafePointer[UInt64],
+    z_len: UInt64,
+    out_words: UnsafePointer[mut=True, UInt64],
+) -> Int32:
+    superneo.superneo_row_dot_blocks_words(bar_blocks_words, num_blocks, z_words, z_len, out_words)
+    return STATUS_OK
