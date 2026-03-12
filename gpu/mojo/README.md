@@ -141,24 +141,24 @@ Assumptions:
 
 ### Milestone 4: Stage-Level Parity Coverage
 
-- [ ] add stage-specific FE chunk snapshot fixtures,
-- [ ] add stage-specific FE aggregate snapshot fixtures,
-- [ ] add stage-specific NC chunk snapshot fixtures,
-- [ ] add stage-specific NC aggregate snapshot fixtures,
-- [ ] add terminal FE/NC round fixtures,
-- [ ] add real Mojo parity tests for `neo-fold` RLC input binding and CCS-only batched folding,
-- [ ] keep end-to-end `optimized_prove` parity tests as the final correctness gate,
-- [ ] add Mojo golden-vector tests once a Mojo toolchain is available in CI or on a supported dev
+- [x] add stage-specific FE chunk snapshot fixtures,
+- [x] add stage-specific FE aggregate snapshot fixtures,
+- [x] add stage-specific NC chunk snapshot fixtures,
+- [x] add stage-specific NC aggregate snapshot fixtures,
+- [x] add terminal FE/NC round fixtures,
+- [x] add real Mojo parity tests for `neo-fold` RLC input binding and CCS-only batched folding,
+- [x] keep end-to-end `optimized_prove` parity tests as the final correctness gate,
+- [x] add Mojo golden-vector tests once a Mojo toolchain is available in CI or on a supported dev
   host.
 
 ### Milestone 5: CUDA Sign-Off
 
-- [ ] add CUDA-only real-accelerator parity tests for Poseidon batch,
-- [ ] add CUDA-only real-accelerator parity tests for FE evaluator creation/evals/fold,
-- [ ] add CUDA-only real-accelerator parity tests for NC evaluator creation/evals/fold,
-- [ ] add CUDA-only real `optimized_prove` parity checks,
-- [ ] add one real `neo-fold` multi-step prove/verify CUDA-backed parity test,
-- [ ] run these on the Ubuntu CUDA VM until GPU CI is available.
+- [x] add CUDA-only real-accelerator parity tests for Poseidon batch,
+- [x] add CUDA-only real-accelerator parity tests for FE evaluator creation/evals/fold,
+- [x] add CUDA-only real-accelerator parity tests for NC evaluator creation/evals/fold,
+- [x] add CUDA-only real `optimized_prove` parity checks,
+- [x] add one real `neo-fold` multi-step prove/verify CUDA-backed parity test,
+- [x] run these on the Ubuntu CUDA VM until GPU CI is available.
 
 ### Milestone 6: Thresholds And Backend Policy
 

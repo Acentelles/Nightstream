@@ -404,8 +404,8 @@ fn build_high_batch_reduction_fixture(
     neo_reductions::engines::utils::bind_header_and_instances(&mut tr, &params, &s, &claims, dims)
         .expect("bind header");
     neo_reductions::engines::utils::bind_me_inputs(&mut tr, &[]).expect("bind empty me inputs");
-    let mut ch = neo_reductions::engines::utils::sample_challenges(&mut tr, dims.ell_d, dims.ell)
-        .expect("sample challenges");
+    let mut ch =
+        neo_reductions::engines::utils::sample_challenges(&mut tr, dims.ell_d, dims.ell).expect("sample challenges");
     ch.beta_m = neo_reductions::engines::utils::sample_beta_m(&mut tr, dims.ell_m).expect("sample beta_m");
 
     (params, s, claims, witnesses, ch, dims.ell_d, dims.ell_m, dims.d_sc)
@@ -816,8 +816,9 @@ fn real_mojo_split_nc_high_batch_nc_oracle_matches_cpu_across_rounds() {
 #[ignore = "requires CUDA-capable Mojo runtime"]
 fn real_mojo_cuda_fe_row_oracle_matches_cpu_across_rounds() {
     let fixture = build_oracle_fixture();
-    let backend =
-        ProverComputeBackend::Mojo(MojoBackendConfig::new(DeviceApi::Cuda).with_library_path(build_real_mojo_library()));
+    let backend = ProverComputeBackend::Mojo(
+        MojoBackendConfig::new(DeviceApi::Cuda).with_library_path(build_real_mojo_library()),
+    );
     let backend_ctx = match BackendContext::new(&backend) {
         Ok(ctx) => ctx,
         Err(err) => {
@@ -860,12 +861,7 @@ fn real_mojo_cuda_fe_row_oracle_matches_cpu_across_rounds() {
 
     let total_rounds = cpu.num_rounds();
     for round in 0..total_rounds {
-        let xs = k_probe_points(
-            round,
-            probe_count_for_round(round, &[384, 512, 640]),
-            20_000,
-            30_000,
-        );
+        let xs = k_probe_points(round, probe_count_for_round(round, &[384, 512, 640]), 20_000, 30_000);
         assert_eq!(cpu.evals_at(&xs), mojo.evals_at(&xs), "round {round}");
         let r = k(40_000 + round as u64, 50_000 + round as u64);
         cpu.fold(r);
@@ -878,8 +874,9 @@ fn real_mojo_cuda_fe_row_oracle_matches_cpu_across_rounds() {
 fn real_mojo_cuda_nc_col_oracle_matches_cpu_across_rounds() {
     let (params, s, _claims, witnesses, ch, ell_d, ell_m, d_sc) =
         build_high_batch_reduction_fixture(b"split_nc_gpu_parity/high_batch_nc_real_cuda");
-    let backend =
-        ProverComputeBackend::Mojo(MojoBackendConfig::new(DeviceApi::Cuda).with_library_path(build_real_mojo_library()));
+    let backend = ProverComputeBackend::Mojo(
+        MojoBackendConfig::new(DeviceApi::Cuda).with_library_path(build_real_mojo_library()),
+    );
     let backend_ctx = match BackendContext::new(&backend) {
         Ok(ctx) => ctx,
         Err(err) => {
@@ -894,18 +891,12 @@ fn real_mojo_cuda_nc_col_oracle_matches_cpu_across_rounds() {
     );
 
     let mut cpu = NcOracle::new(&s, &params, &witnesses, &[], ch.clone(), ell_d, ell_m, d_sc);
-    let mut mojo =
-        SplitNcNcOracle::new(&s, &params, &witnesses, &[], ch, ell_d, ell_m, d_sc, &backend_ctx)
-            .expect("real mojo cuda nc oracle");
+    let mut mojo = SplitNcNcOracle::new(&s, &params, &witnesses, &[], ch, ell_d, ell_m, d_sc, &backend_ctx)
+        .expect("real mojo cuda nc oracle");
 
     let total_rounds = cpu.num_rounds();
     for round in 0..total_rounds {
-        let xs = k_probe_points(
-            round,
-            probe_count_for_round(round, &[384, 512, 640]),
-            60_000,
-            70_000,
-        );
+        let xs = k_probe_points(round, probe_count_for_round(round, &[384, 512, 640]), 60_000, 70_000);
         assert_eq!(cpu.evals_at(&xs), mojo.evals_at(&xs), "round {round}");
         let r = k(80_000 + round as u64, 90_000 + round as u64);
         cpu.fold(r);
@@ -971,8 +962,7 @@ fn real_mojo_split_nc_optimized_prove_matches_cpu_and_verifies() {
 #[test]
 #[ignore = "requires CUDA-capable Mojo runtime"]
 fn real_mojo_cuda_split_nc_optimized_prove_matches_cpu_and_verifies() {
-    let (params, s, l, claims, witnesses, mut cpu_tr) =
-        build_prove_fixture(b"split_nc_gpu_parity/real_mojo_cuda");
+    let (params, s, l, claims, witnesses, mut cpu_tr) = build_prove_fixture(b"split_nc_gpu_parity/real_mojo_cuda");
     let mut mojo_tr = Poseidon2Transcript::new(b"split_nc_gpu_parity/real_mojo_cuda");
 
     let (cpu_out, cpu_proof) = prove_with_backend(
@@ -989,8 +979,9 @@ fn real_mojo_cuda_split_nc_optimized_prove_matches_cpu_and_verifies() {
     )
     .expect("cpu prove");
 
-    let mojo_backend =
-        ProverComputeBackend::Mojo(MojoBackendConfig::new(DeviceApi::Cuda).with_library_path(build_real_mojo_library()));
+    let mojo_backend = ProverComputeBackend::Mojo(
+        MojoBackendConfig::new(DeviceApi::Cuda).with_library_path(build_real_mojo_library()),
+    );
     let backend_ctx = match BackendContext::new(&mojo_backend) {
         Ok(ctx) => ctx,
         Err(err) => {

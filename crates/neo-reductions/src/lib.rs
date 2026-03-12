@@ -13,7 +13,9 @@ pub mod engines; // internal engine trait + wrappers (includes optimized_engine,
 pub mod error;
 pub mod sumcheck;
 pub mod superneo_eval; // transformed-matrix evaluators for SuperNeo migration
-                       // Re-export RLC/DEC from engines for a stable path
+#[doc(hidden)]
+pub mod test_exports;
+// Re-export RLC/DEC from engines for a stable path
 pub use engines::pi_rlc_dec;
 
 // Re-export engine modules for convenience

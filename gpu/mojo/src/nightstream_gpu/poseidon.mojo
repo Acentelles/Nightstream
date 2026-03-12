@@ -10,7 +10,9 @@ comptime INTERNAL_ROUNDS = 22
 comptime GPU_BLOCK_SIZE = 64
 comptime POSEIDON2_GPU_MIN_STATES = 128
 comptime DEVICE_API_CPU = 0
+comptime DEVICE_API_METAL = 1
 comptime DEVICE_API_CUDA = 2
+comptime DEVICE_API_HIP = 3
 comptime PoseidonBatchKernelT = type_of(
     DeviceContext().compile_function[poseidon2_gpu_batch_kernel, poseidon2_gpu_batch_kernel_sig]()
 )
@@ -160,7 +162,9 @@ fn session_prefers_gpu(session: UInt) -> Bool:
     if api == UInt32(DEVICE_API_CPU):
         return False
     return runtime.session_prefers_gpu(UInt64(session)) and (
-        api == UInt32(DEVICE_API_CUDA) or api == UInt32(1)
+        api == UInt32(DEVICE_API_METAL)
+        or api == UInt32(DEVICE_API_CUDA)
+        or api == UInt32(DEVICE_API_HIP)
     )
 
 

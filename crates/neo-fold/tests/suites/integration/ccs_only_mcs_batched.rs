@@ -523,8 +523,9 @@ fn ccs_only_mcs_batched_real_mojo_cuda_matches_cpu() {
     )
     .expect("cpu prove");
 
-    let backend =
-        ProverComputeBackend::Mojo(MojoBackendConfig::new(DeviceApi::Cuda).with_library_path(build_real_mojo_library()));
+    let backend = ProverComputeBackend::Mojo(
+        MojoBackendConfig::new(DeviceApi::Cuda).with_library_path(build_real_mojo_library()),
+    );
     let mut tr_mojo = Poseidon2Transcript::new(b"neo.fold/ccs_only_gpu_rlc_real_cuda");
     let mojo_proof = fold_shard_prove_ccs_only_batched(
         FoldingMode::Optimized,
@@ -667,8 +668,9 @@ fn ccs_only_mcs_batched_real_mojo_metal_matches_cpu() {
     )
     .expect("cpu prove");
 
-    let backend =
-        ProverComputeBackend::Mojo(MojoBackendConfig::new(DeviceApi::Metal).with_library_path(build_real_mojo_library()));
+    let backend = ProverComputeBackend::Mojo(
+        MojoBackendConfig::new(DeviceApi::Metal).with_library_path(build_real_mojo_library()),
+    );
     let mut tr_mojo = Poseidon2Transcript::new(b"neo.fold/ccs_only_gpu_rlc_real_metal");
     let mojo_proof = fold_shard_prove_ccs_only_batched(
         FoldingMode::Optimized,
@@ -795,8 +797,9 @@ fn ccs_only_initial_reduction_real_mojo_metal_matches_cpu() {
     )
     .expect("cpu reductions prove");
 
-    let backend =
-        ProverComputeBackend::Mojo(MojoBackendConfig::new(DeviceApi::Metal).with_library_path(build_real_mojo_library()));
+    let backend = ProverComputeBackend::Mojo(
+        MojoBackendConfig::new(DeviceApi::Metal).with_library_path(build_real_mojo_library()),
+    );
     let mut tr_mojo = Poseidon2Transcript::new(b"neo.fold/ccs_only_initial_reduce_real_metal");
     let (mojo_out, mojo_proof) = reduce_prove_with_backend(
         FoldingMode::Optimized,

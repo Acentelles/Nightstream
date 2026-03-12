@@ -4,17 +4,19 @@ use std::path::{Path, PathBuf};
 #[cfg(target_os = "macos")]
 use std::sync::{mpsc, OnceLock};
 
-#[cfg(any(unix, windows))]
+#[cfg(all(not(target_arch = "wasm32"), any(unix, windows)))]
 use libloading::Library;
 
+use crate::abi::{DeviceRequest, DeviceResponse, FlatFq, FlatK, SessionRequest, POSEIDON2_STATE_WIDTH};
+#[cfg(not(target_arch = "wasm32"))]
 use crate::abi::{
-    DeviceRequest, DeviceResponse, FlatFq, FlatK, SessionRequest, ABI_VERSION, ABI_VERSION_SYMBOL, DEVICE_PROBE_SYMBOL,
-    FE_CREATE_SYMBOL, FE_DESTROY_SYMBOL, FE_EVALS_AT_SYMBOL, FE_FOLD_SYMBOL, NC_CREATE_SYMBOL, NC_DESTROY_SYMBOL,
-    NC_EVALS_AT_SYMBOL, NC_FOLD_SYMBOL, POSEIDON2_PERMUTE_BATCH_SYMBOL, POSEIDON2_PERMUTE_SYMBOL,
-    POSEIDON2_STATE_WIDTH, SESSION_CLOSE_SYMBOL, SESSION_OPEN_SYMBOL,
+    ABI_VERSION, ABI_VERSION_SYMBOL, DEVICE_PROBE_SYMBOL, FE_CREATE_SYMBOL, FE_DESTROY_SYMBOL, FE_EVALS_AT_SYMBOL,
+    FE_FOLD_SYMBOL, NC_CREATE_SYMBOL, NC_DESTROY_SYMBOL, NC_EVALS_AT_SYMBOL, NC_FOLD_SYMBOL,
+    POSEIDON2_PERMUTE_BATCH_SYMBOL, POSEIDON2_PERMUTE_SYMBOL, SESSION_CLOSE_SYMBOL, SESSION_OPEN_SYMBOL,
 };
 use crate::{DeviceApi, MojoBackendConfig, NeoGpuError};
 
+#[cfg(not(target_arch = "wasm32"))]
 type AbiVersionFn = unsafe extern "C" fn() -> u32;
 type DeviceProbeFn = unsafe extern "C" fn(usize, *mut u64) -> i32;
 type SessionOpenFn = unsafe extern "C" fn(usize, *mut u64) -> i32;
@@ -26,9 +28,9 @@ type FoldFn = unsafe extern "C" fn(usize, usize, u64, u64) -> i32;
 type Poseidon2PermuteFn = unsafe extern "C" fn(usize, *mut FlatFq, u32) -> i32;
 type Poseidon2PermuteBatchFn = unsafe extern "C" fn(usize, *mut FlatFq, u32, u32) -> i32;
 
-#[cfg(any(unix, windows))]
+#[cfg(all(not(target_arch = "wasm32"), any(unix, windows)))]
 type PlatformLibrary = Library;
-#[cfg(not(any(unix, windows)))]
+#[cfg(not(all(not(target_arch = "wasm32"), any(unix, windows))))]
 struct PlatformLibrary;
 
 const SPLIT_NC_SNAPSHOT_MAGIC: u64 = 0x4E53_504C_4954_4E43;
@@ -45,6 +47,7 @@ pub enum ExecutionMode {
     Accelerator,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn platform_library_name() -> &'static str {
     #[cfg(target_os = "macos")]
     {
@@ -64,6 +67,7 @@ fn platform_library_name() -> &'static str {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn resolve_library_path(cfg: &MojoBackendConfig) -> PathBuf {
     cfg.library_path
         .clone()
@@ -145,14 +149,14 @@ fn call_for_device_api<T: Send + 'static>(_api: DeviceApi, f: impl FnOnce() -> T
     }
 }
 
-#[cfg(any(unix, windows))]
+#[cfg(all(not(target_arch = "wasm32"), any(unix, windows)))]
 unsafe fn load_required<T: Copy>(lib: &Library, symbol: &'static [u8], name: &'static str) -> Result<T, NeoGpuError> {
     lib.get::<T>(symbol)
         .map(|sym| *sym)
         .map_err(|_| NeoGpuError::MissingSymbol { symbol: name })
 }
 
-#[cfg(any(unix, windows))]
+#[cfg(all(not(target_arch = "wasm32"), any(unix, windows)))]
 unsafe fn load_optional<T: Copy>(lib: &Library, symbol: &'static [u8]) -> Option<T> {
     lib.get::<T>(symbol).ok().map(|sym| *sym)
 }
@@ -224,7 +228,7 @@ impl MojoLibrary {
         self.evaluators.supports_cpu_direct_mode()
     }
 
-    #[cfg(any(unix, windows))]
+    #[cfg(all(not(target_arch = "wasm32"), any(unix, windows)))]
     pub fn load(cfg: &MojoBackendConfig) -> Result<Self, NeoGpuError> {
         let path = resolve_library_path(cfg);
         let lib = unsafe { Library::new(&path) }.map_err(|source| NeoGpuError::LoadLibrary {
@@ -274,7 +278,7 @@ impl MojoLibrary {
         })
     }
 
-    #[cfg(not(any(unix, windows)))]
+    #[cfg(not(all(not(target_arch = "wasm32"), any(unix, windows))))]
     pub fn load(cfg: &MojoBackendConfig) -> Result<Self, NeoGpuError> {
         let _ = cfg;
         Err(NeoGpuError::UnsupportedOperation {
@@ -497,7 +501,9 @@ impl MojoSession {
     pub fn poseidon2_batch_execution_mode(&self, num_states: usize) -> ExecutionMode {
         match self.device_api {
             DeviceApi::Cpu => ExecutionMode::Cpu,
-            DeviceApi::Cuda | DeviceApi::Metal if num_states >= POSEIDON2_GPU_MIN_STATES => ExecutionMode::Accelerator,
+            DeviceApi::Cuda | DeviceApi::Metal | DeviceApi::Hip if num_states >= POSEIDON2_GPU_MIN_STATES => {
+                ExecutionMode::Accelerator
+            }
             DeviceApi::Cuda | DeviceApi::Metal | DeviceApi::Hip | DeviceApi::Auto => ExecutionMode::HostFallback,
         }
     }
@@ -506,9 +512,7 @@ impl MojoSession {
     pub fn split_nc_execution_mode(&self, total_tasks: usize) -> ExecutionMode {
         match self.device_api {
             DeviceApi::Cpu => ExecutionMode::Cpu,
-            DeviceApi::Cuda | DeviceApi::Hip if total_tasks >= SPLIT_NC_GPU_MIN_TASKS => {
-                ExecutionMode::Accelerator
-            }
+            DeviceApi::Cuda | DeviceApi::Hip if total_tasks >= SPLIT_NC_GPU_MIN_TASKS => ExecutionMode::Accelerator,
             DeviceApi::Cuda | DeviceApi::Metal | DeviceApi::Hip | DeviceApi::Auto => ExecutionMode::HostFallback,
         }
     }

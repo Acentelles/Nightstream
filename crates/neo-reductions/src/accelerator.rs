@@ -50,7 +50,10 @@ impl BackendContext {
                     let supports_poseidon2 = session.supports_poseidon2_api();
                     let mut split_nc_session = None;
                     let supports_split_nc = if session.device_api() == DeviceApi::Metal {
-                        let cpu_cfg = cfg.clone().with_device_api(DeviceApi::Cpu).with_device_id(0);
+                        let cpu_cfg = cfg
+                            .clone()
+                            .with_device_api(DeviceApi::Cpu)
+                            .with_device_id(0);
                         match connect(&cpu_cfg) {
                             Ok(cpu_session) if cpu_session.supports_split_nc_api() => {
                                 split_nc_session = Some(cpu_session);

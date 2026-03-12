@@ -382,8 +382,9 @@ fn real_mojo_cuda_me_input_digest_matches_cpu_reference() {
 
     bind_me_inputs(&mut cpu_tr, &me_inputs).expect("cpu bind_me_inputs");
 
-    let backend =
-        ProverComputeBackend::Mojo(MojoBackendConfig::new(DeviceApi::Cuda).with_library_path(build_real_mojo_library()));
+    let backend = ProverComputeBackend::Mojo(
+        MojoBackendConfig::new(DeviceApi::Cuda).with_library_path(build_real_mojo_library()),
+    );
     let backend_ctx = match BackendContext::new(&backend) {
         Ok(ctx) => ctx,
         Err(err) => {

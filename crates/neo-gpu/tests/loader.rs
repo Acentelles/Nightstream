@@ -500,6 +500,11 @@ fn poseidon2_execution_mode_reports_cpu_host_fallback_and_accelerator() {
         .expect("connect cuda mock mojo session");
     assert_eq!(cuda.poseidon2_batch_execution_mode(32), ExecutionMode::HostFallback);
     assert_eq!(cuda.poseidon2_batch_execution_mode(256), ExecutionMode::Accelerator);
+
+    let hip = connect(&MojoBackendConfig::new(DeviceApi::Hip).with_library_path(build_mock_library()))
+        .expect("connect hip mock mojo session");
+    assert_eq!(hip.poseidon2_batch_execution_mode(32), ExecutionMode::HostFallback);
+    assert_eq!(hip.poseidon2_batch_execution_mode(256), ExecutionMode::Accelerator);
 }
 
 #[test]
@@ -517,6 +522,25 @@ fn split_nc_execution_mode_reports_cpu_host_fallback_and_accelerator() {
         .expect("connect cuda mock mojo session");
     assert_eq!(cuda.split_nc_execution_mode(64), ExecutionMode::HostFallback);
     assert_eq!(cuda.split_nc_execution_mode(1024), ExecutionMode::Accelerator);
+
+    let hip = connect(&MojoBackendConfig::new(DeviceApi::Hip).with_library_path(build_mock_library()))
+        .expect("connect hip mock mojo session");
+    assert_eq!(hip.split_nc_execution_mode(64), ExecutionMode::HostFallback);
+    assert_eq!(hip.split_nc_execution_mode(1024), ExecutionMode::Accelerator);
+}
+
+#[test]
+#[ignore = "requires local Mojo toolchain"]
+fn real_mojo_cpu_session_ignores_nonzero_device_id() {
+    let library_path = build_real_mojo_library();
+    let cfg = MojoBackendConfig::new(DeviceApi::Cpu)
+        .with_device_id(7)
+        .with_library_path(library_path);
+
+    let session = connect(&cfg).expect("connect cpu mojo session with nonzero device id");
+    assert_eq!(session.device_api(), DeviceApi::Cpu);
+    assert!(session.supports_poseidon2_api());
+    assert!(session.supports_split_nc_api());
 }
 
 #[test]
@@ -727,29 +751,33 @@ fn real_mojo_split_nc_direct_fold_state_matches_loader_reference() {
     let session = connect(&MojoBackendConfig::new(DeviceApi::Cpu).with_library_path(library_path))
         .expect("connect to real mojo gpu library");
 
-    let points = vec![
-        FlatK::default(),
-        FlatK { re: 1, im: 0 },
-        FlatK { re: 5, im: 7 },
-    ];
+    let points = vec![FlatK::default(), FlatK { re: 1, im: 0 }, FlatK { re: 5, im: 7 }];
     let challenge = FlatK { re: 3, im: 1 };
 
     let rich_fe = rich_fe_snapshot();
     let mut fe_loader = session
         .create_fe_evaluator(&rich_fe)
         .expect("create loader fe evaluator");
-    let fe_before = fe_loader.evals_at(&points).expect("loader fe evals before fold");
+    let fe_before = fe_loader
+        .evals_at(&points)
+        .expect("loader fe evals before fold");
     fe_loader.fold(challenge).expect("loader fe fold");
-    let fe_after = fe_loader.evals_at(&points).expect("loader fe evals after fold");
+    let fe_after = fe_loader
+        .evals_at(&points)
+        .expect("loader fe evals after fold");
     assert_ne!(fe_before, fe_after);
 
     let rich_nc = rich_nc_snapshot();
     let mut nc_loader = session
         .create_nc_evaluator(&rich_nc)
         .expect("create loader nc evaluator");
-    let nc_before = nc_loader.evals_at(&points).expect("loader nc evals before fold");
+    let nc_before = nc_loader
+        .evals_at(&points)
+        .expect("loader nc evals before fold");
     nc_loader.fold(challenge).expect("loader nc fold");
-    let nc_after = nc_loader.evals_at(&points).expect("loader nc evals after fold");
+    let nc_after = nc_loader
+        .evals_at(&points)
+        .expect("loader nc evals after fold");
     assert_ne!(nc_before, nc_after);
 
     let lib = unsafe { Library::new(library_path) }.expect("load real mojo gpu library");
@@ -1021,6 +1049,100 @@ fn real_mojo_cuda_split_nc_smoke_matches_cpu_reference() {
     assert_eq!(
         cuda_nc.evals_at(&points).expect("cuda nc evals"),
         cpu_nc.evals_at(&points).expect("cpu nc evals"),
+    );
+}
+
+#[test]
+#[ignore = "requires CUDA-capable Mojo runtime"]
+fn real_mojo_cuda_fe_evaluator_create_evals_fold_matches_cpu_reference() {
+    let library_path = build_real_mojo_library();
+    let cfg = MojoBackendConfig::new(DeviceApi::Cuda).with_library_path(library_path);
+
+    let Ok(cuda_session) = connect(&cfg) else {
+        eprintln!("skipping: real Mojo shared-library CUDA session is not available in this runtime");
+        return;
+    };
+    assert_eq!(cuda_session.device_api(), DeviceApi::Cuda);
+
+    let cpu_cfg = MojoBackendConfig::new(DeviceApi::Cpu).with_library_path(build_real_mojo_library());
+    let cpu_session = connect(&cpu_cfg).expect("connect cpu mojo session");
+
+    let points = vec![
+        FlatK::default(),
+        FlatK { re: 1, im: 0 },
+        FlatK { re: 5, im: 7 },
+        FlatK { re: 11, im: 13 },
+    ];
+    let challenge = FlatK { re: 3, im: 1 };
+
+    let rich_fe = rich_fe_snapshot();
+    let mut cpu_fe = cpu_session
+        .create_fe_evaluator(&rich_fe)
+        .expect("create cpu fe evaluator");
+    let mut cuda_fe = cuda_session
+        .create_fe_evaluator(&rich_fe)
+        .expect("create cuda fe evaluator");
+
+    assert_eq!(
+        cuda_fe
+            .evals_at(&points)
+            .expect("cuda fe evals before fold"),
+        cpu_fe.evals_at(&points).expect("cpu fe evals before fold"),
+    );
+
+    cpu_fe.fold(challenge).expect("cpu fe fold");
+    cuda_fe.fold(challenge).expect("cuda fe fold");
+
+    assert_eq!(
+        cuda_fe.evals_at(&points).expect("cuda fe evals after fold"),
+        cpu_fe.evals_at(&points).expect("cpu fe evals after fold"),
+    );
+}
+
+#[test]
+#[ignore = "requires CUDA-capable Mojo runtime"]
+fn real_mojo_cuda_nc_evaluator_create_evals_fold_matches_cpu_reference() {
+    let library_path = build_real_mojo_library();
+    let cfg = MojoBackendConfig::new(DeviceApi::Cuda).with_library_path(library_path);
+
+    let Ok(cuda_session) = connect(&cfg) else {
+        eprintln!("skipping: real Mojo shared-library CUDA session is not available in this runtime");
+        return;
+    };
+    assert_eq!(cuda_session.device_api(), DeviceApi::Cuda);
+
+    let cpu_cfg = MojoBackendConfig::new(DeviceApi::Cpu).with_library_path(build_real_mojo_library());
+    let cpu_session = connect(&cpu_cfg).expect("connect cpu mojo session");
+
+    let points = vec![
+        FlatK::default(),
+        FlatK { re: 1, im: 0 },
+        FlatK { re: 17, im: 19 },
+        FlatK { re: 23, im: 29 },
+    ];
+    let challenge = FlatK { re: 5, im: 2 };
+
+    let rich_nc = rich_nc_snapshot();
+    let mut cpu_nc = cpu_session
+        .create_nc_evaluator(&rich_nc)
+        .expect("create cpu nc evaluator");
+    let mut cuda_nc = cuda_session
+        .create_nc_evaluator(&rich_nc)
+        .expect("create cuda nc evaluator");
+
+    assert_eq!(
+        cuda_nc
+            .evals_at(&points)
+            .expect("cuda nc evals before fold"),
+        cpu_nc.evals_at(&points).expect("cpu nc evals before fold"),
+    );
+
+    cpu_nc.fold(challenge).expect("cpu nc fold");
+    cuda_nc.fold(challenge).expect("cuda nc fold");
+
+    assert_eq!(
+        cuda_nc.evals_at(&points).expect("cuda nc evals after fold"),
+        cpu_nc.evals_at(&points).expect("cpu nc evals after fold"),
     );
 }
 

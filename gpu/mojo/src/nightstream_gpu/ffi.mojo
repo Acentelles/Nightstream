@@ -15,7 +15,7 @@ fn request_word(req_addr: UInt) -> UInt64:
 
 
 fn accelerator_requested(req_word: UInt64) -> Bool:
-    return req_word != UInt64(0)
+    return unpack_api(req_word) != UInt32(DEVICE_API_CPU)
 
 
 fn device_api_available(req_word: UInt64) -> Bool:
