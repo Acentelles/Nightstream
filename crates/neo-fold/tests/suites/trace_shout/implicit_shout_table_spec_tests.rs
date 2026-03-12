@@ -130,11 +130,13 @@ fn absorb_step_memory_binds_table_spec() {
     };
 
     let mut tr_add = Poseidon2Transcript::new(b"bind-table-spec");
-    absorb_step_memory(&mut tr_add, &make_step(RiscvOpcode::Add));
+    let step_add = make_step(RiscvOpcode::Add);
+    absorb_step_memory(&mut tr_add, &step_add.lut_insts, &step_add.mem_insts);
     let d_add = tr_add.digest32();
 
     let mut tr_sub = Poseidon2Transcript::new(b"bind-table-spec");
-    absorb_step_memory(&mut tr_sub, &make_step(RiscvOpcode::Sub));
+    let step_sub = make_step(RiscvOpcode::Sub);
+    absorb_step_memory(&mut tr_sub, &step_sub.lut_insts, &step_sub.mem_insts);
     let d_sub = tr_sub.digest32();
 
     assert_ne!(d_add, d_sub, "transcript must bind `table_spec` fields");

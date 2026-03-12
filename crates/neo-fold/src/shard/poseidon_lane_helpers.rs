@@ -1494,7 +1494,7 @@ where
     }
     let lane_committer = poseidon_lane_committer(params, committer_cols, "poseidon lane fold")?;
     let wit_refs: Vec<&Mat<F>> = lane_wits.iter().collect();
-    let (proof, _dec_wits) = prove_rlc_dec_lane(
+    let (proof, _dec_wits, _parent_wit) = prove_rlc_dec_lane(
         mode,
         RlcLane::Val,
         tr,

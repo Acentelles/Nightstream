@@ -444,7 +444,7 @@ where
             .ok_or_else(|| PiCcsError::InvalidInput("step index overflow".into()))?;
 
         for step in batch {
-            absorb_step_memory(tr, step);
+            absorb_step_memory(tr, &step.lut_insts, &step.mem_insts);
         }
         ensure_empty_sidecars_in_step_proof(step_idx, step_proof)?;
 

@@ -1,3 +1,10 @@
+//! Route-A batched time-claim proving and verification.
+//!
+//! This module owns the grouped stage claim/config surface for the shared
+//! Twist/Shout batched time sumcheck. It intentionally models claims by
+//! semantic stage instead of passing a long positional list of optional
+//! claims/config flags.
+
 use neo_ajtai::Commitment as Cmt;
 use neo_math::{F, K};
 use neo_memory::ts_common as ts;
@@ -24,6 +31,107 @@ pub struct ExtraBatchedTimeClaim {
     pub oracle: Box<dyn RoundOracle + Send>,
     pub claimed_sum: K,
     pub label: &'static [u8],
+}
+
+#[derive(Default)]
+pub struct DecodeTimeClaims {
+    pub decode_fields: Option<ExtraBatchedTimeClaim>,
+    pub decode_immediates: Option<ExtraBatchedTimeClaim>,
+}
+
+#[derive(Default)]
+pub struct WidthTimeClaims {
+    pub bitness: Option<ExtraBatchedTimeClaim>,
+    pub quiescence: Option<ExtraBatchedTimeClaim>,
+    pub selector_linkage: Option<ExtraBatchedTimeClaim>,
+    pub load_semantics: Option<ExtraBatchedTimeClaim>,
+    pub store_semantics: Option<ExtraBatchedTimeClaim>,
+}
+
+#[derive(Default)]
+pub struct ControlTimeClaims {
+    pub next_pc_linear: Option<ExtraBatchedTimeClaim>,
+    pub next_pc_control: Option<ExtraBatchedTimeClaim>,
+    pub branch_semantics: Option<ExtraBatchedTimeClaim>,
+    pub control_writeback: Option<ExtraBatchedTimeClaim>,
+}
+
+#[derive(Default)]
+pub struct PoseidonCycleTimeClaims {
+    pub io_link: Option<ExtraBatchedTimeClaim>,
+    pub bitness: Option<ExtraBatchedTimeClaim>,
+    pub canonical_u64: Option<ExtraBatchedTimeClaim>,
+    pub sidecar_link: Option<ExtraBatchedTimeClaim>,
+    pub mode: Option<ExtraBatchedTimeClaim>,
+    pub link_cycle_inv: Option<ExtraBatchedTimeClaim>,
+    pub link_cycle_sum: Option<ExtraBatchedTimeClaim>,
+    pub cont_inv: Option<ExtraBatchedTimeClaim>,
+    pub cont_sum: Option<ExtraBatchedTimeClaim>,
+}
+
+#[derive(Default)]
+pub struct OutputBindingTimeClaims {
+    pub reg_exact_linkage: Option<ExtraBatchedTimeClaim>,
+    pub inc_total: Option<ExtraBatchedTimeClaim>,
+}
+
+#[derive(Default)]
+pub struct RouteABatchedTimeClaims {
+    pub wb: Option<ExtraBatchedTimeClaim>,
+    pub wp: Option<ExtraBatchedTimeClaim>,
+    pub decode: DecodeTimeClaims,
+    pub width: WidthTimeClaims,
+    pub control: ControlTimeClaims,
+    pub poseidon: PoseidonCycleTimeClaims,
+    pub output_binding: OutputBindingTimeClaims,
+}
+
+impl RouteABatchedTimeClaims {
+    fn decode_stage_enabled(&self) -> bool {
+        self.decode.decode_fields.is_some() || self.decode.decode_immediates.is_some()
+    }
+
+    fn width_stage_enabled(&self) -> bool {
+        self.width.bitness.is_some()
+            || self.width.quiescence.is_some()
+            || self.width.selector_linkage.is_some()
+            || self.width.load_semantics.is_some()
+            || self.width.store_semantics.is_some()
+    }
+
+    fn control_stage_enabled(&self) -> bool {
+        self.control.next_pc_linear.is_some()
+            || self.control.next_pc_control.is_some()
+            || self.control.branch_semantics.is_some()
+            || self.control.control_writeback.is_some()
+    }
+
+    fn poseidon_cycle_enabled(&self) -> bool {
+        self.poseidon.io_link.is_some()
+            || self.poseidon.bitness.is_some()
+            || self.poseidon.canonical_u64.is_some()
+            || self.poseidon.sidecar_link.is_some()
+            || self.poseidon.mode.is_some()
+            || self.poseidon.link_cycle_inv.is_some()
+            || self.poseidon.link_cycle_sum.is_some()
+            || self.poseidon.cont_inv.is_some()
+            || self.poseidon.cont_sum.is_some()
+    }
+}
+
+pub struct OutputBindingTimeVerifyConfig {
+    pub reg_exact_linkage_degree_bound: Option<usize>,
+    pub inc_total_degree_bound: Option<usize>,
+}
+
+pub struct RouteABatchedTimeVerifyConfig {
+    pub wb_enabled: bool,
+    pub wp_enabled: bool,
+    pub decode_stage_enabled: bool,
+    pub width_stage_enabled: bool,
+    pub control_stage_enabled: bool,
+    pub poseidon_cycle_enabled: bool,
+    pub output_binding: OutputBindingTimeVerifyConfig,
 }
 
 fn split_extra_claim(
@@ -73,31 +181,23 @@ pub fn prove_route_a_batched_time(
     step: &StepWitnessBundle<Cmt, F, K>,
     twist_read_claims: Vec<K>,
     twist_write_claims: Vec<K>,
-    wb_time_claim: Option<ExtraBatchedTimeClaim>,
-    wp_time_claim: Option<ExtraBatchedTimeClaim>,
-    decode_decode_fields_claim: Option<ExtraBatchedTimeClaim>,
-    decode_decode_immediates_claim: Option<ExtraBatchedTimeClaim>,
-    width_bitness_claim: Option<ExtraBatchedTimeClaim>,
-    width_quiescence_claim: Option<ExtraBatchedTimeClaim>,
-    width_selector_linkage_claim: Option<ExtraBatchedTimeClaim>,
-    width_load_semantics_claim: Option<ExtraBatchedTimeClaim>,
-    width_store_semantics_claim: Option<ExtraBatchedTimeClaim>,
-    control_next_pc_linear_claim: Option<ExtraBatchedTimeClaim>,
-    control_next_pc_control_claim: Option<ExtraBatchedTimeClaim>,
-    control_branch_semantics_claim: Option<ExtraBatchedTimeClaim>,
-    control_control_writeback_claim: Option<ExtraBatchedTimeClaim>,
-    poseidon_io_link_claim: Option<ExtraBatchedTimeClaim>,
-    poseidon_bitness_claim: Option<ExtraBatchedTimeClaim>,
-    poseidon_canonical_u64_claim: Option<ExtraBatchedTimeClaim>,
-    poseidon_sidecar_link_claim: Option<ExtraBatchedTimeClaim>,
-    poseidon_mode_claim: Option<ExtraBatchedTimeClaim>,
-    poseidon_link_cycle_inv_claim: Option<ExtraBatchedTimeClaim>,
-    poseidon_link_cycle_sum_claim: Option<ExtraBatchedTimeClaim>,
-    poseidon_cont_inv_claim: Option<ExtraBatchedTimeClaim>,
-    poseidon_cont_sum_claim: Option<ExtraBatchedTimeClaim>,
-    ob_reg_exact_linkage: Option<ExtraBatchedTimeClaim>,
-    ob_inc_total: Option<ExtraBatchedTimeClaim>,
+    claims: RouteABatchedTimeClaims,
 ) -> Result<RouteABatchedTimeProverOutput, PiCcsError> {
+    let wb_enabled = claims.wb.is_some();
+    let wp_enabled = claims.wp.is_some();
+    let decode_stage_enabled = claims.decode_stage_enabled();
+    let width_stage_enabled = claims.width_stage_enabled();
+    let control_stage_enabled = claims.control_stage_enabled();
+    let poseidon_cycle_enabled = claims.poseidon_cycle_enabled();
+    let RouteABatchedTimeClaims {
+        wb,
+        wp,
+        decode,
+        width,
+        control,
+        poseidon,
+        output_binding,
+    } = claims;
     let mut claimed_sums: Vec<K> = Vec::new();
     let mut degree_bounds: Vec<usize> = Vec::new();
     let mut labels: Vec<&'static [u8]> = Vec::new();
@@ -144,9 +244,10 @@ pub fn prove_route_a_batched_time(
         &mut claims,
     )?;
     macro_rules! append_zero_optional_claim {
-        ($claim_opt:ident, $degree_bound:ident, $oracle:ident, $label:ident, $missing_label_msg:literal, $missing_claimed_sum_msg:literal) => {
-            let $degree_bound = $claim_opt.as_ref().map(|extra| extra.oracle.degree_bound());
-            let (mut $oracle, $label, _claimed_sum) = split_extra_claim($claim_opt);
+        ($claim_opt:expr, $degree_bound:ident, $oracle:ident, $label:ident, $missing_label_msg:literal, $missing_claimed_sum_msg:literal) => {
+            let claim_opt = $claim_opt;
+            let $degree_bound = claim_opt.as_ref().map(|extra| extra.oracle.degree_bound());
+            let (mut $oracle, $label, _claimed_sum) = split_extra_claim(claim_opt);
             append_optional_claim(
                 &mut $oracle,
                 $label,
@@ -164,9 +265,10 @@ pub fn prove_route_a_batched_time(
     }
 
     macro_rules! append_dynamic_optional_claim {
-        ($claim_opt:ident, $degree_bound:ident, $oracle:ident, $label:ident, $claimed_sum:ident, $missing_label_msg:literal, $missing_claimed_sum_msg:literal) => {
-            let $degree_bound = $claim_opt.as_ref().map(|extra| extra.oracle.degree_bound());
-            let (mut $oracle, $label, $claimed_sum) = split_extra_claim($claim_opt);
+        ($claim_opt:expr, $degree_bound:ident, $oracle:ident, $label:ident, $claimed_sum:ident, $missing_label_msg:literal, $missing_claimed_sum_msg:literal) => {
+            let claim_opt = $claim_opt;
+            let $degree_bound = claim_opt.as_ref().map(|extra| extra.oracle.degree_bound());
+            let (mut $oracle, $label, $claimed_sum) = split_extra_claim(claim_opt);
             append_optional_claim(
                 &mut $oracle,
                 $label,
@@ -184,160 +286,160 @@ pub fn prove_route_a_batched_time(
     }
 
     append_zero_optional_claim!(
-        wb_time_claim,
-        wb_time_degree_bound,
+        wb,
+        _wb_time_degree_bound,
         wb_time_oracle,
         wb_time_label,
         "missing wb_time label",
         "missing wb_time claimed_sum"
     );
     append_zero_optional_claim!(
-        wp_time_claim,
-        wp_time_degree_bound,
+        wp,
+        _wp_time_degree_bound,
         wp_time_oracle,
         wp_time_label,
         "missing wp_time label",
         "missing wp_time claimed_sum"
     );
     append_zero_optional_claim!(
-        decode_decode_fields_claim,
-        decode_decode_fields_degree_bound,
+        decode.decode_fields,
+        _decode_decode_fields_degree_bound,
         decode_decode_fields_oracle,
         decode_decode_fields_label,
         "missing decode_fields label",
         "missing decode_fields claimed_sum"
     );
     append_zero_optional_claim!(
-        decode_decode_immediates_claim,
-        decode_decode_immediates_degree_bound,
+        decode.decode_immediates,
+        _decode_decode_immediates_degree_bound,
         decode_decode_immediates_oracle,
         decode_decode_immediates_label,
         "missing decode_immediates label",
         "missing decode_immediates claimed_sum"
     );
     append_zero_optional_claim!(
-        width_bitness_claim,
-        width_bitness_degree_bound,
+        width.bitness,
+        _width_bitness_degree_bound,
         width_bitness_oracle,
         width_bitness_label,
         "missing width_bitness label",
         "missing width_bitness claimed_sum"
     );
     append_zero_optional_claim!(
-        width_quiescence_claim,
-        width_quiescence_degree_bound,
+        width.quiescence,
+        _width_quiescence_degree_bound,
         width_quiescence_oracle,
         width_quiescence_label,
         "missing width_quiescence label",
         "missing width_quiescence claimed_sum"
     );
     append_zero_optional_claim!(
-        width_selector_linkage_claim,
-        width_selector_linkage_degree_bound,
+        width.selector_linkage,
+        _width_selector_linkage_degree_bound,
         width_selector_linkage_oracle,
         width_selector_linkage_label,
         "missing width_selector_linkage label",
         "missing width_selector_linkage claimed_sum"
     );
     append_zero_optional_claim!(
-        width_load_semantics_claim,
-        width_load_semantics_degree_bound,
+        width.load_semantics,
+        _width_load_semantics_degree_bound,
         width_load_semantics_oracle,
         width_load_semantics_label,
         "missing width_load_semantics label",
         "missing width_load_semantics claimed_sum"
     );
     append_zero_optional_claim!(
-        width_store_semantics_claim,
-        width_store_semantics_degree_bound,
+        width.store_semantics,
+        _width_store_semantics_degree_bound,
         width_store_semantics_oracle,
         width_store_semantics_label,
         "missing width_store_semantics label",
         "missing width_store_semantics claimed_sum"
     );
     append_zero_optional_claim!(
-        control_next_pc_linear_claim,
-        control_next_pc_linear_degree_bound,
+        control.next_pc_linear,
+        _control_next_pc_linear_degree_bound,
         control_next_pc_linear_oracle,
         control_next_pc_linear_label,
         "missing control_next_pc_linear label",
         "missing control_next_pc_linear claimed_sum"
     );
     append_zero_optional_claim!(
-        control_next_pc_control_claim,
-        control_next_pc_control_degree_bound,
+        control.next_pc_control,
+        _control_next_pc_control_degree_bound,
         control_next_pc_control_oracle,
         control_next_pc_control_label,
         "missing control_next_pc_control label",
         "missing control_next_pc_control claimed_sum"
     );
     append_zero_optional_claim!(
-        control_branch_semantics_claim,
-        control_branch_semantics_degree_bound,
+        control.branch_semantics,
+        _control_branch_semantics_degree_bound,
         control_branch_semantics_oracle,
         control_branch_semantics_label,
         "missing control_branch_semantics label",
         "missing control_branch_semantics claimed_sum"
     );
     append_zero_optional_claim!(
-        control_control_writeback_claim,
-        control_control_writeback_degree_bound,
+        control.control_writeback,
+        _control_control_writeback_degree_bound,
         control_control_writeback_oracle,
         control_control_writeback_label,
         "missing control_writeback label",
         "missing control_writeback claimed_sum"
     );
     append_zero_optional_claim!(
-        poseidon_io_link_claim,
-        poseidon_io_link_degree_bound,
+        poseidon.io_link,
+        _poseidon_io_link_degree_bound,
         poseidon_io_link_oracle,
         poseidon_io_link_label,
         "missing poseidon/io_link label",
         "missing poseidon/io_link claimed_sum"
     );
     append_zero_optional_claim!(
-        poseidon_bitness_claim,
-        poseidon_bitness_degree_bound,
+        poseidon.bitness,
+        _poseidon_bitness_degree_bound,
         poseidon_bitness_oracle,
         poseidon_bitness_label,
         "missing poseidon/bitness label",
         "missing poseidon/bitness claimed_sum"
     );
     append_zero_optional_claim!(
-        poseidon_canonical_u64_claim,
-        poseidon_canonical_u64_degree_bound,
+        poseidon.canonical_u64,
+        _poseidon_canonical_u64_degree_bound,
         poseidon_canonical_u64_oracle,
         poseidon_canonical_u64_label,
         "missing poseidon/canonical_u64 label",
         "missing poseidon/canonical_u64 claimed_sum"
     );
     append_zero_optional_claim!(
-        poseidon_sidecar_link_claim,
-        poseidon_sidecar_link_degree_bound,
+        poseidon.sidecar_link,
+        _poseidon_sidecar_link_degree_bound,
         poseidon_sidecar_link_oracle,
         poseidon_sidecar_link_label,
         "missing poseidon/sidecar_link label",
         "missing poseidon/sidecar_link claimed_sum"
     );
     append_zero_optional_claim!(
-        poseidon_mode_claim,
-        poseidon_mode_degree_bound,
+        poseidon.mode,
+        _poseidon_mode_degree_bound,
         poseidon_mode_oracle,
         poseidon_mode_label,
         "missing poseidon/mode label",
         "missing poseidon/mode claimed_sum"
     );
     append_zero_optional_claim!(
-        poseidon_link_cycle_inv_claim,
-        poseidon_link_cycle_inv_degree_bound,
+        poseidon.link_cycle_inv,
+        _poseidon_link_cycle_inv_degree_bound,
         poseidon_link_cycle_inv_oracle,
         poseidon_link_cycle_inv_label,
         "missing poseidon/link_cycle_inv label",
         "missing poseidon/link_cycle_inv claimed_sum"
     );
     append_dynamic_optional_claim!(
-        poseidon_link_cycle_sum_claim,
-        poseidon_link_cycle_sum_degree_bound,
+        poseidon.link_cycle_sum,
+        _poseidon_link_cycle_sum_degree_bound,
         poseidon_link_cycle_sum_oracle,
         poseidon_link_cycle_sum_label,
         poseidon_link_cycle_sum_claimed_sum,
@@ -345,23 +447,23 @@ pub fn prove_route_a_batched_time(
         "missing poseidon/link_cycle_sum claimed_sum"
     );
     append_zero_optional_claim!(
-        poseidon_cont_inv_claim,
-        poseidon_cont_inv_degree_bound,
+        poseidon.cont_inv,
+        _poseidon_cont_inv_degree_bound,
         poseidon_cont_inv_oracle,
         poseidon_cont_inv_label,
         "missing poseidon/cont_inv label",
         "missing poseidon/cont_inv claimed_sum"
     );
     append_zero_optional_claim!(
-        poseidon_cont_sum_claim,
-        poseidon_cont_sum_degree_bound,
+        poseidon.cont_sum,
+        _poseidon_cont_sum_degree_bound,
         poseidon_cont_sum_oracle,
         poseidon_cont_sum_label,
         "missing poseidon/cont_sum label",
         "missing poseidon/cont_sum claimed_sum"
     );
     append_zero_optional_claim!(
-        ob_reg_exact_linkage,
+        output_binding.reg_exact_linkage,
         ob_reg_exact_linkage_degree_bound,
         ob_reg_exact_linkage_oracle,
         ob_reg_exact_linkage_label,
@@ -369,7 +471,7 @@ pub fn prove_route_a_batched_time(
         "missing ob_reg_exact_linkage claimed_sum"
     );
     append_dynamic_optional_claim!(
-        ob_inc_total,
+        output_binding.inc_total,
         ob_inc_total_degree_bound,
         ob_inc_total_oracle,
         ob_inc_total_label,
@@ -381,27 +483,12 @@ pub fn prove_route_a_batched_time(
     let metas = RouteATimeClaimPlan::time_claim_metas_for_instances(
         step.lut_instances.iter().map(|(inst, _)| inst),
         step.mem_instances.iter().map(|(inst, _)| inst),
-        wb_time_degree_bound.is_some(),
-        wp_time_degree_bound.is_some(),
-        decode_decode_fields_degree_bound.is_some() || decode_decode_immediates_degree_bound.is_some(),
-        width_bitness_degree_bound.is_some()
-            || width_quiescence_degree_bound.is_some()
-            || width_selector_linkage_degree_bound.is_some()
-            || width_load_semantics_degree_bound.is_some()
-            || width_store_semantics_degree_bound.is_some(),
-        control_next_pc_linear_degree_bound.is_some()
-            || control_next_pc_control_degree_bound.is_some()
-            || control_branch_semantics_degree_bound.is_some()
-            || control_control_writeback_degree_bound.is_some(),
-        poseidon_io_link_degree_bound.is_some()
-            || poseidon_bitness_degree_bound.is_some()
-            || poseidon_canonical_u64_degree_bound.is_some()
-            || poseidon_sidecar_link_degree_bound.is_some()
-            || poseidon_mode_degree_bound.is_some()
-            || poseidon_link_cycle_inv_degree_bound.is_some()
-            || poseidon_link_cycle_sum_degree_bound.is_some()
-            || poseidon_cont_inv_degree_bound.is_some()
-            || poseidon_cont_sum_degree_bound.is_some(),
+        wb_enabled,
+        wp_enabled,
+        decode_stage_enabled,
+        width_stage_enabled,
+        control_stage_enabled,
+        poseidon_cycle_enabled,
         ob_reg_exact_linkage_degree_bound,
         ob_inc_total_degree_bound,
     );
@@ -479,25 +566,18 @@ pub fn verify_route_a_batched_time(
     ell_t: usize,
     step: &StepInstanceBundle<Cmt, F, K>,
     proof: &BatchedTimeProof,
-    wb_enabled: bool,
-    wp_enabled: bool,
-    decode_stage_enabled: bool,
-    width_stage_enabled: bool,
-    control_stage_enabled: bool,
-    poseidon_cycle_enabled: bool,
-    ob_reg_exact_linkage_degree_bound: Option<usize>,
-    ob_inc_total_degree_bound: Option<usize>,
+    config: RouteABatchedTimeVerifyConfig,
 ) -> Result<RouteABatchedTimeVerifyOutput, PiCcsError> {
     let metas = RouteATimeClaimPlan::time_claim_metas_for_step(
         step,
-        wb_enabled,
-        wp_enabled,
-        decode_stage_enabled,
-        width_stage_enabled,
-        control_stage_enabled,
-        poseidon_cycle_enabled,
-        ob_reg_exact_linkage_degree_bound,
-        ob_inc_total_degree_bound,
+        config.wb_enabled,
+        config.wp_enabled,
+        config.decode_stage_enabled,
+        config.width_stage_enabled,
+        config.control_stage_enabled,
+        config.poseidon_cycle_enabled,
+        config.output_binding.reg_exact_linkage_degree_bound,
+        config.output_binding.inc_total_degree_bound,
     );
     let expected_degree_bounds: Vec<usize> = metas.iter().map(|m| m.degree_bound).collect();
     let expected_labels: Vec<&'static [u8]> = metas.iter().map(|m| m.label).collect();
