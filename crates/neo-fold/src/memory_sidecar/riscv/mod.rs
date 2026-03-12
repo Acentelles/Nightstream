@@ -2,6 +2,7 @@ use crate::memory_sidecar::memory::*;
 
 pub(crate) mod control_residuals;
 pub(crate) mod decode_residuals;
+pub(crate) mod decode_time_claims;
 pub(crate) mod oracles;
 pub(crate) mod packed_ops;
 pub(crate) mod rv64_reg_output;
@@ -12,6 +13,7 @@ pub(crate) mod width_residuals;
 
 pub(crate) use control_residuals::*;
 pub(crate) use decode_residuals::*;
+pub(crate) use decode_time_claims::*;
 pub(crate) use oracles::*;
 pub(crate) use packed_ops::*;
 pub(crate) use rv64_reg_output::*;
