@@ -4,6 +4,7 @@
 
 - **What it is**: The maintained product-facing RV64IM trace-wiring path for `neo-fold`.
 - **What it owns**: The maintained ELF/program loading path, RV64 trace preparation, prove/verify execution over that trace, and the result-bundle surface for consumers and exporters.
+- **Routing boundary**: All instruction routing and state-transition glue lives in the main-lane CCS as uniform flag-gated constraints (Jolt model). This includes decode routing, control-flow routing, register writeback routing, and all load/store width routing (LB/LBU/LH/LHU/LW/LWU/LD/SB/SH/SW/SD). No frontend decode or width transport exists. No fake Shout transport tables exist. Maintained RV64 does not schedule a Route-A decode stage. The sidecar owns only real Twist, real Shout, and virtual decomposition.
 - **What it must not do**: Become the owner of shard/session theorem semantics or quietly diverge from the maintained lower shard/session contracts.
 
 ## Architectural Position
@@ -20,6 +21,7 @@
 |---|---|---|---|
 | supported RV64 program input and machine-state initialization | Jolt execution model | `Rv64TraceWiring::from_elf`, `ram_init_u32`, `ram_init_u64`, `reg_init_u64` | Maintained RV64 program and state-loading path |
 | prepared program / trace preprocessing | implementation support | `Rv64PreparedProgram`, `prepare`, `simulate` | Preprocessed program/input state and simulation |
+| routing boundary | implementation support | `Rv64TraceWiring::prove`, RV64 trace metadata columns, main-lane CCS constraints | All routing/glue constraints live in the main-lane CCS. No frontend decode or width transport. No fake Shout transport tables. No maintained-RV64 Route-A decode stage. Sidecar owns only real Twist/Shout and virtual decomposition. |
 | trace-proving configuration | implementation support | `profile`, `min_trace_len`, `chunk_rows`, `max_steps`, `mode`, output-claim methods | Maintained proof-path configuration |
 | prove run | implementation support | `Rv64TraceWiring::prove` | Executes the maintained proof run |
 | prove/verify result bundle | implementation support | `Rv64TraceWiringRun` | Holds proof, CCS, layout, outputs, and profiling information |
@@ -89,6 +91,9 @@ This module is not a direct paper-theorem owner.
 |---|---|---|
 | Maintained RV64 trace runs produce shard/session inputs accepted by the maintained proving path | Core frontend contract | Integration tests and runtime checks |
 | Output binding and linking are wired consistently with lower shard/session semantics | Prevents frontend-specific semantic drift | Integration tests and refinement corpus |
+| No frontend decode or width transport exists, and no maintained-RV64 Route-A decode stage exists | Prevents fake transport anti-pattern from reappearing | Integration tests and runtime checks |
+| All routing/glue constraints live in the main-lane CCS, not in Route-A sidecar residuals | Prevents routing from drifting back into the sidecar | Integration tests and runtime checks |
+| No fake Shout transport tables exist — every Shout table performs real lookup verification | Prevents transport-only anti-pattern from reappearing | Integration tests and runtime checks |
 | Unsupported or malformed programs/configurations fail cleanly | Prevents weakened semantics through partial execution | Tests and API behavior |
 | Internal RAM bridge support remains aligned with maintained semantics | Prevents hidden frontend divergence | Integration tests and review |
 
@@ -125,6 +130,9 @@ Primary consumers:
 - This module should define the maintained product path explicitly.
 - Legacy/reference behavior must not dictate maintained-path semantics.
 - Output-binding and linking options should remain obvious and intentional.
+- No routing, decode, control, or width constraints in the sidecar — all belong to main-lane CCS.
+- No fake transport tables — every Shout table performs real lookup verification.
+- No frontend decode or width transport of any kind.
 
 ## Acceptance Criteria
 

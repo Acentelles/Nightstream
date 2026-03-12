@@ -3,8 +3,9 @@
 ## Purpose
 
 - **What it is**: The Route-A memory and lookup sidecar layer that instantiates Twist/Shout-style claims, openings, and checks for shard folding.
-- **What it owns**: Claim planning, batched time claims, Route-A claim construction, address pre-proofs, transcript binding for sidecar objects, and final Route-A step verification.
-- **What it must not do**: Become the owner of shard orchestration or session policy, or weaken paper sidecar semantics into implementation-only shortcuts.
+- **What it owns**: Real Twist (RAM/register consistency), real Shout (ALU/opcode lookup membership), virtual decomposition (MUL/DIV multi-limb sequences), Poseidon/precompiles, claim planning, batched time claims, Route-A claim construction, address pre-proofs, transcript binding, and final Route-A step verification.
+- **What it does not own**: Instruction routing/state-transition glue (main lane), decode/control flag routing (main lane), load/store width routing (main lane), fake transport of any kind. All routing and glue constraints live in the main-lane CCS as uniform flag-gated constraints following the Jolt model. On the maintained RV64 path this includes `LB/LBU/LH/LHU/LW/LWU/LD/SB/SH/SW/SD`, and Route-A has no maintained-RV64 decode stage there.
+- **What it must not do**: Become the owner of shard orchestration or session policy, weaken paper sidecar semantics into implementation-only shortcuts, or re-introduce routing/glue/decode/width ownership that belongs in the main lane.
 
 ## Architectural Position
 
@@ -22,6 +23,7 @@ In repo terminology, the "Nightstream extension layer" is the combination of Rou
 |---|---|---|---|
 | Shout time/address/lookup checks | Twist/Shout §4 | `RouteAShoutTimeClaimsGuard`, `ShoutRouteAProtocol`, `verify_shout_addr_pre_time` | Lookup-side Route-A proof machinery |
 | Twist time/address/increment checks | Twist/Shout §5 | `RouteATwistTimeClaimsGuard`, `TwistRouteAProtocol`, `verify_twist_addr_pre_time` | Memory-side Route-A proof machinery |
+| virtual decomposition stages | implementation support over Twist/Shout claims | `VirtualTimeClaims`, `verify_route_a_virtual_terminals` | MUL/DIV multi-limb virtual sequences and precompile-specific stages; all decode/control/width routing has moved to the main lane |
 | batched time claims for sidecar stages | Twist/Shout fast prover path | `RouteATimeClaimPlan`, `RouteABatchedTimeClaims`, `prove_route_a_batched_time`, `verify_route_a_batched_time` | Batched time-claim aggregation |
 | final Route-A step verification | implementation support over Twist/Shout claims | `verify_route_a_memory_step` | Verifier-facing sidecar check for one step |
 
@@ -77,7 +79,7 @@ Representative planning methods:
 |---|---|---|---|
 | `RouteABatchedTimeProverOutput` | struct | Core | Prover result for batched time claims |
 | `ExtraBatchedTimeClaim` | struct | Core | One extra batched claim |
-| `DecodeTimeClaims`, `WidthTimeClaims`, `ControlTimeClaims`, `PoseidonCycleTimeClaims`, `OutputBindingTimeClaims` | structs | Core | Stage-grouped time claims |
+| `VirtualTimeClaims`, `PoseidonCycleTimeClaims`, `OutputBindingTimeClaims` | structs | Core | Stage-grouped time claims (decode/control/width stages removed — routing moved to main lane) |
 | `RouteABatchedTimeClaims` | struct | Core | One owner for all stage-grouped batched time claims |
 | `OutputBindingTimeVerifyConfig`, `RouteABatchedTimeVerifyConfig` | structs | Core | Verifier-side grouped config |
 | `prove_route_a_batched_time` | fn | Core | Canonical batched-time prover |
@@ -125,6 +127,8 @@ Representative planning methods:
 | `MS-5` | Auxiliary-lane singleton-input linkage holds for exported artifacts | `NeoFoldRelationValidation` item `2`; `paperArtifactRelationChecks`; `paperArtifactRelationChecks_implies_paperArtifactStepRelationsAccepts` | Ensures auxiliary sidecar lanes feed the folding relation correctly |
 | `MS-6` | Current-step and witness-chain sidecar semantics remain valid after erasing Rust-only sidecars | `NeoFoldStepSemanticValidation` items `1-3`; `paperArtifactStepSemanticChecks`; `paperArtifactStepSemanticChecks_implies_paperArtifactStepSemanticsAccepts` | Prevents sidecar witness drift that still looks structurally well-formed |
 | `MS-7` | Sidecar transcript binding order is prover/verifier consistent | `NeoFoldArtifactValidation` items `2-5` | Prevents challenge drift |
+| `MS-8` | The sidecar does not own any routing/glue/decode/control/width constraints — those belong to the main-lane CCS | ISA-in-CCS plan | Prevents routing from drifting back into the sidecar |
+| `MS-9` | No fake transport tables exist — all Shout tables perform real lookup verification, maintained RV64 does not reintroduce decode/width transport, and maintained RV64 does not schedule Route-A decode claims | ISA-in-CCS plan | Prevents transport-only anti-pattern from reappearing |
 
 ## Assumption Ledger
 
@@ -160,6 +164,9 @@ Primary consumers:
 - Claim ordering and stage requirements must have one obvious owner.
 - Route-A common modules should hide mechanism, not semantic stage meaning.
 - Batched-time APIs should stay grouped by stage semantics rather than positional parameter dumps.
+- No routing, decode, control, or width constraints in the sidecar — all belong to main-lane CCS.
+- No fake transport tables — every Shout table performs real lookup verification.
+- Sidecar stages are limited to: real Twist, real Shout, virtual decomposition, Poseidon/precompiles.
 
 ## Acceptance Criteria
 

@@ -4,6 +4,7 @@ use neo_fold::pi_ccs::FoldingMode;
 use neo_fold::rv64_trace_shard::Rv64TraceWiring;
 use neo_math::F;
 use neo_memory::riscv::lookups::{RiscvInstruction, RiscvMemOp, RiscvOpcode};
+use neo_memory::riscv::trace::{riscv_is_decode_lookup_table_id, riscv_trace_is_width_lookup_table_id};
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
 use p3_goldilocks::Goldilocks;
 
@@ -47,6 +48,23 @@ fn test_rv64_trace_wiring_base_subset_prove_verify() {
         .reg_output_claim_exact_u64(3, 15)
         .prove()
         .expect("prove");
+
+    assert!(
+        run.used_shout_table_ids()
+            .iter()
+            .all(|&table_id| !riscv_is_decode_lookup_table_id(table_id)
+                && !riscv_trace_is_width_lookup_table_id(table_id)),
+        "maintained RV64 base subset must not manufacture decode/width transport tables: {:?}",
+        run.used_shout_table_ids()
+    );
+    assert!(
+        run.proof()
+            .steps
+            .iter()
+            .flat_map(|step| step.batched_time.labels.iter())
+            .all(|label| !label.starts_with(b"decode/")),
+        "maintained RV64 base subset must not schedule Route-A decode claims"
+    );
 
     run.verify().expect("verify");
     assert_eq!(
@@ -138,6 +156,23 @@ fn test_rv64_trace_wiring_base_div_rem_subset_prove_verify() {
             .reg_output_claim_exact_u64(3, expected)
             .prove()
             .expect("prove");
+
+        assert!(
+            run.used_shout_table_ids()
+                .iter()
+                .all(|&table_id| !riscv_is_decode_lookup_table_id(table_id)
+                    && !riscv_trace_is_width_lookup_table_id(table_id)),
+            "maintained RV64 div/rem subset must not manufacture decode/width transport tables: {:?}",
+            run.used_shout_table_ids()
+        );
+        assert!(
+            run.proof()
+                .steps
+                .iter()
+                .flat_map(|step| step.batched_time.labels.iter())
+                .all(|label| !label.starts_with(b"decode/")),
+            "maintained RV64 div/rem subset must not schedule Route-A decode claims"
+        );
 
         run.verify().expect("verify");
     }
@@ -487,6 +522,23 @@ fn test_rv64_trace_wiring_ld_sd_prove_verify() {
         .prove()
         .expect("prove");
 
+    assert!(
+        run.used_shout_table_ids()
+            .iter()
+            .all(|&table_id| !riscv_is_decode_lookup_table_id(table_id)
+                && !riscv_trace_is_width_lookup_table_id(table_id)),
+        "pure LD/SD maintained RV64 path must not manufacture decode/width transport tables: {:?}",
+        run.used_shout_table_ids()
+    );
+    assert!(
+        run.proof()
+            .steps
+            .iter()
+            .flat_map(|step| step.batched_time.labels.iter())
+            .all(|label| !label.starts_with(b"decode/")),
+        "pure LD/SD maintained RV64 path must not schedule Route-A decode claims"
+    );
+
     run.verify().expect("verify");
 }
 
@@ -558,6 +610,23 @@ fn test_rv64_trace_wiring_unsigned_narrow_width_subset_prove_verify() {
         .reg_output_claim_exact_u64(5, 0x78)
         .prove()
         .expect("prove");
+
+    assert!(
+        run.used_shout_table_ids()
+            .iter()
+            .all(|&table_id| !riscv_is_decode_lookup_table_id(table_id)
+                && !riscv_trace_is_width_lookup_table_id(table_id)),
+        "maintained RV64 narrow-width path must not manufacture decode/width transport tables: {:?}",
+        run.used_shout_table_ids()
+    );
+    assert!(
+        run.proof()
+            .steps
+            .iter()
+            .flat_map(|step| step.batched_time.labels.iter())
+            .all(|label| !label.starts_with(b"decode/")),
+        "maintained RV64 narrow-width path must not schedule Route-A decode claims"
+    );
 
     run.verify().expect("verify");
 }
