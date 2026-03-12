@@ -48,62 +48,6 @@ pub(crate) fn decode_k_to_u32(v: K, ctx: &str) -> Result<u32, PiCcsError> {
     Ok(lo as u32)
 }
 
-pub(crate) fn resolve_shared_decode_lookup_lut_indices(
-    step: &StepWitnessBundle<Cmt, F, K>,
-    decode_layout: &Rv32DecodeSidecarLayout,
-) -> Result<(Vec<usize>, Vec<(usize, usize)>), PiCcsError> {
-    let decode_open_cols = riscv_decode_lookup_transport_cols(decode_layout);
-    let mut decode_lut_slots = Vec::with_capacity(decode_open_cols.len());
-    for &col_id in decode_open_cols.iter() {
-        let table_id = riscv_decode_lookup_table_id_for_col(col_id);
-        let lut_idx = step
-            .lut_instances
-            .iter()
-            .position(|(inst, _)| inst.table_id == table_id)
-            .ok_or_else(|| {
-                PiCcsError::ProtocolError(format!(
-                    "W2(shared): missing decode lookup table_id={table_id} for col_id={col_id}"
-                ))
-            })?;
-        let val_slot = riscv_decode_lookup_val_slot_for_col(col_id).ok_or_else(|| {
-            PiCcsError::ProtocolError(format!(
-                "W2(shared): decode col_id={col_id} is not part of decode lookup transport slot map"
-            ))
-        })?;
-        decode_lut_slots.push((lut_idx, val_slot));
-    }
-
-    Ok((decode_open_cols, decode_lut_slots))
-}
-
-pub(crate) fn resolve_shared_width_lookup_lut_indices(
-    step: &StepWitnessBundle<Cmt, F, K>,
-    width_layout: &Rv32WidthSidecarLayout,
-) -> Result<(Vec<usize>, Vec<(usize, usize)>), PiCcsError> {
-    let width_open_cols = riscv_trace_shared_width_lookup_backed_cols(width_layout);
-    let mut width_lut_slots = Vec::with_capacity(width_open_cols.len());
-    for &col_id in width_open_cols.iter() {
-        let table_id = riscv_trace_shared_width_lookup_table_id_for_col(col_id);
-        let lut_idx = step
-            .lut_instances
-            .iter()
-            .position(|(inst, _)| inst.table_id == table_id)
-            .ok_or_else(|| {
-                PiCcsError::ProtocolError(format!(
-                    "W3(shared): missing width lookup table_id={table_id} for col_id={col_id}"
-                ))
-            })?;
-        let val_slot = riscv_trace_shared_width_lookup_val_slot_for_col(col_id).ok_or_else(|| {
-            PiCcsError::ProtocolError(format!(
-                "W3(shared): width col_id={col_id} is not part of width lookup transport slot map"
-            ))
-        })?;
-        width_lut_slots.push((lut_idx, val_slot));
-    }
-
-    Ok((width_open_cols, width_lut_slots))
-}
-
 pub(crate) struct WeightedMaskOracleSparseTime {
     bit_idx: usize,
     r_cycle: Vec<K>,
