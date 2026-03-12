@@ -1,28 +1,4 @@
-//! Shared Route-A trace-layout mapping and reexports for transcript/opening helpers.
-//!
-//! The heavy Route-A support logic is split by invariant family:
-//! - `step_memory_binding`: transcript binding for per-step memory commitments
-//! - `opening_lookup`: opening extraction and lookup helpers
-//! - `sparse_time_oracles`: sparse decoded columns, time oracles, and preproof payloads
-//! - `trace_semantics`: trace linkage, weight vectors, and residual arithmetic
-
 use super::*;
-
-#[path = "opening_lookup.rs"]
-mod opening_lookup;
-#[path = "sparse_time_oracles.rs"]
-mod sparse_time_oracles;
-#[path = "step_memory_binding.rs"]
-mod step_memory_binding;
-#[path = "trace_semantics.rs"]
-mod trace_semantics;
-
-pub(crate) use opening_lookup::*;
-pub(crate) use sparse_time_oracles::*;
-pub use sparse_time_oracles::{TwistTimeLaneOpenings, TwistTimeLaneOpeningsLane};
-pub use step_memory_binding::absorb_step_memory;
-pub(crate) use step_memory_binding::*;
-pub(crate) use trace_semantics::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Rv32PackedShoutOp {
