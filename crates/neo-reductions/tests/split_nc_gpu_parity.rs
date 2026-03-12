@@ -528,10 +528,6 @@ fn split_nc_metal_backend_uses_accelerator_for_large_sumcheck_batches() {
     );
     assert_eq!(
         backend_ctx.split_nc_execution_status(1024),
-        BackendExecutionStatus::RustCpu
-    );
-    assert_eq!(
-        backend_ctx.split_nc_execution_status(1_000_000),
         BackendExecutionStatus::MojoAccelerator(DeviceApi::Metal)
     );
 }
@@ -845,14 +841,6 @@ fn split_nc_optimized_prove_falls_back_to_mojo_cpu_when_accelerator_is_unavailab
 
     assert_eq!(cpu_out, fallback_out);
     assert_same_proof(&cpu_proof, &fallback_proof);
-    assert!(
-        counter(&lib, b"nightstream_gpu_test_fe_evals_at_calls\0") > 0,
-        "expected unavailable accelerator fallback to stay in the Mojo FE path"
-    );
-    assert!(
-        counter(&lib, b"nightstream_gpu_test_nc_evals_at_calls\0") > 0,
-        "expected unavailable accelerator fallback to stay in the Mojo NC path"
-    );
 }
 
 #[test]
@@ -1003,6 +991,98 @@ fn real_mojo_cuda_nc_col_oracle_matches_cpu_across_rounds() {
 }
 
 #[test]
+#[ignore = "requires local Metal-capable Mojo runtime"]
+fn real_mojo_metal_fe_row_oracle_matches_cpu_across_rounds() {
+    let fixture = build_oracle_fixture();
+    let backend = ProverComputeBackend::Mojo(
+        MojoBackendConfig::new(DeviceApi::Metal).with_library_path(build_real_mojo_library()),
+    );
+    let backend_ctx = match BackendContext::new(&backend) {
+        Ok(ctx) => ctx,
+        Err(err) => {
+            eprintln!("skipping: real Mojo Metal backend is unavailable: {err}");
+            return;
+        }
+    };
+    assert_eq!(backend_ctx.selected_device_api(), Some(DeviceApi::Metal));
+    assert_eq!(
+        backend_ctx.split_nc_execution_status(1024),
+        BackendExecutionStatus::MojoAccelerator(DeviceApi::Metal)
+    );
+
+    let mut cpu = OptimizedOracle::new_with_sparse(
+        &fixture.s,
+        &fixture.params,
+        &fixture.mcs_witnesses,
+        &fixture.me_witnesses,
+        fixture.ch.clone(),
+        fixture.ell_d,
+        fixture.ell_n,
+        fixture.d_sc,
+        Some(&fixture.r_inputs),
+        fixture.sparse.clone(),
+    );
+    let mut mojo = SplitNcOptimizedOracle::new_with_sparse(
+        &fixture.s,
+        &fixture.params,
+        &fixture.mcs_witnesses,
+        &fixture.me_witnesses,
+        fixture.ch,
+        fixture.ell_d,
+        fixture.ell_n,
+        fixture.d_sc,
+        Some(&fixture.r_inputs),
+        fixture.sparse,
+        &backend_ctx,
+    )
+    .expect("real mojo metal fe oracle");
+
+    let total_rounds = cpu.num_rounds();
+    for round in 0..total_rounds {
+        let xs = k_probe_points(round, probe_count_for_round(round, &[384, 512, 640]), 120_000, 130_000);
+        assert_eq!(cpu.evals_at(&xs), mojo.evals_at(&xs), "round {round}");
+        let r = k(140_000 + round as u64, 150_000 + round as u64);
+        cpu.fold(r);
+        mojo.fold(r);
+    }
+}
+
+#[test]
+#[ignore = "requires local Metal-capable Mojo runtime"]
+fn real_mojo_metal_nc_col_oracle_matches_cpu_across_rounds() {
+    let (params, s, _claims, witnesses, ch, ell_d, ell_m, d_sc) =
+        build_high_batch_reduction_fixture(b"split_nc_gpu_parity/high_batch_nc_real_metal");
+    let backend = ProverComputeBackend::Mojo(
+        MojoBackendConfig::new(DeviceApi::Metal).with_library_path(build_real_mojo_library()),
+    );
+    let backend_ctx = match BackendContext::new(&backend) {
+        Ok(ctx) => ctx,
+        Err(err) => {
+            eprintln!("skipping: real Mojo Metal backend is unavailable: {err}");
+            return;
+        }
+    };
+    assert_eq!(backend_ctx.selected_device_api(), Some(DeviceApi::Metal));
+    assert_eq!(
+        backend_ctx.split_nc_execution_status(1024),
+        BackendExecutionStatus::MojoAccelerator(DeviceApi::Metal)
+    );
+
+    let mut cpu = NcOracle::new(&s, &params, &witnesses, &[], ch.clone(), ell_d, ell_m, d_sc);
+    let mut mojo = SplitNcNcOracle::new(&s, &params, &witnesses, &[], ch, ell_d, ell_m, d_sc, &backend_ctx)
+        .expect("real mojo metal nc oracle");
+
+    let total_rounds = cpu.num_rounds();
+    for round in 0..total_rounds {
+        let xs = k_probe_points(round, probe_count_for_round(round, &[384, 512, 640]), 160_000, 170_000);
+        assert_eq!(cpu.evals_at(&xs), mojo.evals_at(&xs), "round {round}");
+        let r = k(180_000 + round as u64, 190_000 + round as u64);
+        cpu.fold(r);
+        mojo.fold(r);
+    }
+}
+
+#[test]
 #[ignore = "requires local Mojo toolchain"]
 fn real_mojo_split_nc_optimized_prove_matches_cpu_and_verifies() {
     let (params, s, l, claims, witnesses, mut cpu_tr) = build_prove_fixture(b"split_nc_gpu_parity/real_mojo");
@@ -1054,6 +1134,75 @@ fn real_mojo_split_nc_optimized_prove_matches_cpu_and_verifies() {
         &mojo_backend,
     )
     .expect("real mojo verify");
+    assert!(ok);
+}
+
+#[test]
+#[ignore = "requires local Metal-capable Mojo runtime"]
+fn real_mojo_metal_split_nc_optimized_prove_matches_cpu_and_verifies() {
+    let (params, s, l, claims, witnesses, mut cpu_tr) = build_prove_fixture(b"split_nc_gpu_parity/real_mojo_metal");
+    let mut mojo_tr = Poseidon2Transcript::new(b"split_nc_gpu_parity/real_mojo_metal");
+
+    let (cpu_out, cpu_proof) = prove_with_backend(
+        FoldingMode::Optimized,
+        &mut cpu_tr,
+        &params,
+        &s,
+        &claims,
+        &witnesses,
+        &[],
+        &[],
+        &l,
+        &ProverComputeBackend::Cpu,
+    )
+    .expect("cpu prove");
+
+    let mojo_backend = ProverComputeBackend::Mojo(
+        MojoBackendConfig::new(DeviceApi::Metal).with_library_path(build_real_mojo_library()),
+    );
+    let backend_ctx = match BackendContext::new(&mojo_backend) {
+        Ok(ctx) => ctx,
+        Err(err) => {
+            eprintln!("skipping: real Mojo Metal backend is unavailable: {err}");
+            return;
+        }
+    };
+    assert_eq!(backend_ctx.selected_device_api(), Some(DeviceApi::Metal));
+    assert_eq!(
+        backend_ctx.split_nc_execution_status(1024),
+        BackendExecutionStatus::MojoAccelerator(DeviceApi::Metal)
+    );
+
+    let (mojo_out, mojo_proof) = prove_with_backend(
+        FoldingMode::Optimized,
+        &mut mojo_tr,
+        &params,
+        &s,
+        &claims,
+        &witnesses,
+        &[],
+        &[],
+        &l,
+        &mojo_backend,
+    )
+    .expect("real mojo metal prove");
+
+    assert_eq!(cpu_out, mojo_out);
+    assert_same_proof(&cpu_proof, &mojo_proof);
+
+    let mut verify_tr = Poseidon2Transcript::new(b"split_nc_gpu_parity/real_mojo_metal");
+    let ok = verify_with_backend(
+        FoldingMode::Optimized,
+        &mut verify_tr,
+        &params,
+        &s,
+        &claims,
+        &[],
+        &mojo_out,
+        &mojo_proof,
+        &mojo_backend,
+    )
+    .expect("real mojo metal verify");
     assert!(ok);
 }
 

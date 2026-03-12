@@ -4,11 +4,11 @@ use std::process::Command;
 use std::sync::OnceLock;
 
 use libloading::Library;
-use neo_gpu::FlatK;
+use neo_gpu::{connect, DeviceApi, FlatK, FlatRq, MojoBackendConfig};
 use neo_math::{ct, superneo_bar_block, superneo_bar_matrix, Fq, KExtensions, Rq, D, K};
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
 
-type RqMulFn = unsafe extern "C" fn(*mut u64, *mut u64, *mut u64) -> i32;
+type RqMulFn = unsafe extern "C" fn(u64, *mut u64, *mut u64, *mut u64) -> i32;
 type RqCtFn = unsafe extern "C" fn(*mut u64, *mut u64) -> i32;
 type SuperneoBarBlockFn = unsafe extern "C" fn(*mut u64, *mut u64, *mut u64) -> i32;
 type SuperneoRowDotBlocksFn = unsafe extern "C" fn(*mut u64, u64, *mut u64, u64, *mut u64) -> i32;
@@ -153,7 +153,14 @@ fn real_mojo_rq_mul_and_ct_match_cpu_reference() {
         let mut lhs_words = lhs;
         let mut rhs_words = rhs;
         let mut out_words = [0u64; D];
-        let status = unsafe { rq_mul(lhs_words.as_mut_ptr(), rhs_words.as_mut_ptr(), out_words.as_mut_ptr()) };
+        let status = unsafe {
+            rq_mul(
+                1,
+                lhs_words.as_mut_ptr(),
+                rhs_words.as_mut_ptr(),
+                out_words.as_mut_ptr(),
+            )
+        };
         assert_eq!(status, 0, "rq mul status");
         assert_eq!(out_words, cpu, "rq mul parity seed={seed}");
 
@@ -242,4 +249,42 @@ fn real_mojo_superneo_row_dot_blocks_matches_cpu_reference() {
         },
         cpu
     );
+}
+
+#[test]
+#[ignore = "requires local Mojo toolchain"]
+fn real_mojo_session_ring_and_superneo_match_cpu_reference() {
+    let session = connect(&MojoBackendConfig::new(DeviceApi::Cpu).with_library_path(build_real_mojo_library()))
+        .expect("open real mojo session");
+
+    let lhs = sample_block(17);
+    let rhs = sample_block(117);
+    let lhs_rq = FlatRq { coeffs: lhs };
+    let rhs_rq = FlatRq { coeffs: rhs };
+    let rq_mul = session.rq_mul_u64x54(&lhs_rq, &rhs_rq).expect("rq mul");
+    assert_eq!(rq_mul.coeffs, rq_mul_cpu(lhs, rhs));
+    assert_eq!(session.rq_ct_u64x54(&rq_mul).expect("rq ct"), rq_ct_cpu(rq_mul.coeffs));
+
+    let matrix = superneo_bar_matrix();
+    let matrix_words = std::array::from_fn(|row| std::array::from_fn(|col| matrix[row][col].as_canonical_u64()));
+    let block = sample_block(33);
+    let bar_block = session
+        .superneo_bar_block_u64x54(&matrix_words, &block)
+        .expect("superneo bar block");
+    assert_eq!(bar_block, bar_block_cpu(matrix, block));
+
+    let other_block = sample_block(77);
+    let bar_blocks = vec![
+        session
+            .superneo_bar_block_u64x54(&matrix_words, &block)
+            .expect("bar block 0"),
+        session
+            .superneo_bar_block_u64x54(&matrix_words, &other_block)
+            .expect("bar block 1"),
+    ];
+    let z = sample_z(D + 13, 55);
+    let dot = session
+        .superneo_row_dot_blocks(&bar_blocks, &z)
+        .expect("superneo row dot");
+    assert_eq!(dot, superneo_row_dot_cpu(&bar_blocks, &z));
 }

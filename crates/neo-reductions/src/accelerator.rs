@@ -119,6 +119,10 @@ impl BackendContext {
         }
     }
 
+    pub fn aux_session(&self) -> Result<Option<&MojoSession>, PiCcsError> {
+        Ok(self.initialize_connection()?.map(|conn| &conn.session))
+    }
+
     #[inline]
     pub fn split_nc_required(&self) -> bool {
         self.requested_mojo && !self.allow_cpu_fallback
@@ -199,6 +203,24 @@ impl BackendContext {
 
     pub fn split_nc_execution_status(&self, total_tasks: usize) -> BackendExecutionStatus {
         self.fe_row_execution_status(total_tasks)
+    }
+
+    pub fn commit_mix_execution_status(&self, total_tasks: usize) -> BackendExecutionStatus {
+        let Some(_api) = self.preferred_device_api_hint() else {
+            return BackendExecutionStatus::RustCpu;
+        };
+        let Ok(Some(session)) = self.aux_session() else {
+            return BackendExecutionStatus::RustCpu;
+        };
+        match session.rq_mul_execution_mode(total_tasks) {
+            ExecutionMode::Cpu => BackendExecutionStatus::MojoCpu,
+            ExecutionMode::HostFallback => BackendExecutionStatus::RustCpu,
+            ExecutionMode::Accelerator => BackendExecutionStatus::MojoAccelerator(session.device_api()),
+        }
+    }
+
+    pub fn commit_many_execution_status(&self, total_tasks: usize) -> BackendExecutionStatus {
+        self.commit_mix_execution_status(total_tasks)
     }
 
     pub fn diagnostics_snapshot(&self) -> MojoSessionDiagnostics {

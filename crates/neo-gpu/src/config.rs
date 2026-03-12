@@ -40,7 +40,7 @@ impl DeviceApi {
         match self {
             DeviceApi::Auto => BackendActivationThresholds::new(usize::MAX, usize::MAX, usize::MAX),
             DeviceApi::Cpu => BackendActivationThresholds::new(0, 0, 0),
-            DeviceApi::Metal => BackendActivationThresholds::new(512, 1_000_000, 1_000_000),
+            DeviceApi::Metal => BackendActivationThresholds::new(512, 256, 256),
             DeviceApi::Cuda => BackendActivationThresholds::new(32, 256, 256),
             DeviceApi::Hip => BackendActivationThresholds::new(32, 256, 256),
         }

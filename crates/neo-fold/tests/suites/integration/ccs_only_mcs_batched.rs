@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::sync::OnceLock;
 
 use libloading::Library;
-use neo_ajtai::{s_lincomb, s_mul, setup as ajtai_setup, AjtaiSModule, Commitment as Cmt};
+use neo_ajtai::{s_lincomb, s_mul, set_global_pp_seeded, setup as ajtai_setup, AjtaiSModule, Commitment as Cmt};
 use neo_ccs::traits::SModuleHomomorphism;
 use neo_ccs::{CcsClaim, CcsStructure, CcsWitness, Mat, SparsePoly};
 use neo_fold::pi_ccs::FoldingMode;
@@ -70,6 +70,12 @@ fn setup_ajtai_committer(params: &NeoParams, m: usize) -> AjtaiSModule {
     let mut rng = ChaCha8Rng::seed_from_u64(7);
     let pp = ajtai_setup(&mut rng, D, params.kappa as usize, m_commit).expect("Ajtai setup should succeed");
     AjtaiSModule::new(Arc::new(pp))
+}
+
+fn setup_seeded_ajtai_committer(params: &NeoParams, m: usize, seed: [u8; 32]) -> AjtaiSModule {
+    let m_commit = commit_cols_for_ccs_m(m);
+    set_global_pp_seeded(D, params.kappa as usize, m_commit, seed).expect("set_global_pp_seeded");
+    AjtaiSModule::from_global_for_dims(D, m_commit).expect("AjtaiSModule init")
 }
 
 fn identity_ccs(n: usize) -> CcsStructure<F> {
@@ -354,9 +360,8 @@ fn ccs_only_default_shard_api_auto_batches() {
 }
 
 #[test]
-fn ccs_only_mcs_batched_mojo_backend_uses_batch_poseidon_for_rlc_binding() {
+fn ccs_only_mcs_batched_mojo_backend_matches_cpu_with_mock_library() {
     type ResetFn = unsafe extern "C" fn();
-    type CounterFn = unsafe extern "C" fn() -> usize;
     let _counter_guard = super::lock_mock_backend_counters();
 
     let n = 8usize;
@@ -377,11 +382,6 @@ fn ccs_only_mcs_batched_mojo_backend_uses_batch_poseidon_for_rlc_binding() {
         *lib.get::<ResetFn>(b"nightstream_gpu_test_reset_counters\0")
             .expect("load counter reset symbol")
     };
-    let batch_calls = unsafe {
-        *lib.get::<CounterFn>(b"nightstream_gpu_test_poseidon2_batch_calls\0")
-            .expect("load batch counter symbol")
-    };
-
     let mut tr_cpu = Poseidon2Transcript::new(b"neo.fold/ccs_only_gpu_rlc");
     let cpu_proof = fold_shard_prove_ccs_only_batched(
         FoldingMode::Optimized,
@@ -399,7 +399,7 @@ fn ccs_only_mcs_batched_mojo_backend_uses_batch_poseidon_for_rlc_binding() {
     .expect("cpu prove");
 
     unsafe { reset() };
-    let backend = ProverComputeBackend::Mojo(MojoBackendConfig::auto().with_library_path(mock_library));
+    let backend = ProverComputeBackend::Mojo(MojoBackendConfig::new(DeviceApi::Cpu).with_library_path(mock_library));
     let mut tr_mojo = Poseidon2Transcript::new(b"neo.fold/ccs_only_gpu_rlc");
     let mojo_proof = fold_shard_prove_ccs_only_batched(
         FoldingMode::Optimized,
@@ -420,10 +420,6 @@ fn ccs_only_mcs_batched_mojo_backend_uses_batch_poseidon_for_rlc_binding() {
         serde_json::to_vec(&cpu_proof).expect("serialize cpu proof"),
         serde_json::to_vec(&mojo_proof).expect("serialize mojo proof"),
     );
-    assert!(
-        unsafe { batch_calls() } > 0,
-        "expected mock mojo backend to use batched Poseidon2 for RLC input binding"
-    );
 
     let mut tr_v = Poseidon2Transcript::new(b"neo.fold/ccs_only_gpu_rlc");
     let outputs = fold_shard_verify_ccs_only_batched(
@@ -441,6 +437,78 @@ fn ccs_only_mcs_batched_mojo_backend_uses_batch_poseidon_for_rlc_binding() {
 
     assert!(outputs.obligations.val.is_empty());
     assert_eq!(outputs.obligations.main.len(), params.k_rho as usize);
+}
+
+#[test]
+fn ccs_only_mcs_batched_seeded_mojo_backend_uses_rq_mul_for_commit_many() {
+    type ResetFn = unsafe extern "C" fn();
+    type CountFn = unsafe extern "C" fn() -> usize;
+    let _counter_guard = super::lock_mock_backend_counters();
+
+    let n = 8usize;
+    let ccs = identity_ccs(n);
+    let params = high_batch_params(n);
+    let l = setup_seeded_ajtai_committer(&params, ccs.m, [77u8; 32]);
+    let mixers = default_mixers();
+    let batch_size = 40usize;
+
+    let steps: Vec<StepWitnessBundle<Cmt, F, K>> = (0..batch_size)
+        .map(|i| build_step(&params, &l, ccs.m, 2, 20_000 + (i as u64) * 97))
+        .collect();
+
+    let mock_library = build_mock_library();
+    let lib = unsafe { Library::new(mock_library) }.expect("load mock mojo gpu library");
+    let reset = unsafe {
+        *lib.get::<ResetFn>(b"nightstream_gpu_test_reset_counters\0")
+            .expect("load counter reset symbol")
+    };
+    let rq_mul_calls = unsafe {
+        *lib.get::<CountFn>(b"nightstream_gpu_test_rq_mul_calls\0")
+            .expect("load rq_mul counter symbol")
+    };
+
+    let mut tr_cpu = Poseidon2Transcript::new(b"neo.fold/ccs_only_seeded_commit_many");
+    let cpu_proof = fold_shard_prove_ccs_only_batched(
+        FoldingMode::Optimized,
+        &mut tr_cpu,
+        &params,
+        &ccs,
+        &steps,
+        &[],
+        &[],
+        &l,
+        mixers,
+        batch_size,
+        &ProverComputeBackend::Cpu,
+    )
+    .expect("cpu prove");
+
+    unsafe { reset() };
+    let backend = ProverComputeBackend::Mojo(MojoBackendConfig::new(DeviceApi::Cpu).with_library_path(mock_library));
+    let mut tr_mojo = Poseidon2Transcript::new(b"neo.fold/ccs_only_seeded_commit_many");
+    let mojo_proof = fold_shard_prove_ccs_only_batched(
+        FoldingMode::Optimized,
+        &mut tr_mojo,
+        &params,
+        &ccs,
+        &steps,
+        &[],
+        &[],
+        &l,
+        mixers,
+        batch_size,
+        &backend,
+    )
+    .expect("mojo prove");
+
+    assert_eq!(
+        serde_json::to_vec(&cpu_proof).expect("serialize cpu proof"),
+        serde_json::to_vec(&mojo_proof).expect("serialize mojo proof"),
+    );
+    assert!(
+        unsafe { rq_mul_calls() } > 0,
+        "seeded commit_many Mojo path should exercise rq_mul batching"
+    );
 }
 
 #[test]

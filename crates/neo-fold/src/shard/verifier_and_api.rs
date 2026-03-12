@@ -12,7 +12,7 @@ pub fn fold_shard_prove<L, MR, MB>(
     mixers: CommitMixers<MR, MB>,
 ) -> Result<ShardProof, PiCcsError>
 where
-    L: SModuleHomomorphism<F, Cmt> + Sync,
+    L: SModuleHomomorphism<F, Cmt> + Sync + 'static,
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {
@@ -44,7 +44,7 @@ pub fn fold_shard_prove_with_backend<L, MR, MB>(
     compute_backend: &ProverComputeBackend,
 ) -> Result<ShardProof, PiCcsError>
 where
-    L: SModuleHomomorphism<F, Cmt> + Sync,
+    L: SModuleHomomorphism<F, Cmt> + Sync + 'static,
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {
@@ -77,7 +77,7 @@ pub(crate) fn fold_shard_prove_with_context_and_backend<L, MR, MB>(
     ctx: &ShardProverContext,
 ) -> Result<ShardProof, PiCcsError>
 where
-    L: SModuleHomomorphism<F, Cmt> + Sync,
+    L: SModuleHomomorphism<F, Cmt> + Sync + 'static,
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {
@@ -110,7 +110,7 @@ pub(crate) fn fold_shard_prove_with_context_and_step_timings_and_backend<L, MR, 
     ctx: &ShardProverContext,
 ) -> Result<(ShardProof, Vec<f64>), PiCcsError>
 where
-    L: SModuleHomomorphism<F, Cmt> + Sync,
+    L: SModuleHomomorphism<F, Cmt> + Sync + 'static,
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {
@@ -152,7 +152,7 @@ pub fn fold_shard_prove_with_output_binding<L, MR, MB>(
     final_memory_state: &[F],
 ) -> Result<ShardProof, PiCcsError>
 where
-    L: SModuleHomomorphism<F, Cmt> + Sync,
+    L: SModuleHomomorphism<F, Cmt> + Sync + 'static,
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {
@@ -189,7 +189,7 @@ pub(crate) fn fold_shard_prove_with_output_binding_with_context_and_backend<L, M
     ctx: &ShardProverContext,
 ) -> Result<ShardProof, PiCcsError>
 where
-    L: SModuleHomomorphism<F, Cmt> + Sync,
+    L: SModuleHomomorphism<F, Cmt> + Sync + 'static,
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {
@@ -222,7 +222,7 @@ pub fn fold_shard_prove_with_witnesses<L, MR, MB>(
     mixers: CommitMixers<MR, MB>,
 ) -> Result<(ShardProof, ShardFoldOutputs<Cmt, F, K>, ShardFoldWitnesses<F>), PiCcsError>
 where
-    L: SModuleHomomorphism<F, Cmt> + Sync,
+    L: SModuleHomomorphism<F, Cmt> + Sync + 'static,
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {
@@ -282,7 +282,7 @@ pub fn fold_shard_prove_with_witnesses_with_step_offset<L, MR, MB>(
     step_idx_offset: usize,
 ) -> Result<(ShardProof, ShardFoldOutputs<Cmt, F, K>, ShardFoldWitnesses<F>), PiCcsError>
 where
-    L: SModuleHomomorphism<F, Cmt> + Sync,
+    L: SModuleHomomorphism<F, Cmt> + Sync + 'static,
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {

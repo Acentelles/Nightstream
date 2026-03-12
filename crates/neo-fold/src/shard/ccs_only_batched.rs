@@ -129,7 +129,7 @@ pub fn fold_shard_prove_ccs_only_batched<L, MR, MB>(
     compute_backend: &ProverComputeBackend,
 ) -> Result<ShardProof, PiCcsError>
 where
-    L: SModuleHomomorphism<F, Cmt> + Sync,
+    L: SModuleHomomorphism<F, Cmt> + Sync + 'static,
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {
@@ -165,7 +165,7 @@ pub(crate) fn fold_shard_prove_ccs_only_batched_with_outputs_and_offset<L, MR, M
     compute_backend: &ProverComputeBackend,
 ) -> Result<(ShardProof, Vec<CeClaim<Cmt, F, K>>, Vec<Mat<F>>), PiCcsError>
 where
-    L: SModuleHomomorphism<F, Cmt> + Sync,
+    L: SModuleHomomorphism<F, Cmt> + Sync + 'static,
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {
@@ -201,7 +201,7 @@ pub(crate) fn fold_shard_prove_ccs_only_batched_with_outputs_and_offset_and_cont
     backend_ctx: &neo_reductions::accelerator::BackendContext,
 ) -> Result<(ShardProof, Vec<CeClaim<Cmt, F, K>>, Vec<Mat<F>>), PiCcsError>
 where
-    L: SModuleHomomorphism<F, Cmt> + Sync,
+    L: SModuleHomomorphism<F, Cmt> + Sync + 'static,
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {

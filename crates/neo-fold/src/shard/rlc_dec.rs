@@ -1,5 +1,16 @@
 use super::*;
 
+#[inline]
+fn allow_commit_acceleration_for_lane(
+    backend_ctx: &neo_reductions::accelerator::BackendContext,
+    lane: RlcLane,
+) -> bool {
+    !matches!(
+        (lane, backend_ctx.selected_device_api()),
+        (RlcLane::Val, Some(neo_gpu::DeviceApi::Metal))
+    )
+}
+
 pub(crate) fn prove_rlc_dec_lane<L, MR, MB>(
     mode: &FoldingMode,
     lane: RlcLane,
@@ -21,10 +32,26 @@ pub(crate) fn prove_rlc_dec_lane<L, MR, MB>(
     mixers: CommitMixers<MR, MB>,
 ) -> Result<(RlcDecProof, Vec<Mat<F>>), PiCcsError>
 where
-    L: SModuleHomomorphism<F, Cmt> + Sync,
+    L: SModuleHomomorphism<F, Cmt> + Sync + std::any::Any,
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {
+    let allow_commit_accel = allow_commit_acceleration_for_lane(backend_ctx, lane);
+    let mix_rhos_commits = |rhos: &[Mat<F>], cs: &[Cmt]| {
+        if allow_commit_accel {
+            mix_rhos_commits_with_backend(backend_ctx, mixers.mix_rhos_commits, rhos, cs)
+        } else {
+            (mixers.mix_rhos_commits)(rhos, cs)
+        }
+    };
+    let combine_b_pows = |cs: &[Cmt], b: u32| {
+        if allow_commit_accel {
+            combine_b_pows_with_backend(backend_ctx, mixers.combine_b_pows, cs, b)
+        } else {
+            (mixers.combine_b_pows)(cs, b)
+        }
+    };
+
     if me_inputs.is_empty() {
         let prefix = match lane {
             RlcLane::Main => "",
@@ -71,7 +98,7 @@ where
     let rlc_rhos = ccs::sample_rot_rhos_n_typed(tr, &params_rlc, ring, me_inputs.len())?;
     let rlc_rho_mats = ccs::rot_rhos_to_mats(&rlc_rhos);
     let (mut rlc_parent, Z_mix) = if inputs_have_extra_y {
-        let parent_pub = ccs::rlc_public(s, params, &rlc_rhos, me_inputs, mixers.mix_rhos_commits, ell_d)?;
+        let parent_pub = ccs::rlc_public(s, params, &rlc_rhos, me_inputs, mix_rhos_commits, ell_d)?;
         let (_, z_mix_tmp) = neo_reductions::optimized_engine::rlc_reduction_optimized_with_commit_mix(
             s,
             params,
@@ -79,7 +106,7 @@ where
             me_inputs,
             wit_inputs,
             ell_d,
-            mixers.mix_rhos_commits,
+            mix_rhos_commits,
         );
         (parent_pub, z_mix_tmp)
     } else {
@@ -94,7 +121,7 @@ where
                     me_inputs,
                     &wit_owned,
                     ell_d,
-                    mixers.mix_rhos_commits,
+                    mix_rhos_commits,
                 )
             } else {
                 neo_reductions::optimized_engine::rlc_reduction_optimized_with_commit_mix(
@@ -104,7 +131,7 @@ where
                     me_inputs,
                     wit_inputs,
                     ell_d,
-                    mixers.mix_rhos_commits,
+                    mix_rhos_commits,
                 )
             }
         }
@@ -117,7 +144,7 @@ where
                 me_inputs,
                 wit_inputs,
                 ell_d,
-                mixers.mix_rhos_commits,
+                mix_rhos_commits,
             )
         }
     };
@@ -151,7 +178,11 @@ where
             .collect();
         if !nonzero_idx.is_empty() {
             let mats: Vec<&Mat<F>> = nonzero_idx.iter().map(|&idx| &Z_split[idx]).collect();
-            let commits = l.commit_many(&mats);
+            let commits = if allow_commit_accel {
+                commit_many_with_backend(backend_ctx, l, &mats)?
+            } else {
+                l.commit_many(&mats)
+            };
             if commits.len() != mats.len() {
                 return Err(PiCcsError::ProtocolError(format!(
                     "step {}: DEC commit_many returned {} commitments for {} matrices",
@@ -172,7 +203,7 @@ where
             &Z_split,
             ell_d,
             &child_cs,
-            mixers.combine_b_pows,
+            combine_b_pows,
             ccs_sparse_cache,
         );
         Ok((dec_children, ok_y, ok_X, ok_c, Z_split))
@@ -189,7 +220,7 @@ where
             Z_mix,
             ell_d,
             k_dec_eff,
-            mixers.combine_b_pows,
+            combine_b_pows,
             ccs_sparse_cache,
         ) {
             Ok((children, _child_cs, ok_y, ok_X, ok_c)) if ok_y && ok_X && ok_c => {
@@ -516,7 +547,23 @@ where
         }
     }
 
-    let parent_pub = ccs::rlc_public(s, params, rlc_rhos, rlc_inputs, mixers.mix_rhos_commits, ell_d)?;
+    let allow_commit_accel = allow_commit_acceleration_for_lane(backend_ctx, lane);
+    let mix_rhos_commits = |rhos: &[Mat<F>], cs: &[Cmt]| {
+        if allow_commit_accel {
+            mix_rhos_commits_with_backend(backend_ctx, mixers.mix_rhos_commits, rhos, cs)
+        } else {
+            (mixers.mix_rhos_commits)(rhos, cs)
+        }
+    };
+    let combine_b_pows = |cs: &[Cmt], b: u32| {
+        if allow_commit_accel {
+            combine_b_pows_with_backend(backend_ctx, mixers.combine_b_pows, cs, b)
+        } else {
+            (mixers.combine_b_pows)(cs, b)
+        }
+    };
+
+    let parent_pub = ccs::rlc_public(s, params, rlc_rhos, rlc_inputs, mix_rhos_commits, ell_d)?;
 
     let prefix = match lane {
         RlcLane::Main => "",
@@ -644,7 +691,7 @@ where
         }
     }
 
-    if !ccs::verify_dec_public(s, params, rlc_parent, dec_children, mixers.combine_b_pows, ell_d) {
+    if !ccs::verify_dec_public(s, params, rlc_parent, dec_children, combine_b_pows, ell_d) {
         return Err(PiCcsError::ProtocolError(match lane {
             RlcLane::Main => format!("step {}: DEC public check failed", step_idx),
             RlcLane::Val => format!("step {}: val-lane DEC public check failed", step_idx),

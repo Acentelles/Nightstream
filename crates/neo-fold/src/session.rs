@@ -569,7 +569,7 @@ struct SessionCcsCache {
 
 impl<L> FoldingSession<L>
 where
-    L: SModuleHomomorphism<F, Cmt> + Clone + Sync,
+    L: SModuleHomomorphism<F, Cmt> + Clone + Sync + 'static,
 {
     /// Create a new session with default Ajtai mixers and no initial accumulator (k=1 simple flow).
     pub fn new(mode: FoldingMode, params: NeoParams, l: L) -> Self {

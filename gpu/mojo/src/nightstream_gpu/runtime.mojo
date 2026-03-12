@@ -34,6 +34,14 @@ struct SessionState(Movable):
     var sumcheck_partials_dev: Optional[DeviceBuffer[DType.uint64]]
     var sumcheck_partials_capacity_words: Int
     var sumcheck_kernel_cache_addr: UInt64
+    var ring_lhs_host: Optional[HostBuffer[DType.uint64]]
+    var ring_lhs_dev: Optional[DeviceBuffer[DType.uint64]]
+    var ring_rhs_host: Optional[HostBuffer[DType.uint64]]
+    var ring_rhs_dev: Optional[DeviceBuffer[DType.uint64]]
+    var ring_out_host: Optional[HostBuffer[DType.uint64]]
+    var ring_out_dev: Optional[DeviceBuffer[DType.uint64]]
+    var ring_capacity_words: Int
+    var ring_kernel_cache_addr: UInt64
 
     fn __init__(out self, api: UInt32, device_id: UInt32):
         self.api = api
@@ -50,6 +58,14 @@ struct SessionState(Movable):
         self.sumcheck_partials_dev = Optional[DeviceBuffer[DType.uint64]]()
         self.sumcheck_partials_capacity_words = 0
         self.sumcheck_kernel_cache_addr = 0
+        self.ring_lhs_host = Optional[HostBuffer[DType.uint64]]()
+        self.ring_lhs_dev = Optional[DeviceBuffer[DType.uint64]]()
+        self.ring_rhs_host = Optional[HostBuffer[DType.uint64]]()
+        self.ring_rhs_dev = Optional[DeviceBuffer[DType.uint64]]()
+        self.ring_out_host = Optional[HostBuffer[DType.uint64]]()
+        self.ring_out_dev = Optional[DeviceBuffer[DType.uint64]]()
+        self.ring_capacity_words = 0
+        self.ring_kernel_cache_addr = 0
 
         if api == UInt32(DEVICE_API_CPU) or not has_accelerator():
             return
@@ -124,6 +140,42 @@ struct SessionState(Movable):
 
         if grew:
             ctx.synchronize()
+
+    fn ensure_ring_buffers(mut self, word_count: Int) raises:
+        if not self.accelerator_ctx:
+            raise Error("ring accelerator context unavailable")
+        if (
+            self.ring_capacity_words >= word_count
+            and self.ring_lhs_host
+            and self.ring_lhs_dev
+            and self.ring_rhs_host
+            and self.ring_rhs_dev
+            and self.ring_out_host
+            and self.ring_out_dev
+        ):
+            return
+
+        var ctx = self.accelerator_ctx.value()
+        self.ring_lhs_host = Optional[HostBuffer[DType.uint64]](
+            ctx.enqueue_create_host_buffer[DType.uint64](word_count)
+        )
+        self.ring_lhs_dev = Optional[DeviceBuffer[DType.uint64]](
+            ctx.enqueue_create_buffer[DType.uint64](word_count)
+        )
+        self.ring_rhs_host = Optional[HostBuffer[DType.uint64]](
+            ctx.enqueue_create_host_buffer[DType.uint64](word_count)
+        )
+        self.ring_rhs_dev = Optional[DeviceBuffer[DType.uint64]](
+            ctx.enqueue_create_buffer[DType.uint64](word_count)
+        )
+        self.ring_out_host = Optional[HostBuffer[DType.uint64]](
+            ctx.enqueue_create_host_buffer[DType.uint64](word_count)
+        )
+        self.ring_out_dev = Optional[DeviceBuffer[DType.uint64]](
+            ctx.enqueue_create_buffer[DType.uint64](word_count)
+        )
+        ctx.synchronize()
+        self.ring_capacity_words = word_count
 
 
 fn session_api(session: UInt64) -> UInt32:

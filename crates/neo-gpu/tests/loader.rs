@@ -6,7 +6,8 @@ use std::time::Instant;
 
 use libloading::Library;
 use neo_ccs::crypto::poseidon2_goldilocks as p2;
-use neo_gpu::{connect, DeviceApi, ExecutionMode, FlatK, MojoBackendConfig, MojoLibrary};
+use neo_gpu::{connect, DeviceApi, ExecutionMode, FlatK, FlatRq, MojoBackendConfig, MojoLibrary};
+use neo_math::{Fq, Rq, D};
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
 use p3_goldilocks::Goldilocks;
 use p3_symmetric::Permutation;
@@ -382,6 +383,17 @@ fn direct_backend_poseidon2_hash(
     out
 }
 
+fn rq_mul_cpu(lhs: [u64; D], rhs: [u64; D]) -> [u64; D] {
+    Rq(lhs.map(Fq::from_u64))
+        .mul(&Rq(rhs.map(Fq::from_u64)))
+        .0
+        .map(|x| x.as_canonical_u64())
+}
+
+fn sample_rq_words(seed: u64) -> [u64; D] {
+    std::array::from_fn(|idx| seed.wrapping_mul(19).wrapping_add((idx as u64) * 13 + 5))
+}
+
 #[test]
 fn loads_mock_library_and_probes_split_nc_support() {
     let cfg = MojoBackendConfig::new(DeviceApi::Metal).with_library_path(build_mock_library());
@@ -406,6 +418,54 @@ fn connects_to_mock_library_session() {
     assert!(session.supports_split_nc_api());
     assert!(session.supports_poseidon2_api());
     assert!(session.supports_poseidon2_batch_api());
+}
+
+#[test]
+fn mock_mojo_session_rq_mul_matches_cpu_reference() {
+    let cfg = MojoBackendConfig::new(DeviceApi::Cpu).with_library_path(build_mock_library());
+    let session = connect(&cfg).expect("connect to mock mojo gpu");
+
+    let lhs = sample_rq_words(7);
+    let rhs = sample_rq_words(101);
+    let expected = rq_mul_cpu(lhs, rhs);
+    let actual = session
+        .rq_mul_u64x54(&FlatRq { coeffs: lhs }, &FlatRq { coeffs: rhs })
+        .expect("mock rq mul");
+    assert_eq!(actual.coeffs, expected);
+}
+
+#[test]
+fn mock_mojo_session_rq_mul_batch_matches_cpu_reference() {
+    let cfg = MojoBackendConfig::new(DeviceApi::Cpu).with_library_path(build_mock_library());
+    let session = connect(&cfg).expect("connect to mock mojo gpu");
+
+    let lhs = vec![
+        FlatRq {
+            coeffs: sample_rq_words(7),
+        },
+        FlatRq {
+            coeffs: sample_rq_words(11),
+        },
+    ];
+    let rhs = vec![
+        FlatRq {
+            coeffs: sample_rq_words(101),
+        },
+        FlatRq {
+            coeffs: sample_rq_words(103),
+        },
+    ];
+    let actual = session
+        .rq_mul_batch_u64x54(&lhs, &rhs)
+        .expect("mock rq mul batch");
+    let expected = lhs
+        .iter()
+        .zip(rhs.iter())
+        .map(|(lhs_item, rhs_item)| FlatRq {
+            coeffs: rq_mul_cpu(lhs_item.coeffs, rhs_item.coeffs),
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(actual, expected);
 }
 
 #[test]
@@ -548,8 +608,7 @@ fn split_nc_execution_mode_reports_cpu_host_fallback_and_accelerator() {
     let metal = connect(&MojoBackendConfig::new(DeviceApi::Metal).with_library_path(build_mock_library()))
         .expect("connect metal mock mojo session");
     assert_eq!(metal.split_nc_execution_mode(64), ExecutionMode::HostFallback);
-    assert_eq!(metal.split_nc_execution_mode(1024), ExecutionMode::HostFallback);
-    assert_eq!(metal.split_nc_execution_mode(1_000_000), ExecutionMode::Accelerator);
+    assert_eq!(metal.split_nc_execution_mode(1024), ExecutionMode::Accelerator);
 
     let cuda = connect(&MojoBackendConfig::new(DeviceApi::Cuda).with_library_path(build_mock_library()))
         .expect("connect cuda mock mojo session");
@@ -1031,7 +1090,7 @@ fn real_mojo_metal_split_nc_smoke_matches_cpu_reference() {
     };
     assert_eq!(session.device_api(), DeviceApi::Metal);
     if !session.supports_split_nc_api() {
-        eprintln!("skipping: Split-NC Metal backend is intentionally disabled in the Rust bridge");
+        eprintln!("skipping: real Mojo shared-library Metal Split-NC path is unavailable in this runtime");
         return;
     }
 

@@ -142,7 +142,7 @@ pub(crate) fn fold_shard_prove_route_a_segment_with_witnesses<L, MR, MB>(
     backend_ctx: Option<&neo_reductions::accelerator::BackendContext>,
 ) -> Result<(ShardProof, Vec<Mat<F>>, Vec<Mat<F>>), PiCcsError>
 where
-    L: SModuleHomomorphism<F, Cmt> + Sync,
+    L: SModuleHomomorphism<F, Cmt> + Sync + 'static,
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {

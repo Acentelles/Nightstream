@@ -331,6 +331,16 @@ impl AjtaiSModule {
                 }),
         }
     }
+
+    /// Return `(d, kappa, m, seed)` when this module is backed by a seeded global PP.
+    pub fn global_seeded_params(&self) -> Option<(usize, usize, usize, [u8; 32])> {
+        let PpSource::Global { d, m } = &self.pp else {
+            return None;
+        };
+        get_global_pp_seeded_params_for_dims(*d, *m)
+            .ok()
+            .map(|(kappa, seed)| (*d, kappa, *m, seed))
+    }
 }
 
 impl SModuleHomomorphism<Fq, Commitment> for AjtaiSModule {

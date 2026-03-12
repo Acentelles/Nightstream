@@ -198,61 +198,11 @@ struct NoteCaseRunMetrics {
     setup: Duration,
     chunk_build_commit: Duration,
     fold_and_prove: Duration,
-    shard: Option<neo_fold::shard::ShardProveMetrics>,
 }
 
 fn median_duration(samples: &mut [Duration]) -> Duration {
     samples.sort_unstable();
     samples[samples.len() / 2]
-}
-
-fn print_shard_metrics(label: &str, shard: neo_fold::shard::ShardProveMetrics) {
-    println!(
-        "{label}: lane_ms main={:.1} val={:.1} wb={:.1} wp={:.1} poseidon_cycle={:.1} poseidon_local={:.1} stage8={:.1} route_a_finalize={:.1}",
-        shard.lane_durations.main_ccs_fold.as_secs_f64() * 1000.0,
-        shard.lane_durations.val_lane.as_secs_f64() * 1000.0,
-        shard.lane_durations.wb_lane.as_secs_f64() * 1000.0,
-        shard.lane_durations.wp_lane.as_secs_f64() * 1000.0,
-        shard.lane_durations.poseidon_cycle_lane.as_secs_f64() * 1000.0,
-        shard.lane_durations.poseidon_local_lane.as_secs_f64() * 1000.0,
-        shard.lane_durations.stage8_lane.as_secs_f64() * 1000.0,
-        shard.lane_durations.route_a_finalize.as_secs_f64() * 1000.0,
-    );
-    println!(
-        "{label}: mojo poseidon calls={} accel={} fallback={} cpu={} total_states={} max_states={}",
-        shard.mojo_delta.poseidon2_batch.cpu_calls
-            + shard.mojo_delta.poseidon2_batch.host_fallback_calls
-            + shard.mojo_delta.poseidon2_batch.accelerator_calls,
-        shard.mojo_delta.poseidon2_batch.accelerator_calls,
-        shard.mojo_delta.poseidon2_batch.host_fallback_calls,
-        shard.mojo_delta.poseidon2_batch.cpu_calls,
-        shard.mojo_delta.poseidon2_batch.total_items,
-        shard.mojo_delta.poseidon2_batch.max_items,
-    );
-    println!(
-        "{label}: mojo fe create={} eval={} fold={} destroy={} accel={} fallback={} cpu={} total_tasks={} max_tasks={}",
-        shard.mojo_delta.fe.create_calls,
-        shard.mojo_delta.fe.eval_calls,
-        shard.mojo_delta.fe.fold_calls,
-        shard.mojo_delta.fe.destroy_calls,
-        shard.mojo_delta.fe.accelerator_calls,
-        shard.mojo_delta.fe.host_fallback_calls,
-        shard.mojo_delta.fe.cpu_calls,
-        shard.mojo_delta.fe.total_items,
-        shard.mojo_delta.fe.max_items,
-    );
-    println!(
-        "{label}: mojo nc create={} eval={} fold={} destroy={} accel={} fallback={} cpu={} total_tasks={} max_tasks={}",
-        shard.mojo_delta.nc.create_calls,
-        shard.mojo_delta.nc.eval_calls,
-        shard.mojo_delta.nc.fold_calls,
-        shard.mojo_delta.nc.destroy_calls,
-        shard.mojo_delta.nc.accelerator_calls,
-        shard.mojo_delta.nc.host_fallback_calls,
-        shard.mojo_delta.nc.cpu_calls,
-        shard.mojo_delta.nc.total_items,
-        shard.mojo_delta.nc.max_items,
-    );
 }
 
 fn prove_with_poseidon_retry_rv64(
@@ -428,11 +378,6 @@ fn run_rv64_note_case(
         phases.chunk_build_commit.as_secs_f64() * 1000.0,
         phases.fold_and_prove.as_secs_f64() * 1000.0
     );
-    let shard_metrics = run.shard_prove_metrics();
-    if let Some(metrics) = shard_metrics {
-        print_shard_metrics(label, metrics);
-    }
-
     let verify_start = Instant::now();
     run.verify()
         .unwrap_or_else(|e| panic!("{label}: verify failed: {e}"));
@@ -444,7 +389,6 @@ fn run_rv64_note_case(
         setup: phases.setup,
         chunk_build_commit: phases.chunk_build_commit,
         fold_and_prove: phases.fold_and_prove,
-        shard: shard_metrics,
     }
 }
 
@@ -524,9 +468,6 @@ fn test_rv64_note_spend_from_elf_backend_medians() {
     let mut auto_setup = Vec::with_capacity(iters);
     let mut auto_chunk = Vec::with_capacity(iters);
     let mut auto_fold = Vec::with_capacity(iters);
-    let mut last_cpu_shard = None;
-    let mut last_auto_shard = None;
-
     for iter in 0..iters {
         let cpu = run_rv64_note_case(
             &format!("rv64_note_spend_elf_cpu_iter{iter}"),
@@ -541,7 +482,6 @@ fn test_rv64_note_spend_from_elf_backend_medians() {
         cpu_setup.push(cpu.setup);
         cpu_chunk.push(cpu.chunk_build_commit);
         cpu_fold.push(cpu.fold_and_prove);
-        last_cpu_shard = cpu.shard;
 
         let auto = run_rv64_note_case(
             &format!("rv64_note_spend_elf_auto_iter{iter}"),
@@ -556,7 +496,6 @@ fn test_rv64_note_spend_from_elf_backend_medians() {
         auto_setup.push(auto.setup);
         auto_chunk.push(auto.chunk_build_commit);
         auto_fold.push(auto.fold_and_prove);
-        last_auto_shard = auto.shard;
     }
 
     let cpu_prove_median = median_duration(&mut cpu_prove);
@@ -586,12 +525,6 @@ fn test_rv64_note_spend_from_elf_backend_medians() {
         auto_chunk_median.as_secs_f64() * 1000.0,
         auto_fold_median.as_secs_f64() * 1000.0,
     );
-    if let Some(metrics) = last_cpu_shard {
-        print_shard_metrics("[note-spend-median] cpu_last", metrics);
-    }
-    if let Some(metrics) = last_auto_shard {
-        print_shard_metrics("[note-spend-median] auto_last", metrics);
-    }
 }
 
 #[test]

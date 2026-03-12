@@ -77,7 +77,7 @@ impl<C: NeoCircuit> SharedBusR1csPreprocessing<C> {
     /// `Result`, this can become a structured error instead.
     pub fn into_prover<L>(self, params: NeoParams, committer: L) -> Result<SharedBusR1csProver<L, C>, PiCcsError>
     where
-        L: SModuleHomomorphism<super::F, super::Cmt> + Clone + Sync,
+        L: SModuleHomomorphism<super::F, super::Cmt> + Clone + Sync + 'static,
     {
         let chunk_to_witness = {
             let circuit = Arc::clone(&self.circuit);
@@ -127,7 +127,7 @@ impl<C: NeoCircuit> SharedBusR1csPreprocessing<C> {
 /// Prover-side artifact (includes commitment key material).
 pub struct SharedBusR1csProver<L, C>
 where
-    L: SModuleHomomorphism<super::F, super::Cmt> + Clone + Sync,
+    L: SModuleHomomorphism<super::F, super::Cmt> + Clone + Sync + 'static,
     C: NeoCircuit,
 {
     pub circuit: Arc<C>,
@@ -140,7 +140,7 @@ where
 
 impl<L, C> SharedBusR1csProver<L, C>
 where
-    L: SModuleHomomorphism<super::F, super::Cmt> + Clone + Sync,
+    L: SModuleHomomorphism<super::F, super::Cmt> + Clone + Sync + 'static,
     C: NeoCircuit,
 {
     #[inline]

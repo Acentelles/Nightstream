@@ -28,6 +28,16 @@ pub const NC_FOLD_SYMBOL: &[u8] = b"nightstream_gpu_nc_fold\0";
 pub const POSEIDON2_PERMUTE_SYMBOL: &[u8] = b"nightstream_gpu_poseidon2_permute_u64x8\0";
 #[cfg(not(target_arch = "wasm32"))]
 pub const POSEIDON2_PERMUTE_BATCH_SYMBOL: &[u8] = b"nightstream_gpu_poseidon2_permute_batch_u64x8\0";
+#[cfg(not(target_arch = "wasm32"))]
+pub const RQ_MUL_SYMBOL: &[u8] = b"nightstream_gpu_rq_mul_u64x54\0";
+#[cfg(not(target_arch = "wasm32"))]
+pub const RQ_MUL_BATCH_SYMBOL: &[u8] = b"nightstream_gpu_rq_mul_batch_u64x54\0";
+#[cfg(not(target_arch = "wasm32"))]
+pub const RQ_CT_SYMBOL: &[u8] = b"nightstream_gpu_rq_ct_u64x54\0";
+#[cfg(not(target_arch = "wasm32"))]
+pub const SUPERNEO_BAR_BLOCK_SYMBOL: &[u8] = b"nightstream_gpu_superneo_bar_block_u64x54\0";
+#[cfg(not(target_arch = "wasm32"))]
+pub const SUPERNEO_ROW_DOT_BLOCKS_SYMBOL: &[u8] = b"nightstream_gpu_superneo_row_dot_blocks\0";
 pub const POSEIDON2_STATE_WIDTH: usize = 8;
 
 #[repr(C)]

@@ -60,7 +60,7 @@ pub(crate) fn fold_shard_prove_mixed_ccs_batched<L, MR, MB>(
     compute_backend: &ProverComputeBackend,
 ) -> Result<ShardProof, PiCcsError>
 where
-    L: SModuleHomomorphism<F, Cmt> + Sync,
+    L: SModuleHomomorphism<F, Cmt> + Sync + 'static,
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {
@@ -98,7 +98,7 @@ pub(crate) fn fold_shard_prove_mixed_ccs_batched_with_output_binding<L, MR, MB>(
     compute_backend: &ProverComputeBackend,
 ) -> Result<ShardProof, PiCcsError>
 where
-    L: SModuleHomomorphism<F, Cmt> + Sync,
+    L: SModuleHomomorphism<F, Cmt> + Sync + 'static,
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {
@@ -135,7 +135,7 @@ pub(crate) fn fold_shard_prove_mixed_ccs_batched_with_witnesses<L, MR, MB>(
     compute_backend: &ProverComputeBackend,
 ) -> Result<(ShardProof, Vec<Mat<F>>, Vec<Mat<F>>), PiCcsError>
 where
-    L: SModuleHomomorphism<F, Cmt> + Sync,
+    L: SModuleHomomorphism<F, Cmt> + Sync + 'static,
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {
@@ -172,7 +172,7 @@ fn fold_shard_prove_mixed_ccs_batched_with_witnesses_internal<L, MR, MB>(
     compute_backend: &ProverComputeBackend,
 ) -> Result<(ShardProof, Vec<Mat<F>>, Vec<Mat<F>>), PiCcsError>
 where
-    L: SModuleHomomorphism<F, Cmt> + Sync,
+    L: SModuleHomomorphism<F, Cmt> + Sync + 'static,
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {

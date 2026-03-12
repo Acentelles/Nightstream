@@ -1,0 +1,122 @@
+use std::any::Any;
+
+use neo_ajtai::{sample_uniform_rq, seeded_pp_chunk_seeds, AjtaiSModule, Commitment as Cmt};
+use neo_ccs::traits::SModuleHomomorphism;
+use neo_ccs::Mat;
+use neo_gpu::FlatRq;
+use neo_math::{D, F};
+use p3_field::{PrimeCharacteristicRing, PrimeField64};
+use rand_chacha::rand_core::SeedableRng;
+use rand_chacha::ChaCha8Rng;
+
+use crate::PiCcsError;
+
+#[inline]
+fn flat_rq_from_mat_col_if_nonzero(mat: &Mat<F>, col: usize) -> Option<FlatRq> {
+    if mat.rows() != D || col >= mat.cols() {
+        return None;
+    }
+    let mut coeffs = [0u64; D];
+    let mut any_nonzero = false;
+    for row in 0..D {
+        let value = mat[(row, col)];
+        any_nonzero |= value != F::ZERO;
+        coeffs[row] = value.as_canonical_u64();
+    }
+    any_nonzero.then_some(FlatRq { coeffs })
+}
+
+fn try_commit_many_seeded_with_mojo(
+    backend_ctx: &neo_reductions::accelerator::BackendContext,
+    committer: &AjtaiSModule,
+    zs: &[&Mat<F>],
+) -> Result<Option<Vec<Cmt>>, PiCcsError> {
+    if zs.is_empty() {
+        return Ok(Some(Vec::new()));
+    }
+    let Some((d, kappa, m, seed)) = committer.global_seeded_params() else {
+        return Ok(None);
+    };
+    if d != D || zs.iter().any(|z| z.rows() != d || z.cols() != m) {
+        return Ok(None);
+    }
+    let total_tasks = zs
+        .len()
+        .saturating_mul(kappa)
+        .saturating_mul(m)
+        .saturating_mul(D);
+    if matches!(
+        backend_ctx.commit_many_execution_status(total_tasks),
+        neo_reductions::accelerator::BackendExecutionStatus::RustCpu
+    ) {
+        return Ok(None);
+    }
+    let Some(session) = backend_ctx.aux_session()? else {
+        return Ok(None);
+    };
+
+    let (chunk_size, chunk_seeds_by_row) = seeded_pp_chunk_seeds(seed, kappa, m);
+    let mut out: Vec<Cmt> = (0..zs.len()).map(|_| Cmt::zeros(d, kappa)).collect();
+
+    for (row_idx, chunk_seeds) in chunk_seeds_by_row.iter().enumerate() {
+        for (chunk_idx, chunk_seed) in chunk_seeds.iter().copied().enumerate() {
+            let start = chunk_idx * chunk_size;
+            let end = core::cmp::min(m, start + chunk_size);
+            let mut rng = ChaCha8Rng::from_seed(chunk_seed);
+            let mut lhs_batch = Vec::new();
+            let mut rhs_batch = Vec::new();
+            let mut target_mats = Vec::new();
+
+            for col_idx in start..end {
+                let lhs = FlatRq {
+                    coeffs: sample_uniform_rq(&mut rng).0.map(|x| x.as_canonical_u64()),
+                };
+                for (z_idx, z) in zs.iter().enumerate() {
+                    let Some(rhs) = flat_rq_from_mat_col_if_nonzero(z, col_idx) else {
+                        continue;
+                    };
+                    lhs_batch.push(lhs);
+                    rhs_batch.push(rhs);
+                    target_mats.push(z_idx);
+                }
+            }
+
+            if lhs_batch.is_empty() {
+                continue;
+            }
+
+            let products = match session.rq_mul_batch_u64x54(&lhs_batch, &rhs_batch) {
+                Ok(values) => values,
+                Err(_) => return Ok(None),
+            };
+            for (target_idx, product) in target_mats.into_iter().zip(products.into_iter()) {
+                for (dst, src) in out[target_idx]
+                    .col_mut(row_idx)
+                    .iter_mut()
+                    .zip(product.coeffs.into_iter())
+                {
+                    *dst += F::from_u64(src);
+                }
+            }
+        }
+    }
+
+    Ok(Some(out))
+}
+
+pub(crate) fn commit_many_with_backend<L>(
+    backend_ctx: &neo_reductions::accelerator::BackendContext,
+    committer: &L,
+    zs: &[&Mat<F>],
+) -> Result<Vec<Cmt>, PiCcsError>
+where
+    L: SModuleHomomorphism<F, Cmt> + Sync + Any,
+{
+    if let Some(ajtai) = (committer as &dyn Any).downcast_ref::<AjtaiSModule>() {
+        match try_commit_many_seeded_with_mojo(backend_ctx, ajtai, zs) {
+            Ok(Some(commitments)) => return Ok(commitments),
+            Ok(None) | Err(_) => {}
+        }
+    }
+    Ok(committer.commit_many(zs))
+}

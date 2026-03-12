@@ -85,7 +85,12 @@ fn shift_sumcheck_from_batched_time(
 }
 
 #[inline]
-fn commit_poseidon_lane_wits_batched(params: &NeoParams, wits: &[Mat<F>], label: &str) -> Result<Vec<Cmt>, PiCcsError> {
+fn commit_poseidon_lane_wits_batched(
+    params: &NeoParams,
+    backend_ctx: &neo_reductions::accelerator::BackendContext,
+    wits: &[Mat<F>],
+    label: &str,
+) -> Result<Vec<Cmt>, PiCcsError> {
     if wits.is_empty() {
         return Ok(Vec::new());
     }
@@ -97,7 +102,7 @@ fn commit_poseidon_lane_wits_batched(params: &NeoParams, wits: &[Mat<F>], label:
     for (cols, grouped) in by_cols.into_iter() {
         let committer = crate::shard::poseidon_lane_helpers::poseidon_lane_committer(params, cols, label)?;
         let refs: Vec<&Mat<F>> = grouped.iter().map(|(_, z)| *z).collect();
-        let commits = committer.commit_many(&refs);
+        let commits = commit_many_with_backend(backend_ctx, &committer, &refs)?;
         if commits.len() != refs.len() {
             return Err(PiCcsError::ProtocolError(format!(
                 "{label}: commit_many returned {} commitments for {} matrices",
@@ -147,7 +152,7 @@ pub(crate) fn fold_shard_prove_impl<L, MR, MB>(
     PiCcsError,
 >
 where
-    L: SModuleHomomorphism<F, Cmt> + Sync,
+    L: SModuleHomomorphism<F, Cmt> + Sync + std::any::Any + 'static,
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {
@@ -204,7 +209,7 @@ pub(crate) fn fold_shard_prove_impl_with_backend_ctx<L, MR, MB>(
     PiCcsError,
 >
 where
-    L: SModuleHomomorphism<F, Cmt> + Sync,
+    L: SModuleHomomorphism<F, Cmt> + Sync + 'static,
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {
@@ -566,8 +571,10 @@ where
             let local_wits_ref = poseidon_local_wits
                 .as_ref()
                 .ok_or_else(|| PiCcsError::ProtocolError("missing poseidon local witness chunks".into()))?;
-            let cycle_cs = commit_poseidon_lane_wits_batched(params, cycle_wits_ref, "poseidon cycle commit")?;
-            let local_cs = commit_poseidon_lane_wits_batched(params, local_wits_ref, "poseidon local commit")?;
+            let cycle_cs =
+                commit_poseidon_lane_wits_batched(params, &backend_ctx, cycle_wits_ref, "poseidon cycle commit")?;
+            let local_cs =
+                commit_poseidon_lane_wits_batched(params, &backend_ctx, local_wits_ref, "poseidon local commit")?;
             absorb_poseidon_lane_commitments_prover(tr, &cycle_cs, &local_cs);
             (Some(cycle_cs), Some(local_cs))
         } else {
@@ -1410,7 +1417,7 @@ where
                             params,
                             &rlc_rhos,
                             core::slice::from_ref(me),
-                            mixers.mix_rhos_commits,
+                            |rhos, cs| mix_rhos_commits_with_backend(&backend_ctx, mixers.mix_rhos_commits, rhos, cs),
                             ell_d,
                         )?;
                         let (mut dec_children, ok_y, ok_x, ok_c) = ccs::dec_children_with_commit_cached(
@@ -1421,7 +1428,7 @@ where
                             &Z_split,
                             ell_d,
                             child_cs,
-                            mixers.combine_b_pows,
+                            |cs, b| combine_b_pows_with_backend(&backend_ctx, mixers.combine_b_pows, cs, b),
                             ccs_sparse_cache.as_deref(),
                         );
                         if !(ok_y && ok_x && ok_c) {
@@ -1610,7 +1617,7 @@ where
                     params,
                     &rlc_rhos,
                     core::slice::from_ref(me),
-                    mixers.mix_rhos_commits,
+                    |rhos, cs| mix_rhos_commits_with_backend(&backend_ctx, mixers.mix_rhos_commits, rhos, cs),
                     ell_d,
                 )?;
                 let rlc_rho_mats = ccs::rot_rhos_to_mats(&rlc_rhos);
@@ -1621,7 +1628,7 @@ where
                     core::slice::from_ref(me),
                     &[&mcs_wit.Z],
                     ell_d,
-                    mixers.mix_rhos_commits,
+                    |rhos, cs| mix_rhos_commits_with_backend(&backend_ctx, mixers.mix_rhos_commits, rhos, cs),
                 );
                 let k_dec_lane = core::cmp::max(k_dec, required_dec_digits_for_matrix(params, &z_mix)?);
                 let materialize_wb_lane =
@@ -1637,7 +1644,7 @@ where
                             .collect();
                         if !nonzero_idx.is_empty() {
                             let mats: Vec<&Mat<F>> = nonzero_idx.iter().map(|&idx| &dec_wits[idx]).collect();
-                            let commits = l.commit_many(&mats);
+                            let commits = commit_many_with_backend(&backend_ctx, l, &mats)?;
                             if commits.len() != mats.len() {
                                 return Err(PiCcsError::ProtocolError(format!(
                                     "WB DEC commit_many returned {} commitments for {} matrices",
@@ -1657,7 +1664,7 @@ where
                             &dec_wits,
                             ell_d,
                             &child_cs,
-                            mixers.combine_b_pows,
+                            |cs, b| combine_b_pows_with_backend(&backend_ctx, mixers.combine_b_pows, cs, b),
                             ccs_sparse_cache.as_deref(),
                         );
                         Ok((dec_wits, dec_children, ok_y, ok_x, ok_c))
@@ -1671,7 +1678,7 @@ where
                         &z_mix,
                         ell_d,
                         k_dec_lane,
-                        mixers.combine_b_pows,
+                        |cs, b| combine_b_pows_with_backend(&backend_ctx, mixers.combine_b_pows, cs, b),
                         ccs_sparse_cache.as_deref(),
                     ) {
                         Ok((children, _child_cs, ok_y, ok_x, ok_c)) if ok_y && ok_x && ok_c => {
@@ -1880,7 +1887,7 @@ where
                     params,
                     &rlc_rhos,
                     core::slice::from_ref(me),
-                    mixers.mix_rhos_commits,
+                    |rhos, cs| mix_rhos_commits_with_backend(&backend_ctx, mixers.mix_rhos_commits, rhos, cs),
                     ell_d,
                 )?;
                 let rlc_rho_mats = ccs::rot_rhos_to_mats(&rlc_rhos);
@@ -1891,7 +1898,7 @@ where
                     core::slice::from_ref(me),
                     &[&mcs_wit.Z],
                     ell_d,
-                    mixers.mix_rhos_commits,
+                    |rhos, cs| mix_rhos_commits_with_backend(&backend_ctx, mixers.mix_rhos_commits, rhos, cs),
                 );
                 let k_dec_lane = core::cmp::max(k_dec, required_dec_digits_for_matrix(params, &z_mix)?);
                 let materialize_wp_lane =
@@ -1907,7 +1914,7 @@ where
                             .collect();
                         if !nonzero_idx.is_empty() {
                             let mats: Vec<&Mat<F>> = nonzero_idx.iter().map(|&idx| &dec_wits[idx]).collect();
-                            let commits = l.commit_many(&mats);
+                            let commits = commit_many_with_backend(&backend_ctx, l, &mats)?;
                             if commits.len() != mats.len() {
                                 return Err(PiCcsError::ProtocolError(format!(
                                     "WP DEC commit_many returned {} commitments for {} matrices",
@@ -1927,7 +1934,7 @@ where
                             &dec_wits,
                             ell_d,
                             &child_cs,
-                            mixers.combine_b_pows,
+                            |cs, b| combine_b_pows_with_backend(&backend_ctx, mixers.combine_b_pows, cs, b),
                             ccs_sparse_cache.as_deref(),
                         );
                         Ok((dec_wits, dec_children, ok_y, ok_x, ok_c))
@@ -1941,7 +1948,7 @@ where
                         &z_mix,
                         ell_d,
                         k_dec_lane,
-                        mixers.combine_b_pows,
+                        |cs, b| combine_b_pows_with_backend(&backend_ctx, mixers.combine_b_pows, cs, b),
                         ccs_sparse_cache.as_deref(),
                     ) {
                         Ok((children, _child_cs, ok_y, ok_x, ok_c)) if ok_y && ok_x && ok_c => {
@@ -2540,12 +2547,13 @@ where
                     step_idx,
                     &opening_reduction,
                 )?;
-                let (joint_opening_lane, stage8_joint_wits) =
-                    crate::time_opening::joint_lane::prove_joint_opening_lane_with_witnesses(
+                let (joint_opening_lane, stage8_joint_wits, stage8_joint_metrics) =
+                    crate::time_opening::joint_lane::prove_joint_opening_lane_with_witnesses_and_metrics(
                         tr,
                         params,
                         step_idx,
                         step,
+                        &backend_ctx,
                         &cpu_bus,
                         &time_cpu_commitments,
                         &time_mem_commitments,
@@ -2556,6 +2564,9 @@ where
                         &opening_unification,
                         &opening_batch_coeffs,
                     )?;
+                prove_metrics.stage8_subphases.group_build += stage8_joint_metrics.group_build;
+                prove_metrics.stage8_subphases.joint_commit_many += stage8_joint_metrics.joint_commit_many;
+                prove_metrics.stage8_subphases.unified_fold_mix += stage8_joint_metrics.unified_fold_mix;
                 let stage8_fold_start = time_now();
                 let mut stage8_fold: Vec<RlcDecProof> = Vec::with_capacity(1);
                 let stage8_params = stage8_time_decomp_params(params)?;
@@ -2614,6 +2625,8 @@ where
                         "stage8 fold: missing lane plan for non-empty stage8 witnesses".into(),
                     ));
                 }
+                prove_metrics.stage8_subphases.rlc_dec +=
+                    Duration::from_secs_f64(elapsed_ms(stage8_fold_start) / 1_000.0);
                 prove_metrics.lane_durations.stage8_lane +=
                     Duration::from_secs_f64(elapsed_ms(stage8_fold_start) / 1_000.0);
                 (

@@ -62,12 +62,93 @@ Current verified status:
   CPU/direct mode today,
 - Rust-side auto selection prefers `Metal` on macOS and `Cuda`/`Hip` on non-macOS hosts, then
   falls back to the Mojo CPU session if no accelerator session opens,
-- real shared-library Metal sessions are stable for the Rust bridge path, but Split-NC still uses a
-  Mojo CPU/direct companion session there until Metal Split-NC acceleration is fully signed off,
+- real shared-library Metal sessions are stable for the Rust bridge path, including Split-NC FE/NC
+  parity through the same shared-library session path used on CUDA,
 - real reductions-level CUDA parity is working for transcript digest checks, FE/NC round parity, and
   `optimized_prove` parity,
 - real `neo-fold` CCS-only batched proving and Poseidon2 single-step prove/verify parity now pass on
   supported Mac and CUDA-backed T4 setups through the Rust bridge.
+
+## Current State
+
+### Implemented
+
+- Goldilocks / `K` arithmetic in `src/nightstream_gpu/field.mojo`
+- Poseidon2 shared-library entrypoints in `src/nightstream_gpu/poseidon.mojo`
+- Split-NC FE/NC shared-library evaluators, including resident `fe_fold` / `nc_fold`, in
+  `src/nightstream_gpu/sumcheck.mojo`
+- Session-owned persistent buffers and kernel caches in `src/nightstream_gpu/runtime.mojo`
+- `Rq` arithmetic and batch multiply entrypoints in `src/nightstream_gpu/ring.mojo`
+- SuperNeo block helpers in `src/nightstream_gpu/superneo.mojo`
+- Rust bridge loading, backend policy, diagnostics, and session methods in `crates/neo-gpu`
+- Reductions-level hybrid backend use for transcript Poseidon and Split-NC FE/NC in
+  `crates/neo-reductions`
+- Initial commit-side / Ajtai-side Mojo integration in `crates/neo-fold`, including backend-aware
+  `commit_many` and ring-based commitment mixing
+
+### Parity Complete But Not Yet Performance-Promoted
+
+- Metal Split-NC FE/NC shared-library parity
+  - FE row oracle parity passes
+  - NC col oracle parity passes
+  - `optimized_prove` parity passes
+- Metal and CUDA Poseidon2 shared-library parity
+- Metal and CUDA `Rq` / SuperNeo primitive parity
+- CUDA note-spend proving path
+  - end-to-end proving is slightly faster than CPU on the T4 baseline
+- Metal note-spend proving path
+  - end-to-end parity is correct
+  - current proving performance is still worse than CPU
+
+### Implemented But Still Stub-Like / Partial
+
+- `src/nightstream_gpu/ffi.mojo`
+  - production ABI exists, but `device_probe` / session selection are still lightweight wrappers
+    around the current runtime model rather than a large backend manager
+- `src/nightstream_gpu/ring.mojo`
+  - `Rq` multiply batch exists and is wired into note-spend commitment paths
+  - current GPU kernel shape is correctness-first and not yet tuned for Metal
+- `src/nightstream_gpu/superneo.mojo`
+  - exported helpers are real and parity-tested
+  - they are not yet the dominant backend for note-spend hot loops
+
+### Mocked In Tests
+
+- `crates/neo-gpu/tests/support/mock-mojo-gpu/src/lib.rs`
+  - still the fast mock shared library used by many CI/integration tests
+  - used to verify call routing and parity without requiring a real Mojo toolchain or GPU
+- Some `neo-fold` integration tests still validate “backend path was exercised” through the mock
+  dylib instead of requiring a real accelerator session
+
+### Explicitly Disabled / Gated Today
+
+- Metal commit-side acceleration for note-spend hot lanes is intentionally conservative
+  - Stage-8 joint-opening commitment acceleration is gated off on Metal
+  - `RlcLane::Val` commitment/ring acceleration is gated off on Metal
+  - reason: the current Metal `Rq` path is parity-correct but still too slow for those hot lanes
+- Below threshold, `auto()` keeps work on Rust CPU instead of forcing a Mojo path
+- Mojo CPU/direct fallback is still preferred only when the explicit backend choice or policy calls
+  for it; otherwise `auto()` can stay entirely on Rust CPU
+
+### Known Gaps
+
+- Note-spend lane batching is still incomplete
+  - sibling lanes are not yet collapsed into a few large resident GPU jobs
+- Stage-8 `prove_rlc_dec_lane` is still the main remaining hot path for note-spend
+- The current ring / commitment-side GPU path is only mildly beneficial on CUDA and still too slow
+  on Metal
+- End-to-end note-spend GPU wins are still small on CUDA and negative on Metal
+
+### Practical Backend Status
+
+| Area | CPU | Metal | CUDA | Notes |
+|------|-----|-------|------|-------|
+| Poseidon2 batch | Yes | Yes | Yes | Real shared-lib parity on both accelerators. |
+| Split-NC FE/NC parity | Yes | Yes | Yes | Metal now matches CUDA at shared-lib parity level. |
+| Split-NC FE/NC promotion | N/A | Yes | Yes | Threshold-driven in Rust. |
+| `Rq` batch multiply parity | Yes | Yes | Yes | Real session parity exists. |
+| Commit-side promotion | N/A | Partial | Partial | CUDA is modestly useful; Metal is still gated in hot lanes. |
+| Note-spend end-to-end speedup | Baseline | No | Small yes | Metal remains slower than CPU on the canonical repro. |
 
 Current backend matrix:
 
@@ -75,8 +156,8 @@ Current backend matrix:
 |------|-------------|---------------|--------------|-------|
 | Poseidon2 single/batch via Rust bridge | Yes | Yes | Yes | Rust bridge is the supported production entrypoint. |
 | Poseidon2 accelerator execution | No | Yes | Yes | Metal uses the bridge-thread fix on macOS. |
-| Split-NC FE/NC via shared library | Yes | No | Yes | Metal uses a Mojo CPU/direct companion session through `BackendContext`, not a Metal Split-NC session. |
-| Split-NC accelerator execution | No | No | Yes | CUDA is the promoted real-accelerator target for Split-NC today. |
+| Split-NC FE/NC via shared library | Yes | Yes | Yes | Metal and CUDA both use the shared-library evaluator path. |
+| Split-NC accelerator execution | No | Yes | Yes | Metal now follows the same FE/NC evaluator promotion model as CUDA/HIP. |
 | Rust CPU fallback when Mojo unavailable | Yes | Yes | Yes | Auto mode falls back to Rust CPU only if no Mojo session can be opened. |
 | Mojo CPU/direct fallback when requested accelerator is unavailable | Yes | Yes | Yes | Explicit Mojo backend configs prefer a Mojo CPU session before dropping to Rust CPU. |
 
@@ -104,7 +185,7 @@ Assumptions:
 - proof format, verifier logic, and transcript semantics remain unchanged,
 - Rust remains the protocol/orchestration layer,
 - CUDA is the primary acceleration target,
-- Metal is correctness-first and may stay partially host-backed until stable,
+- Metal is correctness-first and may stay partially CPU-gated in note-spend hot lanes until stable,
 - GPU promotion must be justified by end-to-end prover wins, not only kernel microbenches.
 
 ### Milestone 1: Shared-Library Runtime Hardening
@@ -113,7 +194,7 @@ Assumptions:
   sumcheck kernels,
 - [x] keep the Rust `neo-gpu` loader as the only supported production entrypoint for Mojo GPU work,
 - [x] keep Metal Poseidon shared-lib enabled through the Rust bridge fix,
-- [x] keep Metal Split-NC disabled until its separate shared-lib instability is resolved,
+- [x] stabilize Metal Split-NC through the shared-library evaluator path,
 - [x] add explicit backend fallback/status reporting so we can tell whether a path ran on CPU, Metal
   host mode, or real accelerator execution,
 - [x] document the supported backend matrix clearly in this README and in the Rust bridge docs.
@@ -182,5 +263,12 @@ Assumptions:
 - [x] report CPU baseline, GPU steady-state, GPU roundtrip, and end-to-end prove time,
 - [x] promote a GPU path only when it improves the real prover flow rather than only microbench
   numbers,
-- [x] revisit Metal Split-NC only after CUDA is stable and the shared-lib Metal runtime issue is
+- [x] revisit Metal Split-NC after CUDA was stable and the shared-lib Metal runtime issue was
   isolated.
+
+## Current Optimization Priorities
+
+1. Reduce note-spend Stage-8 `prove_rlc_dec_lane` time.
+2. Batch more commitment/ring work across sibling lanes.
+3. Improve the Metal `Rq` batch kernel enough to remove current hot-lane gates.
+4. Keep CUDA promoted where it beats CPU, and keep Metal conservative until it does.

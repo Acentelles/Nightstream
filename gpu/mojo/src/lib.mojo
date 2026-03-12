@@ -122,11 +122,23 @@ fn nightstream_gpu_poseidon2_permute_batch_u64x8(
 
 @export("nightstream_gpu_rq_mul_u64x54", ABI="C")
 fn nightstream_gpu_rq_mul_u64x54(
+    session: UInt64,
     lhs_words: UnsafePointer[UInt64, MutAnyOrigin],
     rhs_words: UnsafePointer[UInt64, MutAnyOrigin],
     out_words: UnsafePointer[UInt64, MutAnyOrigin],
 ) -> Int32:
-    return ffi.rq_mul_u64x54(lhs_words, rhs_words, out_words)
+    return ffi.rq_mul_u64x54(session, lhs_words, rhs_words, out_words)
+
+
+@export("nightstream_gpu_rq_mul_batch_u64x54", ABI="C")
+fn nightstream_gpu_rq_mul_batch_u64x54(
+    session: UInt64,
+    lhs_words: UnsafePointer[UInt64, MutAnyOrigin],
+    rhs_words: UnsafePointer[UInt64, MutAnyOrigin],
+    pair_count: UInt64,
+    out_words: UnsafePointer[UInt64, MutAnyOrigin],
+) -> Int32:
+    return ffi.rq_mul_batch_u64x54(session, lhs_words, rhs_words, pair_count, out_words)
 
 
 @export("nightstream_gpu_rq_ct_u64x54", ABI="C")

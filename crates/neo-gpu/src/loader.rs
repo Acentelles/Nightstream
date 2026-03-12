@@ -13,9 +13,10 @@ use crate::abi::{DeviceRequest, DeviceResponse, FlatFq, FlatK, SessionRequest, P
 use crate::abi::{
     ABI_VERSION, ABI_VERSION_SYMBOL, DEVICE_PROBE_SYMBOL, FE_CREATE_SYMBOL, FE_DESTROY_SYMBOL, FE_EVALS_AT_SYMBOL,
     FE_FOLD_SYMBOL, NC_CREATE_SYMBOL, NC_DESTROY_SYMBOL, NC_EVALS_AT_SYMBOL, NC_FOLD_SYMBOL,
-    POSEIDON2_PERMUTE_BATCH_SYMBOL, POSEIDON2_PERMUTE_SYMBOL, SESSION_CLOSE_SYMBOL, SESSION_OPEN_SYMBOL,
+    POSEIDON2_PERMUTE_BATCH_SYMBOL, POSEIDON2_PERMUTE_SYMBOL, RQ_CT_SYMBOL, RQ_MUL_BATCH_SYMBOL, RQ_MUL_SYMBOL,
+    SESSION_CLOSE_SYMBOL, SESSION_OPEN_SYMBOL, SUPERNEO_BAR_BLOCK_SYMBOL, SUPERNEO_ROW_DOT_BLOCKS_SYMBOL,
 };
-use crate::{BackendActivationThresholds, DeviceApi, MojoBackendConfig, NeoGpuError};
+use crate::{BackendActivationThresholds, DeviceApi, FlatRq, MojoBackendConfig, NeoGpuError};
 
 #[cfg(not(target_arch = "wasm32"))]
 type AbiVersionFn = unsafe extern "C" fn() -> u32;
@@ -28,6 +29,11 @@ type EvalsAtFn = unsafe extern "C" fn(u64, u64, *mut u64, u64, *mut u64, u64, *m
 type FoldFn = unsafe extern "C" fn(usize, usize, u64, u64) -> i32;
 type Poseidon2PermuteFn = unsafe extern "C" fn(usize, *mut FlatFq, u32) -> i32;
 type Poseidon2PermuteBatchFn = unsafe extern "C" fn(usize, *mut FlatFq, u32, u32) -> i32;
+type RqMulFn = unsafe extern "C" fn(u64, *mut u64, *mut u64, *mut u64) -> i32;
+type RqMulBatchFn = unsafe extern "C" fn(u64, *mut u64, *mut u64, u64, *mut u64) -> i32;
+type RqCtFn = unsafe extern "C" fn(*mut u64, *mut u64) -> i32;
+type SuperneoBarBlockFn = unsafe extern "C" fn(*mut u64, *mut u64, *mut u64) -> i32;
+type SuperneoRowDotBlocksFn = unsafe extern "C" fn(*mut u64, u64, *mut u64, u64, *mut u64) -> i32;
 
 #[cfg(all(not(target_arch = "wasm32"), any(unix, windows)))]
 type PlatformLibrary = Library;
@@ -75,6 +81,7 @@ pub struct MojoSessionDiagnostics {
     pub poseidon2_batch: MojoOperationCounters,
     pub fe: MojoOperationCounters,
     pub nc: MojoOperationCounters,
+    pub rq_mul: MojoOperationCounters,
 }
 
 impl std::ops::Sub for MojoSessionDiagnostics {
@@ -105,6 +112,7 @@ impl std::ops::Sub for MojoSessionDiagnostics {
             poseidon2_batch: sub_counter(self.poseidon2_batch, rhs.poseidon2_batch),
             fe: sub_counter(self.fe, rhs.fe),
             nc: sub_counter(self.nc, rhs.nc),
+            rq_mul: sub_counter(self.rq_mul, rhs.rq_mul),
         }
     }
 }
@@ -252,6 +260,11 @@ struct OptionalEvaluatorFns {
     nc_fold: Option<FoldFn>,
     poseidon2_permute: Option<Poseidon2PermuteFn>,
     poseidon2_permute_batch: Option<Poseidon2PermuteBatchFn>,
+    rq_mul: Option<RqMulFn>,
+    rq_mul_batch: Option<RqMulBatchFn>,
+    rq_ct: Option<RqCtFn>,
+    superneo_bar_block: Option<SuperneoBarBlockFn>,
+    superneo_row_dot_blocks: Option<SuperneoRowDotBlocksFn>,
 }
 
 impl OptionalEvaluatorFns {
@@ -345,6 +358,11 @@ impl MojoLibrary {
                 nc_fold: load_optional::<FoldFn>(&lib, NC_FOLD_SYMBOL),
                 poseidon2_permute: load_optional::<Poseidon2PermuteFn>(&lib, POSEIDON2_PERMUTE_SYMBOL),
                 poseidon2_permute_batch: load_optional::<Poseidon2PermuteBatchFn>(&lib, POSEIDON2_PERMUTE_BATCH_SYMBOL),
+                rq_mul: load_optional::<RqMulFn>(&lib, RQ_MUL_SYMBOL),
+                rq_mul_batch: load_optional::<RqMulBatchFn>(&lib, RQ_MUL_BATCH_SYMBOL),
+                rq_ct: load_optional::<RqCtFn>(&lib, RQ_CT_SYMBOL),
+                superneo_bar_block: load_optional::<SuperneoBarBlockFn>(&lib, SUPERNEO_BAR_BLOCK_SYMBOL),
+                superneo_row_dot_blocks: load_optional::<SuperneoRowDotBlocksFn>(&lib, SUPERNEO_ROW_DOT_BLOCKS_SYMBOL),
             }
         };
 
@@ -825,6 +843,247 @@ impl MojoSession {
             *state = self.permute_poseidon2_u64x8(state)?;
         }
         Ok(())
+    }
+
+    pub fn rq_mul_execution_mode(&self, total_tasks: usize) -> ExecutionMode {
+        let min_tasks = match self.device_api {
+            DeviceApi::Cpu => 0,
+            DeviceApi::Metal => 54 * 1024,
+            DeviceApi::Cuda | DeviceApi::Hip => 54 * 64,
+            DeviceApi::Auto => usize::MAX,
+        };
+        if self.device_api != DeviceApi::Cpu && total_tasks < min_tasks {
+            return ExecutionMode::HostFallback;
+        }
+        match self.device_api {
+            DeviceApi::Cpu => ExecutionMode::Cpu,
+            DeviceApi::Cuda | DeviceApi::Metal | DeviceApi::Hip => ExecutionMode::Accelerator,
+            DeviceApi::Auto => ExecutionMode::HostFallback,
+        }
+    }
+
+    pub fn rq_mul_u64x54(&self, lhs: &FlatRq, rhs: &FlatRq) -> Result<FlatRq, NeoGpuError> {
+        let library = self
+            .library
+            .as_ref()
+            .ok_or(NeoGpuError::UnsupportedOperation { op: "rq_mul_u64x54" })?;
+        let rq_mul = library
+            .evaluators
+            .rq_mul
+            .ok_or(NeoGpuError::UnsupportedOperation { op: "rq_mul_u64x54" })?;
+        let mut lhs_words = lhs.coeffs;
+        let mut rhs_words = rhs.coeffs;
+        let mut out_words = [0u64; 54];
+        let device_api = self.device_api;
+        let lhs_ptr = lhs_words.as_mut_ptr() as usize;
+        let rhs_ptr = rhs_words.as_mut_ptr() as usize;
+        let out_ptr = out_words.as_mut_ptr() as usize;
+        let session_handle = self.handle;
+        let status = call_for_device_api(device_api, move || unsafe {
+            rq_mul(
+                session_handle as u64,
+                lhs_ptr as *mut u64,
+                rhs_ptr as *mut u64,
+                out_ptr as *mut u64,
+            )
+        });
+        if status != 0 {
+            return Err(NeoGpuError::OperationFailed {
+                op: "rq_mul_u64x54",
+                status,
+            });
+        }
+        let mode = self.rq_mul_execution_mode(54);
+        let mut diagnostics = self
+            .diagnostics
+            .lock()
+            .expect("mojo session diagnostics lock");
+        diagnostics.snapshot.rq_mul.record_mode(mode, 1);
+        Ok(FlatRq { coeffs: out_words })
+    }
+
+    pub fn rq_mul_batch_u64x54(&self, lhs: &[FlatRq], rhs: &[FlatRq]) -> Result<Vec<FlatRq>, NeoGpuError> {
+        if lhs.len() != rhs.len() {
+            return Err(NeoGpuError::OperationFailed {
+                op: "rq_mul_batch_u64x54",
+                status: -1,
+            });
+        }
+        if lhs.is_empty() {
+            return Ok(Vec::new());
+        }
+        let library = self
+            .library
+            .as_ref()
+            .ok_or(NeoGpuError::UnsupportedOperation {
+                op: "rq_mul_batch_u64x54",
+            })?;
+
+        if let Some(rq_mul_batch) = library.evaluators.rq_mul_batch {
+            let mut lhs_words = lhs
+                .iter()
+                .flat_map(|value| value.coeffs.iter().copied())
+                .collect::<Vec<_>>();
+            let mut rhs_words = rhs
+                .iter()
+                .flat_map(|value| value.coeffs.iter().copied())
+                .collect::<Vec<_>>();
+            let mut out_words = vec![0u64; lhs.len() * 54];
+            let device_api = self.device_api;
+            let lhs_ptr = lhs_words.as_mut_ptr() as usize;
+            let rhs_ptr = rhs_words.as_mut_ptr() as usize;
+            let out_ptr = out_words.as_mut_ptr() as usize;
+            let pair_count = lhs.len() as u64;
+            let session_handle = self.handle;
+            let status = call_for_device_api(device_api, move || unsafe {
+                rq_mul_batch(
+                    session_handle as u64,
+                    lhs_ptr as *mut u64,
+                    rhs_ptr as *mut u64,
+                    pair_count,
+                    out_ptr as *mut u64,
+                )
+            });
+            if status != 0 {
+                return Err(NeoGpuError::OperationFailed {
+                    op: "rq_mul_batch_u64x54",
+                    status,
+                });
+            }
+            let mode = self.rq_mul_execution_mode(lhs.len().saturating_mul(54));
+            let mut diagnostics = self
+                .diagnostics
+                .lock()
+                .expect("mojo session diagnostics lock");
+            diagnostics.snapshot.rq_mul.record_mode(mode, lhs.len());
+            return Ok(out_words
+                .chunks_exact(54)
+                .map(|chunk| FlatRq {
+                    coeffs: std::array::from_fn(|idx| chunk[idx]),
+                })
+                .collect());
+        }
+
+        lhs.iter()
+            .zip(rhs.iter())
+            .map(|(lhs_item, rhs_item)| self.rq_mul_u64x54(lhs_item, rhs_item))
+            .collect()
+    }
+
+    pub fn rq_ct_u64x54(&self, value: &FlatRq) -> Result<u64, NeoGpuError> {
+        let library = self
+            .library
+            .as_ref()
+            .ok_or(NeoGpuError::UnsupportedOperation { op: "rq_ct_u64x54" })?;
+        let rq_ct = library
+            .evaluators
+            .rq_ct
+            .ok_or(NeoGpuError::UnsupportedOperation { op: "rq_ct_u64x54" })?;
+        let mut words = value.coeffs;
+        let mut out = [0u64; 1];
+        let device_api = self.device_api;
+        let words_ptr = words.as_mut_ptr() as usize;
+        let out_ptr = out.as_mut_ptr() as usize;
+        let status = call_for_device_api(device_api, move || unsafe {
+            rq_ct(words_ptr as *mut u64, out_ptr as *mut u64)
+        });
+        if status != 0 {
+            return Err(NeoGpuError::OperationFailed {
+                op: "rq_ct_u64x54",
+                status,
+            });
+        }
+        Ok(out[0])
+    }
+
+    pub fn superneo_bar_block_u64x54(
+        &self,
+        matrix_words: &[[u64; 54]; 54],
+        block_words: &[u64; 54],
+    ) -> Result<[u64; 54], NeoGpuError> {
+        let library = self
+            .library
+            .as_ref()
+            .ok_or(NeoGpuError::UnsupportedOperation {
+                op: "superneo_bar_block_u64x54",
+            })?;
+        let bar_block = library
+            .evaluators
+            .superneo_bar_block
+            .ok_or(NeoGpuError::UnsupportedOperation {
+                op: "superneo_bar_block_u64x54",
+            })?;
+        let mut matrix_flat = [0u64; 54 * 54];
+        for row in 0..54 {
+            for col in 0..54 {
+                matrix_flat[row * 54 + col] = matrix_words[row][col];
+            }
+        }
+        let mut block = *block_words;
+        let mut out = [0u64; 54];
+        let device_api = self.device_api;
+        let matrix_ptr = matrix_flat.as_mut_ptr() as usize;
+        let block_ptr = block.as_mut_ptr() as usize;
+        let out_ptr = out.as_mut_ptr() as usize;
+        let status = call_for_device_api(device_api, move || unsafe {
+            bar_block(matrix_ptr as *mut u64, block_ptr as *mut u64, out_ptr as *mut u64)
+        });
+        if status != 0 {
+            return Err(NeoGpuError::OperationFailed {
+                op: "superneo_bar_block_u64x54",
+                status,
+            });
+        }
+        Ok(out)
+    }
+
+    pub fn superneo_row_dot_blocks(&self, bar_blocks: &[[u64; 54]], z: &[FlatK]) -> Result<FlatK, NeoGpuError> {
+        let library = self
+            .library
+            .as_ref()
+            .ok_or(NeoGpuError::UnsupportedOperation {
+                op: "superneo_row_dot_blocks",
+            })?;
+        let row_dot = library
+            .evaluators
+            .superneo_row_dot_blocks
+            .ok_or(NeoGpuError::UnsupportedOperation {
+                op: "superneo_row_dot_blocks",
+            })?;
+        let mut bar_words = bar_blocks
+            .iter()
+            .flat_map(|block| block.iter().copied())
+            .collect::<Vec<_>>();
+        let mut z_words = z
+            .iter()
+            .flat_map(|value| [value.re, value.im])
+            .collect::<Vec<_>>();
+        let mut out_words = [0u64; 2];
+        let device_api = self.device_api;
+        let bar_ptr = bar_words.as_mut_ptr() as usize;
+        let z_ptr = z_words.as_mut_ptr() as usize;
+        let out_ptr = out_words.as_mut_ptr() as usize;
+        let num_blocks = bar_blocks.len() as u64;
+        let z_len = z.len() as u64;
+        let status = call_for_device_api(device_api, move || unsafe {
+            row_dot(
+                bar_ptr as *mut u64,
+                num_blocks,
+                z_ptr as *mut u64,
+                z_len,
+                out_ptr as *mut u64,
+            )
+        });
+        if status != 0 {
+            return Err(NeoGpuError::OperationFailed {
+                op: "superneo_row_dot_blocks",
+                status,
+            });
+        }
+        Ok(FlatK {
+            re: out_words[0],
+            im: out_words[1],
+        })
     }
 }
 

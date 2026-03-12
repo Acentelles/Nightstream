@@ -70,6 +70,7 @@ fn session_open(
 
 fn session_close(session: UInt) -> Int32:
     poseidon.destroy_session_cache(UInt64(session))
+    ring.destroy_session_cache(UInt64(session))
     sumcheck.destroy_session_cache(UInt64(session))
     runtime.free_session(UInt64(session))
     return STATUS_OK
@@ -173,11 +174,24 @@ fn poseidon2_permute_batch_u64x8(
 
 
 fn rq_mul_u64x54(
+    session: UInt64,
     lhs_words: UnsafePointer[UInt64],
     rhs_words: UnsafePointer[UInt64],
     out_words: UnsafePointer[mut=True, UInt64],
 ) -> Int32:
+    _ = session
     ring.rq_mul_words(lhs_words, rhs_words, out_words)
+    return STATUS_OK
+
+
+fn rq_mul_batch_u64x54(
+    session: UInt64,
+    lhs_words: UnsafePointer[UInt64],
+    rhs_words: UnsafePointer[UInt64],
+    pair_count: UInt64,
+    out_words: UnsafePointer[mut=True, UInt64],
+) -> Int32:
+    ring.rq_mul_batch_words(session, lhs_words, rhs_words, pair_count, out_words)
     return STATUS_OK
 
 

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, OnceLock};
 
-use neo_math::{from_complex, Fq, KExtensions, D, K};
+use neo_math::{ct, from_complex, superneo_bar_block, Fq, KExtensions, Rq, D, K};
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
 use p3_goldilocks::Goldilocks;
 use p3_symmetric::Permutation;
@@ -56,6 +56,7 @@ static NEXT_EVALUATOR_HANDLE: AtomicUsize = AtomicUsize::new(2);
 static FE_EVALS_AT_CALLS: AtomicUsize = AtomicUsize::new(0);
 static NC_EVALS_AT_CALLS: AtomicUsize = AtomicUsize::new(0);
 static POSEIDON2_BATCH_CALLS: AtomicUsize = AtomicUsize::new(0);
+static RQ_MUL_CALLS: AtomicUsize = AtomicUsize::new(0);
 static SESSION_OPEN_CALLS: AtomicUsize = AtomicUsize::new(0);
 static EVALUATORS: OnceLock<Mutex<HashMap<usize, EvaluatorState>>> = OnceLock::new();
 
@@ -547,34 +548,32 @@ pub extern "C" fn nightstream_gpu_fe_fold(
     challenge_re: u64,
     challenge_im: u64,
 ) -> i32 {
-    unsafe {
-        let mut evaluators = evaluators().lock().expect("mock evaluator registry");
-        let Some(state) = evaluators.get_mut(&evaluator) else {
-            return -3;
-        };
-        match state {
-            EvaluatorState::Fe(state) => {
-                let challenge = flat_to_k(FlatK {
-                    re: challenge_re,
-                    im: challenge_im,
-                });
-                fold_table_inplace(&mut state.eq_beta_r_tbl, challenge);
-                if let Some(eq_tbl) = state.eq_r_inputs_tbl.as_mut() {
-                    fold_table_inplace(eq_tbl, challenge);
-                }
-                for per_mcs in &mut state.f_var_tables_by_mcs {
-                    for table in per_mcs {
-                        fold_table_inplace(table, challenge);
-                    }
-                }
-                if let Some(eval_tbl) = state.eval_tbl.as_mut() {
-                    fold_table_inplace(eval_tbl, challenge);
-                }
-                state.cur_len /= 2;
+    let mut evaluators = evaluators().lock().expect("mock evaluator registry");
+    let Some(state) = evaluators.get_mut(&evaluator) else {
+        return -3;
+    };
+    match state {
+        EvaluatorState::Fe(state) => {
+            let challenge = flat_to_k(FlatK {
+                re: challenge_re,
+                im: challenge_im,
+            });
+            fold_table_inplace(&mut state.eq_beta_r_tbl, challenge);
+            if let Some(eq_tbl) = state.eq_r_inputs_tbl.as_mut() {
+                fold_table_inplace(eq_tbl, challenge);
             }
-            EvaluatorState::Passthrough => {}
-            EvaluatorState::Nc(_) => return -4,
+            for per_mcs in &mut state.f_var_tables_by_mcs {
+                for table in per_mcs {
+                    fold_table_inplace(table, challenge);
+                }
+            }
+            if let Some(eval_tbl) = state.eval_tbl.as_mut() {
+                fold_table_inplace(eval_tbl, challenge);
+            }
+            state.cur_len /= 2;
         }
+        EvaluatorState::Passthrough => {}
+        EvaluatorState::Nc(_) => return -4,
     }
     0
 }
@@ -646,26 +645,24 @@ pub extern "C" fn nightstream_gpu_nc_fold(
     challenge_re: u64,
     challenge_im: u64,
 ) -> i32 {
-    unsafe {
-        let mut evaluators = evaluators().lock().expect("mock evaluator registry");
-        let Some(state) = evaluators.get_mut(&evaluator) else {
-            return -3;
-        };
-        match state {
-            EvaluatorState::Nc(state) => {
-                let challenge = flat_to_k(FlatK {
-                    re: challenge_re,
-                    im: challenge_im,
-                });
-                fold_table_inplace(&mut state.eq_beta_m_tbl, challenge);
-                for table in &mut state.digits_tables {
-                    fold_digits_table_inplace(table, challenge);
-                }
-                state.cur_len /= 2;
+    let mut evaluators = evaluators().lock().expect("mock evaluator registry");
+    let Some(state) = evaluators.get_mut(&evaluator) else {
+        return -3;
+    };
+    match state {
+        EvaluatorState::Nc(state) => {
+            let challenge = flat_to_k(FlatK {
+                re: challenge_re,
+                im: challenge_im,
+            });
+            fold_table_inplace(&mut state.eq_beta_m_tbl, challenge);
+            for table in &mut state.digits_tables {
+                fold_digits_table_inplace(table, challenge);
             }
-            EvaluatorState::Passthrough => {}
-            EvaluatorState::Fe(_) => return -4,
+            state.cur_len /= 2;
         }
+        EvaluatorState::Passthrough => {}
+        EvaluatorState::Fe(_) => return -4,
     }
     0
 }
@@ -760,10 +757,99 @@ pub extern "C" fn nightstream_gpu_poseidon2_permute_batch_u64x8(
 }
 
 #[no_mangle]
+pub extern "C" fn nightstream_gpu_rq_mul_u64x54(
+    _session: usize,
+    lhs_ptr: *mut u64,
+    rhs_ptr: *mut u64,
+    out_ptr: *mut u64,
+) -> i32 {
+    RQ_MUL_CALLS.fetch_add(1, Ordering::Relaxed);
+    unsafe {
+        if lhs_ptr.is_null() || rhs_ptr.is_null() || out_ptr.is_null() {
+            return -3;
+        }
+        let lhs = std::slice::from_raw_parts(lhs_ptr, D);
+        let rhs = std::slice::from_raw_parts(rhs_ptr, D);
+        let out = std::slice::from_raw_parts_mut(out_ptr, D);
+        let lhs_ring = Rq(std::array::from_fn(|idx| Fq::from_u64(lhs[idx])));
+        let rhs_ring = Rq(std::array::from_fn(|idx| Fq::from_u64(rhs[idx])));
+        let prod = lhs_ring.mul(&rhs_ring);
+        for (dst, src) in out.iter_mut().zip(prod.0.iter()) {
+            *dst = src.as_canonical_u64();
+        }
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn nightstream_gpu_rq_mul_batch_u64x54(
+    _session: usize,
+    lhs_ptr: *mut u64,
+    rhs_ptr: *mut u64,
+    pair_count: u64,
+    out_ptr: *mut u64,
+) -> i32 {
+    RQ_MUL_CALLS.fetch_add(pair_count as usize, Ordering::Relaxed);
+    unsafe {
+        if lhs_ptr.is_null() || rhs_ptr.is_null() || out_ptr.is_null() {
+            return -3;
+        }
+        let lhs = std::slice::from_raw_parts(lhs_ptr, pair_count as usize * D);
+        let rhs = std::slice::from_raw_parts(rhs_ptr, pair_count as usize * D);
+        let out = std::slice::from_raw_parts_mut(out_ptr, pair_count as usize * D);
+        for pair_idx in 0..pair_count as usize {
+            let base = pair_idx * D;
+            let lhs_ring = Rq(std::array::from_fn(|idx| Fq::from_u64(lhs[base + idx])));
+            let rhs_ring = Rq(std::array::from_fn(|idx| Fq::from_u64(rhs[base + idx])));
+            let prod = lhs_ring.mul(&rhs_ring);
+            for (dst, src) in out[base..base + D].iter_mut().zip(prod.0.iter()) {
+                *dst = src.as_canonical_u64();
+            }
+        }
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn nightstream_gpu_rq_ct_u64x54(words_ptr: *mut u64, out_ptr: *mut u64) -> i32 {
+    unsafe {
+        if words_ptr.is_null() || out_ptr.is_null() {
+            return -3;
+        }
+        let words = std::slice::from_raw_parts(words_ptr, D);
+        let out = std::slice::from_raw_parts_mut(out_ptr, 1);
+        let ring = Rq(std::array::from_fn(|idx| Fq::from_u64(words[idx])));
+        out[0] = ct(&ring).as_canonical_u64();
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn nightstream_gpu_superneo_bar_block_u64x54(
+    matrix_ptr: *mut u64,
+    block_ptr: *mut u64,
+    out_ptr: *mut u64,
+) -> i32 {
+    unsafe {
+        if matrix_ptr.is_null() || block_ptr.is_null() || out_ptr.is_null() {
+            return -3;
+        }
+        let block = std::slice::from_raw_parts(block_ptr, D);
+        let out = std::slice::from_raw_parts_mut(out_ptr, D);
+        let transformed = superneo_bar_block(std::array::from_fn(|idx| Fq::from_u64(block[idx])));
+        for (dst, src) in out.iter_mut().zip(transformed.iter()) {
+            *dst = src.as_canonical_u64();
+        }
+    }
+    0
+}
+
+#[no_mangle]
 pub extern "C" fn nightstream_gpu_test_reset_counters() {
     FE_EVALS_AT_CALLS.store(0, Ordering::Relaxed);
     NC_EVALS_AT_CALLS.store(0, Ordering::Relaxed);
     POSEIDON2_BATCH_CALLS.store(0, Ordering::Relaxed);
+    RQ_MUL_CALLS.store(0, Ordering::Relaxed);
     SESSION_OPEN_CALLS.store(0, Ordering::Relaxed);
     evaluators().lock().expect("mock evaluator registry").clear();
 }
@@ -786,4 +872,9 @@ pub extern "C" fn nightstream_gpu_test_nc_evals_at_calls() -> usize {
 #[no_mangle]
 pub extern "C" fn nightstream_gpu_test_session_open_calls() -> usize {
     SESSION_OPEN_CALLS.load(Ordering::Relaxed)
+}
+
+#[no_mangle]
+pub extern "C" fn nightstream_gpu_test_rq_mul_calls() -> usize {
+    RQ_MUL_CALLS.load(Ordering::Relaxed)
 }

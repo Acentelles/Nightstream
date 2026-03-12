@@ -18,6 +18,41 @@ use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::PrimeCharacteristicRing;
 #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-threads"))]
 use rayon::prelude::*;
+use std::time::Duration;
+
+#[cfg(target_arch = "wasm32")]
+type TimePoint = f64;
+#[cfg(not(target_arch = "wasm32"))]
+type TimePoint = std::time::Instant;
+
+#[inline]
+fn time_now() -> TimePoint {
+    #[cfg(target_arch = "wasm32")]
+    {
+        js_sys::Date::now()
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::time::Instant::now()
+    }
+}
+
+#[inline]
+fn elapsed_duration(start: TimePoint) -> Duration {
+    #[cfg(target_arch = "wasm32")]
+    {
+        Duration::from_secs_f64((js_sys::Date::now() - start) / 1_000.0)
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        start.elapsed()
+    }
+}
+
+#[inline]
+fn allow_stage8_commit_acceleration(backend_ctx: &neo_reductions::accelerator::BackendContext) -> bool {
+    !matches!(backend_ctx.selected_device_api(), Some(neo_gpu::DeviceApi::Metal))
+}
 
 fn build_claim_witness_from_step(
     params: &NeoParams,
@@ -204,6 +239,13 @@ fn left_mul_add_row_major_into(dst: &mut Mat<F>, rho: &Mat<F>, src_data: &[F], m
 pub struct Stage8FoldLanePlan {
     pub ccs: CcsStructure<F>,
     pub claims: Vec<CeClaim<Cmt, F, K>>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct JointOpeningLaneDurations {
+    pub group_build: Duration,
+    pub joint_commit_many: Duration,
+    pub unified_fold_mix: Duration,
 }
 
 fn unified_fold_digest(groups: &[JointOpeningGroupProof]) -> [u8; 32] {
@@ -452,6 +494,7 @@ pub fn prove_joint_opening_lane_with_witnesses(
     params: &NeoParams,
     step_idx: usize,
     step: &StepWitnessBundle<Cmt, F, K>,
+    backend_ctx: &neo_reductions::accelerator::BackendContext,
     cpu_bus: &neo_memory::cpu::BusLayout,
     time_cpu_commitments: &[Cmt],
     time_mem_commitments: &[Cmt],
@@ -462,6 +505,43 @@ pub fn prove_joint_opening_lane_with_witnesses(
     opening_unification: &OpeningUnificationProof,
     claim_eta_coeffs: &[Vec<Mat<F>>],
 ) -> Result<(JointOpeningLaneProof, Vec<Mat<F>>), PiCcsError> {
+    prove_joint_opening_lane_with_witnesses_and_metrics(
+        tr,
+        params,
+        step_idx,
+        step,
+        backend_ctx,
+        cpu_bus,
+        time_cpu_commitments,
+        time_mem_commitments,
+        time_col_ids,
+        opening_proofs,
+        manifest_digest,
+        reduction,
+        opening_unification,
+        claim_eta_coeffs,
+    )
+    .map(|(lane, wits, _metrics)| (lane, wits))
+}
+
+pub fn prove_joint_opening_lane_with_witnesses_and_metrics(
+    tr: &mut Poseidon2Transcript,
+    params: &NeoParams,
+    step_idx: usize,
+    step: &StepWitnessBundle<Cmt, F, K>,
+    backend_ctx: &neo_reductions::accelerator::BackendContext,
+    cpu_bus: &neo_memory::cpu::BusLayout,
+    time_cpu_commitments: &[Cmt],
+    time_mem_commitments: &[Cmt],
+    time_col_ids: &[usize],
+    opening_proofs: &[TimeOpeningProof],
+    manifest_digest: &[u8; 32],
+    reduction: &OpeningReductionProof,
+    opening_unification: &OpeningUnificationProof,
+    claim_eta_coeffs: &[Vec<Mat<F>>],
+) -> Result<(JointOpeningLaneProof, Vec<Mat<F>>, JointOpeningLaneDurations), PiCcsError> {
+    let mut metrics = JointOpeningLaneDurations::default();
+    let allow_commit_accel = allow_stage8_commit_acceleration(backend_ctx);
     if opening_proofs.len() != claim_eta_coeffs.len() {
         return Err(PiCcsError::ProtocolError(
             "time/opening joint/prove: opening_proofs and claim_eta_coeffs length mismatch".into(),
@@ -522,7 +602,7 @@ pub fn prove_joint_opening_lane_with_witnesses(
         }
 
         let mut joint_z = Mat::zero(D, t, F::ZERO);
-        let mut expected_commitment: Option<Cmt> = None;
+        let mut claim_commitments: Vec<Cmt> = Vec::with_capacity(group.claim_indices.len());
         let mut expected_claim_digits = vec![K::ZERO; D];
 
         for (local_idx, &claim_idx) in group.claim_indices.iter().enumerate() {
@@ -550,7 +630,7 @@ pub fn prove_joint_opening_lane_with_witnesses(
             )?;
 
             let rho = &rhos[local_idx];
-            add_rot_scaled_commitment(&mut expected_commitment, &claim.commitment, rho)?;
+            claim_commitments.push(claim.commitment.clone());
             let rotated_digits = apply_rot_to_digits(rho, claim.eval_digits.as_slice())?;
             for i in 0..D {
                 expected_claim_digits[i] += rotated_digits[i];
@@ -568,9 +648,28 @@ pub fn prove_joint_opening_lane_with_witnesses(
             left_mul_add_into(&mut joint_z, rho, &claim_z)?;
         }
 
-        let expected_commitment = expected_commitment.ok_or_else(|| {
-            PiCcsError::ProtocolError(format!("time/opening joint/prove: group {} has no claims", group_idx))
-        })?;
+        let expected_commitment = if allow_commit_accel {
+            crate::shard::mix_rhos_commits_with_backend(
+                backend_ctx,
+                |mix_rhos, commits| {
+                    let mut acc: Option<Cmt> = None;
+                    for (rho, commit) in mix_rhos.iter().zip(commits.iter()) {
+                        add_rot_scaled_commitment(&mut acc, commit, rho).expect("stage8 group fallback mix");
+                    }
+                    acc.expect("stage8 group fallback commitment")
+                },
+                rhos.as_slice(),
+                claim_commitments.as_slice(),
+            )
+        } else {
+            let mut acc: Option<Cmt> = None;
+            for (rho, commit) in rhos.iter().zip(claim_commitments.iter()) {
+                add_rot_scaled_commitment(&mut acc, commit, rho)?;
+            }
+            acc.ok_or_else(|| {
+                PiCcsError::ProtocolError(format!("time/opening joint/prove: group {} has no claims", group_idx))
+            })?
+        };
 
         let joint_claim_digits =
             eval_time_mat_digits_at_point(group.domain, group.point.as_slice(), step.mcs.0.m_in, cpu_bus, &joint_z)?;
@@ -606,6 +705,7 @@ pub fn prove_joint_opening_lane_with_witnesses(
         })
     };
 
+    let group_results_start = time_now();
     #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-threads"))]
     let group_results: Result<Vec<GroupWork>, PiCcsError> = reduction
         .groups
@@ -622,8 +722,15 @@ pub fn prove_joint_opening_lane_with_witnesses(
         .collect();
 
     let group_results = group_results?;
+    metrics.group_build += elapsed_duration(group_results_start);
     let joint_refs: Vec<&Mat<F>> = group_results.iter().map(|g| &g.joint_z).collect();
-    let joint_commitments = committer.commit_many(&joint_refs);
+    let joint_commit_start = time_now();
+    let joint_commitments = if allow_commit_accel {
+        crate::shard::commit_many_with_backend(backend_ctx, &committer, &joint_refs)?
+    } else {
+        committer.commit_many(&joint_refs)
+    };
+    metrics.joint_commit_many += elapsed_duration(joint_commit_start);
     if joint_commitments.len() != group_results.len() {
         return Err(PiCcsError::ProtocolError(format!(
             "time/opening joint/prove: joint commitment count mismatch (got {}, expected {})",
@@ -666,6 +773,7 @@ pub fn prove_joint_opening_lane_with_witnesses(
 
     let mut unified_fold: Option<JointOpeningGroupProof> = None;
     if !out_groups.is_empty() {
+        let unified_mix_start = time_now();
         let anchor = out_groups
             .first()
             .ok_or_else(|| PiCcsError::ProtocolError("stage8 unified fold: empty groups".into()))?;
@@ -680,12 +788,29 @@ pub fn prove_joint_opening_lane_with_witnesses(
                 out_groups.len()
             )));
         }
-        let mut expected_commitment: Option<Cmt> = None;
-        for (rho, group) in mix_rhos.iter().zip(out_groups.iter()) {
-            add_rot_scaled_commitment(&mut expected_commitment, &group.joint_commitment, rho)?;
-        }
-        let expected_commitment = expected_commitment
-            .ok_or_else(|| PiCcsError::ProtocolError("stage8 unified fold: missing expected commitment".into()))?;
+        let expected_commitment = if allow_commit_accel {
+            crate::shard::mix_rhos_commits_with_backend(
+                backend_ctx,
+                |rhos, commits| {
+                    let mut acc: Option<Cmt> = None;
+                    for (rho, commit) in rhos.iter().zip(commits.iter()) {
+                        add_rot_scaled_commitment(&mut acc, commit, rho).expect("stage8 unified fold fallback mix");
+                    }
+                    acc.expect("stage8 unified fold fallback commitment")
+                },
+                mix_rhos.as_slice(),
+                &out_groups
+                    .iter()
+                    .map(|g| g.joint_commitment.clone())
+                    .collect::<Vec<_>>(),
+            )
+        } else {
+            let mut acc: Option<Cmt> = None;
+            for (rho, group) in mix_rhos.iter().zip(out_groups.iter()) {
+                add_rot_scaled_commitment(&mut acc, &group.joint_commitment, rho)?;
+            }
+            acc.ok_or_else(|| PiCcsError::ProtocolError("stage8 unified fold: missing expected commitment".into()))?
+        };
         let mut expected_claim_digits = vec![K::ZERO; D];
         for (rho, group) in mix_rhos.iter().zip(out_groups.iter()) {
             let rotated = apply_rot_to_digits(rho, group.joint_claim_digits.as_slice())?;
@@ -741,6 +866,7 @@ pub fn prove_joint_opening_lane_with_witnesses(
             joint_commitment: unified_commitment,
             opening_ccs_proof: None,
         });
+        metrics.unified_fold_mix += elapsed_duration(unified_mix_start);
     }
 
     Ok((
@@ -750,6 +876,7 @@ pub fn prove_joint_opening_lane_with_witnesses(
             unified_fold,
         },
         out_wits,
+        metrics,
     ))
 }
 
@@ -758,6 +885,7 @@ pub fn prove_joint_opening_lane(
     params: &NeoParams,
     step_idx: usize,
     step: &StepWitnessBundle<Cmt, F, K>,
+    backend_ctx: &neo_reductions::accelerator::BackendContext,
     cpu_bus: &neo_memory::cpu::BusLayout,
     time_cpu_commitments: &[Cmt],
     time_mem_commitments: &[Cmt],
@@ -768,11 +896,12 @@ pub fn prove_joint_opening_lane(
     opening_unification: &OpeningUnificationProof,
     claim_eta_coeffs: &[Vec<Mat<F>>],
 ) -> Result<JointOpeningLaneProof, PiCcsError> {
-    let (lane, _wits) = prove_joint_opening_lane_with_witnesses(
+    let (lane, _wits, _metrics) = prove_joint_opening_lane_with_witnesses_and_metrics(
         tr,
         params,
         step_idx,
         step,
+        backend_ctx,
         cpu_bus,
         time_cpu_commitments,
         time_mem_commitments,

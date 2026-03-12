@@ -87,6 +87,10 @@ mod ccs_only_batched;
 mod core_utils;
 #[path = "shard/mixed_batched.rs"]
 mod mixed_batched;
+#[path = "shard/mojo_commit_many.rs"]
+mod mojo_commit_many;
+#[path = "shard/mojo_commit_mix.rs"]
+mod mojo_commit_mix;
 #[path = "shard/poseidon_lane_helpers.rs"]
 mod poseidon_lane_helpers;
 #[path = "shard/prover.rs"]
@@ -106,6 +110,8 @@ pub use verifier_and_api::*;
 
 pub(crate) use core_utils::*;
 pub(crate) use mixed_batched::*;
+pub(crate) use mojo_commit_many::*;
+pub(crate) use mojo_commit_mix::*;
 pub(crate) use poseidon_lane_helpers::*;
 pub(crate) use prover::*;
 pub(crate) use rlc_dec::*;
@@ -125,8 +131,17 @@ pub struct ShardProveLaneDurations {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Stage8SubphaseDurations {
+    pub group_build: Duration,
+    pub joint_commit_many: Duration,
+    pub unified_fold_mix: Duration,
+    pub rlc_dec: Duration,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ShardProveMetrics {
     pub lane_durations: ShardProveLaneDurations,
+    pub stage8_subphases: Stage8SubphaseDurations,
     pub mojo_before: neo_gpu::MojoSessionDiagnostics,
     pub mojo_after: neo_gpu::MojoSessionDiagnostics,
     pub mojo_delta: neo_gpu::MojoSessionDiagnostics,
