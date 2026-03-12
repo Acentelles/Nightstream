@@ -50,6 +50,7 @@ const SPLIT_NC_SNAPSHOT_MAGIC: u64 = 0x4E53_504C_4954_4E43;
 const SPLIT_NC_SNAPSHOT_VERSION: u64 = 1;
 const SPLIT_NC_FE_ROW_V1: u64 = 1;
 const SPLIT_NC_NC_COL_V1: u64 = 2;
+const MOCK_CPU_ONLY_DEVICE_ID: u32 = 0xFFFF_FF01;
 
 static NEXT_EVALUATOR_HANDLE: AtomicUsize = AtomicUsize::new(2);
 static FE_EVALS_AT_CALLS: AtomicUsize = AtomicUsize::new(0);
@@ -445,9 +446,12 @@ pub extern "C" fn nightstream_gpu_abi_version() -> u32 {
 #[no_mangle]
 pub extern "C" fn nightstream_gpu_device_probe(_req: *const DeviceRequest, out: *mut DeviceResponse) -> i32 {
     unsafe {
+        let Some(req) = _req.as_ref() else {
+            return -1;
+        };
         if let Some(out) = out.as_mut() {
             out.status = 0;
-            out.available = 1;
+            out.available = i32::from(req.api == 0 || req.device_id != MOCK_CPU_ONLY_DEVICE_ID);
         }
     }
     0
@@ -460,6 +464,9 @@ pub extern "C" fn nightstream_gpu_session_open(req: *const SessionRequest, out_h
         let Some(req) = req.as_ref() else {
             return -1;
         };
+        if req.api != 0 && req.device_id == MOCK_CPU_ONLY_DEVICE_ID {
+            return -9;
+        }
         let Some(out_handle) = out_handle.as_mut() else {
             return -2;
         };

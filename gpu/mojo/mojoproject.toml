@@ -3,7 +3,7 @@ name = "nightstream-mojo-gpu"
 version = "0.1.0"
 entry = "src/lib.mojo"
 shared_lib_basename = "nightstream_mojo_gpu"
-mojo_version = "0.25.7"
+mojo_version = "0.26.1"
 
 [abi]
 version = 1

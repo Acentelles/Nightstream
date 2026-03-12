@@ -3,7 +3,7 @@ use std::sync::Arc;
 use neo_ajtai::Commitment as Cmt;
 use neo_ccs::crypto::poseidon2_goldilocks as p2;
 use neo_ccs::{CcsClaim, CcsStructure, CcsWitness, CeClaim, Mat};
-use neo_gpu::{connect, DeviceApi, FlatK, MojoSession, MojoSplitNcEvaluator, ProverComputeBackend};
+use neo_gpu::{connect, DeviceApi, ExecutionMode, FlatK, MojoSession, MojoSplitNcEvaluator, ProverComputeBackend};
 use neo_math::{from_complex, KExtensions, F as BaseF, K};
 use neo_params::NeoParams;
 use p3_field::{Field, PrimeCharacteristicRing, PrimeField64};
@@ -17,8 +17,17 @@ const POSEIDON2_MIN_PERMUTATIONS_METAL: usize = 128;
 const POSEIDON2_MIN_PERMUTATIONS_CUDA: usize = 32;
 const POSEIDON2_MIN_PERMUTATIONS_HIP: usize = 32;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BackendExecutionStatus {
+    RustCpu,
+    MojoCpu,
+    MojoHostFallback(DeviceApi),
+    MojoAccelerator(DeviceApi),
+}
+
 pub struct BackendContext {
-    session: Option<MojoSession>,
+    split_nc_session: Option<MojoSession>,
+    poseidon_session: Option<MojoSession>,
     requested_mojo: bool,
     allow_cpu_fallback: bool,
     supports_split_nc: bool,
@@ -29,7 +38,8 @@ impl BackendContext {
     pub fn new(backend: &ProverComputeBackend) -> Result<Self, PiCcsError> {
         match backend {
             ProverComputeBackend::Cpu => Ok(Self {
-                session: None,
+                poseidon_session: None,
+                split_nc_session: None,
                 requested_mojo: false,
                 allow_cpu_fallback: false,
                 supports_split_nc: false,
@@ -37,12 +47,26 @@ impl BackendContext {
             }),
             ProverComputeBackend::Mojo(cfg) => match connect(cfg) {
                 Ok(session) => {
-                    let supports_split_nc = session.supports_split_nc_api();
                     let supports_poseidon2 = session.supports_poseidon2_api();
+                    let mut split_nc_session = None;
+                    let supports_split_nc = if session.device_api() == DeviceApi::Metal {
+                        let cpu_cfg = cfg.clone().with_device_api(DeviceApi::Cpu).with_device_id(0);
+                        match connect(&cpu_cfg) {
+                            Ok(cpu_session) if cpu_session.supports_split_nc_api() => {
+                                split_nc_session = Some(cpu_session);
+                                true
+                            }
+                            _ => false,
+                        }
+                    } else {
+                        session.supports_split_nc_api()
+                    };
+
                     if !supports_split_nc && !supports_poseidon2 {
                         if cfg.fallback_to_cpu {
                             return Ok(Self {
-                                session: None,
+                                poseidon_session: None,
+                                split_nc_session: None,
                                 requested_mojo: true,
                                 allow_cpu_fallback: true,
                                 supports_split_nc: false,
@@ -54,7 +78,8 @@ impl BackendContext {
                         ));
                     }
                     Ok(Self {
-                        session: Some(session),
+                        poseidon_session: Some(session),
+                        split_nc_session,
                         requested_mojo: true,
                         allow_cpu_fallback: cfg.fallback_to_cpu,
                         supports_split_nc,
@@ -62,7 +87,8 @@ impl BackendContext {
                     })
                 }
                 Err(_err) if cfg.fallback_to_cpu => Ok(Self {
-                    session: None,
+                    poseidon_session: None,
+                    split_nc_session: None,
                     requested_mojo: true,
                     allow_cpu_fallback: true,
                     supports_split_nc: false,
@@ -83,7 +109,7 @@ impl BackendContext {
     #[inline]
     pub fn poseidon_session(&self) -> Option<&MojoSession> {
         if self.supports_poseidon2 {
-            self.session.as_ref()
+            self.poseidon_session.as_ref()
         } else {
             None
         }
@@ -91,7 +117,10 @@ impl BackendContext {
 
     pub fn split_nc_session(&self) -> Result<Option<&MojoSession>, PiCcsError> {
         if self.supports_split_nc {
-            return Ok(self.session.as_ref());
+            return Ok(self
+                .split_nc_session
+                .as_ref()
+                .or(self.poseidon_session.as_ref()));
         }
         if self.requested_mojo && !self.allow_cpu_fallback {
             return Err(PiCcsError::ProtocolError(
@@ -114,6 +143,36 @@ impl BackendContext {
             Some(DeviceApi::Hip) => POSEIDON2_MIN_PERMUTATIONS_HIP,
             Some(DeviceApi::Cpu) => POSEIDON2_MIN_PERMUTATIONS_CPU_DIRECT,
             Some(DeviceApi::Auto) | None => usize::MAX,
+        }
+    }
+
+    #[inline]
+    pub fn selected_device_api(&self) -> Option<DeviceApi> {
+        self.poseidon_session.as_ref().map(MojoSession::device_api)
+    }
+
+    pub fn poseidon2_execution_status(&self, total_permutations: usize) -> BackendExecutionStatus {
+        let Some(session) = self.poseidon_session() else {
+            return BackendExecutionStatus::RustCpu;
+        };
+        if total_permutations < self.poseidon2_min_permutations() {
+            return BackendExecutionStatus::RustCpu;
+        }
+        match session.poseidon2_batch_execution_mode(total_permutations) {
+            ExecutionMode::Cpu => BackendExecutionStatus::MojoCpu,
+            ExecutionMode::HostFallback => BackendExecutionStatus::MojoHostFallback(session.device_api()),
+            ExecutionMode::Accelerator => BackendExecutionStatus::MojoAccelerator(session.device_api()),
+        }
+    }
+
+    pub fn split_nc_execution_status(&self, total_tasks: usize) -> BackendExecutionStatus {
+        let Ok(Some(session)) = self.split_nc_session() else {
+            return BackendExecutionStatus::RustCpu;
+        };
+        match session.split_nc_execution_mode(total_tasks) {
+            ExecutionMode::Cpu => BackendExecutionStatus::MojoCpu,
+            ExecutionMode::HostFallback => BackendExecutionStatus::MojoHostFallback(session.device_api()),
+            ExecutionMode::Accelerator => BackendExecutionStatus::MojoAccelerator(session.device_api()),
         }
     }
 }

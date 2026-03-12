@@ -52,6 +52,13 @@ fn poseidon2_gpu_batch_kernel(state_words: UnsafePointer[mut=True, UInt64], num_
         poseidon.permute_state_at_offset(state_words, state_idx * WIDTH)
 
 
+fn poseidon2_gpu_batch_kernel_sig(
+    state_words: UnsafePointer[UInt64, MutAnyOrigin],
+    num_states: Int,
+):
+    pass
+
+
 fn print_stats(label: String, num_states: Int, iters: Int, elapsed_ns: Int):
     var total_states = num_states * iters
     var ns_per_state = elapsed_ns // total_states
@@ -110,7 +117,7 @@ fn bench_batch(num_states: Int) raises:
         host[base + 7] = seed + 23
 
     ctx.enqueue_copy(src_buf=host, dst_buf=dev)
-    var kernel = ctx.compile_function[poseidon2_gpu_batch_kernel]()
+    var kernel = ctx.compile_function[poseidon2_gpu_batch_kernel, poseidon2_gpu_batch_kernel_sig]()
     ctx.enqueue_function(
         kernel,
         dev.unsafe_ptr(),

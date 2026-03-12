@@ -61,9 +61,25 @@ Current verified status:
 - the shared library exports the same Poseidon2 batch symbol and can be used from Rust in
   CPU/direct mode today,
 - Rust-side auto selection prefers `Metal` on macOS and `Cuda`/`Hip` on non-macOS hosts, then
-  falls back to CPU if no accelerator session opens,
+  falls back to the Mojo CPU session if no accelerator session opens,
 - real shared-library Metal sessions are still experimental in this toolchain and may report
   unavailable or fail to launch GPU work even when the standalone scripts succeed.
+- real reductions-level CUDA parity is working for transcript digest checks and simplified
+  `optimized_prove` parity,
+- real `neo-fold` CCS-only batched proving is not signed off yet: richer batched flows still hit an
+  NC sumcheck invariant mismatch under real Mojo CPU/direct and CUDA sessions, so end-to-end
+  Nightstream prove/verify promotion remains blocked on that parity bug.
+
+Current backend matrix:
+
+| Path | CPU session | Metal session | CUDA session | Notes |
+|------|-------------|---------------|--------------|-------|
+| Poseidon2 single/batch via Rust bridge | Yes | Yes | Yes | Rust bridge is the supported production entrypoint. |
+| Poseidon2 accelerator execution | No | Yes | Yes | Metal uses the bridge-thread fix on macOS. |
+| Split-NC FE/NC via shared library | Yes | No | Yes | Metal is intentionally disabled in the Rust bridge for Split-NC until its shared-lib instability is resolved. |
+| Split-NC accelerator execution | No | No | No | Current correctness-first path stays host-backed inside Mojo until end-to-end CUDA sign-off is complete. |
+| Rust CPU fallback when Mojo unavailable | Yes | Yes | Yes | Auto mode falls back to Rust CPU only if no Mojo session can be opened. |
+| Mojo CPU/direct fallback when requested accelerator is unavailable | Yes | Yes | Yes | Explicit Mojo backend configs prefer a Mojo CPU session before dropping to Rust CPU. |
 
 Run the throughput benchmark with:
 
@@ -79,41 +95,92 @@ The benchmark reports:
 
 ## Version Pin
 
-The environment is pinned to `mojo==0.25.7` for reproducibility. Update that pin deliberately when
+The environment is pinned to `mojo==0.26.1` for reproducibility. Update that pin deliberately when
 we start relying on newer GPU APIs or language changes.
 
-## Next Steps
+## Implementation Roadmap
 
-- stabilize shared-library GPU session open/probe on Metal so Rust can use the same GPU path that
-  already works in `src/poseidon_gpu_compare.mojo`,
-- flatten Rust-built FE/NC snapshot tables into ABI payloads,
-- port exact Goldilocks/K/Rq arithmetic and FE/NC fold logic,
-- add Mojo golden-vector tests once a Mojo toolchain is available in CI or on a supported dev host,
-- replace deprecated `enqueue_function` launches with `enqueue_function_checked` and keep one
-  parity test per converted kernel,
-- move Metal shared-library calls behind a dedicated long-lived bridge thread in every production
-  path that touches Mojo GPU APIs, then remove any remaining direct-thread launch sites,
-- add explicit backend fallback diagnostics in the Rust bridge and Mojo layer so we can tell
-  whether a path ran on CPU, Metal host mode, or real accelerator execution,
-- add threshold sweep benches for Poseidon, FE row phase, and NC column phase, and store the
-  current cutovers in one place in Rust instead of scattering ad hoc constants,
-- add persistent session-owned host/device buffers for Poseidon batch and Split-NC FE/NC evals so
-  we stop rebuilding buffers on every shared-library call,
-- add reusable compiled-kernel and precomputed-table state on the Mojo side, following the
-  `neo-midnight-mojo-bridge` pattern of caching GPU context and uploaded tables,
-- add CUDA-only real-accelerator parity tests for Split-NC FE and NC in CI or on the Ubuntu GPU VM
-  before we optimize those kernels further,
-- add stage-specific snapshot fixtures for FE chunk, FE aggregate, NC chunk, NC aggregate, and
-  terminal FE/NC rounds so parity failures localize to one proving stage instead of only showing up
-  in end-to-end proofs,
-- implement Mojo-side `fe_fold` and `nc_fold` state updates so evaluators can stay resident instead
-  of depending on Rust to rebuild folded snapshots every round,
-- finish `src/nightstream_gpu/ring.mojo` and `src/nightstream_gpu/superneo.mojo` so Ajtai/commit
-  work can move onto the same backend architecture,
-- add one backend-compare performance test for a real `neo-fold` multi-step proof on CUDA, similar
-  to the bridge repo's backend-compare fixtures, so we track end-to-end speedup instead of only
-  microbench numbers,
-- document the supported backend matrix clearly:
-  CUDA is the primary acceleration target, Metal Poseidon shared-lib is enabled through the Rust
-  bridge fix, and Metal Split-NC remains disabled until its separate shared-lib instability is
-  resolved.
+Assumptions:
+
+- proof format, verifier logic, and transcript semantics remain unchanged,
+- Rust remains the protocol/orchestration layer,
+- CUDA is the primary acceleration target,
+- Metal is correctness-first and may stay partially host-backed until stable,
+- GPU promotion must be justified by end-to-end prover wins, not only kernel microbenches.
+
+### Milestone 1: Shared-Library Runtime Hardening
+
+- [ ] replace deprecated `enqueue_function` launches with `enqueue_function_checked` in Poseidon and
+  sumcheck kernels,
+- [x] keep the Rust `neo-gpu` loader as the only supported production entrypoint for Mojo GPU work,
+- [x] keep Metal Poseidon shared-lib enabled through the Rust bridge fix,
+- [x] keep Metal Split-NC disabled until its separate shared-lib instability is resolved,
+- [x] add explicit backend fallback/status reporting so we can tell whether a path ran on CPU, Metal
+  host mode, or real accelerator execution,
+- [x] document the supported backend matrix clearly in this README and in the Rust bridge docs.
+
+### Milestone 2: Persistent Sessions And Buffers
+
+- [ ] add persistent session-owned host/device buffers for Poseidon batch,
+- [ ] add persistent session-owned host/device buffers for FE/NC evaluator calls,
+- [ ] cache compiled kernels and uploaded immutable tables on the Mojo side,
+- [ ] follow the `neo-midnight-mojo-bridge` pattern of reusing GPU context and uploaded state
+  instead of recreating them on every call,
+- [ ] centralize buffer lifetime and reuse behind the Rust session boundary so callers do not manage
+  raw GPU resources directly.
+
+### Milestone 3: Split-NC Correctness Completion
+
+- [ ] keep Rust as the canonical FE/NC snapshot builder,
+- [ ] flatten FE/NC snapshot tables into stable ABI payloads with no witness decoding on the Mojo
+  side,
+- [ ] implement Mojo-side `fe_fold` so FE evaluators can stay resident across rounds,
+- [ ] implement Mojo-side `nc_fold` so NC evaluators can stay resident across rounds,
+- [ ] avoid rebuilding full FE/NC evaluator state on every round once fold support is in place,
+- [ ] keep CPU Ajtai-tail rounds unchanged and synchronized with the Mojo-backed phase.
+
+### Milestone 4: Stage-Level Parity Coverage
+
+- [ ] add stage-specific FE chunk snapshot fixtures,
+- [ ] add stage-specific FE aggregate snapshot fixtures,
+- [ ] add stage-specific NC chunk snapshot fixtures,
+- [ ] add stage-specific NC aggregate snapshot fixtures,
+- [ ] add terminal FE/NC round fixtures,
+- [ ] add real Mojo parity tests for `neo-fold` RLC input binding and CCS-only batched folding,
+- [ ] keep end-to-end `optimized_prove` parity tests as the final correctness gate,
+- [ ] add Mojo golden-vector tests once a Mojo toolchain is available in CI or on a supported dev
+  host.
+
+### Milestone 5: CUDA Sign-Off
+
+- [ ] add CUDA-only real-accelerator parity tests for Poseidon batch,
+- [ ] add CUDA-only real-accelerator parity tests for FE evaluator creation/evals/fold,
+- [ ] add CUDA-only real-accelerator parity tests for NC evaluator creation/evals/fold,
+- [ ] add CUDA-only real `optimized_prove` parity checks,
+- [ ] add one real `neo-fold` multi-step prove/verify CUDA-backed parity test,
+- [ ] run these on the Ubuntu CUDA VM until GPU CI is available.
+
+### Milestone 6: Thresholds And Backend Policy
+
+- [ ] add threshold sweep benches for Poseidon batch,
+- [ ] add threshold sweep benches for FE row phase,
+- [ ] add threshold sweep benches for NC column phase,
+- [ ] store measured cutovers in one place in Rust instead of scattering ad hoc constants,
+- [ ] make backend activation policy threshold-driven and backend-specific,
+- [ ] keep CPU fallback as the default below cutover sizes.
+
+### Milestone 7: Remaining Mojo Modules
+
+- [ ] finish `src/nightstream_gpu/ring.mojo`,
+- [ ] finish `src/nightstream_gpu/superneo.mojo`,
+- [ ] connect those modules to Ajtai/commit-side acceleration only after Split-NC is stable,
+- [ ] keep proof-compatible transcript binding on the Rust side while those modules land.
+
+### Milestone 8: End-To-End Performance Promotion
+
+- [ ] add one backend-compare performance test for a real `neo-fold` multi-step proof on CUDA,
+- [ ] report CPU baseline, GPU steady-state, GPU roundtrip, and end-to-end prove time,
+- [ ] promote a GPU path only when it improves the real prover flow rather than only microbench
+  numbers,
+- [ ] revisit Metal Split-NC only after CUDA is stable and the shared-lib Metal runtime issue is
+  isolated.

@@ -1,15 +1,30 @@
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 use libloading::Library;
 use neo_ajtai::Commitment;
 use neo_ccs::{CeClaim, Mat};
 use neo_gpu::{DeviceApi, MojoBackendConfig, ProverComputeBackend};
 use neo_math::{D, F, K};
+use neo_reductions::accelerator::{BackendContext, BackendExecutionStatus};
 use neo_reductions::engines::utils::{bind_me_inputs, bind_me_inputs_with_backend};
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::PrimeCharacteristicRing;
+
+const MOCK_CPU_ONLY_DEVICE_ID: u32 = 0xFFFF_FF01;
+
+fn build_mock_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
+fn lock_mock_backend() -> std::sync::MutexGuard<'static, ()> {
+    build_mock_lock()
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner())
+}
 
 fn mock_manifest_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -58,6 +73,63 @@ fn build_mock_library() -> &'static Path {
             .join(mock_library_name())
             .canonicalize()
             .expect("canonical mock mojo gpu library path")
+    })
+}
+
+fn real_mojo_library_name() -> &'static str {
+    #[cfg(target_os = "macos")]
+    {
+        "libnightstream_mojo_gpu.dylib"
+    }
+    #[cfg(target_os = "linux")]
+    {
+        "libnightstream_mojo_gpu.so"
+    }
+    #[cfg(target_os = "windows")]
+    {
+        "nightstream_mojo_gpu.dll"
+    }
+}
+
+fn pixi_bin() -> OsString {
+    if let Some(home) = std::env::var_os("HOME") {
+        let candidate = PathBuf::from(home).join(".pixi").join("bin").join("pixi");
+        if candidate.is_file() {
+            return candidate.into_os_string();
+        }
+    }
+    OsString::from("pixi")
+}
+
+fn build_real_mojo_library() -> &'static Path {
+    static LIB_PATH: OnceLock<PathBuf> = OnceLock::new();
+    LIB_PATH.get_or_init(|| {
+        let project_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("gpu")
+            .join("mojo");
+        let output_dir = project_dir.join("build");
+        let output = output_dir.join(real_mojo_library_name());
+        std::fs::create_dir_all(&output_dir).expect("create mojo build directory");
+
+        let status = Command::new(pixi_bin())
+            .arg("run")
+            .arg("mojo")
+            .arg("build")
+            .arg("--emit")
+            .arg("shared-lib")
+            .arg("src/lib.mojo")
+            .arg("-o")
+            .arg(&output)
+            .current_dir(&project_dir)
+            .status()
+            .expect("spawn mojo build");
+        assert!(status.success(), "real mojo gpu build failed");
+
+        output
+            .canonicalize()
+            .expect("canonical real mojo gpu library path")
     })
 }
 
@@ -118,6 +190,7 @@ fn sample_me_claims(len: usize) -> Vec<CeClaim<Commitment, F, K>> {
 
 #[test]
 fn bind_me_inputs_mojo_backend_matches_cpu_and_uses_batch_poseidon() {
+    let _guard = lock_mock_backend();
     type ResetFn = unsafe extern "C" fn();
     type CounterFn = unsafe extern "C" fn() -> usize;
 
@@ -140,6 +213,11 @@ fn bind_me_inputs_mojo_backend_matches_cpu_and_uses_batch_poseidon() {
     unsafe { reset() };
 
     let backend = ProverComputeBackend::Mojo(MojoBackendConfig::new(DeviceApi::Cuda).with_library_path(mock_library));
+    let backend_ctx = BackendContext::new(&backend).expect("backend context");
+    assert_eq!(
+        backend_ctx.poseidon2_execution_status(1_000),
+        BackendExecutionStatus::MojoAccelerator(DeviceApi::Cuda)
+    );
     bind_me_inputs_with_backend(&mut mojo_tr, &me_inputs, &backend).expect("mojo bind_me_inputs");
 
     assert_eq!(cpu_tr.digest32(), mojo_tr.digest32());
@@ -151,6 +229,7 @@ fn bind_me_inputs_mojo_backend_matches_cpu_and_uses_batch_poseidon() {
 
 #[test]
 fn bind_me_inputs_mojo_metal_backend_skips_small_batches() {
+    let _guard = lock_mock_backend();
     type ResetFn = unsafe extern "C" fn();
     type CounterFn = unsafe extern "C" fn() -> usize;
 
@@ -173,6 +252,11 @@ fn bind_me_inputs_mojo_metal_backend_skips_small_batches() {
     unsafe { reset() };
 
     let backend = ProverComputeBackend::Mojo(MojoBackendConfig::new(DeviceApi::Metal).with_library_path(mock_library));
+    let backend_ctx = BackendContext::new(&backend).expect("backend context");
+    assert_eq!(
+        backend_ctx.poseidon2_execution_status(1),
+        BackendExecutionStatus::RustCpu
+    );
     bind_me_inputs_with_backend(&mut mojo_tr, &me_inputs, &backend).expect("mojo bind_me_inputs");
 
     assert_eq!(cpu_tr.digest32(), mojo_tr.digest32());
@@ -185,6 +269,7 @@ fn bind_me_inputs_mojo_metal_backend_skips_small_batches() {
 
 #[test]
 fn bind_me_inputs_mojo_metal_backend_uses_batch_poseidon_for_large_batches() {
+    let _guard = lock_mock_backend();
     type ResetFn = unsafe extern "C" fn();
     type CounterFn = unsafe extern "C" fn() -> usize;
 
@@ -207,12 +292,62 @@ fn bind_me_inputs_mojo_metal_backend_uses_batch_poseidon_for_large_batches() {
     unsafe { reset() };
 
     let backend = ProverComputeBackend::Mojo(MojoBackendConfig::new(DeviceApi::Metal).with_library_path(mock_library));
+    let backend_ctx = BackendContext::new(&backend).expect("backend context");
+    assert_eq!(
+        backend_ctx.poseidon2_execution_status(1_000),
+        BackendExecutionStatus::MojoAccelerator(DeviceApi::Metal)
+    );
     bind_me_inputs_with_backend(&mut mojo_tr, &me_inputs, &backend).expect("mojo bind_me_inputs");
 
     assert_eq!(cpu_tr.digest32(), mojo_tr.digest32());
     assert!(
         unsafe { batch_calls() } > 0,
         "large Metal batches should use the batched Poseidon2 symbol"
+    );
+}
+
+#[test]
+fn bind_me_inputs_gpu_fallback_prefers_mojo_cpu_over_rust_cpu() {
+    let _guard = lock_mock_backend();
+    type ResetFn = unsafe extern "C" fn();
+    type CounterFn = unsafe extern "C" fn() -> usize;
+
+    let me_inputs = sample_me_claims(6);
+    let mut cpu_tr = Poseidon2Transcript::new(b"neo.reductions/me_input_gpu_digest_cuda_fallback");
+    let mut mojo_tr = Poseidon2Transcript::new(b"neo.reductions/me_input_gpu_digest_cuda_fallback");
+
+    bind_me_inputs(&mut cpu_tr, &me_inputs).expect("cpu bind_me_inputs");
+
+    let mock_library = build_mock_library();
+    let lib = unsafe { Library::new(mock_library) }.expect("load mock mojo gpu library");
+    let reset = unsafe {
+        *lib.get::<ResetFn>(b"nightstream_gpu_test_reset_counters\0")
+            .expect("load counter reset symbol")
+    };
+    let batch_calls = unsafe {
+        *lib.get::<CounterFn>(b"nightstream_gpu_test_poseidon2_batch_calls\0")
+            .expect("load batch counter symbol")
+    };
+    unsafe { reset() };
+
+    let backend = ProverComputeBackend::Mojo(
+        MojoBackendConfig::new(DeviceApi::Cuda)
+            .with_device_id(MOCK_CPU_ONLY_DEVICE_ID)
+            .allow_cpu_fallback()
+            .with_library_path(mock_library),
+    );
+    let backend_ctx = BackendContext::new(&backend).expect("backend context");
+    assert_eq!(backend_ctx.selected_device_api(), Some(DeviceApi::Cpu));
+    assert_eq!(
+        backend_ctx.poseidon2_execution_status(1_000),
+        BackendExecutionStatus::MojoCpu
+    );
+    bind_me_inputs_with_backend(&mut mojo_tr, &me_inputs, &backend).expect("mojo cpu fallback bind_me_inputs");
+
+    assert_eq!(cpu_tr.digest32(), mojo_tr.digest32());
+    assert!(
+        unsafe { batch_calls() } > 0,
+        "expected unavailable accelerator fallback to stay inside the Mojo CPU path"
     );
 }
 
@@ -227,7 +362,41 @@ fn bind_me_inputs_auto_backend_falls_back_to_cpu_when_library_is_missing() {
     let backend = ProverComputeBackend::Mojo(
         MojoBackendConfig::auto().with_library_path("/tmp/nightstream-mojo-gpu-missing.dylib"),
     );
+    let backend_ctx = BackendContext::new(&backend).expect("backend context");
+    assert_eq!(backend_ctx.selected_device_api(), None);
+    assert_eq!(
+        backend_ctx.poseidon2_execution_status(1_000),
+        BackendExecutionStatus::RustCpu
+    );
     bind_me_inputs_with_backend(&mut auto_tr, &me_inputs, &backend).expect("auto bind_me_inputs");
 
     assert_eq!(cpu_tr.digest32(), auto_tr.digest32());
+}
+
+#[test]
+#[ignore = "requires CUDA-capable Mojo runtime"]
+fn real_mojo_cuda_me_input_digest_matches_cpu_reference() {
+    let me_inputs = sample_me_claims(48);
+    let mut cpu_tr = Poseidon2Transcript::new(b"neo.reductions/me_input_real_cuda_digest");
+    let mut mojo_tr = Poseidon2Transcript::new(b"neo.reductions/me_input_real_cuda_digest");
+
+    bind_me_inputs(&mut cpu_tr, &me_inputs).expect("cpu bind_me_inputs");
+
+    let backend =
+        ProverComputeBackend::Mojo(MojoBackendConfig::new(DeviceApi::Cuda).with_library_path(build_real_mojo_library()));
+    let backend_ctx = match BackendContext::new(&backend) {
+        Ok(ctx) => ctx,
+        Err(err) => {
+            eprintln!("skipping: real Mojo CUDA backend is unavailable: {err}");
+            return;
+        }
+    };
+    assert_eq!(backend_ctx.selected_device_api(), Some(DeviceApi::Cuda));
+    assert_eq!(
+        backend_ctx.poseidon2_execution_status(1_000),
+        BackendExecutionStatus::MojoAccelerator(DeviceApi::Cuda)
+    );
+
+    bind_me_inputs_with_backend(&mut mojo_tr, &me_inputs, &backend).expect("real mojo cuda bind_me_inputs");
+    assert_eq!(cpu_tr.digest32(), mojo_tr.digest32());
 }

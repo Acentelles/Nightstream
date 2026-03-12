@@ -5,10 +5,12 @@ use std::sync::OnceLock;
 
 use libloading::Library;
 use neo_ccs::crypto::poseidon2_goldilocks as p2;
-use neo_gpu::{connect, DeviceApi, FlatK, MojoBackendConfig, MojoLibrary};
+use neo_gpu::{connect, DeviceApi, ExecutionMode, FlatK, MojoBackendConfig, MojoLibrary};
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
 use p3_goldilocks::Goldilocks;
 use p3_symmetric::Permutation;
+
+const MOCK_CPU_ONLY_DEVICE_ID: u32 = 0xFFFF_FF01;
 
 fn mock_manifest_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -356,6 +358,79 @@ fn auto_backend_selects_the_preferred_mock_accelerator() {
 }
 
 #[test]
+fn explicit_gpu_backend_with_cpu_fallback_uses_mojo_cpu_when_accelerator_is_unavailable() {
+    let cfg = MojoBackendConfig::new(DeviceApi::Cuda)
+        .with_device_id(MOCK_CPU_ONLY_DEVICE_ID)
+        .allow_cpu_fallback()
+        .with_library_path(build_mock_library());
+    let session = connect(&cfg).expect("connect to mock mojo gpu with cpu fallback");
+
+    assert_eq!(session.device_api(), DeviceApi::Cpu);
+    assert!(session.supports_poseidon2_batch_api());
+
+    let mut backend = poseidon2_batch_fixture(17);
+    session
+        .permute_poseidon2_batch_u64x8(&mut backend)
+        .expect("poseidon2 batch permute through mojo cpu fallback");
+
+    let cpu: Vec<[u64; 8]> = poseidon2_batch_fixture(17)
+        .into_iter()
+        .map(|state| {
+            p2::permutation()
+                .permute(state.map(Goldilocks::from_u64))
+                .map(|x| x.as_canonical_u64())
+        })
+        .collect();
+    assert_eq!(backend, cpu);
+}
+
+#[test]
+fn auto_backend_uses_mojo_cpu_when_no_mock_accelerator_is_available() {
+    let cfg = MojoBackendConfig::auto()
+        .with_device_id(MOCK_CPU_ONLY_DEVICE_ID)
+        .with_library_path(build_mock_library());
+    let session = connect(&cfg).expect("connect to mock mojo gpu with auto cpu fallback");
+
+    assert_eq!(session.device_api(), DeviceApi::Cpu);
+    assert!(session.supports_poseidon2_api());
+    assert!(session.supports_split_nc_api());
+}
+
+#[test]
+fn poseidon2_execution_mode_reports_cpu_host_fallback_and_accelerator() {
+    let cpu = connect(&MojoBackendConfig::new(DeviceApi::Cpu).with_library_path(build_mock_library()))
+        .expect("connect cpu mock mojo session");
+    assert_eq!(cpu.poseidon2_batch_execution_mode(512), ExecutionMode::Cpu);
+
+    let metal = connect(&MojoBackendConfig::new(DeviceApi::Metal).with_library_path(build_mock_library()))
+        .expect("connect metal mock mojo session");
+    assert_eq!(metal.poseidon2_batch_execution_mode(32), ExecutionMode::HostFallback);
+    assert_eq!(metal.poseidon2_batch_execution_mode(256), ExecutionMode::Accelerator);
+
+    let cuda = connect(&MojoBackendConfig::new(DeviceApi::Cuda).with_library_path(build_mock_library()))
+        .expect("connect cuda mock mojo session");
+    assert_eq!(cuda.poseidon2_batch_execution_mode(32), ExecutionMode::HostFallback);
+    assert_eq!(cuda.poseidon2_batch_execution_mode(256), ExecutionMode::Accelerator);
+}
+
+#[test]
+fn split_nc_execution_mode_reports_cpu_host_fallback_and_accelerator() {
+    let cpu = connect(&MojoBackendConfig::new(DeviceApi::Cpu).with_library_path(build_mock_library()))
+        .expect("connect cpu mock mojo session");
+    assert_eq!(cpu.split_nc_execution_mode(1024), ExecutionMode::Cpu);
+
+    let metal = connect(&MojoBackendConfig::new(DeviceApi::Metal).with_library_path(build_mock_library()))
+        .expect("connect metal mock mojo session");
+    assert_eq!(metal.split_nc_execution_mode(64), ExecutionMode::HostFallback);
+    assert_eq!(metal.split_nc_execution_mode(1024), ExecutionMode::HostFallback);
+
+    let cuda = connect(&MojoBackendConfig::new(DeviceApi::Cuda).with_library_path(build_mock_library()))
+        .expect("connect cuda mock mojo session");
+    assert_eq!(cuda.split_nc_execution_mode(64), ExecutionMode::HostFallback);
+    assert_eq!(cuda.split_nc_execution_mode(1024), ExecutionMode::Accelerator);
+}
+
+#[test]
 fn poseidon2_permutation_matches_cpu_reference() {
     let cfg = MojoBackendConfig::new(DeviceApi::Metal).with_library_path(build_mock_library());
     let session = connect(&cfg).expect("connect to mock mojo gpu");
@@ -698,6 +773,36 @@ fn real_mojo_cuda_split_nc_smoke_matches_cpu_reference() {
         cuda_nc.evals_at(&points).expect("cuda nc evals"),
         cpu_nc.evals_at(&points).expect("cpu nc evals"),
     );
+}
+
+#[test]
+#[ignore = "requires CUDA-capable Mojo runtime"]
+fn real_mojo_cuda_session_batch_matches_cpu_reference() {
+    let library_path = build_real_mojo_library();
+    let cfg = MojoBackendConfig::new(DeviceApi::Cuda).with_library_path(library_path);
+
+    let Ok(session) = connect(&cfg) else {
+        eprintln!("skipping: real Mojo shared-library CUDA session is not available in this runtime");
+        return;
+    };
+    assert_eq!(session.device_api(), DeviceApi::Cuda);
+    assert!(session.supports_poseidon2_api());
+    assert!(session.supports_poseidon2_batch_api());
+
+    let mut backend = poseidon2_batch_fixture(256);
+    session
+        .permute_poseidon2_batch_u64x8(&mut backend)
+        .expect("cuda poseidon2 batch path should succeed");
+
+    let cpu: Vec<[u64; 8]> = poseidon2_batch_fixture(256)
+        .into_iter()
+        .map(|state| {
+            p2::permutation()
+                .permute(state.map(Goldilocks::from_u64))
+                .map(|x| x.as_canonical_u64())
+        })
+        .collect();
+    assert_eq!(backend, cpu);
 }
 
 #[test]

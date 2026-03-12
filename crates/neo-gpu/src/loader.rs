@@ -39,6 +39,15 @@ const SPLIT_NC_FE_ROW_V1: u64 = 1;
 const SPLIT_NC_NC_COL_V1: u64 = 2;
 const FE_HEADER_WORDS: usize = 16;
 const NC_HEADER_WORDS: usize = 13;
+const POSEIDON2_GPU_MIN_STATES: usize = 128;
+const SPLIT_NC_GPU_MIN_TASKS: usize = 256;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExecutionMode {
+    Cpu,
+    HostFallback,
+    Accelerator,
+}
 
 fn flat_k_to_ext(value: FlatK) -> K {
     from_complex(Fq::from_u64(value.re), Fq::from_u64(value.im))
@@ -265,11 +274,15 @@ impl MetalCallExecutor {
 
 fn call_for_device_api<T: Send + 'static>(_api: DeviceApi, f: impl FnOnce() -> T + Send + 'static) -> T {
     #[cfg(target_os = "macos")]
-    if _api == DeviceApi::Metal {
-        return MetalCallExecutor::global().call(f);
+    {
+        let _ = _api;
+        MetalCallExecutor::global().call(f)
     }
 
-    with_macos_autorelease_pool(f)
+    #[cfg(not(target_os = "macos"))]
+    {
+        with_macos_autorelease_pool(f)
+    }
 }
 
 #[cfg(any(unix, windows))]
@@ -620,6 +633,26 @@ impl MojoSession {
             .unwrap_or(false)
     }
 
+    #[inline]
+    pub fn poseidon2_batch_execution_mode(&self, num_states: usize) -> ExecutionMode {
+        match self.device_api {
+            DeviceApi::Cpu => ExecutionMode::Cpu,
+            DeviceApi::Cuda | DeviceApi::Metal if num_states >= POSEIDON2_GPU_MIN_STATES => ExecutionMode::Accelerator,
+            DeviceApi::Cuda | DeviceApi::Metal | DeviceApi::Hip | DeviceApi::Auto => ExecutionMode::HostFallback,
+        }
+    }
+
+    #[inline]
+    pub fn split_nc_execution_mode(&self, total_tasks: usize) -> ExecutionMode {
+        match self.device_api {
+            DeviceApi::Cpu => ExecutionMode::Cpu,
+            DeviceApi::Cuda | DeviceApi::Hip if total_tasks >= SPLIT_NC_GPU_MIN_TASKS => {
+                ExecutionMode::Accelerator
+            }
+            DeviceApi::Cuda | DeviceApi::Metal | DeviceApi::Hip | DeviceApi::Auto => ExecutionMode::HostFallback,
+        }
+    }
+
     pub fn create_fe_evaluator(&self, snapshot: &[u8]) -> Result<MojoSplitNcEvaluator<'_>, NeoGpuError> {
         self.create_split_nc_evaluator(SplitNcEvaluatorKind::Fe, snapshot)
     }
@@ -931,9 +964,20 @@ impl Drop for MojoSession {
     }
 }
 
+fn open_session_for_config(cfg: &MojoBackendConfig) -> Result<MojoSession, NeoGpuError> {
+    MojoLibrary::load(cfg)?.open_session(cfg)
+}
+
 pub fn connect(cfg: &MojoBackendConfig) -> Result<MojoSession, NeoGpuError> {
     if cfg.device_api != DeviceApi::Auto {
-        return MojoLibrary::load(cfg)?.open_session(cfg);
+        return match open_session_for_config(cfg) {
+            Ok(session) => Ok(session),
+            Err(err) if cfg.fallback_to_cpu && cfg.device_api != DeviceApi::Cpu => {
+                let cpu_cfg = cfg.clone().with_device_api(DeviceApi::Cpu);
+                open_session_for_config(&cpu_cfg).or(Err(err))
+            }
+            Err(err) => Err(err),
+        };
     }
 
     let mut last_err = None;

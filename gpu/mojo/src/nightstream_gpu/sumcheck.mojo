@@ -14,7 +14,9 @@ alias D_WIDTH = 54
 alias SUMCHECK_GPU_BLOCK_SIZE = 64
 alias SUMCHECK_GPU_MIN_TASKS = 256
 alias DEVICE_API_CPU = 0
+alias DEVICE_API_METAL = 1
 alias DEVICE_API_CUDA = 2
+alias DEVICE_API_HIP = 3
 alias SESSION_HANDLE_MAGIC = UInt64(0x4E53000000000000)
 
 
@@ -60,7 +62,8 @@ fn k_mul(a: KVal, b: KVal) -> KVal:
     var bd = field.fq_mul(a.im, b.im)
     var ad = field.fq_mul(a.re, b.im)
     var bc = field.fq_mul(a.im, b.re)
-    return KVal(field.fq_sub(ac, bd), field.fq_add(ad, bc))
+    var delta_bd = field.fq_mul(UInt64(7), bd)
+    return KVal(field.fq_add(ac, delta_bd), field.fq_add(ad, bc))
 
 
 fn k_pow_small(x: KVal, exp: UInt64) -> KVal:
@@ -91,10 +94,10 @@ fn session_prefers_gpu(session: UInt64) -> Bool:
     if (session & SESSION_HANDLE_MAGIC) != SESSION_HANDLE_MAGIC:
         return False
     var api = UInt32((session >> 32) & UInt64(0xFFFF_FFFF))
-    if api == UInt32(DEVICE_API_CPU):
-        return False
-    # Metal FE/NC shared-library launches are still unstable; keep them on the host path.
-    return api == UInt32(DEVICE_API_CUDA)
+    return (
+        api == UInt32(DEVICE_API_CUDA)
+        or api == UInt32(DEVICE_API_HIP)
+    )
 
 
 fn grid_dim_for(num_tasks: Int) -> Int:
@@ -349,6 +352,24 @@ fn nc_partial_gpu_kernel(
     k_store(partial_words, task_idx * 2, nc_eval_pair(snapshot_words, load_point(points_words, point_idx), pair_idx))
 
 
+fn fe_partial_gpu_kernel_sig(
+    snapshot_words: UnsafePointer[UInt64, MutAnyOrigin],
+    points_words: UnsafePointer[UInt64, MutAnyOrigin],
+    partial_words: UnsafePointer[UInt64, MutAnyOrigin],
+    points_len: Int,
+):
+    pass
+
+
+fn nc_partial_gpu_kernel_sig(
+    snapshot_words: UnsafePointer[UInt64, MutAnyOrigin],
+    points_words: UnsafePointer[UInt64, MutAnyOrigin],
+    partial_words: UnsafePointer[UInt64, MutAnyOrigin],
+    points_len: Int,
+):
+    pass
+
+
 fn reduce_partials_host(
     partial_words: UnsafePointer[mut=True, UInt64],
     points_len: Int,
@@ -390,7 +411,7 @@ fn fe_evals_at_gpu(
 
     ctx.enqueue_copy(src_buf=host_snapshot, dst_buf=dev_snapshot)
     ctx.enqueue_copy(src_buf=host_points, dst_buf=dev_points)
-    var kernel = ctx.compile_function[fe_partial_gpu_kernel]()
+    var kernel = ctx.compile_function[fe_partial_gpu_kernel, fe_partial_gpu_kernel_sig]()
     ctx.enqueue_function(
         kernel,
         dev_snapshot.unsafe_ptr(),
@@ -433,7 +454,7 @@ fn nc_evals_at_gpu(
 
     ctx.enqueue_copy(src_buf=host_snapshot, dst_buf=dev_snapshot)
     ctx.enqueue_copy(src_buf=host_points, dst_buf=dev_points)
-    var kernel = ctx.compile_function[nc_partial_gpu_kernel]()
+    var kernel = ctx.compile_function[nc_partial_gpu_kernel, nc_partial_gpu_kernel_sig]()
     ctx.enqueue_function(
         kernel,
         dev_snapshot.unsafe_ptr(),

@@ -1,3 +1,4 @@
+from memory import UnsafePointer
 from nightstream_gpu import ffi, sumcheck
 
 
@@ -7,12 +8,12 @@ fn nightstream_gpu_abi_version() -> UInt32:
 
 
 @export("nightstream_gpu_device_probe", ABI="C")
-fn nightstream_gpu_device_probe(req_addr: UInt, out_words: UnsafePointer[mut=True, UInt64]) -> Int32:
+fn nightstream_gpu_device_probe(req_addr: UInt, out_words: UnsafePointer[UInt64, MutAnyOrigin]) -> Int32:
     return ffi.device_probe(req_addr, out_words)
 
 
 @export("nightstream_gpu_session_open", ABI="C")
-fn nightstream_gpu_session_open(req_addr: UInt, handle_ptr: UnsafePointer[mut=True, UInt64]) -> Int32:
+fn nightstream_gpu_session_open(req_addr: UInt, handle_ptr: UnsafePointer[UInt64, MutAnyOrigin]) -> Int32:
     return ffi.session_open(req_addr, handle_ptr)
 
 
@@ -24,9 +25,9 @@ fn nightstream_gpu_session_close(session: UInt) -> Int32:
 @export("nightstream_gpu_fe_create", ABI="C")
 fn nightstream_gpu_fe_create(
     session: UInt64,
-    snapshot_words: UnsafePointer[mut=True, UInt64],
+    snapshot_words: UnsafePointer[UInt64, MutAnyOrigin],
     snapshot_len: UInt64,
-    out_handle: UnsafePointer[mut=True, UInt64],
+    out_handle: UnsafePointer[UInt64, MutAnyOrigin],
 ) -> Int32:
     return ffi.fe_create(session, snapshot_words, snapshot_len, out_handle)
 
@@ -40,11 +41,11 @@ fn nightstream_gpu_fe_destroy(session: UInt, evaluator: UInt) -> Int32:
 fn nightstream_gpu_fe_evals_at(
     session: UInt64,
     evaluator: UInt64,
-    snapshot_words: UnsafePointer[mut=True, UInt64],
+    snapshot_words: UnsafePointer[UInt64, MutAnyOrigin],
     snapshot_len: UInt64,
-    points_words: UnsafePointer[mut=True, UInt64],
+    points_words: UnsafePointer[UInt64, MutAnyOrigin],
     points_len: UInt64,
-    out_ptr: UnsafePointer[mut=True, UInt64],
+    out_ptr: UnsafePointer[UInt64, MutAnyOrigin],
     out_len: UInt,
 ) -> Int32:
     return ffi.fe_evals_at(session, evaluator, snapshot_words, snapshot_len, points_words, points_len, out_ptr, out_len)
@@ -58,9 +59,9 @@ fn nightstream_gpu_fe_fold(session: UInt, evaluator: UInt, challenge_re: UInt64,
 @export("nightstream_gpu_nc_create", ABI="C")
 fn nightstream_gpu_nc_create(
     session: UInt64,
-    snapshot_words: UnsafePointer[mut=True, UInt64],
+    snapshot_words: UnsafePointer[UInt64, MutAnyOrigin],
     snapshot_len: UInt64,
-    out_handle: UnsafePointer[mut=True, UInt64],
+    out_handle: UnsafePointer[UInt64, MutAnyOrigin],
 ) -> Int32:
     return ffi.nc_create(session, snapshot_words, snapshot_len, out_handle)
 
@@ -74,11 +75,11 @@ fn nightstream_gpu_nc_destroy(session: UInt, evaluator: UInt) -> Int32:
 fn nightstream_gpu_nc_evals_at(
     session: UInt64,
     evaluator: UInt64,
-    snapshot_words: UnsafePointer[mut=True, UInt64],
+    snapshot_words: UnsafePointer[UInt64, MutAnyOrigin],
     snapshot_len: UInt64,
-    points_words: UnsafePointer[mut=True, UInt64],
+    points_words: UnsafePointer[UInt64, MutAnyOrigin],
     points_len: UInt64,
-    out_ptr: UnsafePointer[mut=True, UInt64],
+    out_ptr: UnsafePointer[UInt64, MutAnyOrigin],
     out_len: UInt,
 ) -> Int32:
     return ffi.nc_evals_at(session, evaluator, snapshot_words, snapshot_len, points_words, points_len, out_ptr, out_len)
@@ -92,9 +93,9 @@ fn nightstream_gpu_nc_fold(session: UInt, evaluator: UInt, challenge_re: UInt64,
 @export("nightstream_gpu_debug_snapshot_head", ABI="C")
 fn nightstream_gpu_debug_snapshot_head(
     session: UInt64,
-    snapshot_words: UnsafePointer[mut=True, UInt64],
+    snapshot_words: UnsafePointer[UInt64, MutAnyOrigin],
     snapshot_len: UInt64,
-    out_words: UnsafePointer[mut=True, UInt64],
+    out_words: UnsafePointer[UInt64, MutAnyOrigin],
     out_len: UInt32,
 ) -> Int32:
     return ffi.debug_snapshot_head(session, snapshot_words, snapshot_len, out_words, out_len)
@@ -103,7 +104,7 @@ fn nightstream_gpu_debug_snapshot_head(
 @export("nightstream_gpu_poseidon2_permute_u64x8", ABI="C")
 fn nightstream_gpu_poseidon2_permute_u64x8(
     session: UInt,
-    state: UnsafePointer[mut=True, UInt64],
+    state: UnsafePointer[UInt64, MutAnyOrigin],
     width: UInt32,
 ) -> Int32:
     return ffi.poseidon2_permute_u64x8(session, state, width)
@@ -112,7 +113,7 @@ fn nightstream_gpu_poseidon2_permute_u64x8(
 @export("nightstream_gpu_poseidon2_permute_batch_u64x8", ABI="C")
 fn nightstream_gpu_poseidon2_permute_batch_u64x8(
     session: UInt,
-    state_words: UnsafePointer[mut=True, UInt64],
+    state_words: UnsafePointer[UInt64, MutAnyOrigin],
     num_states: UInt32,
     width: UInt32,
 ) -> Int32:

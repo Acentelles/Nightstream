@@ -71,6 +71,13 @@ fn poseidon2_gpu_batch_kernel(state_words: UnsafePointer[mut=True, UInt64], num_
         permute_state_at_offset(state_words, state_idx * POSEIDON2_WIDTH)
 
 
+fn poseidon2_gpu_batch_kernel_sig(
+    state_words: UnsafePointer[UInt64, MutAnyOrigin],
+    num_states: Int,
+):
+    pass
+
+
 fn permute_batch_cpu_in_place(state_words: UnsafePointer[mut=True, UInt64], num_states: Int):
     for state_idx in range(num_states):
         permute_state_at_offset(state_words, state_idx * POSEIDON2_WIDTH)
@@ -87,7 +94,7 @@ fn permute_batch_gpu_in_place(state_words: UnsafePointer[mut=True, UInt64], num_
         host[i] = state_words[i]
 
     ctx.enqueue_copy(src_buf=host, dst_buf=dev)
-    var kernel = ctx.compile_function[poseidon2_gpu_batch_kernel]()
+    var kernel = ctx.compile_function[poseidon2_gpu_batch_kernel, poseidon2_gpu_batch_kernel_sig]()
     ctx.enqueue_function(
         kernel,
         dev.unsafe_ptr(),

@@ -10,7 +10,7 @@ use neo_ccs::{CcsClaim, CcsStructure, CcsWitness, Mat, SparsePoly, Term};
 use neo_gpu::{DeviceApi, MojoBackendConfig, ProverComputeBackend};
 use neo_math::{from_complex, D, F, K};
 use neo_params::NeoParams;
-use neo_reductions::accelerator::{BackendContext, SplitNcNcOracle, SplitNcOptimizedOracle};
+use neo_reductions::accelerator::{BackendContext, BackendExecutionStatus, SplitNcNcOracle, SplitNcOptimizedOracle};
 use neo_reductions::api::{prove_with_backend, verify_with_backend, FoldingMode};
 use neo_reductions::engines::optimized_engine::oracle::{NcOracle, OptimizedOracle, SparseCache};
 use neo_reductions::engines::optimized_engine::{Challenges, PiCcsProof};
@@ -19,6 +19,8 @@ use neo_reductions::sumcheck::RoundOracle;
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::PrimeCharacteristicRing;
 use rand_chacha::rand_core::SeedableRng;
+
+const MOCK_CPU_ONLY_DEVICE_ID: u32 = 0xFFFF_FF01;
 
 fn build_mock_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -312,8 +314,92 @@ fn build_prove_fixture(
     (params, s, l, claims, witnesses, Poseidon2Transcript::new(label))
 }
 
+fn high_batch_params(n: usize) -> NeoParams {
+    let base = NeoParams::goldilocks_auto_r1cs_ccs(n).expect("params");
+    NeoParams::new(
+        base.q,
+        base.eta,
+        base.d,
+        base.kappa,
+        base.m,
+        base.b,
+        16,
+        base.T,
+        base.s,
+        base.lambda,
+    )
+    .expect("high batch params")
+}
+
+fn build_high_batch_reduction_fixture(
+    label: &'static [u8],
+) -> (
+    NeoParams,
+    CcsStructure<F>,
+    Vec<CcsClaim<Commitment, F>>,
+    Vec<CcsWitness<F>>,
+    Challenges,
+    usize,
+    usize,
+    usize,
+) {
+    let n = 8usize;
+    let params = high_batch_params(n);
+    let s = identity_left(n, D);
+    let s = CcsStructure::new(vec![s], zero_poly(1)).expect("ccs");
+    let dims = build_dims_and_policy(&params, &s).expect("dims");
+
+    let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(7);
+    let pp = ajtai_setup(&mut rng, D, params.kappa as usize, s.m.div_ceil(D)).expect("ajtai setup");
+    let l = AjtaiSModule::new(Arc::new(pp));
+
+    let z_vectors: Vec<Vec<F>> = (0..40usize)
+        .map(|i| {
+            (0..s.m)
+                .map(|j| match (10_000u64 + (i as u64) * 97 + j as u64) % 3 {
+                    0 => -F::ONE,
+                    1 => F::ZERO,
+                    _ => F::ONE,
+                })
+                .collect()
+        })
+        .collect();
+
+    let witnesses: Vec<CcsWitness<F>> = z_vectors
+        .iter()
+        .map(|z| CcsWitness {
+            w: z[2..].to_vec(),
+            Z: Mat::from_row_major(D, s.m / D, z.clone()),
+        })
+        .collect();
+
+    let claims: Vec<CcsClaim<Commitment, F>> = z_vectors
+        .iter()
+        .zip(witnesses.iter())
+        .map(|(z, wit)| CcsClaim {
+            c: l.commit(&wit.Z),
+            x: z[..2].to_vec(),
+            m_in: 2,
+        })
+        .collect();
+
+    let mut tr = Poseidon2Transcript::new(label);
+    neo_reductions::engines::utils::bind_header_and_instances(&mut tr, &params, &s, &claims, dims)
+        .expect("bind header");
+    neo_reductions::engines::utils::bind_me_inputs(&mut tr, &[]).expect("bind empty me inputs");
+    let mut ch = neo_reductions::engines::utils::sample_challenges(&mut tr, dims.ell_d, dims.ell)
+        .expect("sample challenges");
+    ch.beta_m = neo_reductions::engines::utils::sample_beta_m(&mut tr, dims.ell_m).expect("sample beta_m");
+
+    (params, s, claims, witnesses, ch, dims.ell_d, dims.ell_m, dims.d_sc)
+}
+
+fn mock_backend_for(device_api: DeviceApi) -> ProverComputeBackend {
+    ProverComputeBackend::Mojo(MojoBackendConfig::new(device_api).with_library_path(build_mock_library()))
+}
+
 fn mock_backend() -> ProverComputeBackend {
-    ProverComputeBackend::Mojo(MojoBackendConfig::new(DeviceApi::Cuda).with_library_path(build_mock_library()))
+    mock_backend_for(DeviceApi::Cuda)
 }
 
 fn reset_mock_counters(lib: &Library) {
@@ -356,6 +442,10 @@ fn split_nc_fe_row_mojo_backend_matches_cpu_across_rounds() {
     let fixture = build_oracle_fixture();
     let backend = mock_backend();
     let backend_ctx = BackendContext::new(&backend).expect("backend context");
+    assert_eq!(
+        backend_ctx.split_nc_execution_status(1024),
+        BackendExecutionStatus::MojoAccelerator(DeviceApi::Cuda)
+    );
 
     let mock_library = build_mock_library();
     let lib = unsafe { Library::new(mock_library) }.expect("load mock mojo gpu library");
@@ -409,11 +499,26 @@ fn split_nc_fe_row_mojo_backend_matches_cpu_across_rounds() {
 }
 
 #[test]
+fn split_nc_metal_backend_falls_back_to_mojo_cpu_for_sumcheck() {
+    let _guard = lock_mock_backend();
+    let backend_ctx = BackendContext::new(&mock_backend_for(DeviceApi::Metal)).expect("backend context");
+    assert_eq!(backend_ctx.selected_device_api(), Some(DeviceApi::Metal));
+    assert_eq!(
+        backend_ctx.split_nc_execution_status(1024),
+        BackendExecutionStatus::MojoCpu
+    );
+}
+
+#[test]
 fn split_nc_nc_col_mojo_backend_matches_cpu_across_rounds() {
     let _guard = lock_mock_backend();
     let fixture = build_oracle_fixture();
     let backend = mock_backend();
     let backend_ctx = BackendContext::new(&backend).expect("backend context");
+    assert_eq!(
+        backend_ctx.split_nc_execution_status(1024),
+        BackendExecutionStatus::MojoAccelerator(DeviceApi::Cuda)
+    );
 
     let mock_library = build_mock_library();
     let lib = unsafe { Library::new(mock_library) }.expect("load mock mojo gpu library");
@@ -584,6 +689,123 @@ fn split_nc_optimized_prove_falls_back_to_cpu_when_backend_is_missing() {
 }
 
 #[test]
+fn split_nc_optimized_prove_falls_back_to_mojo_cpu_when_accelerator_is_unavailable() {
+    let _guard = lock_mock_backend();
+    let (params, s, l, claims, witnesses, mut cpu_tr) = build_prove_fixture(b"split_nc_gpu_parity/fallback_mojo_cpu");
+    let mut fallback_tr = Poseidon2Transcript::new(b"split_nc_gpu_parity/fallback_mojo_cpu");
+
+    let (cpu_out, cpu_proof) = prove_with_backend(
+        FoldingMode::Optimized,
+        &mut cpu_tr,
+        &params,
+        &s,
+        &claims,
+        &witnesses,
+        &[],
+        &[],
+        &l,
+        &ProverComputeBackend::Cpu,
+    )
+    .expect("cpu prove");
+
+    let mock_library = build_mock_library();
+    let lib = unsafe { Library::new(mock_library) }.expect("load mock mojo gpu library");
+    reset_mock_counters(&lib);
+
+    let fallback_backend = ProverComputeBackend::Mojo(
+        MojoBackendConfig::new(DeviceApi::Cuda)
+            .with_device_id(MOCK_CPU_ONLY_DEVICE_ID)
+            .allow_cpu_fallback()
+            .with_library_path(mock_library),
+    );
+    let fallback_ctx = BackendContext::new(&fallback_backend).expect("fallback backend context");
+    assert_eq!(fallback_ctx.selected_device_api(), Some(DeviceApi::Cpu));
+    assert_eq!(
+        fallback_ctx.split_nc_execution_status(1024),
+        BackendExecutionStatus::MojoCpu
+    );
+    let (fallback_out, fallback_proof) = prove_with_backend(
+        FoldingMode::Optimized,
+        &mut fallback_tr,
+        &params,
+        &s,
+        &claims,
+        &witnesses,
+        &[],
+        &[],
+        &l,
+        &fallback_backend,
+    )
+    .expect("mojo cpu fallback prove");
+
+    assert_eq!(cpu_out, fallback_out);
+    assert_same_proof(&cpu_proof, &fallback_proof);
+    assert!(
+        counter(&lib, b"nightstream_gpu_test_fe_evals_at_calls\0") > 0,
+        "expected unavailable accelerator fallback to stay in the Mojo FE path"
+    );
+    assert!(
+        counter(&lib, b"nightstream_gpu_test_nc_evals_at_calls\0") > 0,
+        "expected unavailable accelerator fallback to stay in the Mojo NC path"
+    );
+}
+
+#[test]
+fn split_nc_nc_col_high_batch_mock_backend_matches_cpu_across_rounds() {
+    let _guard = lock_mock_backend();
+    let (params, s, _claims, witnesses, ch, ell_d, ell_m, d_sc) =
+        build_high_batch_reduction_fixture(b"split_nc_gpu_parity/high_batch_nc_mock");
+    let backend = mock_backend();
+    let backend_ctx = BackendContext::new(&backend).expect("backend context");
+
+    let mut cpu = NcOracle::new(&s, &params, &witnesses, &[], ch.clone(), ell_d, ell_m, d_sc);
+    let mut mojo = SplitNcNcOracle::new(&s, &params, &witnesses, &[], ch, ell_d, ell_m, d_sc, &backend_ctx)
+        .expect("split-nc mojo nc oracle");
+
+    let total_rounds = cpu.num_rounds();
+    for round in 0..total_rounds {
+        let xs = vec![
+            K::ZERO,
+            K::ONE,
+            k(250 + round as u64, 260 + round as u64),
+            k(270 + round as u64, 280 + round as u64),
+        ];
+        assert_eq!(cpu.evals_at(&xs), mojo.evals_at(&xs), "round {round}");
+        let r = k(290 + round as u64, 300 + round as u64);
+        cpu.fold(r);
+        mojo.fold(r);
+    }
+}
+
+#[test]
+#[ignore = "requires local Mojo toolchain"]
+fn real_mojo_split_nc_high_batch_nc_oracle_matches_cpu_across_rounds() {
+    let (params, s, _claims, witnesses, ch, ell_d, ell_m, d_sc) =
+        build_high_batch_reduction_fixture(b"split_nc_gpu_parity/high_batch_nc_real");
+    let backend =
+        ProverComputeBackend::Mojo(MojoBackendConfig::new(DeviceApi::Cpu).with_library_path(build_real_mojo_library()));
+    let backend_ctx = BackendContext::new(&backend).expect("backend context");
+
+    let mut cpu = NcOracle::new(&s, &params, &witnesses, &[], ch.clone(), ell_d, ell_m, d_sc);
+    let mut mojo = SplitNcNcOracle::new(&s, &params, &witnesses, &[], ch, ell_d, ell_m, d_sc, &backend_ctx)
+        .expect("real mojo split-nc nc oracle");
+
+    let total_rounds = cpu.num_rounds();
+    for round in 0..total_rounds {
+        let xs = vec![
+            K::ZERO,
+            K::ONE,
+            k(350 + round as u64, 360 + round as u64),
+            k(370 + round as u64, 380 + round as u64),
+        ];
+        assert_eq!(cpu.evals_at(&xs), mojo.evals_at(&xs), "round {round}");
+        let r = k(390 + round as u64, 400 + round as u64);
+        cpu.fold(r);
+        mojo.fold(r);
+    }
+}
+
+#[test]
 #[ignore = "requires local Mojo toolchain"]
 fn real_mojo_split_nc_optimized_prove_matches_cpu_and_verifies() {
     let (params, s, l, claims, witnesses, mut cpu_tr) = build_prove_fixture(b"split_nc_gpu_parity/real_mojo");
@@ -635,5 +857,74 @@ fn real_mojo_split_nc_optimized_prove_matches_cpu_and_verifies() {
         &mojo_backend,
     )
     .expect("real mojo verify");
+    assert!(ok);
+}
+
+#[test]
+#[ignore = "requires CUDA-capable Mojo runtime"]
+fn real_mojo_cuda_split_nc_optimized_prove_matches_cpu_and_verifies() {
+    let (params, s, l, claims, witnesses, mut cpu_tr) =
+        build_prove_fixture(b"split_nc_gpu_parity/real_mojo_cuda");
+    let mut mojo_tr = Poseidon2Transcript::new(b"split_nc_gpu_parity/real_mojo_cuda");
+
+    let (cpu_out, cpu_proof) = prove_with_backend(
+        FoldingMode::Optimized,
+        &mut cpu_tr,
+        &params,
+        &s,
+        &claims,
+        &witnesses,
+        &[],
+        &[],
+        &l,
+        &ProverComputeBackend::Cpu,
+    )
+    .expect("cpu prove");
+
+    let mojo_backend =
+        ProverComputeBackend::Mojo(MojoBackendConfig::new(DeviceApi::Cuda).with_library_path(build_real_mojo_library()));
+    let backend_ctx = match BackendContext::new(&mojo_backend) {
+        Ok(ctx) => ctx,
+        Err(err) => {
+            eprintln!("skipping: real Mojo CUDA backend is unavailable: {err}");
+            return;
+        }
+    };
+    assert_eq!(backend_ctx.selected_device_api(), Some(DeviceApi::Cuda));
+    assert_eq!(
+        backend_ctx.split_nc_execution_status(1024),
+        BackendExecutionStatus::MojoAccelerator(DeviceApi::Cuda)
+    );
+
+    let (mojo_out, mojo_proof) = prove_with_backend(
+        FoldingMode::Optimized,
+        &mut mojo_tr,
+        &params,
+        &s,
+        &claims,
+        &witnesses,
+        &[],
+        &[],
+        &l,
+        &mojo_backend,
+    )
+    .expect("real mojo cuda prove");
+
+    assert_eq!(cpu_out, mojo_out);
+    assert_same_proof(&cpu_proof, &mojo_proof);
+
+    let mut verify_tr = Poseidon2Transcript::new(b"split_nc_gpu_parity/real_mojo_cuda");
+    let ok = verify_with_backend(
+        FoldingMode::Optimized,
+        &mut verify_tr,
+        &params,
+        &s,
+        &claims,
+        &[],
+        &mojo_out,
+        &mojo_proof,
+        &mojo_backend,
+    )
+    .expect("real mojo cuda verify");
     assert!(ok);
 }

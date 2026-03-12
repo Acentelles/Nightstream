@@ -42,6 +42,13 @@ fn poseidon2_gpu_batch_kernel(state_words: UnsafePointer[mut=True, UInt64], num_
         )
 
 
+fn poseidon2_gpu_batch_kernel_sig(
+    state_words: UnsafePointer[UInt64, MutAnyOrigin],
+    num_states: Int,
+):
+    pass
+
+
 fn run_gpu_permutations_in_place(state_words: UnsafePointer[mut=True, UInt64], num_states: Int) raises:
     var word_count = words_for_states(num_states)
     var ctx = DeviceContext()
@@ -53,7 +60,7 @@ fn run_gpu_permutations_in_place(state_words: UnsafePointer[mut=True, UInt64], n
         host[i] = state_words[i]
 
     ctx.enqueue_copy(src_buf=host, dst_buf=dev)
-    var kernel = ctx.compile_function[poseidon2_gpu_batch_kernel]()
+    var kernel = ctx.compile_function[poseidon2_gpu_batch_kernel, poseidon2_gpu_batch_kernel_sig]()
     ctx.enqueue_function(
         kernel,
         dev.unsafe_ptr(),
