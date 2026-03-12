@@ -594,13 +594,13 @@ pub fn estimate_proof(proof: &crate::shard::ShardProof) -> TestExportProofEstima
         for val in &step.val_fold {
             val_lane_commitments = val_lane_commitments.saturating_add(val.dec_children.len() + 1);
         }
-        for val in &step.wb_fold {
+        for val in &step.booleanity_fold {
             val_lane_commitments = val_lane_commitments.saturating_add(val.dec_children.len() + 1);
         }
-        for val in &step.wp_fold {
+        for val in &step.trace_opening_fold {
             val_lane_commitments = val_lane_commitments.saturating_add(val.dec_children.len() + 1);
         }
-        for val in &step.stage8_fold {
+        for val in &step.joint_opening_fold {
             val_lane_commitments = val_lane_commitments.saturating_add(val.dec_children.len() + 1);
         }
     }

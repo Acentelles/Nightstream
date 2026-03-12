@@ -4,7 +4,7 @@
 //! This module owns:
 //! - CCS oracle dispatch wrappers
 //! - time-column commitment helpers
-//! - Stage-8 decomposition parameter derivation
+//! - joint-opening decomposition parameter derivation
 //! - sharded helper submodules for step linking, commitment mixers, ME claim
 //!   normalization, RLC arithmetic, and transcript binding
 

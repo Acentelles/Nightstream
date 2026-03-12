@@ -2,7 +2,7 @@
 //! verification.
 //!
 //! This module owns the deterministic PP seed, time-column commitment flow, and
-//! transcript binding for the Stage-8 opening batches.
+//! transcript binding for the joint-opening batches.
 
 use super::*;
 
@@ -33,19 +33,19 @@ fn time_column_commit_seed(t: usize) -> [u8; 32] {
 }
 
 #[inline]
-pub(crate) fn stage8_time_decomp_params(params: &NeoParams) -> Result<NeoParams, PiCcsError> {
+pub(crate) fn joint_opening_time_decomp_params(params: &NeoParams) -> Result<NeoParams, PiCcsError> {
     let mut out = *params;
-    out.b = crate::time_opening::STAGE8_TIME_DECOMP_BASE;
+    out.b = crate::time_opening::JOINT_OPENING_TIME_DECOMP_BASE;
     out.B = (out.b as u64).checked_pow(out.k_rho).ok_or_else(|| {
         PiCcsError::InvalidInput(format!(
-            "stage8/time params: b^k_rho overflow (b={}, k_rho={})",
+            "joint-opening/time params: b^k_rho overflow (b={}, k_rho={})",
             out.b, out.k_rho
         ))
     })?;
     let lhs = (out.k_rho as u128 + 1) * (out.T as u128) * ((out.b as u128).saturating_sub(1));
     if lhs >= out.B as u128 {
         return Err(PiCcsError::InvalidInput(format!(
-            "stage8/time params: guard inequality fails ((k_rho+1)·T·(b-1)={} >= B={})",
+            "joint-opening/time params: guard inequality fails ((k_rho+1)·T·(b-1)={} >= B={})",
             lhs, out.B
         )));
     }
@@ -163,7 +163,7 @@ pub(crate) fn commit_time_column_sets(
                     neo_memory::ajtai::encode_vector_balanced_to_mat_with_base(
                         params,
                         *col,
-                        crate::time_opening::STAGE8_TIME_DECOMP_BASE,
+                        crate::time_opening::JOINT_OPENING_TIME_DECOMP_BASE,
                     )
                 })
                 .collect()
@@ -174,7 +174,7 @@ pub(crate) fn commit_time_column_sets(
                     neo_memory::ajtai::encode_vector_balanced_to_mat_with_base(
                         params,
                         *col,
-                        crate::time_opening::STAGE8_TIME_DECOMP_BASE,
+                        crate::time_opening::JOINT_OPENING_TIME_DECOMP_BASE,
                     )
                 })
                 .collect()
@@ -186,7 +186,7 @@ pub(crate) fn commit_time_column_sets(
                 neo_memory::ajtai::encode_vector_balanced_to_mat_with_base(
                     params,
                     *col,
-                    crate::time_opening::STAGE8_TIME_DECOMP_BASE,
+                    crate::time_opening::JOINT_OPENING_TIME_DECOMP_BASE,
                 )
             })
             .collect();
@@ -217,7 +217,7 @@ pub(crate) fn bind_time_column_commitments(
         time_col_ids.len() as u64,
         cpu_commitments.len() as u64,
         mem_commitments.len() as u64,
-        crate::time_opening::STAGE8_TIME_DECOMP_BASE as u64,
+        crate::time_opening::JOINT_OPENING_TIME_DECOMP_BASE as u64,
     ];
     tr.append_u64s(b"time_columns/commit_bind/header", &header);
     let time_col_ids_u64: Vec<u64> = time_col_ids.iter().map(|&id| id as u64).collect();

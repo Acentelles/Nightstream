@@ -46,8 +46,8 @@ fn ensure_ccs_only_steps_instance(steps: &[StepInstanceBundle<Cmt, F, K>]) -> Re
 fn empty_mem_sidecar_proof() -> MemSidecarProof<Cmt, F, K> {
     MemSidecarProof {
         val_me_claims: Vec::new(),
-        wb_me_claims: Vec::new(),
-        wp_me_claims: Vec::new(),
+        booleanity_me_claims: Vec::new(),
+        trace_opening_me_claims: Vec::new(),
         poseidon_cycle_me_claims: Vec::new(),
         poseidon_local_me_claims: Vec::new(),
         shout_addr_pre: Default::default(),
@@ -66,8 +66,8 @@ fn empty_batched_time_proof() -> BatchedTimeProof {
 
 fn ensure_empty_sidecars_in_step_proof(step_idx: usize, step_proof: &StepProof) -> Result<(), PiCcsError> {
     if !step_proof.mem.val_me_claims.is_empty()
-        || !step_proof.mem.wb_me_claims.is_empty()
-        || !step_proof.mem.wp_me_claims.is_empty()
+        || !step_proof.mem.booleanity_me_claims.is_empty()
+        || !step_proof.mem.trace_opening_me_claims.is_empty()
         || !step_proof.mem.poseidon_cycle_me_claims.is_empty()
         || !step_proof.mem.poseidon_local_me_claims.is_empty()
         || !step_proof.mem.shout_addr_pre.claimed_sums.is_empty()
@@ -89,7 +89,10 @@ fn ensure_empty_sidecars_in_step_proof(step_idx: usize, step_proof: &StepProof) 
             step_idx
         )));
     }
-    if !step_proof.val_fold.is_empty() || !step_proof.wb_fold.is_empty() || !step_proof.wp_fold.is_empty() {
+    if !step_proof.val_fold.is_empty()
+        || !step_proof.booleanity_fold.is_empty()
+        || !step_proof.trace_opening_fold.is_empty()
+    {
         return Err(PiCcsError::ProtocolError(format!(
             "step {}: expected no auxiliary folding lanes for ccs-only batching",
             step_idx
@@ -328,10 +331,10 @@ where
             poseidon_cycle_fold: Vec::new(),
             poseidon_local_fold: Vec::new(),
             val_fold: Vec::new(),
-            wb_fold: Vec::new(),
-            wp_fold: Vec::new(),
+            booleanity_fold: Vec::new(),
+            trace_opening_fold: Vec::new(),
             compressed_substeps: None,
-            stage8_fold: Vec::new(),
+            joint_opening_fold: Vec::new(),
         });
 
         tr.append_message(b"fold/step_done", &(step_idx as u64).to_le_bytes());

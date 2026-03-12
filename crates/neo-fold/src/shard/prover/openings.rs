@@ -1,4 +1,4 @@
-//! Named-opening and stage-8 proving phase for shard folding.
+//! Named-opening and joint-opening fold proving phase for shard folding.
 
 use super::*;
 
@@ -32,7 +32,7 @@ pub(super) struct OpeningsPhaseResult {
     pub opening_reduction: crate::shard_proof_types::OpeningReductionProof,
     pub opening_unification: crate::shard_proof_types::OpeningUnificationProof,
     pub joint_opening_lane: crate::shard_proof_types::JointOpeningLaneProof,
-    pub stage8_fold: Vec<RlcDecProof>,
+    pub joint_opening_fold: Vec<RlcDecProof>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -189,103 +189,103 @@ where
                 source: crate::shard_proof_types::TimeOpeningSource::CommittedOpening,
             });
         }
-        if let Some(wb_me) = mem_proof.wb_me_claims.first() {
+        if let Some(booleanity_me) = mem_proof.booleanity_me_claims.first() {
             let trace = Rv32TraceLayout::new();
-            let wb_cols = crate::memory_sidecar::memory::riscv_trace_wb_columns(&trace);
+            let booleanity_cols = crate::memory_sidecar::memory::riscv_trace_booleanity_columns(&trace);
             let can_use_time_cpu_cols = step.time_columns.t > 0
                 && !step.time_columns.cpu_cols.is_empty()
-                && wb_cols
+                && booleanity_cols
                     .iter()
                     .all(|&col_id| col_id < step.time_columns.cpu_cols.len());
             if !can_use_time_cpu_cols {
                 return Err(PiCcsError::ProtocolError(format!(
-                    "named openings wb: canonical time cpu columns are required (time_t={}, cpu_cols={}, wb_cols={})",
+                    "named openings booleanity: canonical time cpu columns are required (time_t={}, cpu_cols={}, booleanity_cols={})",
                     step.time_columns.t,
                     step.time_columns.cpu_cols.len(),
-                    wb_cols.len()
+                    booleanity_cols.len()
                 )));
             }
             if !has_committed_time_cpu {
                 return Err(PiCcsError::ProtocolError(
-                    "named openings wb: canonical time-column path requires committed time cpu columns".into(),
+                    "named openings booleanity: canonical time-column path requires committed time cpu columns".into(),
                 ));
             }
             let trace_map = crate::memory_sidecar::cpu_bus::time_columns_openings_from_time_columns_at_point(
                 mcs_inst.m_in,
                 step.time_columns.t,
                 &step.time_columns.cpu_cols,
-                &wb_cols,
-                wb_me.r.as_slice(),
-                "named openings wb",
+                &booleanity_cols,
+                booleanity_me.r.as_slice(),
+                "named openings booleanity",
             )?;
-            let mut evals = Vec::with_capacity(wb_cols.len());
-            for &col_id in wb_cols.iter() {
-                let v = trace_map
-                    .get(&col_id)
-                    .copied()
-                    .ok_or_else(|| PiCcsError::ProtocolError(format!("named openings wb: missing col_id={col_id}")))?;
+            let mut evals = Vec::with_capacity(booleanity_cols.len());
+            for &col_id in booleanity_cols.iter() {
+                let v = trace_map.get(&col_id).copied().ok_or_else(|| {
+                    PiCcsError::ProtocolError(format!("named openings booleanity: missing col_id={col_id}"))
+                })?;
                 evals.push(v);
             }
             out.push(crate::shard_proof_types::TimePointOpening {
-                point: wb_me.r.clone(),
-                col_ids: wb_cols,
+                point: booleanity_me.r.clone(),
+                col_ids: booleanity_cols,
                 evals,
                 source: crate::shard_proof_types::TimeOpeningSource::CommittedOpening,
             });
         }
-        if let Some(wp_me) = mem_proof.wp_me_claims.first() {
+        if let Some(trace_opening_me) = mem_proof.trace_opening_me_claims.first() {
             let trace = Rv32TraceLayout::new();
             let rv64_exact_words =
                 crate::memory_sidecar::memory::trace_uses_rv64_exact_words(step.time_columns.cpu_cols.len());
-            let mut wp_cols = crate::memory_sidecar::memory::riscv_trace_wp_opening_columns(&trace);
+            let mut trace_opening_cols = crate::memory_sidecar::memory::riscv_trace_opening_columns(&trace);
             if rv64_exact_words {
-                wp_cols.extend(crate::memory_sidecar::memory::rv64_trace_exact_word_opening_columns());
+                trace_opening_cols.extend(crate::memory_sidecar::memory::rv64_trace_exact_word_opening_columns());
             }
             if control_required {
-                wp_cols.extend(crate::memory_sidecar::memory::riscv_trace_control_extra_opening_columns(&trace));
+                trace_opening_cols
+                    .extend(crate::memory_sidecar::memory::riscv_trace_control_extra_opening_columns(&trace));
             }
             if crate::memory_sidecar::memory::rv64_fullword_width_stage_required_for_step_witness(step) {
-                wp_cols.extend(crate::memory_sidecar::memory::rv64_fullword_wp_opening_columns());
+                trace_opening_cols.extend(crate::memory_sidecar::memory::rv64_fullword_trace_opening_columns());
             }
-            let mut seen_wp_cols = std::collections::BTreeSet::new();
-            wp_cols.retain(|col_id| seen_wp_cols.insert(*col_id));
+            let mut seen_trace_opening_cols = std::collections::BTreeSet::new();
+            trace_opening_cols.retain(|col_id| seen_trace_opening_cols.insert(*col_id));
             let can_use_time_cpu_cols = step.time_columns.t > 0
                 && !step.time_columns.cpu_cols.is_empty()
-                && wp_cols
+                && trace_opening_cols
                     .iter()
                     .all(|&col_id| col_id < step.time_columns.cpu_cols.len());
             if !can_use_time_cpu_cols {
                 return Err(PiCcsError::ProtocolError(format!(
-                    "named openings wp: canonical time cpu columns are required (time_t={}, cpu_cols={}, wp_cols={})",
+                    "named openings trace-opening: canonical time cpu columns are required (time_t={}, cpu_cols={}, trace_opening_cols={})",
                     step.time_columns.t,
                     step.time_columns.cpu_cols.len(),
-                    wp_cols.len()
+                    trace_opening_cols.len()
                 )));
             }
             if !has_committed_time_cpu {
                 return Err(PiCcsError::ProtocolError(
-                    "named openings wp: canonical time-column path requires committed time cpu columns".into(),
+                    "named openings trace-opening: canonical time-column path requires committed time cpu columns"
+                        .into(),
                 ));
             }
             let trace_map = crate::memory_sidecar::cpu_bus::time_columns_openings_from_time_columns_at_point(
                 mcs_inst.m_in,
                 step.time_columns.t,
                 &step.time_columns.cpu_cols,
-                &wp_cols,
-                wp_me.r.as_slice(),
-                "named openings wp",
+                &trace_opening_cols,
+                trace_opening_me.r.as_slice(),
+                "named openings trace-opening",
             )?;
-            let mut evals = Vec::with_capacity(wp_cols.len());
-            for &col_id in wp_cols.iter() {
-                let v = trace_map
-                    .get(&col_id)
-                    .copied()
-                    .ok_or_else(|| PiCcsError::ProtocolError(format!("named openings wp: missing col_id={col_id}")))?;
+            let mut evals = Vec::with_capacity(trace_opening_cols.len());
+            for &col_id in trace_opening_cols.iter() {
+                let v = trace_map.get(&col_id).copied().ok_or_else(|| {
+                    PiCcsError::ProtocolError(format!("named openings trace-opening: missing col_id={col_id}"))
+                })?;
                 evals.push(v);
             }
             out.push(crate::shard_proof_types::TimePointOpening {
-                point: wp_me.r.clone(),
-                col_ids: wp_cols,
+                point: trace_opening_me.r.clone(),
+                col_ids: trace_opening_cols,
                 evals,
                 source: crate::shard_proof_types::TimeOpeningSource::CommittedOpening,
             });
@@ -446,7 +446,7 @@ where
                     let z_col = neo_memory::ajtai::encode_vector_balanced_to_mat_with_base(
                         params,
                         col,
-                        crate::time_opening::STAGE8_TIME_DECOMP_BASE,
+                        crate::time_opening::JOINT_OPENING_TIME_DECOMP_BASE,
                     );
                     let row_nz = crate::time_opening::me_adapter::mat_row_nonzero_entries(&z_col);
                     z_col_cache.insert(col_id, EncodedTimeColCache { z_col, row_nz });
@@ -464,7 +464,7 @@ where
                 )?;
                 let recomposed = crate::time_opening::me_adapter::recompose_digits_to_scalar(
                     digits.as_slice(),
-                    crate::time_opening::STAGE8_TIME_DECOMP_BASE,
+                    crate::time_opening::JOINT_OPENING_TIME_DECOMP_BASE,
                 );
                 if recomposed != eval {
                     return Err(PiCcsError::ProtocolError(format!(
@@ -483,112 +483,113 @@ where
         out
     };
 
-    let (opening_manifest, opening_reduction, opening_unification, joint_opening_lane, stage8_fold) = if opening_proofs
-        .is_empty()
-    {
-        if !fold_openings.is_empty() {
-            return Err(PiCcsError::ProtocolError(
-                "time/opening: missing opening proofs for non-empty named openings".into(),
-            ));
-        }
-        (
-            crate::shard_proof_types::OpeningClaimManifest::default(),
-            crate::shard_proof_types::OpeningReductionProof::default(),
-            crate::shard_proof_types::OpeningUnificationProof::default(),
-            crate::shard_proof_types::JointOpeningLaneProof::default(),
-            Vec::new(),
-        )
-    } else {
-        let opening_manifest = crate::time_opening::manifest::build_opening_claim_manifest(
-            &fold_openings,
-            &opening_proofs,
-            &step.time_columns.col_ids,
-            time_cpu_commitments.len(),
-        )?;
-        crate::time_opening::manifest::bind_opening_claim_manifest(tr, step_idx, &opening_manifest);
-        let opening_batch_coeffs = bind_time_opening_batches_and_sample_coeffs(tr, params, step_idx, &opening_proofs)?;
-        let opening_reduction = crate::time_opening::reduction::build_opening_reduction(&opening_manifest)?;
-        let opening_unification =
-            crate::time_opening::reduction::prove_opening_unification_sumcheck(tr, step_idx, &opening_reduction)?;
-        let (joint_opening_lane, stage8_joint_wits) =
-            crate::time_opening::joint_lane::prove_joint_opening_lane_with_witnesses(
-                tr,
-                params,
-                step_idx,
-                step,
-                cpu_bus,
-                time_cpu_commitments,
-                time_mem_commitments,
-                &step.time_columns.col_ids,
-                &opening_proofs,
-                &opening_manifest.digest,
-                &opening_reduction,
-                &opening_unification,
-                &opening_batch_coeffs,
-            )?;
-        let mut stage8_fold: Vec<RlcDecProof> = Vec::with_capacity(1);
-        let stage8_params = stage8_time_decomp_params(params)?;
-        let stage8_plan = crate::time_opening::joint_lane::build_stage8_fold_lane_plan(
-            &joint_opening_lane,
-            &opening_unification,
-            step.time_columns.t,
-        )?;
-        if let Some(plan) = stage8_plan {
-            if stage8_joint_wits.len() != plan.claims.len() {
-                return Err(PiCcsError::ProtocolError(format!(
-                    "stage8 fold: witness/claim count mismatch (wits={}, claims={})",
-                    stage8_joint_wits.len(),
-                    plan.claims.len()
-                )));
+    let (opening_manifest, opening_reduction, opening_unification, joint_opening_lane, joint_opening_fold) =
+        if opening_proofs.is_empty() {
+            if !fold_openings.is_empty() {
+                return Err(PiCcsError::ProtocolError(
+                    "time/opening: missing opening proofs for non-empty named openings".into(),
+                ));
             }
-            if !has_global_pp_for_dims(D, plan.ccs.m) {
-                return Err(PiCcsError::InvalidInput(format!(
+            (
+                crate::shard_proof_types::OpeningClaimManifest::default(),
+                crate::shard_proof_types::OpeningReductionProof::default(),
+                crate::shard_proof_types::OpeningUnificationProof::default(),
+                crate::shard_proof_types::JointOpeningLaneProof::default(),
+                Vec::new(),
+            )
+        } else {
+            let opening_manifest = crate::time_opening::manifest::build_opening_claim_manifest(
+                &fold_openings,
+                &opening_proofs,
+                &step.time_columns.col_ids,
+                time_cpu_commitments.len(),
+            )?;
+            crate::time_opening::manifest::bind_opening_claim_manifest(tr, step_idx, &opening_manifest);
+            let opening_batch_coeffs =
+                bind_time_opening_batches_and_sample_coeffs(tr, params, step_idx, &opening_proofs)?;
+            let opening_reduction = crate::time_opening::reduction::build_opening_reduction(&opening_manifest)?;
+            let opening_unification =
+                crate::time_opening::reduction::prove_opening_unification_sumcheck(tr, step_idx, &opening_reduction)?;
+            let (joint_opening_lane, joint_opening_wits) =
+                crate::time_opening::joint_lane::prove_joint_opening_lane_with_witnesses(
+                    tr,
+                    params,
+                    step_idx,
+                    step,
+                    cpu_bus,
+                    time_cpu_commitments,
+                    time_mem_commitments,
+                    &step.time_columns.col_ids,
+                    &opening_proofs,
+                    &opening_manifest.digest,
+                    &opening_reduction,
+                    &opening_unification,
+                    &opening_batch_coeffs,
+                )?;
+            let mut joint_opening_fold: Vec<RlcDecProof> = Vec::with_capacity(1);
+            let joint_opening_params = joint_opening_time_decomp_params(params)?;
+            let joint_opening_plan = crate::time_opening::joint_lane::build_joint_opening_fold_lane_plan(
+                &joint_opening_lane,
+                &opening_unification,
+                step.time_columns.t,
+            )?;
+            if let Some(plan) = joint_opening_plan {
+                if joint_opening_wits.len() != plan.claims.len() {
+                    return Err(PiCcsError::ProtocolError(format!(
+                        "stage8 fold: witness/claim count mismatch (wits={}, claims={})",
+                        joint_opening_wits.len(),
+                        plan.claims.len()
+                    )));
+                }
+                if !has_global_pp_for_dims(D, plan.ccs.m) {
+                    return Err(PiCcsError::InvalidInput(format!(
                     "stage8 fold: missing global PP for (D,m)=({D},{}); PP must be pre-registered with canonical seed",
                     plan.ccs.m
                 )));
+                }
+                let joint_opening_committer =
+                    neo_ajtai::AjtaiSModule::from_global_for_dims(D, plan.ccs.m).map_err(|e| {
+                        PiCcsError::InvalidInput(format!(
+                            "stage8 fold: missing global committer for (D,m)=({D},{}): {e}",
+                            plan.ccs.m
+                        ))
+                    })?;
+                tr.append_message(b"fold/stage8_lane_start", &(step_idx as u64).to_le_bytes());
+                tr.append_message(b"fold/stage8_lane_group_idx", &0u64.to_le_bytes());
+                let wit_refs: Vec<&Mat<F>> = joint_opening_wits.iter().collect();
+                let (joint_opening_proof, _joint_opening_wits, _joint_opening_parent_wit) = prove_rlc_dec_lane(
+                    mode,
+                    RlcLane::Val,
+                    tr,
+                    &joint_opening_params,
+                    &plan.ccs,
+                    None,
+                    None,
+                    ring,
+                    ell_d,
+                    k_dec,
+                    step_idx,
+                    None,
+                    plan.claims.as_slice(),
+                    wit_refs.as_slice(),
+                    false,
+                    &joint_opening_committer,
+                    mixers,
+                )?;
+                joint_opening_fold.push(joint_opening_proof);
+            } else if !joint_opening_wits.is_empty() {
+                return Err(PiCcsError::ProtocolError(
+                    "stage8 fold: missing lane plan for non-empty stage8 witnesses".into(),
+                ));
             }
-            let stage8_committer = neo_ajtai::AjtaiSModule::from_global_for_dims(D, plan.ccs.m).map_err(|e| {
-                PiCcsError::InvalidInput(format!(
-                    "stage8 fold: missing global committer for (D,m)=({D},{}): {e}",
-                    plan.ccs.m
-                ))
-            })?;
-            tr.append_message(b"fold/stage8_lane_start", &(step_idx as u64).to_le_bytes());
-            tr.append_message(b"fold/stage8_lane_group_idx", &0u64.to_le_bytes());
-            let wit_refs: Vec<&Mat<F>> = stage8_joint_wits.iter().collect();
-            let (stage8_proof, _stage8_wits, _stage8_parent_wit) = prove_rlc_dec_lane(
-                mode,
-                RlcLane::Val,
-                tr,
-                &stage8_params,
-                &plan.ccs,
-                None,
-                None,
-                ring,
-                ell_d,
-                k_dec,
-                step_idx,
-                None,
-                plan.claims.as_slice(),
-                wit_refs.as_slice(),
-                false,
-                &stage8_committer,
-                mixers,
-            )?;
-            stage8_fold.push(stage8_proof);
-        } else if !stage8_joint_wits.is_empty() {
-            return Err(PiCcsError::ProtocolError(
-                "stage8 fold: missing lane plan for non-empty stage8 witnesses".into(),
-            ));
-        }
-        (
-            opening_manifest,
-            opening_reduction,
-            opening_unification,
-            joint_opening_lane,
-            stage8_fold,
-        )
-    };
+            (
+                opening_manifest,
+                opening_reduction,
+                opening_unification,
+                joint_opening_lane,
+                joint_opening_fold,
+            )
+        };
 
     Ok(OpeningsPhaseResult {
         fold_openings,
@@ -597,6 +598,6 @@ where
         opening_reduction,
         opening_unification,
         joint_opening_lane,
-        stage8_fold,
+        joint_opening_fold,
     })
 }

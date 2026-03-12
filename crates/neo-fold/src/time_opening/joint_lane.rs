@@ -67,7 +67,7 @@ fn build_claim_witness_from_step(
         neo_memory::ajtai::encode_vector_balanced_to_row_major_with_base_into(
             params,
             col,
-            crate::time_opening::STAGE8_TIME_DECOMP_BASE,
+            crate::time_opening::JOINT_OPENING_TIME_DECOMP_BASE,
             &mut z_col_row_major,
         );
         left_mul_add_row_major_into(&mut out, &coeffs[i], z_col_row_major.as_slice(), t)?;
@@ -201,7 +201,7 @@ fn left_mul_add_row_major_into(dst: &mut Mat<F>, rho: &Mat<F>, src_data: &[F], m
 }
 
 #[derive(Clone, Debug)]
-pub struct Stage8FoldLanePlan {
+pub struct JointOpeningFoldLanePlan {
     pub ccs: CcsStructure<F>,
     pub claims: Vec<CeClaim<Cmt, F, K>>,
 }
@@ -376,7 +376,7 @@ fn mix_group_witnesses(group_wits: &[Mat<F>], mix_rhos: &[Mat<F>], time_t: usize
     Ok(out)
 }
 
-fn build_stage8_commit_fold_ccs(time_t: usize, r_len: usize) -> Result<CcsStructure<F>, PiCcsError> {
+fn build_joint_opening_fold_ccs(time_t: usize, r_len: usize) -> Result<CcsStructure<F>, PiCcsError> {
     if time_t == 0 {
         return Err(PiCcsError::InvalidInput(
             "stage8/commit fold: time_t must be > 0".into(),
@@ -398,11 +398,11 @@ fn build_stage8_commit_fold_ccs(time_t: usize, r_len: usize) -> Result<CcsStruct
         .map_err(|e| PiCcsError::InvalidInput(format!("stage8/commit fold: invalid CCS structure: {e:?}")))
 }
 
-pub fn build_stage8_fold_lane_plan(
+pub fn build_joint_opening_fold_lane_plan(
     lane: &JointOpeningLaneProof,
     opening_unification: &OpeningUnificationProof,
     time_t: usize,
-) -> Result<Option<Stage8FoldLanePlan>, PiCcsError> {
+) -> Result<Option<JointOpeningFoldLanePlan>, PiCcsError> {
     if lane.claim_kind != JointClaimKind::VectorPartial {
         return Err(PiCcsError::ProtocolError(
             "stage8/commit fold: unsupported claim kind (expected VectorPartial)".into(),
@@ -422,7 +422,7 @@ pub fn build_stage8_fold_lane_plan(
         ));
     }
 
-    let ccs = build_stage8_commit_fold_ccs(time_t, opening_unification.r_unify.len())?;
+    let ccs = build_joint_opening_fold_ccs(time_t, opening_unification.r_unify.len())?;
     let d_pad = D.next_power_of_two();
     let fold_digest = unified_fold_digest(&lane.groups);
     let claims = lane
@@ -444,7 +444,7 @@ pub fn build_stage8_fold_lane_plan(
             u_len: 0,
         })
         .collect();
-    Ok(Some(Stage8FoldLanePlan { ccs, claims }))
+    Ok(Some(JointOpeningFoldLanePlan { ccs, claims }))
 }
 
 pub fn prove_joint_opening_lane_with_witnesses(
@@ -546,7 +546,7 @@ pub fn prove_joint_opening_lane_with_witnesses(
                 cpu_cols_len,
                 time_cpu_commitments,
                 time_mem_commitments,
-                crate::time_opening::STAGE8_TIME_DECOMP_BASE,
+                crate::time_opening::JOINT_OPENING_TIME_DECOMP_BASE,
             )?;
 
             let rho = &rhos[local_idx];
@@ -582,11 +582,11 @@ pub fn prove_joint_opening_lane_with_witnesses(
         }
         let joint_claim = recompose_digits_to_scalar(
             joint_claim_digits.as_slice(),
-            crate::time_opening::STAGE8_TIME_DECOMP_BASE,
+            crate::time_opening::JOINT_OPENING_TIME_DECOMP_BASE,
         );
         let expected_claim = recompose_digits_to_scalar(
             expected_claim_digits.as_slice(),
-            crate::time_opening::STAGE8_TIME_DECOMP_BASE,
+            crate::time_opening::JOINT_OPENING_TIME_DECOMP_BASE,
         );
         if joint_claim != expected_claim {
             return Err(PiCcsError::ProtocolError(format!(
@@ -648,7 +648,7 @@ pub fn prove_joint_opening_lane_with_witnesses(
 
         let joint_claim = recompose_digits_to_scalar(
             group_work.joint_claim_digits.as_slice(),
-            crate::time_opening::STAGE8_TIME_DECOMP_BASE,
+            crate::time_opening::JOINT_OPENING_TIME_DECOMP_BASE,
         );
 
         out_groups.push(JointOpeningGroupProof {
@@ -729,7 +729,7 @@ pub fn prove_joint_opening_lane_with_witnesses(
         };
         let unified_claim = recompose_digits_to_scalar(
             unified_claim_digits.as_slice(),
-            crate::time_opening::STAGE8_TIME_DECOMP_BASE,
+            crate::time_opening::JOINT_OPENING_TIME_DECOMP_BASE,
         );
         unified_fold = Some(JointOpeningGroupProof {
             point: unified_point,
@@ -883,7 +883,7 @@ pub fn verify_joint_opening_lane(
                 cpu_cols_len,
                 time_cpu_commitments,
                 time_mem_commitments,
-                crate::time_opening::STAGE8_TIME_DECOMP_BASE,
+                crate::time_opening::JOINT_OPENING_TIME_DECOMP_BASE,
             )?;
             let rho = &rhos[local_idx];
             add_rot_scaled_commitment(&mut expected_commitment, &claim.commitment, rho)?;
@@ -894,7 +894,7 @@ pub fn verify_joint_opening_lane(
         }
         let expected_claim = recompose_digits_to_scalar(
             expected_claim_digits.as_slice(),
-            crate::time_opening::STAGE8_TIME_DECOMP_BASE,
+            crate::time_opening::JOINT_OPENING_TIME_DECOMP_BASE,
         );
 
         let expected_commitment = expected_commitment.ok_or_else(|| {
@@ -973,7 +973,7 @@ pub fn verify_joint_opening_lane(
     }
     let recomposed = recompose_digits_to_scalar(
         unified.joint_claim_digits.as_slice(),
-        crate::time_opening::STAGE8_TIME_DECOMP_BASE,
+        crate::time_opening::JOINT_OPENING_TIME_DECOMP_BASE,
     );
     if unified.joint_claim != recomposed {
         return Err(PiCcsError::ProtocolError(

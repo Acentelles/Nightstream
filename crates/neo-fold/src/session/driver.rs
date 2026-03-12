@@ -735,16 +735,16 @@ where
         };
 
         // Val-lane obligations are expected when the session carries any sidecar val lane:
-        // Twist/Shout folds, or WB/WP folds over RV32 trace openings.
+        // Twist/Shout folds, or booleanity/trace-opening folds over RV32 trace openings.
         let has_twist_or_shout = self.has_twist_instances() || self.has_shout_instances();
-        let has_wb_or_wp = run.steps.iter().any(|step| {
-            !step.mem.wb_me_claims.is_empty()
-                || !step.mem.wp_me_claims.is_empty()
-                || !step.wb_fold.is_empty()
-                || !step.wp_fold.is_empty()
-                || !step.stage8_fold.is_empty()
+        let has_trace_opening_sidecars = run.steps.iter().any(|step| {
+            !step.mem.booleanity_me_claims.is_empty()
+                || !step.mem.trace_opening_me_claims.is_empty()
+                || !step.booleanity_fold.is_empty()
+                || !step.trace_opening_fold.is_empty()
+                || !step.joint_opening_fold.is_empty()
         });
-        if !(has_twist_or_shout || has_wb_or_wp) && !outputs.obligations.val.is_empty() {
+        if !(has_twist_or_shout || has_trace_opening_sidecars) && !outputs.obligations.val.is_empty() {
             return Err(PiCcsError::ProtocolError(
                 "CCS-only session verification produced unexpected val-lane obligations".into(),
             ));
@@ -928,14 +928,14 @@ where
         };
 
         let has_twist_or_shout = self.has_twist_instances() || self.has_shout_instances();
-        let has_wb_or_wp = run.steps.iter().any(|step| {
-            !step.mem.wb_me_claims.is_empty()
-                || !step.mem.wp_me_claims.is_empty()
-                || !step.wb_fold.is_empty()
-                || !step.wp_fold.is_empty()
-                || !step.stage8_fold.is_empty()
+        let has_trace_opening_sidecars = run.steps.iter().any(|step| {
+            !step.mem.booleanity_me_claims.is_empty()
+                || !step.mem.trace_opening_me_claims.is_empty()
+                || !step.booleanity_fold.is_empty()
+                || !step.trace_opening_fold.is_empty()
+                || !step.joint_opening_fold.is_empty()
         });
-        if !(has_twist_or_shout || has_wb_or_wp) && !outputs.obligations.val.is_empty() {
+        if !(has_twist_or_shout || has_trace_opening_sidecars) && !outputs.obligations.val.is_empty() {
             return Err(PiCcsError::ProtocolError(
                 "CCS-only session verification produced unexpected val-lane obligations".into(),
             ));

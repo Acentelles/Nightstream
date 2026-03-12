@@ -22,8 +22,8 @@ impl<FF> LaneWitnessAudit<FF> {
 pub struct StepWitnessAudit<FF> {
     pub main_lane: LaneWitnessAudit<FF>,
     pub val_lanes: Vec<LaneWitnessAudit<FF>>,
-    pub wb_lanes: Vec<LaneWitnessAudit<FF>>,
-    pub wp_lanes: Vec<LaneWitnessAudit<FF>>,
+    pub booleanity_lanes: Vec<LaneWitnessAudit<FF>>,
+    pub trace_opening_lanes: Vec<LaneWitnessAudit<FF>>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -35,14 +35,14 @@ impl StepWitnessAudit<F> {
     pub fn new(
         main_lane: LaneWitnessAudit<F>,
         val_lanes: Vec<LaneWitnessAudit<F>>,
-        wb_lanes: Vec<LaneWitnessAudit<F>>,
-        wp_lanes: Vec<LaneWitnessAudit<F>>,
+        booleanity_lanes: Vec<LaneWitnessAudit<F>>,
+        trace_opening_lanes: Vec<LaneWitnessAudit<F>>,
     ) -> Self {
         Self {
             main_lane,
             val_lanes,
-            wb_lanes,
-            wp_lanes,
+            booleanity_lanes,
+            trace_opening_lanes,
         }
     }
 }

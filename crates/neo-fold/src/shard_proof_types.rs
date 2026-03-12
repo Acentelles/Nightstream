@@ -80,7 +80,7 @@ pub struct OpeningReductionGroup {
     pub point: Vec<K>,
     pub domain: OpeningDomain,
     pub claim_indices: Vec<usize>,
-    /// Canonical digest of `(domain, point, claim_indices)` under Stage-8 v1 encoding.
+    /// Canonical digest of `(domain, point, claim_indices)` under the stage8 v1 transcript encoding.
     pub group_digest: [u8; 32],
 }
 
@@ -128,7 +128,7 @@ pub enum JointClaimKind {
 pub struct JointOpeningLaneProof {
     pub claim_kind: JointClaimKind,
     pub groups: Vec<JointOpeningGroupProof>,
-    /// Optional unified Stage-8 fold claim derived from `groups` under transcript-bound mixers.
+    /// Optional unified joint-opening fold claim derived from `groups` under transcript-bound mixers.
     pub unified_fold: Option<JointOpeningGroupProof>,
 }
 
@@ -136,9 +136,9 @@ pub struct JointOpeningLaneProof {
 pub struct FoldingLanes {
     pub main_children: usize,
     pub val_children: usize,
-    pub wb_children: usize,
-    pub wp_children: usize,
-    pub stage8_children: usize,
+    pub booleanity_children: usize,
+    pub trace_opening_children: usize,
+    pub joint_opening_children: usize,
 }
 
 /// Route A Shout address pre-time proof metadata, grouped by `ell_addr`.
@@ -226,11 +226,11 @@ pub struct TimeFoldStep {
     pub opening_proofs: Vec<TimeOpeningProof>,
     /// Canonical claim manifest for time openings (strictly ordered, transcript-bound).
     pub opening_manifest: OpeningClaimManifest,
-    /// Deterministic grouping of opening claims for Stage-8 reduction.
+    /// Deterministic grouping of opening claims for joint-opening reduction.
     pub opening_reduction: OpeningReductionProof,
     /// Sumcheck proof that binds point/domain reduction groups into one transcript-derived selector point.
     pub opening_unification: OpeningUnificationProof,
-    /// Stage-8 Neo-native joint opening lane proof.
+    /// Joint-opening Neo-native lane proof.
     pub joint_opening_lane: JointOpeningLaneProof,
     /// Folding-lane summary for this step (new path).
     pub folding_lanes: FoldingLanes,
@@ -298,7 +298,7 @@ pub struct ShardFoldWitnesses<FF> {
     ///
     /// This is an exporter/audit surface, not a semantic mirror of
     /// `ShardFoldOutputs::obligations.val`. The proof object's `val` obligations also
-    /// include WB/WP/stage8 children, while the collected witness material here follows
+    /// include booleanity/trace-opening/joint-opening children, while the collected witness material here follows
     /// the concrete auxiliary witness paths emitted by the prover.
     pub val_lane_wits: Vec<Mat<FF>>,
 }
@@ -319,10 +319,10 @@ pub struct MemSidecarProof<C, FF, KK> {
     ///
     /// Shared-bus mode only: these are CPU ME openings at `r_val` that include appended bus openings.
     pub val_me_claims: Vec<CeClaim<C, FF, KK>>,
-    /// CPU ME openings at `r_time` used to bind WB booleanity terminals to committed trace columns.
-    pub wb_me_claims: Vec<CeClaim<C, FF, KK>>,
-    /// CPU ME openings at `r_time` used to bind WP quiescence terminals to committed trace columns.
-    pub wp_me_claims: Vec<CeClaim<C, FF, KK>>,
+    /// CPU ME openings at `r_time` used to bind booleanity terminals to committed trace columns.
+    pub booleanity_me_claims: Vec<CeClaim<C, FF, KK>>,
+    /// CPU ME openings at `r_time` used to bind trace-opening terminals to committed trace columns.
+    pub trace_opening_me_claims: Vec<CeClaim<C, FF, KK>>,
     /// Poseidon cycle-lane ME openings at `r_time` used to bind Poseidon Route-A cycle terminals.
     pub poseidon_cycle_me_claims: Vec<CeClaim<C, FF, KK>>,
     /// Poseidon local-lane ME openings used to bind local round/transition terminals.
@@ -374,17 +374,17 @@ pub struct StepProof {
     ///
     /// Each proof is an independent Π_RLC→Π_DEC lane (k=1 in current usage).
     pub val_fold: Vec<RlcDecProof>,
-    /// Reserved WB folding lane(s) for staged booleanity claims.
-    pub wb_fold: Vec<RlcDecProof>,
-    /// Reserved WP folding lane(s) for staged quiescence claims.
-    pub wp_fold: Vec<RlcDecProof>,
+    /// Reserved booleanity folding lane(s) for staged booleanity claims.
+    pub booleanity_fold: Vec<RlcDecProof>,
+    /// Reserved trace-opening folding lane(s) for staged quiescence claims.
+    pub trace_opening_fold: Vec<RlcDecProof>,
     /// Optional nested per-step proofs used by compressed segment encodings.
     ///
     /// When present, this `StepProof` acts as a container and verification should
     /// expand and check the nested steps against the corresponding public segment.
     pub compressed_substeps: Option<Vec<StepProof>>,
-    /// Stage-8 joint-opening folding lane(s) (canonical mode uses exactly one unified lane).
-    pub stage8_fold: Vec<RlcDecProof>,
+    /// Joint-opening folding lane(s) (canonical mode uses exactly one unified lane).
+    pub joint_opening_fold: Vec<RlcDecProof>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -448,13 +448,13 @@ impl ShardProof {
         for p in &step.val_fold {
             out.extend_from_slice(&p.dec_children);
         }
-        for p in &step.wb_fold {
+        for p in &step.booleanity_fold {
             out.extend_from_slice(&p.dec_children);
         }
-        for p in &step.wp_fold {
+        for p in &step.trace_opening_fold {
             out.extend_from_slice(&p.dec_children);
         }
-        for p in &step.stage8_fold {
+        for p in &step.joint_opening_fold {
             out.extend_from_slice(&p.dec_children);
         }
     }

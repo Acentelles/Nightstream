@@ -276,26 +276,26 @@ where
                 idx, step_proof.fold.time_declared_len, step_proof.fold.time_t
             )));
         }
-        let has_stage8_artifacts = !step_proof.fold.openings.is_empty()
+        let has_joint_opening_artifacts = !step_proof.fold.openings.is_empty()
             || !step_proof.fold.opening_proofs.is_empty()
             || !step_proof.fold.opening_unification.round_polys.is_empty()
             || !step_proof.fold.joint_opening_lane.groups.is_empty()
             || step_proof.fold.joint_opening_lane.unified_fold.is_some()
-            || !step_proof.stage8_fold.is_empty()
+            || !step_proof.joint_opening_fold.is_empty()
             || !step_proof.fold.opening_manifest.entries.is_empty()
             || !step_proof.fold.opening_reduction.groups.is_empty();
-        let requires_stage8_openings = cpu_bus.bus_cols > 0
+        let requires_joint_opening_artifacts = cpu_bus.bus_cols > 0
             || !step.mem_insts.is_empty()
             || !step.lut_insts.is_empty()
-            || !step_proof.mem.wb_me_claims.is_empty()
-            || !step_proof.mem.wp_me_claims.is_empty();
-        if requires_stage8_openings && !has_stage8_artifacts {
+            || !step_proof.mem.booleanity_me_claims.is_empty()
+            || !step_proof.mem.trace_opening_me_claims.is_empty();
+        if requires_joint_opening_artifacts && !has_joint_opening_artifacts {
             return Err(PiCcsError::ProtocolError(format!(
-                "step {}: missing Stage-8 artifacts for load-bearing named openings",
+                "step {}: missing joint-opening fold artifacts for load-bearing named openings",
                 idx
             )));
         }
-        if has_stage8_artifacts {
+        if has_joint_opening_artifacts {
             if step_proof.fold.openings.is_empty()
                 || step_proof.fold.opening_proofs.is_empty()
                 || step_proof.fold.opening_manifest.entries.is_empty()
@@ -304,28 +304,28 @@ where
                 || step_proof.fold.joint_opening_lane.groups.is_empty()
             {
                 return Err(PiCcsError::ProtocolError(format!(
-                    "step {}: malformed Stage-8 artifact set (canonical mode requires openings/proofs/manifest/reduction/unification/groups)",
+                    "step {}: malformed joint-opening fold artifact set (canonical mode requires openings/proofs/manifest/reduction/unification/groups)",
                     idx
                 )));
             }
-            let expected_stage8_fold_len = if step_proof.fold.joint_opening_lane.groups.is_empty() {
+            let expected_joint_opening_fold_len = if step_proof.fold.joint_opening_lane.groups.is_empty() {
                 0usize
             } else {
                 1usize
             };
-            if step_proof.stage8_fold.len() != expected_stage8_fold_len {
+            if step_proof.joint_opening_fold.len() != expected_joint_opening_fold_len {
                 return Err(PiCcsError::ProtocolError(format!(
-                    "step {}: malformed Stage-8 artifact set (stage8_fold proofs={}, expected {})",
+                    "step {}: malformed joint-opening fold artifact set (joint_opening_fold proofs={}, expected {})",
                     idx,
-                    step_proof.stage8_fold.len(),
-                    expected_stage8_fold_len
+                    step_proof.joint_opening_fold.len(),
+                    expected_joint_opening_fold_len
                 )));
             }
         }
-        if has_stage8_artifacts {
+        if has_joint_opening_artifacts {
             if step_proof.fold.time_t == 0 {
                 return Err(PiCcsError::ProtocolError(format!(
-                    "step {}: verify/time_columns time_t must be > 0 in Stage-8 committed mode",
+                    "step {}: verify/time_columns time_t must be > 0 in joint-opening committed mode",
                     idx
                 )));
             }
@@ -422,8 +422,8 @@ where
 
         let shout_pre = crate::memory_sidecar::memory::verify_shout_addr_pre_time(tr, step, &step_proof.mem, step_idx)?;
         let twist_pre = crate::memory_sidecar::memory::verify_twist_addr_pre_time(tr, step, &step_proof.mem)?;
-        let wb_enabled = crate::memory_sidecar::memory::wb_wp_required_for_step_instance(step);
-        let wp_enabled = crate::memory_sidecar::memory::wb_wp_required_for_step_instance(step);
+        let booleanity_enabled = crate::memory_sidecar::memory::trace_opening_path_required_for_step_instance(step);
+        let trace_opening_enabled = crate::memory_sidecar::memory::trace_opening_path_required_for_step_instance(step);
         let decode_stage_enabled = crate::memory_sidecar::memory::decode_stage_required_for_step_instance(step);
         let width_stage_enabled = crate::memory_sidecar::memory::width_stage_required_for_step_instance(step)
             || crate::memory_sidecar::memory::rv64_fullword_width_stage_required_from_proof(
@@ -441,8 +441,8 @@ where
             step,
             &step_proof.batched_time,
             crate::memory_sidecar::route_a_time::RouteABatchedTimeVerifyConfig {
-                wb_enabled,
-                wp_enabled,
+                booleanity_enabled,
+                trace_opening_enabled,
                 decode_stage_enabled,
                 width_stage_enabled,
                 control_stage_enabled,
@@ -759,17 +759,17 @@ where
             }
         }
 
-        let has_stage8_artifacts = !step_proof.fold.openings.is_empty()
+        let has_joint_opening_artifacts = !step_proof.fold.openings.is_empty()
             || !step_proof.fold.opening_proofs.is_empty()
             || !step_proof.fold.opening_unification.round_polys.is_empty()
             || !step_proof.fold.joint_opening_lane.groups.is_empty()
             || step_proof.fold.joint_opening_lane.unified_fold.is_some()
-            || !step_proof.stage8_fold.is_empty();
+            || !step_proof.joint_opening_fold.is_empty();
         // Full-column commitment replay is intentionally skipped in verifier hot path.
         // Soundness for load-bearing values is enforced via committed named openings
         // (`validate_step_time_opening_proofs` + batched transcript checks).
         // Commitment binding is enforced via transcript-bound batched opening checks below.
-        if has_stage8_artifacts || requires_stage8_openings {
+        if has_joint_opening_artifacts || requires_joint_opening_artifacts {
             validate_step_time_openings_consistency(step, step_proof, &cpu_bus, &route_r_time)?;
         }
 
@@ -1051,31 +1051,31 @@ where
             }
         }
 
-        if step_proof.mem.wb_me_claims.is_empty() {
-            if !step_proof.wb_fold.is_empty() {
+        if step_proof.mem.booleanity_me_claims.is_empty() {
+            if !step_proof.booleanity_fold.is_empty() {
                 return Err(PiCcsError::ProtocolError(format!(
-                    "step {}: unexpected wb_fold proof(s) (no WB ME claims)",
+                    "step {}: unexpected booleanity_fold proof(s) (no booleanity ME claims)",
                     idx
                 )));
             }
         } else {
-            if step_proof.wb_fold.len() != step_proof.mem.wb_me_claims.len() {
+            if step_proof.booleanity_fold.len() != step_proof.mem.booleanity_me_claims.len() {
                 return Err(PiCcsError::ProtocolError(format!(
-                    "step {}: wb_fold count mismatch (have {}, expected {})",
+                    "step {}: booleanity_fold count mismatch (have {}, expected {})",
                     idx,
-                    step_proof.wb_fold.len(),
-                    step_proof.mem.wb_me_claims.len()
+                    step_proof.booleanity_fold.len(),
+                    step_proof.mem.booleanity_me_claims.len()
                 )));
             }
-            tr.append_message(b"fold/wb_lane_start", &(step_idx as u64).to_le_bytes());
+            tr.append_message(b"fold/booleanity_lane_start", &(step_idx as u64).to_le_bytes());
             for (claim_idx, (me, proof)) in step_proof
                 .mem
-                .wb_me_claims
+                .booleanity_me_claims
                 .iter()
-                .zip(step_proof.wb_fold.iter())
+                .zip(step_proof.booleanity_fold.iter())
                 .enumerate()
             {
-                tr.append_message(b"fold/wb_lane_claim_idx", &(claim_idx as u64).to_le_bytes());
+                tr.append_message(b"fold/booleanity_lane_claim_idx", &(claim_idx as u64).to_le_bytes());
                 verify_rlc_dec_lane(
                     RlcLane::Val,
                     tr,
@@ -1091,37 +1091,40 @@ where
                     &proof.dec_children,
                 )
                 .map_err(|e| {
-                    PiCcsError::ProtocolError(format!("step {} wb_fold claim {} verify failed: {e:?}", idx, claim_idx))
+                    PiCcsError::ProtocolError(format!(
+                        "step {} booleanity_fold claim {} verify failed: {e:?}",
+                        idx, claim_idx
+                    ))
                 })?;
                 val_lane_obligations.extend_from_slice(&proof.dec_children);
             }
         }
 
-        if step_proof.mem.wp_me_claims.is_empty() {
-            if !step_proof.wp_fold.is_empty() {
+        if step_proof.mem.trace_opening_me_claims.is_empty() {
+            if !step_proof.trace_opening_fold.is_empty() {
                 return Err(PiCcsError::ProtocolError(format!(
-                    "step {}: unexpected wp_fold proof(s) (no WP ME claims)",
+                    "step {}: unexpected trace_opening_fold proof(s) (no trace-opening ME claims)",
                     idx
                 )));
             }
         } else {
-            if step_proof.wp_fold.len() != step_proof.mem.wp_me_claims.len() {
+            if step_proof.trace_opening_fold.len() != step_proof.mem.trace_opening_me_claims.len() {
                 return Err(PiCcsError::ProtocolError(format!(
-                    "step {}: wp_fold count mismatch (have {}, expected {})",
+                    "step {}: trace_opening_fold count mismatch (have {}, expected {})",
                     idx,
-                    step_proof.wp_fold.len(),
-                    step_proof.mem.wp_me_claims.len()
+                    step_proof.trace_opening_fold.len(),
+                    step_proof.mem.trace_opening_me_claims.len()
                 )));
             }
-            tr.append_message(b"fold/wp_lane_start", &(step_idx as u64).to_le_bytes());
+            tr.append_message(b"fold/trace_opening_lane_start", &(step_idx as u64).to_le_bytes());
             for (claim_idx, (me, proof)) in step_proof
                 .mem
-                .wp_me_claims
+                .trace_opening_me_claims
                 .iter()
-                .zip(step_proof.wp_fold.iter())
+                .zip(step_proof.trace_opening_fold.iter())
                 .enumerate()
             {
-                tr.append_message(b"fold/wp_lane_claim_idx", &(claim_idx as u64).to_le_bytes());
+                tr.append_message(b"fold/trace_opening_lane_claim_idx", &(claim_idx as u64).to_le_bytes());
                 verify_rlc_dec_lane(
                     RlcLane::Val,
                     tr,
@@ -1137,7 +1140,10 @@ where
                     &proof.dec_children,
                 )
                 .map_err(|e| {
-                    PiCcsError::ProtocolError(format!("step {} wp_fold claim {} verify failed: {e:?}", idx, claim_idx))
+                    PiCcsError::ProtocolError(format!(
+                        "step {} trace_opening_fold claim {} verify failed: {e:?}",
+                        idx, claim_idx
+                    ))
                 })?;
                 val_lane_obligations.extend_from_slice(&proof.dec_children);
             }
@@ -1156,35 +1162,35 @@ where
             &mut val_lane_obligations,
         )?;
 
-        if has_stage8_artifacts || requires_stage8_openings {
+        if has_joint_opening_artifacts || requires_joint_opening_artifacts {
             validate_step_time_opening_batches_with_transcript(tr, params, step_idx, step, step_proof, &cpu_bus)?;
         }
-        let stage8_plan = crate::time_opening::joint_lane::build_stage8_fold_lane_plan(
+        let joint_opening_plan = crate::time_opening::joint_lane::build_joint_opening_fold_lane_plan(
             &step_proof.fold.joint_opening_lane,
             &step_proof.fold.opening_unification,
             step_proof.fold.time_t,
         )?;
-        let expected_stage8_proofs = if stage8_plan.is_some() { 1usize } else { 0usize };
-        if step_proof.stage8_fold.len() != expected_stage8_proofs {
+        let expected_joint_opening_proofs = if joint_opening_plan.is_some() { 1usize } else { 0usize };
+        if step_proof.joint_opening_fold.len() != expected_joint_opening_proofs {
             return Err(PiCcsError::ProtocolError(format!(
-                "step {}: expected stage8_fold proofs to match Stage-8 lane plan (proofs={}, expected={})",
+                "step {}: expected joint_opening_fold proofs to match joint-opening lane plan (proofs={}, expected={})",
                 idx,
-                step_proof.stage8_fold.len(),
-                expected_stage8_proofs
+                step_proof.joint_opening_fold.len(),
+                expected_joint_opening_proofs
             )));
         }
-        if let Some(plan) = stage8_plan {
-            let stage8_params = stage8_time_decomp_params(params)?;
+        if let Some(plan) = joint_opening_plan {
+            let joint_opening_params = joint_opening_time_decomp_params(params)?;
             tr.append_message(b"fold/stage8_lane_start", &(step_idx as u64).to_le_bytes());
             tr.append_message(b"fold/stage8_lane_group_idx", &0u64.to_le_bytes());
             let proof_stage8 = step_proof
-                .stage8_fold
+                .joint_opening_fold
                 .first()
-                .ok_or_else(|| PiCcsError::ProtocolError(format!("step {}: missing Stage-8 fold proof", idx)))?;
+                .ok_or_else(|| PiCcsError::ProtocolError(format!("step {}: missing joint-opening fold proof", idx)))?;
             verify_rlc_dec_lane(
                 RlcLane::Val,
                 tr,
-                &stage8_params,
+                &joint_opening_params,
                 &plan.ccs,
                 &ring,
                 ell_d,
@@ -1195,7 +1201,7 @@ where
                 &proof_stage8.rlc_parent,
                 &proof_stage8.dec_children,
             )
-            .map_err(|e| PiCcsError::ProtocolError(format!("step {} stage8_fold verify failed: {e:?}", idx)))?;
+            .map_err(|e| PiCcsError::ProtocolError(format!("step {} joint_opening_fold verify failed: {e:?}", idx)))?;
             val_lane_obligations.extend_from_slice(&proof_stage8.dec_children);
         }
 

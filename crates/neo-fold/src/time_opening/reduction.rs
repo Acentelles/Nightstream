@@ -49,7 +49,7 @@ pub fn build_opening_reduction(manifest: &OpeningClaimManifest) -> Result<Openin
         } else {
             groups.push(OpeningReductionGroup {
                 point: entry.point.clone(),
-                // Canonical Stage-8 reduction domain:
+                // Canonical joint-opening reduction domain:
                 // time rows are contiguous in Route-A (`time_index(j)=m_in+j`),
                 // so mixed CPU/MEM opening claims can share one reduction domain.
                 domain: OpeningDomain::Cpu,

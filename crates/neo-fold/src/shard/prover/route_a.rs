@@ -207,24 +207,26 @@ pub(super) fn prove_route_a_time_phase(
         params, step, ell_t, &r_cycle, &shout_pre, &twist_pre,
     )?;
 
-    let (wb_time_claim_built, wp_time_claim_built) =
-        crate::memory_sidecar::memory::build_route_a_wb_wp_time_claims(params, step, &r_cycle)?;
-    let wb_wp_required = crate::memory_sidecar::memory::wb_wp_required_for_step_witness(step);
-    if wb_wp_required && (wb_time_claim_built.is_none() || wp_time_claim_built.is_none()) {
+    let (booleanity_time_claim_built, trace_opening_time_claim_built) =
+        crate::memory_sidecar::memory::build_route_a_trace_opening_time_claims(params, step, &r_cycle)?;
+    let trace_opening_path_required = crate::memory_sidecar::memory::trace_opening_path_required_for_step_witness(step);
+    if trace_opening_path_required
+        && (booleanity_time_claim_built.is_none() || trace_opening_time_claim_built.is_none())
+    {
         return Err(PiCcsError::ProtocolError(
-            "WB/WP claims are required in RV32 trace mode but were not built".into(),
+            "booleanity/trace-opening claims are required in RV32 trace mode but were not built".into(),
         ));
     }
-    let wb_time_claim =
-        wb_time_claim_built.map(
+    let booleanity_time_claim =
+        booleanity_time_claim_built.map(
             |(oracle, _)| crate::memory_sidecar::route_a_time::ExtraBatchedTimeClaim {
                 oracle,
                 claimed_sum: K::ZERO,
                 label: b"wb/booleanity",
             },
         );
-    let wp_time_claim =
-        wp_time_claim_built.map(
+    let trace_opening_time_claim =
+        trace_opening_time_claim_built.map(
             |(oracle, _)| crate::memory_sidecar::route_a_time::ExtraBatchedTimeClaim {
                 oracle,
                 claimed_sum: K::ZERO,
@@ -478,8 +480,8 @@ pub(super) fn prove_route_a_time_phase(
         twist_read_claims,
         twist_write_claims,
         crate::memory_sidecar::route_a_time::RouteABatchedTimeClaims {
-            wb: wb_time_claim,
-            wp: wp_time_claim,
+            booleanity: booleanity_time_claim,
+            trace_opening: trace_opening_time_claim,
             decode: crate::memory_sidecar::route_a_time::DecodeTimeClaims {
                 decode_fields: decode_fields_claim,
                 decode_immediates: decode_immediates_claim,

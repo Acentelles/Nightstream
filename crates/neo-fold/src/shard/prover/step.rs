@@ -493,7 +493,7 @@ where
         }
     }
 
-    if crate::memory_sidecar::memory::wb_wp_required_for_step_witness(step) && mcs_inst.m_in == 5 {
+    if crate::memory_sidecar::memory::trace_opening_path_required_for_step_witness(step) && mcs_inst.m_in == 5 {
         let m_in = mcs_inst.m_in;
         let t_len = (step.time_columns.t > 0 && !step.time_columns.cpu_cols.is_empty())
             .then_some(step.time_columns.t)
@@ -674,11 +674,11 @@ where
         let t = me.y_ring.len();
         normalize_me_claims(core::slice::from_mut(me), ell_t, ell_d, t)?;
     }
-    for me in mem_proof.wb_me_claims.iter_mut() {
+    for me in mem_proof.booleanity_me_claims.iter_mut() {
         let t = me.y_ring.len();
         normalize_me_claims(core::slice::from_mut(me), ell_t, ell_d, t)?;
     }
-    for me in mem_proof.wp_me_claims.iter_mut() {
+    for me in mem_proof.trace_opening_me_claims.iter_mut() {
         let t = me.y_ring.len();
         normalize_me_claims(core::slice::from_mut(me), ell_t, ell_d, t)?;
     }
@@ -756,18 +756,18 @@ where
         mixers,
     )?;
 
-    let mut wb_fold = Vec::new();
-    let mut wb_lane_audits = Vec::new();
-    if !mem_proof.wb_me_claims.is_empty() {
+    let mut booleanity_fold = Vec::new();
+    let mut booleanity_lane_audits = Vec::new();
+    if !mem_proof.booleanity_me_claims.is_empty() {
         let trace = Rv32TraceLayout::new();
-        let wb_cols = crate::memory_sidecar::memory::riscv_trace_wb_columns(&trace);
-        let wb_lane = prove_aux_cpu_me_lane(
+        let booleanity_cols = crate::memory_sidecar::memory::riscv_trace_booleanity_columns(&trace);
+        let booleanity_lane = prove_aux_cpu_me_lane(
             AuxCpuLaneConfig {
-                start_label: b"fold/wb_lane_start",
-                claim_idx_label: b"fold/wb_lane_claim_idx",
+                start_label: b"fold/booleanity_lane_start",
+                claim_idx_label: b"fold/booleanity_lane_claim_idx",
                 lane_name: "wb",
-                opening_cols: wb_cols.as_slice(),
-                claims: mem_proof.wb_me_claims.as_slice(),
+                opening_cols: booleanity_cols.as_slice(),
+                claims: mem_proof.booleanity_me_claims.as_slice(),
             },
             tr,
             params,
@@ -786,25 +786,25 @@ where
             l,
             mixers,
         )?;
-        wb_fold = wb_lane.proofs;
-        wb_lane_audits = wb_lane.audits;
+        booleanity_fold = booleanity_lane.proofs;
+        booleanity_lane_audits = booleanity_lane.audits;
     }
 
     let decode_required = crate::memory_sidecar::memory::decode_stage_required_for_step_witness(step);
     let width_required = crate::memory_sidecar::memory::width_stage_required_for_step_witness(step);
-    let mut wp_fold = Vec::new();
-    let mut wp_lane_audits = Vec::new();
-    if !mem_proof.wp_me_claims.is_empty() {
+    let mut trace_opening_fold = Vec::new();
+    let mut trace_opening_lane_audits = Vec::new();
+    if !mem_proof.trace_opening_me_claims.is_empty() {
         let trace = Rv32TraceLayout::new();
-        let t_len = crate::memory_sidecar::memory::infer_rv32_trace_t_len_for_wb_wp(step, &trace)?;
+        let t_len = crate::memory_sidecar::memory::infer_rv32_trace_t_len_for_trace_openings(step, &trace)?;
         let rv64_exact_words =
             crate::memory_sidecar::memory::trace_uses_rv64_exact_words(step.time_columns.cpu_cols.len());
-        let mut wp_open_cols = crate::memory_sidecar::memory::riscv_trace_wp_opening_columns(&trace);
+        let mut trace_opening_cols = crate::memory_sidecar::memory::riscv_trace_opening_columns(&trace);
         if rv64_exact_words {
-            wp_open_cols.extend(crate::memory_sidecar::memory::rv64_trace_exact_word_opening_columns());
+            trace_opening_cols.extend(crate::memory_sidecar::memory::rv64_trace_exact_word_opening_columns());
         }
         if control_required {
-            wp_open_cols.extend(crate::memory_sidecar::memory::riscv_trace_control_extra_opening_columns(&trace));
+            trace_opening_cols.extend(crate::memory_sidecar::memory::riscv_trace_control_extra_opening_columns(&trace));
         }
         if decode_required {
             let decode_layout = Rv32DecodeSidecarLayout::new();
@@ -813,12 +813,12 @@ where
             let bus = crate::memory_sidecar::memory::build_bus_layout_for_step_witness(step, t_len)?;
             if bus.shout_cols.len() != step.lut_instances.len() {
                 return Err(PiCcsError::ProtocolError(
-                    "W2(shared): bus layout shout lane count drift in WP fold".into(),
+                    "decode(shared): bus layout shout lane count drift in trace-opening fold".into(),
                 ));
             }
             if step.time_columns.t != t_len || step.time_columns.cpu_cols.is_empty() {
                 return Err(PiCcsError::ProtocolError(format!(
-                    "W2(shared): canonical time CPU columns required in WP fold (time_t={}, cpu_cols={}, expected_t={t_len})",
+                    "decode(shared): canonical time CPU columns required in trace-opening fold (time_t={}, cpu_cols={}, expected_t={t_len})",
                     step.time_columns.t,
                     step.time_columns.cpu_cols.len()
                 )));
@@ -826,11 +826,11 @@ where
             let cpu_cols_len = step.time_columns.cpu_cols.len();
             let mem_cols_len = step.time_columns.mem_cols.len();
             let expected_logical_cols = cpu_cols_len.checked_add(mem_cols_len).ok_or_else(|| {
-                PiCcsError::InvalidInput("W2(shared): cpu_cols + mem_cols overflow in WP fold".into())
+                PiCcsError::InvalidInput("decode(shared): cpu_cols + mem_cols overflow in trace-opening fold".into())
             })?;
             if step.time_columns.col_ids.len() != expected_logical_cols {
                 return Err(PiCcsError::ProtocolError(format!(
-                    "W2(shared): time column id table mismatch in WP fold (col_ids={}, cpu_cols={}, mem_cols={})",
+                    "decode(shared): time column id table mismatch in trace-opening fold (col_ids={}, cpu_cols={}, mem_cols={})",
                     step.time_columns.col_ids.len(),
                     cpu_cols_len,
                     mem_cols_len
@@ -839,24 +839,26 @@ where
             for &(lut_idx, val_slot) in decode_lut_slots.iter() {
                 let inst_cols = bus.shout_cols.get(lut_idx).ok_or_else(|| {
                     PiCcsError::ProtocolError(
-                        "W2(shared): missing shout cols for decode lookup table in WP fold".into(),
+                        "decode(shared): missing shout cols for decode lookup table in trace-opening fold".into(),
                     )
                 })?;
                 let lane0 = inst_cols.lanes.get(0).ok_or_else(|| {
                     PiCcsError::ProtocolError(
-                        "W2(shared): expected one shout lane for decode lookup table in WP fold".into(),
+                        "decode(shared): expected one shout lane for decode lookup table in trace-opening fold".into(),
                     )
                 })?;
                 let val_col = lane0.vals.get(val_slot).copied().ok_or_else(|| {
                     PiCcsError::ProtocolError(format!(
-                        "W2(shared): decode val_slot={} out of range for lut_idx={} in WP fold (n_vals={})",
+                        "decode(shared): decode val_slot={} out of range for lut_idx={} in trace-opening fold (n_vals={})",
                         val_slot,
                         lut_idx,
                         lane0.vals.len()
                     ))
                 })?;
                 let logical_idx = cpu_cols_len.checked_add(val_col).ok_or_else(|| {
-                    PiCcsError::InvalidInput("W2(shared): cpu_cols + lane primary value overflow in WP fold".into())
+                    PiCcsError::InvalidInput(
+                        "decode(shared): cpu_cols + lane primary value overflow in trace-opening fold".into(),
+                    )
                 })?;
                 let logical_col = step
                     .time_columns
@@ -865,29 +867,29 @@ where
                     .copied()
                     .ok_or_else(|| {
                         PiCcsError::ProtocolError(format!(
-                            "W2(shared): missing logical id for mem local col {} in WP fold",
+                            "decode(shared): missing logical id for mem local col {} in trace-opening fold",
                             val_col
                         ))
                     })?;
-                wp_open_cols.push(logical_col);
+                trace_opening_cols.push(logical_col);
             }
         }
         if width_required && !crate::memory_sidecar::memory::rv64_fullword_width_stage_required_for_step_witness(step) {
-            wp_open_cols.extend(crate::memory_sidecar::memory::width_lookup_bus_val_cols_witness(
+            trace_opening_cols.extend(crate::memory_sidecar::memory::width_lookup_bus_val_cols_witness(
                 step, t_len,
             )?);
         }
         if crate::memory_sidecar::memory::rv64_fullword_width_stage_required_for_step_witness(step) {
-            wp_open_cols.extend(crate::memory_sidecar::memory::rv64_fullword_wp_opening_columns());
+            trace_opening_cols.extend(crate::memory_sidecar::memory::rv64_fullword_trace_opening_columns());
         }
 
-        let wp_lane = prove_aux_cpu_me_lane(
+        let trace_opening_lane = prove_aux_cpu_me_lane(
             AuxCpuLaneConfig {
-                start_label: b"fold/wp_lane_start",
-                claim_idx_label: b"fold/wp_lane_claim_idx",
+                start_label: b"fold/trace_opening_lane_start",
+                claim_idx_label: b"fold/trace_opening_lane_claim_idx",
                 lane_name: "wp",
-                opening_cols: wp_open_cols.as_slice(),
-                claims: mem_proof.wp_me_claims.as_slice(),
+                opening_cols: trace_opening_cols.as_slice(),
+                claims: mem_proof.trace_opening_me_claims.as_slice(),
             },
             tr,
             params,
@@ -906,8 +908,8 @@ where
             l,
             mixers,
         )?;
-        wp_fold = wp_lane.proofs;
-        wp_lane_audits = wp_lane.audits;
+        trace_opening_fold = trace_opening_lane.proofs;
+        trace_opening_lane_audits = trace_opening_lane.audits;
     }
 
     let poseidon_fold_lanes = prove_poseidon_fold_lanes(
@@ -984,10 +986,13 @@ where
             folding_lanes: crate::shard_proof_types::FoldingLanes {
                 main_children: run_state.accumulator.len(),
                 val_children: val_lane.proofs.iter().map(|p| p.dec_children.len()).sum(),
-                wb_children: wb_fold.iter().map(|p| p.dec_children.len()).sum(),
-                wp_children: wp_fold.iter().map(|p| p.dec_children.len()).sum(),
-                stage8_children: openings_phase
-                    .stage8_fold
+                booleanity_children: booleanity_fold.iter().map(|p| p.dec_children.len()).sum(),
+                trace_opening_children: trace_opening_fold
+                    .iter()
+                    .map(|p| p.dec_children.len())
+                    .sum(),
+                joint_opening_children: openings_phase
+                    .joint_opening_fold
                     .iter()
                     .map(|p| p.dec_children.len())
                     .sum(),
@@ -999,16 +1004,16 @@ where
         poseidon_cycle_fold,
         poseidon_local_fold,
         val_fold: val_lane.proofs,
-        wb_fold,
-        wp_fold,
+        booleanity_fold,
+        trace_opening_fold,
         compressed_substeps: None,
-        stage8_fold: openings_phase.stage8_fold,
+        joint_opening_fold: openings_phase.joint_opening_fold,
     });
     run_state.audit_steps.push(StepWitnessAudit::new(
         main_lane_audit,
         val_lane.audits,
-        wb_lane_audits,
-        wp_lane_audits,
+        booleanity_lane_audits,
+        trace_opening_lane_audits,
     ));
 
     tr.append_message(b"fold/step_done", &(step_idx as u64).to_le_bytes());

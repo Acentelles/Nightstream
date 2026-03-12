@@ -285,7 +285,7 @@ pub(crate) fn validate_step_time_openings_consistency(
         }
     }
 
-    if crate::memory_sidecar::memory::wb_wp_required_for_step_instance(step) && step.mcs_inst.m_in == 5 {
+    if crate::memory_sidecar::memory::trace_opening_path_required_for_step_instance(step) && step.mcs_inst.m_in == 5 {
         let trace = neo_memory::riscv::trace::Rv32TraceLayout::new();
         let trace_cols: Vec<usize> = vec![
             trace.active,
@@ -321,49 +321,49 @@ pub(crate) fn validate_step_time_openings_consistency(
         }
     }
 
-    if let Some(wb_me) = step_proof.mem.wb_me_claims.first() {
+    if let Some(booleanity_me) = step_proof.mem.booleanity_me_claims.first() {
         let trace = neo_memory::riscv::trace::Rv32TraceLayout::new();
-        let wb_cols = crate::memory_sidecar::memory::riscv_trace_wb_columns(&trace);
+        let booleanity_cols = crate::memory_sidecar::memory::riscv_trace_booleanity_columns(&trace);
         let opening_entry = crate::memory_sidecar::memory::require_time_opening_entry_for_point(
             openings,
-            wb_me.r.as_slice(),
-            &wb_cols,
-            "verify/openings wb",
+            booleanity_me.r.as_slice(),
+            &booleanity_cols,
+            "verify/openings booleanity",
         )?;
         if opening_entry.source != crate::shard_proof_types::TimeOpeningSource::CommittedOpening {
             return Err(PiCcsError::ProtocolError(format!(
-                "verify/openings wb requires CommittedOpening source (got {:?})",
+                "verify/openings booleanity requires CommittedOpening source (got {:?})",
                 opening_entry.source
             )));
         }
     }
 
-    if let Some(wp_me) = step_proof.mem.wp_me_claims.first() {
+    if let Some(trace_opening_me) = step_proof.mem.trace_opening_me_claims.first() {
         let trace = neo_memory::riscv::trace::Rv32TraceLayout::new();
         let rv64_exact_words =
             crate::memory_sidecar::memory::trace_uses_rv64_exact_words(step.time_columns.cpu_cols.len());
-        let mut wp_cols = crate::memory_sidecar::memory::riscv_trace_wp_opening_columns(&trace);
+        let mut trace_opening_cols = crate::memory_sidecar::memory::riscv_trace_opening_columns(&trace);
         if rv64_exact_words {
-            wp_cols.extend(crate::memory_sidecar::memory::rv64_trace_exact_word_opening_columns());
+            trace_opening_cols.extend(crate::memory_sidecar::memory::rv64_trace_exact_word_opening_columns());
         }
         if crate::memory_sidecar::memory::control_stage_required_for_step_instance(step) {
-            wp_cols.extend(crate::memory_sidecar::memory::riscv_trace_control_extra_opening_columns(&trace));
+            trace_opening_cols.extend(crate::memory_sidecar::memory::riscv_trace_control_extra_opening_columns(&trace));
         }
         if crate::memory_sidecar::memory::rv64_fullword_width_stage_required_from_proof(step, &step_proof.batched_time)
         {
-            wp_cols.extend(crate::memory_sidecar::memory::rv64_fullword_wp_opening_columns());
+            trace_opening_cols.extend(crate::memory_sidecar::memory::rv64_fullword_trace_opening_columns());
         }
-        let mut seen_wp_cols = std::collections::BTreeSet::new();
-        wp_cols.retain(|col_id| seen_wp_cols.insert(*col_id));
+        let mut seen_trace_opening_cols = std::collections::BTreeSet::new();
+        trace_opening_cols.retain(|col_id| seen_trace_opening_cols.insert(*col_id));
         let (opening_entry, _opening_map) = crate::memory_sidecar::memory::require_time_openings_covering_point(
             openings,
-            wp_me.r.as_slice(),
-            &wp_cols,
-            "verify/openings wp",
+            trace_opening_me.r.as_slice(),
+            &trace_opening_cols,
+            "verify/openings trace-opening",
         )?;
         if opening_entry.source != crate::shard_proof_types::TimeOpeningSource::CommittedOpening {
             return Err(PiCcsError::ProtocolError(format!(
-                "verify/openings wp requires CommittedOpening source (got {:?})",
+                "verify/openings trace-opening requires CommittedOpening source (got {:?})",
                 opening_entry.source
             )));
         }
