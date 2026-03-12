@@ -6,8 +6,6 @@ use std::sync::{mpsc, OnceLock};
 
 #[cfg(any(unix, windows))]
 use libloading::Library;
-use neo_math::{from_complex, Fq, KExtensions, K};
-use p3_field::PrimeCharacteristicRing;
 
 use crate::abi::{
     DeviceRequest, DeviceResponse, FlatFq, FlatK, SessionRequest, ABI_VERSION, ABI_VERSION_SYMBOL, DEVICE_PROBE_SYMBOL,
@@ -37,8 +35,6 @@ const SPLIT_NC_SNAPSHOT_MAGIC: u64 = 0x4E53_504C_4954_4E43;
 const SPLIT_NC_SNAPSHOT_VERSION: u64 = 1;
 const SPLIT_NC_FE_ROW_V1: u64 = 1;
 const SPLIT_NC_NC_COL_V1: u64 = 2;
-const FE_HEADER_WORDS: usize = 16;
-const NC_HEADER_WORDS: usize = 13;
 const POSEIDON2_GPU_MIN_STATES: usize = 128;
 const SPLIT_NC_GPU_MIN_TASKS: usize = 256;
 
@@ -47,142 +43,6 @@ pub enum ExecutionMode {
     Cpu,
     HostFallback,
     Accelerator,
-}
-
-fn flat_k_to_ext(value: FlatK) -> K {
-    from_complex(Fq::from_u64(value.re), Fq::from_u64(value.im))
-}
-
-fn ext_to_flat_k(value: K) -> FlatK {
-    let (re, im) = value.to_limbs_u64();
-    FlatK { re, im }
-}
-
-fn read_u64_word(bytes: &[u8], word_idx: usize) -> u64 {
-    let start = word_idx * 8;
-    let mut word = [0u8; 8];
-    word.copy_from_slice(&bytes[start..start + 8]);
-    u64::from_le_bytes(word)
-}
-
-fn write_u64_word(bytes: &mut [u8], word_idx: usize, value: u64) {
-    let start = word_idx * 8;
-    bytes[start..start + 8].copy_from_slice(&value.to_le_bytes());
-}
-
-fn read_flat_k_word(bytes: &[u8], word_idx: usize) -> FlatK {
-    FlatK {
-        re: read_u64_word(bytes, word_idx),
-        im: read_u64_word(bytes, word_idx + 1),
-    }
-}
-
-fn write_flat_k_word(bytes: &mut [u8], word_idx: usize, value: FlatK) {
-    write_u64_word(bytes, word_idx, value.re);
-    write_u64_word(bytes, word_idx + 1, value.im);
-}
-
-fn fold_k_table(bytes: &mut [u8], word_offset: usize, len: usize, challenge: FlatK) {
-    let half = len / 2;
-    let r = flat_k_to_ext(challenge);
-    for i in 0..half {
-        let lo = flat_k_to_ext(read_flat_k_word(bytes, word_offset + (2 * i) * 2));
-        let hi = flat_k_to_ext(read_flat_k_word(bytes, word_offset + (2 * i + 1) * 2));
-        write_flat_k_word(bytes, word_offset + i * 2, ext_to_flat_k(lo + (hi - lo) * r));
-    }
-}
-
-fn apply_fe_snapshot_fold(snapshot: &mut [u8], challenge: FlatK) -> Result<(), NeoGpuError> {
-    if snapshot.len() < FE_HEADER_WORDS * 8 || !snapshot.len().is_multiple_of(8) {
-        return Ok(());
-    }
-    if read_u64_word(snapshot, 0) != SPLIT_NC_SNAPSHOT_MAGIC
-        || read_u64_word(snapshot, 1) != SPLIT_NC_SNAPSHOT_VERSION
-        || read_u64_word(snapshot, 2) != SPLIT_NC_FE_ROW_V1
-    {
-        return Ok(());
-    }
-
-    let cur_len = read_u64_word(snapshot, 5) as usize;
-    let eq_beta_len = read_u64_word(snapshot, 6) as usize;
-    let eq_r_inputs_len = read_u64_word(snapshot, 7) as usize;
-    let term_len = read_u64_word(snapshot, 9) as usize;
-    let num_mcs = read_u64_word(snapshot, 10) as usize;
-    let num_vars = read_u64_word(snapshot, 11) as usize;
-    let table_len = read_u64_word(snapshot, 12) as usize;
-    let eval_len = read_u64_word(snapshot, 13) as usize;
-
-    let eq_beta_off = FE_HEADER_WORDS;
-    let eq_r_inputs_off = eq_beta_off + eq_beta_len * 2;
-    let gamma_pow_off = eq_r_inputs_off + eq_r_inputs_len * 2;
-    let gamma_pow_len = read_u64_word(snapshot, 8) as usize;
-    let mut terms_off = gamma_pow_off + gamma_pow_len * 2;
-    for _ in 0..term_len {
-        let vars_len = read_u64_word(snapshot, terms_off + 2) as usize;
-        terms_off += 3 + vars_len * 2;
-    }
-    let tables_off = terms_off;
-    let eval_off = tables_off + num_mcs * num_vars * table_len * 2;
-
-    fold_k_table(snapshot, eq_beta_off, cur_len, challenge);
-    if eq_r_inputs_len > 0 {
-        fold_k_table(snapshot, eq_r_inputs_off, cur_len, challenge);
-    }
-    for table_idx in 0..(num_mcs * num_vars) {
-        fold_k_table(snapshot, tables_off + table_idx * table_len * 2, cur_len, challenge);
-    }
-    if eval_len > 0 {
-        fold_k_table(snapshot, eval_off, cur_len, challenge);
-    }
-    write_u64_word(snapshot, 5, (cur_len / 2) as u64);
-    Ok(())
-}
-
-fn apply_nc_snapshot_fold(snapshot: &mut [u8], challenge: FlatK) -> Result<(), NeoGpuError> {
-    if snapshot.len() < NC_HEADER_WORDS * 8 || !snapshot.len().is_multiple_of(8) {
-        return Ok(());
-    }
-    if read_u64_word(snapshot, 0) != SPLIT_NC_SNAPSHOT_MAGIC
-        || read_u64_word(snapshot, 1) != SPLIT_NC_SNAPSHOT_VERSION
-        || read_u64_word(snapshot, 2) != SPLIT_NC_NC_COL_V1
-    {
-        return Ok(());
-    }
-
-    let cur_len = read_u64_word(snapshot, 5) as usize;
-    let eq_beta_len = read_u64_word(snapshot, 6) as usize;
-    let num_tables = read_u64_word(snapshot, 7) as usize;
-    let table_len = read_u64_word(snapshot, 8) as usize;
-    let d_width = read_u64_word(snapshot, 9) as usize;
-
-    let eq_beta_off = NC_HEADER_WORDS;
-    let digits_off = eq_beta_off + eq_beta_len * 2;
-
-    fold_k_table(snapshot, eq_beta_off, cur_len, challenge);
-    for table_idx in 0..num_tables {
-        for rho in 0..d_width {
-            let mut entries = Vec::with_capacity(cur_len);
-            for idx in 0..cur_len {
-                entries.push(read_flat_k_word(
-                    snapshot,
-                    digits_off + (table_idx * table_len * d_width + idx * d_width + rho) * 2,
-                ));
-            }
-            let half = cur_len / 2;
-            let r = flat_k_to_ext(challenge);
-            for i in 0..half {
-                let lo = flat_k_to_ext(entries[2 * i]);
-                let hi = flat_k_to_ext(entries[2 * i + 1]);
-                write_flat_k_word(
-                    snapshot,
-                    digits_off + (table_idx * table_len * d_width + i * d_width + rho) * 2,
-                    ext_to_flat_k(lo + (hi - lo) * r),
-                );
-            }
-        }
-    }
-    write_u64_word(snapshot, 5, (cur_len / 2) as u64);
-    Ok(())
 }
 
 fn platform_library_name() -> &'static str {
@@ -590,8 +450,8 @@ pub struct MojoSplitNcEvaluator<'a> {
     session: &'a MojoSession,
     handle: usize,
     kind: SplitNcEvaluatorKind,
-    snapshot: Vec<u8>,
     snapshot_words: Vec<u64>,
+    snapshot_len: usize,
 }
 
 impl MojoSession {
@@ -733,8 +593,8 @@ impl MojoSession {
             session: self,
             handle,
             kind,
-            snapshot: snapshot.to_vec(),
             snapshot_words,
+            snapshot_len: snapshot.len(),
         })
     }
 
@@ -849,7 +709,7 @@ impl MojoSplitNcEvaluator<'_> {
         let evaluator_handle = self.handle as u64;
         let device_api = self.session.device_api;
         let snapshot_ptr = self.snapshot_words.as_ptr() as usize;
-        let snapshot_len = self.snapshot.len() as u64;
+        let snapshot_len = self.snapshot_len as u64;
         let points_ptr = points.as_ptr() as usize;
         let out_ptr_words = out.as_mut_ptr() as usize;
         let points_len = points.len() as u64;
@@ -879,12 +739,6 @@ impl MojoSplitNcEvaluator<'_> {
     }
 
     pub fn fold(&mut self, challenge: FlatK) -> Result<(), NeoGpuError> {
-        match self.kind {
-            SplitNcEvaluatorKind::Fe => apply_fe_snapshot_fold(&mut self.snapshot, challenge)?,
-            SplitNcEvaluatorKind::Nc => apply_nc_snapshot_fold(&mut self.snapshot, challenge)?,
-        }
-        self.snapshot_words = snapshot_bytes_to_words(&self.snapshot)?;
-
         let library = self
             .session
             .library

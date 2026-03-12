@@ -637,6 +637,78 @@ fn ccs_only_mcs_batched_real_mojo_cpu_matches_cpu() {
 }
 
 #[test]
+#[ignore = "requires local Metal-capable Mojo runtime"]
+fn ccs_only_mcs_batched_real_mojo_metal_matches_cpu() {
+    let n = 8usize;
+    let ccs = identity_ccs(n);
+    let params = high_batch_params(n);
+    let l = setup_ajtai_committer(&params, ccs.m);
+    let mixers = default_mixers();
+    let batch_size = 40usize;
+
+    let steps: Vec<StepWitnessBundle<Cmt, F, K>> = (0..batch_size)
+        .map(|i| build_step(&params, &l, ccs.m, 2, 10_000 + (i as u64) * 97))
+        .collect();
+    let steps_public: Vec<StepInstanceBundle<Cmt, F, K>> = steps.iter().map(StepInstanceBundle::from).collect();
+
+    let mut tr_cpu = Poseidon2Transcript::new(b"neo.fold/ccs_only_gpu_rlc_real_metal");
+    let cpu_proof = fold_shard_prove_ccs_only_batched(
+        FoldingMode::Optimized,
+        &mut tr_cpu,
+        &params,
+        &ccs,
+        &steps,
+        &[],
+        &[],
+        &l,
+        mixers,
+        batch_size,
+        &ProverComputeBackend::Cpu,
+    )
+    .expect("cpu prove");
+
+    let backend =
+        ProverComputeBackend::Mojo(MojoBackendConfig::new(DeviceApi::Metal).with_library_path(build_real_mojo_library()));
+    let mut tr_mojo = Poseidon2Transcript::new(b"neo.fold/ccs_only_gpu_rlc_real_metal");
+    let mojo_proof = fold_shard_prove_ccs_only_batched(
+        FoldingMode::Optimized,
+        &mut tr_mojo,
+        &params,
+        &ccs,
+        &steps,
+        &[],
+        &[],
+        &l,
+        mixers,
+        batch_size,
+        &backend,
+    )
+    .expect("real mojo metal prove");
+
+    assert_eq!(
+        serde_json::to_vec(&cpu_proof).expect("serialize cpu proof"),
+        serde_json::to_vec(&mojo_proof).expect("serialize mojo proof"),
+    );
+
+    let mut tr_v = Poseidon2Transcript::new(b"neo.fold/ccs_only_gpu_rlc_real_metal");
+    let outputs = fold_shard_verify_ccs_only_batched(
+        FoldingMode::Optimized,
+        &mut tr_v,
+        &params,
+        &ccs,
+        &steps_public,
+        &[],
+        &mojo_proof,
+        mixers,
+        batch_size,
+    )
+    .expect("verify");
+
+    assert!(outputs.obligations.val.is_empty());
+    assert_eq!(outputs.obligations.main.len(), params.k_rho as usize);
+}
+
+#[test]
 #[ignore = "requires local Mojo toolchain"]
 fn ccs_only_initial_reduction_real_mojo_cpu_matches_cpu() {
     let n = 8usize;
@@ -682,6 +754,63 @@ fn ccs_only_initial_reduction_real_mojo_cpu_matches_cpu() {
         &backend,
     )
     .expect("real mojo cpu reductions prove");
+
+    assert_eq!(
+        serde_json::to_vec(&cpu_out).expect("serialize cpu outputs"),
+        serde_json::to_vec(&mojo_out).expect("serialize mojo outputs"),
+    );
+    assert_eq!(
+        serde_json::to_vec(&cpu_proof).expect("serialize cpu proof"),
+        serde_json::to_vec(&mojo_proof).expect("serialize mojo proof"),
+    );
+}
+
+#[test]
+#[ignore = "requires local Metal-capable Mojo runtime"]
+fn ccs_only_initial_reduction_real_mojo_metal_matches_cpu() {
+    let n = 8usize;
+    let ccs = identity_ccs(n);
+    let params = high_batch_params(n);
+    let l = setup_ajtai_committer(&params, ccs.m);
+    let batch_size = 40usize;
+
+    let steps: Vec<StepWitnessBundle<Cmt, F, K>> = (0..batch_size)
+        .map(|i| build_step(&params, &l, ccs.m, 2, 10_000 + (i as u64) * 97))
+        .collect();
+    let claims: Vec<CcsClaim<Cmt, F>> = steps.iter().map(|step| step.mcs.0.clone()).collect();
+    let witnesses: Vec<CcsWitness<F>> = steps.iter().map(|step| step.mcs.1.clone()).collect();
+
+    let mut tr_cpu = Poseidon2Transcript::new(b"neo.fold/ccs_only_initial_reduce_real_metal");
+    let (cpu_out, cpu_proof) = reduce_prove_with_backend(
+        FoldingMode::Optimized,
+        &mut tr_cpu,
+        &params,
+        &ccs,
+        &claims,
+        &witnesses,
+        &[],
+        &[],
+        &l,
+        &ProverComputeBackend::Cpu,
+    )
+    .expect("cpu reductions prove");
+
+    let backend =
+        ProverComputeBackend::Mojo(MojoBackendConfig::new(DeviceApi::Metal).with_library_path(build_real_mojo_library()));
+    let mut tr_mojo = Poseidon2Transcript::new(b"neo.fold/ccs_only_initial_reduce_real_metal");
+    let (mojo_out, mojo_proof) = reduce_prove_with_backend(
+        FoldingMode::Optimized,
+        &mut tr_mojo,
+        &params,
+        &ccs,
+        &claims,
+        &witnesses,
+        &[],
+        &[],
+        &l,
+        &backend,
+    )
+    .expect("real mojo metal reductions prove");
 
     assert_eq!(
         serde_json::to_vec(&cpu_out).expect("serialize cpu outputs"),

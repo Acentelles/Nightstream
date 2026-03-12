@@ -62,13 +62,12 @@ Current verified status:
   CPU/direct mode today,
 - Rust-side auto selection prefers `Metal` on macOS and `Cuda`/`Hip` on non-macOS hosts, then
   falls back to the Mojo CPU session if no accelerator session opens,
-- real shared-library Metal sessions are still experimental in this toolchain and may report
-  unavailable or fail to launch GPU work even when the standalone scripts succeed.
-- real reductions-level CUDA parity is working for transcript digest checks and simplified
+- real shared-library Metal sessions are stable for the Rust bridge path, but Split-NC still uses a
+  Mojo CPU/direct companion session there until Metal Split-NC acceleration is fully signed off,
+- real reductions-level CUDA parity is working for transcript digest checks, FE/NC round parity, and
   `optimized_prove` parity,
-- real `neo-fold` CCS-only batched proving is not signed off yet: richer batched flows still hit an
-  NC sumcheck invariant mismatch under real Mojo CPU/direct and CUDA sessions, so end-to-end
-  Nightstream prove/verify promotion remains blocked on that parity bug.
+- real `neo-fold` CCS-only batched proving and Poseidon2 single-step prove/verify parity now pass on
+  supported Mac and CUDA-backed T4 setups through the Rust bridge.
 
 Current backend matrix:
 
@@ -76,8 +75,8 @@ Current backend matrix:
 |------|-------------|---------------|--------------|-------|
 | Poseidon2 single/batch via Rust bridge | Yes | Yes | Yes | Rust bridge is the supported production entrypoint. |
 | Poseidon2 accelerator execution | No | Yes | Yes | Metal uses the bridge-thread fix on macOS. |
-| Split-NC FE/NC via shared library | Yes | No | Yes | Metal is intentionally disabled in the Rust bridge for Split-NC until its shared-lib instability is resolved. |
-| Split-NC accelerator execution | No | No | No | Current correctness-first path stays host-backed inside Mojo until end-to-end CUDA sign-off is complete. |
+| Split-NC FE/NC via shared library | Yes | No | Yes | Metal uses a Mojo CPU/direct companion session through `BackendContext`, not a Metal Split-NC session. |
+| Split-NC accelerator execution | No | No | Yes | CUDA is the promoted real-accelerator target for Split-NC today. |
 | Rust CPU fallback when Mojo unavailable | Yes | Yes | Yes | Auto mode falls back to Rust CPU only if no Mojo session can be opened. |
 | Mojo CPU/direct fallback when requested accelerator is unavailable | Yes | Yes | Yes | Explicit Mojo backend configs prefer a Mojo CPU session before dropping to Rust CPU. |
 
@@ -121,23 +120,24 @@ Assumptions:
 
 ### Milestone 2: Persistent Sessions And Buffers
 
-- [ ] add persistent session-owned host/device buffers for Poseidon batch,
-- [ ] add persistent session-owned host/device buffers for FE/NC evaluator calls,
-- [ ] cache compiled kernels and uploaded immutable tables on the Mojo side,
-- [ ] follow the `neo-midnight-mojo-bridge` pattern of reusing GPU context and uploaded state
+- [x] add persistent session-owned host/device buffers for Poseidon batch,
+- [x] add persistent session-owned host/device buffers for FE/NC evaluator calls,
+- [x] cache compiled kernels on the Mojo side,
+- [x] cache uploaded immutable tables on the Mojo side,
+- [x] follow the `neo-midnight-mojo-bridge` pattern of reusing GPU context and uploaded state
   instead of recreating them on every call,
-- [ ] centralize buffer lifetime and reuse behind the Rust session boundary so callers do not manage
+- [x] centralize buffer lifetime and reuse behind the Rust session boundary so callers do not manage
   raw GPU resources directly.
 
 ### Milestone 3: Split-NC Correctness Completion
 
-- [ ] keep Rust as the canonical FE/NC snapshot builder,
-- [ ] flatten FE/NC snapshot tables into stable ABI payloads with no witness decoding on the Mojo
+- [x] keep Rust as the canonical FE/NC snapshot builder,
+- [x] flatten FE/NC snapshot tables into stable ABI payloads with no witness decoding on the Mojo
   side,
-- [ ] implement Mojo-side `fe_fold` so FE evaluators can stay resident across rounds,
-- [ ] implement Mojo-side `nc_fold` so NC evaluators can stay resident across rounds,
-- [ ] avoid rebuilding full FE/NC evaluator state on every round once fold support is in place,
-- [ ] keep CPU Ajtai-tail rounds unchanged and synchronized with the Mojo-backed phase.
+- [x] implement Mojo-side `fe_fold` so FE evaluators can stay resident across rounds,
+- [x] implement Mojo-side `nc_fold` so NC evaluators can stay resident across rounds,
+- [x] avoid rebuilding full FE/NC evaluator state on every round once fold support is in place,
+- [x] keep CPU Ajtai-tail rounds unchanged and synchronized with the Mojo-backed phase.
 
 ### Milestone 4: Stage-Level Parity Coverage
 

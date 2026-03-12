@@ -173,6 +173,17 @@ fn poseidon2_batch_fixture(num_states: usize) -> Vec<[u64; 8]> {
         .collect()
 }
 
+fn poseidon2_batch_cpu_reference(num_states: usize) -> Vec<[u64; 8]> {
+    poseidon2_batch_fixture(num_states)
+        .into_iter()
+        .map(|state| {
+            p2::permutation()
+                .permute(state.map(Goldilocks::from_u64))
+                .map(|x| x.as_canonical_u64())
+        })
+        .collect()
+}
+
 fn push_u64_le(out: &mut Vec<u8>, word: u64) {
     out.extend_from_slice(&word.to_le_bytes());
 }
@@ -224,6 +235,66 @@ fn minimal_nc_snapshot() -> Vec<u8> {
     out
 }
 
+fn rich_fe_snapshot() -> Vec<u8> {
+    let mut out = Vec::new();
+    push_u64_le(&mut out, 0x4E53_504C_4954_4E43);
+    push_u64_le(&mut out, 1);
+    push_u64_le(&mut out, 1);
+    push_u64_le(&mut out, 4);
+    push_u64_le(&mut out, 2);
+    push_u64_le(&mut out, 4);
+    push_u64_le(&mut out, 4);
+    push_u64_le(&mut out, 0);
+    push_u64_le(&mut out, 1);
+    push_u64_le(&mut out, 1);
+    push_u64_le(&mut out, 1);
+    push_u64_le(&mut out, 1);
+    push_u64_le(&mut out, 4);
+    push_u64_le(&mut out, 0);
+    push_flat_k_le(&mut out, FlatK::default());
+
+    for re in [1u64, 2, 3, 4] {
+        push_flat_k_le(&mut out, FlatK { re, im: 0 });
+    }
+    push_flat_k_le(&mut out, FlatK { re: 1, im: 0 });
+
+    push_flat_k_le(&mut out, FlatK { re: 2, im: 0 });
+    push_u64_le(&mut out, 1);
+    push_u64_le(&mut out, 0);
+    push_u64_le(&mut out, 1);
+
+    for re in [5u64, 7, 11, 13] {
+        push_flat_k_le(&mut out, FlatK { re, im: 0 });
+    }
+    out
+}
+
+fn rich_nc_snapshot() -> Vec<u8> {
+    let mut out = Vec::new();
+    push_u64_le(&mut out, 0x4E53_504C_4954_4E43);
+    push_u64_le(&mut out, 1);
+    push_u64_le(&mut out, 2);
+    push_u64_le(&mut out, 4);
+    push_u64_le(&mut out, 2);
+    push_u64_le(&mut out, 4);
+    push_u64_le(&mut out, 4);
+    push_u64_le(&mut out, 1);
+    push_u64_le(&mut out, 4);
+    push_u64_le(&mut out, 1);
+    push_u64_le(&mut out, 1);
+    push_u64_le(&mut out, 1);
+    push_u64_le(&mut out, 0);
+
+    for re in [1u64, 2, 3, 4] {
+        push_flat_k_le(&mut out, FlatK { re, im: 0 });
+    }
+    for re in [5u64, 7, 11, 13] {
+        push_flat_k_le(&mut out, FlatK { re, im: 0 });
+    }
+    push_flat_k_le(&mut out, FlatK { re: 3, im: 0 });
+    out
+}
+
 fn snapshot_words(snapshot: &[u8]) -> Vec<u64> {
     snapshot
         .chunks(8)
@@ -233,6 +304,31 @@ fn snapshot_words(snapshot: &[u8]) -> Vec<u64> {
             u64::from_le_bytes(word)
         })
         .collect()
+}
+
+fn direct_split_nc_evals_at(
+    evals_at: unsafe extern "C" fn(u64, u64, *mut u64, u64, *mut u64, u64, *mut u64, usize) -> i32,
+    session: u64,
+    evaluator: u64,
+    snapshot_words: &mut [u64],
+    snapshot_len: u64,
+    points: &[FlatK],
+) -> Vec<FlatK> {
+    let mut out = vec![FlatK::default(); points.len()];
+    let status = unsafe {
+        evals_at(
+            session,
+            evaluator,
+            snapshot_words.as_mut_ptr(),
+            snapshot_len,
+            points.as_ptr().cast::<u64>() as *mut u64,
+            points.len() as u64,
+            out.as_mut_ptr().cast::<u64>(),
+            out.len(),
+        )
+    };
+    assert_eq!(status, 0, "split-nc evals_at status");
+    out
 }
 
 fn direct_backend_poseidon2_hash(
@@ -373,14 +469,7 @@ fn explicit_gpu_backend_with_cpu_fallback_uses_mojo_cpu_when_accelerator_is_unav
         .permute_poseidon2_batch_u64x8(&mut backend)
         .expect("poseidon2 batch permute through mojo cpu fallback");
 
-    let cpu: Vec<[u64; 8]> = poseidon2_batch_fixture(17)
-        .into_iter()
-        .map(|state| {
-            p2::permutation()
-                .permute(state.map(Goldilocks::from_u64))
-                .map(|x| x.as_canonical_u64())
-        })
-        .collect();
+    let cpu = poseidon2_batch_cpu_reference(17);
     assert_eq!(backend, cpu);
 }
 
@@ -428,6 +517,20 @@ fn split_nc_execution_mode_reports_cpu_host_fallback_and_accelerator() {
         .expect("connect cuda mock mojo session");
     assert_eq!(cuda.split_nc_execution_mode(64), ExecutionMode::HostFallback);
     assert_eq!(cuda.split_nc_execution_mode(1024), ExecutionMode::Accelerator);
+}
+
+#[test]
+fn repeated_mock_poseidon_batch_calls_match_cpu_reference() {
+    let session = connect(&MojoBackendConfig::new(DeviceApi::Cuda).with_library_path(build_mock_library()))
+        .expect("connect cuda mock mojo session");
+
+    for &num_states in &[17usize, 256usize, 33usize] {
+        let mut backend = poseidon2_batch_fixture(num_states);
+        session
+            .permute_poseidon2_batch_u64x8(&mut backend)
+            .expect("reused mock poseidon batch call");
+        assert_eq!(backend, poseidon2_batch_cpu_reference(num_states));
+    }
 }
 
 #[test]
@@ -614,6 +717,138 @@ fn real_mojo_split_nc_probe_and_minimal_eval_work() {
 
 #[test]
 #[ignore = "requires local Mojo toolchain"]
+fn real_mojo_split_nc_direct_fold_state_matches_loader_reference() {
+    type CreateFn = unsafe extern "C" fn(u64, *mut u64, u64, *mut u64) -> i32;
+    type DestroyFn = unsafe extern "C" fn(usize, usize) -> i32;
+    type EvalsAtFn = unsafe extern "C" fn(u64, u64, *mut u64, u64, *mut u64, u64, *mut u64, usize) -> i32;
+    type FoldFn = unsafe extern "C" fn(usize, usize, u64, u64) -> i32;
+
+    let library_path = build_real_mojo_library();
+    let session = connect(&MojoBackendConfig::new(DeviceApi::Cpu).with_library_path(library_path))
+        .expect("connect to real mojo gpu library");
+
+    let points = vec![
+        FlatK::default(),
+        FlatK { re: 1, im: 0 },
+        FlatK { re: 5, im: 7 },
+    ];
+    let challenge = FlatK { re: 3, im: 1 };
+
+    let rich_fe = rich_fe_snapshot();
+    let mut fe_loader = session
+        .create_fe_evaluator(&rich_fe)
+        .expect("create loader fe evaluator");
+    let fe_before = fe_loader.evals_at(&points).expect("loader fe evals before fold");
+    fe_loader.fold(challenge).expect("loader fe fold");
+    let fe_after = fe_loader.evals_at(&points).expect("loader fe evals after fold");
+    assert_ne!(fe_before, fe_after);
+
+    let rich_nc = rich_nc_snapshot();
+    let mut nc_loader = session
+        .create_nc_evaluator(&rich_nc)
+        .expect("create loader nc evaluator");
+    let nc_before = nc_loader.evals_at(&points).expect("loader nc evals before fold");
+    nc_loader.fold(challenge).expect("loader nc fold");
+    let nc_after = nc_loader.evals_at(&points).expect("loader nc evals after fold");
+    assert_ne!(nc_before, nc_after);
+
+    let lib = unsafe { Library::new(library_path) }.expect("load real mojo gpu library");
+    let fe_create = unsafe {
+        *lib.get::<CreateFn>(b"nightstream_gpu_fe_create\0")
+            .expect("load fe_create symbol")
+    };
+    let fe_destroy = unsafe {
+        *lib.get::<DestroyFn>(b"nightstream_gpu_fe_destroy\0")
+            .expect("load fe_destroy symbol")
+    };
+    let fe_evals_at = unsafe {
+        *lib.get::<EvalsAtFn>(b"nightstream_gpu_fe_evals_at\0")
+            .expect("load fe_evals_at symbol")
+    };
+    let fe_fold = unsafe {
+        *lib.get::<FoldFn>(b"nightstream_gpu_fe_fold\0")
+            .expect("load fe_fold symbol")
+    };
+    let nc_create = unsafe {
+        *lib.get::<CreateFn>(b"nightstream_gpu_nc_create\0")
+            .expect("load nc_create symbol")
+    };
+    let nc_destroy = unsafe {
+        *lib.get::<DestroyFn>(b"nightstream_gpu_nc_destroy\0")
+            .expect("load nc_destroy symbol")
+    };
+    let nc_evals_at = unsafe {
+        *lib.get::<EvalsAtFn>(b"nightstream_gpu_nc_evals_at\0")
+            .expect("load nc_evals_at symbol")
+    };
+    let nc_fold = unsafe {
+        *lib.get::<FoldFn>(b"nightstream_gpu_nc_fold\0")
+            .expect("load nc_fold symbol")
+    };
+
+    let mut fe_snapshot_words = snapshot_words(&rich_fe);
+    let stale_fe_snapshot = fe_snapshot_words.clone();
+    let mut fe_handle = 0u64;
+    let fe_create_status =
+        unsafe { fe_create(1, fe_snapshot_words.as_mut_ptr(), rich_fe.len() as u64, &mut fe_handle) };
+    assert_eq!(fe_create_status, 0, "raw fe_create status");
+    assert_ne!(fe_handle, 0);
+    let raw_fe_before = direct_split_nc_evals_at(
+        fe_evals_at,
+        1,
+        fe_handle,
+        &mut stale_fe_snapshot.clone(),
+        rich_fe.len() as u64,
+        &points,
+    );
+    assert_eq!(raw_fe_before, fe_before);
+    let fe_fold_status = unsafe { fe_fold(1, fe_handle as usize, challenge.re, challenge.im) };
+    assert_eq!(fe_fold_status, 0, "raw fe_fold status");
+    let raw_fe_after = direct_split_nc_evals_at(
+        fe_evals_at,
+        1,
+        fe_handle,
+        &mut stale_fe_snapshot.clone(),
+        rich_fe.len() as u64,
+        &points,
+    );
+    assert_eq!(raw_fe_after, fe_after);
+    let fe_destroy_status = unsafe { fe_destroy(1, fe_handle as usize) };
+    assert_eq!(fe_destroy_status, 0, "raw fe_destroy status");
+
+    let mut nc_snapshot_words = snapshot_words(&rich_nc);
+    let stale_nc_snapshot = nc_snapshot_words.clone();
+    let mut nc_handle = 0u64;
+    let nc_create_status =
+        unsafe { nc_create(1, nc_snapshot_words.as_mut_ptr(), rich_nc.len() as u64, &mut nc_handle) };
+    assert_eq!(nc_create_status, 0, "raw nc_create status");
+    assert_ne!(nc_handle, 0);
+    let raw_nc_before = direct_split_nc_evals_at(
+        nc_evals_at,
+        1,
+        nc_handle,
+        &mut stale_nc_snapshot.clone(),
+        rich_nc.len() as u64,
+        &points,
+    );
+    assert_eq!(raw_nc_before, nc_before);
+    let nc_fold_status = unsafe { nc_fold(1, nc_handle as usize, challenge.re, challenge.im) };
+    assert_eq!(nc_fold_status, 0, "raw nc_fold status");
+    let raw_nc_after = direct_split_nc_evals_at(
+        nc_evals_at,
+        1,
+        nc_handle,
+        &mut stale_nc_snapshot.clone(),
+        rich_nc.len() as u64,
+        &points,
+    );
+    assert_eq!(raw_nc_after, nc_after);
+    let nc_destroy_status = unsafe { nc_destroy(1, nc_handle as usize) };
+    assert_eq!(nc_destroy_status, 0, "raw nc_destroy status");
+}
+
+#[test]
+#[ignore = "requires local Mojo toolchain"]
 fn real_mojo_split_nc_debug_snapshot_head_matches_rust_layout() {
     type DebugSnapshotHeadFn = unsafe extern "C" fn(u64, *mut u64, u64, *mut u64, u32) -> i32;
 
@@ -670,15 +905,29 @@ fn real_mojo_metal_session_batch_matches_cpu_reference() {
         return;
     }
 
-    let cpu: Vec<[u64; 8]> = poseidon2_batch_fixture(256)
-        .into_iter()
-        .map(|state| {
-            p2::permutation()
-                .permute(state.map(Goldilocks::from_u64))
-                .map(|x| x.as_canonical_u64())
-        })
-        .collect();
-    assert_eq!(backend, cpu);
+    assert_eq!(backend, poseidon2_batch_cpu_reference(256));
+}
+
+#[test]
+#[ignore = "requires local Metal-capable Mojo runtime"]
+fn real_mojo_metal_session_batch_reuse_matches_cpu_across_sizes() {
+    let library_path = build_real_mojo_library();
+    let cfg = MojoBackendConfig::new(DeviceApi::Metal).with_library_path(library_path);
+
+    let Ok(session) = connect(&cfg) else {
+        eprintln!("skipping: real Mojo shared-library Metal session is not available in this runtime");
+        return;
+    };
+    assert_eq!(session.device_api(), DeviceApi::Metal);
+
+    for &num_states in &[64usize, 256usize, 32usize] {
+        let mut backend = poseidon2_batch_fixture(num_states);
+        if let Err(err) = session.permute_poseidon2_batch_u64x8(&mut backend) {
+            eprintln!("skipping: real Mojo shared-library Metal batch reuse path failed: {err}");
+            return;
+        }
+        assert_eq!(backend, poseidon2_batch_cpu_reference(num_states));
+    }
 }
 
 #[test]
@@ -794,15 +1043,28 @@ fn real_mojo_cuda_session_batch_matches_cpu_reference() {
         .permute_poseidon2_batch_u64x8(&mut backend)
         .expect("cuda poseidon2 batch path should succeed");
 
-    let cpu: Vec<[u64; 8]> = poseidon2_batch_fixture(256)
-        .into_iter()
-        .map(|state| {
-            p2::permutation()
-                .permute(state.map(Goldilocks::from_u64))
-                .map(|x| x.as_canonical_u64())
-        })
-        .collect();
-    assert_eq!(backend, cpu);
+    assert_eq!(backend, poseidon2_batch_cpu_reference(256));
+}
+
+#[test]
+#[ignore = "requires CUDA-capable Mojo runtime"]
+fn real_mojo_cuda_session_batch_reuse_matches_cpu_across_sizes() {
+    let library_path = build_real_mojo_library();
+    let cfg = MojoBackendConfig::new(DeviceApi::Cuda).with_library_path(library_path);
+
+    let Ok(session) = connect(&cfg) else {
+        eprintln!("skipping: real Mojo shared-library CUDA session is not available in this runtime");
+        return;
+    };
+    assert_eq!(session.device_api(), DeviceApi::Cuda);
+
+    for &num_states in &[64usize, 256usize, 32usize] {
+        let mut backend = poseidon2_batch_fixture(num_states);
+        session
+            .permute_poseidon2_batch_u64x8(&mut backend)
+            .expect("cuda poseidon2 batch reuse path should succeed");
+        assert_eq!(backend, poseidon2_batch_cpu_reference(num_states));
+    }
 }
 
 #[test]

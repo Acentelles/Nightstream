@@ -1,17 +1,19 @@
 from gpu.host import DeviceContext
 from gpu import block_dim, block_idx, thread_idx
-from memory import UnsafePointer
-from nightstream_gpu import field
+from memory import UnsafePointer, alloc
+from nightstream_gpu import field, runtime
 
 
-alias POSEIDON2_WIDTH = 8
-alias EXTERNAL_ROUNDS_HALF = 4
-alias INTERNAL_ROUNDS = 22
-alias GPU_BLOCK_SIZE = 64
-alias POSEIDON2_GPU_MIN_STATES = 128
-alias DEVICE_API_CPU = 0
-alias DEVICE_API_CUDA = 2
-alias SESSION_HANDLE_MAGIC = UInt(0x4E53000000000000)
+comptime POSEIDON2_WIDTH = 8
+comptime EXTERNAL_ROUNDS_HALF = 4
+comptime INTERNAL_ROUNDS = 22
+comptime GPU_BLOCK_SIZE = 64
+comptime POSEIDON2_GPU_MIN_STATES = 128
+comptime DEVICE_API_CPU = 0
+comptime DEVICE_API_CUDA = 2
+comptime PoseidonBatchKernelT = type_of(
+    DeviceContext().compile_function[poseidon2_gpu_batch_kernel, poseidon2_gpu_batch_kernel_sig]()
+)
 
 
 fn scaffold_ready() -> Bool:
@@ -47,7 +49,7 @@ fn poseidon2_permute_batch_u64x8(
         return 0
 
     try:
-        permute_batch_gpu_in_place(state_words, num_states_int)
+        permute_batch_gpu_in_place(session, state_words, num_states_int)
     except:
         permute_batch_cpu_in_place(state_words, num_states_int)
     return 0
@@ -78,25 +80,69 @@ fn poseidon2_gpu_batch_kernel_sig(
     pass
 
 
+struct PoseidonGpuCache(Movable):
+    var batch_kernel: PoseidonBatchKernelT
+
+    fn __init__(out self, ctx: DeviceContext) raises:
+        self.batch_kernel = ctx.compile_function[
+            poseidon2_gpu_batch_kernel, poseidon2_gpu_batch_kernel_sig
+        ]()
+
+
+fn poseidon_gpu_cache_ptr(session: UInt64) -> UnsafePointer[PoseidonGpuCache, MutAnyOrigin]:
+    var addr = runtime.session_state_ptr(session)[].poseidon_kernel_cache_addr
+    return UnsafePointer[PoseidonGpuCache, MutAnyOrigin](unsafe_from_address=Int(addr))
+
+
+fn ensure_poseidon_gpu_cache(session: UInt64) raises:
+    ref session_state = runtime.session_state_ptr(session)[]
+    if session_state.poseidon_kernel_cache_addr != 0:
+        return
+
+    var ptr = alloc[PoseidonGpuCache](1)
+    ptr.init_pointee_move(PoseidonGpuCache(session_state.accelerator_ctx.value()))
+    session_state.poseidon_kernel_cache_addr = UInt64(Int(ptr))
+
+
+fn destroy_session_cache(session: UInt64):
+    if session <= 1:
+        return
+    ref session_state = runtime.session_state_ptr(session)[]
+    if session_state.poseidon_kernel_cache_addr == 0:
+        return
+
+    var ptr = poseidon_gpu_cache_ptr(session)
+    ptr.destroy_pointee()
+    ptr.free()
+    session_state.poseidon_kernel_cache_addr = 0
+
+
 fn permute_batch_cpu_in_place(state_words: UnsafePointer[mut=True, UInt64], num_states: Int):
     for state_idx in range(num_states):
         permute_state_at_offset(state_words, state_idx * POSEIDON2_WIDTH)
 
 
-fn permute_batch_gpu_in_place(state_words: UnsafePointer[mut=True, UInt64], num_states: Int) raises:
+fn permute_batch_gpu_in_place(
+    session: UInt,
+    state_words: UnsafePointer[mut=True, UInt64],
+    num_states: Int,
+) raises:
     var word_count = words_for_states(num_states)
-    var ctx = DeviceContext()
-    var host = ctx.enqueue_create_host_buffer[DType.uint64](word_count)
-    var dev = ctx.enqueue_create_buffer[DType.uint64](word_count)
-    ctx.synchronize()
+    var session_ptr = runtime.session_state_ptr(UInt64(session))
+    ref session_state = session_ptr[]
+    session_state.ensure_poseidon_buffers(word_count)
+    ensure_poseidon_gpu_cache(UInt64(session))
+    var ctx = session_state.accelerator_ctx.value()
+    var host = session_state.poseidon_host.value()
+    var dev = session_state.poseidon_dev.value()
+    ref cache = poseidon_gpu_cache_ptr(UInt64(session))[]
 
     for i in range(word_count):
         host[i] = state_words[i]
 
     ctx.enqueue_copy(src_buf=host, dst_buf=dev)
-    var kernel = ctx.compile_function[poseidon2_gpu_batch_kernel, poseidon2_gpu_batch_kernel_sig]()
     ctx.enqueue_function(
-        kernel,
+        cache.batch_kernel,
         dev.unsafe_ptr(),
         num_states,
         grid_dim=grid_dim_for(num_states),
@@ -110,14 +156,12 @@ fn permute_batch_gpu_in_place(state_words: UnsafePointer[mut=True, UInt64], num_
 
 
 fn session_prefers_gpu(session: UInt) -> Bool:
-    if session <= UInt(1):
-        return False
-    if (session & SESSION_HANDLE_MAGIC) != SESSION_HANDLE_MAGIC:
-        return False
-    var api = UInt32((session >> 32) & UInt(0xFFFF_FFFF))
+    var api = runtime.session_api(UInt64(session))
     if api == UInt32(DEVICE_API_CPU):
         return False
-    return api == UInt32(DEVICE_API_CUDA) or api == UInt32(1)
+    return runtime.session_prefers_gpu(UInt64(session)) and (
+        api == UInt32(DEVICE_API_CUDA) or api == UInt32(1)
+    )
 
 
 fn permute_state_at_offset(state_words: UnsafePointer[mut=True, UInt64], base: Int):

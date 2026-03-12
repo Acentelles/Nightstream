@@ -144,6 +144,23 @@ fn k(re: u64, im: u64) -> K {
     from_complex(F::from_u64(re), F::from_u64(im))
 }
 
+fn k_probe_points(round: usize, count: usize, re_base: u64, im_base: u64) -> Vec<K> {
+    let mut xs = Vec::with_capacity(count + 2);
+    xs.push(K::ZERO);
+    xs.push(K::ONE);
+    for idx in 0..count {
+        xs.push(k(
+            re_base + (round as u64) * 1_000 + (idx as u64) * 17,
+            im_base + (round as u64) * 1_000 + (idx as u64) * 19,
+        ));
+    }
+    xs
+}
+
+fn probe_count_for_round(round: usize, counts: &[usize]) -> usize {
+    counts[round % counts.len()]
+}
+
 fn dense_mat<Ff: PrimeCharacteristicRing + Copy>(rows: usize, cols: usize, seed: u64) -> Mat<Ff> {
     let mut data = Vec::with_capacity(rows * cols);
     for r in 0..rows {
@@ -480,12 +497,7 @@ fn split_nc_fe_row_mojo_backend_matches_cpu_across_rounds() {
 
     let total_rounds = cpu.num_rounds();
     for round in 0..total_rounds {
-        let xs = vec![
-            K::ZERO,
-            K::ONE,
-            k(50 + round as u64, 60 + round as u64),
-            k(70 + round as u64, 80 + round as u64),
-        ];
+        let xs = k_probe_points(round, probe_count_for_round(round, &[8, 12, 10]), 50, 60);
         assert_eq!(cpu.evals_at(&xs), mojo.evals_at(&xs), "round {round}");
         let r = k(90 + round as u64, 100 + round as u64);
         cpu.fold(r);
@@ -549,12 +561,7 @@ fn split_nc_nc_col_mojo_backend_matches_cpu_across_rounds() {
 
     let total_rounds = cpu.num_rounds();
     for round in 0..total_rounds {
-        let xs = vec![
-            K::ZERO,
-            K::ONE,
-            k(150 + round as u64, 160 + round as u64),
-            k(170 + round as u64, 180 + round as u64),
-        ];
+        let xs = k_probe_points(round, probe_count_for_round(round, &[8, 12, 10]), 150, 160);
         assert_eq!(cpu.evals_at(&xs), mojo.evals_at(&xs), "round {round}");
         let r = k(190 + round as u64, 200 + round as u64);
         cpu.fold(r);
@@ -800,6 +807,107 @@ fn real_mojo_split_nc_high_batch_nc_oracle_matches_cpu_across_rounds() {
         ];
         assert_eq!(cpu.evals_at(&xs), mojo.evals_at(&xs), "round {round}");
         let r = k(390 + round as u64, 400 + round as u64);
+        cpu.fold(r);
+        mojo.fold(r);
+    }
+}
+
+#[test]
+#[ignore = "requires CUDA-capable Mojo runtime"]
+fn real_mojo_cuda_fe_row_oracle_matches_cpu_across_rounds() {
+    let fixture = build_oracle_fixture();
+    let backend =
+        ProverComputeBackend::Mojo(MojoBackendConfig::new(DeviceApi::Cuda).with_library_path(build_real_mojo_library()));
+    let backend_ctx = match BackendContext::new(&backend) {
+        Ok(ctx) => ctx,
+        Err(err) => {
+            eprintln!("skipping: real Mojo CUDA backend is unavailable: {err}");
+            return;
+        }
+    };
+    assert_eq!(backend_ctx.selected_device_api(), Some(DeviceApi::Cuda));
+    assert_eq!(
+        backend_ctx.split_nc_execution_status(1024),
+        BackendExecutionStatus::MojoAccelerator(DeviceApi::Cuda)
+    );
+
+    let mut cpu = OptimizedOracle::new_with_sparse(
+        &fixture.s,
+        &fixture.params,
+        &fixture.mcs_witnesses,
+        &fixture.me_witnesses,
+        fixture.ch.clone(),
+        fixture.ell_d,
+        fixture.ell_n,
+        fixture.d_sc,
+        Some(&fixture.r_inputs),
+        fixture.sparse.clone(),
+    );
+    let mut mojo = SplitNcOptimizedOracle::new_with_sparse(
+        &fixture.s,
+        &fixture.params,
+        &fixture.mcs_witnesses,
+        &fixture.me_witnesses,
+        fixture.ch,
+        fixture.ell_d,
+        fixture.ell_n,
+        fixture.d_sc,
+        Some(&fixture.r_inputs),
+        fixture.sparse,
+        &backend_ctx,
+    )
+    .expect("real mojo cuda fe oracle");
+
+    let total_rounds = cpu.num_rounds();
+    for round in 0..total_rounds {
+        let xs = k_probe_points(
+            round,
+            probe_count_for_round(round, &[384, 512, 640]),
+            20_000,
+            30_000,
+        );
+        assert_eq!(cpu.evals_at(&xs), mojo.evals_at(&xs), "round {round}");
+        let r = k(40_000 + round as u64, 50_000 + round as u64);
+        cpu.fold(r);
+        mojo.fold(r);
+    }
+}
+
+#[test]
+#[ignore = "requires CUDA-capable Mojo runtime"]
+fn real_mojo_cuda_nc_col_oracle_matches_cpu_across_rounds() {
+    let (params, s, _claims, witnesses, ch, ell_d, ell_m, d_sc) =
+        build_high_batch_reduction_fixture(b"split_nc_gpu_parity/high_batch_nc_real_cuda");
+    let backend =
+        ProverComputeBackend::Mojo(MojoBackendConfig::new(DeviceApi::Cuda).with_library_path(build_real_mojo_library()));
+    let backend_ctx = match BackendContext::new(&backend) {
+        Ok(ctx) => ctx,
+        Err(err) => {
+            eprintln!("skipping: real Mojo CUDA backend is unavailable: {err}");
+            return;
+        }
+    };
+    assert_eq!(backend_ctx.selected_device_api(), Some(DeviceApi::Cuda));
+    assert_eq!(
+        backend_ctx.split_nc_execution_status(1024),
+        BackendExecutionStatus::MojoAccelerator(DeviceApi::Cuda)
+    );
+
+    let mut cpu = NcOracle::new(&s, &params, &witnesses, &[], ch.clone(), ell_d, ell_m, d_sc);
+    let mut mojo =
+        SplitNcNcOracle::new(&s, &params, &witnesses, &[], ch, ell_d, ell_m, d_sc, &backend_ctx)
+            .expect("real mojo cuda nc oracle");
+
+    let total_rounds = cpu.num_rounds();
+    for round in 0..total_rounds {
+        let xs = k_probe_points(
+            round,
+            probe_count_for_round(round, &[384, 512, 640]),
+            60_000,
+            70_000,
+        );
+        assert_eq!(cpu.evals_at(&xs), mojo.evals_at(&xs), "round {round}");
+        let r = k(80_000 + round as u64, 90_000 + round as u64);
         cpu.fold(r);
         mojo.fold(r);
     }

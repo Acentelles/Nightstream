@@ -1,23 +1,28 @@
-from gpu.host import DeviceContext
+from gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from gpu import block_dim, block_idx, thread_idx
-from memory import UnsafePointer
-from nightstream_gpu import field
+from memory import UnsafePointer, alloc
+from nightstream_gpu import field, runtime
 
 
-alias SPLIT_NC_SNAPSHOT_MAGIC = UInt64(0x4E53504C49544E43)
-alias SPLIT_NC_SNAPSHOT_VERSION = UInt64(1)
-alias SPLIT_NC_FE_ROW_V1 = UInt64(1)
-alias SPLIT_NC_NC_COL_V1 = UInt64(2)
-alias FE_HEADER_WORDS = 16
-alias NC_HEADER_WORDS = 13
-alias D_WIDTH = 54
-alias SUMCHECK_GPU_BLOCK_SIZE = 64
-alias SUMCHECK_GPU_MIN_TASKS = 256
-alias DEVICE_API_CPU = 0
-alias DEVICE_API_METAL = 1
-alias DEVICE_API_CUDA = 2
-alias DEVICE_API_HIP = 3
-alias SESSION_HANDLE_MAGIC = UInt64(0x4E53000000000000)
+comptime SPLIT_NC_SNAPSHOT_MAGIC = UInt64(0x4E53504C49544E43)
+comptime SPLIT_NC_SNAPSHOT_VERSION = UInt64(1)
+comptime SPLIT_NC_FE_ROW_V1 = UInt64(1)
+comptime SPLIT_NC_NC_COL_V1 = UInt64(2)
+comptime FE_HEADER_WORDS = 16
+comptime NC_HEADER_WORDS = 13
+comptime D_WIDTH = 54
+comptime SUMCHECK_GPU_BLOCK_SIZE = 64
+comptime SUMCHECK_GPU_MIN_TASKS = 256
+comptime DEVICE_API_CPU = 0
+comptime DEVICE_API_METAL = 1
+comptime DEVICE_API_CUDA = 2
+comptime DEVICE_API_HIP = 3
+comptime FePartialKernelT = type_of(
+    DeviceContext().compile_function[fe_partial_gpu_kernel, fe_partial_gpu_kernel_sig]()
+)
+comptime NcPartialKernelT = type_of(
+    DeviceContext().compile_function[nc_partial_gpu_kernel, nc_partial_gpu_kernel_sig]()
+)
 
 
 struct KVal(Copyable, ImplicitlyCopyable, Movable):
@@ -89,11 +94,9 @@ fn k_load(words: UnsafePointer[UInt64], word_idx: Int) -> KVal:
 
 
 fn session_prefers_gpu(session: UInt64) -> Bool:
-    if session <= 1:
+    if not runtime.session_prefers_gpu(session):
         return False
-    if (session & SESSION_HANDLE_MAGIC) != SESSION_HANDLE_MAGIC:
-        return False
-    var api = UInt32((session >> 32) & UInt64(0xFFFF_FFFF))
+    var api = runtime.session_api(session)
     return (
         api == UInt32(DEVICE_API_CUDA)
         or api == UInt32(DEVICE_API_HIP)
@@ -149,6 +152,151 @@ fn snapshot_status(snapshot_ptr: UnsafePointer[UInt64], snapshot_len: Int, expec
         return -12
     if read_snapshot_word(snapshot_ptr, 2) != expected_kind:
         return -13
+    return 0
+
+
+fn normalized_snapshot_len_bytes(snapshot_len: Int) -> Int:
+    var normalized_len = snapshot_len
+    if normalized_len < 24 or normalized_len % 8 != 0:
+        normalized_len = normalized_len * 8
+    return normalized_len
+
+
+fn normalized_snapshot_word_count(snapshot_len: Int) -> Int:
+    return normalized_snapshot_len_bytes(snapshot_len) // 8
+
+
+fn write_snapshot_word(
+    snapshot_ptr: UnsafePointer[mut=True, UInt64],
+    word_idx: Int,
+    value: UInt64,
+):
+    snapshot_ptr[word_idx] = value
+
+
+fn write_snapshot_k(
+    snapshot_ptr: UnsafePointer[mut=True, UInt64],
+    word_idx: Int,
+    value: KVal,
+):
+    snapshot_ptr[word_idx] = value.re
+    snapshot_ptr[word_idx + 1] = value.im
+
+
+fn fold_k_table_in_place(
+    snapshot_ptr: UnsafePointer[mut=True, UInt64],
+    word_offset: Int,
+    len: Int,
+    challenge: KVal,
+):
+    var half = len // 2
+    var one_minus = k_sub(k_one(), challenge)
+    for i in range(half):
+        var lo = k_load(snapshot_ptr, word_offset + (2 * i) * 2)
+        var hi = k_load(snapshot_ptr, word_offset + ((2 * i + 1) * 2))
+        write_snapshot_k(
+            snapshot_ptr,
+            word_offset + i * 2,
+            k_interp(lo, hi, challenge, one_minus),
+        )
+
+
+fn apply_fe_snapshot_fold_in_place(
+    snapshot_ptr: UnsafePointer[mut=True, UInt64],
+    snapshot_word_count: Int,
+    challenge: KVal,
+) -> Int32:
+    if snapshot_word_count < FE_HEADER_WORDS:
+        return 0
+    if read_snapshot_word(snapshot_ptr, 0) != SPLIT_NC_SNAPSHOT_MAGIC:
+        return 0
+    if read_snapshot_word(snapshot_ptr, 1) != SPLIT_NC_SNAPSHOT_VERSION:
+        return 0
+    if read_snapshot_word(snapshot_ptr, 2) != SPLIT_NC_FE_ROW_V1:
+        return 0
+
+    var cur_len = Int(read_snapshot_word(snapshot_ptr, 5))
+    if cur_len < 2:
+        return 0
+    var eq_beta_len = Int(read_snapshot_word(snapshot_ptr, 6))
+    var eq_r_inputs_len = Int(read_snapshot_word(snapshot_ptr, 7))
+    var gamma_pow_len = Int(read_snapshot_word(snapshot_ptr, 8))
+    var term_count = Int(read_snapshot_word(snapshot_ptr, 9))
+    var num_mcs = Int(read_snapshot_word(snapshot_ptr, 10))
+    var num_vars = Int(read_snapshot_word(snapshot_ptr, 11))
+    var table_len = Int(read_snapshot_word(snapshot_ptr, 12))
+    var eval_len = Int(read_snapshot_word(snapshot_ptr, 13))
+
+    var eq_beta_off = FE_HEADER_WORDS
+    var eq_r_inputs_off = eq_beta_off + (eq_beta_len * 2)
+    var gamma_pow_off = eq_r_inputs_off + (eq_r_inputs_len * 2)
+    var terms_off = gamma_pow_off + (gamma_pow_len * 2)
+    for _ in range(term_count):
+        var vars_len = Int(read_snapshot_word(snapshot_ptr, terms_off + 2))
+        terms_off = terms_off + 3 + (vars_len * 2)
+    var tables_off = terms_off
+    var eval_off = tables_off + (num_mcs * num_vars * table_len * 2)
+
+    fold_k_table_in_place(snapshot_ptr, eq_beta_off, cur_len, challenge)
+    if eq_r_inputs_len > 0:
+        fold_k_table_in_place(snapshot_ptr, eq_r_inputs_off, cur_len, challenge)
+    for table_idx in range(num_mcs * num_vars):
+        fold_k_table_in_place(
+            snapshot_ptr,
+            tables_off + table_idx * table_len * 2,
+            cur_len,
+            challenge,
+        )
+    if eval_len > 0:
+        fold_k_table_in_place(snapshot_ptr, eval_off, cur_len, challenge)
+    write_snapshot_word(snapshot_ptr, 5, UInt64(cur_len // 2))
+    return 0
+
+
+fn apply_nc_snapshot_fold_in_place(
+    snapshot_ptr: UnsafePointer[mut=True, UInt64],
+    snapshot_word_count: Int,
+    challenge: KVal,
+) -> Int32:
+    if snapshot_word_count < NC_HEADER_WORDS:
+        return 0
+    if read_snapshot_word(snapshot_ptr, 0) != SPLIT_NC_SNAPSHOT_MAGIC:
+        return 0
+    if read_snapshot_word(snapshot_ptr, 1) != SPLIT_NC_SNAPSHOT_VERSION:
+        return 0
+    if read_snapshot_word(snapshot_ptr, 2) != SPLIT_NC_NC_COL_V1:
+        return 0
+
+    var cur_len = Int(read_snapshot_word(snapshot_ptr, 5))
+    if cur_len < 2:
+        return 0
+    var eq_beta_len = Int(read_snapshot_word(snapshot_ptr, 6))
+    var num_tables = Int(read_snapshot_word(snapshot_ptr, 7))
+    var table_len = Int(read_snapshot_word(snapshot_ptr, 8))
+    var d_width = Int(read_snapshot_word(snapshot_ptr, 9))
+
+    var eq_beta_off = NC_HEADER_WORDS
+    var digits_off = eq_beta_off + (eq_beta_len * 2)
+    var one_minus = k_sub(k_one(), challenge)
+
+    fold_k_table_in_place(snapshot_ptr, eq_beta_off, cur_len, challenge)
+    for table_idx in range(num_tables):
+        for rho in range(d_width):
+            for i in range(cur_len // 2):
+                var lo = k_load(
+                    snapshot_ptr,
+                    digits_off + ((table_idx * table_len + (2 * i)) * d_width + rho) * 2,
+                )
+                var hi = k_load(
+                    snapshot_ptr,
+                    digits_off + ((table_idx * table_len + (2 * i + 1)) * d_width + rho) * 2,
+                )
+                write_snapshot_k(
+                    snapshot_ptr,
+                    digits_off + ((table_idx * table_len + i) * d_width + rho) * 2,
+                    k_interp(lo, hi, challenge, one_minus),
+                )
+    write_snapshot_word(snapshot_ptr, 5, UInt64(cur_len // 2))
     return 0
 
 
@@ -370,6 +518,107 @@ fn nc_partial_gpu_kernel_sig(
     pass
 
 
+struct SumcheckGpuCache(Movable):
+    var fe_kernel: FePartialKernelT
+    var nc_kernel: NcPartialKernelT
+
+    fn __init__(out self, ctx: DeviceContext) raises:
+        self.fe_kernel = ctx.compile_function[
+            fe_partial_gpu_kernel, fe_partial_gpu_kernel_sig
+        ]()
+        self.nc_kernel = ctx.compile_function[
+            nc_partial_gpu_kernel, nc_partial_gpu_kernel_sig
+        ]()
+
+
+fn sumcheck_gpu_cache_ptr(session: UInt64) -> UnsafePointer[SumcheckGpuCache, MutAnyOrigin]:
+    var addr = runtime.session_state_ptr(session)[].sumcheck_kernel_cache_addr
+    return UnsafePointer[SumcheckGpuCache, MutAnyOrigin](unsafe_from_address=Int(addr))
+
+
+fn ensure_sumcheck_gpu_cache(session: UInt64) raises:
+    ref session_state = runtime.session_state_ptr(session)[]
+    if session_state.sumcheck_kernel_cache_addr != 0:
+        return
+
+    var ptr = alloc[SumcheckGpuCache](1)
+    ptr.init_pointee_move(SumcheckGpuCache(session_state.accelerator_ctx.value()))
+    session_state.sumcheck_kernel_cache_addr = UInt64(Int(ptr))
+
+
+fn destroy_session_cache(session: UInt64):
+    if session <= 1:
+        return
+    ref session_state = runtime.session_state_ptr(session)[]
+    if session_state.sumcheck_kernel_cache_addr == 0:
+        return
+
+    var ptr = sumcheck_gpu_cache_ptr(session)
+    ptr.destroy_pointee()
+    ptr.free()
+    session_state.sumcheck_kernel_cache_addr = 0
+
+
+struct FeEvaluatorState(Movable):
+    var snapshot_words: UnsafePointer[UInt64, MutAnyOrigin]
+    var snapshot_word_count: Int
+    var snapshot_host: Optional[HostBuffer[DType.uint64]]
+    var snapshot_dev: Optional[DeviceBuffer[DType.uint64]]
+    var snapshot_uploaded: Bool
+    var snapshot_dirty: Bool
+
+    fn __init__(
+        out self,
+        snapshot_src: UnsafePointer[UInt64],
+        snapshot_len: Int,
+    ):
+        self.snapshot_word_count = normalized_snapshot_word_count(snapshot_len)
+        self.snapshot_words = alloc[UInt64](self.snapshot_word_count)
+        self.snapshot_host = Optional[HostBuffer[DType.uint64]]()
+        self.snapshot_dev = Optional[DeviceBuffer[DType.uint64]]()
+        self.snapshot_uploaded = False
+        self.snapshot_dirty = True
+        for idx in range(self.snapshot_word_count):
+            self.snapshot_words[idx] = snapshot_src[idx]
+
+    fn __del__(deinit self):
+        self.snapshot_words.free()
+
+
+struct NcEvaluatorState(Movable):
+    var snapshot_words: UnsafePointer[UInt64, MutAnyOrigin]
+    var snapshot_word_count: Int
+    var snapshot_host: Optional[HostBuffer[DType.uint64]]
+    var snapshot_dev: Optional[DeviceBuffer[DType.uint64]]
+    var snapshot_uploaded: Bool
+    var snapshot_dirty: Bool
+
+    fn __init__(
+        out self,
+        snapshot_src: UnsafePointer[UInt64],
+        snapshot_len: Int,
+    ):
+        self.snapshot_word_count = normalized_snapshot_word_count(snapshot_len)
+        self.snapshot_words = alloc[UInt64](self.snapshot_word_count)
+        self.snapshot_host = Optional[HostBuffer[DType.uint64]]()
+        self.snapshot_dev = Optional[DeviceBuffer[DType.uint64]]()
+        self.snapshot_uploaded = False
+        self.snapshot_dirty = True
+        for idx in range(self.snapshot_word_count):
+            self.snapshot_words[idx] = snapshot_src[idx]
+
+    fn __del__(deinit self):
+        self.snapshot_words.free()
+
+
+fn fe_evaluator_ptr(handle: UInt64) -> UnsafePointer[FeEvaluatorState, MutAnyOrigin]:
+    return UnsafePointer[FeEvaluatorState, MutAnyOrigin](unsafe_from_address=Int(handle))
+
+
+fn nc_evaluator_ptr(handle: UInt64) -> UnsafePointer[NcEvaluatorState, MutAnyOrigin]:
+    return UnsafePointer[NcEvaluatorState, MutAnyOrigin](unsafe_from_address=Int(handle))
+
+
 fn reduce_partials_host(
     partial_words: UnsafePointer[mut=True, UInt64],
     points_len: Int,
@@ -383,37 +632,89 @@ fn reduce_partials_host(
         store_out(out_ptr, point_idx, acc)
 
 
+fn ensure_fe_snapshot_uploaded(session: UInt64, evaluator: UnsafePointer[FeEvaluatorState, MutAnyOrigin]) raises:
+    ref session_state = runtime.session_state_ptr(session)[]
+    var ctx = session_state.accelerator_ctx.value()
+    if not evaluator[].snapshot_host or not evaluator[].snapshot_dev:
+        evaluator[].snapshot_host = Optional[HostBuffer[DType.uint64]](
+            ctx.enqueue_create_host_buffer[DType.uint64](evaluator[].snapshot_word_count)
+        )
+        evaluator[].snapshot_dev = Optional[DeviceBuffer[DType.uint64]](
+            ctx.enqueue_create_buffer[DType.uint64](evaluator[].snapshot_word_count)
+        )
+        ctx.synchronize()
+        evaluator[].snapshot_uploaded = False
+        evaluator[].snapshot_dirty = True
+
+    if evaluator[].snapshot_uploaded and not evaluator[].snapshot_dirty:
+        return
+
+    var host_snapshot = evaluator[].snapshot_host.value()
+    var dev_snapshot = evaluator[].snapshot_dev.value()
+    for idx in range(evaluator[].snapshot_word_count):
+        host_snapshot[idx] = evaluator[].snapshot_words[idx]
+    ctx.enqueue_copy(src_buf=host_snapshot, dst_buf=dev_snapshot)
+    ctx.synchronize()
+    evaluator[].snapshot_uploaded = True
+    evaluator[].snapshot_dirty = False
+
+
+fn ensure_nc_snapshot_uploaded(session: UInt64, evaluator: UnsafePointer[NcEvaluatorState, MutAnyOrigin]) raises:
+    ref session_state = runtime.session_state_ptr(session)[]
+    var ctx = session_state.accelerator_ctx.value()
+    if not evaluator[].snapshot_host or not evaluator[].snapshot_dev:
+        evaluator[].snapshot_host = Optional[HostBuffer[DType.uint64]](
+            ctx.enqueue_create_host_buffer[DType.uint64](evaluator[].snapshot_word_count)
+        )
+        evaluator[].snapshot_dev = Optional[DeviceBuffer[DType.uint64]](
+            ctx.enqueue_create_buffer[DType.uint64](evaluator[].snapshot_word_count)
+        )
+        ctx.synchronize()
+        evaluator[].snapshot_uploaded = False
+        evaluator[].snapshot_dirty = True
+
+    if evaluator[].snapshot_uploaded and not evaluator[].snapshot_dirty:
+        return
+
+    var host_snapshot = evaluator[].snapshot_host.value()
+    var dev_snapshot = evaluator[].snapshot_dev.value()
+    for idx in range(evaluator[].snapshot_word_count):
+        host_snapshot[idx] = evaluator[].snapshot_words[idx]
+    ctx.enqueue_copy(src_buf=host_snapshot, dst_buf=dev_snapshot)
+    ctx.synchronize()
+    evaluator[].snapshot_uploaded = True
+    evaluator[].snapshot_dirty = False
+
+
 fn fe_evals_at_gpu(
     session: UInt64,
-    snapshot_words: UnsafePointer[mut=True, UInt64],
-    snapshot_len: UInt64,
+    evaluator: UnsafePointer[FeEvaluatorState, MutAnyOrigin],
     points_words: UnsafePointer[mut=True, UInt64],
     points_len: UInt64,
     out_ptr: UnsafePointer[mut=True, UInt64],
 ) raises:
-    var snapshot_word_count = Int(UInt(snapshot_len)) // 8
     var point_count = Int(UInt(points_len))
-    var tail_len = Int(read_snapshot_word(snapshot_words, 5)) // 2
+    var tail_len = Int(read_snapshot_word(evaluator[].snapshot_words, 5)) // 2
     var partial_word_count = point_count * tail_len * 2
-    var ctx = DeviceContext()
-    var host_snapshot = ctx.enqueue_create_host_buffer[DType.uint64](snapshot_word_count)
-    var host_points = ctx.enqueue_create_host_buffer[DType.uint64](point_count * 2)
-    var host_partials = ctx.enqueue_create_host_buffer[DType.uint64](partial_word_count)
-    var dev_snapshot = ctx.enqueue_create_buffer[DType.uint64](snapshot_word_count)
-    var dev_points = ctx.enqueue_create_buffer[DType.uint64](point_count * 2)
-    var dev_partials = ctx.enqueue_create_buffer[DType.uint64](partial_word_count)
-    ctx.synchronize()
+    var session_ptr = runtime.session_state_ptr(session)
+    ref session_state = session_ptr[]
+    session_state.ensure_sumcheck_buffers(point_count * 2, partial_word_count)
+    ensure_sumcheck_gpu_cache(session)
+    ensure_fe_snapshot_uploaded(session, evaluator)
+    var ctx = session_state.accelerator_ctx.value()
+    var host_points = session_state.sumcheck_points_host.value()
+    var host_partials = session_state.sumcheck_partials_host.value()
+    var dev_points = session_state.sumcheck_points_dev.value()
+    var dev_partials = session_state.sumcheck_partials_dev.value()
+    var dev_snapshot = evaluator[].snapshot_dev.value()
+    ref cache = sumcheck_gpu_cache_ptr(session)[]
 
-    for idx in range(snapshot_word_count):
-        host_snapshot[idx] = snapshot_words[idx]
     for idx in range(point_count * 2):
         host_points[idx] = points_words[idx]
 
-    ctx.enqueue_copy(src_buf=host_snapshot, dst_buf=dev_snapshot)
     ctx.enqueue_copy(src_buf=host_points, dst_buf=dev_points)
-    var kernel = ctx.compile_function[fe_partial_gpu_kernel, fe_partial_gpu_kernel_sig]()
     ctx.enqueue_function(
-        kernel,
+        cache.fe_kernel,
         dev_snapshot.unsafe_ptr(),
         dev_points.unsafe_ptr(),
         dev_partials.unsafe_ptr(),
@@ -428,35 +729,33 @@ fn fe_evals_at_gpu(
 
 fn nc_evals_at_gpu(
     session: UInt64,
-    snapshot_words: UnsafePointer[mut=True, UInt64],
-    snapshot_len: UInt64,
+    evaluator: UnsafePointer[NcEvaluatorState, MutAnyOrigin],
     points_words: UnsafePointer[mut=True, UInt64],
     points_len: UInt64,
     out_ptr: UnsafePointer[mut=True, UInt64],
 ) raises:
-    var snapshot_word_count = Int(UInt(snapshot_len)) // 8
     var point_count = Int(UInt(points_len))
-    var tail_len = Int(read_snapshot_word(snapshot_words, 5)) // 2
+    var tail_len = Int(read_snapshot_word(evaluator[].snapshot_words, 5)) // 2
     var partial_word_count = point_count * tail_len * 2
-    var ctx = DeviceContext()
-    var host_snapshot = ctx.enqueue_create_host_buffer[DType.uint64](snapshot_word_count)
-    var host_points = ctx.enqueue_create_host_buffer[DType.uint64](point_count * 2)
-    var host_partials = ctx.enqueue_create_host_buffer[DType.uint64](partial_word_count)
-    var dev_snapshot = ctx.enqueue_create_buffer[DType.uint64](snapshot_word_count)
-    var dev_points = ctx.enqueue_create_buffer[DType.uint64](point_count * 2)
-    var dev_partials = ctx.enqueue_create_buffer[DType.uint64](partial_word_count)
-    ctx.synchronize()
+    var session_ptr = runtime.session_state_ptr(session)
+    ref session_state = session_ptr[]
+    session_state.ensure_sumcheck_buffers(point_count * 2, partial_word_count)
+    ensure_sumcheck_gpu_cache(session)
+    ensure_nc_snapshot_uploaded(session, evaluator)
+    var ctx = session_state.accelerator_ctx.value()
+    var host_points = session_state.sumcheck_points_host.value()
+    var host_partials = session_state.sumcheck_partials_host.value()
+    var dev_points = session_state.sumcheck_points_dev.value()
+    var dev_partials = session_state.sumcheck_partials_dev.value()
+    var dev_snapshot = evaluator[].snapshot_dev.value()
+    ref cache = sumcheck_gpu_cache_ptr(session)[]
 
-    for idx in range(snapshot_word_count):
-        host_snapshot[idx] = snapshot_words[idx]
     for idx in range(point_count * 2):
         host_points[idx] = points_words[idx]
 
-    ctx.enqueue_copy(src_buf=host_snapshot, dst_buf=dev_snapshot)
     ctx.enqueue_copy(src_buf=host_points, dst_buf=dev_points)
-    var kernel = ctx.compile_function[nc_partial_gpu_kernel, nc_partial_gpu_kernel_sig]()
     ctx.enqueue_function(
-        kernel,
+        cache.nc_kernel,
         dev_snapshot.unsafe_ptr(),
         dev_points.unsafe_ptr(),
         dev_partials.unsafe_ptr(),
@@ -478,11 +777,18 @@ fn fe_create(
     var status = snapshot_status(snapshot_words, Int(UInt(snapshot_len)), SPLIT_NC_FE_ROW_V1)
     if status != 0:
         return status
-    out_handle[0] = 1
+    var ptr = alloc[FeEvaluatorState](1)
+    ptr.init_pointee_move(FeEvaluatorState(snapshot_words, Int(UInt(snapshot_len))))
+    out_handle[0] = UInt64(Int(ptr))
     return 0
 
 
 fn fe_destroy(_session: UInt, _evaluator: UInt) -> Int32:
+    if _evaluator == 0:
+        return -2
+    var ptr = fe_evaluator_ptr(UInt64(_evaluator))
+    ptr.destroy_pointee()
+    ptr.free()
     return 0
 
 
@@ -501,22 +807,42 @@ fn fe_evals_at(
         return status
     if out_len < UInt(points_len):
         return -2
+    if _evaluator == 0:
+        return -3
     var point_count = Int(UInt(points_len))
-    var tail_len = Int(read_snapshot_word(snapshot_words, 5)) // 2
+    var evaluator_ptr = fe_evaluator_ptr(_evaluator)
+    var eval_snapshot = evaluator_ptr[].snapshot_words
+    var tail_len = Int(read_snapshot_word(eval_snapshot, 5)) // 2
     var total_tasks = point_count * tail_len
     if session_prefers_gpu(_session) and total_tasks >= SUMCHECK_GPU_MIN_TASKS:
         try:
-            fe_evals_at_gpu(_session, snapshot_words, snapshot_len, points_words, points_len, out_ptr)
+            fe_evals_at_gpu(
+                _session,
+                evaluator_ptr,
+                points_words,
+                points_len,
+                out_ptr,
+            )
             return 0
         except:
             pass
     for idx in range(Int(UInt(points_len))):
-        store_out(out_ptr, idx, fe_eval_one(snapshot_words, load_point(points_words, idx)))
+        store_out(out_ptr, idx, fe_eval_one(eval_snapshot, load_point(points_words, idx)))
     return 0
 
 
 fn fe_fold(_session: UInt, _evaluator: UInt, _challenge: KVal) -> Int32:
-    return 0
+    if _evaluator == 0:
+        return -2
+    ref evaluator = fe_evaluator_ptr(UInt64(_evaluator))[]
+    var status = apply_fe_snapshot_fold_in_place(
+        evaluator.snapshot_words,
+        evaluator.snapshot_word_count,
+        _challenge,
+    )
+    if status == 0:
+        evaluator.snapshot_dirty = True
+    return status
 
 
 fn nc_create(
@@ -528,11 +854,18 @@ fn nc_create(
     var status = snapshot_status(snapshot_words, Int(UInt(snapshot_len)), SPLIT_NC_NC_COL_V1)
     if status != 0:
         return status
-    out_handle[0] = 2
+    var ptr = alloc[NcEvaluatorState](1)
+    ptr.init_pointee_move(NcEvaluatorState(snapshot_words, Int(UInt(snapshot_len))))
+    out_handle[0] = UInt64(Int(ptr))
     return 0
 
 
 fn nc_destroy(_session: UInt, _evaluator: UInt) -> Int32:
+    if _evaluator == 0:
+        return -2
+    var ptr = nc_evaluator_ptr(UInt64(_evaluator))
+    ptr.destroy_pointee()
+    ptr.free()
     return 0
 
 
@@ -551,22 +884,42 @@ fn nc_evals_at(
         return status
     if out_len < UInt(points_len):
         return -2
+    if _evaluator == 0:
+        return -3
     var point_count = Int(UInt(points_len))
-    var tail_len = Int(read_snapshot_word(snapshot_words, 5)) // 2
+    var evaluator_ptr = nc_evaluator_ptr(_evaluator)
+    var eval_snapshot = evaluator_ptr[].snapshot_words
+    var tail_len = Int(read_snapshot_word(eval_snapshot, 5)) // 2
     var total_tasks = point_count * tail_len
     if session_prefers_gpu(_session) and total_tasks >= SUMCHECK_GPU_MIN_TASKS:
         try:
-            nc_evals_at_gpu(_session, snapshot_words, snapshot_len, points_words, points_len, out_ptr)
+            nc_evals_at_gpu(
+                _session,
+                evaluator_ptr,
+                points_words,
+                points_len,
+                out_ptr,
+            )
             return 0
         except:
             pass
     for idx in range(Int(UInt(points_len))):
-        store_out(out_ptr, idx, nc_eval_one(snapshot_words, load_point(points_words, idx)))
+        store_out(out_ptr, idx, nc_eval_one(eval_snapshot, load_point(points_words, idx)))
     return 0
 
 
 fn nc_fold(_session: UInt, _evaluator: UInt, _challenge: KVal) -> Int32:
-    return 0
+    if _evaluator == 0:
+        return -2
+    ref evaluator = nc_evaluator_ptr(UInt64(_evaluator))[]
+    var status = apply_nc_snapshot_fold_in_place(
+        evaluator.snapshot_words,
+        evaluator.snapshot_word_count,
+        _challenge,
+    )
+    if status == 0:
+        evaluator.snapshot_dirty = True
+    return status
 
 
 fn debug_snapshot_head(

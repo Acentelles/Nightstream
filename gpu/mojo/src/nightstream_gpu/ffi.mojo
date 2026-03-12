@@ -1,17 +1,14 @@
 from memory import UnsafePointer
 from sys import has_accelerator
-from nightstream_gpu import field, poseidon, ring, sumcheck, superneo
+from nightstream_gpu import field, poseidon, ring, runtime, sumcheck, superneo
 
 
-alias DEVICE_API_CPU = 0
-alias DEVICE_API_METAL = 1
-alias DEVICE_API_CUDA = 2
-alias DEVICE_API_HIP = 3
-alias STATUS_OK = 0
-alias STATUS_UNAVAILABLE = -1
-alias SESSION_HANDLE_MAGIC = UInt(0x4E53000000000000)
-
-
+comptime DEVICE_API_CPU = 0
+comptime DEVICE_API_METAL = 1
+comptime DEVICE_API_CUDA = 2
+comptime DEVICE_API_HIP = 3
+comptime STATUS_OK = 0
+comptime STATUS_UNAVAILABLE = -1
 fn request_word(req_addr: UInt) -> UInt64:
     var req_words = UnsafePointer[UInt64](unchecked_downcast_value=Int(req_addr))
     return req_words[0]
@@ -67,18 +64,14 @@ fn session_open(
         handle_ptr[0] = 0
         return STATUS_UNAVAILABLE
 
-    if accelerator_requested(req_word) and api == UInt32(DEVICE_API_CPU):
-        api = UInt32(DEVICE_API_CUDA)
-
-    handle_ptr[0] = (
-        UInt64(SESSION_HANDLE_MAGIC)
-        | (UInt64(api) << 32)
-        | UInt64(device_id)
-    )
+    handle_ptr[0] = runtime.allocate_session(api, device_id)
     return STATUS_OK
 
 
-fn session_close(_session: UInt) -> Int32:
+fn session_close(session: UInt) -> Int32:
+    poseidon.destroy_session_cache(UInt64(session))
+    sumcheck.destroy_session_cache(UInt64(session))
+    runtime.free_session(UInt64(session))
     return STATUS_OK
 
 
