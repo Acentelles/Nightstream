@@ -1,8 +1,10 @@
 use crate::shard_proof_types::{OpeningDomain, TimeOpeningProof};
 use crate::PiCcsError;
-use neo_ajtai::{s_mul, Commitment as Cmt};
+use neo_ajtai::{decomp_b_row_major, s_mul, Commitment as Cmt, DecompStyle};
 use neo_ccs::Mat;
+use neo_math::balanced::to_balanced_i128;
 use neo_math::{ring::cf_inv, ring::Rq as RqEl, KExtensions, D, F, K};
+use neo_params::NeoParams;
 use p3_field::PrimeCharacteristicRing;
 
 #[inline]
@@ -15,6 +17,107 @@ pub fn build_small_chi_table(point: &[K]) -> Result<Option<Vec<K>>, PiCcsError> 
     } else {
         Ok(None)
     }
+}
+
+#[inline]
+pub fn encoded_time_width(t: usize) -> Result<usize, PiCcsError> {
+    t.checked_mul(crate::time_opening::JOINT_OPENING_TIME_SLICE_COUNT)
+        .ok_or_else(|| {
+            PiCcsError::InvalidInput(format!(
+                "time/opening encoded width overflow: t={} slices={}",
+                t,
+                crate::time_opening::JOINT_OPENING_TIME_SLICE_COUNT
+            ))
+        })
+}
+
+#[inline]
+fn slice_radix_u64() -> u64 {
+    1u64 << crate::time_opening::JOINT_OPENING_TIME_SLICE_BITS
+}
+
+#[inline]
+fn field_from_small_signed(value: i128) -> F {
+    debug_assert!(value.unsigned_abs() <= u64::MAX as u128);
+    if value >= 0 {
+        F::from_u64(value as u64)
+    } else {
+        F::ZERO - F::from_u64((-value) as u64)
+    }
+}
+
+#[inline]
+fn split_time_scalar_slices(value: F) -> [F; crate::time_opening::JOINT_OPENING_TIME_SLICE_COUNT] {
+    const SLICE_COUNT: usize = crate::time_opening::JOINT_OPENING_TIME_SLICE_COUNT;
+    debug_assert_eq!(SLICE_COUNT, 2, "time-opening exact transport expects two slices");
+
+    let radix = slice_radix_u64() as i128;
+    let centered = to_balanced_i128(value);
+    let lo = centered.rem_euclid(radix);
+    let hi = (centered - lo) / radix;
+    [field_from_small_signed(lo), field_from_small_signed(hi)]
+}
+
+pub fn encode_time_opening_vector_to_row_major(
+    params: &NeoParams,
+    z: &[F],
+    out: &mut Vec<F>,
+) -> Result<(), PiCcsError> {
+    let t = z.len();
+    let encoded_t = encoded_time_width(t)?;
+    let mut slice_values = [Vec::with_capacity(t), Vec::with_capacity(t)];
+    for &value in z {
+        let [lo, hi] = split_time_scalar_slices(value);
+        slice_values[0].push(lo);
+        slice_values[1].push(hi);
+    }
+
+    let base = crate::time_opening::JOINT_OPENING_TIME_DECOMP_BASE;
+    let row_major_slices = [
+        decomp_b_row_major(
+            slice_values[0].as_slice(),
+            base,
+            params.d as usize,
+            DecompStyle::Balanced,
+        ),
+        decomp_b_row_major(
+            slice_values[1].as_slice(),
+            base,
+            params.d as usize,
+            DecompStyle::Balanced,
+        ),
+    ];
+
+    out.clear();
+    out.reserve(D * encoded_t);
+    for rho in 0..D {
+        let row_start = rho * t;
+        let row_end = row_start + t;
+        out.extend_from_slice(&row_major_slices[0][row_start..row_end]);
+        out.extend_from_slice(&row_major_slices[1][row_start..row_end]);
+    }
+    Ok(())
+}
+
+pub fn encode_time_opening_vector_to_mat(params: &NeoParams, z: &[F]) -> Result<Mat<F>, PiCcsError> {
+    let encoded_t = encoded_time_width(z.len())?;
+    let mut row_major = Vec::new();
+    encode_time_opening_vector_to_row_major(params, z, &mut row_major)?;
+    Ok(Mat::from_row_major(D, encoded_t, row_major))
+}
+
+#[inline]
+pub fn expand_time_row_weights(raw_weights: &[K]) -> Vec<K> {
+    let slice_radix = K::from(F::from_u64(slice_radix_u64()));
+    let mut out = Vec::with_capacity(raw_weights.len() * crate::time_opening::JOINT_OPENING_TIME_SLICE_COUNT);
+    let mut scale = K::ONE;
+    for _ in 0..crate::time_opening::JOINT_OPENING_TIME_SLICE_COUNT {
+        for &weight in raw_weights {
+            out.push(scale * weight);
+        }
+        scale *= slice_radix;
+    }
+    out
 }
 
 #[inline]
@@ -466,7 +569,16 @@ fn eval_cpu_time_mat_digits_at_point_with_chi(
     z: &Mat<F>,
     chi_table: Option<&[K]>,
 ) -> Result<Vec<K>, PiCcsError> {
-    let weights = cpu_time_row_weights(point, m_in, z.cols(), chi_table)?;
+    let slice_count = crate::time_opening::JOINT_OPENING_TIME_SLICE_COUNT;
+    if z.cols() % slice_count != 0 {
+        return Err(PiCcsError::InvalidInput(format!(
+            "time/opening CPU eval(digits): z.cols()={} is not divisible by slice_count={slice_count}",
+            z.cols()
+        )));
+    }
+    let raw_t = z.cols() / slice_count;
+    let raw_weights = cpu_time_row_weights(point, m_in, raw_t, chi_table)?;
+    let weights = expand_time_row_weights(raw_weights.as_slice());
     eval_mat_digits_from_row_weights(weights.as_slice(), z)
 }
 
@@ -477,14 +589,16 @@ fn eval_mem_time_mat_digits_at_point_with_chi(
     z: &Mat<F>,
     chi_table: Option<&[K]>,
 ) -> Result<Vec<K>, PiCcsError> {
-    if z.cols() != bus.chunk_size {
+    let expected_cols = encoded_time_width(bus.chunk_size)?;
+    if z.cols() != expected_cols {
         return Err(PiCcsError::InvalidInput(format!(
-            "time/opening MEM eval(digits): z.cols()={} != chunk_size={}",
+            "time/opening MEM eval(digits): z.cols()={} != encoded chunk_size={}",
             z.cols(),
-            bus.chunk_size
+            expected_cols
         )));
     }
-    let weights = mem_time_row_weights(point, bus, chi_table)?;
+    let raw_weights = mem_time_row_weights(point, bus, chi_table)?;
+    let weights = expand_time_row_weights(raw_weights.as_slice());
     eval_mat_digits_from_row_weights(weights.as_slice(), z)
 }
 
