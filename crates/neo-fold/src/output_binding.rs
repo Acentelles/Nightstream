@@ -9,8 +9,23 @@
 //! Prefer the shard/session wrappers which wire Route-A `r_time` into output binding automatically:
 //!
 //! ```ignore
-//! let proof = neo_fold::shard::fold_shard_prove_with_output_binding(..., &ob_cfg, &final_memory_state)?;
-//! neo_fold::shard::fold_shard_verify_with_output_binding(..., &proof, ..., &ob_cfg)?;
+//! let proof = neo_fold::shard::fold_shard_prove_with_options(
+//!     ...,
+//!     neo_fold::shard::ShardProveApiOptions {
+//!         output_binding: Some(neo_fold::shard::ShardOutputBindingInput {
+//!             config: &ob_cfg,
+//!             final_memory_state: &final_memory_state,
+//!         }),
+//!         ..Default::default()
+//!     },
+//! )?;
+//! neo_fold::shard::fold_shard_verify_with_options(
+//!     ...,
+//!     neo_fold::shard::ShardVerifyApiOptions {
+//!         output_binding: Some(&ob_cfg),
+//!         ..Default::default()
+//!     },
+//! )?;
 //! ```
 
 use neo_math::{from_complex, F, K};

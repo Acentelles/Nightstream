@@ -9,7 +9,10 @@ use neo_ccs::relations::{CcsClaim, CcsStructure, CcsWitness, CeClaim};
 use neo_ccs::traits::SModuleHomomorphism;
 use neo_fold::output_binding::OutputBindingConfig;
 use neo_fold::pi_ccs::FoldingMode;
-use neo_fold::shard::{fold_shard_prove_with_output_binding, fold_shard_verify_with_output_binding, CommitMixers};
+use neo_fold::shard::{
+    fold_shard_prove_with_options, fold_shard_verify_with_options, CommitMixers, ShardOutputBindingInput,
+    ShardProveApiOptions, ShardVerifyApiOptions,
+};
 use neo_fold::PiCcsError;
 use neo_math::{F, K};
 use neo_memory::ajtai::encode_vector_for_ccs_m;
@@ -198,7 +201,7 @@ fn output_binding_e2e_wrong_claim_fails() -> Result<(), PiCcsError> {
     let acc_wit_init: Vec<Mat<F>> = Vec::new();
 
     let mut tr_prove = Poseidon2Transcript::new(b"output-binding-e2e");
-    let proof = fold_shard_prove_with_output_binding(
+    let proof = fold_shard_prove_with_options(
         FoldingMode::Optimized,
         &mut tr_prove,
         &params,
@@ -208,12 +211,18 @@ fn output_binding_e2e_wrong_claim_fails() -> Result<(), PiCcsError> {
         &acc_wit_init,
         &l,
         mixers,
-        &ob_cfg_ok,
-        &final_memory_state,
-    )?;
+        ShardProveApiOptions {
+            output_binding: Some(ShardOutputBindingInput {
+                config: &ob_cfg_ok,
+                final_memory_state: &final_memory_state,
+            }),
+            ..ShardProveApiOptions::default()
+        },
+    )?
+    .proof;
 
     let mut tr_verify_ok = Poseidon2Transcript::new(b"output-binding-e2e");
-    let _outputs_ok = fold_shard_verify_with_output_binding(
+    let _outputs_ok = fold_shard_verify_with_options(
         FoldingMode::Optimized,
         &mut tr_verify_ok,
         &params,
@@ -222,11 +231,14 @@ fn output_binding_e2e_wrong_claim_fails() -> Result<(), PiCcsError> {
         &acc_init,
         &proof,
         mixers,
-        &ob_cfg_ok,
+        ShardVerifyApiOptions {
+            output_binding: Some(&ob_cfg_ok),
+            ..ShardVerifyApiOptions::default()
+        },
     )?;
 
     let mut tr_verify_bad = Poseidon2Transcript::new(b"output-binding-e2e");
-    let res = fold_shard_verify_with_output_binding(
+    let res = fold_shard_verify_with_options(
         FoldingMode::Optimized,
         &mut tr_verify_bad,
         &params,
@@ -235,7 +247,10 @@ fn output_binding_e2e_wrong_claim_fails() -> Result<(), PiCcsError> {
         &acc_init,
         &proof,
         mixers,
-        &ob_cfg_bad,
+        ShardVerifyApiOptions {
+            output_binding: Some(&ob_cfg_bad),
+            ..ShardVerifyApiOptions::default()
+        },
     );
     assert!(res.is_err(), "wrong output claim must fail verification");
 
@@ -267,7 +282,7 @@ fn output_binding_rejects_ccs_only_final_segment() {
     let final_memory_state = vec![F::ZERO; 4];
 
     let mut tr = Poseidon2Transcript::new(b"output-binding-ccs-only-reject");
-    let err = fold_shard_prove_with_output_binding(
+    let err = fold_shard_prove_with_options(
         FoldingMode::Optimized,
         &mut tr,
         &params,
@@ -277,9 +292,15 @@ fn output_binding_rejects_ccs_only_final_segment() {
         &acc_wit_init,
         &l,
         mixers,
-        &ob_cfg,
-        &final_memory_state,
+        ShardProveApiOptions {
+            output_binding: Some(ShardOutputBindingInput {
+                config: &ob_cfg,
+                final_memory_state: &final_memory_state,
+            }),
+            ..ShardProveApiOptions::default()
+        },
     )
+    .map(|result| result.proof)
     .expect_err("ccs-only final segment must be rejected for output binding");
 
     assert!(

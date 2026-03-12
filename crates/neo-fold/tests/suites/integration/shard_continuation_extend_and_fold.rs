@@ -10,8 +10,8 @@ use neo_ccs::traits::SModuleHomomorphism;
 use neo_ccs::{CcsMatrix, CcsStructure, CscMat, Mat, SparsePoly, Term};
 use neo_fold::pi_ccs::FoldingMode;
 use neo_fold::shard::{
-    fold_shard_prove_with_witnesses, fold_shard_prove_with_witnesses_with_step_offset, fold_shard_verify,
-    fold_shard_verify_with_step_linking, fold_shard_verify_with_step_offset, CommitMixers, StepLinkingConfig,
+    fold_shard_prove_with_options, fold_shard_prove_with_witnesses, fold_shard_verify, fold_shard_verify_with_options,
+    CommitMixers, ShardProveApiOptions, ShardVerifyApiOptions, StepLinkingConfig,
 };
 use neo_math::ring::{cf_inv, Rq as RqEl};
 use neo_math::{D, F, K};
@@ -414,7 +414,8 @@ fn shard_continuation_extend_and_fold() {
     // - The CCS is rectangular (currently ~25666 constraints × ~25485 vars) and the optimized engine
     //   supports rectangular CCS (no square padding needed here).
     // - For a single, self-contained “full IVC” proof over both steps, we can concatenate the
-    //   step proofs from stage 0 and stage 1 and verify once with `fold_shard_verify_with_step_linking`.
+    //   step proofs from stage 0 and stage 1 and verify once with
+    //   `fold_shard_verify_with_options(..., ShardVerifyApiOptions { step_linking: Some(...), .. })`.
     let total_start = Instant::now();
 
     let (ccs, m_in) = build_sha256_chain_ccs();
@@ -492,7 +493,7 @@ fn shard_continuation_extend_and_fold() {
     let mut tr_p = Poseidon2Transcript::new(b"neo.fold/shard_continuation");
 
     let prove_prefix_start = Instant::now();
-    let (proof0, out0, wits0) = fold_shard_prove_with_witnesses_with_step_offset(
+    let result0 = fold_shard_prove_with_options(
         FoldingMode::Optimized,
         &mut tr_p,
         &params,
@@ -502,9 +503,13 @@ fn shard_continuation_extend_and_fold() {
         &[],
         &l,
         mixers,
-        0,
+        ShardProveApiOptions {
+            step_idx_offset: 0,
+            ..ShardProveApiOptions::default()
+        },
     )
     .expect("prove prefix");
+    let (proof0, out0, wits0) = (result0.proof, result0.outputs, result0.witnesses);
     let prove_prefix_duration = prove_prefix_start.elapsed();
     println!("Prove prefix shard (step 0): {:?}", prove_prefix_duration);
     assert!(
@@ -519,7 +524,7 @@ fn shard_continuation_extend_and_fold() {
     println!("  Accumulator size after prefix: {} CeClaim(s)", acc1.len());
 
     let prove_extend_start = Instant::now();
-    let (proof1, out1, _wits1) = fold_shard_prove_with_witnesses_with_step_offset(
+    let result1 = fold_shard_prove_with_options(
         FoldingMode::Optimized,
         &mut tr_p,
         &params,
@@ -529,9 +534,13 @@ fn shard_continuation_extend_and_fold() {
         &acc1_wit,
         &l,
         mixers,
-        1,
+        ShardProveApiOptions {
+            step_idx_offset: 1,
+            ..ShardProveApiOptions::default()
+        },
     )
     .expect("prove extension");
+    let (proof1, out1, _wits1) = (result1.proof, result1.outputs, result1.witnesses);
     let prove_extend_duration = prove_extend_start.elapsed();
     println!("Prove extension shard (step 1): {:?}", prove_extend_duration);
     assert!(
@@ -551,7 +560,7 @@ fn shard_continuation_extend_and_fold() {
     println!("Total proving time: {:?}", total_prove_duration);
 
     // Full IVC proof: prove both steps in a *single* shard proof so the verifier can enforce
-    // step-to-step chaining using `fold_shard_verify_with_step_linking`.
+    // step-to-step chaining using `fold_shard_verify_with_options(..., step_linking: Some(...))`.
     //
     // (In contrast, the "continuation" demo above produces two separate shard proofs that must be
     // verified sequentially with a shared transcript state.)
@@ -611,7 +620,7 @@ fn shard_continuation_extend_and_fold() {
     );
 
     let verify_prefix_start = Instant::now();
-    let out0_v = fold_shard_verify_with_step_offset(
+    let out0_v = fold_shard_verify_with_options(
         FoldingMode::Optimized,
         &mut tr_v,
         &params,
@@ -620,7 +629,10 @@ fn shard_continuation_extend_and_fold() {
         &[],
         &proof0,
         mixers,
-        0,
+        ShardVerifyApiOptions {
+            step_idx_offset: 0,
+            ..ShardVerifyApiOptions::default()
+        },
     )
     .expect("verify prefix");
     let verify_prefix_duration = verify_prefix_start.elapsed();
@@ -633,7 +645,7 @@ fn shard_continuation_extend_and_fold() {
 
     // Sanity check: verifying step 1 with the wrong step offset must fail.
     let mut tr_v_wrong = Poseidon2Transcript::new(b"neo.fold/shard_continuation");
-    let out0_v_wrong = fold_shard_verify_with_step_offset(
+    let out0_v_wrong = fold_shard_verify_with_options(
         FoldingMode::Optimized,
         &mut tr_v_wrong,
         &params,
@@ -642,7 +654,10 @@ fn shard_continuation_extend_and_fold() {
         &[],
         &proof0,
         mixers,
-        0,
+        ShardVerifyApiOptions {
+            step_idx_offset: 0,
+            ..ShardVerifyApiOptions::default()
+        },
     )
     .expect("verify prefix (wrong-offset transcript)");
     assert!(
@@ -661,7 +676,7 @@ fn shard_continuation_extend_and_fold() {
     );
 
     let verify_extend_start = Instant::now();
-    let out1_v = fold_shard_verify_with_step_offset(
+    let out1_v = fold_shard_verify_with_options(
         FoldingMode::Optimized,
         &mut tr_v,
         &params,
@@ -670,7 +685,10 @@ fn shard_continuation_extend_and_fold() {
         &out0_v.obligations.main,
         &proof1,
         mixers,
-        1,
+        ShardVerifyApiOptions {
+            step_idx_offset: 1,
+            ..ShardVerifyApiOptions::default()
+        },
     )
     .expect("verify extension");
     let verify_extend_duration = verify_extend_start.elapsed();
@@ -684,7 +702,7 @@ fn shard_continuation_extend_and_fold() {
     // Full IVC verification: verify a single 2-step shard proof with step linking enabled.
     let mut tr_v_full = Poseidon2Transcript::new(b"neo.fold/shard_continuation_full_ivc");
     let verify_full_start = Instant::now();
-    let _out_full_v = fold_shard_verify_with_step_linking(
+    let _out_full_v = fold_shard_verify_with_options(
         FoldingMode::Optimized,
         &mut tr_v_full,
         &params,
@@ -693,7 +711,10 @@ fn shard_continuation_extend_and_fold() {
         &[],
         &proof_full,
         mixers,
-        &step_linking,
+        ShardVerifyApiOptions {
+            step_linking: Some(&step_linking),
+            ..ShardVerifyApiOptions::default()
+        },
     )
     .expect("verify full IVC proof with step linking");
     println!(

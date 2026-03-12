@@ -46,76 +46,6 @@ fn ccs_only_batch_size_for_mode(mode: &FoldingMode, params: &NeoParams, acc_len:
     }
 }
 
-pub(crate) fn fold_shard_prove_mixed_ccs_batched<L, MR, MB>(
-    mode: FoldingMode,
-    tr: &mut Poseidon2Transcript,
-    params: &NeoParams,
-    s_me: &CcsStructure<F>,
-    steps: &[StepWitnessBundle<Cmt, F, K>],
-    acc_init: &[CeClaim<Cmt, F, K>],
-    acc_wit_init: &[Mat<F>],
-    l: &L,
-    mixers: CommitMixers<MR, MB>,
-    prover_ctx: Option<&ShardProverContext>,
-) -> Result<ShardProof, PiCcsError>
-where
-    L: SModuleHomomorphism<F, Cmt> + Sync,
-    MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
-    MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
-{
-    let (proof, _final_main_wits, _val_lane_wits, _audit) = fold_shard_prove_mixed_ccs_batched_with_witnesses_internal(
-        mode,
-        tr,
-        params,
-        s_me,
-        steps,
-        acc_init,
-        acc_wit_init,
-        l,
-        mixers,
-        0,
-        None,
-        prover_ctx,
-    )?;
-    Ok(proof)
-}
-
-pub(crate) fn fold_shard_prove_mixed_ccs_batched_with_output_binding<L, MR, MB>(
-    mode: FoldingMode,
-    tr: &mut Poseidon2Transcript,
-    params: &NeoParams,
-    s_me: &CcsStructure<F>,
-    steps: &[StepWitnessBundle<Cmt, F, K>],
-    acc_init: &[CeClaim<Cmt, F, K>],
-    acc_wit_init: &[Mat<F>],
-    l: &L,
-    mixers: CommitMixers<MR, MB>,
-    ob_cfg: &crate::output_binding::OutputBindingConfig,
-    final_memory_state: &[F],
-    prover_ctx: Option<&ShardProverContext>,
-) -> Result<ShardProof, PiCcsError>
-where
-    L: SModuleHomomorphism<F, Cmt> + Sync,
-    MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
-    MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
-{
-    let (proof, _final_main_wits, _val_lane_wits, _audit) = fold_shard_prove_mixed_ccs_batched_with_witnesses_internal(
-        mode,
-        tr,
-        params,
-        s_me,
-        steps,
-        acc_init,
-        acc_wit_init,
-        l,
-        mixers,
-        0,
-        Some((ob_cfg, final_memory_state)),
-        prover_ctx,
-    )?;
-    Ok(proof)
-}
-
 pub(crate) fn fold_shard_prove_mixed_ccs_batched_with_witnesses<L, MR, MB>(
     mode: FoldingMode,
     tr: &mut Poseidon2Transcript,
@@ -195,6 +125,7 @@ pub(crate) fn fold_shard_prove_mixed_ccs_batched_with_output_binding_and_audit<L
     acc_wit_init: &[Mat<F>],
     l: &L,
     mixers: CommitMixers<MR, MB>,
+    step_idx_offset: usize,
     ob_cfg: &crate::output_binding::OutputBindingConfig,
     final_memory_state: &[F],
     prover_ctx: Option<&ShardProverContext>,
@@ -214,7 +145,7 @@ where
         acc_wit_init,
         l,
         mixers,
-        0,
+        step_idx_offset,
         Some((ob_cfg, final_memory_state)),
         prover_ctx,
     )

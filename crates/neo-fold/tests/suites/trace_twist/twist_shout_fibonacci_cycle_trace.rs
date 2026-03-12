@@ -12,7 +12,10 @@ use neo_ajtai::Commitment as Cmt;
 use neo_fold::output_binding::simple_output_config;
 use neo_fold::pi_ccs::FoldingMode;
 use neo_fold::session::CcsBuilder;
-use neo_fold::shard::{fold_shard_prove_with_output_binding, fold_shard_verify_with_output_binding};
+use neo_fold::shard::{
+    fold_shard_prove_with_options, fold_shard_verify_with_options, ShardOutputBindingInput, ShardProveApiOptions,
+    ShardVerifyApiOptions,
+};
 use neo_math::{F, K};
 use neo_memory::cpu::{ShoutCpuBinding, ShoutInstanceShape, TwistCpuBinding};
 use neo_memory::plain::{LutTable, PlainLutTrace, PlainMemLayout, PlainMemTrace};
@@ -234,7 +237,7 @@ fn twist_shout_fibonacci_cycle_trace() {
     let final_memory_state = vec![F::from_u64(expected_next), F::ZERO];
 
     let mut tr_prove = Poseidon2Transcript::new(b"twist-shout/fibonacci");
-    let proof = fold_shard_prove_with_output_binding(
+    let proof = fold_shard_prove_with_options(
         FoldingMode::Optimized,
         &mut tr_prove,
         &params,
@@ -244,14 +247,20 @@ fn twist_shout_fibonacci_cycle_trace() {
         &[],
         &l,
         mixers,
-        &ob_cfg,
-        &final_memory_state,
+        ShardProveApiOptions {
+            output_binding: Some(ShardOutputBindingInput {
+                config: &ob_cfg,
+                final_memory_state: &final_memory_state,
+            }),
+            ..ShardProveApiOptions::default()
+        },
     )
+    .map(|result| result.proof)
     .expect("prove should succeed");
     assert!(proof.output_proof.is_some(), "output binding proof must be attached");
 
     let mut tr_verify = Poseidon2Transcript::new(b"twist-shout/fibonacci");
-    let outputs = fold_shard_verify_with_output_binding(
+    let outputs = fold_shard_verify_with_options(
         FoldingMode::Optimized,
         &mut tr_verify,
         &params,
@@ -260,7 +269,10 @@ fn twist_shout_fibonacci_cycle_trace() {
         &[],
         &proof,
         mixers,
-        &ob_cfg,
+        ShardVerifyApiOptions {
+            output_binding: Some(&ob_cfg),
+            ..ShardVerifyApiOptions::default()
+        },
     )
     .expect("verify should succeed");
 
