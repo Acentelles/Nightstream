@@ -20,7 +20,7 @@
 |---|---|---|---|
 | one folded step proof | SuperNeo §7.2-§7.4 | `StepProof` | One shard step’s main proof, auxiliary lanes, sidecars, and output binding |
 | `Π_RLC` / `Π_DEC` proof objects | SuperNeo §7.3-§7.4 | `RlcDecProof` | Parent/child claim and witness reductions |
-| opening claim/reduction objects | stage-8 / time-opening machinery | `OpeningClaimManifest`, `OpeningReductionProof`, `OpeningUnificationProof`, `JointOpeningGroupProof`, `JointOpeningLaneProof` | Rust proof-data layer for time openings |
+| opening claim/reduction objects | joint-opening / time-opening machinery | `OpeningClaimManifest`, `OpeningReductionProof`, `OpeningUnificationProof`, `JointOpeningGroupProof`, `JointOpeningLaneProof` | Rust proof-data layer for time openings |
 | carried obligations between folds | SuperNeo Thm 1; §7.5 | `ShardObligations<C,FF,KK>`, `ShardFoldOutputs<C,FF,KK>`, `ShardFoldWitnesses<FF>` | One owner for outgoing shard obligations |
 | shard-level folded proof | implementation support | `ShardProof` | Exported proof for one shard or segment |
 
@@ -54,7 +54,7 @@ This module is not a direct paper-theorem owner. It is the Rust proof-data bound
 | Tier | Meaning | Representative surfaces |
 |---|---|---|
 | paper-core folded data | Section 7 folded claims and outgoing obligations | `RlcDecProof`, main-lane reductions, `ShardObligations`, final folded children |
-| extension proof data | Route-A and time-opening/stage-8 proof objects consumed by shard verification | `MemSidecarProof`, `BatchedTimeProof`, `OpeningClaimManifest`, `OpeningReductionProof`, `OpeningUnificationProof`, `JointOpening*` |
+| extension proof data | Route-A and time-opening/joint-opening proof objects consumed by shard verification | `MemSidecarProof`, `BatchedTimeProof`, `OpeningClaimManifest`, `OpeningReductionProof`, `OpeningUnificationProof`, `JointOpening*` |
 | Rust-only metadata / strengthening | Exporter metadata, audits, optional strengthenings, compatibility fields | audit structs, segment metadata, output-binding-related fields, sidecar-only refinement metadata |
 
 Mixed containers:
@@ -112,7 +112,7 @@ Mixed containers:
 | `SPT-4` | Proof-data structs preserve all verifier-relevant semantics after projection to the paper-core claim/lane views | `PaperCEClaim`, `PaperFoldLane`, `implArtifactChecks_refines_paperArtifactCoreAccepts`, `implArtifactChecks_refines_paperArtifactFullAccepts` | Prevents exporter/session drift |
 | `SPT-5` | `ShardProof::compute_*` helpers match verifier semantics exactly | Rust verifier + Lean artifact/session refinement | Prevents downstream recomputation drift |
 | `SPT-6` | Main and auxiliary obligations remain distinguishable and complete | Rust verifier + artifact validators | Prevents silent loss of carried claims |
-| `SPT-7` | Opening-proof objects preserve the exact domain/source information checked by the verifier | Time-opening layer + artifact validators | Prevents stage-8 weakening |
+| `SPT-7` | Opening-proof objects preserve the exact domain/source information checked by the verifier | Time-opening layer + artifact validators | Prevents joint-opening weakening |
 
 ## Assumption Ledger
 

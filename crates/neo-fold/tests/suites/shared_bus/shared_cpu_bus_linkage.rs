@@ -519,7 +519,7 @@ fn shared_cpu_bus_missing_named_time_opening_fails() {
 }
 
 #[test]
-fn shared_cpu_bus_stage8_tamper_matrix_fails() {
+fn shared_cpu_bus_joint_opening_tamper_matrix_fails() {
     let fx = build_one_step_fixture(11);
 
     let mut tr = Poseidon2Transcript::new(b"shared-cpu-bus");
@@ -558,17 +558,17 @@ fn shared_cpu_bus_stage8_tamper_matrix_fails() {
             .joint_opening_lane
             .unified_fold
             .is_some(),
-        "canonical Stage-8 must always emit unified_fold when groups are present"
+        "canonical joint-opening fold must always emit unified_fold when groups are present"
     );
-    let expected_stage8_fold_len = if proof.steps[0].fold.joint_opening_lane.groups.is_empty() {
+    let expected_joint_opening_fold_len = if proof.steps[0].fold.joint_opening_lane.groups.is_empty() {
         0usize
     } else {
         1usize
     };
     assert_eq!(
-        proof.steps[0].stage8_fold.len(),
-        expected_stage8_fold_len,
-        "Stage-8 fold proof count must match canonical lane plan"
+        proof.steps[0].joint_opening_fold.len(),
+        expected_joint_opening_fold_len,
+        "joint-opening fold proof count must match canonical lane plan"
     );
 
     // 1) Manifest digest tamper must fail.
@@ -587,7 +587,7 @@ fn shared_cpu_bus_stage8_tamper_matrix_fails() {
             .opening_reduction
             .groups
             .is_empty(),
-        "fixture must have at least one Stage-8 reduction group"
+        "fixture must have at least one joint-opening reduction group"
     );
     tampered_reduction.steps[0].fold.opening_reduction.groups[0].group_digest[0] ^= 1;
     assert!(
@@ -625,14 +625,16 @@ fn shared_cpu_bus_stage8_tamper_matrix_fails() {
     unified.joint_claim += K::ONE;
     assert!(
         verify(&tampered_unified_claim).is_err(),
-        "tampering Stage-8 unified claim must fail verification"
+        "tampering joint-opening unified claim must fail verification"
     );
 
-    // 5) Missing stage8_fold proof with non-empty Stage-8 groups must fail.
-    let mut tampered_stage8_lane = proof.clone();
-    tampered_stage8_lane.steps[0].stage8_fold.clear();
+    // 5) Missing joint_opening_fold proof with non-empty joint-opening groups must fail.
+    let mut tampered_joint_opening_lane = proof.clone();
+    tampered_joint_opening_lane.steps[0]
+        .joint_opening_fold
+        .clear();
     assert!(
-        verify(&tampered_stage8_lane).is_err(),
-        "missing Stage-8 fold proof must fail verification when Stage-8 groups exist"
+        verify(&tampered_joint_opening_lane).is_err(),
+        "missing joint-opening fold proof must fail verification when joint-opening groups exist"
     );
 }

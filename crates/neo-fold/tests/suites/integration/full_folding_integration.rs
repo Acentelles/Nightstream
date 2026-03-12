@@ -795,7 +795,7 @@ fn tamper_me_opening_fails() {
     )
     .expect("prove should succeed");
 
-    // Mutate one committed time-opening proof evaluation (canonical Stage-8 path).
+    // Mutate one committed time-opening proof evaluation (canonical joint-opening path).
     let step0 = first_materialized_step_mut(&mut proof);
     if let Some(open_pf) = step0.fold.opening_proofs.first_mut() {
         if let Some(eval0) = open_pf.evals.first_mut() {

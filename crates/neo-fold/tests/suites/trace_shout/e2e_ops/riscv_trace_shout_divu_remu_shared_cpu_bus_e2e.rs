@@ -71,7 +71,7 @@ fn riscv_trace_wiring_ccs_shared_cpu_bus_shout_divu_remu_packed_prove_verify() {
         .reg_output_claim(/*reg=*/ 5, F::from_u64(0xffff_ffff))
         .reg_output_claim(/*reg=*/ 6, F::from_u64(91))
         .prove()
-        .expect("rv32 trace prove (WB/WP route, DIVU/REMU)");
+        .expect("rv32 trace prove (booleanity/trace-opening route, DIVU/REMU)");
     run.verify()
-        .expect("rv32 trace verify (WB/WP route, DIVU/REMU)");
+        .expect("rv32 trace verify (booleanity/trace-opening route, DIVU/REMU)");
 }

@@ -29,7 +29,7 @@ fn tamper_wp_scalar(run: &Rv32TraceWiringRun) {
     let mut bad_proof = run.proof().clone();
     let mut tampered = false;
     for step in &mut bad_proof.steps {
-        for claim in &mut step.mem.wp_me_claims {
+        for claim in &mut step.mem.trace_opening_me_claims {
             if let Some(first) = claim.ct.first_mut() {
                 *first += K::ONE;
                 tampered = true;

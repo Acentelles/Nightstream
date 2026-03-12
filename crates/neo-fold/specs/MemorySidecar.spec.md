@@ -14,7 +14,7 @@
 - **Exports semantics to**: [ShardFolding.spec.md](crates/neo-fold/specs/ShardFolding.spec.md), [TimeOpening.spec.md](crates/neo-fold/specs/TimeOpening.spec.md), Rust artifact/session exporters
 - **Erasure rule**: erasing Rust-only exporter metadata must preserve the same Route-A claim, opening, and verifier obligations.
 
-In repo terminology, the "Nightstream extension layer" is the combination of Route-A sidecars plus time-opening/stage-8 obligations. This is an architectural umbrella term, not a paper theorem label.
+In repo terminology, the "Nightstream extension layer" is the combination of Route-A sidecars plus time-opening/joint-opening obligations. This is an architectural umbrella term, not a paper theorem label.
 
 ## Target Formulas (Paper -> Rust)
 
@@ -43,7 +43,7 @@ In repo terminology, the "Nightstream extension layer" is the combination of Rou
 |---|---|---|
 | `specs/ProtocolRelations.spec.md` | `SuperNeo/ProtocolRelations.lean` | Paper CCS/CE relations that the sidecar ultimately feeds |
 | `specs/RustRefinement/NeoFoldArtifactValidation.spec.md` | `SuperNeo/NeoFoldArtifactValidation.lean` | Defines executable checks for Route-A batched-time transcripts, CPU/shift metadata wrappers, CE witness semantics, lane summaries, `ccs_out.r`, and tamper rejection |
-| `specs/RustRefinement/NeoFoldRelationValidation.spec.md` | `SuperNeo/RustRefinement/NeoFoldRelationValidation.lean` | Exposes `paperArtifactRelationChecks` and `paperArtifactRelationChecks_implies_paperArtifactStepRelationsAccepts`, including auxiliary-lane singleton-input linkage and stage-8 obligations |
+| `specs/RustRefinement/NeoFoldRelationValidation.spec.md` | `SuperNeo/RustRefinement/NeoFoldRelationValidation.lean` | Exposes `paperArtifactRelationChecks` and `paperArtifactRelationChecks_implies_paperArtifactStepRelationsAccepts`, including auxiliary-lane singleton-input linkage and joint-opening obligations |
 | `specs/RustRefinement/NeoFoldStepSemanticValidation.spec.md` | `SuperNeo/RustRefinement/NeoFoldStepSemanticValidation.lean` | Exposes `paperArtifactStepSemanticChecks` and `paperArtifactStepSemanticChecks_implies_paperArtifactStepSemanticsAccepts` for current-step and witness-chain semantic checks |
 
 ## Contract Surface
@@ -153,7 +153,7 @@ Primary consumers:
 |---|---|
 | exported valid Route-A shard artifacts | accepted by Lean artifact validators |
 | exported tampered Route-A shard artifacts | rejected by Lean artifact validators |
-| projected paper-core step relations over real Route-A artifacts | accepted by Lean relation validators, especially auxiliary-lane linkage and stage-8 obligations |
+| projected paper-core step relations over real Route-A artifacts | accepted by Lean relation validators, especially auxiliary-lane linkage and joint-opening obligations |
 
 ## Quality Expectations
 

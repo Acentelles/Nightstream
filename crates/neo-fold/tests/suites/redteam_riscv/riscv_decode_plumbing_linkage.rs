@@ -28,7 +28,7 @@ fn prove_run_addi_halt(imm: i32) -> Rv32TraceWiringRun {
 
 fn tamper_decode_related_scalar(proof: &mut ShardProof) {
     for step in &mut proof.steps {
-        for claim in &mut step.mem.wp_me_claims {
+        for claim in &mut step.mem.trace_opening_me_claims {
             if let Some(first) = claim.ct.first_mut() {
                 *first += K::ONE;
                 return;

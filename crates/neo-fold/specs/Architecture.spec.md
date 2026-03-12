@@ -11,7 +11,7 @@
 | Layer | Owner specs/modules | Anchor | Role |
 |---|---|---|---|
 | paper-core folding | `ShardFolding`, Lean `FoldingProtocol` | SuperNeo §7.2-§7.5 | Realizes `Π_CCS`, `Π_RLC`, `Π_DEC` and produces outgoing obligations |
-| extension proofs | `MemorySidecar`, `TimeOpening` | Twist/Shout §4-§5 | Proves Route-A memory/lookup and time-opening/stage-8 obligations consumed by shard folding |
+| extension proofs | `MemorySidecar`, `TimeOpening` | Twist/Shout §4-§5 | Proves Route-A memory/lookup and time-opening/joint-opening obligations consumed by shard folding |
 | proof-data boundary | `ShardProofTypes` | Rust artifact/refinement layer | Exports the combined artifact with explicit separation between core, extension, and metadata fields |
 | orchestration | `Session` | architecture-level | Carries accumulators across shards and invokes lower layers |
 | frontends | `RV64TraceShard`, `RISCVTraceShard`, shared-bus APIs in `Session` | Jolt §3 | Turns machine/program traces into step bundles and sidecar inputs |

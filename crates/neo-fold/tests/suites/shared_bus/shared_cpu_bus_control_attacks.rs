@@ -53,7 +53,7 @@ fn prove_control_trace_program(program: Vec<RiscvInstruction>) -> (Rv32TraceWiri
     (run, proof)
 }
 
-fn rv32_wp_opening_cols(layout: &Rv32TraceLayout) -> Vec<usize> {
+fn rv32_trace_opening_cols(layout: &Rv32TraceLayout) -> Vec<usize> {
     vec![
         layout.active,
         layout.is_virtual,
@@ -82,48 +82,51 @@ fn rv32_wp_opening_cols(layout: &Rv32TraceLayout) -> Vec<usize> {
 }
 
 fn tamper_named_wp_opening_scalar(proof: &mut ShardProof, target_col: usize) {
-    let wp_point = {
+    let trace_opening_point = {
         let step = first_materialized_step(proof);
         assert_eq!(
-            step.mem.wp_me_claims.len(),
+            step.mem.trace_opening_me_claims.len(),
             1,
-            "expected one WP ME claim reused by control stage checks"
+            "expected one trace-opening ME claim reused by control stage checks"
         );
-        step.mem.wp_me_claims[0].r.clone()
+        step.mem.trace_opening_me_claims[0].r.clone()
     };
     let step = first_materialized_step_mut(proof);
-    let wp_open_idx = step
+    let trace_opening_idx = step
         .fold
         .openings
         .iter()
-        .position(|opening| opening.point == wp_point && opening.col_ids.iter().any(|&c| c == target_col))
+        .position(|opening| opening.point == trace_opening_point && opening.col_ids.iter().any(|&c| c == target_col))
         .or_else(|| {
             step.fold
                 .openings
                 .iter()
-                .position(|opening| opening.point == wp_point)
+                .position(|opening| opening.point == trace_opening_point)
         })
-        .expect("control stage openings must be present in WP named openings");
-    let wp_open = &mut step.fold.openings[wp_open_idx];
-    assert!(!wp_open.evals.is_empty(), "WP named opening evals must be non-empty");
-    let open_idx = wp_open
+        .expect("control stage openings must be present in trace-opening named openings");
+    let trace_opening = &mut step.fold.openings[trace_opening_idx];
+    assert!(
+        !trace_opening.evals.is_empty(),
+        "trace-opening named opening evals must be non-empty"
+    );
+    let open_idx = trace_opening
         .col_ids
         .iter()
         .position(|&c| c == target_col)
         .unwrap_or(0);
     assert!(
-        open_idx < wp_open.evals.len(),
+        open_idx < trace_opening.evals.len(),
         "control stage opening index must be in-bounds"
     );
-    wp_open.evals[open_idx] += K::ONE;
+    trace_opening.evals[open_idx] += K::ONE;
 }
 
 fn tamper_control_wp_opening_scalar(proof: &mut ShardProof, trace_col: usize) {
     let layout = Rv32TraceLayout::new();
-    let open_cols = rv32_wp_opening_cols(&layout);
+    let open_cols = rv32_trace_opening_cols(&layout);
     assert!(
         open_cols.contains(&trace_col),
-        "trace col must be present in control stage WP opening set"
+        "trace col must be present in control stage trace-opening set"
     );
     tamper_named_wp_opening_scalar(proof, trace_col);
 }

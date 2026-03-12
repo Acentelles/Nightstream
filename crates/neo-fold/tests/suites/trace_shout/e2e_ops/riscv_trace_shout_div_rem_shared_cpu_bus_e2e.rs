@@ -88,6 +88,6 @@ fn riscv_trace_wiring_ccs_shared_cpu_bus_shout_div_rem_packed_prove_verify() {
         .reg_output_claim(/*reg=*/ 9, F::from_u64(0xffff_ffff))
         .reg_output_claim(/*reg=*/ 10, F::from_u64(0x8000_0000))
         .prove()
-        .expect("rv32 trace prove (WB/WP route, DIV/REM)");
-    run.verify().expect("rv32 trace verify (WB/WP route, DIV/REM)");
+        .expect("rv32 trace prove (booleanity/trace-opening route, DIV/REM)");
+    run.verify().expect("rv32 trace verify (booleanity/trace-opening route, DIV/REM)");
 }

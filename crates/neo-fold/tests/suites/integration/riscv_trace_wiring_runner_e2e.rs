@@ -680,7 +680,7 @@ fn rv32_trace_wiring_runner_chunked_ivc_batches_no_shared_val_lanes_per_mem() {
 }
 
 #[test]
-fn rv32_trace_wiring_runner_wb_wp_folds_are_emitted_and_required() {
+fn rv32_trace_wiring_runner_booleanity_trace_opening_folds_are_emitted_and_required() {
     // Program: ADDI x1, x0, 1; HALT
     let program = vec![
         RiscvInstruction::IAlu {
@@ -701,38 +701,38 @@ fn rv32_trace_wiring_runner_wb_wp_folds_are_emitted_and_required() {
     let proof = run.proof().clone();
     let step0 = first_materialized_step(&proof);
     assert!(
-        !step0.mem.wb_me_claims.is_empty(),
-        "expected WB ME claims for RV32 trace route-A"
+        !step0.mem.booleanity_me_claims.is_empty(),
+        "expected booleanity ME claims for RV32 trace route-A"
     );
     assert!(
-        !step0.mem.wp_me_claims.is_empty(),
-        "expected WP ME claims for RV32 trace route-A"
+        !step0.mem.trace_opening_me_claims.is_empty(),
+        "expected trace-opening ME claims for RV32 trace route-A"
     );
     assert!(
-        !step0.wb_fold.is_empty(),
-        "expected wb_fold proofs for RV32 trace route-A"
+        !step0.booleanity_fold.is_empty(),
+        "expected booleanity_fold proofs for RV32 trace route-A"
     );
     assert!(
-        !step0.wp_fold.is_empty(),
-        "expected wp_fold proofs for RV32 trace route-A"
+        !step0.trace_opening_fold.is_empty(),
+        "expected trace_opening_fold proofs for RV32 trace route-A"
     );
 
     let mut proof_missing_wb = proof.clone();
     first_materialized_step_mut(&mut proof_missing_wb)
-        .wb_fold
+        .booleanity_fold
         .clear();
     assert!(
         run.verify_proof(&proof_missing_wb).is_err(),
-        "missing wb_fold must fail verification"
+        "missing booleanity_fold must fail verification"
     );
 
     let mut proof_missing_wp = proof.clone();
     first_materialized_step_mut(&mut proof_missing_wp)
-        .wp_fold
+        .trace_opening_fold
         .clear();
     assert!(
         run.verify_proof(&proof_missing_wp).is_err(),
-        "missing wp_fold must fail verification"
+        "missing trace_opening_fold must fail verification"
     );
 }
 
@@ -757,23 +757,27 @@ fn rv32_trace_wiring_runner_decode_openings_are_embedded_in_wp_and_required() {
 
     let proof = run.proof().clone();
     let step0 = first_materialized_step(&proof);
-    assert_eq!(step0.mem.wp_me_claims.len(), 1, "expected one WP ME claim");
+    assert_eq!(
+        step0.mem.trace_opening_me_claims.len(),
+        1,
+        "expected one trace-opening ME claim"
+    );
     let mut proof_missing_decode_me = proof.clone();
     let decode_layout = Rv32DecodeSidecarLayout::new();
     let target_col = decode_layout.op_alu_imm;
-    let wp_point = step0.mem.wp_me_claims[0].r.clone();
+    let trace_opening_point = step0.mem.trace_opening_me_claims[0].r.clone();
     let step_mut = first_materialized_step_mut(&mut proof_missing_decode_me);
-    let wp_open_idx = step_mut
+    let trace_opening_idx = step_mut
         .fold
         .openings
         .iter()
-        .find(|opening| opening.point == wp_point && opening.col_ids.iter().any(|&c| c == target_col))
+        .find(|opening| opening.point == trace_opening_point && opening.col_ids.iter().any(|&c| c == target_col))
         .or_else(|| {
             step_mut
                 .fold
                 .openings
                 .iter()
-                .find(|opening| opening.point == wp_point)
+                .find(|opening| opening.point == trace_opening_point)
         })
         .and_then(|opening| {
             step_mut
@@ -782,18 +786,21 @@ fn rv32_trace_wiring_runner_decode_openings_are_embedded_in_wp_and_required() {
                 .iter()
                 .position(|cand| cand.point == opening.point && cand.col_ids == opening.col_ids)
         })
-        .expect("decode openings must be present in WP named openings");
-    let wp_open = &mut step_mut.fold.openings[wp_open_idx];
-    assert!(!wp_open.evals.is_empty(), "WP named opening evals must be non-empty");
-    let decode_idx = wp_open
+        .expect("decode openings must be present in trace-opening named openings");
+    let trace_opening = &mut step_mut.fold.openings[trace_opening_idx];
+    assert!(
+        !trace_opening.evals.is_empty(),
+        "trace-opening named opening evals must be non-empty"
+    );
+    let decode_idx = trace_opening
         .col_ids
         .iter()
         .position(|&c| c == target_col)
         .unwrap_or(0);
-    wp_open.evals[decode_idx] += K::ONE;
+    trace_opening.evals[decode_idx] += K::ONE;
     assert!(
         run.verify_proof(&proof_missing_decode_me).is_err(),
-        "tampered decode lookup opening embedded in WP ME must fail verification"
+        "tampered decode lookup opening embedded in trace-opening ME must fail verification"
     );
 }
 
@@ -818,24 +825,28 @@ fn rv32_trace_wiring_runner_width_openings_on_wp_are_required() {
 
     let proof = run.proof().clone();
     let step0 = first_materialized_step(&proof);
-    assert_eq!(step0.mem.wp_me_claims.len(), 1, "expected one WP ME claim");
+    assert_eq!(
+        step0.mem.trace_opening_me_claims.len(),
+        1,
+        "expected one trace-opening ME claim"
+    );
 
     let mut proof_tampered_width_open = proof.clone();
     let width_layout = Rv32WidthSidecarLayout::new();
     let target_col = width_layout.rs2_low_bit[0];
-    let wp_point = step0.mem.wp_me_claims[0].r.clone();
+    let trace_opening_point = step0.mem.trace_opening_me_claims[0].r.clone();
     let step_mut = first_materialized_step_mut(&mut proof_tampered_width_open);
-    let wp_open_idx = step_mut
+    let trace_opening_idx = step_mut
         .fold
         .openings
         .iter()
-        .find(|opening| opening.point == wp_point && opening.col_ids.iter().any(|&c| c == target_col))
+        .find(|opening| opening.point == trace_opening_point && opening.col_ids.iter().any(|&c| c == target_col))
         .or_else(|| {
             step_mut
                 .fold
                 .openings
                 .iter()
-                .find(|opening| opening.point == wp_point)
+                .find(|opening| opening.point == trace_opening_point)
         })
         .and_then(|opening| {
             step_mut
@@ -844,18 +855,21 @@ fn rv32_trace_wiring_runner_width_openings_on_wp_are_required() {
                 .iter()
                 .position(|cand| cand.point == opening.point && cand.col_ids == opening.col_ids)
         })
-        .expect("width openings must be present in WP named openings");
-    let wp_open = &mut step_mut.fold.openings[wp_open_idx];
-    assert!(!wp_open.evals.is_empty(), "WP named opening evals must be non-empty");
-    let width_idx = wp_open
+        .expect("width openings must be present in trace-opening named openings");
+    let trace_opening = &mut step_mut.fold.openings[trace_opening_idx];
+    assert!(
+        !trace_opening.evals.is_empty(),
+        "trace-opening named opening evals must be non-empty"
+    );
+    let width_idx = trace_opening
         .col_ids
         .iter()
         .position(|&c| c == target_col)
         .unwrap_or(0);
-    wp_open.evals[width_idx] += K::ONE;
+    trace_opening.evals[width_idx] += K::ONE;
     assert!(
         run.verify_proof(&proof_tampered_width_open).is_err(),
-        "tampered width lookup opening embedded in WP ME must fail verification"
+        "tampered width lookup opening embedded in trace-opening ME must fail verification"
     );
 }
 
@@ -953,7 +967,7 @@ fn rv32_trace_wiring_runner_rejects_zero_chunk_rows() {
 
 #[test]
 fn rv32_trace_wiring_runner_rejects_amo_via_wb_decode_scope_lock() {
-    // Program includes one AMO row. In Tier 2.1 trace mode this is rejected by WB/decode stage
+    // Program includes one AMO row. In Tier 2.1 trace mode this is rejected by booleanity/decode stage
     // decode residuals (scope lock), not by the N0 main-trace CCS.
     let program = vec![
         RiscvInstruction::IAlu {
@@ -976,7 +990,7 @@ fn rv32_trace_wiring_runner_rejects_amo_via_wb_decode_scope_lock() {
         Rv32TraceWiring::from_rom(/*program_base=*/ 0, &program_bytes)
             .prove()
             .is_err(),
-        "AMO must be rejected in Tier 2.1 trace mode via WB/decode stage scope lock"
+        "AMO must be rejected in Tier 2.1 trace mode via booleanity/decode stage scope lock"
     );
 }
 
@@ -1034,7 +1048,7 @@ fn rv32_trace_wiring_runner_accepts_wrapped_load_store_addressing() {
 
 #[test]
 fn rv32_trace_wiring_runner_accepts_load_to_x0_without_writeback() {
-    // Regression for W3 load-semantics gating: loads to x0 are legal and must not
+    // Regression for width load-semantics gating: loads to x0 are legal and must not
     // require rd writeback while still enforcing RAM-read semantics.
     let program = vec![
         RiscvInstruction::IAlu {

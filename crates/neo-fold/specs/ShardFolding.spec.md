@@ -111,7 +111,7 @@ This spec depends on [ShardProofTypes.spec.md](crates/neo-fold/specs/ShardProofT
 | `SF-4` | `Π_DEC` parent refinement: implementation parent acceptance implies projected paper-core `Π_DEC` parent acceptance | `implPiDECParentAccepts_refines_paperPiDECParentAccepts` | Makes the decomposition-parent theorem explicit instead of only relying on the combined lane theorem |
 | `SF-5` | Full folding-lane refinement: implementation lane acceptance implies projected paper-core lane acceptance for both `Π_RLC` and `Π_DEC` | `implFoldLaneAccepts_refines_paperFoldLaneAccepts` | This is the key lane-level composition theorem |
 | `SF-6` | Whole-artifact core refinement: implementation artifact acceptance implies `paperArtifactCoreAccepts` | `implArtifactChecks_refines_paperArtifactCoreAccepts` | First whole-artifact conservative-extension theorem over projected paper-core claims |
-| `SF-7` | Whole-artifact relation refinement: implementation artifact acceptance implies projected per-step relation acceptance | `implArtifactChecks_refines_paperArtifactStepRelationsAccepts`; `paperArtifactRelationChecks`; `paperArtifactRelationChecks_implies_paperArtifactStepRelationsAccepts` | Connects real Rust artifacts back to the paper-core `Π_RLC` / `Π_DEC` / stage-8 relation layer |
+| `SF-7` | Whole-artifact relation refinement: implementation artifact acceptance implies projected per-step relation acceptance | `implArtifactChecks_refines_paperArtifactStepRelationsAccepts`; `paperArtifactRelationChecks`; `paperArtifactRelationChecks_implies_paperArtifactStepRelationsAccepts` | Connects real Rust artifacts back to the paper-core `Π_RLC` / `Π_DEC` / joint-opening relation layer |
 | `SF-8` | Whole-artifact full refinement: implementation artifact acceptance implies `paperArtifactFullAccepts` | `implArtifactChecks_refines_paperArtifactFullAccepts` | Strongest current artifact-level conservative-extension theorem |
 | `SF-9` | Rust artifact validation reconstructs and validates `Π_CCS` FE and NC transcripts | `NeoFoldArtifactValidation` items `2-3` | Prevents transcript drift between prover/exporter/validator |
 | `SF-10` | Rust artifact validation checks CE semantics for current, carried, parent, and child witnesses | `NeoFoldArtifactValidation` item `7`; `paperArtifactStepSemanticChecks`; `paperArtifactStepSemanticChecks_implies_paperArtifactStepSemanticsAccepts` | Ensures exported witness chains really satisfy the folded CE semantics |
@@ -128,7 +128,7 @@ This spec depends on [ShardProofTypes.spec.md](crates/neo-fold/specs/ShardProofT
 |---|---|---|
 | CCS/CE semantics are correct | `neo-ccs` specs + Lean formalization | This layer composes them; it does not redefine them |
 | Route-A sidecar semantics are correct | `MemorySidecar.spec.md` | This layer integrates sidecars into shard proving |
-| Time-opening/stage-8 semantics are correct | `TimeOpening.spec.md` | This layer consumes stage-8/opening proof objects |
+| Time-opening/joint-opening semantics are correct | `TimeOpening.spec.md` | This layer consumes joint-opening/opening proof objects |
 | Transcript/arithmetic primitives are correct | lower crates | Required for prover/verifier agreement |
 
 ## Dependency and Consumer Map

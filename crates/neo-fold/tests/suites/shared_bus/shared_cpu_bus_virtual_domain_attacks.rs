@@ -119,7 +119,7 @@ fn tamper_reg_domain_bit_opening(run: &Rv32TraceWiringRun, proof: &mut ShardProo
     opening.evals[eval_idx] += K::ONE;
 }
 
-fn rv32_wp_opening_cols(layout: &Rv32TraceLayout) -> Vec<usize> {
+fn rv32_trace_opening_cols(layout: &Rv32TraceLayout) -> Vec<usize> {
     vec![
         layout.active,
         layout.is_virtual,
@@ -147,74 +147,94 @@ fn rv32_wp_opening_cols(layout: &Rv32TraceLayout) -> Vec<usize> {
 
 fn tamper_trace_wp_opening_scalar(proof: &mut ShardProof, trace_col: usize) {
     let layout = Rv32TraceLayout::new();
-    let wp_cols = rv32_wp_opening_cols(&layout);
-    let open_idx = wp_cols
+    let trace_opening_cols = rv32_trace_opening_cols(&layout);
+    let open_idx = trace_opening_cols
         .iter()
         .position(|&c| c == trace_col)
-        .expect("trace col must be present in WP opening set");
-    let wp_point = {
+        .expect("trace col must be present in trace-opening set");
+    let trace_opening_point = {
         let step = first_materialized_step(proof);
-        assert_eq!(step.mem.wp_me_claims.len(), 1, "expected one WP ME claim");
-        step.mem.wp_me_claims[0].r.clone()
+        assert_eq!(
+            step.mem.trace_opening_me_claims.len(),
+            1,
+            "expected one trace-opening ME claim"
+        );
+        step.mem.trace_opening_me_claims[0].r.clone()
     };
     let step = first_materialized_step_mut(proof);
-    let wp_open_idx = step
+    let trace_opening_idx = step
         .fold
         .openings
         .iter()
-        .position(|opening| opening.point == wp_point && opening.col_ids.iter().any(|&c| c == trace_col))
+        .position(|opening| opening.point == trace_opening_point && opening.col_ids.iter().any(|&c| c == trace_col))
         .or_else(|| {
             step.fold
                 .openings
                 .iter()
-                .position(|opening| opening.point == wp_point)
+                .position(|opening| opening.point == trace_opening_point)
         })
-        .expect("WP openings must be present in named openings");
-    let wp_open = &mut step.fold.openings[wp_open_idx];
-    assert!(!wp_open.evals.is_empty(), "WP named opening evals must be non-empty");
-    let eval_idx = wp_open
+        .expect("trace-opening evaluations must be present in named openings");
+    let trace_opening = &mut step.fold.openings[trace_opening_idx];
+    assert!(
+        !trace_opening.evals.is_empty(),
+        "trace-opening named opening evals must be non-empty"
+    );
+    let eval_idx = trace_opening
         .col_ids
         .iter()
         .position(|&c| c == trace_col)
         .unwrap_or(open_idx);
-    assert!(eval_idx < wp_open.evals.len(), "WP opening index must be in-bounds");
-    wp_open.evals[eval_idx] += K::ONE;
+    assert!(
+        eval_idx < trace_opening.evals.len(),
+        "trace-opening index must be in-bounds"
+    );
+    trace_opening.evals[eval_idx] += K::ONE;
 }
 
 fn force_trace_wp_opening_scalar_zero(proof: &mut ShardProof, trace_col: usize) {
     let layout = Rv32TraceLayout::new();
-    let wp_cols = rv32_wp_opening_cols(&layout);
-    let open_idx = wp_cols
+    let trace_opening_cols = rv32_trace_opening_cols(&layout);
+    let open_idx = trace_opening_cols
         .iter()
         .position(|&c| c == trace_col)
-        .expect("trace col must be present in WP opening set");
-    let wp_point = {
+        .expect("trace col must be present in trace-opening set");
+    let trace_opening_point = {
         let step = first_materialized_step(proof);
-        assert_eq!(step.mem.wp_me_claims.len(), 1, "expected one WP ME claim");
-        step.mem.wp_me_claims[0].r.clone()
+        assert_eq!(
+            step.mem.trace_opening_me_claims.len(),
+            1,
+            "expected one trace-opening ME claim"
+        );
+        step.mem.trace_opening_me_claims[0].r.clone()
     };
     let step = first_materialized_step_mut(proof);
-    let wp_open_idx = step
+    let trace_opening_idx = step
         .fold
         .openings
         .iter()
-        .position(|opening| opening.point == wp_point && opening.col_ids.iter().any(|&c| c == trace_col))
+        .position(|opening| opening.point == trace_opening_point && opening.col_ids.iter().any(|&c| c == trace_col))
         .or_else(|| {
             step.fold
                 .openings
                 .iter()
-                .position(|opening| opening.point == wp_point)
+                .position(|opening| opening.point == trace_opening_point)
         })
-        .expect("WP openings must be present in named openings");
-    let wp_open = &mut step.fold.openings[wp_open_idx];
-    assert!(!wp_open.evals.is_empty(), "WP named opening evals must be non-empty");
-    let eval_idx = wp_open
+        .expect("trace-opening evaluations must be present in named openings");
+    let trace_opening = &mut step.fold.openings[trace_opening_idx];
+    assert!(
+        !trace_opening.evals.is_empty(),
+        "trace-opening named opening evals must be non-empty"
+    );
+    let eval_idx = trace_opening
         .col_ids
         .iter()
         .position(|&c| c == trace_col)
         .unwrap_or(open_idx);
-    assert!(eval_idx < wp_open.evals.len(), "WP opening index must be in-bounds");
-    wp_open.evals[eval_idx] = K::ZERO;
+    assert!(
+        eval_idx < trace_opening.evals.len(),
+        "trace-opening index must be in-bounds"
+    );
+    trace_opening.evals[eval_idx] = K::ZERO;
 }
 
 fn prove_nonvirtual_trace_program() -> (Rv32TraceWiringRun, ShardProof) {

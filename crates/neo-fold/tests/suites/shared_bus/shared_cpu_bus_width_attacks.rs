@@ -88,37 +88,43 @@ fn tamper_width_opening_scalar(proof: &mut ShardProof, width_col: usize) {
         width_open_cols.contains(&width_col),
         "expected width lookup opening column"
     );
-    let wp_point = {
+    let trace_opening_point = {
         let step = first_materialized_step(proof);
         assert_eq!(
-            step.mem.wp_me_claims.len(),
+            step.mem.trace_opening_me_claims.len(),
             1,
-            "expected one WP ME claim carrying width lookup openings"
+            "expected one trace-opening ME claim carrying width lookup openings"
         );
-        step.mem.wp_me_claims[0].r.clone()
+        step.mem.trace_opening_me_claims[0].r.clone()
     };
     let step = first_materialized_step_mut(proof);
-    let wp_open_idx = step
+    let trace_opening_idx = step
         .fold
         .openings
         .iter()
-        .position(|opening| opening.point == wp_point && opening.col_ids.iter().any(|&c| c == width_col))
+        .position(|opening| opening.point == trace_opening_point && opening.col_ids.iter().any(|&c| c == width_col))
         .or_else(|| {
             step.fold
                 .openings
                 .iter()
-                .position(|opening| opening.point == wp_point)
+                .position(|opening| opening.point == trace_opening_point)
         })
-        .expect("width openings must be present in WP named openings");
-    let wp_open = &mut step.fold.openings[wp_open_idx];
-    assert!(!wp_open.evals.is_empty(), "WP named opening evals must be non-empty");
-    let width_idx = wp_open
+        .expect("width openings must be present in trace-opening named openings");
+    let trace_opening = &mut step.fold.openings[trace_opening_idx];
+    assert!(
+        !trace_opening.evals.is_empty(),
+        "trace-opening named opening evals must be non-empty"
+    );
+    let width_idx = trace_opening
         .col_ids
         .iter()
         .position(|&c| c == width_col)
         .unwrap_or(0);
-    assert!(width_idx < wp_open.evals.len(), "width opening index must be in-bounds");
-    wp_open.evals[width_idx] += K::ONE;
+    assert!(
+        width_idx < trace_opening.evals.len(),
+        "width opening index must be in-bounds"
+    );
+    trace_opening.evals[width_idx] += K::ONE;
 }
 
 #[test]

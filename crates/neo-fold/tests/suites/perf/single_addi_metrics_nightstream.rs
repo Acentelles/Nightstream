@@ -152,8 +152,8 @@ fn opening_surface_from_shard_proof(proof: &ShardProof) -> OpeningSurfaceBuckets
 
         buckets.sidecars += sum_y_scalars(&step.mem.val_me_claims);
 
-        buckets.claim_reduction_linkage += sum_y_scalars(&step.mem.wb_me_claims);
-        buckets.claim_reduction_linkage += sum_y_scalars(&step.mem.wp_me_claims);
+        buckets.claim_reduction_linkage += sum_y_scalars(&step.mem.booleanity_me_claims);
+        buckets.claim_reduction_linkage += sum_y_scalars(&step.mem.trace_opening_me_claims);
         buckets.claim_reduction_linkage += step.batched_time.claimed_sums.len();
 
         buckets.pcs_open += step.fold.dec_children.len();
@@ -163,12 +163,12 @@ fn opening_surface_from_shard_proof(proof: &ShardProof) -> OpeningSurfaceBuckets
             .map(|p| p.dec_children.len())
             .sum::<usize>();
         buckets.pcs_open += step
-            .wb_fold
+            .booleanity_fold
             .iter()
             .map(|p| p.dec_children.len())
             .sum::<usize>();
         buckets.pcs_open += step
-            .wp_fold
+            .trace_opening_fold
             .iter()
             .map(|p| p.dec_children.len())
             .sum::<usize>();
@@ -575,7 +575,7 @@ fn report_track_a_w0_w1_snapshot() {
     let mut ccs_claims = Vec::new();
     let mut shout_claims = Vec::new();
     let mut twist_claims = Vec::new();
-    let mut wb_wp_claims = Vec::new();
+    let mut booleanity_trace_opening_claims = Vec::new();
     let mut decode_claims = Vec::new();
     let mut width_claims = Vec::new();
     let mut control_claims = Vec::new();
@@ -592,7 +592,7 @@ fn report_track_a_w0_w1_snapshot() {
         } else if label.starts_with("twist/") {
             twist_claims.push(entry);
         } else if label.starts_with("wb/") || label.starts_with("wp/") {
-            wb_wp_claims.push(entry);
+            booleanity_trace_opening_claims.push(entry);
         } else if label.starts_with("decode/") {
             decode_claims.push(entry);
         } else if label.starts_with("width/") {
@@ -638,7 +638,11 @@ fn report_track_a_w0_w1_snapshot() {
     print_group("CCS (main constraint satisfaction)", &ccs_claims, false);
     print_group("Shout (lookup argument)", &shout_claims, true);
     print_group("Twist (memory argument)", &twist_claims, true);
-    print_group("WB/WP (booleanity + quiescence)", &wb_wp_claims, false);
+    print_group(
+        "booleanity/trace-opening (booleanity + quiescence)",
+        &booleanity_trace_opening_claims,
+        false,
+    );
     print_group("Decode stage (lookup-backed decode)", &decode_claims, false);
     print_group("Width stage (lookup-backed width)", &width_claims, false);
     print_group("Control stage (branch/jump/writeback)", &control_claims, false);
@@ -673,35 +677,35 @@ fn report_track_a_w0_w1_snapshot() {
         step_proof.val_fold.len(),
         val_count
     );
-    let wb_count: usize = step_proof
-        .wb_fold
+    let booleanity_count: usize = step_proof
+        .booleanity_fold
         .iter()
         .map(|w| w.dec_children.len())
         .sum();
     println!(
-        "  WB fold lanes:           {} (dec children={})",
-        step_proof.wb_fold.len(),
-        wb_count
+        "  booleanity fold lanes:           {} (dec children={})",
+        step_proof.booleanity_fold.len(),
+        booleanity_count
     );
-    let wp_count: usize = step_proof
-        .wp_fold
+    let trace_opening_count: usize = step_proof
+        .trace_opening_fold
         .iter()
         .map(|w| w.dec_children.len())
         .sum();
     println!(
-        "  WP fold lanes:           {} (dec children={})",
-        step_proof.wp_fold.len(),
-        wp_count
+        "  trace-opening fold lanes:           {} (dec children={})",
+        step_proof.trace_opening_fold.len(),
+        trace_opening_count
     );
-    let stage8_count: usize = step_proof
-        .stage8_fold
+    let joint_opening_count: usize = step_proof
+        .joint_opening_fold
         .iter()
         .map(|w| w.dec_children.len())
         .sum();
     println!(
-        "  Stage-8 fold lanes:      {} (dec children={})",
-        step_proof.stage8_fold.len(),
-        stage8_count
+        "  joint-opening fold lanes:      {} (dec children={})",
+        step_proof.joint_opening_fold.len(),
+        joint_opening_count
     );
     println!();
 
@@ -710,24 +714,41 @@ fn report_track_a_w0_w1_snapshot() {
     println!("{thin_sep}");
     let mem = &step_proof.mem;
     println!("  Val ME @ r_val:          {} claims", mem.val_me_claims.len());
-    println!("  WB ME claims:            {} claims", mem.wb_me_claims.len());
-    println!("  WP ME claims:            {} claims", mem.wp_me_claims.len());
-    let (open_src_derived, open_src_ccs_tail, open_src_wb_tail, open_src_wp_tail, open_src_committed, open_src_virtual) =
-        step_proof.fold.openings.iter().fold(
-            (0usize, 0usize, 0usize, 0usize, 0usize, 0usize),
-            |(d, c, wb, wp, co, vr), opening| match format!("{:?}", opening.source).as_str() {
-                "TimeColumnsDerived" => (d + 1, c, wb, wp, co, vr),
-                "CcsTail" => (d, c + 1, wb, wp, co, vr),
-                "WbMeTail" => (d, c, wb + 1, wp, co, vr),
-                "WpMeTail" => (d, c, wb, wp + 1, co, vr),
-                "CommittedOpening" => (d, c, wb, wp, co + 1, vr),
-                "VirtualReducedOpening" => (d, c, wb, wp, co, vr + 1),
-                _ => (d, c, wb, wp, co, vr),
-            },
-        );
     println!(
-        "  Time opening sources:    derived={} ccs_tail={} wb_tail={} wp_tail={} committed={} virtual_reduced={}",
-        open_src_derived, open_src_ccs_tail, open_src_wb_tail, open_src_wp_tail, open_src_committed, open_src_virtual
+        "  booleanity ME claims:            {} claims",
+        mem.booleanity_me_claims.len()
+    );
+    println!(
+        "  trace-opening ME claims:            {} claims",
+        mem.trace_opening_me_claims.len()
+    );
+    let (
+        open_src_derived,
+        open_src_ccs_tail,
+        open_src_legacy_booleanity_tail,
+        open_src_legacy_trace_opening_tail,
+        open_src_committed,
+        open_src_virtual,
+    ) = step_proof.fold.openings.iter().fold(
+        (0usize, 0usize, 0usize, 0usize, 0usize, 0usize),
+        |(d, c, wb, wp, co, vr), opening| match format!("{:?}", opening.source).as_str() {
+            "TimeColumnsDerived" => (d + 1, c, wb, wp, co, vr),
+            "CcsTail" => (d, c + 1, wb, wp, co, vr),
+            "WbMeTail" => (d, c, wb + 1, wp, co, vr),
+            "WpMeTail" => (d, c, wb, wp + 1, co, vr),
+            "CommittedOpening" => (d, c, wb, wp, co + 1, vr),
+            "VirtualReducedOpening" => (d, c, wb, wp, co, vr + 1),
+            _ => (d, c, wb, wp, co, vr),
+        },
+    );
+    println!(
+        "  Time opening sources:    derived={} ccs_tail={} legacy_booleanity_tail={} legacy_trace_opening_tail={} committed={} virtual_reduced={}",
+        open_src_derived,
+        open_src_ccs_tail,
+        open_src_legacy_booleanity_tail,
+        open_src_legacy_trace_opening_tail,
+        open_src_committed,
+        open_src_virtual
     );
     println!();
 
@@ -783,12 +804,20 @@ fn report_track_a_w0_w1_snapshot() {
     println!("  {:<36} {:>10}", "  of which: CCS", ccs_claims.len());
     println!("  {:<36} {:>10}", "  of which: Shout", shout_claims.len());
     println!("  {:<36} {:>10}", "  of which: Twist", twist_claims.len());
-    println!("  {:<36} {:>10}", "  of which: WB/WP", wb_wp_claims.len());
+    println!(
+        "  {:<36} {:>10}",
+        "  of which: booleanity/trace-opening",
+        booleanity_trace_opening_claims.len()
+    );
     println!("  {:<36} {:>10}", "  of which: Decode", decode_claims.len());
     println!("  {:<36} {:>10}", "  of which: Width", width_claims.len());
     println!("  {:<36} {:>10}", "  of which: Control", control_claims.len());
     println!("  {:<36} {:>10}", "Commit lanes", 1);
-    println!("  {:<36} {:>10}", "Stage-8 fold lanes", step_proof.stage8_fold.len());
+    println!(
+        "  {:<36} {:>10}",
+        "joint-opening fold lanes",
+        step_proof.joint_opening_fold.len()
+    );
     let committed_sidecars = step_proof
         .fold
         .openings

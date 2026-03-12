@@ -38,6 +38,6 @@ fn riscv_trace_wiring_ccs_shared_cpu_bus_shout_mulhu_prove_verify() {
         .reg_output_claim(/*reg=*/ 3, F::from_u64(1))
         .reg_output_claim(/*reg=*/ 4, F::from_u64(1))
         .prove()
-        .expect("rv32 trace prove (WB/WP route, MULHU)");
-    run.verify().expect("rv32 trace verify (WB/WP route, MULHU)");
+        .expect("rv32 trace prove (booleanity/trace-opening route, MULHU)");
+    run.verify().expect("rv32 trace verify (booleanity/trace-opening route, MULHU)");
 }
