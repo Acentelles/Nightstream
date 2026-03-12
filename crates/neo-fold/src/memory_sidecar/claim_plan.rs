@@ -470,7 +470,7 @@ impl RouteATimeClaimPlan {
                 degree_bound: 3,
                 is_dynamic: false,
             });
-            if decode_stage_enabled && mem_inst.mem_id == REG_ID.0 {
+            if control_stage_enabled && mem_inst.mem_id == REG_ID.0 {
                 out.push(TimeClaimMeta {
                     label: b"twist/virtual_write_domain",
                     degree_bound: 4,
@@ -743,14 +743,14 @@ impl RouteATimeClaimPlan {
 
             let bitness = idx;
             idx += 1;
-            let virtual_write_domain = if decode_stage_enabled && mem_inst.mem_id == REG_ID.0 {
+            let virtual_write_domain = if control_stage_enabled && mem_inst.mem_id == REG_ID.0 {
                 let out = idx;
                 idx += 1;
                 Some(out)
             } else {
                 None
             };
-            let nonvirtual_arch_domain = if decode_stage_enabled && mem_inst.mem_id == REG_ID.0 {
+            let nonvirtual_arch_domain = if control_stage_enabled && mem_inst.mem_id == REG_ID.0 {
                 let out = idx;
                 idx += 1;
                 Some(out)

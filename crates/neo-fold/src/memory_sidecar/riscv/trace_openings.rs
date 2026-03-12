@@ -16,12 +16,12 @@ pub(crate) fn has_trace_lookup_families_witness(step: &StepWitnessBundle<Cmt, F,
 
 #[inline]
 pub(crate) fn trace_opening_path_required_for_step_instance(step: &StepInstanceBundle<Cmt, F, K>) -> bool {
-    has_trace_lookup_families_instance(step)
+    has_trace_lookup_families_instance(step) || trace_uses_rv64_exact_words(step.time_columns.cpu_cols.len())
 }
 
 #[inline]
 pub(crate) fn trace_opening_path_required_for_step_witness(step: &StepWitnessBundle<Cmt, F, K>) -> bool {
-    has_trace_lookup_families_witness(step)
+    has_trace_lookup_families_witness(step) || trace_uses_rv64_exact_words(step.time_columns.cpu_cols.len())
 }
 
 pub(crate) fn build_bus_layout_for_step_witness(
@@ -186,11 +186,17 @@ pub(crate) fn width_stage_required_for_step_witness(step: &StepWitnessBundle<Cmt
 
 #[inline]
 pub(crate) fn control_stage_required_for_step_instance(step: &StepInstanceBundle<Cmt, F, K>) -> bool {
+    if trace_uses_rv64_exact_words(step.time_columns.cpu_cols.len()) {
+        return trace_opening_path_required_for_step_instance(step);
+    }
     decode_stage_required_for_step_instance(step)
 }
 
 #[inline]
 pub(crate) fn control_stage_required_for_step_witness(step: &StepWitnessBundle<Cmt, F, K>) -> bool {
+    if trace_uses_rv64_exact_words(step.time_columns.cpu_cols.len()) {
+        return trace_opening_path_required_for_step_witness(step);
+    }
     decode_stage_required_for_step_witness(step)
 }
 
@@ -404,10 +410,17 @@ pub(crate) fn emit_route_a_trace_opening_me_claims(
     if rv64_exact_words {
         trace_opening_cols.extend(rv64_trace_exact_word_opening_columns());
     }
-    if control_stage_required_for_step_witness(step) {
+    let control_required = control_stage_required_for_step_witness(step);
+    let decode_required = decode_stage_required_for_step_witness(step);
+    if control_required {
         trace_opening_cols.extend(riscv_trace_control_extra_opening_columns(&trace));
     }
-    if decode_stage_required_for_step_witness(step) {
+    if rv64_exact_words && control_required {
+        trace_opening_cols.extend(rv64_control_trace_metadata_columns(
+            &neo_memory::riscv::trace::Rv64TraceLayout::new(),
+        ));
+    }
+    if decode_required && !rv64_exact_words {
         let decode_layout = Rv32DecodeSidecarLayout::new();
         let (_decode_open_cols, decode_lut_slots) = resolve_shared_decode_lookup_lut_indices(step, &decode_layout)?;
         let bus = build_bus_layout_for_step_witness(step, t_len)?;

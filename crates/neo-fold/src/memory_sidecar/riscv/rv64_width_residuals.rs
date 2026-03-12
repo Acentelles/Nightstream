@@ -9,68 +9,21 @@ use neo_memory::riscv::trace::{
 use super::*;
 
 #[inline]
-fn step_has_rv64_width_mem_ops(time_columns: &neo_memory::witness::TimeColumns<F>) -> bool {
-    let trace = Rv64TraceLayout::new();
-    if time_columns.cpu_cols.len() != trace.cols {
-        return false;
-    }
-    let Some(abs_idx) = time_columns
-        .col_ids
-        .iter()
-        .position(|&id| id == trace.instr_word)
-    else {
-        return false;
-    };
-    if abs_idx >= time_columns.cpu_cols.len() {
-        return false;
-    }
-    time_columns.cpu_cols[abs_idx].iter().any(|word_f| {
-        let word_u64 = word_f.as_canonical_u64();
-        if word_u64 > u32::MAX as u64 {
-            return false;
-        }
-        let word = word_u64 as u32;
-        let opcode = word & 0x7f;
-        let funct3 = (word >> 12) & 0x7;
-        match opcode {
-            0x03 => matches!(funct3, 0b000 | 0b001 | 0b010 | 0b011 | 0b100 | 0b101 | 0b110),
-            0x23 => matches!(funct3, 0b000 | 0b001 | 0b010 | 0b011),
-            _ => false,
-        }
-    })
+pub(crate) fn rv64_fullword_width_stage_required_for_step_instance(_step: &StepInstanceBundle<Cmt, F, K>) -> bool {
+    false
 }
 
 #[inline]
-pub(crate) fn rv64_fullword_width_stage_required_for_step_instance(step: &StepInstanceBundle<Cmt, F, K>) -> bool {
-    trace_opening_path_required_for_step_instance(step)
-        && step.mem_insts.iter().any(|inst| inst.mem_id == RAM_ID.0)
-        && step_has_rv64_width_mem_ops(&step.time_columns)
-}
-
-#[inline]
-pub(crate) fn rv64_fullword_width_stage_required_for_step_witness(step: &StepWitnessBundle<Cmt, F, K>) -> bool {
-    trace_opening_path_required_for_step_witness(step)
-        && step
-            .mem_instances
-            .iter()
-            .any(|(inst, _)| inst.mem_id == RAM_ID.0)
-        && step_has_rv64_width_mem_ops(&step.time_columns)
+pub(crate) fn rv64_fullword_width_stage_required_for_step_witness(_step: &StepWitnessBundle<Cmt, F, K>) -> bool {
+    false
 }
 
 #[inline]
 pub(crate) fn rv64_fullword_width_stage_required_from_proof(
-    step: &StepInstanceBundle<Cmt, F, K>,
-    batched_time: &crate::shard_proof_types::BatchedTimeProof,
+    _step: &StepInstanceBundle<Cmt, F, K>,
+    _batched_time: &crate::shard_proof_types::BatchedTimeProof,
 ) -> bool {
-    step.mem_insts.iter().any(|inst| inst.mem_id == RAM_ID.0)
-        && !step
-            .lut_insts
-            .iter()
-            .any(|inst| riscv_trace_uses_shared_width_lookup_table_id(inst.table_id))
-        && batched_time
-            .labels
-            .iter()
-            .any(|label| label.as_slice().starts_with(b"width/"))
+    false
 }
 
 #[inline]
@@ -88,7 +41,18 @@ pub(crate) fn rv64_fullword_trace_opening_columns() -> Vec<usize> {
         trace64.rs2_val_lo32,
         trace64.rs2_val_hi32,
     ]);
+    trace_opening_cols.extend(rv64_width_trace_metadata_columns(&trace64));
     trace_opening_cols
+}
+
+#[inline]
+fn rv64_width_trace_metadata_columns(trace: &Rv64TraceLayout) -> Vec<usize> {
+    let mut cols = Vec::with_capacity(10);
+    cols.push(trace.rd_has_write);
+    cols.push(trace.op_load);
+    cols.push(trace.op_store);
+    cols.extend(trace.funct3_is.iter().take(7).copied());
+    cols
 }
 
 #[inline]
@@ -126,7 +90,7 @@ fn rv64_load_residuals_exact(
     rd_lo: K,
     rd_hi: K,
     ram_rv_lo: K,
-    ram_rv_hi: K,
+    _ram_rv_hi: K,
     rd_has_write: K,
     ram_has_read: K,
     load_lb: K,
@@ -135,16 +99,15 @@ fn rv64_load_residuals_exact(
     load_lbu: K,
     load_lhu: K,
     load_lwu: K,
-    load_ld: K,
     ram_rv_low_bits: [K; 32],
-) -> [K; 17] {
+) -> [K; 15] {
     let low8 = rv64_pack_low_bits(&ram_rv_low_bits, 8);
     let low16 = rv64_pack_low_bits(&ram_rv_low_bits, 16);
     let low32 = rv64_pack_low_bits(&ram_rv_low_bits, 32);
     let (signext8_lo, signext8_hi) = rv64_sign_extend_to_lo_hi(&ram_rv_low_bits, 8);
     let (signext16_lo, signext16_hi) = rv64_sign_extend_to_lo_hi(&ram_rv_low_bits, 16);
     let (signext32_lo, signext32_hi) = rv64_sign_extend_to_lo_hi(&ram_rv_low_bits, 32);
-    let load_gate = load_lb + load_lh + load_lw + load_lbu + load_lhu + load_lwu + load_ld;
+    let load_gate = load_lb + load_lh + load_lw + load_lbu + load_lhu + load_lwu;
     [
         load_gate * (ram_rv_lo - low32),
         load_lb * (rd_lo - signext8_lo),
@@ -159,8 +122,6 @@ fn rv64_load_residuals_exact(
         load_lhu * rd_hi,
         load_lwu * (rd_lo - low32),
         load_lwu * rd_hi,
-        load_ld * (rd_lo - ram_rv_lo),
-        load_ld * (rd_hi - ram_rv_hi),
         load_gate * (rd_has_write - K::ONE),
         load_gate * (ram_has_read - K::ONE),
     ]
@@ -173,25 +134,23 @@ fn rv64_store_residuals_exact(
     ram_rv_lo: K,
     ram_rv_hi: K,
     rs2_lo: K,
-    rs2_hi: K,
+    _rs2_hi: K,
     rd_has_write: K,
     ram_has_read: K,
     ram_has_write: K,
     store_sb: K,
     store_sh: K,
     store_sw: K,
-    store_sd: K,
     ram_rv_low_bits: [K; 32],
     rs2_low_bits: [K; 32],
-) -> [K; 13] {
+) -> [K; 11] {
     let rv_low8 = rv64_pack_low_bits(&ram_rv_low_bits, 8);
     let rv_low16 = rv64_pack_low_bits(&ram_rv_low_bits, 16);
     let rv_low32 = rv64_pack_low_bits(&ram_rv_low_bits, 32);
     let rs2_low8 = rv64_pack_low_bits(&rs2_low_bits, 8);
     let rs2_low16 = rv64_pack_low_bits(&rs2_low_bits, 16);
     let rs2_low32 = rv64_pack_low_bits(&rs2_low_bits, 32);
-    let narrow_store_gate = store_sb + store_sh + store_sw;
-    let store_gate = narrow_store_gate + store_sd;
+    let store_gate = store_sb + store_sh + store_sw;
     [
         store_gate * (ram_rv_lo - rv_low32),
         store_gate * (rs2_lo - rs2_low32),
@@ -201,10 +160,8 @@ fn rv64_store_residuals_exact(
         store_sh * (ram_wv_hi - ram_rv_hi),
         store_sw * (ram_wv_lo - rs2_low32),
         store_sw * (ram_wv_hi - ram_rv_hi),
-        store_sd * (ram_wv_lo - rs2_lo),
-        store_sd * (ram_wv_hi - rs2_hi),
         store_gate * rd_has_write,
-        narrow_store_gate * (ram_has_read - K::ONE) + store_sd * ram_has_read,
+        store_gate * (ram_has_read - K::ONE),
         store_gate * (ram_has_write - K::ONE),
     ]
 }
@@ -526,14 +483,12 @@ pub(crate) fn build_route_a_rv64_fullword_time_claims(
 
     let trace = Rv64TraceLayout::new();
     let width = Rv64WidthSidecarLayout::new();
-    let decode = Rv32DecodeSidecarLayout::new();
     let t_len = infer_rv32_trace_t_len_for_trace_openings(step, &Rv32TraceLayout::new())?;
     let m_in = step.mcs.0.m_in;
     let ell_n = r_cycle.len();
 
-    let main_col_ids = [
+    let mut main_col_ids = vec![
         trace.active,
-        trace.instr_word,
         trace.ram_addr,
         trace.rd_val_lo32,
         trace.rd_val_hi32,
@@ -544,6 +499,7 @@ pub(crate) fn build_route_a_rv64_fullword_time_claims(
         trace.rs2_val_lo32,
         trace.rs2_val_hi32,
     ];
+    main_col_ids.extend(rv64_width_trace_metadata_columns(&trace));
     let main_decoded = decode_trace_col_values_batch(params, step, t_len, &main_col_ids)?;
 
     let width_col_ids = rv64_width_lookup_backed_cols(&width);
@@ -590,46 +546,6 @@ pub(crate) fn build_route_a_rv64_fullword_time_claims(
         .get(&ram_twist.has_write)
         .ok_or_else(|| PiCcsError::ProtocolError("width(rv64): missing RAM twist has_write column".into()))?;
 
-    let decode_col_ids: Vec<usize> = core::iter::once(decode.op_load)
-        .chain(core::iter::once(decode.op_store))
-        .chain(core::iter::once(decode.rd_has_write))
-        .chain(decode.funct3_is.iter().take(7).copied())
-        .collect();
-    let decode_decoded = {
-        let instr_vals = main_decoded
-            .get(&trace.instr_word)
-            .ok_or_else(|| PiCcsError::ProtocolError("width(rv64): missing instr_word decode column".into()))?;
-        let active_vals = main_decoded
-            .get(&trace.active)
-            .ok_or_else(|| PiCcsError::ProtocolError("width(rv64): missing active decode column".into()))?;
-        if instr_vals.len() != t_len || active_vals.len() != t_len {
-            return Err(PiCcsError::ProtocolError(format!(
-                "width(rv64): decoded CPU column lengths drift (instr={}, active={}, t_len={t_len})",
-                instr_vals.len(),
-                active_vals.len()
-            )));
-        }
-        let mut decoded = BTreeMap::<usize, Vec<K>>::new();
-        for &col_id in &decode_col_ids {
-            decoded.insert(col_id, Vec::with_capacity(t_len));
-        }
-        for j in 0..t_len {
-            let instr_word = decode_k_to_u32(instr_vals[j], "width(rv64)/instr_word")?;
-            let active = active_vals[j] != K::ZERO;
-            let mut row = riscv_decode_lookup_backed_row_from_instr_word(&decode, instr_word, active);
-            if !active {
-                row.fill(F::ZERO);
-            }
-            for &col_id in &decode_col_ids {
-                decoded
-                    .get_mut(&col_id)
-                    .ok_or_else(|| PiCcsError::ProtocolError("width(rv64): decode map build failed".into()))?
-                    .push(K::from(row[col_id]));
-            }
-        }
-        decoded
-    };
-
     #[cfg(debug_assertions)]
     for j in 0..t_len {
         let rd_lo = *main_decoded
@@ -668,16 +584,16 @@ pub(crate) fn build_route_a_rv64_fullword_time_claims(
             .ok_or_else(|| {
                 PiCcsError::ProtocolError("width(rv64): missing rs2_val_hi32 row while validating".into())
             })?;
-        let op_load = *decode_decoded
-            .get(&decode.op_load)
+        let op_load = *main_decoded
+            .get(&trace.op_load)
             .and_then(|v| v.get(j))
             .ok_or_else(|| PiCcsError::ProtocolError("width(rv64): missing op_load row while validating".into()))?;
-        let op_store = *decode_decoded
-            .get(&decode.op_store)
+        let op_store = *main_decoded
+            .get(&trace.op_store)
             .and_then(|v| v.get(j))
             .ok_or_else(|| PiCcsError::ProtocolError("width(rv64): missing op_store row while validating".into()))?;
-        let rd_has_write = *decode_decoded
-            .get(&decode.rd_has_write)
+        let rd_has_write = *main_decoded
+            .get(&trace.rd_has_write)
             .and_then(|v| v.get(j))
             .ok_or_else(|| {
                 PiCcsError::ProtocolError("width(rv64): missing rd_has_write row while validating".into())
@@ -688,50 +604,42 @@ pub(crate) fn build_route_a_rv64_fullword_time_claims(
         let ram_has_write = *ram_twist_has_write_vals.get(j).ok_or_else(|| {
             PiCcsError::ProtocolError("width(rv64): missing RAM twist has_write row while validating".into())
         })?;
-        let funct3_is = [
-            *decode_decoded
-                .get(&decode.funct3_is[0])
-                .and_then(|v| v.get(j))
-                .ok_or_else(|| {
-                    PiCcsError::ProtocolError("width(rv64): missing funct3_is[0] row while validating".into())
-                })?,
-            *decode_decoded
-                .get(&decode.funct3_is[1])
-                .and_then(|v| v.get(j))
-                .ok_or_else(|| {
-                    PiCcsError::ProtocolError("width(rv64): missing funct3_is[1] row while validating".into())
-                })?,
-            *decode_decoded
-                .get(&decode.funct3_is[2])
-                .and_then(|v| v.get(j))
-                .ok_or_else(|| {
-                    PiCcsError::ProtocolError("width(rv64): missing funct3_is[2] row while validating".into())
-                })?,
-            *decode_decoded
-                .get(&decode.funct3_is[3])
-                .and_then(|v| v.get(j))
-                .ok_or_else(|| {
-                    PiCcsError::ProtocolError("width(rv64): missing funct3_is[3] row while validating".into())
-                })?,
-            *decode_decoded
-                .get(&decode.funct3_is[4])
-                .and_then(|v| v.get(j))
-                .ok_or_else(|| {
-                    PiCcsError::ProtocolError("width(rv64): missing funct3_is[4] row while validating".into())
-                })?,
-            *decode_decoded
-                .get(&decode.funct3_is[5])
-                .and_then(|v| v.get(j))
-                .ok_or_else(|| {
-                    PiCcsError::ProtocolError("width(rv64): missing funct3_is[5] row while validating".into())
-                })?,
-            *decode_decoded
-                .get(&decode.funct3_is[6])
-                .and_then(|v| v.get(j))
-                .ok_or_else(|| {
-                    PiCcsError::ProtocolError("width(rv64): missing funct3_is[6] row while validating".into())
-                })?,
-        ];
+        let funct3_lb = *main_decoded
+            .get(&trace.funct3_is[0])
+            .and_then(|v| v.get(j))
+            .ok_or_else(|| {
+                PiCcsError::ProtocolError("width(rv64): missing funct3_is[0] row while validating".into())
+            })?;
+        let funct3_lh = *main_decoded
+            .get(&trace.funct3_is[1])
+            .and_then(|v| v.get(j))
+            .ok_or_else(|| {
+                PiCcsError::ProtocolError("width(rv64): missing funct3_is[1] row while validating".into())
+            })?;
+        let funct3_lw = *main_decoded
+            .get(&trace.funct3_is[2])
+            .and_then(|v| v.get(j))
+            .ok_or_else(|| {
+                PiCcsError::ProtocolError("width(rv64): missing funct3_is[2] row while validating".into())
+            })?;
+        let funct3_lbu = *main_decoded
+            .get(&trace.funct3_is[4])
+            .and_then(|v| v.get(j))
+            .ok_or_else(|| {
+                PiCcsError::ProtocolError("width(rv64): missing funct3_is[4] row while validating".into())
+            })?;
+        let funct3_lhu = *main_decoded
+            .get(&trace.funct3_is[5])
+            .and_then(|v| v.get(j))
+            .ok_or_else(|| {
+                PiCcsError::ProtocolError("width(rv64): missing funct3_is[5] row while validating".into())
+            })?;
+        let funct3_lwu = *main_decoded
+            .get(&trace.funct3_is[6])
+            .and_then(|v| v.get(j))
+            .ok_or_else(|| {
+                PiCcsError::ProtocolError("width(rv64): missing funct3_is[6] row while validating".into())
+            })?;
         let mut ram_rv_low_bits = [K::ZERO; 32];
         let mut rs2_low_bits = [K::ZERO; 32];
         for bit in 0..32usize {
@@ -758,13 +666,12 @@ pub(crate) fn build_route_a_rv64_fullword_time_claims(
             ram_rv_hi,
             rd_has_write,
             ram_has_read,
-            op_load * funct3_is[0],
-            op_load * funct3_is[1],
-            op_load * funct3_is[2],
-            op_load * funct3_is[4],
-            op_load * funct3_is[5],
-            op_load * funct3_is[6],
-            op_load * funct3_is[3],
+            op_load * funct3_lb,
+            op_load * funct3_lh,
+            op_load * funct3_lw,
+            op_load * funct3_lbu,
+            op_load * funct3_lhu,
+            op_load * funct3_lwu,
             ram_rv_low_bits,
         );
         if let Some((idx, _)) = load_residuals
@@ -773,8 +680,7 @@ pub(crate) fn build_route_a_rv64_fullword_time_claims(
             .find(|(_, r)| **r != K::ZERO)
         {
             return Err(PiCcsError::ProtocolError(format!(
-                "width(rv64)/load_semantics residual non-zero at row={j}, idx={idx}, op_load={op_load}, funct3_is={:?}, rd_has_write={rd_has_write}, ram_has_read={ram_has_read}",
-                funct3_is
+                "width(rv64)/load_semantics residual non-zero at row={j}, idx={idx}, op_load={op_load}, funct3=[lb:{funct3_lb}, lh:{funct3_lh}, lw:{funct3_lw}, lbu:{funct3_lbu}, lhu:{funct3_lhu}, lwu:{funct3_lwu}], rd_has_write={rd_has_write}, ram_has_read={ram_has_read}"
             )));
         }
 
@@ -788,10 +694,9 @@ pub(crate) fn build_route_a_rv64_fullword_time_claims(
             rd_has_write,
             ram_has_read,
             ram_has_write,
-            op_store * funct3_is[0],
-            op_store * funct3_is[1],
-            op_store * funct3_is[2],
-            op_store * funct3_is[3],
+            op_store * funct3_lb,
+            op_store * funct3_lh,
+            op_store * funct3_lw,
             ram_rv_low_bits,
             rs2_low_bits,
         );
@@ -801,8 +706,7 @@ pub(crate) fn build_route_a_rv64_fullword_time_claims(
             .find(|(_, r)| **r != K::ZERO)
         {
             return Err(PiCcsError::ProtocolError(format!(
-                "width(rv64)/store_semantics residual non-zero at row={j}, idx={idx}, op_store={op_store}, funct3_is={:?}, rd_has_write={rd_has_write}, ram_has_read={ram_has_read}, ram_has_write={ram_has_write}",
-                funct3_is
+                "width(rv64)/store_semantics residual non-zero at row={j}, idx={idx}, op_store={op_store}, funct3=[sb:{funct3_lb}, sh:{funct3_lh}, sw:{funct3_lw}], rd_has_write={rd_has_write}, ram_has_read={ram_has_read}, ram_has_write={ram_has_write}"
             )));
         }
     }
@@ -821,14 +725,6 @@ pub(crate) fn build_route_a_rv64_fullword_time_claims(
         })?;
         width_sparse.insert(col_id, sparse_trace_col_from_values(m_in, ell_n, vals)?);
     }
-    let mut decode_sparse = BTreeMap::<usize, SparseIdxVec<K>>::new();
-    for &col_id in &decode_col_ids {
-        let vals = decode_decoded
-            .get(&col_id)
-            .ok_or_else(|| PiCcsError::ProtocolError(format!("width(rv64): missing decode decoded column {col_id}")))?;
-        decode_sparse.insert(col_id, sparse_trace_col_from_values(m_in, ell_n, vals)?);
-    }
-
     let main_col = |col_id: usize| -> Result<SparseIdxVec<K>, PiCcsError> {
         main_sparse
             .get(&col_id)
@@ -840,12 +736,6 @@ pub(crate) fn build_route_a_rv64_fullword_time_claims(
             .get(&col_id)
             .cloned()
             .ok_or_else(|| PiCcsError::ProtocolError(format!("width(rv64): missing RV64 width sparse column {col_id}")))
-    };
-    let decode_col = |col_id: usize| -> Result<SparseIdxVec<K>, PiCcsError> {
-        decode_sparse
-            .get(&col_id)
-            .cloned()
-            .ok_or_else(|| PiCcsError::ProtocolError(format!("width(rv64): missing decode sparse column {col_id}")))
     };
     let ram_twist_has_read_sparse = sparse_trace_col_from_values(m_in, ell_n, ram_twist_has_read_vals)?;
     let ram_twist_has_write_sparse = sparse_trace_col_from_values(m_in, ell_n, ram_twist_has_write_vals)?;
@@ -1002,23 +892,22 @@ pub(crate) fn build_route_a_rv64_fullword_time_claims(
     load_sparse.push(main_col(trace.rd_val_hi32)?);
     load_sparse.push(main_col(trace.ram_rv_lo32)?);
     load_sparse.push(main_col(trace.ram_rv_hi32)?);
-    load_sparse.push(decode_col(decode.rd_has_write)?);
+    load_sparse.push(main_col(trace.rd_has_write)?);
     load_sparse.push(ram_twist_has_read_sparse.clone());
-    load_sparse.push(decode_col(decode.op_load)?);
-    load_sparse.push(decode_col(decode.funct3_is[0])?);
-    load_sparse.push(decode_col(decode.funct3_is[1])?);
-    load_sparse.push(decode_col(decode.funct3_is[2])?);
-    load_sparse.push(decode_col(decode.funct3_is[3])?);
-    load_sparse.push(decode_col(decode.funct3_is[4])?);
-    load_sparse.push(decode_col(decode.funct3_is[5])?);
-    load_sparse.push(decode_col(decode.funct3_is[6])?);
+    load_sparse.push(main_col(trace.op_load)?);
+    load_sparse.push(main_col(trace.funct3_is[0])?);
+    load_sparse.push(main_col(trace.funct3_is[1])?);
+    load_sparse.push(main_col(trace.funct3_is[2])?);
+    load_sparse.push(main_col(trace.funct3_is[4])?);
+    load_sparse.push(main_col(trace.funct3_is[5])?);
+    load_sparse.push(main_col(trace.funct3_is[6])?);
     for &col_id in &width.ram_rv_low_bit {
         load_sparse.push(width_col(col_id)?);
     }
-    let load_weights = width_load_weight_vector(r_cycle, 17);
+    let load_weights = width_load_weight_vector(r_cycle, 15);
     let load_oracle = FormulaOracleSparseTime::new(load_sparse, 5, r_cycle, move |vals: &[K]| {
         let mut ram_rv_low_bits = [K::ZERO; 32];
-        ram_rv_low_bits.copy_from_slice(&vals[14..46]);
+        ram_rv_low_bits.copy_from_slice(&vals[13..45]);
         let residuals = rv64_load_residuals_exact(
             vals[0],
             vals[1],
@@ -1029,10 +918,9 @@ pub(crate) fn build_route_a_rv64_fullword_time_claims(
             vals[6] * vals[7],
             vals[6] * vals[8],
             vals[6] * vals[9],
+            vals[6] * vals[10],
             vals[6] * vals[11],
             vals[6] * vals[12],
-            vals[6] * vals[13],
-            vals[6] * vals[10],
             ram_rv_low_bits,
         );
         residuals
@@ -1041,33 +929,32 @@ pub(crate) fn build_route_a_rv64_fullword_time_claims(
             .fold(K::ZERO, |acc, (residual, weight)| acc + *weight * *residual)
     });
 
-    let mut store_sparse = Vec::with_capacity(78);
+    let mut store_sparse = Vec::with_capacity(77);
     store_sparse.push(main_col(trace.ram_wv_lo32)?);
     store_sparse.push(main_col(trace.ram_wv_hi32)?);
     store_sparse.push(main_col(trace.ram_rv_lo32)?);
     store_sparse.push(main_col(trace.ram_rv_hi32)?);
     store_sparse.push(main_col(trace.rs2_val_lo32)?);
     store_sparse.push(main_col(trace.rs2_val_hi32)?);
-    store_sparse.push(decode_col(decode.rd_has_write)?);
+    store_sparse.push(main_col(trace.rd_has_write)?);
     store_sparse.push(ram_twist_has_read_sparse);
     store_sparse.push(ram_twist_has_write_sparse);
-    store_sparse.push(decode_col(decode.op_store)?);
-    store_sparse.push(decode_col(decode.funct3_is[0])?);
-    store_sparse.push(decode_col(decode.funct3_is[1])?);
-    store_sparse.push(decode_col(decode.funct3_is[2])?);
-    store_sparse.push(decode_col(decode.funct3_is[3])?);
+    store_sparse.push(main_col(trace.op_store)?);
+    store_sparse.push(main_col(trace.funct3_is[0])?);
+    store_sparse.push(main_col(trace.funct3_is[1])?);
+    store_sparse.push(main_col(trace.funct3_is[2])?);
     for &col_id in &width.ram_rv_low_bit {
         store_sparse.push(width_col(col_id)?);
     }
     for &col_id in &width.rs2_low_bit {
         store_sparse.push(width_col(col_id)?);
     }
-    let store_weights = width_store_weight_vector(r_cycle, 13);
+    let store_weights = width_store_weight_vector(r_cycle, 11);
     let store_oracle = FormulaOracleSparseTime::new(store_sparse, 4, r_cycle, move |vals: &[K]| {
         let mut ram_rv_low_bits = [K::ZERO; 32];
-        ram_rv_low_bits.copy_from_slice(&vals[14..46]);
+        ram_rv_low_bits.copy_from_slice(&vals[13..45]);
         let mut rs2_low_bits = [K::ZERO; 32];
-        rs2_low_bits.copy_from_slice(&vals[46..78]);
+        rs2_low_bits.copy_from_slice(&vals[45..77]);
         let residuals = rv64_store_residuals_exact(
             vals[0],
             vals[1],
@@ -1081,7 +968,6 @@ pub(crate) fn build_route_a_rv64_fullword_time_claims(
             vals[9] * vals[10],
             vals[9] * vals[11],
             vals[9] * vals[12],
-            vals[9] * vals[13],
             ram_rv_low_bits,
             rs2_low_bits,
         );
@@ -1179,7 +1065,6 @@ pub(crate) fn verify_route_a_rv64_fullword_terminals(
     }
 
     let trace = Rv64TraceLayout::new();
-    let decode = Rv32DecodeSidecarLayout::new();
     let width = Rv64WidthSidecarLayout::new();
     let trace_opening_me = &mem_proof.trace_opening_me_claims[0];
     if trace_opening_me.r.as_slice() != r_time {
@@ -1208,15 +1093,6 @@ pub(crate) fn verify_route_a_rv64_fullword_terminals(
     let trace_opening_col = |col_id: usize| -> Result<K, PiCcsError> {
         named_opening(&trace_opening_map, col_id, "width(rv64) trace-opening")
     };
-    let decode_open_map = decode_lookup_open_map_from_committed_openings(
-        step,
-        cpu_bus,
-        r_time,
-        step_time_openings,
-        "width(rv64) decode",
-    )?;
-    let decode_open_col =
-        |col_id: usize| -> Result<K, PiCcsError> { named_opening(&decode_open_map, col_id, "width(rv64) decode") };
     let width_open_map = rv64_width_lookup_open_map_from_committed_openings(
         step,
         cpu_bus,
@@ -1329,10 +1205,10 @@ pub(crate) fn verify_route_a_rv64_fullword_terminals(
     let ram_wv_hi = trace_opening_col(trace.ram_wv_hi32)?;
     let rs2_lo = trace_opening_col(trace.rs2_val_lo32)?;
     let rs2_hi = trace_opening_col(trace.rs2_val_hi32)?;
-    let rd_has_write = decode_open_col(decode.rd_has_write)?;
+    let rd_has_write = trace_opening_col(trace.rd_has_write)?;
     let twist_open = open_rv64_ram_twist_lane(cpu_bus, step, r_time, step_time_openings, "width(rv64)/mem_semantics")?;
-    let op_load = decode_open_col(decode.op_load)?;
-    let op_store = decode_open_col(decode.op_store)?;
+    let op_load = trace_opening_col(trace.op_load)?;
+    let op_store = trace_opening_col(trace.op_store)?;
     if let Some(claim_idx) = claim_plan.width_load_semantics {
         if claim_idx >= batched_final_values.len() {
             return Err(PiCcsError::ProtocolError(
@@ -1346,13 +1222,12 @@ pub(crate) fn verify_route_a_rv64_fullword_terminals(
             ram_rv_hi,
             rd_has_write,
             twist_open.has_read,
-            op_load * decode_open_col(decode.funct3_is[0])?,
-            op_load * decode_open_col(decode.funct3_is[1])?,
-            op_load * decode_open_col(decode.funct3_is[2])?,
-            op_load * decode_open_col(decode.funct3_is[4])?,
-            op_load * decode_open_col(decode.funct3_is[5])?,
-            op_load * decode_open_col(decode.funct3_is[6])?,
-            op_load * decode_open_col(decode.funct3_is[3])?,
+            op_load * trace_opening_col(trace.funct3_is[0])?,
+            op_load * trace_opening_col(trace.funct3_is[1])?,
+            op_load * trace_opening_col(trace.funct3_is[2])?,
+            op_load * trace_opening_col(trace.funct3_is[4])?,
+            op_load * trace_opening_col(trace.funct3_is[5])?,
+            op_load * trace_opening_col(trace.funct3_is[6])?,
             ram_rv_low_bits,
         );
         let weights = width_load_weight_vector(r_cycle, residuals.len());
@@ -1384,10 +1259,9 @@ pub(crate) fn verify_route_a_rv64_fullword_terminals(
             rd_has_write,
             twist_open.has_read,
             twist_open.has_write,
-            op_store * decode_open_col(decode.funct3_is[0])?,
-            op_store * decode_open_col(decode.funct3_is[1])?,
-            op_store * decode_open_col(decode.funct3_is[2])?,
-            op_store * decode_open_col(decode.funct3_is[3])?,
+            op_store * trace_opening_col(trace.funct3_is[0])?,
+            op_store * trace_opening_col(trace.funct3_is[1])?,
+            op_store * trace_opening_col(trace.funct3_is[2])?,
             ram_rv_low_bits,
             rs2_low_bits,
         );

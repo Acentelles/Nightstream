@@ -75,18 +75,6 @@ pub(crate) fn decode_lookup_open_map_from_committed_openings(
     Ok(decode_open_map)
 }
 
-fn decode_open_map_from_instr_and_transport(
-    step: &StepInstanceBundle<Cmt, F, K>,
-    cpu_bus: &BusLayout,
-    point: &[K],
-    step_time_openings: &[crate::shard_proof_types::TimePointOpening],
-    _instr_word: K,
-    _active: K,
-    label: &str,
-) -> Result<BTreeMap<usize, K>, PiCcsError> {
-    decode_lookup_open_map_from_committed_openings(step, cpu_bus, point, step_time_openings, label)
-}
-
 pub(crate) fn verify_route_a_decode_terminals(
     cpu_bus: &BusLayout,
     step: &StepInstanceBundle<Cmt, F, K>,
@@ -130,8 +118,6 @@ pub(crate) fn verify_route_a_decode_terminals(
         ));
     }
     let trace = Rv32TraceLayout::new();
-    let rv64_exact_words = trace_uses_rv64_exact_words(step.time_columns.cpu_cols.len());
-    let rv64_trace = neo_memory::riscv::trace::Rv64TraceLayout::new();
     let booleanity_me = &mem_proof.booleanity_me_claims[0];
     let booleanity_cols = riscv_trace_booleanity_columns(&trace);
     let booleanity_opening_map = require_time_openings_for_point(
@@ -144,10 +130,7 @@ pub(crate) fn verify_route_a_decode_terminals(
         named_opening(&booleanity_opening_map, col_id, "decode booleanity")
     };
 
-    let mut trace_opening_cols = riscv_trace_opening_columns(&trace);
-    if rv64_exact_words {
-        trace_opening_cols.extend(rv64_trace_exact_word_opening_columns());
-    }
+    let trace_opening_cols = riscv_trace_opening_columns(&trace);
     let (_trace_opening_entry, trace_opening_map) = require_time_openings_covering_point(
         step_time_openings,
         trace_opening_me.r.as_slice(),
@@ -156,15 +139,8 @@ pub(crate) fn verify_route_a_decode_terminals(
     )?;
     let trace_opening_col =
         |col_id: usize| -> Result<K, PiCcsError> { named_opening(&trace_opening_map, col_id, "decode trace-opening") };
-    let decode_open_map = decode_open_map_from_instr_and_transport(
-        step,
-        cpu_bus,
-        r_time,
-        step_time_openings,
-        trace_opening_col(trace.instr_word)?,
-        trace_opening_col(trace.active)?,
-        "decode decode",
-    )?;
+    let decode_open_map =
+        decode_lookup_open_map_from_committed_openings(step, cpu_bus, r_time, step_time_openings, "decode decode")?;
     let decode_open_col =
         |col_id: usize| -> Result<K, PiCcsError> { named_opening(&decode_open_map, col_id, "decode decode") };
 
@@ -233,6 +209,7 @@ pub(crate) fn verify_route_a_decode_terminals(
         let rd_is_zero = decode_open_col(decode_layout.rd_is_zero)?;
         let decode_rd_has_write = decode_open_col(decode_layout.rd_has_write)?;
         let imm_i = decode_open_col(decode_layout.imm_i)?;
+        let rv64_exact_words = false;
         let mut decode_inputs = DecodeFieldsOpenings {
             rv64_exact_words,
             active: trace_opening_col(trace.active)?,
@@ -246,51 +223,15 @@ pub(crate) fn verify_route_a_decode_terminals(
             rs1_val: trace_opening_col(trace.rs1_val)?,
             rs2_val: trace_opening_col(trace.rs2_val)?,
             rd_val: trace_opening_col(trace.rd_val)?,
-            rs1_word: if rv64_exact_words {
-                trace_opening_col(rv64_trace.rs1_val_lo32)?
-            } else {
-                K::ZERO
-            },
-            rs2_word: if rv64_exact_words {
-                trace_opening_col(rv64_trace.rs2_val_lo32)?
-            } else {
-                K::ZERO
-            },
-            rd_word: if rv64_exact_words {
-                trace_opening_col(rv64_trace.rd_val_lo32)?
-            } else {
-                K::ZERO
-            },
-            shout_lhs_word: if rv64_exact_words {
-                trace_opening_col(rv64_trace.shout_lhs_lo32)?
-            } else {
-                K::ZERO
-            },
-            shout_lhs_hi: if rv64_exact_words {
-                trace_opening_col(rv64_trace.shout_lhs_hi32)?
-            } else {
-                K::ZERO
-            },
-            shout_rhs_word: if rv64_exact_words {
-                trace_opening_col(rv64_trace.shout_rhs_lo32)?
-            } else {
-                K::ZERO
-            },
-            shout_rhs_hi: if rv64_exact_words {
-                trace_opening_col(rv64_trace.shout_rhs_hi32)?
-            } else {
-                K::ZERO
-            },
-            shout_add_sub_key_word: if rv64_exact_words {
-                trace_opening_col(rv64_trace.shout_add_sub_key_lo32)?
-            } else {
-                K::ZERO
-            },
-            shout_add_sub_key_hi: if rv64_exact_words {
-                trace_opening_col(rv64_trace.shout_add_sub_key_hi32)?
-            } else {
-                K::ZERO
-            },
+            rs1_word: K::ZERO,
+            rs2_word: K::ZERO,
+            rd_word: K::ZERO,
+            shout_lhs_word: K::ZERO,
+            shout_lhs_hi: K::ZERO,
+            shout_rhs_word: K::ZERO,
+            shout_rhs_hi: K::ZERO,
+            shout_add_sub_key_word: K::ZERO,
+            shout_add_sub_key_hi: K::ZERO,
             trace_rd_has_write: trace_opening_col(trace.rd_has_write)?,
             ram_addr: trace_opening_col(trace.ram_addr)?,
             shout_has_lookup: trace_opening_col(trace.shout_has_lookup)?,
@@ -315,14 +256,12 @@ pub(crate) fn verify_route_a_decode_terminals(
             imm_i,
             imm_s: decode_open_col(decode_layout.imm_s)?,
         };
-        if !rv64_exact_words {
-            decode_inputs.rs1_word = decode_inputs.rs1_val;
-            decode_inputs.rs2_word = decode_inputs.rs2_val;
-            decode_inputs.rd_word = decode_inputs.rd_val;
-            decode_inputs.shout_lhs_word = decode_inputs.shout_lhs;
-            decode_inputs.shout_rhs_word = decode_inputs.shout_rhs;
-            decode_inputs.shout_add_sub_key_word = decode_inputs.shout_add_sub_key;
-        }
+        decode_inputs.rs1_word = decode_inputs.rs1_val;
+        decode_inputs.rs2_word = decode_inputs.rs2_val;
+        decode_inputs.rd_word = decode_inputs.rd_val;
+        decode_inputs.shout_lhs_word = decode_inputs.shout_lhs;
+        decode_inputs.shout_rhs_word = decode_inputs.shout_rhs;
+        decode_inputs.shout_add_sub_key_word = decode_inputs.shout_add_sub_key;
         let weights = decode_pack_weight_vector(r_cycle, DECODE_FIELDS_RESIDUAL_COUNT);
         let weighted = decode_fields_weighted_residual(&decode_inputs, &weights);
         let expected = eq_points(r_time, r_cycle) * weighted;

@@ -75,18 +75,14 @@ pub(crate) fn build_route_a_decode_time_claims(
     }
 
     let trace = Rv32TraceLayout::new();
-    let rv64_exact_words = trace_uses_rv64_exact_words(step.time_columns.cpu_cols.len());
-    let _rv64_trace = if rv64_exact_words {
-        Some(neo_memory::riscv::trace::Rv64TraceLayout::new())
-    } else {
-        None
-    };
+    let rv64_exact_words = false;
+    let _rv64_trace: Option<neo_memory::riscv::trace::Rv64TraceLayout> = None;
     let decode = Rv32DecodeSidecarLayout::new();
     let t_len = infer_rv32_trace_t_len_for_trace_openings(step, &trace)?;
     let m_in = step.mcs.0.m_in;
     let ell_n = r_cycle.len();
 
-    let mut cpu_cols = vec![
+    let cpu_cols = vec![
         trace.active,
         trace.halted,
         trace.is_virtual,
@@ -108,9 +104,6 @@ pub(crate) fn build_route_a_decode_time_claims(
         trace.shout_rhs,
         trace.shout_add_sub_key,
     ];
-    if rv64_exact_words {
-        cpu_cols.extend(rv64_trace_exact_word_opening_columns());
-    }
     let cpu_decoded = decode_trace_col_values_batch(params, step, t_len, &cpu_cols)?;
 
     let decode_decoded = {
@@ -143,9 +136,6 @@ pub(crate) fn build_route_a_decode_time_claims(
         }
         let mut decoded = DenseCols::from_cols(decoded_cols);
 
-        // In shared lookup-backed mode, overwrite lookup-backed decode columns with the values
-        // actually committed on the shared Shout bus so prover oracles and verifier terminals
-        // are sourced from identical openings.
         let (decode_open_cols, decode_lut_slots) = resolve_shared_decode_lookup_lut_indices(step, &decode)?;
         let bus = build_bus_layout_for_step_witness(step, t_len)?;
         if bus.shout_cols.len() != step.lut_instances.len() {
@@ -338,7 +328,6 @@ pub(crate) fn build_route_a_decode_time_claims(
         decoded.insert(decode.alu_reg_table_delta, alu_reg_delta);
         decoded.insert(decode.alu_imm_table_delta, alu_imm_delta);
         decoded.insert(decode.alu_imm_shift_rhs_delta, alu_imm_shift_rhs_delta);
-
         decoded
     };
 

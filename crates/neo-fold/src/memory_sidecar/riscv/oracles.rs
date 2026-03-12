@@ -35,7 +35,7 @@ pub(crate) fn build_route_a_memory_oracles(
             twist_pre.len()
         )));
     }
-    let trace_is_virtual_sparse = if decode_stage_required_for_step_witness(step) {
+    let trace_is_virtual_sparse = if control_stage_required_for_step_witness(step) {
         let trace = Rv32TraceLayout::new();
         let t_len = infer_rv32_trace_t_len_for_trace_openings(step, &trace)?;
         let decoded = decode_trace_col_values_batch(params, step, t_len, &[trace.is_virtual])?;

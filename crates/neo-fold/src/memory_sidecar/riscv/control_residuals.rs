@@ -7,6 +7,126 @@ pub(crate) type ControlTimeClaims = (
     Option<(Box<dyn RoundOracle + Send>, K)>,
 );
 
+pub(crate) fn rv64_control_trace_metadata_columns(trace: &neo_memory::riscv::trace::Rv64TraceLayout) -> Vec<usize> {
+    let mut cols = vec![
+        trace.op_lui,
+        trace.op_auipc,
+        trace.op_jal,
+        trace.op_jalr,
+        trace.op_branch,
+        trace.op_load,
+        trace.op_store,
+        trace.op_alu_imm,
+        trace.op_alu_reg,
+        trace.op_misc_mem,
+        trace.op_system,
+        trace.op_amo,
+        trace.op_custom,
+        trace.write_lui,
+        trace.write_auipc,
+        trace.write_jal,
+        trace.write_jalr,
+        trace.rd_is_zero,
+        trace.opcode_u32ext,
+        trace.ram_has_read,
+        trace.ram_has_write,
+        trace.imm_i_u32ext,
+        trace.imm_s_u32ext,
+        trace.imm_b_u32ext,
+        trace.imm_j_u32ext,
+    ];
+    cols.extend(trace.rd_bit);
+    cols.extend(trace.funct3_bit);
+    cols.extend(trace.funct3_is);
+    cols.extend(trace.rs1_bit);
+    cols.extend(trace.rs2_bit);
+    cols.extend(trace.funct7_bit);
+    cols
+}
+
+fn rv64_control_decode_col_from_trace(
+    trace: &neo_memory::riscv::trace::Rv64TraceLayout,
+    decode: &Rv32DecodeSidecarLayout,
+    col_id: usize,
+) -> Result<usize, PiCcsError> {
+    if col_id == decode.op_lui {
+        Ok(trace.op_lui)
+    } else if col_id == decode.op_auipc {
+        Ok(trace.op_auipc)
+    } else if col_id == decode.op_jal {
+        Ok(trace.op_jal)
+    } else if col_id == decode.op_jalr {
+        Ok(trace.op_jalr)
+    } else if col_id == decode.op_branch {
+        Ok(trace.op_branch)
+    } else if col_id == decode.op_load {
+        Ok(trace.op_load)
+    } else if col_id == decode.op_store {
+        Ok(trace.op_store)
+    } else if col_id == decode.op_alu_imm {
+        Ok(trace.op_alu_imm)
+    } else if col_id == decode.op_alu_reg {
+        Ok(trace.op_alu_reg)
+    } else if col_id == decode.op_misc_mem {
+        Ok(trace.op_misc_mem)
+    } else if col_id == decode.op_system {
+        Ok(trace.op_system)
+    } else if col_id == decode.op_amo {
+        Ok(trace.op_amo)
+    } else if col_id == decode.op_custom {
+        Ok(trace.op_custom)
+    } else if col_id == decode.op_lui_write {
+        Ok(trace.write_lui)
+    } else if col_id == decode.op_auipc_write {
+        Ok(trace.write_auipc)
+    } else if col_id == decode.op_jal_write {
+        Ok(trace.write_jal)
+    } else if col_id == decode.op_jalr_write {
+        Ok(trace.write_jalr)
+    } else if col_id == decode.rd_is_zero {
+        Ok(trace.rd_is_zero)
+    } else if col_id == decode.imm_i {
+        Ok(trace.imm_i_u32ext)
+    } else if col_id == decode.imm_b {
+        Ok(trace.imm_b_u32ext)
+    } else if col_id == decode.imm_j {
+        Ok(trace.imm_j_u32ext)
+    } else if let Some(idx) = decode.funct3_bit.iter().position(|&id| id == col_id) {
+        Ok(trace.funct3_bit[idx])
+    } else if let Some(idx) = decode.funct3_is.iter().position(|&id| id == col_id) {
+        Ok(trace.funct3_is[idx])
+    } else if let Some(idx) = decode.rs1_bit.iter().position(|&id| id == col_id) {
+        Ok(trace.rs1_bit[idx])
+    } else if let Some(idx) = decode.rs2_bit.iter().position(|&id| id == col_id) {
+        Ok(trace.rs2_bit[idx])
+    } else if let Some(idx) = decode.funct7_bit.iter().position(|&id| id == col_id) {
+        Ok(trace.funct7_bit[idx])
+    } else {
+        Err(PiCcsError::ProtocolError(format!(
+            "control(shared): unsupported RV64 trace metadata mapping for decode col_id={col_id}"
+        )))
+    }
+}
+
+fn rv64_control_decode_cols_from_trace(
+    trace: &neo_memory::riscv::trace::Rv64TraceLayout,
+    decode: &Rv32DecodeSidecarLayout,
+    main_decoded: &BTreeMap<usize, Vec<K>>,
+    decode_col_ids: &[usize],
+) -> Result<BTreeMap<usize, Vec<K>>, PiCcsError> {
+    let mut decoded = BTreeMap::<usize, Vec<K>>::new();
+    for &col_id in decode_col_ids {
+        let trace_col = rv64_control_decode_col_from_trace(trace, decode, col_id)?;
+        let vals = main_decoded.get(&trace_col).ok_or_else(|| {
+            PiCcsError::ProtocolError(format!(
+                "control(shared): missing RV64 trace metadata column {trace_col} for decode col_id={col_id}"
+            ))
+        })?;
+        decoded.insert(col_id, vals.clone());
+    }
+    Ok(decoded)
+}
+
 pub(crate) fn build_route_a_control_time_claims(
     params: &NeoParams,
     step: &StepWitnessBundle<Cmt, F, K>,
@@ -17,6 +137,7 @@ pub(crate) fn build_route_a_control_time_claims(
     }
     let machine_xlen =
         neo_memory::riscv::trace::infer_riscv_trace_machine_xlen(step.time_columns.cpu_cols.len()).unwrap_or(32);
+    let rv64_trace = (machine_xlen == 64).then(neo_memory::riscv::trace::Rv64TraceLayout::new);
     let (
         trace_cols,
         trace_active,
@@ -77,7 +198,7 @@ pub(crate) fn build_route_a_control_time_claims(
         return Err(PiCcsError::InvalidInput("control stage: t_len must be >= 1".into()));
     }
 
-    let main_col_ids = vec![
+    let mut main_col_ids = vec![
         trace_active,
         trace_is_virtual,
         trace_instr_word,
@@ -88,6 +209,9 @@ pub(crate) fn build_route_a_control_time_claims(
         trace_shout_val,
         trace_jalr_drop_bit,
     ];
+    if let Some(trace64) = rv64_trace.as_ref() {
+        main_col_ids.extend(rv64_control_trace_metadata_columns(trace64));
+    }
     let decode_col_ids = vec![
         decode.op_lui,
         decode.op_auipc,
@@ -135,7 +259,9 @@ pub(crate) fn build_route_a_control_time_claims(
     ];
 
     let main_decoded = decode_trace_col_values_batch(params, step, t_len, &main_col_ids)?;
-    let decode_decoded = {
+    let decode_decoded = if let Some(trace64) = rv64_trace.as_ref() {
+        rv64_control_decode_cols_from_trace(trace64, &decode, &main_decoded, &decode_col_ids)?
+    } else {
         let instr_vals = main_decoded
             .get(&trace_instr_word)
             .ok_or_else(|| PiCcsError::ProtocolError("control(shared): missing instr_word decode column".into()))?;
@@ -711,6 +837,7 @@ pub(crate) fn verify_route_a_control_terminals(
     let machine_xlen =
         neo_memory::riscv::trace::infer_riscv_trace_machine_xlen(step.time_columns.cpu_cols.len()).unwrap_or(32);
     let trace = Rv32TraceLayout::new();
+    let rv64_trace = (machine_xlen == 64).then(neo_memory::riscv::trace::Rv64TraceLayout::new);
     let decode = Rv32DecodeSidecarLayout::new();
 
     let trace_opening_me = &mem_proof.trace_opening_me_claims[0];
@@ -733,6 +860,9 @@ pub(crate) fn verify_route_a_control_terminals(
     let control_extra_cols = riscv_trace_control_extra_opening_columns(&trace);
     let mut trace_opening_all_cols = trace_opening_base_cols.clone();
     trace_opening_all_cols.extend(control_extra_cols.iter().copied());
+    if let Some(trace64) = rv64_trace.as_ref() {
+        trace_opening_all_cols.extend(rv64_control_trace_metadata_columns(trace64));
+    }
     let (_trace_opening_entry, trace_opening_map) = require_time_openings_covering_point(
         step_time_openings,
         trace_opening_me.r.as_slice(),
@@ -742,15 +872,31 @@ pub(crate) fn verify_route_a_control_terminals(
     let trace_opening_col = |col_id: usize| -> Result<K, PiCcsError> {
         named_opening(&trace_opening_map, col_id, "control stage trace-opening")
     };
-    let decode_open_map = decode_lookup_open_map_from_committed_openings(
-        step,
-        cpu_bus,
-        r_time,
-        step_time_openings,
-        "control stage decode",
-    )?;
-    let decode_open_col =
-        |col_id: usize| -> Result<K, PiCcsError> { named_opening(&decode_open_map, col_id, "control stage decode") };
+    let decode_open_map = if rv64_trace.is_none() {
+        Some(decode_lookup_open_map_from_committed_openings(
+            step,
+            cpu_bus,
+            r_time,
+            step_time_openings,
+            "control stage decode",
+        )?)
+    } else {
+        None
+    };
+    let decode_open_col = |col_id: usize| -> Result<K, PiCcsError> {
+        if let Some(trace64) = rv64_trace.as_ref() {
+            let trace_col = rv64_control_decode_col_from_trace(trace64, &decode, col_id)?;
+            trace_opening_col(trace_col)
+        } else {
+            named_opening(
+                decode_open_map
+                    .as_ref()
+                    .ok_or_else(|| PiCcsError::ProtocolError("control stage decode openings missing".into()))?,
+                col_id,
+                "control stage decode",
+            )
+        }
+    };
 
     let active = trace_opening_col(trace.active)?;
     let is_virtual = trace_opening_col(trace.is_virtual)?;

@@ -346,8 +346,14 @@ pub(crate) fn validate_step_time_openings_consistency(
         if rv64_exact_words {
             trace_opening_cols.extend(crate::memory_sidecar::memory::rv64_trace_exact_word_opening_columns());
         }
-        if crate::memory_sidecar::memory::control_stage_required_for_step_instance(step) {
+        let control_required = crate::memory_sidecar::memory::control_stage_required_for_step_instance(step);
+        if control_required {
             trace_opening_cols.extend(crate::memory_sidecar::memory::riscv_trace_control_extra_opening_columns(&trace));
+        }
+        if rv64_exact_words && control_required {
+            trace_opening_cols.extend(crate::memory_sidecar::memory::rv64_control_trace_metadata_columns(
+                &neo_memory::riscv::trace::Rv64TraceLayout::new(),
+            ));
         }
         if crate::memory_sidecar::memory::rv64_fullword_width_stage_required_from_proof(step, &step_proof.batched_time)
         {

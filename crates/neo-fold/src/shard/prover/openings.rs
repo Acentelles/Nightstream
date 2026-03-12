@@ -244,6 +244,11 @@ where
                 trace_opening_cols
                     .extend(crate::memory_sidecar::memory::riscv_trace_control_extra_opening_columns(&trace));
             }
+            if rv64_exact_words && control_required {
+                trace_opening_cols.extend(crate::memory_sidecar::memory::rv64_control_trace_metadata_columns(
+                    &neo_memory::riscv::trace::Rv64TraceLayout::new(),
+                ));
+            }
             if crate::memory_sidecar::memory::rv64_fullword_width_stage_required_for_step_witness(step) {
                 trace_opening_cols.extend(crate::memory_sidecar::memory::rv64_fullword_trace_opening_columns());
             }

@@ -806,7 +806,12 @@ where
         if control_required {
             trace_opening_cols.extend(crate::memory_sidecar::memory::riscv_trace_control_extra_opening_columns(&trace));
         }
-        if decode_required {
+        if rv64_exact_words && control_required {
+            trace_opening_cols.extend(crate::memory_sidecar::memory::rv64_control_trace_metadata_columns(
+                &neo_memory::riscv::trace::Rv64TraceLayout::new(),
+            ));
+        }
+        if decode_required && !rv64_exact_words {
             let decode_layout = Rv32DecodeSidecarLayout::new();
             let (_decode_open_cols, decode_lut_slots) =
                 crate::memory_sidecar::memory::resolve_shared_decode_lookup_lut_indices(step, &decode_layout)?;

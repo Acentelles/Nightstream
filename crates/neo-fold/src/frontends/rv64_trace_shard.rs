@@ -42,18 +42,15 @@ use neo_memory::riscv::lookups::{
 };
 use neo_memory::riscv::rom_init::prog_rom_layout_and_init_words;
 use neo_memory::riscv::trace::{
-    riscv_decode_lookup_backed_row_from_instr_word, riscv_decode_lookup_table_id_for_col,
-    riscv_decode_lookup_transport_cols, riscv_trace_lookup_addr_group_for_table_id,
-    riscv_trace_lookup_n_vals_for_table_id, riscv_trace_lookup_selector_group_for_table_id,
-    rv64_width_lookup_backed_cols, rv64_width_lookup_table_id_for_col, rv64_width_sidecar_witness_from_exec_table,
-    Rv32DecodeSidecarLayout, Rv64WidthSidecarLayout,
+    riscv_trace_lookup_addr_group_for_table_id, riscv_trace_lookup_n_vals_for_table_id,
+    riscv_trace_lookup_selector_group_for_table_id,
 };
 use neo_memory::{
     lower_loaded_program, LoweredInstruction, LoweredProgram, LutTableSpec, R1csCpu, RiscvGuestMemoryLayout,
     RiscvProofProfile, RiscvProofProfileConfig, RiscvProofProfileError,
 };
 use neo_params::NeoParams;
-use neo_vm_trace::{trace_program, ShoutId, StepTrace, Twist as _, VmTrace};
+use neo_vm_trace::{trace_program, StepTrace, Twist as _, VmTrace};
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
 use rand_chacha::rand_core::SeedableRng;
 
@@ -365,13 +362,12 @@ impl Rv64TraceWiring {
 
         let prove_start = time_now();
         let setup_start = prove_start;
-        let mut trace = prepared.simulate(max_steps)?;
+        let trace = prepared.simulate(max_steps)?;
         validate_trace_opcode_lookup_one_hot(&trace, prepared.profile.xlen())?;
         let target_len = trace.steps.len().max(self.min_trace_len);
         let (prog_layout, prog_init_words) =
             prog_rom_layout_and_init_words::<F>(PROG_ID, prepared.entry_segment.vaddr, &prepared.entry_segment.data)
                 .map_err(|e| PiCcsError::InvalidInput(format!("prog_rom_layout_and_init_words failed: {e}")))?;
-        inject_decode_lookup_events_into_trace(&mut trace, &prog_layout, &prog_init_words)?;
 
         let exec = RiscvExecTable::from_trace_padded_with_xlen(&trace, target_len, /*machine_xlen=*/ 64)
             .map_err(|e| PiCcsError::InvalidInput(format!("RiscvExecTable::from_trace_padded failed: {e}")))?;
@@ -384,15 +380,6 @@ impl Rv64TraceWiring {
         exec.validate_inactive_rows_are_empty()
             .map_err(|e| PiCcsError::InvalidInput(format!("validate_inactive_rows_are_empty failed: {e}")))?;
         validate_rv64_trace_field_injectivity(&exec, &prepared)?;
-        let width_layout = Rv64WidthSidecarLayout::new();
-        let include_width_lookup = rv64_program_requires_width_lookup(&program);
-        let (rv64_width_lookup_tables, rv64_width_lookup_addr_d) = if include_width_lookup {
-            let (tables, addr_d) = build_rv64_width_lookup_tables(&width_layout, &exec, trace.steps.len())?;
-            inject_rv64_width_lookup_events_into_trace(&mut trace, &exec, &width_layout)?;
-            (tables, addr_d)
-        } else {
-            (HashMap::new(), 0usize)
-        };
         let rv64_ram_bridge = if rv64_program_requires_ram_sidecar(&program) || !prepared.ram_init_words.is_empty() {
             derive_rv64_ram_bridge(
                 &trace,
@@ -481,15 +468,6 @@ impl Rv64TraceWiring {
             );
         }
 
-        let decode_lookup_tables = build_decode_lookup_tables(&prog_layout, &prog_init_words);
-        let decode_layout = Rv32DecodeSidecarLayout::new();
-        let decode_lookup_cols = riscv_decode_lookup_transport_cols(&decode_layout);
-        let mut decode_table_ids: Vec<u32> = decode_lookup_cols
-            .iter()
-            .map(|&col_id| riscv_decode_lookup_table_id_for_col(col_id))
-            .collect();
-        decode_table_ids.sort_unstable();
-        decode_table_ids.dedup();
         let mut shout_bus_specs = Vec::new();
         for &table_id in rv64_trace_table_specs(&shout_ops).keys() {
             shout_bus_specs.push(TraceShoutBusSpec {
@@ -498,49 +476,8 @@ impl Rv64TraceWiring {
                 n_vals: 1,
             });
         }
-        if decode_table_ids.len() == 1 {
-            shout_bus_specs.push(TraceShoutBusSpec {
-                table_id: decode_table_ids[0],
-                ell_addr: prog_layout.d,
-                n_vals: decode_lookup_cols.len().max(1),
-            });
-        } else {
-            for &col_id in decode_lookup_cols.iter() {
-                shout_bus_specs.push(TraceShoutBusSpec {
-                    table_id: riscv_decode_lookup_table_id_for_col(col_id),
-                    ell_addr: prog_layout.d,
-                    n_vals: 1,
-                });
-            }
-        }
-        if include_width_lookup {
-            let width_lookup_cols = rv64_width_lookup_backed_cols(&width_layout);
-            let mut width_table_ids: Vec<u32> = width_lookup_cols
-                .iter()
-                .map(|&col_id| rv64_width_lookup_table_id_for_col(col_id))
-                .collect();
-            width_table_ids.sort_unstable();
-            width_table_ids.dedup();
-            if width_table_ids.len() == 1 {
-                shout_bus_specs.push(TraceShoutBusSpec {
-                    table_id: width_table_ids[0],
-                    ell_addr: rv64_width_lookup_addr_d,
-                    n_vals: width_lookup_cols.len().max(1),
-                });
-            } else {
-                for &col_id in &width_lookup_cols {
-                    shout_bus_specs.push(TraceShoutBusSpec {
-                        table_id: rv64_width_lookup_table_id_for_col(col_id),
-                        ell_addr: rv64_width_lookup_addr_d,
-                        n_vals: 1,
-                    });
-                }
-            }
-        }
-
         let table_specs = rv64_trace_table_specs(&shout_ops);
-        let mut lut_tables = decode_lookup_tables.clone();
-        lut_tables.extend(rv64_width_lookup_tables.clone());
+        let lut_tables = HashMap::new();
         let lut_lanes: HashMap<u32, usize> = HashMap::new();
         let bus_cols = estimate_route_a_bus_cols(layout.t, &table_specs, &lut_tables, &mem_layouts, &lut_lanes)?;
         layout.m = layout
