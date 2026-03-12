@@ -765,7 +765,7 @@ where
             AuxCpuLaneConfig {
                 start_label: b"fold/booleanity_lane_start",
                 claim_idx_label: b"fold/booleanity_lane_claim_idx",
-                lane_name: "wb",
+                lane_name: "booleanity",
                 opening_cols: booleanity_cols.as_slice(),
                 claims: mem_proof.booleanity_me_claims.as_slice(),
             },
@@ -887,7 +887,7 @@ where
             AuxCpuLaneConfig {
                 start_label: b"fold/trace_opening_lane_start",
                 claim_idx_label: b"fold/trace_opening_lane_claim_idx",
-                lane_name: "wp",
+                lane_name: "trace_opening",
                 opening_cols: trace_opening_cols.as_slice(),
                 claims: mem_proof.trace_opening_me_claims.as_slice(),
             },

@@ -222,7 +222,7 @@ pub(super) fn prove_route_a_time_phase(
             |(oracle, _)| crate::memory_sidecar::route_a_time::ExtraBatchedTimeClaim {
                 oracle,
                 claimed_sum: K::ZERO,
-                label: b"wb/booleanity",
+                label: b"booleanity/check",
             },
         );
     let trace_opening_time_claim =
@@ -230,7 +230,7 @@ pub(super) fn prove_route_a_time_phase(
             |(oracle, _)| crate::memory_sidecar::route_a_time::ExtraBatchedTimeClaim {
                 oracle,
                 claimed_sum: K::ZERO,
-                label: b"wp/quiescence",
+                label: b"trace_opening/quiescence",
             },
         );
 

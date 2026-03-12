@@ -1181,9 +1181,9 @@ where
         }
         if let Some(plan) = joint_opening_plan {
             let joint_opening_params = joint_opening_time_decomp_params(params)?;
-            tr.append_message(b"fold/stage8_lane_start", &(step_idx as u64).to_le_bytes());
-            tr.append_message(b"fold/stage8_lane_group_idx", &0u64.to_le_bytes());
-            let proof_stage8 = step_proof
+            tr.append_message(b"fold/joint_opening_lane_start", &(step_idx as u64).to_le_bytes());
+            tr.append_message(b"fold/joint_opening_lane_group_idx", &0u64.to_le_bytes());
+            let joint_opening_fold_proof = step_proof
                 .joint_opening_fold
                 .first()
                 .ok_or_else(|| PiCcsError::ProtocolError(format!("step {}: missing joint-opening fold proof", idx)))?;
@@ -1197,12 +1197,12 @@ where
                 mixers,
                 step_idx,
                 plan.claims.as_slice(),
-                &proof_stage8.rlc_rhos,
-                &proof_stage8.rlc_parent,
-                &proof_stage8.dec_children,
+                &joint_opening_fold_proof.rlc_rhos,
+                &joint_opening_fold_proof.rlc_parent,
+                &joint_opening_fold_proof.dec_children,
             )
             .map_err(|e| PiCcsError::ProtocolError(format!("step {} joint_opening_fold verify failed: {e:?}", idx)))?;
-            val_lane_obligations.extend_from_slice(&proof_stage8.dec_children);
+            val_lane_obligations.extend_from_slice(&joint_opening_fold_proof.dec_children);
         }
 
         tr.append_message(b"fold/step_done", &(step_idx as u64).to_le_bytes());

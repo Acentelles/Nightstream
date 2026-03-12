@@ -502,9 +502,7 @@ pub(crate) fn verify_route_a_trace_opening_terminals(
 
     if let Some(claim_idx) = claim_plan.booleanity_claim {
         if claim_idx >= batched_final_values.len() {
-            return Err(PiCcsError::ProtocolError(
-                "wb/booleanity claim index out of range".into(),
-            ));
+            return Err(PiCcsError::ProtocolError("booleanity claim index out of range".into()));
         }
         if mem_proof.booleanity_me_claims.len() != 1 {
             return Err(PiCcsError::ProtocolError(format!(
@@ -546,20 +544,18 @@ pub(crate) fn verify_route_a_trace_opening_terminals(
         let expected_terminal = eq_points(r_time, r_cycle) * booleanity_weighted_sum;
         let observed_terminal = batched_final_values[claim_idx];
         if observed_terminal != expected_terminal {
-            return Err(PiCcsError::ProtocolError(
-                "wb/booleanity terminal value mismatch".into(),
-            ));
+            return Err(PiCcsError::ProtocolError("booleanity terminal value mismatch".into()));
         }
     } else if !mem_proof.booleanity_me_claims.is_empty() {
         return Err(PiCcsError::ProtocolError(
-            "unexpected booleanity ME claims: wb/booleanity stage is not enabled".into(),
+            "unexpected booleanity ME claims: booleanity stage is not enabled".into(),
         ));
     }
 
     if let Some(claim_idx) = claim_plan.trace_opening_quiescence {
         if claim_idx >= batched_final_values.len() {
             return Err(PiCcsError::ProtocolError(
-                "wp/quiescence claim index out of range".into(),
+                "trace-opening/quiescence claim index out of range".into(),
             ));
         }
         if mem_proof.trace_opening_me_claims.len() != 1 {
@@ -611,12 +607,12 @@ pub(crate) fn verify_route_a_trace_opening_terminals(
         let observed_terminal = batched_final_values[claim_idx];
         if observed_terminal != expected_terminal {
             return Err(PiCcsError::ProtocolError(
-                "wp/quiescence terminal value mismatch".into(),
+                "trace-opening/quiescence terminal value mismatch".into(),
             ));
         }
     } else if !mem_proof.trace_opening_me_claims.is_empty() {
         return Err(PiCcsError::ProtocolError(
-            "unexpected trace-opening ME claims: wp/quiescence stage is not enabled".into(),
+            "unexpected trace-opening ME claims: trace-opening/quiescence stage is not enabled".into(),
         ));
     }
 

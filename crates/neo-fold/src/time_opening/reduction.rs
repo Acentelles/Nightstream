@@ -17,27 +17,30 @@ fn group_digest(
     domain: OpeningDomain,
     claim_indices: &[usize],
 ) -> [u8; 32] {
-    let mut h = Poseidon2Transcript::new(b"stage8/reduction/group_digest");
-    h.append_message(b"stage8/reduction/group_digest/version", b"v2");
-    h.append_message(b"stage8/reduction/group_digest/manifest_digest", manifest_digest);
+    let mut h = Poseidon2Transcript::new(b"joint_opening/reduction/group_digest");
+    h.append_message(b"joint_opening/reduction/group_digest/version", b"v2");
+    h.append_message(b"joint_opening/reduction/group_digest/manifest_digest", manifest_digest);
     let dom = match domain {
         OpeningDomain::Cpu => 1u64,
         OpeningDomain::Mem => 2u64,
     };
-    h.append_u64s(b"stage8/reduction/group_digest/domain", &[dom]);
-    h.append_u64s(b"stage8/reduction/group_digest/point_len", &[point.len() as u64]);
+    h.append_u64s(b"joint_opening/reduction/group_digest/domain", &[dom]);
+    h.append_u64s(b"joint_opening/reduction/group_digest/point_len", &[point.len() as u64]);
     let point_coeffs_per_elem = point.first().map(|v| v.as_coeffs().len()).unwrap_or(0);
     h.append_fields_iter(
-        b"stage8/reduction/group_digest/point",
+        b"joint_opening/reduction/group_digest/point",
         point.len().saturating_mul(point_coeffs_per_elem),
         point.iter().flat_map(|v| v.as_coeffs()),
     );
     let claim_indices_u64: Vec<u64> = claim_indices.iter().map(|&idx| idx as u64).collect();
     h.append_u64s(
-        b"stage8/reduction/group_digest/claim_indices_len",
+        b"joint_opening/reduction/group_digest/claim_indices_len",
         &[claim_indices_u64.len() as u64],
     );
-    h.append_u64s(b"stage8/reduction/group_digest/claim_indices", &claim_indices_u64);
+    h.append_u64s(
+        b"joint_opening/reduction/group_digest/claim_indices",
+        &claim_indices_u64,
+    );
     h.digest32()
 }
 
@@ -94,9 +97,12 @@ pub fn bind_opening_reduction_and_sample_group_coeffs(
     manifest_digest: &[u8; 32],
     reduction: &OpeningReductionProof,
 ) -> Result<Vec<Vec<Mat<F>>>, PiCcsError> {
-    tr.append_message(b"stage8/reduction_bind/v1", &[]);
-    tr.append_u64s(b"stage8/reduction_bind/step_idx", &[step_idx as u64]);
-    tr.append_u64s(b"stage8/reduction_bind/group_len", &[reduction.groups.len() as u64]);
+    tr.append_message(b"joint_opening/reduction_bind/v1", &[]);
+    tr.append_u64s(b"joint_opening/reduction_bind/step_idx", &[step_idx as u64]);
+    tr.append_u64s(
+        b"joint_opening/reduction_bind/group_len",
+        &[reduction.groups.len() as u64],
+    );
 
     let mut seen = vec![false; manifest_len];
     let mut out_coeffs: Vec<Vec<Mat<F>>> = Vec::with_capacity(reduction.groups.len());
@@ -114,24 +120,24 @@ pub fn bind_opening_reduction_and_sample_group_coeffs(
             )));
         }
 
-        tr.append_u64s(b"stage8/reduction_bind/group_idx", &[group_idx as u64]);
+        tr.append_u64s(b"joint_opening/reduction_bind/group_idx", &[group_idx as u64]);
         let dom = match group.domain {
             OpeningDomain::Cpu => 0u64,
             OpeningDomain::Mem => 1u64,
         };
-        tr.append_u64s(b"stage8/reduction_bind/domain", &[dom]);
-        tr.append_u64s(b"stage8/reduction_bind/point_len", &[group.point.len() as u64]);
+        tr.append_u64s(b"joint_opening/reduction_bind/domain", &[dom]);
+        tr.append_u64s(b"joint_opening/reduction_bind/point_len", &[group.point.len() as u64]);
         let point_coeffs_per_elem = group
             .point
             .first()
             .map(|v| v.as_coeffs().len())
             .unwrap_or(0);
         tr.append_fields_iter(
-            b"stage8/reduction_bind/point",
+            b"joint_opening/reduction_bind/point",
             group.point.len().saturating_mul(point_coeffs_per_elem),
             group.point.iter().flat_map(|v| v.as_coeffs()),
         );
-        tr.append_message(b"stage8/reduction_bind/group_digest", &group.group_digest);
+        tr.append_message(b"joint_opening/reduction_bind/group_digest", &group.group_digest);
 
         let mut idx_u64 = Vec::with_capacity(group.claim_indices.len());
         for &claim_idx in group.claim_indices.iter() {
@@ -150,8 +156,8 @@ pub fn bind_opening_reduction_and_sample_group_coeffs(
             seen[claim_idx] = true;
             idx_u64.push(claim_idx as u64);
         }
-        tr.append_u64s(b"stage8/reduction_bind/claim_indices", &idx_u64);
-        tr.append_message(b"stage8/reduction/rho", &(group_idx as u64).to_le_bytes());
+        tr.append_u64s(b"joint_opening/reduction_bind/claim_indices", &idx_u64);
+        tr.append_message(b"joint_opening/reduction/rho", &(group_idx as u64).to_le_bytes());
         let rhos = ccs::sample_rot_rhos_n(tr, params, &ring, group.claim_indices.len())?;
         for i in 0..rhos.len() {
             for j in (i + 1)..rhos.len() {
@@ -181,33 +187,36 @@ fn ceil_log2_at_least_1(n: usize) -> usize {
 }
 
 fn group_value(group: &OpeningReductionGroup) -> K {
-    let mut h = Poseidon2Transcript::new(b"stage8/reduction/group_value");
-    h.append_message(b"stage8/reduction/group_value/version", b"v1");
-    h.append_message(b"stage8/reduction/group_value/digest", &group.group_digest);
+    let mut h = Poseidon2Transcript::new(b"joint_opening/reduction/group_value");
+    h.append_message(b"joint_opening/reduction/group_value/version", b"v1");
+    h.append_message(b"joint_opening/reduction/group_value/digest", &group.group_digest);
     let dom = match group.domain {
         OpeningDomain::Cpu => 0u64,
         OpeningDomain::Mem => 1u64,
     };
-    h.append_u64s(b"stage8/reduction/group_value/domain", &[dom]);
-    h.append_u64s(b"stage8/reduction/group_value/point_len", &[group.point.len() as u64]);
+    h.append_u64s(b"joint_opening/reduction/group_value/domain", &[dom]);
+    h.append_u64s(
+        b"joint_opening/reduction/group_value/point_len",
+        &[group.point.len() as u64],
+    );
     let point_coeffs_per_elem = group
         .point
         .first()
         .map(|v| v.as_coeffs().len())
         .unwrap_or(0);
     h.append_fields_iter(
-        b"stage8/reduction/group_value/point",
+        b"joint_opening/reduction/group_value/point",
         group.point.len().saturating_mul(point_coeffs_per_elem),
         group.point.iter().flat_map(|v| v.as_coeffs()),
     );
     let idx_u64: Vec<u64> = group.claim_indices.iter().map(|&idx| idx as u64).collect();
     h.append_u64s(
-        b"stage8/reduction/group_value/claim_indices_len",
+        b"joint_opening/reduction/group_value/claim_indices_len",
         &[idx_u64.len() as u64],
     );
-    h.append_u64s(b"stage8/reduction/group_value/claim_indices", &idx_u64);
-    let c = h.challenge_field(b"stage8/reduction/group_value/0");
-    let d = h.challenge_field(b"stage8/reduction/group_value/1");
+    h.append_u64s(b"joint_opening/reduction/group_value/claim_indices", &idx_u64);
+    let c = h.challenge_field(b"joint_opening/reduction/group_value/0");
+    let d = h.challenge_field(b"joint_opening/reduction/group_value/1");
     from_complex(c, d)
 }
 
@@ -218,28 +227,31 @@ fn bind_opening_unification_statement(
     ell_sel: usize,
     values: &[K],
 ) {
-    tr.append_message(b"stage8/reduction_unify_bind/v1", &[]);
-    tr.append_u64s(b"stage8/reduction_unify_bind/step_idx", &[step_idx as u64]);
+    tr.append_message(b"joint_opening/reduction_unify_bind/v1", &[]);
+    tr.append_u64s(b"joint_opening/reduction_unify_bind/step_idx", &[step_idx as u64]);
     tr.append_u64s(
-        b"stage8/reduction_unify_bind/group_len",
+        b"joint_opening/reduction_unify_bind/group_len",
         &[reduction.groups.len() as u64],
     );
-    tr.append_u64s(b"stage8/reduction_unify_bind/ell_sel", &[ell_sel as u64]);
+    tr.append_u64s(b"joint_opening/reduction_unify_bind/ell_sel", &[ell_sel as u64]);
     for (idx, (group, value)) in reduction.groups.iter().zip(values.iter()).enumerate() {
-        tr.append_u64s(b"stage8/reduction_unify_bind/group_idx", &[idx as u64]);
+        tr.append_u64s(b"joint_opening/reduction_unify_bind/group_idx", &[idx as u64]);
         let dom = match group.domain {
             OpeningDomain::Cpu => 0u64,
             OpeningDomain::Mem => 1u64,
         };
-        tr.append_u64s(b"stage8/reduction_unify_bind/domain", &[dom]);
-        tr.append_u64s(b"stage8/reduction_unify_bind/point_len", &[group.point.len() as u64]);
+        tr.append_u64s(b"joint_opening/reduction_unify_bind/domain", &[dom]);
+        tr.append_u64s(
+            b"joint_opening/reduction_unify_bind/point_len",
+            &[group.point.len() as u64],
+        );
         let point_coeffs_per_elem = group
             .point
             .first()
             .map(|v| v.as_coeffs().len())
             .unwrap_or(0);
         tr.append_fields_iter(
-            b"stage8/reduction_unify_bind/point",
+            b"joint_opening/reduction_unify_bind/point",
             group.point.len().saturating_mul(point_coeffs_per_elem),
             group.point.iter().flat_map(|v| v.as_coeffs()),
         );
@@ -249,12 +261,12 @@ fn bind_opening_unification_statement(
             .map(|&claim_idx| claim_idx as u64)
             .collect();
         tr.append_u64s(
-            b"stage8/reduction_unify_bind/claim_indices_len",
+            b"joint_opening/reduction_unify_bind/claim_indices_len",
             &[idx_u64.len() as u64],
         );
-        tr.append_u64s(b"stage8/reduction_unify_bind/claim_indices", &idx_u64);
-        tr.append_message(b"stage8/reduction_unify_bind/group_digest", &group.group_digest);
-        tr.append_fields(b"stage8/reduction_unify_bind/group_value", &value.as_coeffs());
+        tr.append_u64s(b"joint_opening/reduction_unify_bind/claim_indices", &idx_u64);
+        tr.append_message(b"joint_opening/reduction_unify_bind/group_digest", &group.group_digest);
+        tr.append_fields(b"joint_opening/reduction_unify_bind/group_value", &value.as_coeffs());
     }
 }
 
@@ -347,10 +359,10 @@ pub fn prove_opening_unification_sumcheck(
     let claimed_sum = values.iter().copied().fold(K::ZERO, |acc, v| acc + v);
     let mut oracle = GroupSelectorOracle::new(values, ell_sel);
     let (round_polys, r_unify) =
-        run_sumcheck_prover_ds(tr, b"stage8/reduction_unify", step_idx, &mut oracle, claimed_sum)?;
+        run_sumcheck_prover_ds(tr, b"joint_opening/reduction_unify", step_idx, &mut oracle, claimed_sum)?;
     if round_polys.len() != ell_sel || r_unify.len() != ell_sel {
         return Err(PiCcsError::ProtocolError(format!(
-            "stage8/reduction_unify prove: round/challenge length mismatch (rounds={}, r_unify={}, ell_sel={})",
+            "joint-opening/reduction_unify prove: round/challenge length mismatch (rounds={}, r_unify={}, ell_sel={})",
             round_polys.len(),
             r_unify.len(),
             ell_sel
@@ -374,7 +386,7 @@ pub fn verify_opening_unification_sumcheck(
             return Ok(());
         }
         return Err(PiCcsError::ProtocolError(
-            "stage8/reduction_unify verify: expected empty proof when there are no reduction groups".into(),
+            "joint-opening/reduction_unify verify: expected empty proof when there are no reduction groups".into(),
         ));
     }
     let values: Vec<K> = reduction.groups.iter().map(group_value).collect();
@@ -383,19 +395,19 @@ pub fn verify_opening_unification_sumcheck(
     let expected_sum = values.iter().copied().fold(K::ZERO, |acc, v| acc + v);
     if proof.claimed_sum != expected_sum {
         return Err(PiCcsError::ProtocolError(
-            "stage8/reduction_unify verify: claimed_sum mismatch".into(),
+            "joint-opening/reduction_unify verify: claimed_sum mismatch".into(),
         ));
     }
     if proof.round_polys.len() != ell_sel {
         return Err(PiCcsError::ProtocolError(format!(
-            "stage8/reduction_unify verify: expected {} rounds, got {}",
+            "joint-opening/reduction_unify verify: expected {} rounds, got {}",
             ell_sel,
             proof.round_polys.len()
         )));
     }
     let (r_unify, final_value, ok) = verify_sumcheck_rounds_ds(
         tr,
-        b"stage8/reduction_unify",
+        b"joint_opening/reduction_unify",
         step_idx,
         1,
         proof.claimed_sum,
@@ -403,18 +415,18 @@ pub fn verify_opening_unification_sumcheck(
     );
     if !ok {
         return Err(PiCcsError::ProtocolError(
-            "stage8/reduction_unify verify: sumcheck verification failed".into(),
+            "joint-opening/reduction_unify verify: sumcheck verification failed".into(),
         ));
     }
     if r_unify != proof.r_unify {
         return Err(PiCcsError::ProtocolError(
-            "stage8/reduction_unify verify: r_unify mismatch".into(),
+            "joint-opening/reduction_unify verify: r_unify mismatch".into(),
         ));
     }
     let expected_final = GroupSelectorOracle::eval_at_point(&values, &proof.r_unify);
     if final_value != expected_final {
         return Err(PiCcsError::ProtocolError(
-            "stage8/reduction_unify verify: final value mismatch".into(),
+            "joint-opening/reduction_unify verify: final value mismatch".into(),
         ));
     }
     Ok(())

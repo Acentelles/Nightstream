@@ -80,7 +80,7 @@ pub struct OpeningReductionGroup {
     pub point: Vec<K>,
     pub domain: OpeningDomain,
     pub claim_indices: Vec<usize>,
-    /// Canonical digest of `(domain, point, claim_indices)` under the stage8 v1 transcript encoding.
+    /// Canonical digest of `(domain, point, claim_indices)` under the joint-opening reduction transcript encoding.
     pub group_digest: [u8; 32],
 }
 

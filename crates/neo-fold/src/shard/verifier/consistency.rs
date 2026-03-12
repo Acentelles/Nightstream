@@ -74,20 +74,20 @@ pub(crate) fn validate_step_time_opening_batches_with_transcript(
     )?;
     if manifest != fold.opening_manifest {
         return Err(PiCcsError::ProtocolError(
-            "verify/time-opening stage8: opening manifest mismatch".into(),
+            "verify/time-opening joint-opening: opening manifest mismatch".into(),
         ));
     }
     crate::time_opening::manifest::bind_opening_claim_manifest(tr, step_idx, &manifest);
     let all_coeffs = bind_time_opening_batches_and_sample_coeffs(tr, params, step_idx, &fold.opening_proofs)?;
     if all_coeffs.len() != fold.opening_proofs.len() {
         return Err(PiCcsError::ProtocolError(
-            "verify/time-opening stage8: opening-batch coefficient/proof length mismatch".into(),
+            "verify/time-opening joint-opening: opening-batch coefficient/proof length mismatch".into(),
         ));
     }
     let reduction = crate::time_opening::reduction::build_opening_reduction(&manifest)?;
     if reduction.groups != fold.opening_reduction.groups {
         return Err(PiCcsError::ProtocolError(
-            "verify/time-opening stage8: reduction proof mismatch".into(),
+            "verify/time-opening joint-opening: reduction proof mismatch".into(),
         ));
     }
     crate::time_opening::reduction::verify_opening_unification_sumcheck(

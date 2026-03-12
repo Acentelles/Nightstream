@@ -171,7 +171,7 @@ pub(crate) fn verify_route_a_decode_terminals(
     if let Some(claim_idx) = claim_plan.decode_fields {
         if claim_idx >= batched_final_values.len() {
             return Err(PiCcsError::ProtocolError(
-                "w2/decode_fields claim index out of range".into(),
+                "decode/fields claim index out of range".into(),
             ));
         }
         let opcode_flags = [
@@ -328,7 +328,7 @@ pub(crate) fn verify_route_a_decode_terminals(
         let expected = eq_points(r_time, r_cycle) * weighted;
         if batched_final_values[claim_idx] != expected {
             return Err(PiCcsError::ProtocolError(
-                "w2/decode_fields terminal value mismatch".into(),
+                "decode/fields terminal value mismatch".into(),
             ));
         }
     }
@@ -336,7 +336,7 @@ pub(crate) fn verify_route_a_decode_terminals(
     if let Some(claim_idx) = claim_plan.decode_immediates {
         if claim_idx >= batched_final_values.len() {
             return Err(PiCcsError::ProtocolError(
-                "w2/decode_immediates claim index out of range".into(),
+                "decode/immediates claim index out of range".into(),
             ));
         }
         let residuals = decode_immediate_residuals(
@@ -388,7 +388,7 @@ pub(crate) fn verify_route_a_decode_terminals(
         let expected = eq_points(r_time, r_cycle) * weighted;
         if batched_final_values[claim_idx] != expected {
             return Err(PiCcsError::ProtocolError(
-                "w2/decode_immediates terminal value mismatch".into(),
+                "decode/immediates terminal value mismatch".into(),
             ));
         }
     }

@@ -334,7 +334,7 @@ pub(crate) fn build_route_a_width_time_claims(
             .find(|(_, r)| **r != K::ZERO)
         {
             return Err(PiCcsError::ProtocolError(format!(
-                "w3/load_semantics residual non-zero at row={j}, idx={idx}, active={active}, op_load={op_load}, funct3_is={:?}, rd_has_write={rd_has_write}, ram_has_read={ram_has_read}",
+                "width/load_semantics residual non-zero at row={j}, idx={idx}, active={active}, op_load={op_load}, funct3_is={:?}, rd_has_write={rd_has_write}, ram_has_read={ram_has_read}",
                 funct3_is
             )));
         }
@@ -362,7 +362,7 @@ pub(crate) fn build_route_a_width_time_claims(
             .find(|(_, r)| **r != K::ZERO)
         {
             return Err(PiCcsError::ProtocolError(format!(
-                "w3/store_semantics residual non-zero at row={j}, idx={idx}, active={active}, op_store={op_store}, funct3_is={:?}, ram_has_read={ram_has_read}, ram_has_write={ram_has_write}",
+                "width/store_semantics residual non-zero at row={j}, idx={idx}, active={active}, op_store={op_store}, funct3_is={:?}, ram_has_read={ram_has_read}, ram_has_write={ram_has_write}",
                 funct3_is
             )));
         }
@@ -757,7 +757,9 @@ pub(crate) fn verify_route_a_width_terminals(
 
     if let Some(claim_idx) = claim_plan.width_bitness {
         if claim_idx >= batched_final_values.len() {
-            return Err(PiCcsError::ProtocolError("w3/bitness claim index out of range".into()));
+            return Err(PiCcsError::ProtocolError(
+                "width/bitness claim index out of range".into(),
+            ));
         }
         let mut bitness_open = Vec::with_capacity(32);
         bitness_open.extend_from_slice(&ram_rv_low_bits);
@@ -769,14 +771,16 @@ pub(crate) fn verify_route_a_width_terminals(
         }
         let expected = eq_points(r_time, r_cycle) * weighted;
         if batched_final_values[claim_idx] != expected {
-            return Err(PiCcsError::ProtocolError("w3/bitness terminal value mismatch".into()));
+            return Err(PiCcsError::ProtocolError(
+                "width/bitness terminal value mismatch".into(),
+            ));
         }
     }
 
     if let Some(claim_idx) = claim_plan.width_quiescence {
         if claim_idx >= batched_final_values.len() {
             return Err(PiCcsError::ProtocolError(
-                "w3/quiescence claim index out of range".into(),
+                "width/quiescence claim index out of range".into(),
             ));
         }
         let mut quiescence_open = vec![ram_rv_q16, rs2_q16];
@@ -790,21 +794,21 @@ pub(crate) fn verify_route_a_width_terminals(
         let expected = eq_points(r_time, r_cycle) * (K::ONE - active) * weighted;
         if batched_final_values[claim_idx] != expected {
             return Err(PiCcsError::ProtocolError(
-                "w3/quiescence terminal value mismatch".into(),
+                "width/quiescence terminal value mismatch".into(),
             ));
         }
     }
 
     if claim_plan.width_selector_linkage.is_some() {
         return Err(PiCcsError::ProtocolError(
-            "w3/selector_linkage must be disabled in reduced width-sidecar mode".into(),
+            "width/selector_linkage must be disabled in reduced width-sidecar mode".into(),
         ));
     }
 
     if let Some(claim_idx) = claim_plan.width_load_semantics {
         if claim_idx >= batched_final_values.len() {
             return Err(PiCcsError::ProtocolError(
-                "w3/load_semantics claim index out of range".into(),
+                "width/load_semantics claim index out of range".into(),
             ));
         }
         let residuals = width_load_semantics_residuals(
@@ -824,7 +828,7 @@ pub(crate) fn verify_route_a_width_terminals(
         let expected = eq_points(r_time, r_cycle) * weighted;
         if batched_final_values[claim_idx] != expected {
             return Err(PiCcsError::ProtocolError(
-                "w3/load_semantics terminal value mismatch".into(),
+                "width/load_semantics terminal value mismatch".into(),
             ));
         }
     }
@@ -832,7 +836,7 @@ pub(crate) fn verify_route_a_width_terminals(
     if let Some(claim_idx) = claim_plan.width_store_semantics {
         if claim_idx >= batched_final_values.len() {
             return Err(PiCcsError::ProtocolError(
-                "w3/store_semantics claim index out of range".into(),
+                "width/store_semantics claim index out of range".into(),
             ));
         }
         let residuals = width_store_semantics_residuals(
@@ -855,7 +859,7 @@ pub(crate) fn verify_route_a_width_terminals(
         let expected = eq_points(r_time, r_cycle) * weighted;
         if batched_final_values[claim_idx] != expected {
             return Err(PiCcsError::ProtocolError(
-                "w3/store_semantics terminal value mismatch".into(),
+                "width/store_semantics terminal value mismatch".into(),
             ));
         }
     }

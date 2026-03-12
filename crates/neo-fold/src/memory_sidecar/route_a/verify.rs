@@ -180,8 +180,8 @@ pub fn verify_route_a_memory_step(
     };
     let booleanity_enabled = trace_opening_path_required_for_step_instance(step);
     let trace_opening_enabled = trace_opening_path_required_for_step_instance(step);
-    let w2_enabled = decode_stage_required_for_step_instance(step);
-    let w3_enabled = width_stage_required_for_step_instance(step) || rv64_fullword_width_stage_from_proof;
+    let decode_stage_enabled = decode_stage_required_for_step_instance(step);
+    let width_stage_enabled = width_stage_required_for_step_instance(step) || rv64_fullword_width_stage_from_proof;
     let control_enabled = control_stage_required_for_step_instance(step);
     let poseidon_cycle_enabled = RouteATimeClaimPlan::poseidon_stage_required_for_step_instance(step)?;
     let claim_plan = RouteATimeClaimPlan::build(
@@ -189,8 +189,8 @@ pub fn verify_route_a_memory_step(
         claim_idx_start,
         booleanity_enabled,
         trace_opening_enabled,
-        w2_enabled,
-        w3_enabled,
+        decode_stage_enabled,
+        width_stage_enabled,
         control_enabled,
         poseidon_cycle_enabled,
     )?;

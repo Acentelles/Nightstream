@@ -486,7 +486,7 @@ impl RouteATimeClaimPlan {
 
         if booleanity_enabled {
             out.push(TimeClaimMeta {
-                label: b"wb/booleanity",
+                label: b"booleanity/check",
                 degree_bound: 3,
                 is_dynamic: false,
             });
@@ -494,7 +494,7 @@ impl RouteATimeClaimPlan {
 
         if trace_opening_enabled {
             out.push(TimeClaimMeta {
-                label: b"wp/quiescence",
+                label: b"trace_opening/quiescence",
                 degree_bound: 3,
                 is_dynamic: false,
             });

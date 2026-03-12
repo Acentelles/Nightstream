@@ -207,14 +207,17 @@ pub struct JointOpeningFoldLanePlan {
 }
 
 fn unified_fold_digest(groups: &[JointOpeningGroupProof]) -> [u8; 32] {
-    let mut tr = neo_transcript::Poseidon2Transcript::new(b"stage8/unified_fold_digest");
-    tr.append_message(b"stage8/unified_fold_digest/version", b"v2");
-    tr.append_u64s(b"stage8/unified_fold_digest/groups_len", &[groups.len() as u64]);
+    let mut tr = neo_transcript::Poseidon2Transcript::new(b"joint_opening/unified_fold_digest");
+    tr.append_message(b"joint_opening/unified_fold_digest/version", b"v2");
+    tr.append_u64s(b"joint_opening/unified_fold_digest/groups_len", &[groups.len() as u64]);
     let mut group_digests_flat = Vec::with_capacity(groups.len() * 32);
     for g in groups {
         group_digests_flat.extend_from_slice(&g.group_digest);
     }
-    tr.append_bytes_packed(b"stage8/unified_fold_digest/group_digests_flat", &group_digests_flat);
+    tr.append_bytes_packed(
+        b"joint_opening/unified_fold_digest/group_digests_flat",
+        &group_digests_flat,
+    );
     tr.digest32()
 }
 
@@ -225,9 +228,9 @@ fn bind_and_sample_unified_fold_mixers(
     groups: &[JointOpeningGroupProof],
     opening_unification: &OpeningUnificationProof,
 ) -> Result<Vec<Mat<F>>, PiCcsError> {
-    tr.append_message(b"stage8/unified_fold_bind/v2", &[]);
+    tr.append_message(b"joint_opening/unified_fold_bind/v2", &[]);
     tr.append_u64s(
-        b"stage8/unified_fold_bind/header",
+        b"joint_opening/unified_fold_bind/header",
         &[
             step_idx as u64,
             groups.len() as u64,
@@ -239,10 +242,13 @@ fn bind_and_sample_unified_fold_mixers(
     for g in groups {
         group_digests_flat.extend_from_slice(&g.group_digest);
     }
-    tr.append_bytes_packed(b"stage8/unified_fold_bind/group_digests_flat", &group_digests_flat);
-    tr.append_message(b"stage8/unified_fold_bind/digest", &unified_fold_digest(groups));
+    tr.append_bytes_packed(
+        b"joint_opening/unified_fold_bind/group_digests_flat",
+        &group_digests_flat,
+    );
+    tr.append_message(b"joint_opening/unified_fold_bind/digest", &unified_fold_digest(groups));
     tr.append_fields(
-        b"stage8/unified_fold_bind/opening_unify_claimed_sum",
+        b"joint_opening/unified_fold_bind/opening_unify_claimed_sum",
         &opening_unification.claimed_sum.as_coeffs(),
     );
     let mut round_field_lens = Vec::with_capacity(opening_unification.round_polys.len());
@@ -250,19 +256,19 @@ fn bind_and_sample_unified_fold_mixers(
     for coeffs in &opening_unification.round_polys {
         let per_elem = coeffs.first().map(|v| v.as_coeffs().len()).unwrap_or(0);
         let round_len = coeffs.len().checked_mul(per_elem).ok_or_else(|| {
-            PiCcsError::ProtocolError("stage8 unified fold bind: round coefficient length overflow".into())
+            PiCcsError::ProtocolError("joint-opening unified fold bind: round coefficient length overflow".into())
         })?;
         round_field_lens.push(round_len as u64);
         total_round_fields = total_round_fields.checked_add(round_len).ok_or_else(|| {
-            PiCcsError::ProtocolError("stage8 unified fold bind: total round coefficient length overflow".into())
+            PiCcsError::ProtocolError("joint-opening unified fold bind: total round coefficient length overflow".into())
         })?;
     }
     tr.append_u64s(
-        b"stage8/unified_fold_bind/opening_unify_round_field_lens",
+        b"joint_opening/unified_fold_bind/opening_unify_round_field_lens",
         &round_field_lens,
     );
     tr.append_fields_iter(
-        b"stage8/unified_fold_bind/opening_unify_round_coeffs_flat",
+        b"joint_opening/unified_fold_bind/opening_unify_round_coeffs_flat",
         total_round_fields,
         opening_unification
             .round_polys
@@ -276,7 +282,7 @@ fn bind_and_sample_unified_fold_mixers(
         .map(|v| v.as_coeffs().len())
         .unwrap_or(0);
     tr.append_fields_iter(
-        b"stage8/unified_fold_bind/opening_unify_r",
+        b"joint_opening/unified_fold_bind/opening_unify_r",
         opening_unification.r_unify.len().saturating_mul(r_coeffs),
         opening_unification
             .r_unify
@@ -290,7 +296,7 @@ fn bind_and_sample_unified_fold_mixers(
 fn mix_group_witnesses(group_wits: &[Mat<F>], mix_rhos: &[Mat<F>], time_t: usize) -> Result<Mat<F>, PiCcsError> {
     if group_wits.len() != mix_rhos.len() {
         return Err(PiCcsError::ProtocolError(format!(
-            "stage8 unified fold: witness/mixer length mismatch (wits={}, mixers={})",
+            "joint-opening unified fold: witness/mixer length mismatch (wits={}, mixers={})",
             group_wits.len(),
             mix_rhos.len()
         )));
@@ -298,7 +304,7 @@ fn mix_group_witnesses(group_wits: &[Mat<F>], mix_rhos: &[Mat<F>], time_t: usize
     for (idx, (rho, wit)) in mix_rhos.iter().zip(group_wits.iter()).enumerate() {
         if rho.rows() != D || rho.cols() != D {
             return Err(PiCcsError::ProtocolError(format!(
-                "stage8 unified fold: mixer[{idx}] shape mismatch (got {}x{}, expected {}x{})",
+                "joint-opening unified fold: mixer[{idx}] shape mismatch (got {}x{}, expected {}x{})",
                 rho.rows(),
                 rho.cols(),
                 D,
@@ -307,7 +313,7 @@ fn mix_group_witnesses(group_wits: &[Mat<F>], mix_rhos: &[Mat<F>], time_t: usize
         }
         if wit.rows() != D || wit.cols() != time_t {
             return Err(PiCcsError::ProtocolError(format!(
-                "stage8 unified fold: witness[{idx}] shape mismatch (got {}x{}, expected {}x{})",
+                "joint-opening unified fold: witness[{idx}] shape mismatch (got {}x{}, expected {}x{})",
                 wit.rows(),
                 wit.cols(),
                 D,
@@ -379,12 +385,12 @@ fn mix_group_witnesses(group_wits: &[Mat<F>], mix_rhos: &[Mat<F>], time_t: usize
 fn build_joint_opening_fold_ccs(time_t: usize, r_len: usize) -> Result<CcsStructure<F>, PiCcsError> {
     if time_t == 0 {
         return Err(PiCcsError::InvalidInput(
-            "stage8/commit fold: time_t must be > 0".into(),
+            "joint-opening/commit fold: time_t must be > 0".into(),
         ));
     }
     let n = 1usize
         .checked_shl(r_len as u32)
-        .ok_or_else(|| PiCcsError::InvalidInput("stage8/commit fold: 2^ell_n overflow".into()))?
+        .ok_or_else(|| PiCcsError::InvalidInput("joint-opening/commit fold: 2^ell_n overflow".into()))?
         .max(1);
     let mat = CscMat::from_triplets(Vec::new(), n, time_t);
     let poly = SparsePoly::new(
@@ -395,7 +401,7 @@ fn build_joint_opening_fold_ccs(time_t: usize, r_len: usize) -> Result<CcsStruct
         }],
     );
     CcsStructure::new_sparse(vec![CcsMatrix::Csc(mat)], poly)
-        .map_err(|e| PiCcsError::InvalidInput(format!("stage8/commit fold: invalid CCS structure: {e:?}")))
+        .map_err(|e| PiCcsError::InvalidInput(format!("joint-opening/commit fold: invalid CCS structure: {e:?}")))
 }
 
 pub fn build_joint_opening_fold_lane_plan(
@@ -405,7 +411,7 @@ pub fn build_joint_opening_fold_lane_plan(
 ) -> Result<Option<JointOpeningFoldLanePlan>, PiCcsError> {
     if lane.claim_kind != JointClaimKind::VectorPartial {
         return Err(PiCcsError::ProtocolError(
-            "stage8/commit fold: unsupported claim kind (expected VectorPartial)".into(),
+            "joint-opening/commit fold: unsupported claim kind (expected VectorPartial)".into(),
         ));
     }
     if lane.groups.is_empty() {
@@ -413,12 +419,12 @@ pub fn build_joint_opening_fold_lane_plan(
     }
     if time_t == 0 {
         return Err(PiCcsError::ProtocolError(
-            "stage8/commit fold: time_t must be > 0 in canonical mode".into(),
+            "joint-opening/commit fold: time_t must be > 0 in canonical mode".into(),
         ));
     }
     if opening_unification.r_unify.is_empty() {
         return Err(PiCcsError::ProtocolError(
-            "stage8/commit fold: opening_unification.r_unify must be non-empty when groups are present".into(),
+            "joint-opening/commit fold: opening_unification.r_unify must be non-empty when groups are present".into(),
         ));
     }
 
@@ -668,14 +674,14 @@ pub fn prove_joint_opening_lane_with_witnesses(
     if !out_groups.is_empty() {
         let anchor = out_groups
             .first()
-            .ok_or_else(|| PiCcsError::ProtocolError("stage8 unified fold: empty groups".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("joint-opening unified fold: empty groups".into()))?;
         let can_unify = out_groups
             .iter()
             .all(|g| g.point == anchor.point && g.domain == anchor.domain);
         let mix_rhos = bind_and_sample_unified_fold_mixers(tr, params, step_idx, &out_groups, opening_unification)?;
         if mix_rhos.len() != out_groups.len() {
             return Err(PiCcsError::ProtocolError(format!(
-                "stage8 unified fold: sampled mixer count {} != group count {}",
+                "joint-opening unified fold: sampled mixer count {} != group count {}",
                 mix_rhos.len(),
                 out_groups.len()
             )));
@@ -684,8 +690,9 @@ pub fn prove_joint_opening_lane_with_witnesses(
         for (rho, group) in mix_rhos.iter().zip(out_groups.iter()) {
             add_rot_scaled_commitment(&mut expected_commitment, &group.joint_commitment, rho)?;
         }
-        let expected_commitment = expected_commitment
-            .ok_or_else(|| PiCcsError::ProtocolError("stage8 unified fold: missing expected commitment".into()))?;
+        let expected_commitment = expected_commitment.ok_or_else(|| {
+            PiCcsError::ProtocolError("joint-opening unified fold: missing expected commitment".into())
+        })?;
         let mut expected_claim_digits = vec![K::ZERO; D];
         for (rho, group) in mix_rhos.iter().zip(out_groups.iter()) {
             let rotated = apply_rot_to_digits(rho, group.joint_claim_digits.as_slice())?;
@@ -698,7 +705,7 @@ pub fn prove_joint_opening_lane_with_witnesses(
             let unified_commitment = committer.commit(&unified_z);
             if unified_commitment != expected_commitment {
                 return Err(PiCcsError::ProtocolError(
-                    "stage8 unified fold: commitment mismatch".into(),
+                    "joint-opening unified fold: commitment mismatch".into(),
                 ));
             }
             let unified_claim_digits = eval_time_mat_digits_at_point(
@@ -710,7 +717,7 @@ pub fn prove_joint_opening_lane_with_witnesses(
             )?;
             if unified_claim_digits != expected_claim_digits {
                 return Err(PiCcsError::ProtocolError(
-                    "stage8 unified fold: joint claim digits mismatch vs transcript-mixed group claims".into(),
+                    "joint-opening unified fold: joint claim digits mismatch vs transcript-mixed group claims".into(),
                 ));
             }
             (

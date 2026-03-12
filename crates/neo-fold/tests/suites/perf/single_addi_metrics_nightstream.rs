@@ -591,7 +591,7 @@ fn report_track_a_w0_w1_snapshot() {
             shout_claims.push(entry);
         } else if label.starts_with("twist/") {
             twist_claims.push(entry);
-        } else if label.starts_with("wb/") || label.starts_with("wp/") {
+        } else if label.starts_with("booleanity/") || label.starts_with("trace_opening/") {
             booleanity_trace_opening_claims.push(entry);
         } else if label.starts_with("decode/") {
             decode_claims.push(entry);
