@@ -170,7 +170,10 @@ fn zero_poly(t: usize) -> SparsePoly<F> {
 }
 
 fn z_witness(seed: u64, m: usize) -> Mat<F> {
-    assert!(m.is_multiple_of(D), "Split-NC test fixture requires SuperNeo-compatible width");
+    assert!(
+        m.is_multiple_of(D),
+        "Split-NC test fixture requires SuperNeo-compatible width"
+    );
     let cols = m / D;
     let mut data = Vec::with_capacity(D * cols);
     for rho in 0..D {
@@ -462,8 +465,7 @@ fn split_nc_nc_col_mojo_backend_matches_cpu_across_rounds() {
 #[test]
 fn split_nc_optimized_prove_mojo_backend_matches_cpu_and_verifies() {
     let _guard = lock_mock_backend();
-    let (params, s, l, claims, witnesses, mut cpu_tr) =
-        build_prove_fixture(b"split_nc_gpu_parity/prove_cpu");
+    let (params, s, l, claims, witnesses, mut cpu_tr) = build_prove_fixture(b"split_nc_gpu_parity/prove_cpu");
     let mut mojo_tr = Poseidon2Transcript::new(b"split_nc_gpu_parity/prove_cpu");
     let backend = mock_backend();
 
@@ -543,8 +545,7 @@ fn split_nc_optimized_prove_mojo_backend_matches_cpu_and_verifies() {
 
 #[test]
 fn split_nc_optimized_prove_falls_back_to_cpu_when_backend_is_missing() {
-    let (params, s, l, claims, witnesses, mut cpu_tr) =
-        build_prove_fixture(b"split_nc_gpu_parity/fallback_cpu");
+    let (params, s, l, claims, witnesses, mut cpu_tr) = build_prove_fixture(b"split_nc_gpu_parity/fallback_cpu");
     let mut fallback_tr = Poseidon2Transcript::new(b"split_nc_gpu_parity/fallback_cpu");
 
     let (cpu_out, cpu_proof) = prove_with_backend(
@@ -585,8 +586,7 @@ fn split_nc_optimized_prove_falls_back_to_cpu_when_backend_is_missing() {
 #[test]
 #[ignore = "requires local Mojo toolchain"]
 fn real_mojo_split_nc_optimized_prove_matches_cpu_and_verifies() {
-    let (params, s, l, claims, witnesses, mut cpu_tr) =
-        build_prove_fixture(b"split_nc_gpu_parity/real_mojo");
+    let (params, s, l, claims, witnesses, mut cpu_tr) = build_prove_fixture(b"split_nc_gpu_parity/real_mojo");
     let mut mojo_tr = Poseidon2Transcript::new(b"split_nc_gpu_parity/real_mojo");
 
     let (cpu_out, cpu_proof) = prove_with_backend(

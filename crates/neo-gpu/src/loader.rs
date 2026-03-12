@@ -1,18 +1,19 @@
-use std::path::{Path, PathBuf};
 #[cfg(target_os = "macos")]
 use std::ffi::c_void;
+use std::path::{Path, PathBuf};
 #[cfg(target_os = "macos")]
 use std::sync::{mpsc, OnceLock};
 
+#[cfg(any(unix, windows))]
 use libloading::Library;
 use neo_math::{from_complex, Fq, KExtensions, K};
 use p3_field::PrimeCharacteristicRing;
 
 use crate::abi::{
-    DeviceRequest, DeviceResponse, FlatFq, FlatK, SessionRequest, ABI_VERSION, ABI_VERSION_SYMBOL,
-    DEVICE_PROBE_SYMBOL, FE_CREATE_SYMBOL, FE_DESTROY_SYMBOL, FE_EVALS_AT_SYMBOL, FE_FOLD_SYMBOL,
-    NC_CREATE_SYMBOL, NC_DESTROY_SYMBOL, NC_EVALS_AT_SYMBOL, NC_FOLD_SYMBOL, POSEIDON2_PERMUTE_BATCH_SYMBOL,
-    POSEIDON2_PERMUTE_SYMBOL, POSEIDON2_STATE_WIDTH, SESSION_CLOSE_SYMBOL, SESSION_OPEN_SYMBOL,
+    DeviceRequest, DeviceResponse, FlatFq, FlatK, SessionRequest, ABI_VERSION, ABI_VERSION_SYMBOL, DEVICE_PROBE_SYMBOL,
+    FE_CREATE_SYMBOL, FE_DESTROY_SYMBOL, FE_EVALS_AT_SYMBOL, FE_FOLD_SYMBOL, NC_CREATE_SYMBOL, NC_DESTROY_SYMBOL,
+    NC_EVALS_AT_SYMBOL, NC_FOLD_SYMBOL, POSEIDON2_PERMUTE_BATCH_SYMBOL, POSEIDON2_PERMUTE_SYMBOL,
+    POSEIDON2_STATE_WIDTH, SESSION_CLOSE_SYMBOL, SESSION_OPEN_SYMBOL,
 };
 use crate::{DeviceApi, MojoBackendConfig, NeoGpuError};
 
@@ -26,6 +27,11 @@ type EvalsAtFn = unsafe extern "C" fn(u64, u64, *mut u64, u64, *mut u64, u64, *m
 type FoldFn = unsafe extern "C" fn(usize, usize, u64, u64) -> i32;
 type Poseidon2PermuteFn = unsafe extern "C" fn(usize, *mut FlatFq, u32) -> i32;
 type Poseidon2PermuteBatchFn = unsafe extern "C" fn(usize, *mut FlatFq, u32, u32) -> i32;
+
+#[cfg(any(unix, windows))]
+type PlatformLibrary = Library;
+#[cfg(not(any(unix, windows)))]
+struct PlatformLibrary;
 
 const SPLIT_NC_SNAPSHOT_MAGIC: u64 = 0x4E53_504C_4954_4E43;
 const SPLIT_NC_SNAPSHOT_VERSION: u64 = 1;
@@ -173,15 +179,19 @@ fn apply_nc_snapshot_fold(snapshot: &mut [u8], challenge: FlatK) -> Result<(), N
 fn platform_library_name() -> &'static str {
     #[cfg(target_os = "macos")]
     {
-        "libnightstream_mojo_gpu.dylib"
+        return "libnightstream_mojo_gpu.dylib";
     }
     #[cfg(target_os = "linux")]
     {
-        "libnightstream_mojo_gpu.so"
+        return "libnightstream_mojo_gpu.so";
     }
     #[cfg(target_os = "windows")]
     {
-        "nightstream_mojo_gpu.dll"
+        return "nightstream_mojo_gpu.dll";
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    {
+        "libnightstream_mojo_gpu.unsupported"
     }
 }
 
@@ -253,24 +263,23 @@ impl MetalCallExecutor {
     }
 }
 
-fn call_for_device_api<T: Send + 'static>(
-    api: DeviceApi,
-    f: impl FnOnce() -> T + Send + 'static,
-) -> T {
+fn call_for_device_api<T: Send + 'static>(_api: DeviceApi, f: impl FnOnce() -> T + Send + 'static) -> T {
     #[cfg(target_os = "macos")]
-    if api == DeviceApi::Metal {
+    if _api == DeviceApi::Metal {
         return MetalCallExecutor::global().call(f);
     }
 
     with_macos_autorelease_pool(f)
 }
 
+#[cfg(any(unix, windows))]
 unsafe fn load_required<T: Copy>(lib: &Library, symbol: &'static [u8], name: &'static str) -> Result<T, NeoGpuError> {
     lib.get::<T>(symbol)
         .map(|sym| *sym)
         .map_err(|_| NeoGpuError::MissingSymbol { symbol: name })
 }
 
+#[cfg(any(unix, windows))]
 unsafe fn load_optional<T: Copy>(lib: &Library, symbol: &'static [u8]) -> Option<T> {
     lib.get::<T>(symbol).ok().map(|sym| *sym)
 }
@@ -329,7 +338,7 @@ fn snapshot_bytes_to_words(snapshot: &[u8]) -> Result<Vec<u64>, NeoGpuError> {
 
 pub struct MojoLibrary {
     path: PathBuf,
-    _lib: Library,
+    _lib: PlatformLibrary,
     device_probe: DeviceProbeFn,
     session_open: SessionOpenFn,
     session_close: SessionCloseFn,
@@ -342,6 +351,7 @@ impl MojoLibrary {
         self.evaluators.supports_cpu_direct_mode()
     }
 
+    #[cfg(any(unix, windows))]
     pub fn load(cfg: &MojoBackendConfig) -> Result<Self, NeoGpuError> {
         let path = resolve_library_path(cfg);
         let lib = unsafe { Library::new(&path) }.map_err(|source| NeoGpuError::LoadLibrary {
@@ -391,6 +401,14 @@ impl MojoLibrary {
         })
     }
 
+    #[cfg(not(any(unix, windows)))]
+    pub fn load(cfg: &MojoBackendConfig) -> Result<Self, NeoGpuError> {
+        let _ = cfg;
+        Err(NeoGpuError::UnsupportedOperation {
+            op: "gpu_dynamic_loading_unsupported_platform",
+        })
+    }
+
     #[inline]
     pub fn path(&self) -> &Path {
         &self.path
@@ -405,9 +423,7 @@ impl MojoLibrary {
         let device_probe = self.device_probe;
         let req_ptr = (&req as *const DeviceRequest) as usize;
         let resp_ptr = (&mut resp_word as *mut u64) as usize;
-        let status = call_for_device_api(api, move || unsafe {
-            device_probe(req_ptr, resp_ptr as *mut u64)
-        });
+        let status = call_for_device_api(api, move || unsafe { device_probe(req_ptr, resp_ptr as *mut u64) });
         if status != 0 {
             return Ok(api == DeviceApi::Cpu && self.supports_cpu_direct_mode());
         }
@@ -887,9 +903,7 @@ impl Drop for MojoSplitNcEvaluator<'_> {
         let evaluator_handle = self.handle;
         let device_api = self.session.device_api;
         let kind = self.kind;
-        let status = call_for_device_api(device_api, move || unsafe {
-            destroy(session_handle, evaluator_handle)
-        });
+        let status = call_for_device_api(device_api, move || unsafe { destroy(session_handle, evaluator_handle) });
         if status != 0 {
             let _ = Err::<(), _>(NeoGpuError::OperationFailed {
                 op: match kind {

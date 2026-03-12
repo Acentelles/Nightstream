@@ -497,11 +497,7 @@ fn real_mojo_split_nc_probe_and_minimal_eval_work() {
     let cfg = MojoBackendConfig::new(DeviceApi::Cpu).with_library_path(library_path);
     let session = connect(&cfg).expect("connect to real mojo gpu library");
 
-    let points = [
-        FlatK::default(),
-        FlatK { re: 1, im: 0 },
-        FlatK { re: 5, im: 7 },
-    ];
+    let points = [FlatK::default(), FlatK { re: 1, im: 0 }, FlatK { re: 5, im: 7 }];
     if !session.supports_split_nc_api() {
         match session.create_fe_evaluator(&minimal_fe_snapshot()) {
             Ok(mut fe) => {
@@ -540,7 +536,6 @@ fn real_mojo_split_nc_probe_and_minimal_eval_work() {
     );
     nc.fold(FlatK { re: 3, im: 0 }).expect("real mojo nc fold");
 }
-
 
 #[test]
 #[ignore = "requires local Mojo toolchain"]

@@ -4,7 +4,7 @@ use neo_ajtai::Commitment as Cmt;
 use neo_ccs::crypto::poseidon2_goldilocks as p2;
 use neo_ccs::{CcsClaim, CcsStructure, CcsWitness, CeClaim, Mat};
 use neo_gpu::{connect, DeviceApi, FlatK, MojoSession, MojoSplitNcEvaluator, ProverComputeBackend};
-use neo_math::{from_complex, F as BaseF, K, KExtensions};
+use neo_math::{from_complex, KExtensions, F as BaseF, K};
 use neo_params::NeoParams;
 use p3_field::{Field, PrimeCharacteristicRing, PrimeField64};
 
@@ -311,9 +311,16 @@ where
 {
     fn evals_at(&mut self, points: &[K]) -> Vec<K> {
         if self.should_use_gpu() {
-            let flat_points = points.iter().copied().map(flat_k_from_ext).collect::<Vec<_>>();
+            let flat_points = points
+                .iter()
+                .copied()
+                .map(flat_k_from_ext)
+                .collect::<Vec<_>>();
             let gpu_out = {
-                let evaluator = self.fe_evaluator.as_ref().expect("checked by should_use_gpu");
+                let evaluator = self
+                    .fe_evaluator
+                    .as_ref()
+                    .expect("checked by should_use_gpu");
                 evaluator.evals_at(&flat_points)
             };
             match gpu_out {
@@ -336,7 +343,10 @@ where
         if self.should_use_gpu() {
             let challenge = flat_k_from_ext(r);
             let gpu_result = {
-                let evaluator = self.fe_evaluator.as_mut().expect("checked by should_use_gpu");
+                let evaluator = self
+                    .fe_evaluator
+                    .as_mut()
+                    .expect("checked by should_use_gpu");
                 evaluator.fold(challenge)
             };
             if let Err(err) = gpu_result {
@@ -424,9 +434,16 @@ where
 {
     fn evals_at(&mut self, points: &[K]) -> Vec<K> {
         if self.should_use_gpu() {
-            let flat_points = points.iter().copied().map(flat_k_from_ext).collect::<Vec<_>>();
+            let flat_points = points
+                .iter()
+                .copied()
+                .map(flat_k_from_ext)
+                .collect::<Vec<_>>();
             let gpu_out = {
-                let evaluator = self.nc_evaluator.as_ref().expect("checked by should_use_gpu");
+                let evaluator = self
+                    .nc_evaluator
+                    .as_ref()
+                    .expect("checked by should_use_gpu");
                 evaluator.evals_at(&flat_points)
             };
             match gpu_out {
@@ -449,7 +466,10 @@ where
         if self.should_use_gpu() {
             let challenge = flat_k_from_ext(r);
             let gpu_result = {
-                let evaluator = self.nc_evaluator.as_mut().expect("checked by should_use_gpu");
+                let evaluator = self
+                    .nc_evaluator
+                    .as_mut()
+                    .expect("checked by should_use_gpu");
                 evaluator.fold(challenge)
             };
             if let Err(err) = gpu_result {
