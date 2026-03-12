@@ -20,7 +20,6 @@ use std::time::Duration;
 
 use crate::output_binding::OutputBindingConfig;
 use crate::pi_ccs::FoldingMode;
-use crate::rv64_ram_bridge::{derive_rv64_ram_bridge, extend_layout_with_guest_addresses, segment_backed_ram_words};
 use crate::session::FoldingSession;
 use crate::shard::{ShardProof, StepLinkingConfig};
 use crate::PiCcsError;
@@ -58,6 +57,8 @@ use neo_vm_trace::{trace_program, ShoutId, StepTrace, Twist as _, VmTrace};
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
 use rand_chacha::rand_core::SeedableRng;
 
+use super::rv64_ram_bridge::{derive_rv64_ram_bridge, extend_layout_with_guest_addresses, segment_backed_ram_words};
+#[path = "rv64_helpers.rs"]
 mod helpers;
 use helpers::*;
 

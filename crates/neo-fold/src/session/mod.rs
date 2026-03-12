@@ -17,7 +17,7 @@
 //! lives in `shard::fold_shard_prove/verify` (Route A integration).
 
 #![allow(non_snake_case)]
-#![doc = include_str!("session/README.md")]
+#![doc = include_str!("README.md")]
 
 mod resources;
 pub use resources::*;

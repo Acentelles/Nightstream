@@ -7,15 +7,15 @@
 
 use super::*;
 
-#[path = "prover/context.rs"]
+mod ccs_only_batched;
 mod context;
-#[path = "prover/lanes.rs"]
 mod lanes;
-#[path = "prover/openings.rs"]
+mod mixed_batched;
 mod openings;
-#[path = "prover/route_a.rs"]
+mod poseidon_lane_helpers;
+mod rlc_dec;
 mod route_a;
-#[path = "prover/step.rs"]
+mod route_a_segment;
 mod step;
 
 use context::{
@@ -29,7 +29,12 @@ use route_a::{
 };
 use step::{prove_shard_step, ShardRunState, ShardStepEnvironment};
 
+pub use ccs_only_batched::{fold_shard_prove_ccs_only_batched, fold_shard_verify_ccs_only_batched};
 pub(crate) use context::mode_uses_sparse_cache;
+pub(crate) use mixed_batched::*;
+pub(crate) use poseidon_lane_helpers::*;
+pub(crate) use rlc_dec::*;
+pub(crate) use route_a_segment::*;
 
 #[derive(Clone)]
 pub(crate) struct ShardProverContext {

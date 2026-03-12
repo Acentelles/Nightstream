@@ -96,7 +96,7 @@ pub(super) fn commit_poseidon_lane_wits_batched(
     }
     let mut out: Vec<Option<Cmt>> = vec![None; wits.len()];
     for (cols, grouped) in by_cols {
-        let committer = crate::shard::poseidon_lane_helpers::poseidon_lane_committer(params, cols, label)?;
+        let committer = crate::shard::prover::poseidon_lane_helpers::poseidon_lane_committer(params, cols, label)?;
         let refs: Vec<&Mat<F>> = grouped.iter().map(|(_, z)| *z).collect();
         let commits = committer.commit_many(&refs);
         if commits.len() != refs.len() {

@@ -79,42 +79,19 @@ pub(crate) fn elapsed_ms(start: TimePoint) -> f64 {
     }
 }
 
-#[path = "shard/audit_types.rs"]
 mod audit_types;
-#[path = "shard/ccs_only_batched.rs"]
-mod ccs_only_batched;
-#[path = "shard/core_utils.rs"]
 mod core_utils;
-#[path = "shard/mixed_batched.rs"]
-mod mixed_batched;
-#[path = "shard/poseidon_lane_helpers.rs"]
-mod poseidon_lane_helpers;
-#[path = "shard/prove_api.rs"]
 mod prove_api;
-#[path = "shard/prover.rs"]
 mod prover;
-#[path = "shard/rlc_dec.rs"]
-mod rlc_dec;
-#[path = "shard/route_a_segment.rs"]
-mod route_a_segment;
-#[path = "shard/verifier.rs"]
 mod verifier;
-#[path = "shard/verify_api.rs"]
 mod verify_api;
-#[path = "shard/verify_consistency.rs"]
-mod verify_consistency;
 
 pub use audit_types::{LaneWitnessAudit, ShardProofAudit, StepWitnessAudit};
-pub use ccs_only_batched::{fold_shard_prove_ccs_only_batched, fold_shard_verify_ccs_only_batched};
 pub use core_utils::{absorb_step_memory, check_step_linking, CommitMixers, StepLinkingConfig};
 pub use prove_api::*;
+pub use prover::{fold_shard_prove_ccs_only_batched, fold_shard_verify_ccs_only_batched};
 pub use verify_api::*;
 
 pub(crate) use core_utils::*;
-pub(crate) use mixed_batched::*;
-pub(crate) use poseidon_lane_helpers::*;
 pub(crate) use prover::*;
-pub(crate) use rlc_dec::*;
-pub(crate) use route_a_segment::*;
 pub(crate) use verifier::*;
-pub(crate) use verify_consistency::*;

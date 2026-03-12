@@ -14,9 +14,6 @@ pub use neo_reductions::{
 // Ergonomic per-step session API layered on top of the coordinator
 pub mod session;
 
-// Runner for the `TestExport` JSON schema (shared by tests and wasm)
-pub mod test_export;
-
 // Memory sidecar helpers (Route A integration plumbing)
 pub mod memory_sidecar;
 
@@ -26,9 +23,10 @@ pub mod finalize;
 // Shard-level folding (CPU + Memory Sidecar)
 pub mod shard;
 
-pub mod riscv_trace_shard;
-mod rv64_ram_bridge;
-pub mod rv64_trace_shard;
+pub mod frontends;
+pub use frontends::riscv_trace_shard;
+pub use frontends::rv64_trace_shard;
+pub use frontends::test_export;
 
 // Output binding integration
 pub mod output_binding;
