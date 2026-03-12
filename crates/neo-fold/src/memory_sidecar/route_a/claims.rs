@@ -424,7 +424,7 @@ impl<'o> TimeBatchedClaims for TwistRouteAProtocol<'o> {
     }
 }
 
-pub(crate) type W3TimeClaims = (
+pub(crate) type WidthResidualTimeClaims = (
     Option<(Box<dyn RoundOracle + Send>, K)>,
     Option<(Box<dyn RoundOracle + Send>, K)>,
     Option<(Box<dyn RoundOracle + Send>, K)>,

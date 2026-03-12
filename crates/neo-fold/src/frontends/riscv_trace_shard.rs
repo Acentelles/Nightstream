@@ -729,7 +729,7 @@ fn build_rv32_width_lookup_tables(
     // Width lookup tables here are execution-indexed helper transport tables.
     // They are not a standalone trust root: Route-A width residual claims bind
     // every opened helper value back to committed trace columns (`ram_rv`,
-    // `rs2_val`), and WB/WP enforce the associated bitness/quiescence properties.
+    // `rs2_val`), and booleanity/trace-opening stages enforce the associated bitness/quiescence properties.
     let max_cycle = exec
         .rows
         .iter()

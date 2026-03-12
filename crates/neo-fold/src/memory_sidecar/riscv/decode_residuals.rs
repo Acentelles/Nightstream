@@ -8,17 +8,17 @@ mod decode_residuals_alu_branch;
 mod decode_residuals_virtual;
 
 #[cfg(debug_assertions)]
-pub(crate) use decode_residuals_alu_branch::w2_alu_branch_lookup_residuals;
-pub(crate) use decode_residuals_alu_branch::w2_alu_branch_lookup_residuals_into;
-use decode_residuals_alu_branch::w2_alu_branch_lookup_residuals_sink;
+pub(crate) use decode_residuals_alu_branch::decode_alu_branch_lookup_residuals;
+pub(crate) use decode_residuals_alu_branch::decode_alu_branch_lookup_residuals_into;
+use decode_residuals_alu_branch::decode_alu_branch_lookup_residuals_sink;
 
-const W2_SELECTOR_RESIDUAL_COUNT: usize = 8;
-const W2_BITNESS_RESIDUAL_COUNT: usize = 20;
-const W2_ALU_BRANCH_RESIDUAL_COUNT: usize =
-    W2_FIELDS_RESIDUAL_COUNT - W2_SELECTOR_RESIDUAL_COUNT - W2_BITNESS_RESIDUAL_COUNT;
+const DECODE_SELECTOR_RESIDUAL_COUNT: usize = 8;
+const DECODE_BITNESS_RESIDUAL_COUNT: usize = 20;
+const DECODE_ALU_BRANCH_RESIDUAL_COUNT: usize =
+    DECODE_FIELDS_RESIDUAL_COUNT - DECODE_SELECTOR_RESIDUAL_COUNT - DECODE_BITNESS_RESIDUAL_COUNT;
 
 #[derive(Clone, Copy, Debug)]
-struct W2VirtualTableIds {
+struct DecodeVirtualTableIds {
     add: u64,
     addw: u64,
     vmovsignw: u64,
@@ -42,12 +42,12 @@ struct W2VirtualTableIds {
 }
 
 #[inline]
-fn w2_virtual_table_ids() -> &'static W2VirtualTableIds {
-    static IDS: OnceLock<W2VirtualTableIds> = OnceLock::new();
+fn decode_virtual_table_ids() -> &'static DecodeVirtualTableIds {
+    static IDS: OnceLock<DecodeVirtualTableIds> = OnceLock::new();
     IDS.get_or_init(|| {
         let tables = RiscvShoutTables::new(32);
         let id = |op| tables.opcode_to_id(op).0 as u64;
-        W2VirtualTableIds {
+        DecodeVirtualTableIds {
             add: id(RiscvOpcode::Add),
             addw: id(RiscvOpcode::Addw),
             vmovsignw: id(RiscvOpcode::VirtualMovsignWord),
@@ -73,7 +73,7 @@ fn w2_virtual_table_ids() -> &'static W2VirtualTableIds {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct W2VirtualConstantsK {
+struct DecodeVirtualConstantsK {
     alu_table_weights: [K; 7],
     branch_base_10: K,
     branch_sub_5: K,
@@ -112,12 +112,12 @@ fn k_u64(v: u64) -> K {
 }
 
 #[inline]
-fn w2_virtual_constants_k() -> &'static W2VirtualConstantsK {
-    static CONSTS: OnceLock<W2VirtualConstantsK> = OnceLock::new();
+fn decode_virtual_constants_k() -> &'static DecodeVirtualConstantsK {
+    static CONSTS: OnceLock<DecodeVirtualConstantsK> = OnceLock::new();
     CONSTS.get_or_init(|| {
-        let table_ids = w2_virtual_table_ids();
+        let table_ids = decode_virtual_table_ids();
         let two_pow_32 = k_u64(1u64 << 32);
-        W2VirtualConstantsK {
+        DecodeVirtualConstantsK {
             alu_table_weights: [k_u64(3), k_u64(7), k_u64(5), k_u64(6), k_u64(1), k_u64(8), k_u64(2)],
             branch_base_10: k_u64(10),
             branch_sub_5: k_u64(5),
@@ -153,7 +153,7 @@ fn w2_virtual_constants_k() -> &'static W2VirtualConstantsK {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct W2DecodeFieldsOpenings {
+pub(crate) struct DecodeFieldsOpenings {
     pub rv64_exact_words: bool,
     pub active: K,
     pub halted: K,
@@ -201,7 +201,7 @@ pub(crate) struct W2DecodeFieldsOpenings {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct W2AluBranchResidualInputs {
+struct DecodeAluBranchResidualInputs {
     rv64_exact_words: bool,
     active: K,
     is_virtual: K,
@@ -252,8 +252,8 @@ struct W2AluBranchResidualInputs {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct W2VirtualResidualInputs {
-    base: W2AluBranchResidualInputs,
+struct DecodeVirtualResidualInputs {
+    base: DecodeAluBranchResidualInputs,
     op_alu_reg: K,
     op_alu_reg_wide: K,
     op_alu_reg_base_only: K,
@@ -271,20 +271,17 @@ struct W2VirtualResidualInputs {
 }
 
 #[inline]
-pub(crate) fn w2_decode_fields_weighted_residual(openings: &W2DecodeFieldsOpenings, fields_weights: &[K]) -> K {
-    w2_decode_fields_weighted_residual_with_scratch(openings, fields_weights)
+pub(crate) fn decode_fields_weighted_residual(openings: &DecodeFieldsOpenings, fields_weights: &[K]) -> K {
+    decode_fields_weighted_residual_with_scratch(openings, fields_weights)
 }
 
 #[inline]
-pub(crate) fn w2_decode_fields_weighted_residual_with_scratch(
-    openings: &W2DecodeFieldsOpenings,
-    fields_weights: &[K],
-) -> K {
+pub(crate) fn decode_fields_weighted_residual_with_scratch(openings: &DecodeFieldsOpenings, fields_weights: &[K]) -> K {
     debug_assert_eq!(
         fields_weights.len(),
-        W2_FIELDS_RESIDUAL_COUNT,
+        DECODE_FIELDS_RESIDUAL_COUNT,
         "decode/fields weight length mismatch: expected {}, got {}",
-        W2_FIELDS_RESIDUAL_COUNT,
+        DECODE_FIELDS_RESIDUAL_COUNT,
         fields_weights.len()
     );
 
@@ -297,12 +294,12 @@ pub(crate) fn w2_decode_fields_weighted_residual_with_scratch(
         openings.opcode_flags[7] * rd_keep,
         openings.opcode_flags[8] * rd_keep,
     ];
-    let alu_reg_table_delta = w2_alu_reg_table_delta_from_bits(openings.funct7_bits, openings.funct3_is);
+    let alu_reg_table_delta = decode_alu_reg_table_delta_from_bits(openings.funct7_bits, openings.funct3_is);
     let alu_imm_table_delta = openings.funct7_bits[5] * openings.funct3_is[5];
     let alu_imm_shift_rhs_delta =
         (openings.funct3_is[1] + openings.funct3_is[5]) * (openings.decode_rs2_addr - openings.imm_i);
 
-    let selector_residuals = w2_decode_selector_residuals(
+    let selector_residuals = decode_selector_residuals(
         openings.active,
         openings.decode_opcode,
         openings.opcode_flags,
@@ -311,7 +308,7 @@ pub(crate) fn w2_decode_fields_weighted_residual_with_scratch(
         openings.funct3_bits,
         openings.opcode_flags[11],
     );
-    let bitness_residuals = w2_decode_bitness_residuals(openings.opcode_flags, openings.funct3_is);
+    let bitness_residuals = decode_bitness_residuals(openings.opcode_flags, openings.funct3_is);
     let mut weighted = K::ZERO;
     let mut w_idx = 0usize;
     for r in selector_residuals {
@@ -323,7 +320,7 @@ pub(crate) fn w2_decode_fields_weighted_residual_with_scratch(
         w_idx += 1;
     }
     let mut alu_branch_sink = WeightedResidualSink::new(&fields_weights[w_idx..]);
-    let inputs = W2AluBranchResidualInputs {
+    let inputs = DecodeAluBranchResidualInputs {
         rv64_exact_words: openings.rv64_exact_words,
         active: openings.active,
         is_virtual: openings.is_virtual,
@@ -372,7 +369,7 @@ pub(crate) fn w2_decode_fields_weighted_residual_with_scratch(
         imm_i: openings.imm_i,
         imm_s: openings.imm_s,
     };
-    w2_alu_branch_lookup_residuals_sink(&inputs, &mut alu_branch_sink);
+    decode_alu_branch_lookup_residuals_sink(&inputs, &mut alu_branch_sink);
     weighted += alu_branch_sink.finish();
     w_idx += alu_branch_sink.len();
     debug_assert_eq!(
@@ -385,12 +382,12 @@ pub(crate) fn w2_decode_fields_weighted_residual_with_scratch(
     weighted
 }
 
-trait W2ResidualSink {
+trait DecodeResidualSink {
     fn push(&mut self, value: K);
     fn len(&self) -> usize;
 }
 
-impl W2ResidualSink for Vec<K> {
+impl DecodeResidualSink for Vec<K> {
     #[inline]
     fn push(&mut self, value: K) {
         Vec::push(self, value);
@@ -431,7 +428,7 @@ impl<'a> WeightedResidualSink<'a> {
     }
 }
 
-impl W2ResidualSink for WeightedResidualSink<'_> {
+impl DecodeResidualSink for WeightedResidualSink<'_> {
     #[inline]
     fn push(&mut self, value: K) {
         debug_assert!(
@@ -450,14 +447,18 @@ impl W2ResidualSink for WeightedResidualSink<'_> {
     }
 }
 
-const W2_STAGE_GATE_TABLE_CAP: usize = 21; // supports max_remaining up to 19 (plus sentinel)
+const DECODE_STAGE_GATE_TABLE_CAP: usize = 21; // supports max_remaining up to 19 (plus sentinel)
 
 #[inline]
-fn w2_build_stage_gate_table(remaining: K, max_remaining: usize, gates: &mut [K; W2_STAGE_GATE_TABLE_CAP]) -> K {
-    debug_assert!(max_remaining + 1 < W2_STAGE_GATE_TABLE_CAP);
+fn decode_build_stage_gate_table(
+    remaining: K,
+    max_remaining: usize,
+    gates: &mut [K; DECODE_STAGE_GATE_TABLE_CAP],
+) -> K {
+    debug_assert!(max_remaining + 1 < DECODE_STAGE_GATE_TABLE_CAP);
 
-    let mut prefix = [K::ONE; W2_STAGE_GATE_TABLE_CAP];
-    let mut suffix = [K::ONE; W2_STAGE_GATE_TABLE_CAP];
+    let mut prefix = [K::ONE; DECODE_STAGE_GATE_TABLE_CAP];
+    let mut suffix = [K::ONE; DECODE_STAGE_GATE_TABLE_CAP];
 
     for r in 1..=max_remaining {
         prefix[r] = prefix[r - 1] * (remaining - K::from(F::from_u64(r as u64)));
@@ -489,7 +490,7 @@ struct VirtualStageRow {
 }
 
 #[inline]
-fn push_virtual_stage_row<S: W2ResidualSink>(residuals: &mut S, gate: K, row: VirtualStageRow) {
+fn push_virtual_stage_row<S: DecodeResidualSink>(residuals: &mut S, gate: K, row: VirtualStageRow) {
     residuals.push(gate * row.rs1);
     residuals.push(gate * row.rs2);
     residuals.push(gate * row.rd_has_write);
@@ -520,7 +521,7 @@ struct VirtualStageSparseRow {
 }
 
 #[inline]
-fn push_virtual_stage_sparse_row<S: W2ResidualSink>(residuals: &mut S, gate: K, row: VirtualStageSparseRow) {
+fn push_virtual_stage_sparse_row<S: DecodeResidualSink>(residuals: &mut S, gate: K, row: VirtualStageSparseRow) {
     residuals.push(gate * row.rs1);
     residuals.push(gate * row.rs2);
     residuals.push(gate * row.rd_has_write);

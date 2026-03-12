@@ -82,7 +82,7 @@ pub(crate) fn build_route_a_decode_time_claims(
         None
     };
     let decode = Rv32DecodeSidecarLayout::new();
-    let t_len = infer_rv32_trace_t_len_for_wb_wp(step, &trace)?;
+    let t_len = infer_rv32_trace_t_len_for_trace_openings(step, &trace)?;
     let m_in = step.mcs.0.m_in;
     let ell_n = r_cycle.len();
 
@@ -116,13 +116,13 @@ pub(crate) fn build_route_a_decode_time_claims(
     let decode_decoded = {
         let instr_vals = cpu_decoded
             .get(&trace.instr_word)
-            .ok_or_else(|| PiCcsError::ProtocolError("W2(shared): missing instr_word decode column".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("decode(shared): missing instr_word decode column".into()))?;
         let active_vals = cpu_decoded
             .get(&trace.active)
-            .ok_or_else(|| PiCcsError::ProtocolError("W2(shared): missing active decode column".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("decode(shared): missing active decode column".into()))?;
         if instr_vals.len() != t_len || active_vals.len() != t_len {
             return Err(PiCcsError::ProtocolError(format!(
-                "W2(shared): decoded CPU column lengths drift (instr={}, active={}, t_len={t_len})",
+                "decode(shared): decoded CPU column lengths drift (instr={}, active={}, t_len={t_len})",
                 instr_vals.len(),
                 active_vals.len()
             )));
@@ -131,7 +131,7 @@ pub(crate) fn build_route_a_decode_time_claims(
             .map(|_| Vec::with_capacity(t_len))
             .collect();
         for j in 0..t_len {
-            let instr_word = decode_k_to_u32(instr_vals[j], "W2(shared)/instr_word")?;
+            let instr_word = decode_k_to_u32(instr_vals[j], "decode(shared)/instr_word")?;
             let active = active_vals[j] != K::ZERO;
             let mut row = riscv_decode_lookup_backed_row_from_instr_word(&decode, instr_word, active);
             if !active {
@@ -150,20 +150,20 @@ pub(crate) fn build_route_a_decode_time_claims(
         let bus = build_bus_layout_for_step_witness(step, t_len)?;
         if bus.shout_cols.len() != step.lut_instances.len() {
             return Err(PiCcsError::ProtocolError(
-                "W2(shared): bus layout shout lane count drift".into(),
+                "decode(shared): bus layout shout lane count drift".into(),
             ));
         }
         let mut bus_val_cols = Vec::with_capacity(decode_open_cols.len());
         for &(lut_idx, val_slot) in decode_lut_slots.iter() {
             let inst_cols = bus.shout_cols.get(lut_idx).ok_or_else(|| {
-                PiCcsError::ProtocolError("W2(shared): missing shout cols for decode lookup table".into())
+                PiCcsError::ProtocolError("decode(shared): missing shout cols for decode lookup table".into())
             })?;
             let lane0 = inst_cols.lanes.get(0).ok_or_else(|| {
-                PiCcsError::ProtocolError("W2(shared): expected one shout lane for decode lookup table".into())
+                PiCcsError::ProtocolError("decode(shared): expected one shout lane for decode lookup table".into())
             })?;
             let val_col = lane0.vals.get(val_slot).copied().ok_or_else(|| {
                 PiCcsError::ProtocolError(format!(
-                    "W2(shared): decode val_slot={} out of range for lut_idx={} (n_vals={})",
+                    "decode(shared): decode val_slot={} out of range for lut_idx={} (n_vals={})",
                     val_slot,
                     lut_idx,
                     lane0.vals.len()
@@ -181,7 +181,7 @@ pub(crate) fn build_route_a_decode_time_claims(
             let bus_col_id = bus_val_cols[open_idx];
             let values = lookup_vals.get(&bus_col_id).ok_or_else(|| {
                 PiCcsError::ProtocolError(format!(
-                    "W2(shared): missing decoded lookup values for bus_col={bus_col_id}"
+                    "decode(shared): missing decoded lookup values for bus_col={bus_col_id}"
                 ))
             })?;
             decoded.insert(decode_col_id, values.clone());
@@ -190,76 +190,76 @@ pub(crate) fn build_route_a_decode_time_claims(
         // Recompute derived decode helper columns from opened lookup-backed decode columns.
         let rd_is_zero_vals = decoded
             .get(&decode.rd_is_zero)
-            .ok_or_else(|| PiCcsError::ProtocolError("W2(shared): missing rd_is_zero decode column".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("decode(shared): missing rd_is_zero decode column".into()))?;
         let funct7_b0_vals = decoded
             .get(&decode.funct7_bit[0])
-            .ok_or_else(|| PiCcsError::ProtocolError("W2(shared): missing funct7_bit[0] decode column".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("decode(shared): missing funct7_bit[0] decode column".into()))?;
         let funct7_b1_vals = decoded
             .get(&decode.funct7_bit[1])
-            .ok_or_else(|| PiCcsError::ProtocolError("W2(shared): missing funct7_bit[1] decode column".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("decode(shared): missing funct7_bit[1] decode column".into()))?;
         let funct7_b2_vals = decoded
             .get(&decode.funct7_bit[2])
-            .ok_or_else(|| PiCcsError::ProtocolError("W2(shared): missing funct7_bit[2] decode column".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("decode(shared): missing funct7_bit[2] decode column".into()))?;
         let funct7_b3_vals = decoded
             .get(&decode.funct7_bit[3])
-            .ok_or_else(|| PiCcsError::ProtocolError("W2(shared): missing funct7_bit[3] decode column".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("decode(shared): missing funct7_bit[3] decode column".into()))?;
         let funct7_b4_vals = decoded
             .get(&decode.funct7_bit[4])
-            .ok_or_else(|| PiCcsError::ProtocolError("W2(shared): missing funct7_bit[4] decode column".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("decode(shared): missing funct7_bit[4] decode column".into()))?;
         let funct7_b5_vals = decoded
             .get(&decode.funct7_bit[5])
-            .ok_or_else(|| PiCcsError::ProtocolError("W2(shared): missing funct7_bit[5] decode column".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("decode(shared): missing funct7_bit[5] decode column".into()))?;
         let funct7_b6_vals = decoded
             .get(&decode.funct7_bit[6])
-            .ok_or_else(|| PiCcsError::ProtocolError("W2(shared): missing funct7_bit[6] decode column".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("decode(shared): missing funct7_bit[6] decode column".into()))?;
         let op_lui_vals = decoded
             .get(&decode.op_lui)
-            .ok_or_else(|| PiCcsError::ProtocolError("W2(shared): missing op_lui decode column".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("decode(shared): missing op_lui decode column".into()))?;
         let op_auipc_vals = decoded
             .get(&decode.op_auipc)
-            .ok_or_else(|| PiCcsError::ProtocolError("W2(shared): missing op_auipc decode column".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("decode(shared): missing op_auipc decode column".into()))?;
         let op_jal_vals = decoded
             .get(&decode.op_jal)
-            .ok_or_else(|| PiCcsError::ProtocolError("W2(shared): missing op_jal decode column".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("decode(shared): missing op_jal decode column".into()))?;
         let op_jalr_vals = decoded
             .get(&decode.op_jalr)
-            .ok_or_else(|| PiCcsError::ProtocolError("W2(shared): missing op_jalr decode column".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("decode(shared): missing op_jalr decode column".into()))?;
         let op_alu_imm_vals = decoded
             .get(&decode.op_alu_imm)
-            .ok_or_else(|| PiCcsError::ProtocolError("W2(shared): missing op_alu_imm decode column".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("decode(shared): missing op_alu_imm decode column".into()))?;
         let op_alu_reg_vals = decoded
             .get(&decode.op_alu_reg)
-            .ok_or_else(|| PiCcsError::ProtocolError("W2(shared): missing op_alu_reg decode column".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("decode(shared): missing op_alu_reg decode column".into()))?;
         let funct3_is0_vals = decoded
             .get(&decode.funct3_is[0])
-            .ok_or_else(|| PiCcsError::ProtocolError("W2(shared): missing funct3_is[0] decode column".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("decode(shared): missing funct3_is[0] decode column".into()))?;
         let funct3_is1_vals = decoded
             .get(&decode.funct3_is[1])
-            .ok_or_else(|| PiCcsError::ProtocolError("W2(shared): missing funct3_is[1] decode column".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("decode(shared): missing funct3_is[1] decode column".into()))?;
         let funct3_is2_vals = decoded
             .get(&decode.funct3_is[2])
-            .ok_or_else(|| PiCcsError::ProtocolError("W2(shared): missing funct3_is[2] decode column".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("decode(shared): missing funct3_is[2] decode column".into()))?;
         let funct3_is3_vals = decoded
             .get(&decode.funct3_is[3])
-            .ok_or_else(|| PiCcsError::ProtocolError("W2(shared): missing funct3_is[3] decode column".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("decode(shared): missing funct3_is[3] decode column".into()))?;
         let funct3_is4_vals = decoded
             .get(&decode.funct3_is[4])
-            .ok_or_else(|| PiCcsError::ProtocolError("W2(shared): missing funct3_is[4] decode column".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("decode(shared): missing funct3_is[4] decode column".into()))?;
         let funct3_is5_vals = decoded
             .get(&decode.funct3_is[5])
-            .ok_or_else(|| PiCcsError::ProtocolError("W2(shared): missing funct3_is[5] decode column".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("decode(shared): missing funct3_is[5] decode column".into()))?;
         let funct3_is6_vals = decoded
             .get(&decode.funct3_is[6])
-            .ok_or_else(|| PiCcsError::ProtocolError("W2(shared): missing funct3_is[6] decode column".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("decode(shared): missing funct3_is[6] decode column".into()))?;
         let funct3_is7_vals = decoded
             .get(&decode.funct3_is[7])
-            .ok_or_else(|| PiCcsError::ProtocolError("W2(shared): missing funct3_is[7] decode column".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("decode(shared): missing funct3_is[7] decode column".into()))?;
         let rs2_vals = decoded
             .get(&decode.rs2)
-            .ok_or_else(|| PiCcsError::ProtocolError("W2(shared): missing rs2 decode column".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("decode(shared): missing rs2 decode column".into()))?;
         let imm_i_vals = decoded
             .get(&decode.imm_i)
-            .ok_or_else(|| PiCcsError::ProtocolError("W2(shared): missing imm_i decode column".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("decode(shared): missing imm_i decode column".into()))?;
         for (col_id, vals) in [
             (decode.rd_is_zero, rd_is_zero_vals.as_slice()),
             (decode.funct7_bit[0], funct7_b0_vals.as_slice()),
@@ -286,7 +286,7 @@ pub(crate) fn build_route_a_decode_time_claims(
             (decode.rs2, rs2_vals.as_slice()),
             (decode.imm_i, imm_i_vals.as_slice()),
         ] {
-            ensure_column_len("W2(shared)", col_id, vals, t_len)?;
+            ensure_column_len("decode(shared)", col_id, vals, t_len)?;
         }
 
         let mut op_lui_write = Vec::with_capacity(t_len);
@@ -325,7 +325,7 @@ pub(crate) fn build_route_a_decode_time_claims(
                 funct3_is6_vals[j],
                 funct3_is7_vals[j],
             ];
-            alu_reg_delta.push(w2_alu_reg_table_delta_from_bits(funct7_bits, funct3_is));
+            alu_reg_delta.push(decode_alu_reg_table_delta_from_bits(funct7_bits, funct3_is));
             alu_imm_delta.push(funct7_bits[5] * funct3_is[5]);
             alu_imm_shift_rhs_delta.push((funct3_is1_vals[j] + funct3_is5_vals[j]) * (rs2_vals[j] - imm_i_vals[j]));
         }
@@ -342,122 +342,167 @@ pub(crate) fn build_route_a_decode_time_claims(
         decoded
     };
 
-    let imm_i_vals = decode_decoded
-        .get(&decode.imm_i)
-        .ok_or_else(|| PiCcsError::ProtocolError(format!("W2 missing decode lookup-backed column {}", decode.imm_i)))?;
-    let imm_s_vals = decode_decoded
-        .get(&decode.imm_s)
-        .ok_or_else(|| PiCcsError::ProtocolError(format!("W2 missing decode lookup-backed column {}", decode.imm_s)))?;
-    let imm_b_vals = decode_decoded
-        .get(&decode.imm_b)
-        .ok_or_else(|| PiCcsError::ProtocolError(format!("W2 missing decode lookup-backed column {}", decode.imm_b)))?;
-    let imm_j_vals = decode_decoded
-        .get(&decode.imm_j)
-        .ok_or_else(|| PiCcsError::ProtocolError(format!("W2 missing decode lookup-backed column {}", decode.imm_j)))?;
+    let imm_i_vals = decode_decoded.get(&decode.imm_i).ok_or_else(|| {
+        PiCcsError::ProtocolError(format!("decode missing decode lookup-backed column {}", decode.imm_i))
+    })?;
+    let imm_s_vals = decode_decoded.get(&decode.imm_s).ok_or_else(|| {
+        PiCcsError::ProtocolError(format!("decode missing decode lookup-backed column {}", decode.imm_s))
+    })?;
+    let imm_b_vals = decode_decoded.get(&decode.imm_b).ok_or_else(|| {
+        PiCcsError::ProtocolError(format!("decode missing decode lookup-backed column {}", decode.imm_b))
+    })?;
+    let imm_j_vals = decode_decoded.get(&decode.imm_j).ok_or_else(|| {
+        PiCcsError::ProtocolError(format!("decode missing decode lookup-backed column {}", decode.imm_j))
+    })?;
     let funct3_bit0_vals = decode_decoded.get(&decode.funct3_bit[0]).ok_or_else(|| {
         PiCcsError::ProtocolError(format!(
-            "W2 missing decode lookup-backed column {}",
+            "decode missing decode lookup-backed column {}",
             decode.funct3_bit[0]
         ))
     })?;
     let funct3_bit1_vals = decode_decoded.get(&decode.funct3_bit[1]).ok_or_else(|| {
         PiCcsError::ProtocolError(format!(
-            "W2 missing decode lookup-backed column {}",
+            "decode missing decode lookup-backed column {}",
             decode.funct3_bit[1]
         ))
     })?;
     let funct3_bit2_vals = decode_decoded.get(&decode.funct3_bit[2]).ok_or_else(|| {
         PiCcsError::ProtocolError(format!(
-            "W2 missing decode lookup-backed column {}",
+            "decode missing decode lookup-backed column {}",
             decode.funct3_bit[2]
         ))
     })?;
     let funct7_bit0_vals = decode_decoded.get(&decode.funct7_bit[0]).ok_or_else(|| {
         PiCcsError::ProtocolError(format!(
-            "W2 missing decode lookup-backed column {}",
+            "decode missing decode lookup-backed column {}",
             decode.funct7_bit[0]
         ))
     })?;
     let funct7_bit1_vals = decode_decoded.get(&decode.funct7_bit[1]).ok_or_else(|| {
         PiCcsError::ProtocolError(format!(
-            "W2 missing decode lookup-backed column {}",
+            "decode missing decode lookup-backed column {}",
             decode.funct7_bit[1]
         ))
     })?;
     let funct7_bit2_vals = decode_decoded.get(&decode.funct7_bit[2]).ok_or_else(|| {
         PiCcsError::ProtocolError(format!(
-            "W2 missing decode lookup-backed column {}",
+            "decode missing decode lookup-backed column {}",
             decode.funct7_bit[2]
         ))
     })?;
     let funct7_bit3_vals = decode_decoded.get(&decode.funct7_bit[3]).ok_or_else(|| {
         PiCcsError::ProtocolError(format!(
-            "W2 missing decode lookup-backed column {}",
+            "decode missing decode lookup-backed column {}",
             decode.funct7_bit[3]
         ))
     })?;
     let funct7_bit4_vals = decode_decoded.get(&decode.funct7_bit[4]).ok_or_else(|| {
         PiCcsError::ProtocolError(format!(
-            "W2 missing decode lookup-backed column {}",
+            "decode missing decode lookup-backed column {}",
             decode.funct7_bit[4]
         ))
     })?;
     let funct7_bit5_vals = decode_decoded.get(&decode.funct7_bit[5]).ok_or_else(|| {
         PiCcsError::ProtocolError(format!(
-            "W2 missing decode lookup-backed column {}",
+            "decode missing decode lookup-backed column {}",
             decode.funct7_bit[5]
         ))
     })?;
     let funct7_bit6_vals = decode_decoded.get(&decode.funct7_bit[6]).ok_or_else(|| {
         PiCcsError::ProtocolError(format!(
-            "W2 missing decode lookup-backed column {}",
+            "decode missing decode lookup-backed column {}",
             decode.funct7_bit[6]
         ))
     })?;
     let rd_bit0_vals = decode_decoded.get(&decode.rd_bit[0]).ok_or_else(|| {
-        PiCcsError::ProtocolError(format!("W2 missing decode lookup-backed column {}", decode.rd_bit[0]))
+        PiCcsError::ProtocolError(format!(
+            "decode missing decode lookup-backed column {}",
+            decode.rd_bit[0]
+        ))
     })?;
     let rd_bit1_vals = decode_decoded.get(&decode.rd_bit[1]).ok_or_else(|| {
-        PiCcsError::ProtocolError(format!("W2 missing decode lookup-backed column {}", decode.rd_bit[1]))
+        PiCcsError::ProtocolError(format!(
+            "decode missing decode lookup-backed column {}",
+            decode.rd_bit[1]
+        ))
     })?;
     let rd_bit2_vals = decode_decoded.get(&decode.rd_bit[2]).ok_or_else(|| {
-        PiCcsError::ProtocolError(format!("W2 missing decode lookup-backed column {}", decode.rd_bit[2]))
+        PiCcsError::ProtocolError(format!(
+            "decode missing decode lookup-backed column {}",
+            decode.rd_bit[2]
+        ))
     })?;
     let rd_bit3_vals = decode_decoded.get(&decode.rd_bit[3]).ok_or_else(|| {
-        PiCcsError::ProtocolError(format!("W2 missing decode lookup-backed column {}", decode.rd_bit[3]))
+        PiCcsError::ProtocolError(format!(
+            "decode missing decode lookup-backed column {}",
+            decode.rd_bit[3]
+        ))
     })?;
     let rd_bit4_vals = decode_decoded.get(&decode.rd_bit[4]).ok_or_else(|| {
-        PiCcsError::ProtocolError(format!("W2 missing decode lookup-backed column {}", decode.rd_bit[4]))
+        PiCcsError::ProtocolError(format!(
+            "decode missing decode lookup-backed column {}",
+            decode.rd_bit[4]
+        ))
     })?;
     let rs1_bit0_vals = decode_decoded.get(&decode.rs1_bit[0]).ok_or_else(|| {
-        PiCcsError::ProtocolError(format!("W2 missing decode lookup-backed column {}", decode.rs1_bit[0]))
+        PiCcsError::ProtocolError(format!(
+            "decode missing decode lookup-backed column {}",
+            decode.rs1_bit[0]
+        ))
     })?;
     let rs1_bit1_vals = decode_decoded.get(&decode.rs1_bit[1]).ok_or_else(|| {
-        PiCcsError::ProtocolError(format!("W2 missing decode lookup-backed column {}", decode.rs1_bit[1]))
+        PiCcsError::ProtocolError(format!(
+            "decode missing decode lookup-backed column {}",
+            decode.rs1_bit[1]
+        ))
     })?;
     let rs1_bit2_vals = decode_decoded.get(&decode.rs1_bit[2]).ok_or_else(|| {
-        PiCcsError::ProtocolError(format!("W2 missing decode lookup-backed column {}", decode.rs1_bit[2]))
+        PiCcsError::ProtocolError(format!(
+            "decode missing decode lookup-backed column {}",
+            decode.rs1_bit[2]
+        ))
     })?;
     let rs1_bit3_vals = decode_decoded.get(&decode.rs1_bit[3]).ok_or_else(|| {
-        PiCcsError::ProtocolError(format!("W2 missing decode lookup-backed column {}", decode.rs1_bit[3]))
+        PiCcsError::ProtocolError(format!(
+            "decode missing decode lookup-backed column {}",
+            decode.rs1_bit[3]
+        ))
     })?;
     let rs1_bit4_vals = decode_decoded.get(&decode.rs1_bit[4]).ok_or_else(|| {
-        PiCcsError::ProtocolError(format!("W2 missing decode lookup-backed column {}", decode.rs1_bit[4]))
+        PiCcsError::ProtocolError(format!(
+            "decode missing decode lookup-backed column {}",
+            decode.rs1_bit[4]
+        ))
     })?;
     let rs2_bit0_vals = decode_decoded.get(&decode.rs2_bit[0]).ok_or_else(|| {
-        PiCcsError::ProtocolError(format!("W2 missing decode lookup-backed column {}", decode.rs2_bit[0]))
+        PiCcsError::ProtocolError(format!(
+            "decode missing decode lookup-backed column {}",
+            decode.rs2_bit[0]
+        ))
     })?;
     let rs2_bit1_vals = decode_decoded.get(&decode.rs2_bit[1]).ok_or_else(|| {
-        PiCcsError::ProtocolError(format!("W2 missing decode lookup-backed column {}", decode.rs2_bit[1]))
+        PiCcsError::ProtocolError(format!(
+            "decode missing decode lookup-backed column {}",
+            decode.rs2_bit[1]
+        ))
     })?;
     let rs2_bit2_vals = decode_decoded.get(&decode.rs2_bit[2]).ok_or_else(|| {
-        PiCcsError::ProtocolError(format!("W2 missing decode lookup-backed column {}", decode.rs2_bit[2]))
+        PiCcsError::ProtocolError(format!(
+            "decode missing decode lookup-backed column {}",
+            decode.rs2_bit[2]
+        ))
     })?;
     let rs2_bit3_vals = decode_decoded.get(&decode.rs2_bit[3]).ok_or_else(|| {
-        PiCcsError::ProtocolError(format!("W2 missing decode lookup-backed column {}", decode.rs2_bit[3]))
+        PiCcsError::ProtocolError(format!(
+            "decode missing decode lookup-backed column {}",
+            decode.rs2_bit[3]
+        ))
     })?;
     let rs2_bit4_vals = decode_decoded.get(&decode.rs2_bit[4]).ok_or_else(|| {
-        PiCcsError::ProtocolError(format!("W2 missing decode lookup-backed column {}", decode.rs2_bit[4]))
+        PiCcsError::ProtocolError(format!(
+            "decode missing decode lookup-backed column {}",
+            decode.rs2_bit[4]
+        ))
     })?;
     for (col_id, vals) in [
         (decode.imm_i, imm_i_vals.as_slice()),
@@ -490,27 +535,27 @@ pub(crate) fn build_route_a_decode_time_claims(
         (decode.rs2_bit[3], rs2_bit3_vals.as_slice()),
         (decode.rs2_bit[4], rs2_bit4_vals.as_slice()),
     ] {
-        ensure_column_len("W2(shared)", col_id, vals, t_len)?;
+        ensure_column_len("decode(shared)", col_id, vals, t_len)?;
     }
 
     #[cfg(debug_assertions)]
     let cpu_active_vals = cpu_decoded
         .get(&trace.active)
-        .ok_or_else(|| PiCcsError::ProtocolError(format!("W2 missing CPU decoded column {}", trace.active)))?;
+        .ok_or_else(|| PiCcsError::ProtocolError(format!("decode missing CPU decoded column {}", trace.active)))?;
     #[cfg(debug_assertions)]
     let cpu_halted_vals = cpu_decoded
         .get(&trace.halted)
-        .ok_or_else(|| PiCcsError::ProtocolError(format!("W2 missing CPU decoded column {}", trace.halted)))?;
+        .ok_or_else(|| PiCcsError::ProtocolError(format!("decode missing CPU decoded column {}", trace.halted)))?;
     #[cfg(debug_assertions)]
     let cpu_is_virtual_vals = cpu_decoded
         .get(&trace.is_virtual)
-        .ok_or_else(|| PiCcsError::ProtocolError(format!("W2 missing CPU decoded column {}", trace.is_virtual)))?;
+        .ok_or_else(|| PiCcsError::ProtocolError(format!("decode missing CPU decoded column {}", trace.is_virtual)))?;
     #[cfg(debug_assertions)]
     let cpu_virtual_sequence_remaining_vals = cpu_decoded
         .get(&trace.virtual_sequence_remaining)
         .ok_or_else(|| {
             PiCcsError::ProtocolError(format!(
-                "W2 missing CPU decoded column {}",
+                "decode missing CPU decoded column {}",
                 trace.virtual_sequence_remaining
             ))
         })?;
@@ -519,217 +564,244 @@ pub(crate) fn build_route_a_decode_time_claims(
         .get(&trace.virtual_commit_from_prev)
         .ok_or_else(|| {
             PiCcsError::ProtocolError(format!(
-                "W2 missing CPU decoded column {}",
+                "decode missing CPU decoded column {}",
                 trace.virtual_commit_from_prev
             ))
         })?;
     #[cfg(debug_assertions)]
     let cpu_rs1_addr_vals = cpu_decoded
         .get(&trace.rs1_addr)
-        .ok_or_else(|| PiCcsError::ProtocolError(format!("W2 missing CPU decoded column {}", trace.rs1_addr)))?;
+        .ok_or_else(|| PiCcsError::ProtocolError(format!("decode missing CPU decoded column {}", trace.rs1_addr)))?;
     #[cfg(debug_assertions)]
     let cpu_rs2_addr_vals = cpu_decoded
         .get(&trace.rs2_addr)
-        .ok_or_else(|| PiCcsError::ProtocolError(format!("W2 missing CPU decoded column {}", trace.rs2_addr)))?;
+        .ok_or_else(|| PiCcsError::ProtocolError(format!("decode missing CPU decoded column {}", trace.rs2_addr)))?;
     #[cfg(debug_assertions)]
     let cpu_rd_addr_vals = cpu_decoded
         .get(&trace.rd_addr)
-        .ok_or_else(|| PiCcsError::ProtocolError(format!("W2 missing CPU decoded column {}", trace.rd_addr)))?;
+        .ok_or_else(|| PiCcsError::ProtocolError(format!("decode missing CPU decoded column {}", trace.rd_addr)))?;
     #[cfg(debug_assertions)]
     let cpu_rs1_val_vals = cpu_decoded
         .get(&trace.rs1_val)
-        .ok_or_else(|| PiCcsError::ProtocolError(format!("W2 missing CPU decoded column {}", trace.rs1_val)))?;
+        .ok_or_else(|| PiCcsError::ProtocolError(format!("decode missing CPU decoded column {}", trace.rs1_val)))?;
     #[cfg(debug_assertions)]
     let cpu_rs2_val_vals = cpu_decoded
         .get(&trace.rs2_val)
-        .ok_or_else(|| PiCcsError::ProtocolError(format!("W2 missing CPU decoded column {}", trace.rs2_val)))?;
+        .ok_or_else(|| PiCcsError::ProtocolError(format!("decode missing CPU decoded column {}", trace.rs2_val)))?;
     #[cfg(debug_assertions)]
     let cpu_rd_val_vals = cpu_decoded
         .get(&trace.rd_val)
-        .ok_or_else(|| PiCcsError::ProtocolError(format!("W2 missing CPU decoded column {}", trace.rd_val)))?;
+        .ok_or_else(|| PiCcsError::ProtocolError(format!("decode missing CPU decoded column {}", trace.rd_val)))?;
     #[cfg(debug_assertions)]
-    let cpu_rd_has_write_vals = cpu_decoded
-        .get(&trace.rd_has_write)
-        .ok_or_else(|| PiCcsError::ProtocolError(format!("W2 missing CPU decoded column {}", trace.rd_has_write)))?;
+    let cpu_rd_has_write_vals = cpu_decoded.get(&trace.rd_has_write).ok_or_else(|| {
+        PiCcsError::ProtocolError(format!("decode missing CPU decoded column {}", trace.rd_has_write))
+    })?;
     #[cfg(debug_assertions)]
     let cpu_ram_addr_vals = cpu_decoded
         .get(&trace.ram_addr)
-        .ok_or_else(|| PiCcsError::ProtocolError(format!("W2 missing CPU decoded column {}", trace.ram_addr)))?;
+        .ok_or_else(|| PiCcsError::ProtocolError(format!("decode missing CPU decoded column {}", trace.ram_addr)))?;
     #[cfg(debug_assertions)]
     let cpu_shout_has_lookup_vals = cpu_decoded.get(&trace.shout_has_lookup).ok_or_else(|| {
-        PiCcsError::ProtocolError(format!("W2 missing CPU decoded column {}", trace.shout_has_lookup))
+        PiCcsError::ProtocolError(format!("decode missing CPU decoded column {}", trace.shout_has_lookup))
     })?;
     #[cfg(debug_assertions)]
-    let cpu_shout_table_id_vals = cpu_decoded
-        .get(&trace.shout_table_id)
-        .ok_or_else(|| PiCcsError::ProtocolError(format!("W2 missing CPU decoded column {}", trace.shout_table_id)))?;
+    let cpu_shout_table_id_vals = cpu_decoded.get(&trace.shout_table_id).ok_or_else(|| {
+        PiCcsError::ProtocolError(format!("decode missing CPU decoded column {}", trace.shout_table_id))
+    })?;
     #[cfg(debug_assertions)]
     let cpu_shout_val_vals = cpu_decoded
         .get(&trace.shout_val)
-        .ok_or_else(|| PiCcsError::ProtocolError(format!("W2 missing CPU decoded column {}", trace.shout_val)))?;
+        .ok_or_else(|| PiCcsError::ProtocolError(format!("decode missing CPU decoded column {}", trace.shout_val)))?;
     #[cfg(debug_assertions)]
     let cpu_shout_lhs_vals = cpu_decoded
         .get(&trace.shout_lhs)
-        .ok_or_else(|| PiCcsError::ProtocolError(format!("W2 missing CPU decoded column {}", trace.shout_lhs)))?;
+        .ok_or_else(|| PiCcsError::ProtocolError(format!("decode missing CPU decoded column {}", trace.shout_lhs)))?;
     #[cfg(debug_assertions)]
     let cpu_shout_rhs_vals = cpu_decoded
         .get(&trace.shout_rhs)
-        .ok_or_else(|| PiCcsError::ProtocolError(format!("W2 missing CPU decoded column {}", trace.shout_rhs)))?;
+        .ok_or_else(|| PiCcsError::ProtocolError(format!("decode missing CPU decoded column {}", trace.shout_rhs)))?;
     #[cfg(debug_assertions)]
     let cpu_shout_add_sub_key_vals = cpu_decoded.get(&trace.shout_add_sub_key).ok_or_else(|| {
-        PiCcsError::ProtocolError(format!("W2 missing CPU decoded column {}", trace.shout_add_sub_key))
+        PiCcsError::ProtocolError(format!("decode missing CPU decoded column {}", trace.shout_add_sub_key))
     })?;
     #[cfg(debug_assertions)]
     let decode_opcode_vals = decode_decoded.get(&decode.opcode).ok_or_else(|| {
-        PiCcsError::ProtocolError(format!("W2 missing decode lookup-backed column {}", decode.opcode))
+        PiCcsError::ProtocolError(format!("decode missing decode lookup-backed column {}", decode.opcode))
     })?;
     #[cfg(debug_assertions)]
-    let decode_rs1_addr_vals = decode_decoded
-        .get(&decode.rs1)
-        .ok_or_else(|| PiCcsError::ProtocolError(format!("W2 missing decode lookup-backed column {}", decode.rs1)))?;
+    let decode_rs1_addr_vals = decode_decoded.get(&decode.rs1).ok_or_else(|| {
+        PiCcsError::ProtocolError(format!("decode missing decode lookup-backed column {}", decode.rs1))
+    })?;
     #[cfg(debug_assertions)]
-    let decode_rs2_addr_vals = decode_decoded
-        .get(&decode.rs2)
-        .ok_or_else(|| PiCcsError::ProtocolError(format!("W2 missing decode lookup-backed column {}", decode.rs2)))?;
+    let decode_rs2_addr_vals = decode_decoded.get(&decode.rs2).ok_or_else(|| {
+        PiCcsError::ProtocolError(format!("decode missing decode lookup-backed column {}", decode.rs2))
+    })?;
     #[cfg(debug_assertions)]
-    let decode_rd_addr_vals = decode_decoded
-        .get(&decode.rd)
-        .ok_or_else(|| PiCcsError::ProtocolError(format!("W2 missing decode lookup-backed column {}", decode.rd)))?;
+    let decode_rd_addr_vals = decode_decoded.get(&decode.rd).ok_or_else(|| {
+        PiCcsError::ProtocolError(format!("decode missing decode lookup-backed column {}", decode.rd))
+    })?;
     #[cfg(debug_assertions)]
     let decode_rd_is_zero_vals = decode_decoded.get(&decode.rd_is_zero).ok_or_else(|| {
-        PiCcsError::ProtocolError(format!("W2 missing decode lookup-backed column {}", decode.rd_is_zero))
+        PiCcsError::ProtocolError(format!(
+            "decode missing decode lookup-backed column {}",
+            decode.rd_is_zero
+        ))
     })?;
     #[cfg(debug_assertions)]
     let decode_rd_has_write_vals = decode_decoded.get(&decode.rd_has_write).ok_or_else(|| {
         PiCcsError::ProtocolError(format!(
-            "W2 missing decode lookup-backed column {}",
+            "decode missing decode lookup-backed column {}",
             decode.rd_has_write
         ))
     })?;
     #[cfg(debug_assertions)]
     let decode_ram_has_read_vals = decode_decoded.get(&decode.ram_has_read).ok_or_else(|| {
         PiCcsError::ProtocolError(format!(
-            "W2 missing decode lookup-backed column {}",
+            "decode missing decode lookup-backed column {}",
             decode.ram_has_read
         ))
     })?;
     #[cfg(debug_assertions)]
     let decode_ram_has_write_vals = decode_decoded.get(&decode.ram_has_write).ok_or_else(|| {
         PiCcsError::ProtocolError(format!(
-            "W2 missing decode lookup-backed column {}",
+            "decode missing decode lookup-backed column {}",
             decode.ram_has_write
         ))
     })?;
     #[cfg(debug_assertions)]
     let decode_op_lui_vals = decode_decoded.get(&decode.op_lui).ok_or_else(|| {
-        PiCcsError::ProtocolError(format!("W2 missing decode lookup-backed column {}", decode.op_lui))
+        PiCcsError::ProtocolError(format!("decode missing decode lookup-backed column {}", decode.op_lui))
     })?;
     #[cfg(debug_assertions)]
     let decode_op_auipc_vals = decode_decoded.get(&decode.op_auipc).ok_or_else(|| {
-        PiCcsError::ProtocolError(format!("W2 missing decode lookup-backed column {}", decode.op_auipc))
+        PiCcsError::ProtocolError(format!(
+            "decode missing decode lookup-backed column {}",
+            decode.op_auipc
+        ))
     })?;
     #[cfg(debug_assertions)]
     let decode_op_jal_vals = decode_decoded.get(&decode.op_jal).ok_or_else(|| {
-        PiCcsError::ProtocolError(format!("W2 missing decode lookup-backed column {}", decode.op_jal))
+        PiCcsError::ProtocolError(format!("decode missing decode lookup-backed column {}", decode.op_jal))
     })?;
     #[cfg(debug_assertions)]
     let decode_op_jalr_vals = decode_decoded.get(&decode.op_jalr).ok_or_else(|| {
-        PiCcsError::ProtocolError(format!("W2 missing decode lookup-backed column {}", decode.op_jalr))
+        PiCcsError::ProtocolError(format!("decode missing decode lookup-backed column {}", decode.op_jalr))
     })?;
     #[cfg(debug_assertions)]
     let decode_op_branch_vals = decode_decoded.get(&decode.op_branch).ok_or_else(|| {
-        PiCcsError::ProtocolError(format!("W2 missing decode lookup-backed column {}", decode.op_branch))
+        PiCcsError::ProtocolError(format!(
+            "decode missing decode lookup-backed column {}",
+            decode.op_branch
+        ))
     })?;
     #[cfg(debug_assertions)]
     let decode_op_load_vals = decode_decoded.get(&decode.op_load).ok_or_else(|| {
-        PiCcsError::ProtocolError(format!("W2 missing decode lookup-backed column {}", decode.op_load))
+        PiCcsError::ProtocolError(format!("decode missing decode lookup-backed column {}", decode.op_load))
     })?;
     #[cfg(debug_assertions)]
     let decode_op_store_vals = decode_decoded.get(&decode.op_store).ok_or_else(|| {
-        PiCcsError::ProtocolError(format!("W2 missing decode lookup-backed column {}", decode.op_store))
+        PiCcsError::ProtocolError(format!(
+            "decode missing decode lookup-backed column {}",
+            decode.op_store
+        ))
     })?;
     #[cfg(debug_assertions)]
     let decode_op_alu_imm_vals = decode_decoded.get(&decode.op_alu_imm).ok_or_else(|| {
-        PiCcsError::ProtocolError(format!("W2 missing decode lookup-backed column {}", decode.op_alu_imm))
+        PiCcsError::ProtocolError(format!(
+            "decode missing decode lookup-backed column {}",
+            decode.op_alu_imm
+        ))
     })?;
     #[cfg(debug_assertions)]
     let decode_op_alu_reg_vals = decode_decoded.get(&decode.op_alu_reg).ok_or_else(|| {
-        PiCcsError::ProtocolError(format!("W2 missing decode lookup-backed column {}", decode.op_alu_reg))
+        PiCcsError::ProtocolError(format!(
+            "decode missing decode lookup-backed column {}",
+            decode.op_alu_reg
+        ))
     })?;
     #[cfg(debug_assertions)]
     let decode_op_misc_mem_vals = decode_decoded.get(&decode.op_misc_mem).ok_or_else(|| {
-        PiCcsError::ProtocolError(format!("W2 missing decode lookup-backed column {}", decode.op_misc_mem))
+        PiCcsError::ProtocolError(format!(
+            "decode missing decode lookup-backed column {}",
+            decode.op_misc_mem
+        ))
     })?;
     #[cfg(debug_assertions)]
     let decode_op_system_vals = decode_decoded.get(&decode.op_system).ok_or_else(|| {
-        PiCcsError::ProtocolError(format!("W2 missing decode lookup-backed column {}", decode.op_system))
+        PiCcsError::ProtocolError(format!(
+            "decode missing decode lookup-backed column {}",
+            decode.op_system
+        ))
     })?;
     #[cfg(debug_assertions)]
     let decode_op_amo_vals = decode_decoded.get(&decode.op_amo).ok_or_else(|| {
-        PiCcsError::ProtocolError(format!("W2 missing decode lookup-backed column {}", decode.op_amo))
+        PiCcsError::ProtocolError(format!("decode missing decode lookup-backed column {}", decode.op_amo))
     })?;
     #[cfg(debug_assertions)]
     let decode_op_custom_vals = decode_decoded.get(&decode.op_custom).ok_or_else(|| {
-        PiCcsError::ProtocolError(format!("W2 missing decode lookup-backed column {}", decode.op_custom))
+        PiCcsError::ProtocolError(format!(
+            "decode missing decode lookup-backed column {}",
+            decode.op_custom
+        ))
     })?;
     #[cfg(debug_assertions)]
     let decode_funct3_is0_vals = decode_decoded.get(&decode.funct3_is[0]).ok_or_else(|| {
         PiCcsError::ProtocolError(format!(
-            "W2 missing decode lookup-backed column {}",
+            "decode missing decode lookup-backed column {}",
             decode.funct3_is[0]
         ))
     })?;
     #[cfg(debug_assertions)]
     let decode_funct3_is1_vals = decode_decoded.get(&decode.funct3_is[1]).ok_or_else(|| {
         PiCcsError::ProtocolError(format!(
-            "W2 missing decode lookup-backed column {}",
+            "decode missing decode lookup-backed column {}",
             decode.funct3_is[1]
         ))
     })?;
     #[cfg(debug_assertions)]
     let decode_funct3_is2_vals = decode_decoded.get(&decode.funct3_is[2]).ok_or_else(|| {
         PiCcsError::ProtocolError(format!(
-            "W2 missing decode lookup-backed column {}",
+            "decode missing decode lookup-backed column {}",
             decode.funct3_is[2]
         ))
     })?;
     #[cfg(debug_assertions)]
     let decode_funct3_is3_vals = decode_decoded.get(&decode.funct3_is[3]).ok_or_else(|| {
         PiCcsError::ProtocolError(format!(
-            "W2 missing decode lookup-backed column {}",
+            "decode missing decode lookup-backed column {}",
             decode.funct3_is[3]
         ))
     })?;
     #[cfg(debug_assertions)]
     let decode_funct3_is4_vals = decode_decoded.get(&decode.funct3_is[4]).ok_or_else(|| {
         PiCcsError::ProtocolError(format!(
-            "W2 missing decode lookup-backed column {}",
+            "decode missing decode lookup-backed column {}",
             decode.funct3_is[4]
         ))
     })?;
     #[cfg(debug_assertions)]
     let decode_funct3_is5_vals = decode_decoded.get(&decode.funct3_is[5]).ok_or_else(|| {
         PiCcsError::ProtocolError(format!(
-            "W2 missing decode lookup-backed column {}",
+            "decode missing decode lookup-backed column {}",
             decode.funct3_is[5]
         ))
     })?;
     #[cfg(debug_assertions)]
     let decode_funct3_is6_vals = decode_decoded.get(&decode.funct3_is[6]).ok_or_else(|| {
         PiCcsError::ProtocolError(format!(
-            "W2 missing decode lookup-backed column {}",
+            "decode missing decode lookup-backed column {}",
             decode.funct3_is[6]
         ))
     })?;
     #[cfg(debug_assertions)]
     let decode_funct3_is7_vals = decode_decoded.get(&decode.funct3_is[7]).ok_or_else(|| {
         PiCcsError::ProtocolError(format!(
-            "W2 missing decode lookup-backed column {}",
+            "decode missing decode lookup-backed column {}",
             decode.funct3_is[7]
         ))
     })?;
 
-    let mut imm_residual_vals: Vec<Vec<K>> = (0..W2_IMM_RESIDUAL_COUNT)
+    let mut imm_residual_vals: Vec<Vec<K>> = (0..DECODE_IMM_RESIDUAL_COUNT)
         .map(|_| Vec::with_capacity(t_len))
         .collect();
     for j in 0..t_len {
@@ -743,7 +815,7 @@ pub(crate) fn build_route_a_decode_time_claims(
             funct7_bit5_vals[j],
             funct7_bit6_vals[j],
         ];
-        let imm = w2_decode_immediate_residuals(
+        let imm = decode_immediate_residuals(
             imm_i_vals[j],
             imm_s_vals[j],
             imm_b_vals[j],
@@ -801,42 +873,54 @@ pub(crate) fn build_route_a_decode_time_claims(
             let shout_add_sub_key = cpu_shout_add_sub_key_vals[j];
             let rs1_word = if let Some(rv64_trace) = _rv64_trace.as_ref() {
                 cpu_decoded.get(&rv64_trace.rs1_val_lo32).ok_or_else(|| {
-                    PiCcsError::ProtocolError(format!("W2 missing CPU decoded column {}", rv64_trace.rs1_val_lo32))
+                    PiCcsError::ProtocolError(format!("decode missing CPU decoded column {}", rv64_trace.rs1_val_lo32))
                 })?[j]
             } else {
                 rs1_val
             };
             let rs2_word = if let Some(rv64_trace) = _rv64_trace.as_ref() {
                 cpu_decoded.get(&rv64_trace.rs2_val_lo32).ok_or_else(|| {
-                    PiCcsError::ProtocolError(format!("W2 missing CPU decoded column {}", rv64_trace.rs2_val_lo32))
+                    PiCcsError::ProtocolError(format!("decode missing CPU decoded column {}", rv64_trace.rs2_val_lo32))
                 })?[j]
             } else {
                 rs2_val
             };
             let shout_lhs_word = if let Some(rv64_trace) = _rv64_trace.as_ref() {
                 cpu_decoded.get(&rv64_trace.shout_lhs_lo32).ok_or_else(|| {
-                    PiCcsError::ProtocolError(format!("W2 missing CPU decoded column {}", rv64_trace.shout_lhs_lo32))
+                    PiCcsError::ProtocolError(format!(
+                        "decode missing CPU decoded column {}",
+                        rv64_trace.shout_lhs_lo32
+                    ))
                 })?[j]
             } else {
                 shout_lhs
             };
             let shout_lhs_hi = if let Some(rv64_trace) = _rv64_trace.as_ref() {
                 cpu_decoded.get(&rv64_trace.shout_lhs_hi32).ok_or_else(|| {
-                    PiCcsError::ProtocolError(format!("W2 missing CPU decoded column {}", rv64_trace.shout_lhs_hi32))
+                    PiCcsError::ProtocolError(format!(
+                        "decode missing CPU decoded column {}",
+                        rv64_trace.shout_lhs_hi32
+                    ))
                 })?[j]
             } else {
                 K::ZERO
             };
             let shout_rhs_word = if let Some(rv64_trace) = _rv64_trace.as_ref() {
                 cpu_decoded.get(&rv64_trace.shout_rhs_lo32).ok_or_else(|| {
-                    PiCcsError::ProtocolError(format!("W2 missing CPU decoded column {}", rv64_trace.shout_rhs_lo32))
+                    PiCcsError::ProtocolError(format!(
+                        "decode missing CPU decoded column {}",
+                        rv64_trace.shout_rhs_lo32
+                    ))
                 })?[j]
             } else {
                 shout_rhs
             };
             let shout_rhs_hi = if let Some(rv64_trace) = _rv64_trace.as_ref() {
                 cpu_decoded.get(&rv64_trace.shout_rhs_hi32).ok_or_else(|| {
-                    PiCcsError::ProtocolError(format!("W2 missing CPU decoded column {}", rv64_trace.shout_rhs_hi32))
+                    PiCcsError::ProtocolError(format!(
+                        "decode missing CPU decoded column {}",
+                        rv64_trace.shout_rhs_hi32
+                    ))
                 })?[j]
             } else {
                 K::ZERO
@@ -846,7 +930,7 @@ pub(crate) fn build_route_a_decode_time_claims(
                     .get(&rv64_trace.shout_add_sub_key_lo32)
                     .ok_or_else(|| {
                         PiCcsError::ProtocolError(format!(
-                            "W2 missing CPU decoded column {}",
+                            "decode missing CPU decoded column {}",
                             rv64_trace.shout_add_sub_key_lo32
                         ))
                     })?[j]
@@ -858,7 +942,7 @@ pub(crate) fn build_route_a_decode_time_claims(
                     .get(&rv64_trace.shout_add_sub_key_hi32)
                     .ok_or_else(|| {
                         PiCcsError::ProtocolError(format!(
-                            "W2 missing CPU decoded column {}",
+                            "decode missing CPU decoded column {}",
                             rv64_trace.shout_add_sub_key_hi32
                         ))
                     })?[j]
@@ -902,10 +986,10 @@ pub(crate) fn build_route_a_decode_time_claims(
                 opcode_flags[7] * (K::ONE - rd_is_zero),
                 opcode_flags[8] * (K::ONE - rd_is_zero),
             ];
-            let alu_reg_table_delta = w2_alu_reg_table_delta_from_bits(funct7_bits, funct3_is);
+            let alu_reg_table_delta = decode_alu_reg_table_delta_from_bits(funct7_bits, funct3_is);
             let alu_imm_table_delta = funct7_bits[5] * funct3_is[5];
             let alu_imm_shift_rhs_delta = (funct3_is[1] + funct3_is[5]) * (decode_rs2_addr - imm_i_vals[j]);
-            let selector_residuals = w2_decode_selector_residuals(
+            let selector_residuals = decode_selector_residuals(
                 active,
                 decode_opcode,
                 opcode_flags,
@@ -914,8 +998,8 @@ pub(crate) fn build_route_a_decode_time_claims(
                 funct3_bits,
                 opcode_flags[11],
             );
-            let bitness_residuals = w2_decode_bitness_residuals(opcode_flags, funct3_is);
-            let alu_branch_residuals = w2_alu_branch_lookup_residuals(
+            let bitness_residuals = decode_bitness_residuals(opcode_flags, funct3_is);
+            let alu_branch_residuals = decode_alu_branch_lookup_residuals(
                 rv64_exact_words,
                 active,
                 is_virtual,
@@ -1071,13 +1155,13 @@ pub(crate) fn build_route_a_decode_time_claims(
     for &col_id in main_field_cols.iter() {
         let vals = cpu_decoded
             .get(&col_id)
-            .ok_or_else(|| PiCcsError::ProtocolError(format!("W2 missing CPU decoded column {col_id}")))?;
+            .ok_or_else(|| PiCcsError::ProtocolError(format!("decode missing CPU decoded column {col_id}")))?;
         fields_sparse_cols.push(sparse_trace_col_from_values(m_in, ell_n, vals)?);
     }
     for &col_id in decode_field_cols.iter() {
         let vals = decode_decoded
             .get(&col_id)
-            .ok_or_else(|| PiCcsError::ProtocolError(format!("W2 missing decode lookup-backed column {col_id}")))?;
+            .ok_or_else(|| PiCcsError::ProtocolError(format!("decode missing decode lookup-backed column {col_id}")))?;
         fields_sparse_cols.push(sparse_trace_col_from_values(m_in, ell_n, vals)?);
     }
 
@@ -1088,12 +1172,12 @@ pub(crate) fn build_route_a_decode_time_claims(
 
     let pow2_cycle = 1usize
         .checked_shl(ell_n as u32)
-        .ok_or_else(|| PiCcsError::InvalidInput("W2: 2^ell_n overflow".into()))?;
+        .ok_or_else(|| PiCcsError::InvalidInput("decode: 2^ell_n overflow".into()))?;
     let active_zero = SparseIdxVec::from_entries(pow2_cycle, Vec::new());
-    let fields_weights = w2_decode_pack_weight_vector(r_cycle, W2_FIELDS_RESIDUAL_COUNT);
+    let fields_weights = decode_pack_weight_vector(r_cycle, DECODE_FIELDS_RESIDUAL_COUNT);
     let eval_fields_openings = move |vals: &[K]| {
         let mut cursor = ValueCursor::new(vals);
-        let mut decode_inputs = W2DecodeFieldsOpenings {
+        let mut decode_inputs = DecodeFieldsOpenings {
             rv64_exact_words,
             active: cursor.take(),
             halted: cursor.take(),
@@ -1159,7 +1243,7 @@ pub(crate) fn build_route_a_decode_time_claims(
     };
     let eval_fields = move |vals: &[K]| {
         let decode_inputs = eval_fields_openings(vals);
-        w2_decode_fields_weighted_residual_with_scratch(&decode_inputs, &fields_weights)
+        decode_fields_weighted_residual_with_scratch(&decode_inputs, &fields_weights)
     };
     let pair_domain = pow2_cycle >> 1;
     let mut pair_vals0 = vec![K::ZERO; fields_sparse_cols.len()];
@@ -1175,7 +1259,7 @@ pub(crate) fn build_route_a_decode_time_claims(
         if pair_sum != K::ZERO {
             let row0 = eval_fields_openings(&pair_vals0);
             let row1 = eval_fields_openings(&pair_vals1);
-            let row0_selector = w2_decode_selector_residuals(
+            let row0_selector = decode_selector_residuals(
                 row0.active,
                 row0.decode_opcode,
                 row0.opcode_flags,
@@ -1184,7 +1268,7 @@ pub(crate) fn build_route_a_decode_time_claims(
                 row0.funct3_bits,
                 row0.opcode_flags[11],
             );
-            let row1_selector = w2_decode_selector_residuals(
+            let row1_selector = decode_selector_residuals(
                 row1.active,
                 row1.decode_opcode,
                 row1.opcode_flags,
@@ -1193,8 +1277,8 @@ pub(crate) fn build_route_a_decode_time_claims(
                 row1.funct3_bits,
                 row1.opcode_flags[11],
             );
-            let row0_bitness = w2_decode_bitness_residuals(row0.opcode_flags, row0.funct3_is);
-            let row1_bitness = w2_decode_bitness_residuals(row1.opcode_flags, row1.funct3_is);
+            let row0_bitness = decode_bitness_residuals(row0.opcode_flags, row0.funct3_is);
+            let row1_bitness = decode_bitness_residuals(row1.opcode_flags, row1.funct3_is);
             let row0_op_write_flags = [
                 row0.opcode_flags[0] * (K::ONE - row0.rd_is_zero),
                 row0.opcode_flags[1] * (K::ONE - row0.rd_is_zero),
@@ -1211,8 +1295,8 @@ pub(crate) fn build_route_a_decode_time_claims(
                 row1.opcode_flags[7] * (K::ONE - row1.rd_is_zero),
                 row1.opcode_flags[8] * (K::ONE - row1.rd_is_zero),
             ];
-            let mut row0_alu = Vec::with_capacity(W2_FIELDS_RESIDUAL_COUNT);
-            w2_alu_branch_lookup_residuals_into(
+            let mut row0_alu = Vec::with_capacity(DECODE_FIELDS_RESIDUAL_COUNT);
+            decode_alu_branch_lookup_residuals_into(
                 row0.rv64_exact_words,
                 row0.active,
                 row0.is_virtual,
@@ -1254,7 +1338,7 @@ pub(crate) fn build_route_a_decode_time_claims(
                 row0.opcode_flags,
                 row0_op_write_flags,
                 row0.funct3_is,
-                w2_alu_reg_table_delta_from_bits(row0.funct7_bits, row0.funct3_is),
+                decode_alu_reg_table_delta_from_bits(row0.funct7_bits, row0.funct3_is),
                 row0.funct7_bits[5] * row0.funct3_is[5],
                 (row0.funct3_is[1] + row0.funct3_is[5]) * (row0.decode_rs2_addr - row0.imm_i),
                 row0.decode_rs2_addr,
@@ -1262,8 +1346,8 @@ pub(crate) fn build_route_a_decode_time_claims(
                 row0.imm_s,
                 &mut row0_alu,
             );
-            let mut row1_alu = Vec::with_capacity(W2_FIELDS_RESIDUAL_COUNT);
-            w2_alu_branch_lookup_residuals_into(
+            let mut row1_alu = Vec::with_capacity(DECODE_FIELDS_RESIDUAL_COUNT);
+            decode_alu_branch_lookup_residuals_into(
                 row1.rv64_exact_words,
                 row1.active,
                 row1.is_virtual,
@@ -1305,7 +1389,7 @@ pub(crate) fn build_route_a_decode_time_claims(
                 row1.opcode_flags,
                 row1_op_write_flags,
                 row1.funct3_is,
-                w2_alu_reg_table_delta_from_bits(row1.funct7_bits, row1.funct3_is),
+                decode_alu_reg_table_delta_from_bits(row1.funct7_bits, row1.funct3_is),
                 row1.funct7_bits[5] * row1.funct3_is[5],
                 (row1.funct3_is[1] + row1.funct3_is[5]) * (row1.decode_rs2_addr - row1.imm_i),
                 row1.decode_rs2_addr,
@@ -1391,11 +1475,12 @@ pub(crate) fn build_route_a_decode_time_claims(
             )));
         }
     }
-    let fields_oracle = FormulaOracleSparseTime::new(fields_sparse_cols, W2_FIELDS_DEGREE_BOUND, r_cycle, eval_fields);
+    let fields_oracle =
+        FormulaOracleSparseTime::new(fields_sparse_cols, DECODE_FIELDS_DEGREE_BOUND, r_cycle, eval_fields);
     let imm_oracle = WeightedMaskOracleSparseTime::new(
         active_zero,
         imm_sparse_cols,
-        w2_decode_imm_weight_vector(r_cycle, 4),
+        decode_imm_weight_vector(r_cycle, 4),
         r_cycle,
     );
 

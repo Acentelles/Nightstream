@@ -1,8 +1,11 @@
 use super::*;
 
 #[inline]
-pub(super) fn push_virtual_decode_residuals<S: W2ResidualSink>(inputs: &W2VirtualResidualInputs, residuals: &mut S) {
-    let W2VirtualResidualInputs {
+pub(super) fn push_virtual_decode_residuals<S: DecodeResidualSink>(
+    inputs: &DecodeVirtualResidualInputs,
+    residuals: &mut S,
+) {
+    let DecodeVirtualResidualInputs {
         base,
         op_alu_reg,
         op_alu_reg_wide,
@@ -19,7 +22,7 @@ pub(super) fn push_virtual_decode_residuals<S: W2ResidualSink>(inputs: &W2Virtua
         mul_key_delta,
         two_pow_32,
     } = *inputs;
-    let W2AluBranchResidualInputs {
+    let DecodeAluBranchResidualInputs {
         rv64_exact_words,
         is_virtual,
         virtual_sequence_remaining,
@@ -53,7 +56,7 @@ pub(super) fn push_virtual_decode_residuals<S: W2ResidualSink>(inputs: &W2Virtua
     let op_remu = is_rv32m * funct3_is[7];
     let op_virtual_decomp = op_mul + op_mulh + op_mulhu + op_mulhsu + op_div + op_divu + op_rem + op_remu;
     let rem = virtual_sequence_remaining;
-    let k_consts = w2_virtual_constants_k();
+    let k_consts = decode_virtual_constants_k();
     let v0 = k_consts.v0;
     let v1 = k_consts.v1;
     let v2 = k_consts.v2;
@@ -98,20 +101,20 @@ pub(super) fn push_virtual_decode_residuals<S: W2ResidualSink>(inputs: &W2Virtua
     let virtual_remu = is_virtual * op_remu * op_alu_reg_base_only;
     residuals.push(is_virtual * (K::ONE - op_virtual_decomp));
 
-    let mut stage_gate_2 = [K::ZERO; W2_STAGE_GATE_TABLE_CAP];
-    let mut stage_gate_3 = [K::ZERO; W2_STAGE_GATE_TABLE_CAP];
-    let mut stage_gate_7 = [K::ZERO; W2_STAGE_GATE_TABLE_CAP];
-    let mut stage_gate_8 = [K::ZERO; W2_STAGE_GATE_TABLE_CAP];
-    let mut stage_gate_11 = [K::ZERO; W2_STAGE_GATE_TABLE_CAP];
-    let mut stage_gate_18 = [K::ZERO; W2_STAGE_GATE_TABLE_CAP];
-    let mut stage_gate_19 = [K::ZERO; W2_STAGE_GATE_TABLE_CAP];
-    let _ = w2_build_stage_gate_table(rem, 2, &mut stage_gate_2);
-    let rem_poly_3 = w2_build_stage_gate_table(rem, 3, &mut stage_gate_3);
-    let rem_poly_7 = w2_build_stage_gate_table(rem, 7, &mut stage_gate_7);
-    let rem_poly_8 = w2_build_stage_gate_table(rem, 8, &mut stage_gate_8);
-    let rem_poly_11 = w2_build_stage_gate_table(rem, 11, &mut stage_gate_11);
-    let rem_poly_18 = w2_build_stage_gate_table(rem, 18, &mut stage_gate_18);
-    let rem_poly_19 = w2_build_stage_gate_table(rem, 19, &mut stage_gate_19);
+    let mut stage_gate_2 = [K::ZERO; DECODE_STAGE_GATE_TABLE_CAP];
+    let mut stage_gate_3 = [K::ZERO; DECODE_STAGE_GATE_TABLE_CAP];
+    let mut stage_gate_7 = [K::ZERO; DECODE_STAGE_GATE_TABLE_CAP];
+    let mut stage_gate_8 = [K::ZERO; DECODE_STAGE_GATE_TABLE_CAP];
+    let mut stage_gate_11 = [K::ZERO; DECODE_STAGE_GATE_TABLE_CAP];
+    let mut stage_gate_18 = [K::ZERO; DECODE_STAGE_GATE_TABLE_CAP];
+    let mut stage_gate_19 = [K::ZERO; DECODE_STAGE_GATE_TABLE_CAP];
+    let _ = decode_build_stage_gate_table(rem, 2, &mut stage_gate_2);
+    let rem_poly_3 = decode_build_stage_gate_table(rem, 3, &mut stage_gate_3);
+    let rem_poly_7 = decode_build_stage_gate_table(rem, 7, &mut stage_gate_7);
+    let rem_poly_8 = decode_build_stage_gate_table(rem, 8, &mut stage_gate_8);
+    let rem_poly_11 = decode_build_stage_gate_table(rem, 11, &mut stage_gate_11);
+    let rem_poly_18 = decode_build_stage_gate_table(rem, 18, &mut stage_gate_18);
+    let rem_poly_19 = decode_build_stage_gate_table(rem, 19, &mut stage_gate_19);
 
     residuals.push(virtual_mulw * rem_poly_3);
     residuals.push(virtual_divw * rem_poly_3);

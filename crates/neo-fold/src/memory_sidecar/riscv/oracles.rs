@@ -37,7 +37,7 @@ pub(crate) fn build_route_a_memory_oracles(
     }
     let trace_is_virtual_sparse = if decode_stage_required_for_step_witness(step) {
         let trace = Rv32TraceLayout::new();
-        let t_len = infer_rv32_trace_t_len_for_wb_wp(step, &trace)?;
+        let t_len = infer_rv32_trace_t_len_for_trace_openings(step, &trace)?;
         let decoded = decode_trace_col_values_batch(params, step, t_len, &[trace.is_virtual])?;
         let is_virtual_vals = decoded.get(&trace.is_virtual).ok_or_else(|| {
             PiCcsError::ProtocolError("virtual-domain oracle: missing is_virtual trace column".into())

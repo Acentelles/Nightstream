@@ -2,7 +2,7 @@ use super::*;
 
 #[inline]
 #[cfg(debug_assertions)]
-pub(crate) fn w2_alu_branch_lookup_residuals(
+pub(crate) fn decode_alu_branch_lookup_residuals(
     rv64_exact_words: bool,
     active: K,
     is_virtual: K,
@@ -51,7 +51,7 @@ pub(crate) fn w2_alu_branch_lookup_residuals(
     imm_i: K,
     imm_s: K,
 ) -> Vec<K> {
-    let inputs = W2AluBranchResidualInputs {
+    let inputs = DecodeAluBranchResidualInputs {
         rv64_exact_words,
         active,
         is_virtual,
@@ -100,13 +100,13 @@ pub(crate) fn w2_alu_branch_lookup_residuals(
         imm_i,
         imm_s,
     };
-    let mut residuals = Vec::with_capacity(W2_ALU_BRANCH_RESIDUAL_COUNT);
-    w2_alu_branch_lookup_residuals_sink(&inputs, &mut residuals);
+    let mut residuals = Vec::with_capacity(DECODE_ALU_BRANCH_RESIDUAL_COUNT);
+    decode_alu_branch_lookup_residuals_sink(&inputs, &mut residuals);
     residuals
 }
 
 #[inline]
-pub(crate) fn w2_alu_branch_lookup_residuals_into(
+pub(crate) fn decode_alu_branch_lookup_residuals_into(
     rv64_exact_words: bool,
     active: K,
     is_virtual: K,
@@ -157,10 +157,10 @@ pub(crate) fn w2_alu_branch_lookup_residuals_into(
     residuals: &mut Vec<K>,
 ) {
     residuals.clear();
-    if residuals.capacity() < W2_ALU_BRANCH_RESIDUAL_COUNT {
-        residuals.reserve(W2_ALU_BRANCH_RESIDUAL_COUNT - residuals.capacity());
+    if residuals.capacity() < DECODE_ALU_BRANCH_RESIDUAL_COUNT {
+        residuals.reserve(DECODE_ALU_BRANCH_RESIDUAL_COUNT - residuals.capacity());
     }
-    let inputs = W2AluBranchResidualInputs {
+    let inputs = DecodeAluBranchResidualInputs {
         rv64_exact_words,
         active,
         is_virtual,
@@ -209,15 +209,15 @@ pub(crate) fn w2_alu_branch_lookup_residuals_into(
         imm_i,
         imm_s,
     };
-    w2_alu_branch_lookup_residuals_sink(&inputs, residuals);
+    decode_alu_branch_lookup_residuals_sink(&inputs, residuals);
 }
 
 #[inline]
-pub(super) fn w2_alu_branch_lookup_residuals_sink<S: W2ResidualSink>(
-    inputs: &W2AluBranchResidualInputs,
+pub(super) fn decode_alu_branch_lookup_residuals_sink<S: DecodeResidualSink>(
+    inputs: &DecodeAluBranchResidualInputs,
     residuals: &mut S,
 ) {
-    let W2AluBranchResidualInputs {
+    let DecodeAluBranchResidualInputs {
         rv64_exact_words,
         active,
         is_virtual,
@@ -290,7 +290,7 @@ pub(super) fn w2_alu_branch_lookup_residuals_sink<S: W2ResidualSink>(
         op_lui + op_auipc + op_jal + op_jalr + op_branch + op_alu_imm + op_alu_reg + op_misc_mem + op_system;
     let mem_lookup_ops = op_load + op_store;
     let add_lookup_ops = op_load + op_store + op_jalr;
-    let k_consts = w2_virtual_constants_k();
+    let k_consts = decode_virtual_constants_k();
     let add_table_id = k_consts.add_table_id;
     let addw_table_id = k_consts.addw_table_id;
     let opcode_alu_imm_base = K::from(F::from_u64(0x13));
@@ -315,7 +315,7 @@ pub(super) fn w2_alu_branch_lookup_residuals_sink<S: W2ResidualSink>(
     let shift_selector = funct3_is[1] + funct3_is[5];
     let funct7_m_tail =
         funct7_bits[1] + funct7_bits[2] + funct7_bits[3] + funct7_bits[4] + funct7_bits[5] + funct7_bits[6];
-    let alu_reg_table_delta_expected = w2_alu_reg_table_delta_from_bits(funct7_bits, funct3_is);
+    let alu_reg_table_delta_expected = decode_alu_reg_table_delta_from_bits(funct7_bits, funct3_is);
 
     let op_add_imm = op_alu_imm_base_only * funct3_is[0];
     let op_add_reg = op_alu_reg_base_only * funct3_is[0] * (K::ONE - funct7_bits[0]) * (K::ONE - funct7_bits[5]);
@@ -465,7 +465,7 @@ pub(super) fn w2_alu_branch_lookup_residuals_sink<S: W2ResidualSink>(
         residuals.push(nonvirtual * r);
     }
 
-    let virtual_inputs = W2VirtualResidualInputs {
+    let virtual_inputs = DecodeVirtualResidualInputs {
         base: *inputs,
         op_alu_reg,
         op_alu_reg_wide,
@@ -486,9 +486,9 @@ pub(super) fn w2_alu_branch_lookup_residuals_sink<S: W2ResidualSink>(
 
     debug_assert_eq!(
         residuals.len(),
-        W2_ALU_BRANCH_RESIDUAL_COUNT,
+        DECODE_ALU_BRANCH_RESIDUAL_COUNT,
         "decode/fields alu_branch residual count mismatch: expected {}, got {}",
-        W2_ALU_BRANCH_RESIDUAL_COUNT,
+        DECODE_ALU_BRANCH_RESIDUAL_COUNT,
         residuals.len()
     );
 }

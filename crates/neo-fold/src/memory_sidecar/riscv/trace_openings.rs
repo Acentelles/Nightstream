@@ -15,12 +15,12 @@ pub(crate) fn has_trace_lookup_families_witness(step: &StepWitnessBundle<Cmt, F,
 }
 
 #[inline]
-pub(crate) fn wb_wp_required_for_step_instance(step: &StepInstanceBundle<Cmt, F, K>) -> bool {
+pub(crate) fn trace_opening_path_required_for_step_instance(step: &StepInstanceBundle<Cmt, F, K>) -> bool {
     has_trace_lookup_families_instance(step)
 }
 
 #[inline]
-pub(crate) fn wb_wp_required_for_step_witness(step: &StepWitnessBundle<Cmt, F, K>) -> bool {
+pub(crate) fn trace_opening_path_required_for_step_witness(step: &StepWitnessBundle<Cmt, F, K>) -> bool {
     has_trace_lookup_families_witness(step)
 }
 
@@ -104,12 +104,12 @@ pub(crate) fn resolve_shared_decode_lookup_lut_indices(
             .position(|(inst, _)| inst.table_id == table_id)
             .ok_or_else(|| {
                 PiCcsError::ProtocolError(format!(
-                    "W2(shared): missing decode lookup table_id={table_id} for col_id={col_id}"
+                    "decode(shared): missing decode lookup table_id={table_id} for col_id={col_id}"
                 ))
             })?;
         let val_slot = riscv_decode_lookup_val_slot_for_col(col_id).ok_or_else(|| {
             PiCcsError::ProtocolError(format!(
-                "W2(shared): decode col_id={col_id} is not part of decode lookup transport slot map"
+                "decode(shared): decode col_id={col_id} is not part of decode lookup transport slot map"
             ))
         })?;
         decode_lut_slots.push((lut_idx, val_slot));
@@ -132,12 +132,12 @@ pub(crate) fn resolve_shared_width_lookup_lut_indices(
             .position(|(inst, _)| inst.table_id == table_id)
             .ok_or_else(|| {
                 PiCcsError::ProtocolError(format!(
-                    "W3(shared): missing width lookup table_id={table_id} for col_id={col_id}"
+                    "width(shared): missing width lookup table_id={table_id} for col_id={col_id}"
                 ))
             })?;
         let val_slot = riscv_trace_shared_width_lookup_val_slot_for_col(col_id).ok_or_else(|| {
             PiCcsError::ProtocolError(format!(
-                "W3(shared): width col_id={col_id} is not part of width lookup transport slot map"
+                "width(shared): width col_id={col_id} is not part of width lookup transport slot map"
             ))
         })?;
         width_lut_slots.push((lut_idx, val_slot));
@@ -148,7 +148,7 @@ pub(crate) fn resolve_shared_width_lookup_lut_indices(
 
 #[inline]
 pub(crate) fn decode_stage_required_for_step_instance(step: &StepInstanceBundle<Cmt, F, K>) -> bool {
-    wb_wp_required_for_step_instance(step)
+    trace_opening_path_required_for_step_instance(step)
         && step
             .lut_insts
             .iter()
@@ -157,7 +157,7 @@ pub(crate) fn decode_stage_required_for_step_instance(step: &StepInstanceBundle<
 
 #[inline]
 pub(crate) fn decode_stage_required_for_step_witness(step: &StepWitnessBundle<Cmt, F, K>) -> bool {
-    wb_wp_required_for_step_witness(step)
+    trace_opening_path_required_for_step_witness(step)
         && step
             .lut_instances
             .iter()
@@ -166,7 +166,7 @@ pub(crate) fn decode_stage_required_for_step_witness(step: &StepWitnessBundle<Cm
 
 #[inline]
 pub(crate) fn width_stage_required_for_step_instance(step: &StepInstanceBundle<Cmt, F, K>) -> bool {
-    wb_wp_required_for_step_instance(step)
+    trace_opening_path_required_for_step_instance(step)
         && (step
             .lut_insts
             .iter()
@@ -176,7 +176,7 @@ pub(crate) fn width_stage_required_for_step_instance(step: &StepInstanceBundle<C
 
 #[inline]
 pub(crate) fn width_stage_required_for_step_witness(step: &StepWitnessBundle<Cmt, F, K>) -> bool {
-    wb_wp_required_for_step_witness(step)
+    trace_opening_path_required_for_step_witness(step)
         && (step
             .lut_instances
             .iter()
@@ -270,7 +270,7 @@ pub(crate) fn time_mem_local_col_for_step(
     Ok(mem_local)
 }
 
-pub(crate) fn build_route_a_wb_wp_time_claims(
+pub(crate) fn build_route_a_trace_opening_time_claims(
     params: &NeoParams,
     step: &StepWitnessBundle<Cmt, F, K>,
     r_cycle: &[K],
@@ -281,71 +281,75 @@ pub(crate) fn build_route_a_wb_wp_time_claims(
     ),
     PiCcsError,
 > {
-    if !wb_wp_required_for_step_witness(step) {
+    if !trace_opening_path_required_for_step_witness(step) {
         return Ok((None, None));
     }
 
     let trace = Rv32TraceLayout::new();
-    let t_len = infer_rv32_trace_t_len_for_wb_wp(step, &trace)?;
+    let t_len = infer_rv32_trace_t_len_for_trace_openings(step, &trace)?;
     let m_in = step.mcs.0.m_in;
     let ell_n = r_cycle.len();
-    let wb_bool_cols = riscv_trace_wb_columns(&trace);
-    let wp_cols = riscv_trace_wp_columns(&trace);
+    let booleanity_cols = riscv_trace_booleanity_columns(&trace);
+    let trace_opening_cols = riscv_trace_quiescence_columns(&trace);
 
-    let mut decode_cols = Vec::with_capacity(1 + wb_bool_cols.len() + wp_cols.len());
+    let mut decode_cols = Vec::with_capacity(1 + booleanity_cols.len() + trace_opening_cols.len());
     decode_cols.push(trace.active);
-    decode_cols.extend(wb_bool_cols.iter().copied());
-    decode_cols.extend(wp_cols.iter().copied());
+    decode_cols.extend(booleanity_cols.iter().copied());
+    decode_cols.extend(trace_opening_cols.iter().copied());
     let decoded = decode_trace_col_values_batch(params, step, t_len, &decode_cols)?;
 
-    let wb_weights = wb_weight_vector(r_cycle, wb_bool_cols.len());
-    let mut wb_bool_sparse_cols: Vec<SparseIdxVec<K>> = Vec::with_capacity(wb_bool_cols.len());
-    for &col_id in wb_bool_cols.iter() {
+    let booleanity_weights = booleanity_weight_vector(r_cycle, booleanity_cols.len());
+    let mut booleanity_sparse_cols: Vec<SparseIdxVec<K>> = Vec::with_capacity(booleanity_cols.len());
+    for &col_id in booleanity_cols.iter() {
         let vals = decoded
             .get(&col_id)
-            .ok_or_else(|| PiCcsError::ProtocolError(format!("WB: missing decoded bool column {col_id}")))?;
-        wb_bool_sparse_cols.push(sparse_trace_col_from_values(m_in, ell_n, vals)?);
+            .ok_or_else(|| PiCcsError::ProtocolError(format!("booleanity: missing decoded bool column {col_id}")))?;
+        booleanity_sparse_cols.push(sparse_trace_col_from_values(m_in, ell_n, vals)?);
     }
 
-    let wb_oracle = LazyWeightedBitnessOracleSparseTime::new_with_cycle(r_cycle, wb_bool_sparse_cols, wb_weights);
+    let booleanity_oracle =
+        LazyWeightedBitnessOracleSparseTime::new_with_cycle(r_cycle, booleanity_sparse_cols, booleanity_weights);
 
-    let weights = wp_weight_vector(r_cycle, wp_cols.len());
-    let active_vals = decoded
-        .get(&trace.active)
-        .ok_or_else(|| PiCcsError::ProtocolError(format!("WP: missing decoded active column {}", trace.active)))?;
+    let weights = trace_opening_weight_vector(r_cycle, trace_opening_cols.len());
+    let active_vals = decoded.get(&trace.active).ok_or_else(|| {
+        PiCcsError::ProtocolError(format!("trace-opening: missing decoded active column {}", trace.active))
+    })?;
     let active = sparse_trace_col_from_values(m_in, ell_n, &active_vals)?;
 
-    let mut sparse_cols: Vec<SparseIdxVec<K>> = Vec::with_capacity(wp_cols.len());
-    for &col_id in wp_cols.iter() {
+    let mut sparse_cols: Vec<SparseIdxVec<K>> = Vec::with_capacity(trace_opening_cols.len());
+    for &col_id in trace_opening_cols.iter() {
         let vals = decoded
             .get(&col_id)
-            .ok_or_else(|| PiCcsError::ProtocolError(format!("WP: missing decoded column {col_id}")))?;
+            .ok_or_else(|| PiCcsError::ProtocolError(format!("trace-opening: missing decoded column {col_id}")))?;
         sparse_cols.push(sparse_trace_col_from_values(m_in, ell_n, &vals)?);
     }
 
     let oracle = WeightedMaskOracleSparseTime::new(active, sparse_cols, weights, r_cycle);
-    Ok((Some((Box::new(wb_oracle), K::ZERO)), Some((Box::new(oracle), K::ZERO))))
+    Ok((
+        Some((Box::new(booleanity_oracle), K::ZERO)),
+        Some((Box::new(oracle), K::ZERO)),
+    ))
 }
 
-pub(crate) fn emit_route_a_wb_wp_me_claims(
+pub(crate) fn emit_route_a_trace_opening_me_claims(
     tr: &mut Poseidon2Transcript,
     params: &NeoParams,
     s: &CcsStructure<F>,
     step: &StepWitnessBundle<Cmt, F, K>,
     r_time: &[K],
 ) -> Result<(Vec<CeClaim<Cmt, F, K>>, Vec<CeClaim<Cmt, F, K>>), PiCcsError> {
-    if !wb_wp_required_for_step_witness(step) {
+    if !trace_opening_path_required_for_step_witness(step) {
         return Ok((Vec::new(), Vec::new()));
     }
 
     let trace = Rv32TraceLayout::new();
-    let t_len = infer_rv32_trace_t_len_for_wb_wp(step, &trace)?;
+    let t_len = infer_rv32_trace_t_len_for_trace_openings(step, &trace)?;
     let m_in = step.mcs.0.m_in;
     let core_t = s.t();
     let (mcs_inst, mcs_wit) = &step.mcs;
 
-    let wb_cols = riscv_trace_wb_columns(&trace);
-    let mut wb_claims = ts::emit_me_claims_for_mats(
+    let booleanity_cols = riscv_trace_booleanity_columns(&trace);
+    let mut booleanity_claims = ts::emit_me_claims_for_mats(
         tr,
         b"cpu/me_digest_wb_time",
         params,
@@ -355,32 +359,32 @@ pub(crate) fn emit_route_a_wb_wp_me_claims(
         r_time,
         m_in,
     )?;
-    if wb_claims.len() != 1 {
+    if booleanity_claims.len() != 1 {
         return Err(PiCcsError::ProtocolError(format!(
-            "WB expects exactly one CPU ME claim at r_time, got {}",
-            wb_claims.len()
+            "booleanity expects exactly one CPU ME claim at r_time, got {}",
+            booleanity_claims.len()
         )));
     }
-    let mut wp_claims = wb_claims.clone();
-    if wp_claims.len() != 1 {
+    let mut trace_opening_claims = booleanity_claims.clone();
+    if trace_opening_claims.len() != 1 {
         return Err(PiCcsError::ProtocolError(format!(
-            "WP expects exactly one CPU ME claim at r_time, got {}",
-            wp_claims.len()
+            "trace-opening expects exactly one CPU ME claim at r_time, got {}",
+            trace_opening_claims.len()
         )));
     }
-    wp_claims[0].fold_digest = {
+    trace_opening_claims[0].fold_digest = {
         let mut fork = tr.fork(b"cpu/me_digest_wp_time");
         fork.digest32()
     };
 
-    let wb_use_time_cols = step.time_columns.t == t_len
+    let booleanity_use_time_cols = step.time_columns.t == t_len
         && !step.time_columns.cpu_cols.is_empty()
-        && wb_cols
+        && booleanity_cols
             .iter()
             .all(|&col_id| col_id < step.time_columns.cpu_cols.len());
-    if !wb_use_time_cols {
+    if !booleanity_use_time_cols {
         return Err(PiCcsError::ProtocolError(format!(
-            "WB(shared): canonical time CPU columns are required (time_t={}, cpu_cols={}, expected_t={t_len})",
+            "booleanity(shared): canonical time CPU columns are required (time_t={}, cpu_cols={}, expected_t={t_len})",
             step.time_columns.t,
             step.time_columns.cpu_cols.len()
         )));
@@ -390,18 +394,18 @@ pub(crate) fn emit_route_a_wb_wp_me_claims(
         m_in,
         t_len,
         &step.time_columns.cpu_cols,
-        &wb_cols,
+        &booleanity_cols,
         core_t,
-        &mut wb_claims[0],
+        &mut booleanity_claims[0],
     )?;
 
     let rv64_exact_words = trace_uses_rv64_exact_words(step.time_columns.cpu_cols.len());
-    let mut wp_cols = riscv_trace_wp_opening_columns(&trace);
+    let mut trace_opening_cols = riscv_trace_opening_columns(&trace);
     if rv64_exact_words {
-        wp_cols.extend(rv64_trace_exact_word_opening_columns());
+        trace_opening_cols.extend(rv64_trace_exact_word_opening_columns());
     }
     if control_stage_required_for_step_witness(step) {
-        wp_cols.extend(riscv_trace_control_extra_opening_columns(&trace));
+        trace_opening_cols.extend(riscv_trace_control_extra_opening_columns(&trace));
     }
     if decode_stage_required_for_step_witness(step) {
         let decode_layout = Rv32DecodeSidecarLayout::new();
@@ -409,40 +413,40 @@ pub(crate) fn emit_route_a_wb_wp_me_claims(
         let bus = build_bus_layout_for_step_witness(step, t_len)?;
         if bus.shout_cols.len() != step.lut_instances.len() {
             return Err(PiCcsError::ProtocolError(
-                "W2(shared): bus layout shout lane count drift".into(),
+                "decode(shared): bus layout shout lane count drift".into(),
             ));
         }
         for &(lut_idx, val_slot) in decode_lut_slots.iter() {
             let inst_cols = bus.shout_cols.get(lut_idx).ok_or_else(|| {
-                PiCcsError::ProtocolError("W2(shared): missing shout cols for decode lookup table".into())
+                PiCcsError::ProtocolError("decode(shared): missing shout cols for decode lookup table".into())
             })?;
             let lane0 = inst_cols.lanes.get(0).ok_or_else(|| {
-                PiCcsError::ProtocolError("W2(shared): expected one shout lane for decode lookup table".into())
+                PiCcsError::ProtocolError("decode(shared): expected one shout lane for decode lookup table".into())
             })?;
             let val_col = lane0.vals.get(val_slot).copied().ok_or_else(|| {
                 PiCcsError::ProtocolError(format!(
-                    "W2(shared): decode val_slot={} out of range for lut_idx={} (n_vals={})",
+                    "decode(shared): decode val_slot={} out of range for lut_idx={} (n_vals={})",
                     val_slot,
                     lut_idx,
                     lane0.vals.len()
                 ))
             })?;
-            let logical_bus_col = time_mem_logical_col_id_for_step(step, val_col, "W2(shared)")?;
-            wp_cols.push(logical_bus_col);
+            let logical_bus_col = time_mem_logical_col_id_for_step(step, val_col, "decode(shared)")?;
+            trace_opening_cols.push(logical_bus_col);
         }
     }
     if width_stage_required_for_step_witness(step) && !rv64_fullword_width_stage_required_for_step_witness(step) {
-        wp_cols.extend(width_lookup_bus_val_cols_witness(step, t_len)?);
+        trace_opening_cols.extend(width_lookup_bus_val_cols_witness(step, t_len)?);
     }
     if rv64_fullword_width_stage_required_for_step_witness(step) {
-        wp_cols.extend(rv64_fullword_wp_opening_columns());
+        trace_opening_cols.extend(rv64_fullword_trace_opening_columns());
     }
-    let wp_use_time_cols = step.time_columns.t == t_len
+    let trace_opening_use_time_cols = step.time_columns.t == t_len
         && !step.time_columns.cpu_cols.is_empty()
         && !step.time_columns.mem_cols.is_empty();
-    if !wp_use_time_cols {
+    if !trace_opening_use_time_cols {
         return Err(PiCcsError::ProtocolError(format!(
-            "WP(shared): canonical time CPU/MEM columns are required (time_t={}, cpu_cols={}, mem_cols={}, expected_t={t_len})",
+            "trace-opening(shared): canonical time CPU/MEM columns are required (time_t={}, cpu_cols={}, mem_cols={}, expected_t={t_len})",
             step.time_columns.t,
             step.time_columns.cpu_cols.len(),
             step.time_columns.mem_cols.len()
@@ -455,14 +459,14 @@ pub(crate) fn emit_route_a_wb_wp_me_claims(
         &step.time_columns.cpu_cols,
         &step.time_columns.mem_cols,
         &step.time_columns.col_ids,
-        &wp_cols,
+        &trace_opening_cols,
         core_t,
-        &mut wp_claims[0],
+        &mut trace_opening_claims[0],
     )?;
-    Ok((wb_claims, wp_claims))
+    Ok((booleanity_claims, trace_opening_claims))
 }
 
-pub(crate) fn verify_route_a_wb_wp_terminals(
+pub(crate) fn verify_route_a_trace_opening_terminals(
     step: &StepInstanceBundle<Cmt, F, K>,
     r_time: &[K],
     r_cycle: &[K],
@@ -476,11 +480,11 @@ pub(crate) fn verify_route_a_wb_wp_terminals(
     }
 
     let trace = Rv32TraceLayout::new();
-    let requires_wb_wp = claim_plan.wb_bool.is_some()
-        || claim_plan.wp_quiescence.is_some()
-        || !mem_proof.wb_me_claims.is_empty()
-        || !mem_proof.wp_me_claims.is_empty();
-    if !requires_wb_wp {
+    let requires_trace_openings = claim_plan.booleanity_claim.is_some()
+        || claim_plan.trace_opening_quiescence.is_some()
+        || !mem_proof.booleanity_me_claims.is_empty()
+        || !mem_proof.trace_opening_me_claims.is_empty();
+    if !requires_trace_openings {
         return Ok(());
     }
     let cpu_cols_len = step.time_columns.cpu_cols.len();
@@ -492,120 +496,127 @@ pub(crate) fn verify_route_a_wb_wp_terminals(
         && step.time_columns.col_ids.len() == expected_logical_cols;
     if !strict_committed_mode {
         return Err(PiCcsError::ProtocolError(
-            "WB/WP terminals require canonical committed time-column mode".into(),
+            "booleanity/trace-opening terminals require canonical committed time-column mode".into(),
         ));
     }
 
-    if let Some(claim_idx) = claim_plan.wb_bool {
+    if let Some(claim_idx) = claim_plan.booleanity_claim {
         if claim_idx >= batched_final_values.len() {
             return Err(PiCcsError::ProtocolError(
                 "wb/booleanity claim index out of range".into(),
             ));
         }
-        if mem_proof.wb_me_claims.len() != 1 {
+        if mem_proof.booleanity_me_claims.len() != 1 {
             return Err(PiCcsError::ProtocolError(format!(
-                "WB expects exactly one ME claim at r_time (got {})",
-                mem_proof.wb_me_claims.len()
+                "booleanity expects exactly one ME claim at r_time (got {})",
+                mem_proof.booleanity_me_claims.len()
             )));
         }
-        let me = &mem_proof.wb_me_claims[0];
+        let me = &mem_proof.booleanity_me_claims[0];
         if me.r.as_slice() != r_time {
             return Err(PiCcsError::ProtocolError(
-                "WB ME claim r mismatch (expected r_time)".into(),
+                "booleanity ME claim r mismatch (expected r_time)".into(),
             ));
         }
         if me.c != step.mcs_inst.c {
-            return Err(PiCcsError::ProtocolError("WB ME claim commitment mismatch".into()));
+            return Err(PiCcsError::ProtocolError(
+                "booleanity ME claim commitment mismatch".into(),
+            ));
         }
         if me.m_in != step.mcs_inst.m_in {
-            return Err(PiCcsError::ProtocolError("WB ME claim m_in mismatch".into()));
+            return Err(PiCcsError::ProtocolError("booleanity ME claim m_in mismatch".into()));
         }
 
-        let wb_bool_cols = riscv_trace_wb_columns(&trace);
-        let (wb_open_entry, wb_open_map) =
-            require_time_openings_covering_point(step_time_openings, r_time, &wb_bool_cols, "WB")?;
-        if wb_open_entry.source != crate::shard_proof_types::TimeOpeningSource::CommittedOpening {
+        let booleanity_cols = riscv_trace_booleanity_columns(&trace);
+        let (booleanity_opening_entry, booleanity_opening_map) =
+            require_time_openings_covering_point(step_time_openings, r_time, &booleanity_cols, "booleanity")?;
+        if booleanity_opening_entry.source != crate::shard_proof_types::TimeOpeningSource::CommittedOpening {
             return Err(PiCcsError::ProtocolError(format!(
-                "WB requires CommittedOpening source (got {:?})",
-                wb_open_entry.source
+                "booleanity requires CommittedOpening source (got {:?})",
+                booleanity_opening_entry.source
             )));
         }
-        let wb_weights = wb_weight_vector(r_cycle, wb_bool_cols.len());
-        let mut wb_weighted_bitness = K::ZERO;
-        for (&col_id, &w) in wb_bool_cols.iter().zip(wb_weights.iter()) {
-            let b = named_opening(&wb_open_map, col_id, "WB")?;
-            wb_weighted_bitness += w * b * (b - K::ONE);
+        let booleanity_weights = booleanity_weight_vector(r_cycle, booleanity_cols.len());
+        let mut booleanity_weighted_sum = K::ZERO;
+        for (&col_id, &w) in booleanity_cols.iter().zip(booleanity_weights.iter()) {
+            let b = named_opening(&booleanity_opening_map, col_id, "booleanity")?;
+            booleanity_weighted_sum += w * b * (b - K::ONE);
         }
 
-        let expected_terminal = eq_points(r_time, r_cycle) * wb_weighted_bitness;
+        let expected_terminal = eq_points(r_time, r_cycle) * booleanity_weighted_sum;
         let observed_terminal = batched_final_values[claim_idx];
         if observed_terminal != expected_terminal {
             return Err(PiCcsError::ProtocolError(
                 "wb/booleanity terminal value mismatch".into(),
             ));
         }
-    } else if !mem_proof.wb_me_claims.is_empty() {
+    } else if !mem_proof.booleanity_me_claims.is_empty() {
         return Err(PiCcsError::ProtocolError(
-            "unexpected WB ME claims: wb/booleanity stage is not enabled".into(),
+            "unexpected booleanity ME claims: wb/booleanity stage is not enabled".into(),
         ));
     }
 
-    if let Some(claim_idx) = claim_plan.wp_quiescence {
+    if let Some(claim_idx) = claim_plan.trace_opening_quiescence {
         if claim_idx >= batched_final_values.len() {
             return Err(PiCcsError::ProtocolError(
                 "wp/quiescence claim index out of range".into(),
             ));
         }
-        if mem_proof.wp_me_claims.len() != 1 {
+        if mem_proof.trace_opening_me_claims.len() != 1 {
             return Err(PiCcsError::ProtocolError(format!(
-                "WP expects exactly one ME claim at r_time (got {})",
-                mem_proof.wp_me_claims.len()
+                "trace-opening expects exactly one ME claim at r_time (got {})",
+                mem_proof.trace_opening_me_claims.len()
             )));
         }
-        let me = &mem_proof.wp_me_claims[0];
+        let me = &mem_proof.trace_opening_me_claims[0];
         if me.r.as_slice() != r_time {
             return Err(PiCcsError::ProtocolError(
-                "WP ME claim r mismatch (expected r_time)".into(),
+                "trace-opening ME claim r mismatch (expected r_time)".into(),
             ));
         }
         if me.c != step.mcs_inst.c {
-            return Err(PiCcsError::ProtocolError("WP ME claim commitment mismatch".into()));
+            return Err(PiCcsError::ProtocolError(
+                "trace-opening ME claim commitment mismatch".into(),
+            ));
         }
         if me.m_in != step.mcs_inst.m_in {
-            return Err(PiCcsError::ProtocolError("WP ME claim m_in mismatch".into()));
+            return Err(PiCcsError::ProtocolError("trace-opening ME claim m_in mismatch".into()));
         }
 
         let rv64_exact_words = trace_uses_rv64_exact_words(step.time_columns.cpu_cols.len());
-        let mut wp_open_cols = riscv_trace_wp_opening_columns(&trace);
+        let mut trace_opening_cols = riscv_trace_opening_columns(&trace);
         if rv64_exact_words {
-            wp_open_cols.extend(rv64_trace_exact_word_opening_columns());
+            trace_opening_cols.extend(rv64_trace_exact_word_opening_columns());
         }
-        let (wp_open_entry, wp_open_map) =
-            require_time_openings_covering_point(step_time_openings, r_time, &wp_open_cols, "WP")?;
-        if wp_open_entry.source != crate::shard_proof_types::TimeOpeningSource::CommittedOpening {
+        let (trace_opening_entry, trace_opening_map) =
+            require_time_openings_covering_point(step_time_openings, r_time, &trace_opening_cols, "trace-opening")?;
+        if trace_opening_entry.source != crate::shard_proof_types::TimeOpeningSource::CommittedOpening {
             return Err(PiCcsError::ProtocolError(format!(
-                "WP requires CommittedOpening source (got {:?})",
-                wp_open_entry.source
+                "trace-opening requires CommittedOpening source (got {:?})",
+                trace_opening_entry.source
             )));
         }
-        let active_open = named_opening(&wp_open_map, trace.active, "WP")?;
-        let wp_cols_no_active = riscv_trace_wp_columns(&trace);
-        let wp_weights = wp_weight_vector(r_cycle, wp_cols_no_active.len());
-        let mut wp_weighted_sum = K::ZERO;
-        for (&col_id, &w) in wp_cols_no_active.iter().zip(wp_weights.iter()) {
-            let v = named_opening(&wp_open_map, col_id, "WP")?;
-            wp_weighted_sum += w * v;
+        let active_open = named_opening(&trace_opening_map, trace.active, "trace-opening")?;
+        let trace_opening_cols_no_active = riscv_trace_quiescence_columns(&trace);
+        let trace_opening_weights = trace_opening_weight_vector(r_cycle, trace_opening_cols_no_active.len());
+        let mut trace_opening_weighted_sum = K::ZERO;
+        for (&col_id, &w) in trace_opening_cols_no_active
+            .iter()
+            .zip(trace_opening_weights.iter())
+        {
+            let v = named_opening(&trace_opening_map, col_id, "trace-opening")?;
+            trace_opening_weighted_sum += w * v;
         }
-        let expected_terminal = eq_points(r_time, r_cycle) * (K::ONE - active_open) * wp_weighted_sum;
+        let expected_terminal = eq_points(r_time, r_cycle) * (K::ONE - active_open) * trace_opening_weighted_sum;
         let observed_terminal = batched_final_values[claim_idx];
         if observed_terminal != expected_terminal {
             return Err(PiCcsError::ProtocolError(
                 "wp/quiescence terminal value mismatch".into(),
             ));
         }
-    } else if !mem_proof.wp_me_claims.is_empty() {
+    } else if !mem_proof.trace_opening_me_claims.is_empty() {
         return Err(PiCcsError::ProtocolError(
-            "unexpected WP ME claims: wp/quiescence stage is not enabled".into(),
+            "unexpected trace-opening ME claims: wp/quiescence stage is not enabled".into(),
         ));
     }
 

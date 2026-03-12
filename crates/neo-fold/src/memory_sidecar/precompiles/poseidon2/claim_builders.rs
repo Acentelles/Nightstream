@@ -314,19 +314,19 @@ pub(crate) fn poseidon_bitness_residuals(
     funct7_bits: [K; 7],
 ) -> [K; POSEIDON_BITNESS_RESIDUAL_COUNT] {
     [
-        w2_bool01(op_custom),
-        w2_bool01(rd_has_write),
-        w2_bool01(rd_is_zero),
-        w2_bool01(funct3_bits[0]),
-        w2_bool01(funct3_bits[1]),
-        w2_bool01(funct3_bits[2]),
-        w2_bool01(funct7_bits[0]),
-        w2_bool01(funct7_bits[1]),
-        w2_bool01(funct7_bits[2]),
-        w2_bool01(funct7_bits[3]),
-        w2_bool01(funct7_bits[4]),
-        w2_bool01(funct7_bits[5]),
-        w2_bool01(funct7_bits[6]),
+        decode_bool01(op_custom),
+        decode_bool01(rd_has_write),
+        decode_bool01(rd_is_zero),
+        decode_bool01(funct3_bits[0]),
+        decode_bool01(funct3_bits[1]),
+        decode_bool01(funct3_bits[2]),
+        decode_bool01(funct7_bits[0]),
+        decode_bool01(funct7_bits[1]),
+        decode_bool01(funct7_bits[2]),
+        decode_bool01(funct7_bits[3]),
+        decode_bool01(funct7_bits[4]),
+        decode_bool01(funct7_bits[5]),
+        decode_bool01(funct7_bits[6]),
     ]
 }
 
@@ -360,8 +360,8 @@ pub(crate) fn poseidon_canonical_residuals(
         side_op_squeeze * (side_squeeze_word - selected_word),
         side_op_squeeze * (selected_lo + mask32 - side_lo_sum - side_c0 * two32),
         side_op_squeeze * (selected_hi + side_c0 - side_hi_sum - side_c1 * two32),
-        side_op_squeeze * w2_bool01(side_c0),
-        side_op_squeeze * w2_bool01(side_c1),
+        side_op_squeeze * decode_bool01(side_c0),
+        side_op_squeeze * decode_bool01(side_c1),
         side_op_squeeze * side_c1,
         (K::ONE - side_op_squeeze) * side_c0,
         (K::ONE - side_op_squeeze) * side_c1,
@@ -555,7 +555,7 @@ pub(crate) fn build_poseidon_sidecar_table_from_step_witness(
 
     let trace = Rv32TraceLayout::new();
     let cpu_cols = poseidon_cpu_word_cols(step);
-    let t_len = infer_rv32_trace_t_len_for_wb_wp(step, &trace)?;
+    let t_len = infer_rv32_trace_t_len_for_trace_openings(step, &trace)?;
     if t_len == 0 {
         return Err(PiCcsError::InvalidInput(
             "poseidon sidecar build: t_len must be >= 1".into(),
@@ -975,7 +975,7 @@ pub(crate) fn build_poseidon_cycle_trace_matrix(
 ) -> Result<(Mat<F>, usize, usize, Vec<usize>), PiCcsError> {
     let trace = Rv32TraceLayout::new();
     let layout = PoseidonCycleTraceLayout::new();
-    let t_len = infer_rv32_trace_t_len_for_wb_wp(step, &trace)?;
+    let t_len = infer_rv32_trace_t_len_for_trace_openings(step, &trace)?;
     if t_len == 0 {
         return Err(PiCcsError::InvalidInput(
             "poseidon cycle trace matrix: t_len must be >= 1".into(),
@@ -1039,7 +1039,7 @@ pub(crate) fn build_route_a_poseidon_cycle_claims(
     let layout = PoseidonCycleTraceLayout::new();
     let m_in = step.mcs.0.m_in;
     let ell_n = r_cycle.len();
-    let t_len = infer_rv32_trace_t_len_for_wb_wp(step, &trace)?;
+    let t_len = infer_rv32_trace_t_len_for_trace_openings(step, &trace)?;
     if t_len == 0 {
         return Err(PiCcsError::InvalidInput(
             "poseidon cycle stage: t_len must be >= 1".into(),

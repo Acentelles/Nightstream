@@ -8,7 +8,7 @@ use neo_memory::riscv::trace::{riscv_is_decode_lookup_table_id, riscv_trace_is_w
 use neo_memory::witness::{LutInstance, LutTableSpec, MemInstance, StepInstanceBundle, StepWitnessBundle};
 use p3_field::PrimeField64;
 
-use crate::memory_sidecar::memory::W2_FIELDS_DEGREE_BOUND;
+use crate::memory_sidecar::memory::DECODE_FIELDS_DEGREE_BOUND;
 use crate::PiCcsError;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -167,8 +167,8 @@ pub struct RouteATimeClaimPlan {
     pub shout_gamma_groups: Vec<ShoutGammaGroupTimeClaimIdx>,
     pub shout_event_trace_hash: Option<usize>,
     pub twist: Vec<TwistTimeClaimIdx>,
-    pub wb_bool: Option<usize>,
-    pub wp_quiescence: Option<usize>,
+    pub booleanity_claim: Option<usize>,
+    pub trace_opening_quiescence: Option<usize>,
     pub decode_fields: Option<usize>,
     pub decode_immediates: Option<usize>,
     pub width_bitness: Option<usize>,
@@ -314,8 +314,8 @@ impl RouteATimeClaimPlan {
     pub fn time_claim_metas_for_instances<'a, LI, MI>(
         lut_insts: LI,
         mem_insts: MI,
-        wb_enabled: bool,
-        wp_enabled: bool,
+        booleanity_enabled: bool,
+        trace_opening_enabled: bool,
         decode_stage_enabled: bool,
         width_stage_enabled: bool,
         control_stage_enabled: bool,
@@ -484,7 +484,7 @@ impl RouteATimeClaimPlan {
             }
         }
 
-        if wb_enabled {
+        if booleanity_enabled {
             out.push(TimeClaimMeta {
                 label: b"wb/booleanity",
                 degree_bound: 3,
@@ -492,7 +492,7 @@ impl RouteATimeClaimPlan {
             });
         }
 
-        if wp_enabled {
+        if trace_opening_enabled {
             out.push(TimeClaimMeta {
                 label: b"wp/quiescence",
                 degree_bound: 3,
@@ -503,7 +503,7 @@ impl RouteATimeClaimPlan {
         if decode_stage_enabled {
             out.push(TimeClaimMeta {
                 label: b"decode/fields",
-                degree_bound: W2_FIELDS_DEGREE_BOUND,
+                degree_bound: DECODE_FIELDS_DEGREE_BOUND,
                 is_dynamic: false,
             });
             out.push(TimeClaimMeta {
@@ -596,8 +596,8 @@ impl RouteATimeClaimPlan {
     /// of this list, starting at `claim_idx_start` (typically 0).
     pub fn time_claim_metas_for_step(
         step: &StepInstanceBundle<Cmt, F, K>,
-        wb_enabled: bool,
-        wp_enabled: bool,
+        booleanity_enabled: bool,
+        trace_opening_enabled: bool,
         decode_stage_enabled: bool,
         width_stage_enabled: bool,
         control_stage_enabled: bool,
@@ -608,8 +608,8 @@ impl RouteATimeClaimPlan {
         Self::time_claim_metas_for_instances(
             step.lut_insts.iter(),
             step.mem_insts.iter(),
-            wb_enabled,
-            wp_enabled,
+            booleanity_enabled,
+            trace_opening_enabled,
             decode_stage_enabled,
             width_stage_enabled,
             control_stage_enabled,
@@ -622,8 +622,8 @@ impl RouteATimeClaimPlan {
     pub fn build(
         step: &StepInstanceBundle<Cmt, F, K>,
         claim_idx_start: usize,
-        wb_enabled: bool,
-        wp_enabled: bool,
+        booleanity_enabled: bool,
+        trace_opening_enabled: bool,
         decode_stage_enabled: bool,
         width_stage_enabled: bool,
         control_stage_enabled: bool,
@@ -768,7 +768,7 @@ impl RouteATimeClaimPlan {
             });
         }
 
-        let wb_bool = if wb_enabled {
+        let booleanity_claim = if booleanity_enabled {
             let out = idx;
             idx += 1;
             Some(out)
@@ -776,7 +776,7 @@ impl RouteATimeClaimPlan {
             None
         };
 
-        let wp_quiescence = if wp_enabled {
+        let trace_opening_quiescence = if trace_opening_enabled {
             let out = idx;
             idx += 1;
             Some(out)
@@ -952,8 +952,8 @@ impl RouteATimeClaimPlan {
             shout_gamma_groups,
             shout_event_trace_hash,
             twist,
-            wb_bool,
-            wp_quiescence,
+            booleanity_claim,
+            trace_opening_quiescence,
             decode_fields,
             decode_immediates,
             width_bitness,

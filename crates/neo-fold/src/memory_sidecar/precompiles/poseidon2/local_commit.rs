@@ -157,7 +157,7 @@ pub(crate) fn poseidon_local_round_residuals(
     matmul_internal_8_k(&mut internal_out);
 
     let mut residuals = [K::ZERO; POSEIDON_LOCAL_ROUND_RESIDUAL_COUNT];
-    residuals[0] = row_active * w2_bool01(row_active);
+    residuals[0] = row_active * decode_bool01(row_active);
     residuals[1] = row_active * has_round * (has_round - K::ONE);
     residuals[2] = row_active * (has_round - (is_step_mds + is_step_external + is_step_internal));
     for i in 0..POSEIDON_WIDTH {

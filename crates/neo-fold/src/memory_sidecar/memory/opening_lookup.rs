@@ -198,19 +198,19 @@ pub(crate) fn bus_logical_col_ids_for_step_instance(
     Ok(step.time_columns.col_ids[cpu_cols_len..].to_vec())
 }
 
-pub(crate) fn infer_rv32_trace_t_len_for_wb_wp(
+pub(crate) fn infer_rv32_trace_t_len_for_trace_openings(
     step: &StepWitnessBundle<Cmt, F, K>,
     trace: &Rv32TraceLayout,
 ) -> Result<usize, PiCcsError> {
     let t_len = step.time_columns.t;
     if t_len == 0 {
         return Err(PiCcsError::InvalidInput(
-            "WB/WP requires canonical time columns with t >= 1".into(),
+            "booleanity/trace-opening requires canonical time columns with t >= 1".into(),
         ));
     }
     if step.time_columns.cpu_cols.len() < trace.cols {
         return Err(PiCcsError::InvalidInput(format!(
-            "WB/WP requires canonical RV32 time cpu prefix columns (got {}, expected at least {})",
+            "booleanity/trace-opening requires canonical RV32 time cpu prefix columns (got {}, expected at least {})",
             step.time_columns.cpu_cols.len(),
             trace.cols
         )));
@@ -226,7 +226,7 @@ pub(crate) fn decode_trace_col_values_batch(
 ) -> Result<BTreeMap<usize, Vec<K>>, PiCcsError> {
     if step.time_columns.t != t_len || step.time_columns.cpu_cols.is_empty() {
         return Err(PiCcsError::InvalidInput(format!(
-            "WB/WP requires canonical time CPU columns (time_t={}, cpu_cols={}, expected_t={t_len})",
+            "booleanity/trace-opening requires canonical time CPU columns (time_t={}, cpu_cols={}, expected_t={t_len})",
             step.time_columns.t,
             step.time_columns.cpu_cols.len()
         )));
@@ -237,14 +237,14 @@ pub(crate) fn decode_trace_col_values_batch(
     for col_id in unique_col_ids {
         let vals = step.time_columns.cpu_cols.get(col_id).ok_or_else(|| {
             PiCcsError::InvalidInput(format!(
-                "WB/WP: trace col_id {} out of range for time_columns.cpu_cols.len()={}",
+                "booleanity/trace-opening: trace col_id {} out of range for time_columns.cpu_cols.len()={}",
                 col_id,
                 step.time_columns.cpu_cols.len()
             ))
         })?;
         if vals.len() != t_len {
             return Err(PiCcsError::InvalidInput(format!(
-                "WB/WP: time_columns.cpu_cols[{col_id}].len()={} != t_len={t_len}",
+                "booleanity/trace-opening: time_columns.cpu_cols[{col_id}].len()={} != t_len={t_len}",
                 vals.len()
             )));
         }
@@ -260,11 +260,11 @@ pub(crate) fn decode_lookup_backed_col_values_batch(
     time_mem_cols: Option<&[Vec<F>]>,
     col_ids: &[usize],
 ) -> Result<BTreeMap<usize, Vec<K>>, PiCcsError> {
-    let mem_cols =
-        time_mem_cols.ok_or_else(|| PiCcsError::InvalidInput("W2: canonical time mem columns are required".into()))?;
+    let mem_cols = time_mem_cols
+        .ok_or_else(|| PiCcsError::InvalidInput("decode: canonical time mem columns are required".into()))?;
     if mem_cols.is_empty() {
         return Err(PiCcsError::InvalidInput(
-            "W2: canonical time mem columns are required".into(),
+            "decode: canonical time mem columns are required".into(),
         ));
     }
 
@@ -273,18 +273,18 @@ pub(crate) fn decode_lookup_backed_col_values_batch(
     for col_id in unique_col_ids {
         if col_id >= max_cols {
             return Err(PiCcsError::InvalidInput(format!(
-                "W2: decode lookup-backed column out of range (col_id={col_id}, cols={max_cols})"
+                "decode: decode lookup-backed column out of range (col_id={col_id}, cols={max_cols})"
             )));
         }
         let vals = mem_cols.get(col_id).ok_or_else(|| {
             PiCcsError::InvalidInput(format!(
-                "W2: missing time mem column col_id={col_id} (mem_cols={})",
+                "decode: missing time mem column col_id={col_id} (mem_cols={})",
                 mem_cols.len()
             ))
         })?;
         if vals.len() != t_len {
             return Err(PiCcsError::InvalidInput(format!(
-                "W2: time mem column length mismatch for col_id={col_id} (len={}, t_len={t_len})",
+                "decode: time mem column length mismatch for col_id={col_id} (len={}, t_len={t_len})",
                 vals.len()
             )));
         }

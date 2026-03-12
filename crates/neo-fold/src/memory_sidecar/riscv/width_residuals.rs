@@ -36,7 +36,7 @@ pub(crate) fn width_lookup_bus_val_cols_witness(
     let mut width_bus_col_by_col: BTreeMap<usize, usize> = BTreeMap::new();
     if step.time_columns.t != t_len || step.time_columns.cpu_cols.is_empty() {
         return Err(PiCcsError::ProtocolError(format!(
-            "W3(shared): canonical time columns required for width lookup openings (time_t={}, cpu_cols={}, expected_t={t_len})",
+            "width(shared): canonical time columns required for width lookup openings (time_t={}, cpu_cols={}, expected_t={t_len})",
             step.time_columns.t,
             step.time_columns.cpu_cols.len()
         )));
@@ -44,33 +44,32 @@ pub(crate) fn width_lookup_bus_val_cols_witness(
     let bus = build_bus_layout_for_step_witness(step, t_len)?;
     if bus.shout_cols.len() != step.lut_instances.len() {
         return Err(PiCcsError::ProtocolError(
-            "W3(shared): bus shout lane count drift while resolving width lookup columns".into(),
+            "width(shared): bus shout lane count drift while resolving width lookup columns".into(),
         ));
     }
     for (&width_col_id, &(lut_idx, val_slot)) in width_cols.iter().zip(width_lut_slots.iter()) {
-        let inst_cols = bus
-            .shout_cols
-            .get(lut_idx)
-            .ok_or_else(|| PiCcsError::ProtocolError("W3(shared): missing shout cols for width lookup table".into()))?;
+        let inst_cols = bus.shout_cols.get(lut_idx).ok_or_else(|| {
+            PiCcsError::ProtocolError("width(shared): missing shout cols for width lookup table".into())
+        })?;
         let lane0 = inst_cols.lanes.get(0).ok_or_else(|| {
-            PiCcsError::ProtocolError("W3(shared): expected one shout lane for width lookup table".into())
+            PiCcsError::ProtocolError("width(shared): expected one shout lane for width lookup table".into())
         })?;
         let val_col = lane0.vals.get(val_slot).copied().ok_or_else(|| {
             PiCcsError::ProtocolError(format!(
-                "W3(shared): width val_slot={} out of range for lut_idx={} (n_vals={})",
+                "width(shared): width val_slot={} out of range for lut_idx={} (n_vals={})",
                 val_slot,
                 lut_idx,
                 lane0.vals.len()
             ))
         })?;
-        let logical_bus_col = time_mem_logical_col_id_for_step(step, val_col, "W3(shared)")?;
+        let logical_bus_col = time_mem_logical_col_id_for_step(step, val_col, "width(shared)")?;
         width_bus_col_by_col.insert(width_col_id, logical_bus_col);
     }
     let mut out = Vec::with_capacity(width_cols.len());
     for &col_id in width_cols.iter() {
         let bus_col = width_bus_col_by_col.get(&col_id).copied().ok_or_else(|| {
             PiCcsError::ProtocolError(format!(
-                "W3(shared): missing width lookup bus val column for width col_id={col_id}"
+                "width(shared): missing width lookup bus val column for width col_id={col_id}"
             ))
         })?;
         out.push(bus_col);
@@ -82,7 +81,7 @@ pub(crate) fn build_route_a_width_time_claims(
     params: &NeoParams,
     step: &StepWitnessBundle<Cmt, F, K>,
     r_cycle: &[K],
-) -> Result<W3TimeClaims, PiCcsError> {
+) -> Result<WidthResidualTimeClaims, PiCcsError> {
     if rv64_fullword_width_stage_required_for_step_witness(step) {
         return build_route_a_rv64_fullword_time_claims(params, step, r_cycle);
     }
@@ -94,9 +93,9 @@ pub(crate) fn build_route_a_width_time_claims(
     let decode = Rv32DecodeSidecarLayout::new();
     let m_in = step.mcs.0.m_in;
     let ell_n = r_cycle.len();
-    let t_len = infer_rv32_trace_t_len_for_wb_wp(step, &trace)?;
+    let t_len = infer_rv32_trace_t_len_for_trace_openings(step, &trace)?;
     if t_len == 0 {
-        return Err(PiCcsError::InvalidInput("W3: t_len must be >= 1".into()));
+        return Err(PiCcsError::InvalidInput("width: t_len must be >= 1".into()));
     }
 
     let main_col_ids = [
@@ -114,10 +113,10 @@ pub(crate) fn build_route_a_width_time_claims(
         let bus = build_bus_layout_for_step_witness(step, t_len)?;
         let mut width_bus_val_cols = Vec::with_capacity(width_bus_abs_cols.len());
         for abs_col in width_bus_abs_cols.iter().copied() {
-            let local_col = time_mem_local_col_for_step(step, abs_col, "W3(shared)")?;
+            let local_col = time_mem_local_col_for_step(step, abs_col, "width(shared)")?;
             if local_col >= bus.bus_cols {
                 return Err(PiCcsError::ProtocolError(format!(
-                    "W3(shared): width lookup bus column out of range (local_col={local_col}, bus_cols={})",
+                    "width(shared): width lookup bus column out of range (local_col={local_col}, bus_cols={})",
                     bus.bus_cols
                 )));
             }
@@ -134,7 +133,7 @@ pub(crate) fn build_route_a_width_time_claims(
             let bus_col_id = width_bus_val_cols[idx];
             let vals = lookup_vals.get(&bus_col_id).ok_or_else(|| {
                 PiCcsError::ProtocolError(format!(
-                    "W3(shared): missing decoded lookup values for bus_col={bus_col_id}"
+                    "width(shared): missing decoded lookup values for bus_col={bus_col_id}"
                 ))
             })?;
             by_col.insert(col_id, vals.clone());
@@ -151,13 +150,13 @@ pub(crate) fn build_route_a_width_time_claims(
     let decode_decoded = {
         let instr_vals = main_decoded
             .get(&trace.instr_word)
-            .ok_or_else(|| PiCcsError::ProtocolError("W3(shared): missing instr_word decode column".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("width(shared): missing instr_word decode column".into()))?;
         let active_vals = main_decoded
             .get(&trace.active)
-            .ok_or_else(|| PiCcsError::ProtocolError("W3(shared): missing active decode column".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("width(shared): missing active decode column".into()))?;
         if instr_vals.len() != t_len || active_vals.len() != t_len {
             return Err(PiCcsError::ProtocolError(format!(
-                "W3(shared): decoded CPU column lengths drift (instr={}, active={}, t_len={t_len})",
+                "width(shared): decoded CPU column lengths drift (instr={}, active={}, t_len={t_len})",
                 instr_vals.len(),
                 active_vals.len()
             )));
@@ -167,7 +166,7 @@ pub(crate) fn build_route_a_width_time_claims(
             decoded.insert(col_id, Vec::with_capacity(t_len));
         }
         for j in 0..t_len {
-            let instr_word = decode_k_to_u32(instr_vals[j], "W3(shared)/instr_word")?;
+            let instr_word = decode_k_to_u32(instr_vals[j], "width(shared)/instr_word")?;
             let active = active_vals[j] != K::ZERO;
             let mut row = riscv_decode_lookup_backed_row_from_instr_word(&decode, instr_word, active);
             if !active {
@@ -176,7 +175,7 @@ pub(crate) fn build_route_a_width_time_claims(
             for &col_id in decode_col_ids.iter() {
                 decoded
                     .get_mut(&col_id)
-                    .ok_or_else(|| PiCcsError::ProtocolError("W3(shared): decode map build failed".into()))?
+                    .ok_or_else(|| PiCcsError::ProtocolError("width(shared): decode map build failed".into()))?
                     .push(K::from(row[col_id]));
             }
         }
@@ -188,104 +187,110 @@ pub(crate) fn build_route_a_width_time_claims(
         let rd_val = *main_decoded
             .get(&trace.rd_val)
             .and_then(|v| v.get(j))
-            .ok_or_else(|| PiCcsError::ProtocolError("W3(shared): missing rd_val row while validating".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("width(shared): missing rd_val row while validating".into()))?;
         let ram_rv = *main_decoded
             .get(&trace.ram_rv)
             .and_then(|v| v.get(j))
-            .ok_or_else(|| PiCcsError::ProtocolError("W3(shared): missing ram_rv row while validating".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("width(shared): missing ram_rv row while validating".into()))?;
         let ram_wv = *main_decoded
             .get(&trace.ram_wv)
             .and_then(|v| v.get(j))
-            .ok_or_else(|| PiCcsError::ProtocolError("W3(shared): missing ram_wv row while validating".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("width(shared): missing ram_wv row while validating".into()))?;
         let rs2_val = *main_decoded
             .get(&trace.rs2_val)
             .and_then(|v| v.get(j))
-            .ok_or_else(|| PiCcsError::ProtocolError("W3(shared): missing rs2_val row while validating".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("width(shared): missing rs2_val row while validating".into()))?;
         let active = *main_decoded
             .get(&trace.active)
             .and_then(|v| v.get(j))
-            .ok_or_else(|| PiCcsError::ProtocolError("W3(shared): missing active row while validating".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("width(shared): missing active row while validating".into()))?;
 
         let rd_has_write = *decode_decoded
             .get(&decode.rd_has_write)
             .and_then(|v| v.get(j))
-            .ok_or_else(|| PiCcsError::ProtocolError("W3(shared): missing rd_has_write row while validating".into()))?;
+            .ok_or_else(|| {
+                PiCcsError::ProtocolError("width(shared): missing rd_has_write row while validating".into())
+            })?;
         let ram_has_read = *decode_decoded
             .get(&decode.ram_has_read)
             .and_then(|v| v.get(j))
-            .ok_or_else(|| PiCcsError::ProtocolError("W3(shared): missing ram_has_read row while validating".into()))?;
+            .ok_or_else(|| {
+                PiCcsError::ProtocolError("width(shared): missing ram_has_read row while validating".into())
+            })?;
         let ram_has_write = *decode_decoded
             .get(&decode.ram_has_write)
             .and_then(|v| v.get(j))
             .ok_or_else(|| {
-                PiCcsError::ProtocolError("W3(shared): missing ram_has_write row while validating".into())
+                PiCcsError::ProtocolError("width(shared): missing ram_has_write row while validating".into())
             })?;
         let op_load = *decode_decoded
             .get(&decode.op_load)
             .and_then(|v| v.get(j))
-            .ok_or_else(|| PiCcsError::ProtocolError("W3(shared): missing op_load row while validating".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("width(shared): missing op_load row while validating".into()))?;
         let op_store = *decode_decoded
             .get(&decode.op_store)
             .and_then(|v| v.get(j))
-            .ok_or_else(|| PiCcsError::ProtocolError("W3(shared): missing op_store row while validating".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("width(shared): missing op_store row while validating".into()))?;
         let funct3_is = [
             *decode_decoded
                 .get(&decode.funct3_is[0])
                 .and_then(|v| v.get(j))
                 .ok_or_else(|| {
-                    PiCcsError::ProtocolError("W3(shared): missing funct3_is[0] row while validating".into())
+                    PiCcsError::ProtocolError("width(shared): missing funct3_is[0] row while validating".into())
                 })?,
             *decode_decoded
                 .get(&decode.funct3_is[1])
                 .and_then(|v| v.get(j))
                 .ok_or_else(|| {
-                    PiCcsError::ProtocolError("W3(shared): missing funct3_is[1] row while validating".into())
+                    PiCcsError::ProtocolError("width(shared): missing funct3_is[1] row while validating".into())
                 })?,
             *decode_decoded
                 .get(&decode.funct3_is[2])
                 .and_then(|v| v.get(j))
                 .ok_or_else(|| {
-                    PiCcsError::ProtocolError("W3(shared): missing funct3_is[2] row while validating".into())
+                    PiCcsError::ProtocolError("width(shared): missing funct3_is[2] row while validating".into())
                 })?,
             *decode_decoded
                 .get(&decode.funct3_is[3])
                 .and_then(|v| v.get(j))
                 .ok_or_else(|| {
-                    PiCcsError::ProtocolError("W3(shared): missing funct3_is[3] row while validating".into())
+                    PiCcsError::ProtocolError("width(shared): missing funct3_is[3] row while validating".into())
                 })?,
             *decode_decoded
                 .get(&decode.funct3_is[4])
                 .and_then(|v| v.get(j))
                 .ok_or_else(|| {
-                    PiCcsError::ProtocolError("W3(shared): missing funct3_is[4] row while validating".into())
+                    PiCcsError::ProtocolError("width(shared): missing funct3_is[4] row while validating".into())
                 })?,
             *decode_decoded
                 .get(&decode.funct3_is[5])
                 .and_then(|v| v.get(j))
                 .ok_or_else(|| {
-                    PiCcsError::ProtocolError("W3(shared): missing funct3_is[5] row while validating".into())
+                    PiCcsError::ProtocolError("width(shared): missing funct3_is[5] row while validating".into())
                 })?,
             *decode_decoded
                 .get(&decode.funct3_is[6])
                 .and_then(|v| v.get(j))
                 .ok_or_else(|| {
-                    PiCcsError::ProtocolError("W3(shared): missing funct3_is[6] row while validating".into())
+                    PiCcsError::ProtocolError("width(shared): missing funct3_is[6] row while validating".into())
                 })?,
             *decode_decoded
                 .get(&decode.funct3_is[7])
                 .and_then(|v| v.get(j))
                 .ok_or_else(|| {
-                    PiCcsError::ProtocolError("W3(shared): missing funct3_is[7] row while validating".into())
+                    PiCcsError::ProtocolError("width(shared): missing funct3_is[7] row while validating".into())
                 })?,
         ];
         let ram_rv_q16 = *width_decoded
             .get(&width.ram_rv_q16)
             .and_then(|v| v.get(j))
-            .ok_or_else(|| PiCcsError::ProtocolError("W3(shared): missing ram_rv_q16 row while validating".into()))?;
+            .ok_or_else(|| {
+                PiCcsError::ProtocolError("width(shared): missing ram_rv_q16 row while validating".into())
+            })?;
         let rs2_q16 = *width_decoded
             .get(&width.rs2_q16)
             .and_then(|v| v.get(j))
-            .ok_or_else(|| PiCcsError::ProtocolError("W3(shared): missing rs2_q16 row while validating".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("width(shared): missing rs2_q16 row while validating".into()))?;
         let mut ram_rv_low_bits = [K::ZERO; 16];
         let mut rs2_low_bits = [K::ZERO; 16];
         for bit in 0..16usize {
@@ -294,14 +299,16 @@ pub(crate) fn build_route_a_width_time_claims(
                 .and_then(|v| v.get(j))
                 .ok_or_else(|| {
                     PiCcsError::ProtocolError(format!(
-                        "W3(shared): missing ram_rv_low_bit[{bit}] row while validating"
+                        "width(shared): missing ram_rv_low_bit[{bit}] row while validating"
                     ))
                 })?;
             rs2_low_bits[bit] = *width_decoded
                 .get(&width.rs2_low_bit[bit])
                 .and_then(|v| v.get(j))
                 .ok_or_else(|| {
-                    PiCcsError::ProtocolError(format!("W3(shared): missing rs2_low_bit[{bit}] row while validating"))
+                    PiCcsError::ProtocolError(format!(
+                        "width(shared): missing rs2_low_bit[{bit}] row while validating"
+                    ))
                 })?;
         }
 
@@ -312,7 +319,7 @@ pub(crate) fn build_route_a_width_time_claims(
             op_load * funct3_is[5],
             op_load * funct3_is[2],
         ];
-        let load_residuals = w3_load_semantics_residuals(
+        let load_residuals = width_load_semantics_residuals(
             rd_val,
             ram_rv,
             rd_has_write,
@@ -337,7 +344,7 @@ pub(crate) fn build_route_a_width_time_claims(
             op_store * funct3_is[1],
             op_store * funct3_is[2],
         ];
-        let store_residuals = w3_store_semantics_residuals(
+        let store_residuals = width_store_semantics_residuals(
             ram_wv,
             ram_rv,
             rs2_val,
@@ -365,21 +372,21 @@ pub(crate) fn build_route_a_width_time_claims(
     for &col_id in main_col_ids.iter() {
         let vals = main_decoded
             .get(&col_id)
-            .ok_or_else(|| PiCcsError::ProtocolError(format!("W3 missing main decoded column {col_id}")))?;
+            .ok_or_else(|| PiCcsError::ProtocolError(format!("width missing main decoded column {col_id}")))?;
         main_sparse.insert(col_id, sparse_trace_col_from_values(m_in, ell_n, vals)?);
     }
     let mut width_sparse = BTreeMap::<usize, SparseIdxVec<K>>::new();
     for &col_id in width_col_ids.iter() {
         let vals = width_decoded
             .get(&col_id)
-            .ok_or_else(|| PiCcsError::ProtocolError(format!("W3 missing width decoded column {col_id}")))?;
+            .ok_or_else(|| PiCcsError::ProtocolError(format!("width missing width decoded column {col_id}")))?;
         width_sparse.insert(col_id, sparse_trace_col_from_values(m_in, ell_n, vals)?);
     }
     let mut decode_sparse = BTreeMap::<usize, SparseIdxVec<K>>::new();
     for &col_id in decode_col_ids.iter() {
         let vals = decode_decoded
             .get(&col_id)
-            .ok_or_else(|| PiCcsError::ProtocolError(format!("W3 missing decode decoded column {col_id}")))?;
+            .ok_or_else(|| PiCcsError::ProtocolError(format!("width missing decode decoded column {col_id}")))?;
         decode_sparse.insert(col_id, sparse_trace_col_from_values(m_in, ell_n, vals)?);
     }
 
@@ -387,19 +394,19 @@ pub(crate) fn build_route_a_width_time_claims(
         main_sparse
             .get(&col_id)
             .cloned()
-            .ok_or_else(|| PiCcsError::ProtocolError(format!("W3 missing main sparse column {col_id}")))
+            .ok_or_else(|| PiCcsError::ProtocolError(format!("width missing main sparse column {col_id}")))
     };
     let width_col = |col_id: usize| -> Result<SparseIdxVec<K>, PiCcsError> {
         width_sparse
             .get(&col_id)
             .cloned()
-            .ok_or_else(|| PiCcsError::ProtocolError(format!("W3 missing width sparse column {col_id}")))
+            .ok_or_else(|| PiCcsError::ProtocolError(format!("width missing width sparse column {col_id}")))
     };
     let decode_col = |col_id: usize| -> Result<SparseIdxVec<K>, PiCcsError> {
         decode_sparse
             .get(&col_id)
             .cloned()
-            .ok_or_else(|| PiCcsError::ProtocolError(format!("W3 missing decode sparse column {col_id}")))
+            .ok_or_else(|| PiCcsError::ProtocolError(format!("width missing decode sparse column {col_id}")))
     };
 
     let bitness_cols: Vec<usize> = width
@@ -412,7 +419,7 @@ pub(crate) fn build_route_a_width_time_claims(
     for &col_id in bitness_cols.iter() {
         bitness_sparse.push(width_col(col_id)?);
     }
-    let bitness_weights = w3_bitness_weight_vector(r_cycle, bitness_cols.len());
+    let bitness_weights = width_bitness_weight_vector(r_cycle, bitness_cols.len());
     let bitness_oracle = FormulaOracleSparseTime::new(bitness_sparse, 3, r_cycle, move |vals: &[K]| {
         let mut weighted = K::ZERO;
         for (b, w) in vals.iter().zip(bitness_weights.iter()) {
@@ -426,7 +433,7 @@ pub(crate) fn build_route_a_width_time_claims(
     for &col_id in width_col_ids.iter() {
         quiescence_sparse.push(width_col(col_id)?);
     }
-    let quiescence_weights = w3_quiescence_weight_vector(r_cycle, width.cols);
+    let quiescence_weights = width_quiescence_weight_vector(r_cycle, width.cols);
     let quiescence_oracle = FormulaOracleSparseTime::new(quiescence_sparse, 3, r_cycle, move |vals: &[K]| {
         let active = vals[0];
         let mut weighted = K::ZERO;
@@ -451,7 +458,7 @@ pub(crate) fn build_route_a_width_time_claims(
     for &col_id in width.ram_rv_low_bit.iter() {
         load_sparse.push(width_col(col_id)?);
     }
-    let load_weights = w3_load_weight_vector(r_cycle, 16);
+    let load_weights = width_load_weight_vector(r_cycle, 16);
     let load_oracle = FormulaOracleSparseTime::new(load_sparse, 5, r_cycle, move |vals: &[K]| {
         let rd_val = vals[0];
         let ram_rv = vals[1];
@@ -473,7 +480,7 @@ pub(crate) fn build_route_a_width_time_claims(
         ];
         let mut ram_rv_low_bits = [K::ZERO; 16];
         ram_rv_low_bits.copy_from_slice(&vals[11..27]);
-        let residuals = w3_load_semantics_residuals(
+        let residuals = width_load_semantics_residuals(
             rd_val,
             ram_rv,
             rd_has_write,
@@ -507,7 +514,7 @@ pub(crate) fn build_route_a_width_time_claims(
     for &col_id in width.rs2_low_bit.iter() {
         store_sparse.push(width_col(col_id)?);
     }
-    let store_weights = w3_store_weight_vector(r_cycle, 12);
+    let store_weights = width_store_weight_vector(r_cycle, 12);
     let store_oracle = FormulaOracleSparseTime::new(store_sparse, 4, r_cycle, move |vals: &[K]| {
         let ram_wv = vals[0];
         let ram_rv = vals[1];
@@ -525,7 +532,7 @@ pub(crate) fn build_route_a_width_time_claims(
         ram_rv_low_bits.copy_from_slice(&vals[11..27]);
         let mut rs2_low_bits = [K::ZERO; 16];
         rs2_low_bits.copy_from_slice(&vals[27..43]);
-        let residuals = w3_store_semantics_residuals(
+        let residuals = width_store_semantics_residuals(
             ram_wv,
             ram_rv,
             rs2_val,
@@ -661,9 +668,9 @@ pub(crate) fn verify_route_a_width_terminals(
         );
     }
 
-    if mem_proof.wp_me_claims.len() != 1 {
+    if mem_proof.trace_opening_me_claims.len() != 1 {
         return Err(PiCcsError::ProtocolError(
-            "W3 requires WP ME openings for shared main-trace terminals".into(),
+            "width requires trace-opening ME openings for shared main-trace terminals".into(),
         ));
     }
 
@@ -671,40 +678,49 @@ pub(crate) fn verify_route_a_width_terminals(
     let width = Rv32WidthSidecarLayout::new();
     let decode = Rv32DecodeSidecarLayout::new();
 
-    let wp_me = &mem_proof.wp_me_claims[0];
-    if wp_me.r.as_slice() != r_time {
+    let trace_opening_me = &mem_proof.trace_opening_me_claims[0];
+    if trace_opening_me.r.as_slice() != r_time {
         return Err(PiCcsError::ProtocolError(
-            "W3 WP ME claim r mismatch (expected r_time)".into(),
+            "width trace-opening ME claim r mismatch (expected r_time)".into(),
         ));
     }
-    if wp_me.c != step.mcs_inst.c {
-        return Err(PiCcsError::ProtocolError("W3 WP ME claim commitment mismatch".into()));
+    if trace_opening_me.c != step.mcs_inst.c {
+        return Err(PiCcsError::ProtocolError(
+            "width trace-opening ME claim commitment mismatch".into(),
+        ));
     }
-    if wp_me.m_in != step.mcs_inst.m_in {
-        return Err(PiCcsError::ProtocolError("W3 WP ME claim m_in mismatch".into()));
+    if trace_opening_me.m_in != step.mcs_inst.m_in {
+        return Err(PiCcsError::ProtocolError(
+            "width trace-opening ME claim m_in mismatch".into(),
+        ));
     }
-    let wp_cols = riscv_trace_wp_opening_columns(&trace);
-    let (_wp_entry, wp_open_map) =
-        require_time_openings_covering_point(step_time_openings, wp_me.r.as_slice(), &wp_cols, "W3 WP")?;
-    let wp_open_col = |col_id: usize| -> Result<K, PiCcsError> { named_opening(&wp_open_map, col_id, "W3 WP") };
+    let trace_opening_cols = riscv_trace_opening_columns(&trace);
+    let (_trace_opening_entry, trace_opening_map) = require_time_openings_covering_point(
+        step_time_openings,
+        trace_opening_me.r.as_slice(),
+        &trace_opening_cols,
+        "width trace-opening",
+    )?;
+    let trace_opening_col =
+        |col_id: usize| -> Result<K, PiCcsError> { named_opening(&trace_opening_map, col_id, "width trace-opening") };
 
     let decode_open_map =
-        decode_lookup_open_map_from_committed_openings(step, cpu_bus, r_time, step_time_openings, "W3 decode")?;
+        decode_lookup_open_map_from_committed_openings(step, cpu_bus, r_time, step_time_openings, "width decode")?;
     let decode_open_col =
-        |col_id: usize| -> Result<K, PiCcsError> { named_opening(&decode_open_map, col_id, "W3 decode") };
+        |col_id: usize| -> Result<K, PiCcsError> { named_opening(&decode_open_map, col_id, "width decode") };
     let width_open_map =
-        width_lookup_open_map_from_committed_openings(step, cpu_bus, r_time, step_time_openings, "W3 width")?;
+        width_lookup_open_map_from_committed_openings(step, cpu_bus, r_time, step_time_openings, "width width")?;
     let width_open_col =
-        |col_id: usize| -> Result<K, PiCcsError> { named_opening(&width_open_map, col_id, "W3 width") };
+        |col_id: usize| -> Result<K, PiCcsError> { named_opening(&width_open_map, col_id, "width width") };
 
-    let active = wp_open_col(trace.active)?;
+    let active = trace_opening_col(trace.active)?;
     let rd_has_write = decode_open_col(decode.rd_has_write)?;
-    let rd_val = wp_open_col(trace.rd_val)?;
+    let rd_val = trace_opening_col(trace.rd_val)?;
     let ram_has_read = decode_open_col(decode.ram_has_read)?;
     let ram_has_write = decode_open_col(decode.ram_has_write)?;
-    let ram_rv = wp_open_col(trace.ram_rv)?;
-    let ram_wv = wp_open_col(trace.ram_wv)?;
-    let rs2_val = wp_open_col(trace.rs2_val)?;
+    let ram_rv = trace_opening_col(trace.ram_rv)?;
+    let ram_wv = trace_opening_col(trace.ram_wv)?;
+    let rs2_val = trace_opening_col(trace.rs2_val)?;
 
     let mut ram_rv_low_bits = [K::ZERO; 16];
     let mut rs2_low_bits = [K::ZERO; 16];
@@ -746,7 +762,7 @@ pub(crate) fn verify_route_a_width_terminals(
         let mut bitness_open = Vec::with_capacity(32);
         bitness_open.extend_from_slice(&ram_rv_low_bits);
         bitness_open.extend_from_slice(&rs2_low_bits);
-        let weights = w3_bitness_weight_vector(r_cycle, bitness_open.len());
+        let weights = width_bitness_weight_vector(r_cycle, bitness_open.len());
         let mut weighted = K::ZERO;
         for (b, w) in bitness_open.iter().zip(weights.iter()) {
             weighted += *w * *b * (*b - K::ONE);
@@ -766,7 +782,7 @@ pub(crate) fn verify_route_a_width_terminals(
         let mut quiescence_open = vec![ram_rv_q16, rs2_q16];
         quiescence_open.extend_from_slice(&ram_rv_low_bits);
         quiescence_open.extend_from_slice(&rs2_low_bits);
-        let weights = w3_quiescence_weight_vector(r_cycle, quiescence_open.len());
+        let weights = width_quiescence_weight_vector(r_cycle, quiescence_open.len());
         let mut weighted = K::ZERO;
         for (v, w) in quiescence_open.iter().zip(weights.iter()) {
             weighted += *w * *v;
@@ -791,7 +807,7 @@ pub(crate) fn verify_route_a_width_terminals(
                 "w3/load_semantics claim index out of range".into(),
             ));
         }
-        let residuals = w3_load_semantics_residuals(
+        let residuals = width_load_semantics_residuals(
             rd_val,
             ram_rv,
             rd_has_write,
@@ -800,7 +816,7 @@ pub(crate) fn verify_route_a_width_terminals(
             ram_rv_q16,
             ram_rv_low_bits,
         );
-        let weights = w3_load_weight_vector(r_cycle, residuals.len());
+        let weights = width_load_weight_vector(r_cycle, residuals.len());
         let mut weighted = K::ZERO;
         for (r, w) in residuals.iter().zip(weights.iter()) {
             weighted += *w * *r;
@@ -819,7 +835,7 @@ pub(crate) fn verify_route_a_width_terminals(
                 "w3/store_semantics claim index out of range".into(),
             ));
         }
-        let residuals = w3_store_semantics_residuals(
+        let residuals = width_store_semantics_residuals(
             ram_wv,
             ram_rv,
             rs2_val,
@@ -831,7 +847,7 @@ pub(crate) fn verify_route_a_width_terminals(
             ram_rv_low_bits,
             rs2_low_bits,
         );
-        let weights = w3_store_weight_vector(r_cycle, residuals.len());
+        let weights = width_store_weight_vector(r_cycle, residuals.len());
         let mut weighted = K::ZERO;
         for (r, w) in residuals.iter().zip(weights.iter()) {
             weighted += *w * *r;

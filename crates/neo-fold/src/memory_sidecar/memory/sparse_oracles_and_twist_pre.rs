@@ -7,15 +7,15 @@ pub(crate) fn sparse_trace_col_from_values(
 ) -> Result<SparseIdxVec<K>, PiCcsError> {
     let pow2_cycle = 1usize
         .checked_shl(ell_n as u32)
-        .ok_or_else(|| PiCcsError::InvalidInput("WB/WP: 2^ell_n overflow".into()))?;
+        .ok_or_else(|| PiCcsError::InvalidInput("booleanity/trace-opening: 2^ell_n overflow".into()))?;
     let t_len = values.len();
     if m_in
         .checked_add(t_len)
-        .ok_or_else(|| PiCcsError::InvalidInput("WB/WP: m_in + t_len overflow".into()))?
+        .ok_or_else(|| PiCcsError::InvalidInput("booleanity/trace-opening: m_in + t_len overflow".into()))?
         > pow2_cycle
     {
         return Err(PiCcsError::InvalidInput(format!(
-            "WB/WP: trace rows out of range (m_in={m_in}, t_len={t_len}, 2^ell_n={pow2_cycle})"
+            "booleanity/trace-opening: trace rows out of range (m_in={m_in}, t_len={t_len}, 2^ell_n={pow2_cycle})"
         )));
     }
     let mut entries = Vec::new();
@@ -1220,44 +1220,44 @@ pub(crate) fn expected_trace_shout_table_id_from_openings(
         return Ok(None);
     }
 
-    if mem_proof.wp_me_claims.len() != 1 {
+    if mem_proof.trace_opening_me_claims.len() != 1 {
         return Err(PiCcsError::ProtocolError(
-            "decode-linked Shout table_id check requires one WP ME claim".into(),
+            "decode-linked Shout table_id check requires one trace-opening ME claim".into(),
         ));
     }
-    let wp_me = &mem_proof.wp_me_claims[0];
-    if wp_me.r.as_slice() != r_time {
+    let trace_opening_me = &mem_proof.trace_opening_me_claims[0];
+    if trace_opening_me.r.as_slice() != r_time {
         return Err(PiCcsError::ProtocolError(
-            "decode-linked Shout table_id check: WP ME r mismatch".into(),
+            "decode-linked Shout table_id check: trace-opening ME r mismatch".into(),
         ));
     }
-    if wp_me.c != step.mcs_inst.c {
+    if trace_opening_me.c != step.mcs_inst.c {
         return Err(PiCcsError::ProtocolError(
-            "decode-linked Shout table_id check: WP ME commitment mismatch".into(),
+            "decode-linked Shout table_id check: trace-opening ME commitment mismatch".into(),
         ));
     }
-    if wp_me.m_in != step.mcs_inst.m_in {
+    if trace_opening_me.m_in != step.mcs_inst.m_in {
         return Err(PiCcsError::ProtocolError(
-            "decode-linked Shout table_id check: WP ME m_in mismatch".into(),
+            "decode-linked Shout table_id check: trace-opening ME m_in mismatch".into(),
         ));
     }
 
     let trace_layout = Rv32TraceLayout::new();
-    let wp_cols = riscv_trace_wp_opening_columns(&trace_layout);
-    let (wp_entry, wp_open_map) = require_time_openings_covering_point(
+    let trace_opening_cols = riscv_trace_opening_columns(&trace_layout);
+    let (trace_opening_entry, trace_opening_map) = require_time_openings_covering_point(
         step_time_openings,
         r_time,
-        &wp_cols,
-        "decode-linked Shout table_id check/WP",
+        &trace_opening_cols,
+        "decode-linked Shout table_id check/trace-opening",
     )?;
-    if wp_entry.source != crate::shard_proof_types::TimeOpeningSource::CommittedOpening {
+    if trace_opening_entry.source != crate::shard_proof_types::TimeOpeningSource::CommittedOpening {
         return Err(PiCcsError::ProtocolError(format!(
-            "decode-linked Shout table_id check/WP requires CommittedOpening source (got {:?})",
-            wp_entry.source
+            "decode-linked Shout table_id check/trace-opening requires CommittedOpening source (got {:?})",
+            trace_opening_entry.source
         )));
     }
     let shout_table_id = named_opening(
-        &wp_open_map,
+        &trace_opening_map,
         trace_layout.shout_table_id,
         "decode-linked Shout table_id check",
     )?;

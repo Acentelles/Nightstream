@@ -101,56 +101,72 @@ pub(crate) fn verify_route_a_decode_terminals(
         return Ok(());
     }
 
-    if mem_proof.wb_me_claims.len() != 1 {
+    if mem_proof.booleanity_me_claims.len() != 1 {
         return Err(PiCcsError::ProtocolError(
-            "W2 requires WB ME openings for shared active/bit terminals".into(),
+            "decode requires booleanity ME openings for shared active/bit terminals".into(),
         ));
     }
 
     let decode_layout = Rv32DecodeSidecarLayout::new();
-    if mem_proof.wp_me_claims.len() != 1 {
+    if mem_proof.trace_opening_me_claims.len() != 1 {
         return Err(PiCcsError::ProtocolError(
-            "W2 requires WP ME openings for shared main-trace/decode terminals".into(),
+            "decode requires trace-opening ME openings for shared main-trace/decode terminals".into(),
         ));
     }
-    let wp_me = &mem_proof.wp_me_claims[0];
-    if wp_me.r.as_slice() != r_time {
+    let trace_opening_me = &mem_proof.trace_opening_me_claims[0];
+    if trace_opening_me.r.as_slice() != r_time {
         return Err(PiCcsError::ProtocolError(
-            "W2 WP ME claim r mismatch (expected r_time)".into(),
+            "decode trace-opening ME claim r mismatch (expected r_time)".into(),
         ));
     }
-    if wp_me.c != step.mcs_inst.c {
-        return Err(PiCcsError::ProtocolError("W2 WP ME claim commitment mismatch".into()));
+    if trace_opening_me.c != step.mcs_inst.c {
+        return Err(PiCcsError::ProtocolError(
+            "decode trace-opening ME claim commitment mismatch".into(),
+        ));
     }
-    if wp_me.m_in != step.mcs_inst.m_in {
-        return Err(PiCcsError::ProtocolError("W2 WP ME claim m_in mismatch".into()));
+    if trace_opening_me.m_in != step.mcs_inst.m_in {
+        return Err(PiCcsError::ProtocolError(
+            "decode trace-opening ME claim m_in mismatch".into(),
+        ));
     }
     let trace = Rv32TraceLayout::new();
     let rv64_exact_words = trace_uses_rv64_exact_words(step.time_columns.cpu_cols.len());
     let rv64_trace = neo_memory::riscv::trace::Rv64TraceLayout::new();
-    let wb_me = &mem_proof.wb_me_claims[0];
-    let wb_cols = riscv_trace_wb_columns(&trace);
-    let wb_open_map = require_time_openings_for_point(step_time_openings, wb_me.r.as_slice(), &wb_cols, "W2 WB")?;
-    let wb_open_col = |col_id: usize| -> Result<K, PiCcsError> { named_opening(&wb_open_map, col_id, "W2 WB") };
+    let booleanity_me = &mem_proof.booleanity_me_claims[0];
+    let booleanity_cols = riscv_trace_booleanity_columns(&trace);
+    let booleanity_opening_map = require_time_openings_for_point(
+        step_time_openings,
+        booleanity_me.r.as_slice(),
+        &booleanity_cols,
+        "decode booleanity",
+    )?;
+    let booleanity_opening_col = |col_id: usize| -> Result<K, PiCcsError> {
+        named_opening(&booleanity_opening_map, col_id, "decode booleanity")
+    };
 
-    let mut wp_cols = riscv_trace_wp_opening_columns(&trace);
+    let mut trace_opening_cols = riscv_trace_opening_columns(&trace);
     if rv64_exact_words {
-        wp_cols.extend(rv64_trace_exact_word_opening_columns());
+        trace_opening_cols.extend(rv64_trace_exact_word_opening_columns());
     }
-    let (_wp_entry, wp_open_map) =
-        require_time_openings_covering_point(step_time_openings, wp_me.r.as_slice(), &wp_cols, "W2 WP")?;
-    let wp_open_col = |col_id: usize| -> Result<K, PiCcsError> { named_opening(&wp_open_map, col_id, "W2 WP") };
+    let (_trace_opening_entry, trace_opening_map) = require_time_openings_covering_point(
+        step_time_openings,
+        trace_opening_me.r.as_slice(),
+        &trace_opening_cols,
+        "decode trace-opening",
+    )?;
+    let trace_opening_col =
+        |col_id: usize| -> Result<K, PiCcsError> { named_opening(&trace_opening_map, col_id, "decode trace-opening") };
     let decode_open_map = decode_open_map_from_instr_and_transport(
         step,
         cpu_bus,
         r_time,
         step_time_openings,
-        wp_open_col(trace.instr_word)?,
-        wp_open_col(trace.active)?,
-        "W2 decode",
+        trace_opening_col(trace.instr_word)?,
+        trace_opening_col(trace.active)?,
+        "decode decode",
     )?;
     let decode_open_col =
-        |col_id: usize| -> Result<K, PiCcsError> { named_opening(&decode_open_map, col_id, "W2 decode") };
+        |col_id: usize| -> Result<K, PiCcsError> { named_opening(&decode_open_map, col_id, "decode decode") };
 
     if let Some(claim_idx) = claim_plan.decode_fields {
         if claim_idx >= batched_final_values.len() {
@@ -211,78 +227,78 @@ pub(crate) fn verify_route_a_decode_terminals(
             decode_open_col(decode_layout.rd_bit[3])?,
             decode_open_col(decode_layout.rd_bit[4])?,
         ];
-        let decode_rs1_addr = w2_reg_addr_from_bits(rs1_bits);
+        let decode_rs1_addr = decode_reg_addr_from_bits(rs1_bits);
         let decode_rs2_addr = decode_open_col(decode_layout.rs2)?;
-        let decode_rd_addr = w2_reg_addr_from_bits(rd_bits);
+        let decode_rd_addr = decode_reg_addr_from_bits(rd_bits);
         let rd_is_zero = decode_open_col(decode_layout.rd_is_zero)?;
         let decode_rd_has_write = decode_open_col(decode_layout.rd_has_write)?;
         let imm_i = decode_open_col(decode_layout.imm_i)?;
-        let mut decode_inputs = W2DecodeFieldsOpenings {
+        let mut decode_inputs = DecodeFieldsOpenings {
             rv64_exact_words,
-            active: wp_open_col(trace.active)?,
-            halted: wb_open_col(trace.halted)?,
-            is_virtual: wp_open_col(trace.is_virtual)?,
-            virtual_sequence_remaining: wp_open_col(trace.virtual_sequence_remaining)?,
-            virtual_commit_from_prev: wp_open_col(trace.virtual_commit_from_prev)?,
-            trace_rs1_addr: wp_open_col(trace.rs1_addr)?,
-            trace_rs2_addr: wp_open_col(trace.rs2_addr)?,
-            trace_rd_addr: wp_open_col(trace.rd_addr)?,
-            rs1_val: wp_open_col(trace.rs1_val)?,
-            rs2_val: wp_open_col(trace.rs2_val)?,
-            rd_val: wp_open_col(trace.rd_val)?,
+            active: trace_opening_col(trace.active)?,
+            halted: booleanity_opening_col(trace.halted)?,
+            is_virtual: trace_opening_col(trace.is_virtual)?,
+            virtual_sequence_remaining: trace_opening_col(trace.virtual_sequence_remaining)?,
+            virtual_commit_from_prev: trace_opening_col(trace.virtual_commit_from_prev)?,
+            trace_rs1_addr: trace_opening_col(trace.rs1_addr)?,
+            trace_rs2_addr: trace_opening_col(trace.rs2_addr)?,
+            trace_rd_addr: trace_opening_col(trace.rd_addr)?,
+            rs1_val: trace_opening_col(trace.rs1_val)?,
+            rs2_val: trace_opening_col(trace.rs2_val)?,
+            rd_val: trace_opening_col(trace.rd_val)?,
             rs1_word: if rv64_exact_words {
-                wp_open_col(rv64_trace.rs1_val_lo32)?
+                trace_opening_col(rv64_trace.rs1_val_lo32)?
             } else {
                 K::ZERO
             },
             rs2_word: if rv64_exact_words {
-                wp_open_col(rv64_trace.rs2_val_lo32)?
+                trace_opening_col(rv64_trace.rs2_val_lo32)?
             } else {
                 K::ZERO
             },
             rd_word: if rv64_exact_words {
-                wp_open_col(rv64_trace.rd_val_lo32)?
+                trace_opening_col(rv64_trace.rd_val_lo32)?
             } else {
                 K::ZERO
             },
             shout_lhs_word: if rv64_exact_words {
-                wp_open_col(rv64_trace.shout_lhs_lo32)?
+                trace_opening_col(rv64_trace.shout_lhs_lo32)?
             } else {
                 K::ZERO
             },
             shout_lhs_hi: if rv64_exact_words {
-                wp_open_col(rv64_trace.shout_lhs_hi32)?
+                trace_opening_col(rv64_trace.shout_lhs_hi32)?
             } else {
                 K::ZERO
             },
             shout_rhs_word: if rv64_exact_words {
-                wp_open_col(rv64_trace.shout_rhs_lo32)?
+                trace_opening_col(rv64_trace.shout_rhs_lo32)?
             } else {
                 K::ZERO
             },
             shout_rhs_hi: if rv64_exact_words {
-                wp_open_col(rv64_trace.shout_rhs_hi32)?
+                trace_opening_col(rv64_trace.shout_rhs_hi32)?
             } else {
                 K::ZERO
             },
             shout_add_sub_key_word: if rv64_exact_words {
-                wp_open_col(rv64_trace.shout_add_sub_key_lo32)?
+                trace_opening_col(rv64_trace.shout_add_sub_key_lo32)?
             } else {
                 K::ZERO
             },
             shout_add_sub_key_hi: if rv64_exact_words {
-                wp_open_col(rv64_trace.shout_add_sub_key_hi32)?
+                trace_opening_col(rv64_trace.shout_add_sub_key_hi32)?
             } else {
                 K::ZERO
             },
-            trace_rd_has_write: wp_open_col(trace.rd_has_write)?,
-            ram_addr: wp_open_col(trace.ram_addr)?,
-            shout_has_lookup: wp_open_col(trace.shout_has_lookup)?,
-            shout_table_id: wp_open_col(trace.shout_table_id)?,
-            shout_val: wp_open_col(trace.shout_val)?,
-            shout_lhs: wp_open_col(trace.shout_lhs)?,
-            shout_rhs: wp_open_col(trace.shout_rhs)?,
-            shout_add_sub_key: wp_open_col(trace.shout_add_sub_key)?,
+            trace_rd_has_write: trace_opening_col(trace.rd_has_write)?,
+            ram_addr: trace_opening_col(trace.ram_addr)?,
+            shout_has_lookup: trace_opening_col(trace.shout_has_lookup)?,
+            shout_table_id: trace_opening_col(trace.shout_table_id)?,
+            shout_val: trace_opening_col(trace.shout_val)?,
+            shout_lhs: trace_opening_col(trace.shout_lhs)?,
+            shout_rhs: trace_opening_col(trace.shout_rhs)?,
+            shout_add_sub_key: trace_opening_col(trace.shout_add_sub_key)?,
             decode_opcode: decode_open_col(decode_layout.opcode)?,
             decode_rs1_addr,
             decode_rs2_addr,
@@ -307,8 +323,8 @@ pub(crate) fn verify_route_a_decode_terminals(
             decode_inputs.shout_rhs_word = decode_inputs.shout_rhs;
             decode_inputs.shout_add_sub_key_word = decode_inputs.shout_add_sub_key;
         }
-        let weights = w2_decode_pack_weight_vector(r_cycle, W2_FIELDS_RESIDUAL_COUNT);
-        let weighted = w2_decode_fields_weighted_residual(&decode_inputs, &weights);
+        let weights = decode_pack_weight_vector(r_cycle, DECODE_FIELDS_RESIDUAL_COUNT);
+        let weighted = decode_fields_weighted_residual(&decode_inputs, &weights);
         let expected = eq_points(r_time, r_cycle) * weighted;
         if batched_final_values[claim_idx] != expected {
             return Err(PiCcsError::ProtocolError(
@@ -323,7 +339,7 @@ pub(crate) fn verify_route_a_decode_terminals(
                 "w2/decode_immediates claim index out of range".into(),
             ));
         }
-        let residuals = w2_decode_immediate_residuals(
+        let residuals = decode_immediate_residuals(
             decode_open_col(decode_layout.imm_i)?,
             decode_open_col(decode_layout.imm_s)?,
             decode_open_col(decode_layout.imm_b)?,
@@ -365,7 +381,7 @@ pub(crate) fn verify_route_a_decode_terminals(
             ],
         );
         let mut weighted = K::ZERO;
-        let weights = w2_decode_imm_weight_vector(r_cycle, residuals.len());
+        let weights = decode_imm_weight_vector(r_cycle, residuals.len());
         for (r, w) in residuals.iter().zip(weights.iter()) {
             weighted += *w * *r;
         }

@@ -42,14 +42,14 @@ fn step_has_rv64_width_mem_ops(time_columns: &neo_memory::witness::TimeColumns<F
 
 #[inline]
 pub(crate) fn rv64_fullword_width_stage_required_for_step_instance(step: &StepInstanceBundle<Cmt, F, K>) -> bool {
-    wb_wp_required_for_step_instance(step)
+    trace_opening_path_required_for_step_instance(step)
         && step.mem_insts.iter().any(|inst| inst.mem_id == RAM_ID.0)
         && step_has_rv64_width_mem_ops(&step.time_columns)
 }
 
 #[inline]
 pub(crate) fn rv64_fullword_width_stage_required_for_step_witness(step: &StepWitnessBundle<Cmt, F, K>) -> bool {
-    wb_wp_required_for_step_witness(step)
+    trace_opening_path_required_for_step_witness(step)
         && step
             .mem_instances
             .iter()
@@ -74,11 +74,11 @@ pub(crate) fn rv64_fullword_width_stage_required_from_proof(
 }
 
 #[inline]
-pub(crate) fn rv64_fullword_wp_opening_columns() -> Vec<usize> {
+pub(crate) fn rv64_fullword_trace_opening_columns() -> Vec<usize> {
     let trace32 = Rv32TraceLayout::new();
     let trace64 = Rv64TraceLayout::new();
-    let mut wp_cols = riscv_trace_wp_opening_columns(&trace32);
-    wp_cols.extend([
+    let mut trace_opening_cols = riscv_trace_opening_columns(&trace32);
+    trace_opening_cols.extend([
         trace64.rd_val_lo32,
         trace64.rd_val_hi32,
         trace64.ram_rv_lo32,
@@ -88,7 +88,7 @@ pub(crate) fn rv64_fullword_wp_opening_columns() -> Vec<usize> {
         trace64.rs2_val_lo32,
         trace64.rs2_val_hi32,
     ]);
-    wp_cols
+    trace_opening_cols
 }
 
 #[inline]
@@ -452,12 +452,12 @@ fn resolve_shared_rv64_width_lookup_lut_indices(
             .position(|(inst, _)| inst.table_id == table_id)
             .ok_or_else(|| {
                 PiCcsError::ProtocolError(format!(
-                    "W3(rv64): missing RV64 width lookup table_id={table_id} for col_id={col_id}"
+                    "width(rv64): missing RV64 width lookup table_id={table_id} for col_id={col_id}"
                 ))
             })?;
         let val_slot = rv64_width_lookup_val_slot_for_col(col_id).ok_or_else(|| {
             PiCcsError::ProtocolError(format!(
-                "W3(rv64): RV64 width col_id={col_id} is not part of width lookup transport slot map"
+                "width(rv64): RV64 width col_id={col_id} is not part of width lookup transport slot map"
             ))
         })?;
         width_lut_slots.push((lut_idx, val_slot));
@@ -474,7 +474,7 @@ fn rv64_width_lookup_bus_val_cols_witness(
     let mut width_bus_col_by_col = BTreeMap::<usize, usize>::new();
     if step.time_columns.t != t_len || step.time_columns.cpu_cols.is_empty() {
         return Err(PiCcsError::ProtocolError(format!(
-            "W3(rv64): canonical time columns required for RV64 width lookup openings (time_t={}, cpu_cols={}, expected_t={t_len})",
+            "width(rv64): canonical time columns required for RV64 width lookup openings (time_t={}, cpu_cols={}, expected_t={t_len})",
             step.time_columns.t,
             step.time_columns.cpu_cols.len()
         )));
@@ -482,32 +482,32 @@ fn rv64_width_lookup_bus_val_cols_witness(
     let bus = build_bus_layout_for_step_witness(step, t_len)?;
     if bus.shout_cols.len() != step.lut_instances.len() {
         return Err(PiCcsError::ProtocolError(
-            "W3(rv64): bus shout lane count drift while resolving RV64 width lookup columns".into(),
+            "width(rv64): bus shout lane count drift while resolving RV64 width lookup columns".into(),
         ));
     }
     for (&width_col_id, &(lut_idx, val_slot)) in width_cols.iter().zip(width_lut_slots.iter()) {
         let inst_cols = bus.shout_cols.get(lut_idx).ok_or_else(|| {
-            PiCcsError::ProtocolError("W3(rv64): missing shout cols for RV64 width lookup table".into())
+            PiCcsError::ProtocolError("width(rv64): missing shout cols for RV64 width lookup table".into())
         })?;
         let lane0 = inst_cols.lanes.first().ok_or_else(|| {
-            PiCcsError::ProtocolError("W3(rv64): expected one shout lane for RV64 width lookup table".into())
+            PiCcsError::ProtocolError("width(rv64): expected one shout lane for RV64 width lookup table".into())
         })?;
         let val_col = lane0.vals.get(val_slot).copied().ok_or_else(|| {
             PiCcsError::ProtocolError(format!(
-                "W3(rv64): RV64 width val_slot={} out of range for lut_idx={} (n_vals={})",
+                "width(rv64): RV64 width val_slot={} out of range for lut_idx={} (n_vals={})",
                 val_slot,
                 lut_idx,
                 lane0.vals.len()
             ))
         })?;
-        let logical_bus_col = time_mem_logical_col_id_for_step(step, val_col, "W3(rv64)")?;
+        let logical_bus_col = time_mem_logical_col_id_for_step(step, val_col, "width(rv64)")?;
         width_bus_col_by_col.insert(width_col_id, logical_bus_col);
     }
     let mut out = Vec::with_capacity(width_cols.len());
     for &col_id in &width_cols {
         let bus_col = width_bus_col_by_col.get(&col_id).copied().ok_or_else(|| {
             PiCcsError::ProtocolError(format!(
-                "W3(rv64): missing RV64 width lookup bus val column for width col_id={col_id}"
+                "width(rv64): missing RV64 width lookup bus val column for width col_id={col_id}"
             ))
         })?;
         out.push(bus_col);
@@ -519,7 +519,7 @@ pub(crate) fn build_route_a_rv64_fullword_time_claims(
     params: &NeoParams,
     step: &StepWitnessBundle<Cmt, F, K>,
     r_cycle: &[K],
-) -> Result<W3TimeClaims, PiCcsError> {
+) -> Result<WidthResidualTimeClaims, PiCcsError> {
     if !rv64_fullword_width_stage_required_for_step_witness(step) {
         return Ok((None, None, None, None, None));
     }
@@ -527,7 +527,7 @@ pub(crate) fn build_route_a_rv64_fullword_time_claims(
     let trace = Rv64TraceLayout::new();
     let width = Rv64WidthSidecarLayout::new();
     let decode = Rv32DecodeSidecarLayout::new();
-    let t_len = infer_rv32_trace_t_len_for_wb_wp(step, &Rv32TraceLayout::new())?;
+    let t_len = infer_rv32_trace_t_len_for_trace_openings(step, &Rv32TraceLayout::new())?;
     let m_in = step.mcs.0.m_in;
     let ell_n = r_cycle.len();
 
@@ -552,10 +552,10 @@ pub(crate) fn build_route_a_rv64_fullword_time_claims(
         let bus = build_bus_layout_for_step_witness(step, t_len)?;
         let mut width_bus_val_cols = Vec::with_capacity(width_bus_abs_cols.len());
         for abs_col in width_bus_abs_cols.iter().copied() {
-            let local_col = time_mem_local_col_for_step(step, abs_col, "W3(rv64)")?;
+            let local_col = time_mem_local_col_for_step(step, abs_col, "width(rv64)")?;
             if local_col >= bus.bus_cols {
                 return Err(PiCcsError::ProtocolError(format!(
-                    "W3(rv64): RV64 width lookup bus column out of range (local_col={local_col}, bus_cols={})",
+                    "width(rv64): RV64 width lookup bus column out of range (local_col={local_col}, bus_cols={})",
                     bus.bus_cols
                 )));
             }
@@ -572,7 +572,7 @@ pub(crate) fn build_route_a_rv64_fullword_time_claims(
             let bus_col_id = width_bus_val_cols[idx];
             let vals = lookup_vals.get(&bus_col_id).ok_or_else(|| {
                 PiCcsError::ProtocolError(format!(
-                    "W3(rv64): missing decoded RV64 width lookup values for bus_col={bus_col_id}"
+                    "width(rv64): missing decoded RV64 width lookup values for bus_col={bus_col_id}"
                 ))
             })?;
             by_col.insert(col_id, vals.clone());
@@ -580,15 +580,15 @@ pub(crate) fn build_route_a_rv64_fullword_time_claims(
         by_col
     };
 
-    let ram_twist = decode_rv64_ram_twist_lane_witness(step, t_len, "W3(rv64)")?;
+    let ram_twist = decode_rv64_ram_twist_lane_witness(step, t_len, "width(rv64)")?;
     let ram_twist_has_read_vals = ram_twist
         .decoded
         .get(&ram_twist.has_read)
-        .ok_or_else(|| PiCcsError::ProtocolError("W3(rv64): missing RAM twist has_read column".into()))?;
+        .ok_or_else(|| PiCcsError::ProtocolError("width(rv64): missing RAM twist has_read column".into()))?;
     let ram_twist_has_write_vals = ram_twist
         .decoded
         .get(&ram_twist.has_write)
-        .ok_or_else(|| PiCcsError::ProtocolError("W3(rv64): missing RAM twist has_write column".into()))?;
+        .ok_or_else(|| PiCcsError::ProtocolError("width(rv64): missing RAM twist has_write column".into()))?;
 
     let decode_col_ids: Vec<usize> = core::iter::once(decode.op_load)
         .chain(core::iter::once(decode.op_store))
@@ -598,13 +598,13 @@ pub(crate) fn build_route_a_rv64_fullword_time_claims(
     let decode_decoded = {
         let instr_vals = main_decoded
             .get(&trace.instr_word)
-            .ok_or_else(|| PiCcsError::ProtocolError("W3(rv64): missing instr_word decode column".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("width(rv64): missing instr_word decode column".into()))?;
         let active_vals = main_decoded
             .get(&trace.active)
-            .ok_or_else(|| PiCcsError::ProtocolError("W3(rv64): missing active decode column".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("width(rv64): missing active decode column".into()))?;
         if instr_vals.len() != t_len || active_vals.len() != t_len {
             return Err(PiCcsError::ProtocolError(format!(
-                "W3(rv64): decoded CPU column lengths drift (instr={}, active={}, t_len={t_len})",
+                "width(rv64): decoded CPU column lengths drift (instr={}, active={}, t_len={t_len})",
                 instr_vals.len(),
                 active_vals.len()
             )));
@@ -614,7 +614,7 @@ pub(crate) fn build_route_a_rv64_fullword_time_claims(
             decoded.insert(col_id, Vec::with_capacity(t_len));
         }
         for j in 0..t_len {
-            let instr_word = decode_k_to_u32(instr_vals[j], "W3(rv64)/instr_word")?;
+            let instr_word = decode_k_to_u32(instr_vals[j], "width(rv64)/instr_word")?;
             let active = active_vals[j] != K::ZERO;
             let mut row = riscv_decode_lookup_backed_row_from_instr_word(&decode, instr_word, active);
             if !active {
@@ -623,7 +623,7 @@ pub(crate) fn build_route_a_rv64_fullword_time_claims(
             for &col_id in &decode_col_ids {
                 decoded
                     .get_mut(&col_id)
-                    .ok_or_else(|| PiCcsError::ProtocolError("W3(rv64): decode map build failed".into()))?
+                    .ok_or_else(|| PiCcsError::ProtocolError("width(rv64): decode map build failed".into()))?
                     .push(K::from(row[col_id]));
             }
         }
@@ -635,95 +635,101 @@ pub(crate) fn build_route_a_rv64_fullword_time_claims(
         let rd_lo = *main_decoded
             .get(&trace.rd_val_lo32)
             .and_then(|v| v.get(j))
-            .ok_or_else(|| PiCcsError::ProtocolError("W3(rv64): missing rd_val_lo32 row while validating".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("width(rv64): missing rd_val_lo32 row while validating".into()))?;
         let rd_hi = *main_decoded
             .get(&trace.rd_val_hi32)
             .and_then(|v| v.get(j))
-            .ok_or_else(|| PiCcsError::ProtocolError("W3(rv64): missing rd_val_hi32 row while validating".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("width(rv64): missing rd_val_hi32 row while validating".into()))?;
         let ram_rv_lo = *main_decoded
             .get(&trace.ram_rv_lo32)
             .and_then(|v| v.get(j))
-            .ok_or_else(|| PiCcsError::ProtocolError("W3(rv64): missing ram_rv_lo32 row while validating".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("width(rv64): missing ram_rv_lo32 row while validating".into()))?;
         let ram_rv_hi = *main_decoded
             .get(&trace.ram_rv_hi32)
             .and_then(|v| v.get(j))
-            .ok_or_else(|| PiCcsError::ProtocolError("W3(rv64): missing ram_rv_hi32 row while validating".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("width(rv64): missing ram_rv_hi32 row while validating".into()))?;
         let ram_wv_lo = *main_decoded
             .get(&trace.ram_wv_lo32)
             .and_then(|v| v.get(j))
-            .ok_or_else(|| PiCcsError::ProtocolError("W3(rv64): missing ram_wv_lo32 row while validating".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("width(rv64): missing ram_wv_lo32 row while validating".into()))?;
         let ram_wv_hi = *main_decoded
             .get(&trace.ram_wv_hi32)
             .and_then(|v| v.get(j))
-            .ok_or_else(|| PiCcsError::ProtocolError("W3(rv64): missing ram_wv_hi32 row while validating".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("width(rv64): missing ram_wv_hi32 row while validating".into()))?;
         let rs2_lo = *main_decoded
             .get(&trace.rs2_val_lo32)
             .and_then(|v| v.get(j))
-            .ok_or_else(|| PiCcsError::ProtocolError("W3(rv64): missing rs2_val_lo32 row while validating".into()))?;
+            .ok_or_else(|| {
+                PiCcsError::ProtocolError("width(rv64): missing rs2_val_lo32 row while validating".into())
+            })?;
         let rs2_hi = *main_decoded
             .get(&trace.rs2_val_hi32)
             .and_then(|v| v.get(j))
-            .ok_or_else(|| PiCcsError::ProtocolError("W3(rv64): missing rs2_val_hi32 row while validating".into()))?;
+            .ok_or_else(|| {
+                PiCcsError::ProtocolError("width(rv64): missing rs2_val_hi32 row while validating".into())
+            })?;
         let op_load = *decode_decoded
             .get(&decode.op_load)
             .and_then(|v| v.get(j))
-            .ok_or_else(|| PiCcsError::ProtocolError("W3(rv64): missing op_load row while validating".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("width(rv64): missing op_load row while validating".into()))?;
         let op_store = *decode_decoded
             .get(&decode.op_store)
             .and_then(|v| v.get(j))
-            .ok_or_else(|| PiCcsError::ProtocolError("W3(rv64): missing op_store row while validating".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("width(rv64): missing op_store row while validating".into()))?;
         let rd_has_write = *decode_decoded
             .get(&decode.rd_has_write)
             .and_then(|v| v.get(j))
-            .ok_or_else(|| PiCcsError::ProtocolError("W3(rv64): missing rd_has_write row while validating".into()))?;
+            .ok_or_else(|| {
+                PiCcsError::ProtocolError("width(rv64): missing rd_has_write row while validating".into())
+            })?;
         let ram_has_read = *ram_twist_has_read_vals.get(j).ok_or_else(|| {
-            PiCcsError::ProtocolError("W3(rv64): missing RAM twist has_read row while validating".into())
+            PiCcsError::ProtocolError("width(rv64): missing RAM twist has_read row while validating".into())
         })?;
         let ram_has_write = *ram_twist_has_write_vals.get(j).ok_or_else(|| {
-            PiCcsError::ProtocolError("W3(rv64): missing RAM twist has_write row while validating".into())
+            PiCcsError::ProtocolError("width(rv64): missing RAM twist has_write row while validating".into())
         })?;
         let funct3_is = [
             *decode_decoded
                 .get(&decode.funct3_is[0])
                 .and_then(|v| v.get(j))
                 .ok_or_else(|| {
-                    PiCcsError::ProtocolError("W3(rv64): missing funct3_is[0] row while validating".into())
+                    PiCcsError::ProtocolError("width(rv64): missing funct3_is[0] row while validating".into())
                 })?,
             *decode_decoded
                 .get(&decode.funct3_is[1])
                 .and_then(|v| v.get(j))
                 .ok_or_else(|| {
-                    PiCcsError::ProtocolError("W3(rv64): missing funct3_is[1] row while validating".into())
+                    PiCcsError::ProtocolError("width(rv64): missing funct3_is[1] row while validating".into())
                 })?,
             *decode_decoded
                 .get(&decode.funct3_is[2])
                 .and_then(|v| v.get(j))
                 .ok_or_else(|| {
-                    PiCcsError::ProtocolError("W3(rv64): missing funct3_is[2] row while validating".into())
+                    PiCcsError::ProtocolError("width(rv64): missing funct3_is[2] row while validating".into())
                 })?,
             *decode_decoded
                 .get(&decode.funct3_is[3])
                 .and_then(|v| v.get(j))
                 .ok_or_else(|| {
-                    PiCcsError::ProtocolError("W3(rv64): missing funct3_is[3] row while validating".into())
+                    PiCcsError::ProtocolError("width(rv64): missing funct3_is[3] row while validating".into())
                 })?,
             *decode_decoded
                 .get(&decode.funct3_is[4])
                 .and_then(|v| v.get(j))
                 .ok_or_else(|| {
-                    PiCcsError::ProtocolError("W3(rv64): missing funct3_is[4] row while validating".into())
+                    PiCcsError::ProtocolError("width(rv64): missing funct3_is[4] row while validating".into())
                 })?,
             *decode_decoded
                 .get(&decode.funct3_is[5])
                 .and_then(|v| v.get(j))
                 .ok_or_else(|| {
-                    PiCcsError::ProtocolError("W3(rv64): missing funct3_is[5] row while validating".into())
+                    PiCcsError::ProtocolError("width(rv64): missing funct3_is[5] row while validating".into())
                 })?,
             *decode_decoded
                 .get(&decode.funct3_is[6])
                 .and_then(|v| v.get(j))
                 .ok_or_else(|| {
-                    PiCcsError::ProtocolError("W3(rv64): missing funct3_is[6] row while validating".into())
+                    PiCcsError::ProtocolError("width(rv64): missing funct3_is[6] row while validating".into())
                 })?,
         ];
         let mut ram_rv_low_bits = [K::ZERO; 32];
@@ -733,13 +739,15 @@ pub(crate) fn build_route_a_rv64_fullword_time_claims(
                 .get(&width.ram_rv_low_bit[bit])
                 .and_then(|v| v.get(j))
                 .ok_or_else(|| {
-                    PiCcsError::ProtocolError(format!("W3(rv64): missing ram_rv_low_bit[{bit}] row while validating"))
+                    PiCcsError::ProtocolError(format!(
+                        "width(rv64): missing ram_rv_low_bit[{bit}] row while validating"
+                    ))
                 })?;
             rs2_low_bits[bit] = *width_decoded
                 .get(&width.rs2_low_bit[bit])
                 .and_then(|v| v.get(j))
                 .ok_or_else(|| {
-                    PiCcsError::ProtocolError(format!("W3(rv64): missing rs2_low_bit[{bit}] row while validating"))
+                    PiCcsError::ProtocolError(format!("width(rv64): missing rs2_low_bit[{bit}] row while validating"))
                 })?;
         }
 
@@ -803,13 +811,13 @@ pub(crate) fn build_route_a_rv64_fullword_time_claims(
     for &col_id in &main_col_ids {
         let vals = main_decoded
             .get(&col_id)
-            .ok_or_else(|| PiCcsError::ProtocolError(format!("W3(rv64): missing main decoded column {col_id}")))?;
+            .ok_or_else(|| PiCcsError::ProtocolError(format!("width(rv64): missing main decoded column {col_id}")))?;
         main_sparse.insert(col_id, sparse_trace_col_from_values(m_in, ell_n, vals)?);
     }
     let mut width_sparse = BTreeMap::<usize, SparseIdxVec<K>>::new();
     for &col_id in &width_col_ids {
         let vals = width_decoded.get(&col_id).ok_or_else(|| {
-            PiCcsError::ProtocolError(format!("W3(rv64): missing RV64 width decoded column {col_id}"))
+            PiCcsError::ProtocolError(format!("width(rv64): missing RV64 width decoded column {col_id}"))
         })?;
         width_sparse.insert(col_id, sparse_trace_col_from_values(m_in, ell_n, vals)?);
     }
@@ -817,7 +825,7 @@ pub(crate) fn build_route_a_rv64_fullword_time_claims(
     for &col_id in &decode_col_ids {
         let vals = decode_decoded
             .get(&col_id)
-            .ok_or_else(|| PiCcsError::ProtocolError(format!("W3(rv64): missing decode decoded column {col_id}")))?;
+            .ok_or_else(|| PiCcsError::ProtocolError(format!("width(rv64): missing decode decoded column {col_id}")))?;
         decode_sparse.insert(col_id, sparse_trace_col_from_values(m_in, ell_n, vals)?);
     }
 
@@ -825,19 +833,19 @@ pub(crate) fn build_route_a_rv64_fullword_time_claims(
         main_sparse
             .get(&col_id)
             .cloned()
-            .ok_or_else(|| PiCcsError::ProtocolError(format!("W3(rv64): missing main sparse column {col_id}")))
+            .ok_or_else(|| PiCcsError::ProtocolError(format!("width(rv64): missing main sparse column {col_id}")))
     };
     let width_col = |col_id: usize| -> Result<SparseIdxVec<K>, PiCcsError> {
         width_sparse
             .get(&col_id)
             .cloned()
-            .ok_or_else(|| PiCcsError::ProtocolError(format!("W3(rv64): missing RV64 width sparse column {col_id}")))
+            .ok_or_else(|| PiCcsError::ProtocolError(format!("width(rv64): missing RV64 width sparse column {col_id}")))
     };
     let decode_col = |col_id: usize| -> Result<SparseIdxVec<K>, PiCcsError> {
         decode_sparse
             .get(&col_id)
             .cloned()
-            .ok_or_else(|| PiCcsError::ProtocolError(format!("W3(rv64): missing decode sparse column {col_id}")))
+            .ok_or_else(|| PiCcsError::ProtocolError(format!("width(rv64): missing decode sparse column {col_id}")))
     };
     let ram_twist_has_read_sparse = sparse_trace_col_from_values(m_in, ell_n, ram_twist_has_read_vals)?;
     let ram_twist_has_write_sparse = sparse_trace_col_from_values(m_in, ell_n, ram_twist_has_write_vals)?;
@@ -852,7 +860,7 @@ pub(crate) fn build_route_a_rv64_fullword_time_claims(
     for &col_id in &bitness_cols {
         bitness_sparse.push(width_col(col_id)?);
     }
-    let bitness_weights = w3_bitness_weight_vector(r_cycle, bitness_cols.len());
+    let bitness_weights = width_bitness_weight_vector(r_cycle, bitness_cols.len());
     let bitness_oracle = FormulaOracleSparseTime::new(bitness_sparse, 3, r_cycle, move |vals: &[K]| {
         let mut weighted = K::ZERO;
         for (bit, weight) in vals.iter().zip(bitness_weights.iter()) {
@@ -866,7 +874,7 @@ pub(crate) fn build_route_a_rv64_fullword_time_claims(
     for &col_id in &width_col_ids {
         quiescence_sparse.push(width_col(col_id)?);
     }
-    let quiescence_weights = w3_quiescence_weight_vector(r_cycle, width.cols);
+    let quiescence_weights = width_quiescence_weight_vector(r_cycle, width.cols);
     let quiescence_oracle = FormulaOracleSparseTime::new(quiescence_sparse, 3, r_cycle, move |vals: &[K]| {
         let active = vals[0];
         let mut weighted = K::ZERO;
@@ -882,7 +890,7 @@ pub(crate) fn build_route_a_rv64_fullword_time_claims(
             .iter()
             .enumerate()
             .find(|(_, (inst, _))| inst.mem_id == RAM_ID.0)
-            .ok_or_else(|| PiCcsError::ProtocolError("W3(rv64): missing RAM mem instance".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("width(rv64): missing RAM mem instance".into()))?;
         #[cfg(not(debug_assertions))]
         let _ = ram_mem_idx_dbg;
         match ram_inst.guest_addr_remap.as_ref() {
@@ -893,7 +901,7 @@ pub(crate) fn build_route_a_rv64_fullword_time_claims(
                 #[cfg(debug_assertions)]
                 {
                     let cpu_ram_addr_vals = main_decoded.get(&trace.ram_addr).ok_or_else(|| {
-                        PiCcsError::ProtocolError("W3(rv64): missing ram_addr rows while validating".into())
+                        PiCcsError::ProtocolError("width(rv64): missing ram_addr rows while validating".into())
                     })?;
                     for j in 0..t_len {
                         let mut ra_bits = Vec::with_capacity(ell_addr);
@@ -906,7 +914,7 @@ pub(crate) fn build_route_a_rv64_fullword_time_claims(
                                     .and_then(|v| v.get(j))
                                     .ok_or_else(|| {
                                         PiCcsError::ProtocolError(format!(
-                                            "W3(rv64): missing ra_bit column {col_id} row while validating"
+                                            "width(rv64): missing ra_bit column {col_id} row while validating"
                                         ))
                                     })?,
                             );
@@ -919,7 +927,7 @@ pub(crate) fn build_route_a_rv64_fullword_time_claims(
                                     .and_then(|v| v.get(j))
                                     .ok_or_else(|| {
                                         PiCcsError::ProtocolError(format!(
-                                            "W3(rv64): missing wa_bit column {col_id} row while validating"
+                                            "width(rv64): missing wa_bit column {col_id} row while validating"
                                         ))
                                     })?,
                             );
@@ -946,13 +954,13 @@ pub(crate) fn build_route_a_rv64_fullword_time_claims(
                 let mut wa_sparse = Vec::with_capacity(ell_addr);
                 for &col_id in &ram_twist.ra_bits {
                     let vals = ram_twist.decoded.get(&col_id).ok_or_else(|| {
-                        PiCcsError::ProtocolError(format!("W3(rv64): missing ra_bit column {col_id}"))
+                        PiCcsError::ProtocolError(format!("width(rv64): missing ra_bit column {col_id}"))
                     })?;
                     ra_sparse.push(sparse_trace_col_from_values(m_in, ell_n, vals)?);
                 }
                 for &col_id in &ram_twist.wa_bits {
                     let vals = ram_twist.decoded.get(&col_id).ok_or_else(|| {
-                        PiCcsError::ProtocolError(format!("W3(rv64): missing wa_bit column {col_id}"))
+                        PiCcsError::ProtocolError(format!("width(rv64): missing wa_bit column {col_id}"))
                     })?;
                     wa_sparse.push(sparse_trace_col_from_values(m_in, ell_n, vals)?);
                 }
@@ -1007,7 +1015,7 @@ pub(crate) fn build_route_a_rv64_fullword_time_claims(
     for &col_id in &width.ram_rv_low_bit {
         load_sparse.push(width_col(col_id)?);
     }
-    let load_weights = w3_load_weight_vector(r_cycle, 17);
+    let load_weights = width_load_weight_vector(r_cycle, 17);
     let load_oracle = FormulaOracleSparseTime::new(load_sparse, 5, r_cycle, move |vals: &[K]| {
         let mut ram_rv_low_bits = [K::ZERO; 32];
         ram_rv_low_bits.copy_from_slice(&vals[14..46]);
@@ -1054,7 +1062,7 @@ pub(crate) fn build_route_a_rv64_fullword_time_claims(
     for &col_id in &width.rs2_low_bit {
         store_sparse.push(width_col(col_id)?);
     }
-    let store_weights = w3_store_weight_vector(r_cycle, 13);
+    let store_weights = width_store_weight_vector(r_cycle, 13);
     let store_oracle = FormulaOracleSparseTime::new(store_sparse, 4, r_cycle, move |vals: &[K]| {
         let mut ram_rv_low_bits = [K::ZERO; 32];
         ram_rv_low_bits.copy_from_slice(&vals[14..46]);
@@ -1164,47 +1172,60 @@ pub(crate) fn verify_route_a_rv64_fullword_terminals(
     mem_proof: &MemSidecarProof<Cmt, F, K>,
     step_time_openings: &[crate::shard_proof_types::TimePointOpening],
 ) -> Result<(), PiCcsError> {
-    if mem_proof.wp_me_claims.len() != 1 {
+    if mem_proof.trace_opening_me_claims.len() != 1 {
         return Err(PiCcsError::ProtocolError(
-            "W3(rv64) requires WP ME openings for shared main-trace terminals".into(),
+            "width(rv64) requires trace-opening ME openings for shared main-trace terminals".into(),
         ));
     }
 
     let trace = Rv64TraceLayout::new();
     let decode = Rv32DecodeSidecarLayout::new();
     let width = Rv64WidthSidecarLayout::new();
-    let wp_me = &mem_proof.wp_me_claims[0];
-    if wp_me.r.as_slice() != r_time {
+    let trace_opening_me = &mem_proof.trace_opening_me_claims[0];
+    if trace_opening_me.r.as_slice() != r_time {
         return Err(PiCcsError::ProtocolError(
-            "W3(rv64) WP ME claim r mismatch (expected r_time)".into(),
+            "width(rv64) trace-opening ME claim r mismatch (expected r_time)".into(),
         ));
     }
-    if wp_me.c != step.mcs_inst.c {
+    if trace_opening_me.c != step.mcs_inst.c {
         return Err(PiCcsError::ProtocolError(
-            "W3(rv64) WP ME claim commitment mismatch".into(),
+            "width(rv64) trace-opening ME claim commitment mismatch".into(),
         ));
     }
-    if wp_me.m_in != step.mcs_inst.m_in {
-        return Err(PiCcsError::ProtocolError("W3(rv64) WP ME claim m_in mismatch".into()));
+    if trace_opening_me.m_in != step.mcs_inst.m_in {
+        return Err(PiCcsError::ProtocolError(
+            "width(rv64) trace-opening ME claim m_in mismatch".into(),
+        ));
     }
 
-    let wp_cols = rv64_fullword_wp_opening_columns();
-    let (_wp_entry, wp_open_map) =
-        require_time_openings_covering_point(step_time_openings, wp_me.r.as_slice(), &wp_cols, "W3(rv64) WP")?;
-    let wp_open_col = |col_id: usize| -> Result<K, PiCcsError> { named_opening(&wp_open_map, col_id, "W3(rv64) WP") };
-    let decode_open_map =
-        decode_lookup_open_map_from_committed_openings(step, cpu_bus, r_time, step_time_openings, "W3(rv64) decode")?;
+    let trace_opening_cols = rv64_fullword_trace_opening_columns();
+    let (_trace_opening_entry, trace_opening_map) = require_time_openings_covering_point(
+        step_time_openings,
+        trace_opening_me.r.as_slice(),
+        &trace_opening_cols,
+        "width(rv64) trace-opening",
+    )?;
+    let trace_opening_col = |col_id: usize| -> Result<K, PiCcsError> {
+        named_opening(&trace_opening_map, col_id, "width(rv64) trace-opening")
+    };
+    let decode_open_map = decode_lookup_open_map_from_committed_openings(
+        step,
+        cpu_bus,
+        r_time,
+        step_time_openings,
+        "width(rv64) decode",
+    )?;
     let decode_open_col =
-        |col_id: usize| -> Result<K, PiCcsError> { named_opening(&decode_open_map, col_id, "W3(rv64) decode") };
+        |col_id: usize| -> Result<K, PiCcsError> { named_opening(&decode_open_map, col_id, "width(rv64) decode") };
     let width_open_map = rv64_width_lookup_open_map_from_committed_openings(
         step,
         cpu_bus,
         r_time,
         step_time_openings,
-        "W3(rv64) width",
+        "width(rv64) width",
     )?;
     let width_open_col =
-        |col_id: usize| -> Result<K, PiCcsError> { named_opening(&width_open_map, col_id, "W3(rv64) width") };
+        |col_id: usize| -> Result<K, PiCcsError> { named_opening(&width_open_map, col_id, "width(rv64) width") };
     let mut ram_rv_low_bits = [K::ZERO; 32];
     let mut rs2_low_bits = [K::ZERO; 32];
     for bit in 0..32usize {
@@ -1221,7 +1242,7 @@ pub(crate) fn verify_route_a_rv64_fullword_terminals(
         let mut bitness_open = Vec::with_capacity(64);
         bitness_open.extend_from_slice(&ram_rv_low_bits);
         bitness_open.extend_from_slice(&rs2_low_bits);
-        let weights = w3_bitness_weight_vector(r_cycle, bitness_open.len());
+        let weights = width_bitness_weight_vector(r_cycle, bitness_open.len());
         let mut weighted = K::ZERO;
         for (bit, weight) in bitness_open.iter().zip(weights.iter()) {
             weighted += *weight * *bit * (*bit - K::ONE);
@@ -1240,12 +1261,12 @@ pub(crate) fn verify_route_a_rv64_fullword_terminals(
                 "w3(rv64)/quiescence claim index out of range".into(),
             ));
         }
-        let active = wp_open_col(trace.active)?;
+        let active = trace_opening_col(trace.active)?;
         let mut quiescence_open = Vec::with_capacity(width.cols);
         for &col_id in rv64_width_lookup_backed_cols(&width).iter() {
             quiescence_open.push(width_open_col(col_id)?);
         }
-        let weights = w3_quiescence_weight_vector(r_cycle, quiescence_open.len());
+        let weights = width_quiescence_weight_vector(r_cycle, quiescence_open.len());
         let mut weighted = K::ZERO;
         for (value, weight) in quiescence_open.iter().zip(weights.iter()) {
             weighted += *weight * *value;
@@ -1269,16 +1290,21 @@ pub(crate) fn verify_route_a_rv64_fullword_terminals(
             .iter()
             .enumerate()
             .find(|(_, inst)| inst.mem_id == RAM_ID.0)
-            .ok_or_else(|| PiCcsError::ProtocolError("W3(rv64): missing RAM mem instance".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("width(rv64): missing RAM mem instance".into()))?;
         let remap = ram_inst.guest_addr_remap.as_ref().ok_or_else(|| {
             PiCcsError::ProtocolError(
                 "w3(rv64)/selector_linkage scheduled without RAM guest_addr_remap metadata".into(),
             )
         })?;
-        let twist_open =
-            open_rv64_ram_twist_lane(cpu_bus, step, r_time, step_time_openings, "W3(rv64)/selector_linkage")?;
+        let twist_open = open_rv64_ram_twist_lane(
+            cpu_bus,
+            step,
+            r_time,
+            step_time_openings,
+            "width(rv64)/selector_linkage",
+        )?;
         let residual = rv64_selector_linkage_residual(
-            wp_open_col(trace.ram_addr)?,
+            trace_opening_col(trace.ram_addr)?,
             &twist_open.ra_bits,
             twist_open.has_read,
             &twist_open.wa_bits,
@@ -1295,16 +1321,16 @@ pub(crate) fn verify_route_a_rv64_fullword_terminals(
         }
     }
 
-    let rd_lo = wp_open_col(trace.rd_val_lo32)?;
-    let rd_hi = wp_open_col(trace.rd_val_hi32)?;
-    let ram_rv_lo = wp_open_col(trace.ram_rv_lo32)?;
-    let ram_rv_hi = wp_open_col(trace.ram_rv_hi32)?;
-    let ram_wv_lo = wp_open_col(trace.ram_wv_lo32)?;
-    let ram_wv_hi = wp_open_col(trace.ram_wv_hi32)?;
-    let rs2_lo = wp_open_col(trace.rs2_val_lo32)?;
-    let rs2_hi = wp_open_col(trace.rs2_val_hi32)?;
+    let rd_lo = trace_opening_col(trace.rd_val_lo32)?;
+    let rd_hi = trace_opening_col(trace.rd_val_hi32)?;
+    let ram_rv_lo = trace_opening_col(trace.ram_rv_lo32)?;
+    let ram_rv_hi = trace_opening_col(trace.ram_rv_hi32)?;
+    let ram_wv_lo = trace_opening_col(trace.ram_wv_lo32)?;
+    let ram_wv_hi = trace_opening_col(trace.ram_wv_hi32)?;
+    let rs2_lo = trace_opening_col(trace.rs2_val_lo32)?;
+    let rs2_hi = trace_opening_col(trace.rs2_val_hi32)?;
     let rd_has_write = decode_open_col(decode.rd_has_write)?;
-    let twist_open = open_rv64_ram_twist_lane(cpu_bus, step, r_time, step_time_openings, "W3(rv64)/mem_semantics")?;
+    let twist_open = open_rv64_ram_twist_lane(cpu_bus, step, r_time, step_time_openings, "width(rv64)/mem_semantics")?;
     let op_load = decode_open_col(decode.op_load)?;
     let op_store = decode_open_col(decode.op_store)?;
     if let Some(claim_idx) = claim_plan.width_load_semantics {
@@ -1329,7 +1355,7 @@ pub(crate) fn verify_route_a_rv64_fullword_terminals(
             op_load * decode_open_col(decode.funct3_is[3])?,
             ram_rv_low_bits,
         );
-        let weights = w3_load_weight_vector(r_cycle, residuals.len());
+        let weights = width_load_weight_vector(r_cycle, residuals.len());
         let weighted = residuals
             .iter()
             .zip(weights.iter())
@@ -1365,7 +1391,7 @@ pub(crate) fn verify_route_a_rv64_fullword_terminals(
             ram_rv_low_bits,
             rs2_low_bits,
         );
-        let weights = w3_store_weight_vector(r_cycle, residuals.len());
+        let weights = width_store_weight_vector(r_cycle, residuals.len());
         let weighted = residuals
             .iter()
             .zip(weights.iter())

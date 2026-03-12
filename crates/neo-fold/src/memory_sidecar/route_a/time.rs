@@ -77,8 +77,8 @@ pub struct OutputBindingTimeClaims {
 
 #[derive(Default)]
 pub struct RouteABatchedTimeClaims {
-    pub wb: Option<ExtraBatchedTimeClaim>,
-    pub wp: Option<ExtraBatchedTimeClaim>,
+    pub booleanity: Option<ExtraBatchedTimeClaim>,
+    pub trace_opening: Option<ExtraBatchedTimeClaim>,
     pub decode: DecodeTimeClaims,
     pub width: WidthTimeClaims,
     pub control: ControlTimeClaims,
@@ -125,8 +125,8 @@ pub struct OutputBindingTimeVerifyConfig {
 }
 
 pub struct RouteABatchedTimeVerifyConfig {
-    pub wb_enabled: bool,
-    pub wp_enabled: bool,
+    pub booleanity_enabled: bool,
+    pub trace_opening_enabled: bool,
     pub decode_stage_enabled: bool,
     pub width_stage_enabled: bool,
     pub control_stage_enabled: bool,
@@ -183,15 +183,15 @@ pub fn prove_route_a_batched_time(
     twist_write_claims: Vec<K>,
     claims: RouteABatchedTimeClaims,
 ) -> Result<RouteABatchedTimeProverOutput, PiCcsError> {
-    let wb_enabled = claims.wb.is_some();
-    let wp_enabled = claims.wp.is_some();
+    let booleanity_enabled = claims.booleanity.is_some();
+    let trace_opening_enabled = claims.trace_opening.is_some();
     let decode_stage_enabled = claims.decode_stage_enabled();
     let width_stage_enabled = claims.width_stage_enabled();
     let control_stage_enabled = claims.control_stage_enabled();
     let poseidon_cycle_enabled = claims.poseidon_cycle_enabled();
     let RouteABatchedTimeClaims {
-        wb,
-        wp,
+        booleanity,
+        trace_opening,
         decode,
         width,
         control,
@@ -286,20 +286,20 @@ pub fn prove_route_a_batched_time(
     }
 
     append_zero_optional_claim!(
-        wb,
-        _wb_time_degree_bound,
-        wb_time_oracle,
-        wb_time_label,
-        "missing wb_time label",
-        "missing wb_time claimed_sum"
+        booleanity,
+        _booleanity_time_degree_bound,
+        booleanity_time_oracle,
+        booleanity_time_label,
+        "missing booleanity_time label",
+        "missing booleanity_time claimed_sum"
     );
     append_zero_optional_claim!(
-        wp,
-        _wp_time_degree_bound,
-        wp_time_oracle,
-        wp_time_label,
-        "missing wp_time label",
-        "missing wp_time claimed_sum"
+        trace_opening,
+        _trace_opening_time_degree_bound,
+        trace_opening_time_oracle,
+        trace_opening_time_label,
+        "missing trace_opening_time label",
+        "missing trace_opening_time claimed_sum"
     );
     append_zero_optional_claim!(
         decode.decode_fields,
@@ -483,8 +483,8 @@ pub fn prove_route_a_batched_time(
     let metas = RouteATimeClaimPlan::time_claim_metas_for_instances(
         step.lut_instances.iter().map(|(inst, _)| inst),
         step.mem_instances.iter().map(|(inst, _)| inst),
-        wb_enabled,
-        wp_enabled,
+        booleanity_enabled,
+        trace_opening_enabled,
         decode_stage_enabled,
         width_stage_enabled,
         control_stage_enabled,
@@ -570,8 +570,8 @@ pub fn verify_route_a_batched_time(
 ) -> Result<RouteABatchedTimeVerifyOutput, PiCcsError> {
     let metas = RouteATimeClaimPlan::time_claim_metas_for_step(
         step,
-        config.wb_enabled,
-        config.wp_enabled,
+        config.booleanity_enabled,
+        config.trace_opening_enabled,
         config.decode_stage_enabled,
         config.width_stage_enabled,
         config.control_stage_enabled,

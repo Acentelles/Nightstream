@@ -1,7 +1,7 @@
 //! Route-A trace linkage, opening extraction, and residual arithmetic helpers.
 //!
 //! This module owns the semantic checks and arithmetic identities that tie the
-//! concrete CPU trace columns to Route-A / Stage-8 claim verification. It keeps
+//! concrete CPU trace columns to Route-A / joint-opening claim verification. It keeps
 //! trace-linkage and residual formulas together instead of hiding them inside a
 //! broader "common" utility bucket.
 
@@ -90,37 +90,37 @@ pub(crate) fn chi_cycle_children(r_cycle: &[K], bit_idx: usize, prefix_eq: K, pa
 }
 
 #[inline]
-pub(crate) fn wb_weight_vector(r_cycle: &[K], len: usize) -> Vec<K> {
+pub(crate) fn booleanity_weight_vector(r_cycle: &[K], len: usize) -> Vec<K> {
     bitness_weights(r_cycle, len, 0x5742_5F42_4F4F_4Cu64)
 }
 
 #[inline]
-pub(crate) fn w2_decode_pack_weight_vector(r_cycle: &[K], len: usize) -> Vec<K> {
+pub(crate) fn decode_pack_weight_vector(r_cycle: &[K], len: usize) -> Vec<K> {
     bitness_weights(r_cycle, len, 0x5732_5F50_4143_4Bu64)
 }
 
 #[inline]
-pub(crate) fn w2_decode_imm_weight_vector(r_cycle: &[K], len: usize) -> Vec<K> {
+pub(crate) fn decode_imm_weight_vector(r_cycle: &[K], len: usize) -> Vec<K> {
     bitness_weights(r_cycle, len, 0x5732_5F49_4D4D_214Du64)
 }
 
 #[inline]
-pub(crate) fn w3_bitness_weight_vector(r_cycle: &[K], len: usize) -> Vec<K> {
+pub(crate) fn width_bitness_weight_vector(r_cycle: &[K], len: usize) -> Vec<K> {
     bitness_weights(r_cycle, len, 0x5733_5F42_4954_2144u64)
 }
 
 #[inline]
-pub(crate) fn w3_quiescence_weight_vector(r_cycle: &[K], len: usize) -> Vec<K> {
+pub(crate) fn width_quiescence_weight_vector(r_cycle: &[K], len: usize) -> Vec<K> {
     bitness_weights(r_cycle, len, 0x5733_5F51_5549_4553u64)
 }
 
 #[inline]
-pub(crate) fn w3_load_weight_vector(r_cycle: &[K], len: usize) -> Vec<K> {
+pub(crate) fn width_load_weight_vector(r_cycle: &[K], len: usize) -> Vec<K> {
     bitness_weights(r_cycle, len, 0x5733_5F4C_4F41_4421u64)
 }
 
 #[inline]
-pub(crate) fn w3_store_weight_vector(r_cycle: &[K], len: usize) -> Vec<K> {
+pub(crate) fn width_store_weight_vector(r_cycle: &[K], len: usize) -> Vec<K> {
     bitness_weights(r_cycle, len, 0x5733_5F53_544F_5245u64)
 }
 
@@ -145,32 +145,32 @@ pub(crate) fn control_writeback_weight_vector(r_cycle: &[K], len: usize) -> Vec<
 }
 
 #[inline]
-pub(crate) fn wp_weight_vector(r_cycle: &[K], len: usize) -> Vec<K> {
+pub(crate) fn trace_opening_weight_vector(r_cycle: &[K], len: usize) -> Vec<K> {
     bitness_weights(r_cycle, len, 0x5750_5F51_5549_4553u64)
 }
 
-pub(crate) fn rv32_trace_wb_columns(layout: &Rv32TraceLayout) -> Vec<usize> {
+pub(crate) fn rv32_trace_booleanity_columns(layout: &Rv32TraceLayout) -> Vec<usize> {
     vec![layout.active, layout.halted, layout.shout_has_lookup]
 }
 
 #[inline]
-pub(crate) fn riscv_trace_wb_columns(layout: &Rv32TraceLayout) -> Vec<usize> {
-    rv32_trace_wb_columns(layout)
+pub(crate) fn riscv_trace_booleanity_columns(layout: &Rv32TraceLayout) -> Vec<usize> {
+    rv32_trace_booleanity_columns(layout)
 }
 
 // Selector(8) + bitness(20) + ALU/branch/decomposition(824).
-pub(crate) const W2_FIELDS_RESIDUAL_COUNT: usize = 852;
+pub(crate) const DECODE_FIELDS_RESIDUAL_COUNT: usize = 852;
 // Virtual DIV/REM stage selectors (up to rem=19) raise decode/fields multiplicative degree.
-pub(crate) const W2_FIELDS_DEGREE_BOUND: usize = 64;
-pub(crate) const W2_IMM_RESIDUAL_COUNT: usize = 4;
+pub(crate) const DECODE_FIELDS_DEGREE_BOUND: usize = 64;
+pub(crate) const DECODE_IMM_RESIDUAL_COUNT: usize = 4;
 
 #[inline]
-pub(crate) fn w2_bool01(v: K) -> K {
+pub(crate) fn decode_bool01(v: K) -> K {
     v * (v - K::ONE)
 }
 
 #[inline]
-pub(crate) fn w2_reg_addr_from_bits(bits: [K; 5]) -> K {
+pub(crate) fn decode_reg_addr_from_bits(bits: [K; 5]) -> K {
     bits[0]
         + K::from(F::from_u64(2)) * bits[1]
         + K::from(F::from_u64(4)) * bits[2]
@@ -179,7 +179,7 @@ pub(crate) fn w2_reg_addr_from_bits(bits: [K; 5]) -> K {
 }
 
 #[inline]
-pub(crate) fn w2_decode_selector_residuals(
+pub(crate) fn decode_selector_residuals(
     active: K,
     decode_opcode: K,
     opcode_flags: [K; 12],
@@ -223,33 +223,33 @@ pub(crate) fn w2_decode_selector_residuals(
 }
 
 #[inline]
-pub(crate) fn w2_decode_bitness_residuals(opcode_flags: [K; 12], funct3_is: [K; 8]) -> [K; 20] {
+pub(crate) fn decode_bitness_residuals(opcode_flags: [K; 12], funct3_is: [K; 8]) -> [K; 20] {
     [
-        w2_bool01(opcode_flags[0]),
-        w2_bool01(opcode_flags[1]),
-        w2_bool01(opcode_flags[2]),
-        w2_bool01(opcode_flags[3]),
-        w2_bool01(opcode_flags[4]),
-        w2_bool01(opcode_flags[5]),
-        w2_bool01(opcode_flags[6]),
-        w2_bool01(opcode_flags[7]),
-        w2_bool01(opcode_flags[8]),
-        w2_bool01(opcode_flags[9]),
-        w2_bool01(opcode_flags[10]),
-        w2_bool01(opcode_flags[11]),
-        w2_bool01(funct3_is[0]),
-        w2_bool01(funct3_is[1]),
-        w2_bool01(funct3_is[2]),
-        w2_bool01(funct3_is[3]),
-        w2_bool01(funct3_is[4]),
-        w2_bool01(funct3_is[5]),
-        w2_bool01(funct3_is[6]),
-        w2_bool01(funct3_is[7]),
+        decode_bool01(opcode_flags[0]),
+        decode_bool01(opcode_flags[1]),
+        decode_bool01(opcode_flags[2]),
+        decode_bool01(opcode_flags[3]),
+        decode_bool01(opcode_flags[4]),
+        decode_bool01(opcode_flags[5]),
+        decode_bool01(opcode_flags[6]),
+        decode_bool01(opcode_flags[7]),
+        decode_bool01(opcode_flags[8]),
+        decode_bool01(opcode_flags[9]),
+        decode_bool01(opcode_flags[10]),
+        decode_bool01(opcode_flags[11]),
+        decode_bool01(funct3_is[0]),
+        decode_bool01(funct3_is[1]),
+        decode_bool01(funct3_is[2]),
+        decode_bool01(funct3_is[3]),
+        decode_bool01(funct3_is[4]),
+        decode_bool01(funct3_is[5]),
+        decode_bool01(funct3_is[6]),
+        decode_bool01(funct3_is[7]),
     ]
 }
 
 #[inline]
-pub(crate) fn w2_alu_reg_table_delta_from_bits(funct7_bits: [K; 7], funct3_is: [K; 8]) -> K {
+pub(crate) fn decode_alu_reg_table_delta_from_bits(funct7_bits: [K; 7], funct3_is: [K; 8]) -> K {
     let is_rv32m = funct7_bits[0];
 
     let base_delta = funct7_bits[5] * (funct3_is[0] + funct3_is[5]);
@@ -266,7 +266,7 @@ pub(crate) fn w2_alu_reg_table_delta_from_bits(funct7_bits: [K; 7], funct3_is: [
 }
 
 #[inline]
-pub(crate) fn w2_decode_immediate_residuals(
+pub(crate) fn decode_immediate_residuals(
     imm_i: K,
     imm_s: K,
     imm_b: K,
@@ -349,7 +349,7 @@ pub(crate) fn w2_decode_immediate_residuals(
 }
 
 #[inline]
-pub(crate) fn w3_load_semantics_residuals(
+pub(crate) fn width_load_semantics_residuals(
     rd_val: K,
     ram_rv: K,
     rd_has_write: K,
@@ -412,7 +412,7 @@ pub(crate) fn w3_load_semantics_residuals(
 }
 
 #[inline]
-pub(crate) fn w3_store_semantics_residuals(
+pub(crate) fn width_store_semantics_residuals(
     ram_wv: K,
     ram_rv: K,
     rs2_val: K,
@@ -598,7 +598,7 @@ pub(crate) fn control_writeback_residuals(
     ]
 }
 
-pub(crate) fn rv32_trace_wp_columns(layout: &Rv32TraceLayout) -> Vec<usize> {
+pub(crate) fn rv32_trace_quiescence_columns(layout: &Rv32TraceLayout) -> Vec<usize> {
     vec![
         layout.is_virtual,
         layout.virtual_sequence_remaining,
@@ -625,8 +625,8 @@ pub(crate) fn rv32_trace_wp_columns(layout: &Rv32TraceLayout) -> Vec<usize> {
 }
 
 #[inline]
-pub(crate) fn riscv_trace_wp_columns(layout: &Rv32TraceLayout) -> Vec<usize> {
-    rv32_trace_wp_columns(layout)
+pub(crate) fn riscv_trace_quiescence_columns(layout: &Rv32TraceLayout) -> Vec<usize> {
+    rv32_trace_quiescence_columns(layout)
 }
 
 #[inline]
@@ -649,16 +649,16 @@ pub(crate) fn rv64_trace_exact_word_opening_columns() -> Vec<usize> {
     ]
 }
 
-pub(crate) fn rv32_trace_wp_opening_columns(layout: &Rv32TraceLayout) -> Vec<usize> {
+pub(crate) fn rv32_trace_opening_columns(layout: &Rv32TraceLayout) -> Vec<usize> {
     let mut out = Vec::with_capacity(1 + layout.cols);
     out.push(layout.active);
-    out.extend(rv32_trace_wp_columns(layout));
+    out.extend(rv32_trace_quiescence_columns(layout));
     out
 }
 
 #[inline]
-pub(crate) fn riscv_trace_wp_opening_columns(layout: &Rv32TraceLayout) -> Vec<usize> {
-    rv32_trace_wp_opening_columns(layout)
+pub(crate) fn riscv_trace_opening_columns(layout: &Rv32TraceLayout) -> Vec<usize> {
+    rv32_trace_opening_columns(layout)
 }
 
 pub(crate) fn rv32_trace_control_extra_opening_columns(layout: &Rv32TraceLayout) -> Vec<usize> {

@@ -63,12 +63,12 @@ pub(crate) fn build_route_a_control_time_claims(
     let t_len = step.time_columns.t;
     if t_len == 0 {
         return Err(PiCcsError::InvalidInput(
-            "WB/WP requires canonical time columns with t >= 1".into(),
+            "booleanity/trace-opening requires canonical time columns with t >= 1".into(),
         ));
     }
     if step.time_columns.cpu_cols.len() < trace_cols {
         return Err(PiCcsError::InvalidInput(format!(
-            "WB/WP requires canonical RV{machine_xlen} time cpu prefix columns (got {}, expected at least {})",
+            "booleanity/trace-opening requires canonical RV{machine_xlen} time cpu prefix columns (got {}, expected at least {})",
             step.time_columns.cpu_cols.len(),
             trace_cols
         )));
@@ -703,9 +703,9 @@ pub(crate) fn verify_route_a_control_terminals(
         return Ok(());
     }
 
-    if mem_proof.wp_me_claims.len() != 1 {
+    if mem_proof.trace_opening_me_claims.len() != 1 {
         return Err(PiCcsError::ProtocolError(
-            "control stage requires WP ME openings for main-trace terminals".into(),
+            "control stage requires trace-opening ME openings for main-trace terminals".into(),
         ));
     }
     let machine_xlen =
@@ -713,30 +713,35 @@ pub(crate) fn verify_route_a_control_terminals(
     let trace = Rv32TraceLayout::new();
     let decode = Rv32DecodeSidecarLayout::new();
 
-    let wp_me = &mem_proof.wp_me_claims[0];
-    if wp_me.r.as_slice() != r_time {
+    let trace_opening_me = &mem_proof.trace_opening_me_claims[0];
+    if trace_opening_me.r.as_slice() != r_time {
         return Err(PiCcsError::ProtocolError(
-            "control stage WP ME claim r mismatch (expected r_time)".into(),
+            "control stage trace-opening ME claim r mismatch (expected r_time)".into(),
         ));
     }
-    if wp_me.c != step.mcs_inst.c {
+    if trace_opening_me.c != step.mcs_inst.c {
         return Err(PiCcsError::ProtocolError(
-            "control stage WP ME claim commitment mismatch".into(),
+            "control stage trace-opening ME claim commitment mismatch".into(),
         ));
     }
-    if wp_me.m_in != step.mcs_inst.m_in {
+    if trace_opening_me.m_in != step.mcs_inst.m_in {
         return Err(PiCcsError::ProtocolError(
-            "control stage WP ME claim m_in mismatch".into(),
+            "control stage trace-opening ME claim m_in mismatch".into(),
         ));
     }
-    let wp_base_cols = riscv_trace_wp_opening_columns(&trace);
+    let trace_opening_base_cols = riscv_trace_opening_columns(&trace);
     let control_extra_cols = riscv_trace_control_extra_opening_columns(&trace);
-    let mut wp_all_cols = wp_base_cols.clone();
-    wp_all_cols.extend(control_extra_cols.iter().copied());
-    let (_wp_entry, wp_open_map) =
-        require_time_openings_covering_point(step_time_openings, wp_me.r.as_slice(), &wp_all_cols, "control stage WP")?;
-    let wp_open_col =
-        |col_id: usize| -> Result<K, PiCcsError> { named_opening(&wp_open_map, col_id, "control stage WP") };
+    let mut trace_opening_all_cols = trace_opening_base_cols.clone();
+    trace_opening_all_cols.extend(control_extra_cols.iter().copied());
+    let (_trace_opening_entry, trace_opening_map) = require_time_openings_covering_point(
+        step_time_openings,
+        trace_opening_me.r.as_slice(),
+        &trace_opening_all_cols,
+        "control stage trace-opening",
+    )?;
+    let trace_opening_col = |col_id: usize| -> Result<K, PiCcsError> {
+        named_opening(&trace_opening_map, col_id, "control stage trace-opening")
+    };
     let decode_open_map = decode_lookup_open_map_from_committed_openings(
         step,
         cpu_bus,
@@ -747,14 +752,14 @@ pub(crate) fn verify_route_a_control_terminals(
     let decode_open_col =
         |col_id: usize| -> Result<K, PiCcsError> { named_opening(&decode_open_map, col_id, "control stage decode") };
 
-    let active = wp_open_col(trace.active)?;
-    let is_virtual = wp_open_col(trace.is_virtual)?;
-    let pc_before = wp_open_col(trace.pc_before)?;
-    let pc_after = wp_open_col(trace.pc_after)?;
-    let rs1_val = wp_open_col(trace.rs1_val)?;
-    let rd_val = wp_open_col(trace.rd_val)?;
-    let jalr_drop_bit = wp_open_col(trace.jalr_drop_bit)?;
-    let shout_val = wp_open_col(trace.shout_val)?;
+    let active = trace_opening_col(trace.active)?;
+    let is_virtual = trace_opening_col(trace.is_virtual)?;
+    let pc_before = trace_opening_col(trace.pc_before)?;
+    let pc_after = trace_opening_col(trace.pc_after)?;
+    let rs1_val = trace_opening_col(trace.rs1_val)?;
+    let rd_val = trace_opening_col(trace.rd_val)?;
+    let jalr_drop_bit = trace_opening_col(trace.jalr_drop_bit)?;
+    let shout_val = trace_opening_col(trace.shout_val)?;
     let funct3_bits = [
         decode_open_col(decode.funct3_bit[0])?,
         decode_open_col(decode.funct3_bit[1])?,

@@ -115,31 +115,31 @@ pub(crate) fn verify_route_a_poseidon_cycle_terminals(
         ));
     }
 
-    if mem_proof.wp_me_claims.len() != 1 {
+    if mem_proof.trace_opening_me_claims.len() != 1 {
         return Err(PiCcsError::ProtocolError(
-            "poseidon cycle stage requires WP ME openings".into(),
+            "poseidon cycle stage requires trace-opening ME openings".into(),
         ));
     }
-    let wp_me = &mem_proof.wp_me_claims[0];
-    if wp_me.r.as_slice() != r_time {
+    let trace_opening_me = &mem_proof.trace_opening_me_claims[0];
+    if trace_opening_me.r.as_slice() != r_time {
         return Err(PiCcsError::ProtocolError(
-            "poseidon cycle WP ME claim r mismatch (expected r_time)".into(),
+            "poseidon cycle trace-opening ME claim r mismatch (expected r_time)".into(),
         ));
     }
-    if wp_me.c != step.mcs_inst.c {
+    if trace_opening_me.c != step.mcs_inst.c {
         return Err(PiCcsError::ProtocolError(
-            "poseidon cycle WP ME claim commitment mismatch".into(),
+            "poseidon cycle trace-opening ME claim commitment mismatch".into(),
         ));
     }
-    if wp_me.m_in != step.mcs_inst.m_in {
+    if trace_opening_me.m_in != step.mcs_inst.m_in {
         return Err(PiCcsError::ProtocolError(
-            "poseidon cycle WP ME claim m_in mismatch".into(),
+            "poseidon cycle trace-opening ME claim m_in mismatch".into(),
         ));
     }
 
     let decode = Rv32DecodeSidecarLayout::new();
     let cpu_cols = poseidon_cpu_word_cols_for_cpu_len(step.time_columns.cpu_cols.len());
-    let mut wp_required_cols = vec![
+    let mut trace_opening_required_cols = vec![
         cpu_cols.active,
         cpu_cols.instr_word,
         cpu_cols.rs1_word,
@@ -147,16 +147,17 @@ pub(crate) fn verify_route_a_poseidon_cycle_terminals(
         cpu_cols.rd_word,
         cpu_cols.shout_has_lookup,
     ];
-    wp_required_cols.sort_unstable();
-    wp_required_cols.dedup();
-    let (_wp_entry, wp_open_map) = require_time_openings_covering_point(
+    trace_opening_required_cols.sort_unstable();
+    trace_opening_required_cols.dedup();
+    let (_trace_opening_entry, trace_opening_map) = require_time_openings_covering_point(
         step_time_openings,
-        wp_me.r.as_slice(),
-        &wp_required_cols,
-        "poseidon cycle WP",
+        trace_opening_me.r.as_slice(),
+        &trace_opening_required_cols,
+        "poseidon cycle trace-opening",
     )?;
-    let wp_open_col =
-        |col_id: usize| -> Result<K, PiCcsError> { named_opening(&wp_open_map, col_id, "poseidon cycle WP") };
+    let trace_opening_col = |col_id: usize| -> Result<K, PiCcsError> {
+        named_opening(&trace_opening_map, col_id, "poseidon cycle trace-opening")
+    };
     let decode_open_map = decode_lookup_open_map_from_committed_openings(
         step,
         cpu_bus,
@@ -183,7 +184,7 @@ pub(crate) fn verify_route_a_poseidon_cycle_terminals(
     let rd_is_zero = decode_open_col(decode.rd_is_zero)?;
     let ram_has_read = decode_open_col(decode.ram_has_read)?;
     let ram_has_write = decode_open_col(decode.ram_has_write)?;
-    let shout_has_lookup = wp_open_col(cpu_cols.shout_has_lookup)?;
+    let shout_has_lookup = trace_opening_col(cpu_cols.shout_has_lookup)?;
     let funct3_bits = [
         decode_open_col(decode.funct3_bit[0])?,
         decode_open_col(decode.funct3_bit[1])?,
@@ -198,9 +199,9 @@ pub(crate) fn verify_route_a_poseidon_cycle_terminals(
         decode_open_col(decode.funct7_bit[5])?,
         decode_open_col(decode.funct7_bit[6])?,
     ];
-    let rs1_val = wp_open_col(cpu_cols.rs1_word)?;
-    let rs2_val = wp_open_col(cpu_cols.rs2_word)?;
-    let rd_val = wp_open_col(cpu_cols.rd_word)?;
+    let rs1_val = trace_opening_col(cpu_cols.rs1_word)?;
+    let rs2_val = trace_opening_col(cpu_cols.rs2_word)?;
+    let rd_val = trace_opening_col(cpu_cols.rd_word)?;
 
     if let Some(claim_idx) = claim_plan.poseidon_io_link {
         if claim_idx >= batched_final_values.len() {

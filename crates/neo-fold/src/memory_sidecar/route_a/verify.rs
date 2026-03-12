@@ -52,7 +52,7 @@ pub fn verify_route_a_memory_step(
     poseidon_cont_chals: Option<&PoseidonContinuityChallenges>,
 ) -> Result<RouteAMemoryVerifyOutput, PiCcsError> {
     let chi_cycle_at_r_time = eq_points(r_time, r_cycle);
-    let trace_mode = wb_wp_required_for_step_instance(step);
+    let trace_mode = trace_opening_path_required_for_step_instance(step);
     let cpu_link = if trace_mode {
         extract_trace_cpu_link_openings(m, core_t, cpu_bus.bus_cols, step, ccs_out0, step_time_openings, r_time)?
     } else {
@@ -178,8 +178,8 @@ pub fn verify_route_a_memory_step(
     } else {
         BTreeMap::new()
     };
-    let wb_enabled = wb_wp_required_for_step_instance(step);
-    let wp_enabled = wb_wp_required_for_step_instance(step);
+    let booleanity_enabled = trace_opening_path_required_for_step_instance(step);
+    let trace_opening_enabled = trace_opening_path_required_for_step_instance(step);
     let w2_enabled = decode_stage_required_for_step_instance(step);
     let w3_enabled = width_stage_required_for_step_instance(step) || rv64_fullword_width_stage_from_proof;
     let control_enabled = control_stage_required_for_step_instance(step);
@@ -187,8 +187,8 @@ pub fn verify_route_a_memory_step(
     let claim_plan = RouteATimeClaimPlan::build(
         step,
         claim_idx_start,
-        wb_enabled,
-        wp_enabled,
+        booleanity_enabled,
+        trace_opening_enabled,
         w2_enabled,
         w3_enabled,
         control_enabled,
@@ -209,40 +209,44 @@ pub fn verify_route_a_memory_step(
         )));
     }
     let is_virtual_open = if trace_mode {
-        if mem_proof.wp_me_claims.len() != 1 {
+        if mem_proof.trace_opening_me_claims.len() != 1 {
             return Err(PiCcsError::ProtocolError(format!(
-                "virtual-domain check requires one WP ME claim (got {})",
-                mem_proof.wp_me_claims.len()
+                "virtual-domain check requires one trace-opening ME claim (got {})",
+                mem_proof.trace_opening_me_claims.len()
             )));
         }
-        let wp_me = &mem_proof.wp_me_claims[0];
-        if wp_me.r.as_slice() != r_time {
+        let trace_opening_me = &mem_proof.trace_opening_me_claims[0];
+        if trace_opening_me.r.as_slice() != r_time {
             return Err(PiCcsError::ProtocolError(
-                "virtual-domain check: WP ME r mismatch".into(),
+                "virtual-domain check: trace-opening ME r mismatch".into(),
             ));
         }
-        if wp_me.c != step.mcs_inst.c {
+        if trace_opening_me.c != step.mcs_inst.c {
             return Err(PiCcsError::ProtocolError(
-                "virtual-domain check: WP ME commitment mismatch".into(),
+                "virtual-domain check: trace-opening ME commitment mismatch".into(),
             ));
         }
-        if wp_me.m_in != step.mcs_inst.m_in {
+        if trace_opening_me.m_in != step.mcs_inst.m_in {
             return Err(PiCcsError::ProtocolError(
-                "virtual-domain check: WP ME m_in mismatch".into(),
+                "virtual-domain check: trace-opening ME m_in mismatch".into(),
             ));
         }
         let trace_layout = Rv32TraceLayout::new();
-        let wp_cols = riscv_trace_wp_opening_columns(&trace_layout);
-        let (wp_entry, wp_openings) =
-            require_time_openings_covering_point(step_time_openings, r_time, &wp_cols, "virtual-domain check/WP")?;
-        if wp_entry.source != crate::shard_proof_types::TimeOpeningSource::CommittedOpening {
+        let trace_opening_cols = riscv_trace_opening_columns(&trace_layout);
+        let (trace_opening_entry, trace_opening_openings) = require_time_openings_covering_point(
+            step_time_openings,
+            r_time,
+            &trace_opening_cols,
+            "virtual-domain check/trace-opening",
+        )?;
+        if trace_opening_entry.source != crate::shard_proof_types::TimeOpeningSource::CommittedOpening {
             return Err(PiCcsError::ProtocolError(format!(
-                "virtual-domain check/WP requires CommittedOpening source (got {:?})",
-                wp_entry.source
+                "virtual-domain check/trace-opening requires CommittedOpening source (got {:?})",
+                trace_opening_entry.source
             )));
         }
         named_opening(
-            &wp_openings,
+            &trace_opening_openings,
             trace_layout.is_virtual,
             "virtual-domain check: is_virtual",
         )?
@@ -1337,7 +1341,7 @@ pub fn verify_route_a_memory_step(
         }
     }
 
-    verify_route_a_wb_wp_terminals(
+    verify_route_a_trace_opening_terminals(
         step,
         r_time,
         r_cycle,

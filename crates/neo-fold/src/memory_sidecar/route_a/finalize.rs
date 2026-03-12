@@ -169,8 +169,8 @@ pub(crate) fn finalize_route_a_memory_prover(
     }
 
     let mut val_me_claims: Vec<CeClaim<Cmt, F, K>> = Vec::new();
-    let mut wb_me_claims: Vec<CeClaim<Cmt, F, K>> = Vec::new();
-    let mut wp_me_claims: Vec<CeClaim<Cmt, F, K>> = Vec::new();
+    let mut booleanity_me_claims: Vec<CeClaim<Cmt, F, K>> = Vec::new();
+    let mut trace_opening_me_claims: Vec<CeClaim<Cmt, F, K>> = Vec::new();
     let mut proofs: Vec<MemOrLutProof> = Vec::new();
 
     // --------------------------------------------------------------------
@@ -498,14 +498,14 @@ pub(crate) fn finalize_route_a_memory_prover(
         ));
     }
 
-    let (wb_claims, wp_claims) = emit_route_a_wb_wp_me_claims(tr, params, s, step, r_time)?;
-    wb_me_claims.extend(wb_claims);
-    wp_me_claims.extend(wp_claims);
+    let (booleanity_claims, trace_opening_claims) = emit_route_a_trace_opening_me_claims(tr, params, s, step, r_time)?;
+    booleanity_me_claims.extend(booleanity_claims);
+    trace_opening_me_claims.extend(trace_opening_claims);
 
     Ok(MemSidecarProof {
         val_me_claims,
-        wb_me_claims,
-        wp_me_claims,
+        booleanity_me_claims,
+        trace_opening_me_claims,
         poseidon_cycle_me_claims: Vec::new(),
         poseidon_local_me_claims: Vec::new(),
         shout_addr_pre: shout_addr_pre.clone(),
