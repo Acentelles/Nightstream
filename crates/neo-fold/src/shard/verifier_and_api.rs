@@ -1665,7 +1665,7 @@ where
     fold_shard_verify(mode, tr, params, s_me, steps, acc_init, proof, mixers)
 }
 
-pub(crate) fn fold_shard_verify_with_step_linking_and_backend<MR, MB>(
+pub fn fold_shard_verify_with_step_linking_and_backend<MR, MB>(
     mode: FoldingMode,
     tr: &mut Poseidon2Transcript,
     params: &NeoParams,
@@ -1705,7 +1705,7 @@ where
     )
 }
 
-pub(crate) fn fold_shard_verify_with_output_binding_and_backend<MR, MB>(
+pub fn fold_shard_verify_with_output_binding_and_backend<MR, MB>(
     mode: FoldingMode,
     tr: &mut Poseidon2Transcript,
     params: &NeoParams,
@@ -1867,7 +1867,7 @@ where
     )
 }
 
-pub(crate) fn fold_shard_verify_with_output_binding_and_step_linking_and_backend<MR, MB>(
+pub fn fold_shard_verify_with_output_binding_and_step_linking_and_backend<MR, MB>(
     mode: FoldingMode,
     tr: &mut Poseidon2Transcript,
     params: &NeoParams,
