@@ -7,7 +7,7 @@
 use super::*;
 
 #[inline]
-fn time_column_commit_seed(t: usize) -> [u8; 32] {
+fn time_column_commit_seed(t: usize, encoded_t: usize) -> [u8; 32] {
     #[inline]
     fn mix64(mut x: u64) -> u64 {
         x ^= x >> 30;
@@ -19,11 +19,18 @@ fn time_column_commit_seed(t: usize) -> [u8; 32] {
 
     let d = neo_math::D as u64;
     let tt = t as u64;
+    let enc = encoded_t as u64;
     let words = [
-        mix64(0x6e65_6f2d_666f_6c64 ^ d ^ (tt << 1)),
-        mix64(0x7469_6d65_2d63_6f6c ^ (tt << 7)),
-        mix64(0x636f_6d6d_6974_2d76 ^ (d << 13) ^ (tt << 5)),
-        mix64(0x312f_6465_7465_726d ^ (d << 17) ^ (tt << 19)),
+        mix64(0x6e65_6f2d_666f_6c64 ^ d ^ (tt << 1) ^ (enc << 3)),
+        mix64(0x7469_6d65_2d63_6f6c ^ (tt << 7) ^ (enc << 11)),
+        mix64(0x636f_6d6d_6974_2d76 ^ (d << 13) ^ (tt << 5) ^ (enc << 17)),
+        mix64(
+            0x312f_6465_7465_726d
+                ^ (d << 17)
+                ^ (tt << 19)
+                ^ ((crate::time_opening::JOINT_OPENING_TIME_SLICE_BITS as u64) << 23)
+                ^ ((crate::time_opening::JOINT_OPENING_TIME_SLICE_COUNT as u64) << 27),
+        ),
     ];
     let mut seed = [0u8; 32];
     for (i, w) in words.iter().enumerate() {
@@ -87,65 +94,66 @@ pub(crate) fn commit_time_column_sets(
         }
     }
 
+    let encoded_t = crate::time_opening::me_adapter::encoded_time_width(t)?;
     let want_kappa = params.kappa as usize;
-    let expected_seed = time_column_commit_seed(t);
-    if has_global_pp_for_dims(D, t) {
-        if let Ok((kappa, seed)) = get_global_pp_seeded_params_for_dims(D, t) {
+    let expected_seed = time_column_commit_seed(t, encoded_t);
+    if has_global_pp_for_dims(D, encoded_t) {
+        if let Ok((kappa, seed)) = get_global_pp_seeded_params_for_dims(D, encoded_t) {
             if kappa != want_kappa {
                 return Err(PiCcsError::InvalidInput(format!(
-                    "{label}: time-column PP kappa mismatch for (D,t)=({D},{t}) (have {kappa}, want {want_kappa})"
+                    "{label}: time-column PP kappa mismatch for (D,m)=({D},{encoded_t}) logical_t={t} (have {kappa}, want {want_kappa})"
                 )));
             }
             if seed != expected_seed {
                 return Err(PiCcsError::InvalidInput(format!(
-                    "{label}: time-column PP seed mismatch for (D,t)=({D},{t})"
+                    "{label}: time-column PP seed mismatch for (D,m)=({D},{encoded_t}) logical_t={t}"
                 )));
             }
         } else {
-            let pp = get_global_pp_for_dims(D, t).map_err(|e| {
+            let pp = get_global_pp_for_dims(D, encoded_t).map_err(|e| {
                 PiCcsError::InvalidInput(format!(
-                    "{label}: failed to load existing time-column PP for (D,t)=({D},{t}): {e}"
+                    "{label}: failed to load existing time-column PP for (D,m)=({D},{encoded_t}) logical_t={t}: {e}"
                 ))
             })?;
             if pp.kappa != want_kappa {
                 return Err(PiCcsError::InvalidInput(format!(
-                    "{label}: time-column PP kappa mismatch for (D,t)=({D},{t}) (have {}, want {want_kappa})",
+                    "{label}: time-column PP kappa mismatch for (D,m)=({D},{encoded_t}) logical_t={t} (have {}, want {want_kappa})",
                     pp.kappa
                 )));
             }
         }
     } else {
-        match neo_ajtai::set_global_pp_seeded(D, want_kappa, t, expected_seed) {
+        match neo_ajtai::set_global_pp_seeded(D, want_kappa, encoded_t, expected_seed) {
             Ok(()) => {}
-            Err(e) if has_global_pp_for_dims(D, t) => {
-                if let Ok((kappa, seed)) = get_global_pp_seeded_params_for_dims(D, t) {
+            Err(e) if has_global_pp_for_dims(D, encoded_t) => {
+                if let Ok((kappa, seed)) = get_global_pp_seeded_params_for_dims(D, encoded_t) {
                     if kappa != want_kappa {
                         return Err(PiCcsError::InvalidInput(format!(
-                            "{label}: time-column PP race produced kappa mismatch for (D,t)=({D},{t}) (have {kappa}, want {want_kappa})"
+                            "{label}: time-column PP race produced kappa mismatch for (D,m)=({D},{encoded_t}) logical_t={t} (have {kappa}, want {want_kappa})"
                         )));
                     }
                     if seed != expected_seed {
                         return Err(PiCcsError::InvalidInput(format!(
-                            "{label}: time-column PP race produced seed mismatch for (D,t)=({D},{t})"
+                            "{label}: time-column PP race produced seed mismatch for (D,m)=({D},{encoded_t}) logical_t={t}"
                         )));
                     }
                 } else {
                     return Err(PiCcsError::InvalidInput(format!(
-                        "{label}: failed to register/load seeded time-column PP for (D,t)=({D},{t}): {e}"
+                        "{label}: failed to register/load seeded time-column PP for (D,m)=({D},{encoded_t}) logical_t={t}: {e}"
                     )));
                 }
             }
             Err(e) => {
                 return Err(PiCcsError::InvalidInput(format!(
-                    "{label}: failed to register seeded time-column PP for (D,t)=({D},{t}): {e}"
+                    "{label}: failed to register seeded time-column PP for (D,m)=({D},{encoded_t}) logical_t={t}: {e}"
                 )));
             }
         }
     }
 
-    let committer = neo_ajtai::AjtaiSModule::from_global_for_dims(D, t).map_err(|e| {
+    let committer = neo_ajtai::AjtaiSModule::from_global_for_dims(D, encoded_t).map_err(|e| {
         PiCcsError::InvalidInput(format!(
-            "{label}: time-column committer unavailable for (D,t)=({D},{t}): {e}"
+            "{label}: time-column committer unavailable for (D,m)=({D},{encoded_t}) logical_t={t}: {e}"
         ))
     })?;
 
@@ -156,40 +164,26 @@ pub(crate) fn commit_time_column_sets(
     let mut all_comms = Vec::with_capacity(all_cols.len());
     for chunk in all_cols.chunks(TIME_COMMIT_BATCH) {
         #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-threads"))]
-        let mats: Vec<Mat<F>> = if chunk.len() >= 32 {
+        let mats: Result<Vec<Mat<F>>, PiCcsError> = if chunk.len() >= 32 {
             chunk
                 .par_iter()
-                .map(|col| {
-                    neo_memory::ajtai::encode_vector_balanced_to_mat_with_base(
-                        params,
-                        *col,
-                        crate::time_opening::JOINT_OPENING_TIME_DECOMP_BASE,
-                    )
-                })
+                .map(|col| crate::time_opening::me_adapter::encode_time_opening_vector_to_mat(params, *col))
                 .collect()
         } else {
             chunk
                 .iter()
-                .map(|col| {
-                    neo_memory::ajtai::encode_vector_balanced_to_mat_with_base(
-                        params,
-                        *col,
-                        crate::time_opening::JOINT_OPENING_TIME_DECOMP_BASE,
-                    )
-                })
+                .map(|col| crate::time_opening::me_adapter::encode_time_opening_vector_to_mat(params, *col))
                 .collect()
         };
+        #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-threads"))]
+        let mats = mats?;
         #[cfg(all(target_arch = "wasm32", not(feature = "wasm-threads")))]
-        let mats: Vec<Mat<F>> = chunk
+        let mats: Result<Vec<Mat<F>>, PiCcsError> = chunk
             .iter()
-            .map(|col| {
-                neo_memory::ajtai::encode_vector_balanced_to_mat_with_base(
-                    params,
-                    *col,
-                    crate::time_opening::JOINT_OPENING_TIME_DECOMP_BASE,
-                )
-            })
+            .map(|col| crate::time_opening::me_adapter::encode_time_opening_vector_to_mat(params, *col))
             .collect();
+        #[cfg(all(target_arch = "wasm32", not(feature = "wasm-threads")))]
+        let mats = mats?;
         let refs: Vec<&Mat<F>> = mats.iter().collect();
         all_comms.extend(committer.commit_many(&refs));
     }
@@ -210,14 +204,19 @@ pub(crate) fn bind_time_column_commitments(
     mem_commitments: &[Cmt],
 ) {
     tr.append_message(b"time_columns/commit_bind/v2", &[]);
+    let encoded_t = crate::time_opening::me_adapter::encoded_time_width(time_t)
+        .expect("time_columns/commit_bind: encoded time width overflow");
     let header = [
         step_idx as u64,
         time_t as u64,
+        encoded_t as u64,
         time_declared_len as u64,
         time_col_ids.len() as u64,
         cpu_commitments.len() as u64,
         mem_commitments.len() as u64,
         crate::time_opening::JOINT_OPENING_TIME_DECOMP_BASE as u64,
+        crate::time_opening::JOINT_OPENING_TIME_SLICE_BITS as u64,
+        crate::time_opening::JOINT_OPENING_TIME_SLICE_COUNT as u64,
     ];
     tr.append_u64s(b"time_columns/commit_bind/header", &header);
     let time_col_ids_u64: Vec<u64> = time_col_ids.iter().map(|&id| id as u64).collect();

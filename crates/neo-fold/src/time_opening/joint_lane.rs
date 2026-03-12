@@ -28,8 +28,9 @@ fn build_claim_witness_from_step(
     cpu_cols_len: usize,
     domain: OpeningDomain,
 ) -> Result<Mat<F>, PiCcsError> {
-    let t = step.time_columns.t;
-    let mut out = Mat::zero(D, t, F::ZERO);
+    let logical_t = step.time_columns.t;
+    let encoded_t = crate::time_opening::me_adapter::encoded_time_width(logical_t)?;
+    let mut out = Mat::zero(D, encoded_t, F::ZERO);
     let mut z_col_row_major = Vec::new();
     for (i, &col_id) in open_pf.col_ids.iter().enumerate() {
         let abs_pos = logical_col_pos.get(&col_id).copied().ok_or_else(|| {
@@ -64,13 +65,8 @@ fn build_claim_witness_from_step(
                 ))
             })?
         };
-        neo_memory::ajtai::encode_vector_balanced_to_row_major_with_base_into(
-            params,
-            col,
-            crate::time_opening::JOINT_OPENING_TIME_DECOMP_BASE,
-            &mut z_col_row_major,
-        );
-        left_mul_add_row_major_into(&mut out, &coeffs[i], z_col_row_major.as_slice(), t)?;
+        crate::time_opening::me_adapter::encode_time_opening_vector_to_row_major(params, col, &mut z_col_row_major)?;
+        left_mul_add_row_major_into(&mut out, &coeffs[i], z_col_row_major.as_slice(), encoded_t)?;
     }
     Ok(out)
 }
@@ -383,7 +379,8 @@ fn mix_group_witnesses(group_wits: &[Mat<F>], mix_rhos: &[Mat<F>], time_t: usize
 }
 
 fn build_joint_opening_fold_ccs(time_t: usize, r_len: usize) -> Result<CcsStructure<F>, PiCcsError> {
-    if time_t == 0 {
+    let encoded_t = crate::time_opening::me_adapter::encoded_time_width(time_t)?;
+    if encoded_t == 0 {
         return Err(PiCcsError::InvalidInput(
             "joint-opening/commit fold: time_t must be > 0".into(),
         ));
@@ -392,7 +389,7 @@ fn build_joint_opening_fold_ccs(time_t: usize, r_len: usize) -> Result<CcsStruct
         .checked_shl(r_len as u32)
         .ok_or_else(|| PiCcsError::InvalidInput("joint-opening/commit fold: 2^ell_n overflow".into()))?
         .max(1);
-    let mat = CscMat::from_triplets(Vec::new(), n, time_t);
+    let mat = CscMat::from_triplets(Vec::new(), n, encoded_t);
     let poly = SparsePoly::new(
         1,
         vec![Term {
@@ -479,6 +476,7 @@ pub fn prove_joint_opening_lane_with_witnesses(
             "time/opening joint/prove: time_t must be > 0 in canonical mode".into(),
         ));
     }
+    let encoded_t = crate::time_opening::me_adapter::encoded_time_width(t)?;
 
     let logical_col_pos = build_logical_col_pos(time_col_ids)?;
     let group_rhos = bind_opening_reduction_and_sample_group_coeffs(
@@ -495,9 +493,9 @@ pub fn prove_joint_opening_lane_with_witnesses(
         ));
     }
 
-    let committer = neo_ajtai::AjtaiSModule::from_global_for_dims(D, t).map_err(|e| {
+    let committer = neo_ajtai::AjtaiSModule::from_global_for_dims(D, encoded_t).map_err(|e| {
         PiCcsError::InvalidInput(format!(
-            "time/opening joint/prove: missing Ajtai committer for (D,t)=({D},{t}): {e}"
+            "time/opening joint/prove: missing Ajtai committer for (D,m)=({D},{encoded_t}) logical_t={t}: {e}"
         ))
     })?;
     let cpu_cols_len = time_cpu_commitments.len();
@@ -527,7 +525,7 @@ pub fn prove_joint_opening_lane_with_witnesses(
             )));
         }
 
-        let mut joint_z = Mat::zero(D, t, F::ZERO);
+        let mut joint_z = Mat::zero(D, encoded_t, F::ZERO);
         let mut expected_commitment: Option<Cmt> = None;
         let mut expected_claim_digits = vec![K::ZERO; D];
 
@@ -701,7 +699,7 @@ pub fn prove_joint_opening_lane_with_witnesses(
             }
         }
         let (unified_point, unified_domain, unified_commitment, unified_claim_digits) = if can_unify {
-            let unified_z = mix_group_witnesses(&out_wits, &mix_rhos, t)?;
+            let unified_z = mix_group_witnesses(&out_wits, &mix_rhos, encoded_t)?;
             let unified_commitment = committer.commit(&unified_z);
             if unified_commitment != expected_commitment {
                 return Err(PiCcsError::ProtocolError(

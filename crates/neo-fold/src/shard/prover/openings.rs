@@ -405,8 +405,10 @@ where
                         )?
                     }
                 };
+                let encoded_point_row_weights =
+                    crate::time_opening::me_adapter::expand_time_row_weights(point_row_weights.as_slice());
                 let (point_row_weights_re, point_row_weights_im) =
-                    crate::time_opening::me_adapter::split_row_weight_coeffs(point_row_weights.as_slice());
+                    crate::time_opening::me_adapter::split_row_weight_coeffs(encoded_point_row_weights.as_slice());
                 point_weight_cache.push((
                     domain,
                     opening.point.clone(),
@@ -443,11 +445,7 @@ where
                             ))
                         })?
                     };
-                    let z_col = neo_memory::ajtai::encode_vector_balanced_to_mat_with_base(
-                        params,
-                        col,
-                        crate::time_opening::JOINT_OPENING_TIME_DECOMP_BASE,
-                    );
+                    let z_col = crate::time_opening::me_adapter::encode_time_opening_vector_to_mat(params, col)?;
                     let row_nz = crate::time_opening::me_adapter::mat_row_nonzero_entries(&z_col);
                     z_col_cache.insert(col_id, EncodedTimeColCache { z_col, row_nz });
                 }
