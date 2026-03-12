@@ -194,7 +194,7 @@ fn bind_me_inputs_mojo_backend_matches_cpu_and_uses_batch_poseidon() {
     type ResetFn = unsafe extern "C" fn();
     type CounterFn = unsafe extern "C" fn() -> usize;
 
-    let me_inputs = sample_me_claims(6);
+    let me_inputs = sample_me_claims(48);
     let mut cpu_tr = Poseidon2Transcript::new(b"neo.reductions/me_input_gpu_digest");
     let mut mojo_tr = Poseidon2Transcript::new(b"neo.reductions/me_input_gpu_digest");
 
@@ -273,7 +273,7 @@ fn bind_me_inputs_mojo_metal_backend_uses_batch_poseidon_for_large_batches() {
     type ResetFn = unsafe extern "C" fn();
     type CounterFn = unsafe extern "C" fn() -> usize;
 
-    let me_inputs = sample_me_claims(24);
+    let me_inputs = sample_me_claims(520);
     let mut cpu_tr = Poseidon2Transcript::new(b"neo.reductions/me_input_gpu_digest_large_metal");
     let mut mojo_tr = Poseidon2Transcript::new(b"neo.reductions/me_input_gpu_digest_large_metal");
 

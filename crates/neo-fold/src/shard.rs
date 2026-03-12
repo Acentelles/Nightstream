@@ -48,6 +48,7 @@ use rand_chacha::ChaCha8Rng;
 #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-threads"))]
 use rayon::prelude::*;
 use std::sync::Arc;
+use std::time::Duration;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 
@@ -110,3 +111,23 @@ pub(crate) use prover::*;
 pub(crate) use rlc_dec::*;
 pub(crate) use route_a_segment::*;
 pub(crate) use verify_consistency::*;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ShardProveLaneDurations {
+    pub main_ccs_fold: Duration,
+    pub val_lane: Duration,
+    pub wb_lane: Duration,
+    pub wp_lane: Duration,
+    pub poseidon_cycle_lane: Duration,
+    pub poseidon_local_lane: Duration,
+    pub stage8_lane: Duration,
+    pub route_a_finalize: Duration,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ShardProveMetrics {
+    pub lane_durations: ShardProveLaneDurations,
+    pub mojo_before: neo_gpu::MojoSessionDiagnostics,
+    pub mojo_after: neo_gpu::MojoSessionDiagnostics,
+    pub mojo_delta: neo_gpu::MojoSessionDiagnostics,
+}

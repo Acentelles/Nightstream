@@ -1,12 +1,16 @@
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use neo_ajtai::Commitment as Cmt;
 use neo_ccs::crypto::poseidon2_goldilocks as p2;
 use neo_ccs::{CcsClaim, CcsStructure, CcsWitness, CeClaim, Mat};
-use neo_gpu::{connect, DeviceApi, ExecutionMode, FlatK, MojoSession, MojoSplitNcEvaluator, ProverComputeBackend};
+use neo_gpu::{
+    connect, DeviceApi, ExecutionMode, FlatK, MojoSession, MojoSessionDiagnostics, MojoSplitNcEvaluator,
+    ProverComputeBackend,
+};
 use neo_math::{from_complex, KExtensions, F as BaseF, K};
 use neo_params::NeoParams;
 use p3_field::{Field, PrimeCharacteristicRing, PrimeField64};
+use p3_symmetric::Permutation;
 
 use crate::engines::optimized_engine::oracle::{NcOracle, OptimizedOracle, SparseCache};
 use crate::sumcheck::RoundOracle;
@@ -20,10 +24,14 @@ pub enum BackendExecutionStatus {
 }
 
 pub struct BackendContext {
-    split_nc_session: Option<MojoSession>,
-    poseidon_session: Option<MojoSession>,
+    mojo_cfg: Option<neo_gpu::MojoBackendConfig>,
     requested_mojo: bool,
     allow_cpu_fallback: bool,
+    connection: OnceLock<Result<Option<BackendConnection>, String>>,
+}
+
+struct BackendConnection {
+    session: MojoSession,
     supports_split_nc: bool,
     supports_poseidon2: bool,
 }
@@ -32,99 +40,83 @@ impl BackendContext {
     pub fn new(backend: &ProverComputeBackend) -> Result<Self, PiCcsError> {
         match backend {
             ProverComputeBackend::Cpu => Ok(Self {
-                poseidon_session: None,
-                split_nc_session: None,
+                mojo_cfg: None,
                 requested_mojo: false,
                 allow_cpu_fallback: false,
-                supports_split_nc: false,
-                supports_poseidon2: false,
+                connection: OnceLock::new(),
             }),
-            ProverComputeBackend::Mojo(cfg) => match connect(cfg) {
-                Ok(session) => {
-                    let supports_poseidon2 = session.supports_poseidon2_api();
-                    let mut split_nc_session = None;
-                    let supports_split_nc = if session.device_api() == DeviceApi::Metal {
-                        let cpu_cfg = cfg
-                            .clone()
-                            .with_device_api(DeviceApi::Cpu)
-                            .with_device_id(0);
-                        match connect(&cpu_cfg) {
-                            Ok(cpu_session) if cpu_session.supports_split_nc_api() => {
-                                split_nc_session = Some(cpu_session);
-                                true
-                            }
-                            _ => false,
-                        }
-                    } else {
-                        session.supports_split_nc_api()
-                    };
-
-                    if !supports_split_nc && !supports_poseidon2 {
-                        if cfg.fallback_to_cpu {
-                            return Ok(Self {
-                                poseidon_session: None,
-                                split_nc_session: None,
-                                requested_mojo: true,
-                                allow_cpu_fallback: true,
-                                supports_split_nc: false,
-                                supports_poseidon2: false,
-                            });
-                        }
-                        return Err(PiCcsError::ProtocolError(
-                            "Mojo backend loaded but does not expose Poseidon2 or Split-NC symbols".into(),
-                        ));
-                    }
-                    Ok(Self {
-                        poseidon_session: Some(session),
-                        split_nc_session,
-                        requested_mojo: true,
-                        allow_cpu_fallback: cfg.fallback_to_cpu,
-                        supports_split_nc,
-                        supports_poseidon2,
-                    })
-                }
-                Err(_err) if cfg.fallback_to_cpu => Ok(Self {
-                    poseidon_session: None,
-                    split_nc_session: None,
-                    requested_mojo: true,
-                    allow_cpu_fallback: true,
-                    supports_split_nc: false,
-                    supports_poseidon2: false,
-                }),
-                Err(err) => Err(PiCcsError::ProtocolError(format!(
-                    "failed to initialize Mojo backend: {err}"
-                ))),
-            },
+            ProverComputeBackend::Mojo(cfg) => Ok(Self {
+                mojo_cfg: Some(cfg.clone()),
+                requested_mojo: true,
+                allow_cpu_fallback: cfg.fallback_to_cpu,
+                connection: OnceLock::new(),
+            }),
         }
     }
 
-    #[inline]
-    pub fn supports_poseidon2(&self) -> bool {
-        self.supports_poseidon2
+    fn preferred_device_api_hint(&self) -> Option<DeviceApi> {
+        let cfg = self.mojo_cfg.as_ref()?;
+        match cfg.device_api {
+            DeviceApi::Auto => cfg
+                .device_api
+                .candidate_order()
+                .iter()
+                .copied()
+                .find(|api| *api != DeviceApi::Cpu)
+                .or(Some(DeviceApi::Cpu)),
+            api => Some(api),
+        }
     }
 
-    #[inline]
-    pub fn poseidon_session(&self) -> Option<&MojoSession> {
-        if self.supports_poseidon2 {
-            self.poseidon_session.as_ref()
-        } else {
-            None
+    fn initialize_connection(&self) -> Result<Option<&BackendConnection>, PiCcsError> {
+        let Some(cfg) = self.mojo_cfg.as_ref() else {
+            return Ok(None);
+        };
+        let result = self.connection.get_or_init(|| match connect(cfg) {
+            Ok(session) => {
+                let supports_poseidon2 = session.supports_poseidon2_api();
+                let supports_split_nc = session.declares_split_nc_api();
+                if !supports_split_nc && !supports_poseidon2 {
+                    if cfg.fallback_to_cpu {
+                        Ok(None)
+                    } else {
+                        Err("Mojo backend loaded but does not expose Poseidon2 or Split-NC symbols".into())
+                    }
+                } else {
+                    Ok(Some(BackendConnection {
+                        session,
+                        supports_split_nc,
+                        supports_poseidon2,
+                    }))
+                }
+            }
+            Err(_err) if cfg.fallback_to_cpu => Ok(None),
+            Err(err) => Err(format!("failed to initialize Mojo backend: {err}")),
+        });
+        result
+            .as_ref()
+            .map(|conn| conn.as_ref())
+            .map_err(|err| PiCcsError::ProtocolError(err.clone()))
+    }
+
+    fn poseidon_session(&self) -> Result<Option<&MojoSession>, PiCcsError> {
+        match self.initialize_connection()? {
+            Some(conn) if conn.supports_poseidon2 => Ok(Some(&conn.session)),
+            Some(_) if self.requested_mojo && !self.allow_cpu_fallback => Err(PiCcsError::ProtocolError(
+                "Mojo backend loaded but does not expose Poseidon2 symbols".into(),
+            )),
+            _ => Ok(None),
         }
     }
 
     pub fn split_nc_session(&self) -> Result<Option<&MojoSession>, PiCcsError> {
-        if self.supports_split_nc {
-            return Ok(self
-                .split_nc_session
-                .as_ref()
-                .or(self.poseidon_session.as_ref()));
-        }
-        if self.requested_mojo && !self.allow_cpu_fallback {
-            return Err(PiCcsError::ProtocolError(
+        match self.initialize_connection()? {
+            Some(conn) if conn.supports_split_nc => Ok(Some(&conn.session)),
+            Some(_) if self.requested_mojo && !self.allow_cpu_fallback => Err(PiCcsError::ProtocolError(
                 "Mojo backend loaded but does not expose Split-NC evaluator symbols".into(),
-            ));
+            )),
+            _ => Ok(None),
         }
-        Ok(None)
     }
 
     #[inline]
@@ -134,7 +126,7 @@ impl BackendContext {
 
     #[inline]
     pub fn poseidon2_min_permutations(&self) -> usize {
-        match self.poseidon_session().map(MojoSession::device_api) {
+        match self.preferred_device_api_hint() {
             Some(api) => api.activation_thresholds().poseidon2_batch_min_states,
             None => usize::MAX,
         }
@@ -142,11 +134,26 @@ impl BackendContext {
 
     #[inline]
     pub fn selected_device_api(&self) -> Option<DeviceApi> {
-        self.poseidon_session.as_ref().map(MojoSession::device_api)
+        match self.initialize_connection() {
+            Ok(Some(conn)) => Some(conn.session.device_api()),
+            Ok(None) => None,
+            Err(_) => None,
+        }
+    }
+
+    #[inline]
+    pub fn split_nc_device_api_hint(&self) -> Option<DeviceApi> {
+        self.preferred_device_api_hint()
     }
 
     pub fn poseidon2_execution_status(&self, total_permutations: usize) -> BackendExecutionStatus {
-        let Some(session) = self.poseidon_session() else {
+        let Some(api) = self.preferred_device_api_hint() else {
+            return BackendExecutionStatus::RustCpu;
+        };
+        if api != DeviceApi::Cpu && total_permutations < api.activation_thresholds().poseidon2_batch_min_states {
+            return BackendExecutionStatus::RustCpu;
+        }
+        let Some(session) = self.poseidon_session().unwrap_or_default() else {
             return BackendExecutionStatus::RustCpu;
         };
         match session.poseidon2_batch_execution_mode(total_permutations) {
@@ -157,6 +164,12 @@ impl BackendContext {
     }
 
     pub fn fe_row_execution_status(&self, total_tasks: usize) -> BackendExecutionStatus {
+        let Some(api) = self.split_nc_device_api_hint() else {
+            return BackendExecutionStatus::RustCpu;
+        };
+        if api != DeviceApi::Cpu && total_tasks < api.activation_thresholds().fe_row_min_tasks {
+            return BackendExecutionStatus::RustCpu;
+        }
         let Ok(Some(session)) = self.split_nc_session() else {
             return BackendExecutionStatus::RustCpu;
         };
@@ -168,6 +181,12 @@ impl BackendContext {
     }
 
     pub fn nc_col_execution_status(&self, total_tasks: usize) -> BackendExecutionStatus {
+        let Some(api) = self.split_nc_device_api_hint() else {
+            return BackendExecutionStatus::RustCpu;
+        };
+        if api != DeviceApi::Cpu && total_tasks < api.activation_thresholds().nc_col_min_tasks {
+            return BackendExecutionStatus::RustCpu;
+        }
         let Ok(Some(session)) = self.split_nc_session() else {
             return BackendExecutionStatus::RustCpu;
         };
@@ -180,6 +199,13 @@ impl BackendContext {
 
     pub fn split_nc_execution_status(&self, total_tasks: usize) -> BackendExecutionStatus {
         self.fe_row_execution_status(total_tasks)
+    }
+
+    pub fn diagnostics_snapshot(&self) -> MojoSessionDiagnostics {
+        match self.connection.get() {
+            Some(Ok(Some(conn))) => conn.session.diagnostics_snapshot(),
+            _ => MojoSessionDiagnostics::default(),
+        }
     }
 }
 
@@ -197,6 +223,15 @@ fn flat_k_from_ext(x: K) -> FlatK {
 #[inline]
 fn ext_k_from_flat(x: FlatK) -> K {
     from_complex(BaseF::from_u64(x.re), BaseF::from_u64(x.im))
+}
+
+#[inline]
+fn poseidon2_permute_state_cpu_u64x8(state: &mut [u64; p2::WIDTH]) {
+    let mut felt_state = state.map(BaseF::from_u64);
+    felt_state = p2::permutation().permute(felt_state);
+    for (dst, src) in state.iter_mut().zip(felt_state.into_iter()) {
+        *dst = src.as_canonical_u64();
+    }
 }
 
 pub fn poseidon2_digest32_many_with_context(
@@ -218,7 +253,7 @@ pub fn poseidon2_digest32_many_with_context(
         return Ok(None);
     }
 
-    let Some(session) = backend_ctx.poseidon_session() else {
+    let Some(session) = backend_ctx.poseidon_session()? else {
         return Ok(None);
     };
 
@@ -247,9 +282,16 @@ pub fn poseidon2_digest32_many_with_context(
             batch.push(states[input_idx]);
         }
 
-        session
-            .permute_poseidon2_batch_u64x8(&mut batch)
-            .map_err(|err| PiCcsError::ProtocolError(format!("batched Poseidon2 permutation failed: {err}")))?;
+        match session.poseidon2_batch_execution_mode(batch.len()) {
+            ExecutionMode::Cpu | ExecutionMode::Accelerator => session
+                .permute_poseidon2_batch_u64x8(&mut batch)
+                .map_err(|err| PiCcsError::ProtocolError(format!("batched Poseidon2 permutation failed: {err}")))?,
+            ExecutionMode::HostFallback => {
+                for state in &mut batch {
+                    poseidon2_permute_state_cpu_u64x8(state);
+                }
+            }
+        }
 
         for (input_idx, state) in batch_indices.iter().copied().zip(batch.iter().copied()) {
             states[input_idx] = state;
@@ -262,9 +304,16 @@ pub fn poseidon2_digest32_many_with_context(
         batch.push(*state);
     }
 
-    session
-        .permute_poseidon2_batch_u64x8(&mut batch)
-        .map_err(|err| PiCcsError::ProtocolError(format!("final batched Poseidon2 permutation failed: {err}")))?;
+    match session.poseidon2_batch_execution_mode(batch.len()) {
+        ExecutionMode::Cpu | ExecutionMode::Accelerator => session
+            .permute_poseidon2_batch_u64x8(&mut batch)
+            .map_err(|err| PiCcsError::ProtocolError(format!("final batched Poseidon2 permutation failed: {err}")))?,
+        ExecutionMode::HostFallback => {
+            for state in &mut batch {
+                poseidon2_permute_state_cpu_u64x8(state);
+            }
+        }
+    }
 
     let mut digests = Vec::with_capacity(batch.len());
     for state in batch {
@@ -283,6 +332,7 @@ where
     K: From<Ff>,
 {
     inner: OptimizedOracle<'a, Ff>,
+    backend_ctx: &'ctx BackendContext,
     fe_evaluator: Option<MojoSplitNcEvaluator<'ctx>>,
     split_nc_device_api: Option<DeviceApi>,
     split_nc_required: bool,
@@ -320,23 +370,11 @@ where
             sparse,
         );
         let split_nc_required = backend_ctx.split_nc_required();
-        let split_nc_session = backend_ctx.split_nc_session()?;
-        let split_nc_device_api = split_nc_session.map(MojoSession::device_api);
-        let fe_evaluator = match split_nc_session {
-            Some(session) => match session.create_fe_evaluator(&inner.fe_row_snapshot_bytes()) {
-                Ok(evaluator) => Some(evaluator),
-                Err(err) if split_nc_required => {
-                    return Err(PiCcsError::ProtocolError(format!(
-                        "failed to initialize Mojo FE evaluator: {err}"
-                    )))
-                }
-                Err(_) => None,
-            },
-            None => None,
-        };
+        let split_nc_device_api = backend_ctx.split_nc_device_api_hint();
         Ok(Self {
             inner,
-            fe_evaluator,
+            backend_ctx,
+            fe_evaluator: None,
             split_nc_device_api,
             split_nc_required,
         })
@@ -371,11 +409,29 @@ where
         let Some(total_tasks) = self.inner.fe_row_total_tasks(point_count) else {
             return false;
         };
-        self.fe_evaluator.is_some()
-            && matches!(
-                split_nc_execution_mode_for(api, total_tasks, api.activation_thresholds().fe_row_min_tasks),
-                ExecutionMode::Cpu | ExecutionMode::Accelerator
-            )
+        matches!(
+            split_nc_execution_mode_for(api, total_tasks, api.activation_thresholds().fe_row_min_tasks),
+            ExecutionMode::Cpu | ExecutionMode::Accelerator
+        )
+    }
+
+    fn ensure_fe_evaluator(&mut self) -> bool {
+        if self.fe_evaluator.is_some() {
+            return true;
+        }
+        let Ok(Some(session)) = self.backend_ctx.split_nc_session() else {
+            return false;
+        };
+        match session.create_fe_evaluator(&self.inner.fe_row_snapshot_bytes()) {
+            Ok(evaluator) => {
+                self.fe_evaluator = Some(evaluator);
+                true
+            }
+            Err(err) if self.split_nc_required => {
+                panic!("failed to initialize Mojo FE evaluator: {err}");
+            }
+            Err(_) => false,
+        }
     }
 
     fn drop_fe_evaluator(&mut self, context: &str, err: impl std::fmt::Display) {
@@ -392,7 +448,7 @@ where
     K: From<Ff>,
 {
     fn evals_at(&mut self, points: &[K]) -> Vec<K> {
-        if self.should_use_backend(points.len()) {
+        if self.should_use_backend(points.len()) && self.ensure_fe_evaluator() {
             let flat_points = points
                 .iter()
                 .copied()
@@ -445,6 +501,7 @@ where
     K: From<Ff>,
 {
     inner: NcOracle<'a, Ff>,
+    backend_ctx: &'ctx BackendContext,
     nc_evaluator: Option<MojoSplitNcEvaluator<'ctx>>,
     split_nc_device_api: Option<DeviceApi>,
     split_nc_required: bool,
@@ -469,23 +526,11 @@ where
     ) -> Result<Self, PiCcsError> {
         let inner = NcOracle::new(s, params, mcs_witnesses, me_witnesses, ch, ell_d, ell_m, d_sc);
         let split_nc_required = backend_ctx.split_nc_required();
-        let split_nc_session = backend_ctx.split_nc_session()?;
-        let split_nc_device_api = split_nc_session.map(MojoSession::device_api);
-        let nc_evaluator = match split_nc_session {
-            Some(session) => match session.create_nc_evaluator(&inner.nc_col_snapshot_bytes()) {
-                Ok(evaluator) => Some(evaluator),
-                Err(err) if split_nc_required => {
-                    return Err(PiCcsError::ProtocolError(format!(
-                        "failed to initialize Mojo NC evaluator: {err}"
-                    )))
-                }
-                Err(_) => None,
-            },
-            None => None,
-        };
+        let split_nc_device_api = backend_ctx.split_nc_device_api_hint();
         Ok(Self {
             inner,
-            nc_evaluator,
+            backend_ctx,
+            nc_evaluator: None,
             split_nc_device_api,
             split_nc_required,
         })
@@ -505,11 +550,29 @@ where
         let Some(total_tasks) = self.inner.nc_col_total_tasks(point_count) else {
             return false;
         };
-        self.nc_evaluator.is_some()
-            && matches!(
-                split_nc_execution_mode_for(api, total_tasks, api.activation_thresholds().nc_col_min_tasks),
-                ExecutionMode::Cpu | ExecutionMode::Accelerator
-            )
+        matches!(
+            split_nc_execution_mode_for(api, total_tasks, api.activation_thresholds().nc_col_min_tasks),
+            ExecutionMode::Cpu | ExecutionMode::Accelerator
+        )
+    }
+
+    fn ensure_nc_evaluator(&mut self) -> bool {
+        if self.nc_evaluator.is_some() {
+            return true;
+        }
+        let Ok(Some(session)) = self.backend_ctx.split_nc_session() else {
+            return false;
+        };
+        match session.create_nc_evaluator(&self.inner.nc_col_snapshot_bytes()) {
+            Ok(evaluator) => {
+                self.nc_evaluator = Some(evaluator);
+                true
+            }
+            Err(err) if self.split_nc_required => {
+                panic!("failed to initialize Mojo NC evaluator: {err}");
+            }
+            Err(_) => false,
+        }
     }
 
     fn drop_nc_evaluator(&mut self, context: &str, err: impl std::fmt::Display) {
@@ -526,7 +589,7 @@ where
     K: From<Ff>,
 {
     fn evals_at(&mut self, points: &[K]) -> Vec<K> {
-        if self.should_use_backend(points.len()) {
+        if self.should_use_backend(points.len()) && self.ensure_nc_evaluator() {
             let flat_points = points
                 .iter()
                 .copied()
@@ -577,7 +640,7 @@ where
 fn split_nc_execution_mode_for(api: DeviceApi, total_tasks: usize, min_tasks: usize) -> ExecutionMode {
     match api {
         DeviceApi::Cpu => ExecutionMode::Cpu,
-        DeviceApi::Cuda | DeviceApi::Hip if total_tasks >= min_tasks => ExecutionMode::Accelerator,
+        DeviceApi::Cuda | DeviceApi::Metal | DeviceApi::Hip if total_tasks >= min_tasks => ExecutionMode::Accelerator,
         DeviceApi::Cuda | DeviceApi::Metal | DeviceApi::Hip | DeviceApi::Auto => ExecutionMode::HostFallback,
     }
 }

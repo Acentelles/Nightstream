@@ -1964,11 +1964,55 @@ pub(crate) fn bind_rlc_inputs_with_context(
         .first()
         .map(|me| me_digest_poseidon_input_capacity(lane_scope, me))
         .unwrap_or(256);
+    let total_permutations = me_inputs
+        .iter()
+        .map(|me| {
+            me_digest_poseidon_input_capacity(lane_scope, me).div_ceil(neo_ccs::crypto::poseidon2_goldilocks::RATE) + 1
+        })
+        .sum::<usize>();
 
     #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-threads"))]
     let allow_parallel = rayon::current_num_threads() > 1 && rayon::current_thread_index().is_none();
     #[cfg(not(any(not(target_arch = "wasm32"), feature = "wasm-threads")))]
     let _allow_parallel = false;
+
+    if matches!(
+        backend_ctx.poseidon2_execution_status(total_permutations),
+        neo_reductions::accelerator::BackendExecutionStatus::RustCpu
+    ) {
+        #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-threads"))]
+        let digests: Vec<[u8; 32]> = if allow_parallel && me_inputs.len() >= 8 {
+            use rayon::prelude::*;
+            me_inputs
+                .par_iter()
+                .map(|me| {
+                    let digest_input = me_digest_poseidon_input(lane_scope, me, digest_capacity_hint);
+                    poseidon_digest32_fields(&digest_input)
+                })
+                .collect()
+        } else {
+            me_inputs
+                .iter()
+                .map(|me| {
+                    let digest_input = me_digest_poseidon_input(lane_scope, me, digest_capacity_hint);
+                    poseidon_digest32_fields(&digest_input)
+                })
+                .collect()
+        };
+        #[cfg(not(any(not(target_arch = "wasm32"), feature = "wasm-threads")))]
+        let digests: Vec<[u8; 32]> = me_inputs
+            .iter()
+            .map(|me| {
+                let digest_input = me_digest_poseidon_input(lane_scope, me, digest_capacity_hint);
+                poseidon_digest32_fields(&digest_input)
+            })
+            .collect();
+
+        for digest in digests {
+            tr.append_bytes_packed(b"me/rlc_digest", &digest);
+        }
+        return Ok(());
+    }
 
     #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-threads"))]
     let digest_inputs: Vec<Vec<F>> = if allow_parallel && me_inputs.len() >= 8 {

@@ -6,11 +6,15 @@
 
 use neo_fold::pi_ccs::FoldingMode;
 use neo_fold::rv64_trace_shard::{Rv64TraceWiring, Rv64TraceWiringRun};
+use neo_fold::{MojoBackendConfig, ProverComputeBackend};
 use neo_math::F;
 use neo_memory::riscv::exec_table::RiscvExecTable;
 use neo_vm_trace::TwistOpKind;
 use p3_field::PrimeCharacteristicRing;
 use std::collections::{BTreeSet, HashMap};
+use std::ffi::OsString;
+use std::path::PathBuf;
+use std::process::Command;
 use std::time::{Duration, Instant};
 
 #[path = "support/note_deposit_fixture.rs"]
@@ -19,6 +23,58 @@ mod note_deposit_fixture;
 mod note_spend_fixture;
 #[path = "support/rv64_guest.rs"]
 mod rv64_guest;
+
+fn real_mojo_library_name() -> &'static str {
+    #[cfg(target_os = "macos")]
+    {
+        "libnightstream_mojo_gpu.dylib"
+    }
+    #[cfg(target_os = "linux")]
+    {
+        "libnightstream_mojo_gpu.so"
+    }
+    #[cfg(target_os = "windows")]
+    {
+        "nightstream_mojo_gpu.dll"
+    }
+}
+
+fn pixi_bin() -> OsString {
+    if let Some(home) = std::env::var_os("HOME") {
+        let candidate = PathBuf::from(home).join(".pixi").join("bin").join("pixi");
+        if candidate.is_file() {
+            return candidate.into_os_string();
+        }
+    }
+    OsString::from("pixi")
+}
+
+fn build_real_mojo_library() -> PathBuf {
+    let project_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("gpu")
+        .join("mojo");
+    let output_dir = project_dir.join("build");
+    let output = output_dir.join(real_mojo_library_name());
+    std::fs::create_dir_all(&output_dir).expect("create mojo build directory");
+    let status = Command::new(pixi_bin())
+        .arg("run")
+        .arg("mojo")
+        .arg("build")
+        .arg("--emit")
+        .arg("shared-lib")
+        .arg("src/lib.mojo")
+        .arg("-o")
+        .arg(&output)
+        .current_dir(&project_dir)
+        .status()
+        .expect("spawn mojo build");
+    assert!(status.success(), "real mojo gpu build failed");
+    output
+        .canonicalize()
+        .expect("canonical real mojo gpu library path")
+}
 
 fn simulate_exec_with_witness_rv64(
     elf: &[u8],
@@ -135,6 +191,70 @@ struct NoteCaseMetrics {
     witness_ram_words: usize,
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+struct NoteCaseRunMetrics {
+    prove_wall: Duration,
+    verify_wall: Duration,
+    setup: Duration,
+    chunk_build_commit: Duration,
+    fold_and_prove: Duration,
+    shard: Option<neo_fold::shard::ShardProveMetrics>,
+}
+
+fn median_duration(samples: &mut [Duration]) -> Duration {
+    samples.sort_unstable();
+    samples[samples.len() / 2]
+}
+
+fn print_shard_metrics(label: &str, shard: neo_fold::shard::ShardProveMetrics) {
+    println!(
+        "{label}: lane_ms main={:.1} val={:.1} wb={:.1} wp={:.1} poseidon_cycle={:.1} poseidon_local={:.1} stage8={:.1} route_a_finalize={:.1}",
+        shard.lane_durations.main_ccs_fold.as_secs_f64() * 1000.0,
+        shard.lane_durations.val_lane.as_secs_f64() * 1000.0,
+        shard.lane_durations.wb_lane.as_secs_f64() * 1000.0,
+        shard.lane_durations.wp_lane.as_secs_f64() * 1000.0,
+        shard.lane_durations.poseidon_cycle_lane.as_secs_f64() * 1000.0,
+        shard.lane_durations.poseidon_local_lane.as_secs_f64() * 1000.0,
+        shard.lane_durations.stage8_lane.as_secs_f64() * 1000.0,
+        shard.lane_durations.route_a_finalize.as_secs_f64() * 1000.0,
+    );
+    println!(
+        "{label}: mojo poseidon calls={} accel={} fallback={} cpu={} total_states={} max_states={}",
+        shard.mojo_delta.poseidon2_batch.cpu_calls
+            + shard.mojo_delta.poseidon2_batch.host_fallback_calls
+            + shard.mojo_delta.poseidon2_batch.accelerator_calls,
+        shard.mojo_delta.poseidon2_batch.accelerator_calls,
+        shard.mojo_delta.poseidon2_batch.host_fallback_calls,
+        shard.mojo_delta.poseidon2_batch.cpu_calls,
+        shard.mojo_delta.poseidon2_batch.total_items,
+        shard.mojo_delta.poseidon2_batch.max_items,
+    );
+    println!(
+        "{label}: mojo fe create={} eval={} fold={} destroy={} accel={} fallback={} cpu={} total_tasks={} max_tasks={}",
+        shard.mojo_delta.fe.create_calls,
+        shard.mojo_delta.fe.eval_calls,
+        shard.mojo_delta.fe.fold_calls,
+        shard.mojo_delta.fe.destroy_calls,
+        shard.mojo_delta.fe.accelerator_calls,
+        shard.mojo_delta.fe.host_fallback_calls,
+        shard.mojo_delta.fe.cpu_calls,
+        shard.mojo_delta.fe.total_items,
+        shard.mojo_delta.fe.max_items,
+    );
+    println!(
+        "{label}: mojo nc create={} eval={} fold={} destroy={} accel={} fallback={} cpu={} total_tasks={} max_tasks={}",
+        shard.mojo_delta.nc.create_calls,
+        shard.mojo_delta.nc.eval_calls,
+        shard.mojo_delta.nc.fold_calls,
+        shard.mojo_delta.nc.destroy_calls,
+        shard.mojo_delta.nc.accelerator_calls,
+        shard.mojo_delta.nc.host_fallback_calls,
+        shard.mojo_delta.nc.cpu_calls,
+        shard.mojo_delta.nc.total_items,
+        shard.mojo_delta.nc.max_items,
+    );
+}
+
 fn prove_with_poseidon_retry_rv64(
     elf: &[u8],
     ram_pairs: &[(u64, u32)],
@@ -142,6 +262,7 @@ fn prove_with_poseidon_retry_rv64(
     executed_steps: usize,
     initial_chunk_rows: usize,
     max_retries: usize,
+    compute_backend: &ProverComputeBackend,
 ) -> Result<ProveWithRetryResult, String> {
     let mut chunk_rows = executed_steps.max(1);
     let configured_initial = initial_chunk_rows.max(1);
@@ -155,6 +276,7 @@ fn prove_with_poseidon_retry_rv64(
             .map_err(|e| format!("from_elf failed: {e}"))?
             .mode(FoldingMode::Optimized)
             .chunk_rows(chunk_rows)
+            .compute_backend(compute_backend.clone())
             .max_steps(executed_steps);
         for &(addr, val) in ram_pairs {
             wiring = wiring.ram_init_u32(addr, val);
@@ -219,7 +341,8 @@ fn run_rv64_note_case(
     witness_ram_pairs: &[(u64, u32)],
     output_layout_words: &[(u64, u32)],
     max_steps: usize,
-) {
+    compute_backend: &ProverComputeBackend,
+) -> NoteCaseRunMetrics {
     let metrics = NoteCaseMetrics {
         witness_ram_words: witness_ram_pairs.len(),
         simulated_steps: 0,
@@ -259,6 +382,7 @@ fn run_rv64_note_case(
         metrics.simulated_steps,
         metrics.simulated_steps,
         8,
+        compute_backend,
     )
     .unwrap_or_else(|e| panic!("{label}: prove failed: {e}"));
     let prove_wall = prove_start.elapsed();
@@ -304,12 +428,24 @@ fn run_rv64_note_case(
         phases.chunk_build_commit.as_secs_f64() * 1000.0,
         phases.fold_and_prove.as_secs_f64() * 1000.0
     );
+    let shard_metrics = run.shard_prove_metrics();
+    if let Some(metrics) = shard_metrics {
+        print_shard_metrics(label, metrics);
+    }
 
     let verify_start = Instant::now();
     run.verify()
         .unwrap_or_else(|e| panic!("{label}: verify failed: {e}"));
     let verify_wall = verify_start.elapsed();
     println!("{label}: verify_wall_ms={:.1}", verify_wall.as_secs_f64() * 1000.0);
+    NoteCaseRunMetrics {
+        prove_wall,
+        verify_wall,
+        setup: phases.setup,
+        chunk_build_commit: phases.chunk_build_commit,
+        fold_and_prove: phases.fold_and_prove,
+        shard: shard_metrics,
+    }
 }
 
 #[test]
@@ -323,6 +459,7 @@ fn test_rv64_note_spend_from_elf_perf_repro() {
         &witness.ram_pairs,
         &witness.output_layout_words,
         400_000,
+        &ProverComputeBackend::Cpu,
     );
 }
 
@@ -337,5 +474,140 @@ fn test_rv64_note_deposit_from_elf_perf_repro() {
         &witness.ram_pairs,
         &witness.output_layout_words,
         200_000,
+        &ProverComputeBackend::Cpu,
+    );
+}
+
+#[test]
+#[ignore = "slow RV64IM note-spend ELF backend compare repro"]
+fn test_rv64_note_spend_from_elf_auto_backend_perf_repro() {
+    let elf = rv64_guest::build_note_spend_rv64im_elf().expect("build RV64IM note guest ELF");
+    let witness = note_spend_fixture::build_note_spend_fixture_witness();
+    let _ = build_real_mojo_library();
+
+    run_rv64_note_case(
+        "rv64_note_spend_elf_cpu",
+        &elf,
+        &witness.ram_pairs,
+        &witness.output_layout_words,
+        400_000,
+        &ProverComputeBackend::Cpu,
+    );
+    run_rv64_note_case(
+        "rv64_note_spend_elf_auto",
+        &elf,
+        &witness.ram_pairs,
+        &witness.output_layout_words,
+        400_000,
+        &ProverComputeBackend::auto(),
+    );
+}
+
+#[test]
+#[ignore = "slow RV64IM note-spend ELF median backend benchmark"]
+fn test_rv64_note_spend_from_elf_backend_medians() {
+    let elf = rv64_guest::build_note_spend_rv64im_elf().expect("build RV64IM note guest ELF");
+    let witness = note_spend_fixture::build_note_spend_fixture_witness();
+    let _ = build_real_mojo_library();
+    let iters = std::env::var("NS_GPU_PROVE_ITERS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(5);
+
+    let mut cpu_prove = Vec::with_capacity(iters);
+    let mut cpu_verify = Vec::with_capacity(iters);
+    let mut cpu_setup = Vec::with_capacity(iters);
+    let mut cpu_chunk = Vec::with_capacity(iters);
+    let mut cpu_fold = Vec::with_capacity(iters);
+    let mut auto_prove = Vec::with_capacity(iters);
+    let mut auto_verify = Vec::with_capacity(iters);
+    let mut auto_setup = Vec::with_capacity(iters);
+    let mut auto_chunk = Vec::with_capacity(iters);
+    let mut auto_fold = Vec::with_capacity(iters);
+    let mut last_cpu_shard = None;
+    let mut last_auto_shard = None;
+
+    for iter in 0..iters {
+        let cpu = run_rv64_note_case(
+            &format!("rv64_note_spend_elf_cpu_iter{iter}"),
+            &elf,
+            &witness.ram_pairs,
+            &witness.output_layout_words,
+            400_000,
+            &ProverComputeBackend::Cpu,
+        );
+        cpu_prove.push(cpu.prove_wall);
+        cpu_verify.push(cpu.verify_wall);
+        cpu_setup.push(cpu.setup);
+        cpu_chunk.push(cpu.chunk_build_commit);
+        cpu_fold.push(cpu.fold_and_prove);
+        last_cpu_shard = cpu.shard;
+
+        let auto = run_rv64_note_case(
+            &format!("rv64_note_spend_elf_auto_iter{iter}"),
+            &elf,
+            &witness.ram_pairs,
+            &witness.output_layout_words,
+            400_000,
+            &ProverComputeBackend::auto(),
+        );
+        auto_prove.push(auto.prove_wall);
+        auto_verify.push(auto.verify_wall);
+        auto_setup.push(auto.setup);
+        auto_chunk.push(auto.chunk_build_commit);
+        auto_fold.push(auto.fold_and_prove);
+        last_auto_shard = auto.shard;
+    }
+
+    let cpu_prove_median = median_duration(&mut cpu_prove);
+    let cpu_verify_median = median_duration(&mut cpu_verify);
+    let cpu_setup_median = median_duration(&mut cpu_setup);
+    let cpu_chunk_median = median_duration(&mut cpu_chunk);
+    let cpu_fold_median = median_duration(&mut cpu_fold);
+    let auto_prove_median = median_duration(&mut auto_prove);
+    let auto_verify_median = median_duration(&mut auto_verify);
+    let auto_setup_median = median_duration(&mut auto_setup);
+    let auto_chunk_median = median_duration(&mut auto_chunk);
+    let auto_fold_median = median_duration(&mut auto_fold);
+
+    println!(
+        "[note-spend-median] cpu prove_ms={:.1} verify_ms={:.1} setup_ms={:.1} chunk_build_commit_ms={:.1} fold_and_prove_ms={:.1}",
+        cpu_prove_median.as_secs_f64() * 1000.0,
+        cpu_verify_median.as_secs_f64() * 1000.0,
+        cpu_setup_median.as_secs_f64() * 1000.0,
+        cpu_chunk_median.as_secs_f64() * 1000.0,
+        cpu_fold_median.as_secs_f64() * 1000.0,
+    );
+    println!(
+        "[note-spend-median] auto prove_ms={:.1} verify_ms={:.1} setup_ms={:.1} chunk_build_commit_ms={:.1} fold_and_prove_ms={:.1}",
+        auto_prove_median.as_secs_f64() * 1000.0,
+        auto_verify_median.as_secs_f64() * 1000.0,
+        auto_setup_median.as_secs_f64() * 1000.0,
+        auto_chunk_median.as_secs_f64() * 1000.0,
+        auto_fold_median.as_secs_f64() * 1000.0,
+    );
+    if let Some(metrics) = last_cpu_shard {
+        print_shard_metrics("[note-spend-median] cpu_last", metrics);
+    }
+    if let Some(metrics) = last_auto_shard {
+        print_shard_metrics("[note-spend-median] auto_last", metrics);
+    }
+}
+
+#[test]
+#[ignore = "slow RV64IM note-spend ELF real Mojo backend benchmark"]
+fn test_rv64_note_spend_from_elf_real_mojo_backend_perf_repro() {
+    let elf = rv64_guest::build_note_spend_rv64im_elf().expect("build RV64IM note guest ELF");
+    let witness = note_spend_fixture::build_note_spend_fixture_witness();
+    let library = build_real_mojo_library();
+    let mojo_backend = ProverComputeBackend::Mojo(MojoBackendConfig::auto().with_library_path(library));
+
+    run_rv64_note_case(
+        "rv64_note_spend_elf_real_mojo",
+        &elf,
+        &witness.ram_pairs,
+        &witness.output_layout_words,
+        400_000,
+        &mojo_backend,
     );
 }

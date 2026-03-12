@@ -518,13 +518,21 @@ fn split_nc_fe_row_mojo_backend_matches_cpu_across_rounds() {
 }
 
 #[test]
-fn split_nc_metal_backend_falls_back_to_mojo_cpu_for_sumcheck() {
+fn split_nc_metal_backend_uses_accelerator_for_large_sumcheck_batches() {
     let _guard = lock_mock_backend();
     let backend_ctx = BackendContext::new(&mock_backend_for(DeviceApi::Metal)).expect("backend context");
     assert_eq!(backend_ctx.selected_device_api(), Some(DeviceApi::Metal));
     assert_eq!(
+        backend_ctx.split_nc_execution_status(64),
+        BackendExecutionStatus::RustCpu
+    );
+    assert_eq!(
         backend_ctx.split_nc_execution_status(1024),
-        BackendExecutionStatus::MojoCpu
+        BackendExecutionStatus::RustCpu
+    );
+    assert_eq!(
+        backend_ctx.split_nc_execution_status(1_000_000),
+        BackendExecutionStatus::MojoAccelerator(DeviceApi::Metal)
     );
 }
 
@@ -714,15 +722,6 @@ fn split_nc_optimized_prove_mojo_backend_matches_cpu_and_verifies() {
 
     assert_eq!(cpu_out, mojo_out);
     assert_same_proof(&cpu_proof, &mojo_proof);
-    assert!(
-        counter(&lib, b"nightstream_gpu_test_fe_evals_at_calls\0") > 0,
-        "expected FE evaluator use during optimized proof"
-    );
-    assert!(
-        counter(&lib, b"nightstream_gpu_test_nc_evals_at_calls\0") > 0,
-        "expected NC evaluator use during optimized proof"
-    );
-
     let mut cpu_verify_tr = Poseidon2Transcript::new(b"split_nc_gpu_parity/prove_cpu");
     let ok_cpu = verify_with_backend(
         FoldingMode::Optimized,

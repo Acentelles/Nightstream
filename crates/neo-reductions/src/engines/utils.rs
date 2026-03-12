@@ -231,8 +231,45 @@ pub fn bind_me_inputs_with_context(
     }
 
     #[inline]
+    fn packed_bytes_as_fields_len(bytes_len: usize) -> usize {
+        1 + bytes_len.div_ceil(7)
+    }
+
+    #[inline]
+    fn f_slice_as_fields_len(vals_len: usize) -> usize {
+        1 + vals_len
+    }
+
+    #[inline]
+    fn k_slice_as_fields_len(vals: &[K]) -> usize {
+        let coeffs_len = vals.first().map(|v| v.as_coeffs().len()).unwrap_or(0);
+        2 + vals.len() * coeffs_len
+    }
+
+    #[inline]
+    fn me_digest_poseidon_input_len(me: &CeClaim<Cmt, F, K>) -> usize {
+        let mut len = 0usize;
+        len += packed_bytes_as_fields_len(b"neo/ccs/me_input_digest_poseidon/v2".len());
+        len += f_slice_as_fields_len(me.c.data.len());
+        len += f_slice_as_fields_len(me.X.as_slice().len());
+        len += k_slice_as_fields_len(&me.r);
+        len += k_slice_as_fields_len(&me.s_col);
+        len += k_slice_as_fields_len(&me.y_zcol);
+        len += 1;
+        for row in &me.y_ring {
+            len += k_slice_as_fields_len(row);
+        }
+        len += k_slice_as_fields_len(&me.ct);
+        len += k_slice_as_fields_len(&me.aux_openings);
+        len += f_slice_as_fields_len(me.c_step_coords.len());
+        len += 3;
+        len += packed_bytes_as_fields_len(me.fold_digest.len());
+        len
+    }
+
+    #[inline]
     fn me_digest_poseidon_input(me: &CeClaim<Cmt, F, K>) -> Vec<F> {
-        let mut digest_input = Vec::<F>::with_capacity(2048);
+        let mut digest_input = Vec::<F>::with_capacity(me_digest_poseidon_input_len(me).max(256));
         extend_packed_bytes_as_fields(&mut digest_input, b"neo/ccs/me_input_digest_poseidon/v2");
 
         extend_f_slice(&mut digest_input, &me.c.data);
@@ -256,46 +293,75 @@ pub fn bind_me_inputs_with_context(
         digest_input
     }
 
-    if backend_ctx.supports_poseidon2() {
-        let digest_inputs = me_inputs
-            .iter()
-            .map(me_digest_poseidon_input)
-            .collect::<Vec<_>>();
-        if let Some(digests) = crate::accelerator::poseidon2_digest32_many_with_context(backend_ctx, &digest_inputs)? {
-            for digest in digests {
-                tr.append_bytes_packed(b"me_digest", &digest);
-            }
-            return Ok(());
-        }
-
-        for digest_input in digest_inputs {
-            tr.append_bytes_packed(b"me_digest", &poseidon_digest32_fields(&digest_input));
-        }
-        return Ok(());
-    }
-
+    let total_permutations = me_inputs
+        .iter()
+        .map(|me| me_digest_poseidon_input_len(me).div_ceil(neo_ccs::crypto::poseidon2_goldilocks::RATE) + 1)
+        .sum::<usize>();
     #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-threads"))]
     let allow_parallel = rayon::current_num_threads() > 1 && rayon::current_thread_index().is_none();
     #[cfg(not(any(not(target_arch = "wasm32"), feature = "wasm-threads")))]
     let _allow_parallel = false;
-
-    #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-threads"))]
-    let digests: Vec<[u8; 32]> = if allow_parallel && me_inputs.len() >= 8 {
-        use rayon::prelude::*;
-        me_inputs
-            .par_iter()
-            .map(|me| poseidon_digest32_fields(&me_digest_poseidon_input(me)))
-            .collect()
-    } else {
-        me_inputs
+    let poseidon_status = backend_ctx.poseidon2_execution_status(total_permutations);
+    if matches!(poseidon_status, crate::accelerator::BackendExecutionStatus::RustCpu) {
+        #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-threads"))]
+        let digests: Vec<[u8; 32]> = if allow_parallel && me_inputs.len() >= 8 {
+            use rayon::prelude::*;
+            me_inputs
+                .par_iter()
+                .map(|me| poseidon_digest32_fields(&me_digest_poseidon_input(me)))
+                .collect()
+        } else {
+            me_inputs
+                .iter()
+                .map(|me| poseidon_digest32_fields(&me_digest_poseidon_input(me)))
+                .collect()
+        };
+        #[cfg(not(any(not(target_arch = "wasm32"), feature = "wasm-threads")))]
+        let digests: Vec<[u8; 32]> = me_inputs
             .iter()
             .map(|me| poseidon_digest32_fields(&me_digest_poseidon_input(me)))
+            .collect();
+
+        for digest in digests {
+            tr.append_bytes_packed(b"me_digest", &digest);
+        }
+        return Ok(());
+    }
+
+    let digest_inputs = me_inputs
+        .iter()
+        .map(me_digest_poseidon_input)
+        .collect::<Vec<_>>();
+    if let Some(digests) = crate::accelerator::poseidon2_digest32_many_with_context(backend_ctx, &digest_inputs)? {
+        for digest in digests {
+            tr.append_bytes_packed(b"me_digest", &digest);
+        }
+        return Ok(());
+    }
+
+    if backend_ctx.split_nc_required() && backend_ctx.selected_device_api().is_none() {
+        return Err(PiCcsError::ProtocolError(
+            "required Mojo backend is unavailable for ME-input Poseidon2 binding".into(),
+        ));
+    }
+
+    #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-threads"))]
+    let digests: Vec<[u8; 32]> = if allow_parallel && digest_inputs.len() >= 8 {
+        use rayon::prelude::*;
+        digest_inputs
+            .par_iter()
+            .map(|digest_input| poseidon_digest32_fields(digest_input))
+            .collect()
+    } else {
+        digest_inputs
+            .iter()
+            .map(|digest_input| poseidon_digest32_fields(digest_input))
             .collect()
     };
     #[cfg(not(any(not(target_arch = "wasm32"), feature = "wasm-threads")))]
-    let digests: Vec<[u8; 32]> = me_inputs
+    let digests: Vec<[u8; 32]> = digest_inputs
         .iter()
-        .map(|me| poseidon_digest32_fields(&me_digest_poseidon_input(me)))
+        .map(|digest_input| poseidon_digest32_fields(digest_input))
         .collect();
 
     for digest in digests {

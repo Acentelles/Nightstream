@@ -98,6 +98,8 @@ fn session_prefers_gpu(session: UInt64) -> Bool:
         return False
     var api = runtime.session_api(session)
     return (
+        api == UInt32(DEVICE_API_METAL)
+        or
         api == UInt32(DEVICE_API_CUDA)
         or api == UInt32(DEVICE_API_HIP)
     )

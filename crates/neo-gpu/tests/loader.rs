@@ -221,6 +221,29 @@ fn minimal_fe_snapshot() -> Vec<u8> {
     out
 }
 
+fn fe_snapshot_with_cur_len(cur_len: u64) -> Vec<u8> {
+    let mut out = Vec::new();
+    push_u64_le(&mut out, 0x4E53_504C_4954_4E43);
+    push_u64_le(&mut out, 1);
+    push_u64_le(&mut out, 1);
+    push_u64_le(&mut out, 4);
+    push_u64_le(&mut out, 2);
+    push_u64_le(&mut out, cur_len);
+    push_u64_le(&mut out, cur_len);
+    push_u64_le(&mut out, 0);
+    push_u64_le(&mut out, 0);
+    push_u64_le(&mut out, 0);
+    push_u64_le(&mut out, 0);
+    push_u64_le(&mut out, 0);
+    push_u64_le(&mut out, 0);
+    push_u64_le(&mut out, 0);
+    push_flat_k_le(&mut out, FlatK::default());
+    for idx in 0..cur_len {
+        push_flat_k_le(&mut out, FlatK { re: idx + 1, im: 0 });
+    }
+    out
+}
+
 fn minimal_nc_snapshot() -> Vec<u8> {
     let mut out = Vec::new();
     push_u64_le(&mut out, 0x4E53_504C_4954_4E43);
@@ -500,7 +523,8 @@ fn poseidon2_execution_mode_reports_cpu_host_fallback_and_accelerator() {
     let metal = connect(&MojoBackendConfig::new(DeviceApi::Metal).with_library_path(build_mock_library()))
         .expect("connect metal mock mojo session");
     assert_eq!(metal.poseidon2_batch_execution_mode(32), ExecutionMode::HostFallback);
-    assert_eq!(metal.poseidon2_batch_execution_mode(256), ExecutionMode::Accelerator);
+    assert_eq!(metal.poseidon2_batch_execution_mode(256), ExecutionMode::HostFallback);
+    assert_eq!(metal.poseidon2_batch_execution_mode(512), ExecutionMode::Accelerator);
 
     let cuda = connect(&MojoBackendConfig::new(DeviceApi::Cuda).with_library_path(build_mock_library()))
         .expect("connect cuda mock mojo session");
@@ -525,6 +549,7 @@ fn split_nc_execution_mode_reports_cpu_host_fallback_and_accelerator() {
         .expect("connect metal mock mojo session");
     assert_eq!(metal.split_nc_execution_mode(64), ExecutionMode::HostFallback);
     assert_eq!(metal.split_nc_execution_mode(1024), ExecutionMode::HostFallback);
+    assert_eq!(metal.split_nc_execution_mode(1_000_000), ExecutionMode::Accelerator);
 
     let cuda = connect(&MojoBackendConfig::new(DeviceApi::Cuda).with_library_path(build_mock_library()))
         .expect("connect cuda mock mojo session");
@@ -535,6 +560,34 @@ fn split_nc_execution_mode_reports_cpu_host_fallback_and_accelerator() {
         .expect("connect hip mock mojo session");
     assert_eq!(hip.split_nc_execution_mode(64), ExecutionMode::HostFallback);
     assert_eq!(hip.split_nc_execution_mode(1024), ExecutionMode::Accelerator);
+}
+
+#[test]
+fn split_nc_diagnostics_track_total_tasks_not_point_count() {
+    let library_path = build_mock_library();
+    let cfg = MojoBackendConfig::new(DeviceApi::Cuda).with_library_path(library_path);
+    let session = connect(&cfg).expect("connect to mock mojo gpu");
+    let snapshot = fe_snapshot_with_cur_len(512);
+    let evaluator = session
+        .create_fe_evaluator(&snapshot)
+        .expect("create fe evaluator");
+    session.reset_diagnostics();
+    let points = vec![FlatK { re: 7, im: 0 }, FlatK { re: 13, im: 0 }];
+    let _ = evaluator.evals_at(&points).expect("evals_at");
+    let diagnostics = session.diagnostics_snapshot();
+    assert_eq!(diagnostics.fe.eval_calls, 1);
+    assert_eq!(diagnostics.fe.total_items, 512);
+    assert_eq!(diagnostics.fe.max_items, 512);
+    assert_eq!(diagnostics.fe.accelerator_calls, 1);
+    assert_eq!(diagnostics.fe.host_fallback_calls, 0);
+}
+
+#[test]
+#[ignore = "requires local Mojo toolchain"]
+fn real_mojo_auto_connect_uses_workspace_build_output() {
+    let _ = build_real_mojo_library();
+    let session = connect(&MojoBackendConfig::auto()).expect("connect using workspace build output");
+    assert_ne!(session.device_api(), DeviceApi::Cpu);
 }
 
 #[test]

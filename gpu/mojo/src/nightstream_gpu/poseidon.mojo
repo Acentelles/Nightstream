@@ -8,7 +8,9 @@ comptime POSEIDON2_WIDTH = 8
 comptime EXTERNAL_ROUNDS_HALF = 4
 comptime INTERNAL_ROUNDS = 22
 comptime GPU_BLOCK_SIZE = 64
-comptime POSEIDON2_GPU_MIN_STATES = 128
+comptime POSEIDON2_METAL_GPU_MIN_STATES = 512
+comptime POSEIDON2_CUDA_GPU_MIN_STATES = 32
+comptime POSEIDON2_HIP_GPU_MIN_STATES = 32
 comptime DEVICE_API_CPU = 0
 comptime DEVICE_API_METAL = 1
 comptime DEVICE_API_CUDA = 2
@@ -46,7 +48,7 @@ fn poseidon2_permute_batch_u64x8(
     var num_states_int = Int(num_states)
     if num_states_int <= 0:
         return 0
-    if not session_prefers_gpu(session) or num_states_int < POSEIDON2_GPU_MIN_STATES:
+    if not session_prefers_gpu(session) or num_states_int < poseidon_gpu_min_states_for_api(runtime.session_api(UInt64(session))):
         permute_batch_cpu_in_place(state_words, num_states_int)
         return 0
 
@@ -67,6 +69,16 @@ fn words_for_states(num_states: Int) -> Int:
 
 fn grid_dim_for(num_states: Int) -> Int:
     return (num_states + GPU_BLOCK_SIZE - 1) // GPU_BLOCK_SIZE
+
+
+fn poseidon_gpu_min_states_for_api(api: UInt32) -> Int:
+    if api == UInt32(DEVICE_API_METAL):
+        return POSEIDON2_METAL_GPU_MIN_STATES
+    if api == UInt32(DEVICE_API_CUDA):
+        return POSEIDON2_CUDA_GPU_MIN_STATES
+    if api == UInt32(DEVICE_API_HIP):
+        return POSEIDON2_HIP_GPU_MIN_STATES
+    return 1 << 30
 
 
 fn poseidon2_gpu_batch_kernel(state_words: UnsafePointer[mut=True, UInt64], num_states: Int):

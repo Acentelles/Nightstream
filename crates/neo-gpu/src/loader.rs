@@ -3,6 +3,7 @@ use std::ffi::c_void;
 use std::path::{Path, PathBuf};
 #[cfg(target_os = "macos")]
 use std::sync::{mpsc, OnceLock};
+use std::sync::{Arc, Mutex};
 
 #[cfg(all(not(target_arch = "wasm32"), any(unix, windows)))]
 use libloading::Library;
@@ -44,6 +45,75 @@ pub enum ExecutionMode {
     Accelerator,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct MojoOperationCounters {
+    pub cpu_calls: u64,
+    pub host_fallback_calls: u64,
+    pub accelerator_calls: u64,
+    pub create_calls: u64,
+    pub eval_calls: u64,
+    pub fold_calls: u64,
+    pub destroy_calls: u64,
+    pub total_items: u64,
+    pub max_items: usize,
+}
+
+impl MojoOperationCounters {
+    fn record_mode(&mut self, mode: ExecutionMode, items: usize) {
+        match mode {
+            ExecutionMode::Cpu => self.cpu_calls += 1,
+            ExecutionMode::HostFallback => self.host_fallback_calls += 1,
+            ExecutionMode::Accelerator => self.accelerator_calls += 1,
+        }
+        self.total_items += items as u64;
+        self.max_items = self.max_items.max(items);
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct MojoSessionDiagnostics {
+    pub poseidon2_batch: MojoOperationCounters,
+    pub fe: MojoOperationCounters,
+    pub nc: MojoOperationCounters,
+}
+
+impl std::ops::Sub for MojoSessionDiagnostics {
+    type Output = MojoSessionDiagnostics;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        fn sub_counter(lhs: MojoOperationCounters, rhs: MojoOperationCounters) -> MojoOperationCounters {
+            MojoOperationCounters {
+                cpu_calls: lhs.cpu_calls.saturating_sub(rhs.cpu_calls),
+                host_fallback_calls: lhs
+                    .host_fallback_calls
+                    .saturating_sub(rhs.host_fallback_calls),
+                accelerator_calls: lhs.accelerator_calls.saturating_sub(rhs.accelerator_calls),
+                create_calls: lhs.create_calls.saturating_sub(rhs.create_calls),
+                eval_calls: lhs.eval_calls.saturating_sub(rhs.eval_calls),
+                fold_calls: lhs.fold_calls.saturating_sub(rhs.fold_calls),
+                destroy_calls: lhs.destroy_calls.saturating_sub(rhs.destroy_calls),
+                total_items: lhs.total_items.saturating_sub(rhs.total_items),
+                max_items: if lhs.max_items > rhs.max_items {
+                    lhs.max_items
+                } else {
+                    0
+                },
+            }
+        }
+
+        MojoSessionDiagnostics {
+            poseidon2_batch: sub_counter(self.poseidon2_batch, rhs.poseidon2_batch),
+            fe: sub_counter(self.fe, rhs.fe),
+            nc: sub_counter(self.nc, rhs.nc),
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct SessionDiagnosticsState {
+    snapshot: MojoSessionDiagnostics,
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 fn platform_library_name() -> &'static str {
     #[cfg(target_os = "macos")]
@@ -66,9 +136,22 @@ fn platform_library_name() -> &'static str {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn resolve_library_path(cfg: &MojoBackendConfig) -> PathBuf {
-    cfg.library_path
-        .clone()
-        .unwrap_or_else(|| PathBuf::from(platform_library_name()))
+    if let Some(path) = cfg.library_path.clone() {
+        return path;
+    }
+
+    let workspace_build = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("gpu")
+        .join("mojo")
+        .join("build")
+        .join(platform_library_name());
+    if workspace_build.is_file() {
+        return workspace_build;
+    }
+
+    PathBuf::from(platform_library_name())
 }
 
 #[cfg(target_os = "macos")]
@@ -345,6 +428,7 @@ impl MojoLibrary {
                 handle,
                 device_api: cfg.device_api,
                 device_id: cfg.device_id,
+                diagnostics: Arc::new(Mutex::new(SessionDiagnosticsState::default())),
             });
         }
 
@@ -355,6 +439,7 @@ impl MojoLibrary {
                 handle,
                 device_api: cfg.device_api,
                 device_id: cfg.device_id,
+                diagnostics: Arc::new(Mutex::new(SessionDiagnosticsState::default())),
             });
         }
 
@@ -445,6 +530,7 @@ pub struct MojoSession {
     handle: usize,
     device_api: DeviceApi,
     device_id: u32,
+    diagnostics: Arc<Mutex<SessionDiagnosticsState>>,
 }
 
 pub struct MojoSplitNcEvaluator<'a> {
@@ -471,10 +557,29 @@ impl MojoSession {
         self.device_id
     }
 
+    pub fn diagnostics_snapshot(&self) -> MojoSessionDiagnostics {
+        self.diagnostics
+            .lock()
+            .expect("mojo session diagnostics lock")
+            .snapshot
+    }
+
+    pub fn reset_diagnostics(&self) {
+        self.diagnostics
+            .lock()
+            .expect("mojo session diagnostics lock")
+            .snapshot = MojoSessionDiagnostics::default();
+    }
+
+    #[inline]
+    pub fn declares_split_nc_api(&self) -> bool {
+        self.library
+            .as_ref()
+            .map(MojoLibrary::supports_split_nc_api)
+            .unwrap_or(false)
+    }
+
     pub fn supports_split_nc_api(&self) -> bool {
-        if self.device_api == DeviceApi::Metal {
-            return false;
-        }
         self.probe_split_nc_api().is_ok()
     }
 
@@ -513,7 +618,7 @@ impl MojoSession {
         let thresholds = self.activation_thresholds();
         match self.device_api {
             DeviceApi::Cpu => ExecutionMode::Cpu,
-            DeviceApi::Cuda | DeviceApi::Hip if total_tasks >= thresholds.fe_row_min_tasks => {
+            DeviceApi::Cuda | DeviceApi::Metal | DeviceApi::Hip if total_tasks >= thresholds.fe_row_min_tasks => {
                 ExecutionMode::Accelerator
             }
             DeviceApi::Cuda | DeviceApi::Metal | DeviceApi::Hip | DeviceApi::Auto => ExecutionMode::HostFallback,
@@ -525,7 +630,7 @@ impl MojoSession {
         let thresholds = self.activation_thresholds();
         match self.device_api {
             DeviceApi::Cpu => ExecutionMode::Cpu,
-            DeviceApi::Cuda | DeviceApi::Hip if total_tasks >= thresholds.nc_col_min_tasks => {
+            DeviceApi::Cuda | DeviceApi::Metal | DeviceApi::Hip if total_tasks >= thresholds.nc_col_min_tasks => {
                 ExecutionMode::Accelerator
             }
             DeviceApi::Cuda | DeviceApi::Metal | DeviceApi::Hip | DeviceApi::Auto => ExecutionMode::HostFallback,
@@ -567,11 +672,6 @@ impl MojoSession {
         kind: SplitNcEvaluatorKind,
         snapshot: &[u8],
     ) -> Result<MojoSplitNcEvaluator<'_>, NeoGpuError> {
-        if self.device_api == DeviceApi::Metal {
-            return Err(NeoGpuError::UnsupportedOperation {
-                op: "split_nc_metal_disabled",
-            });
-        }
         let library = self
             .library
             .as_ref()
@@ -618,6 +718,21 @@ impl MojoSession {
                 });
             }
         }
+        let mode = match self.device_api {
+            DeviceApi::Cpu => ExecutionMode::Cpu,
+            DeviceApi::Cuda | DeviceApi::Metal | DeviceApi::Hip => ExecutionMode::Accelerator,
+            DeviceApi::Auto => ExecutionMode::HostFallback,
+        };
+        let mut diagnostics = self
+            .diagnostics
+            .lock()
+            .expect("mojo session diagnostics lock");
+        let counters = match kind {
+            SplitNcEvaluatorKind::Fe => &mut diagnostics.snapshot.fe,
+            SplitNcEvaluatorKind::Nc => &mut diagnostics.snapshot.nc,
+        };
+        counters.create_calls += 1;
+        counters.record_mode(mode, snapshot.len());
         Ok(MojoSplitNcEvaluator {
             session: self,
             handle,
@@ -676,6 +791,7 @@ impl MojoSession {
             })?;
 
         if let Some(permute_batch) = library.evaluators.poseidon2_permute_batch {
+            let mode = self.poseidon2_batch_execution_mode(states.len());
             let session_handle = self.handle;
             let device_api = self.device_api;
             let state_ptr = states.as_mut_ptr().cast::<FlatFq>() as usize;
@@ -694,6 +810,14 @@ impl MojoSession {
                     status,
                 });
             }
+            let mut diagnostics = self
+                .diagnostics
+                .lock()
+                .expect("mojo session diagnostics lock");
+            diagnostics
+                .snapshot
+                .poseidon2_batch
+                .record_mode(mode, states.len());
             return Ok(());
         }
 
@@ -708,6 +832,29 @@ impl MojoSplitNcEvaluator<'_> {
     #[inline]
     pub fn handle(&self) -> usize {
         self.handle
+    }
+
+    fn snapshot_current_len(&self) -> Option<usize> {
+        let words = self.snapshot_words.as_slice();
+        if words.len() <= 5 {
+            return None;
+        }
+        let magic = words[0];
+        let version = words[1];
+        let kind = words[2];
+        if magic != SPLIT_NC_SNAPSHOT_MAGIC
+            || version != SPLIT_NC_SNAPSHOT_VERSION
+            || (kind != SPLIT_NC_FE_ROW_V1 && kind != SPLIT_NC_NC_COL_V1)
+        {
+            return None;
+        }
+        usize::try_from(words[5]).ok()
+    }
+
+    fn total_tasks_for_points(&self, point_count: usize) -> usize {
+        self.snapshot_current_len()
+            .map(|cur_len| point_count.saturating_mul(cur_len / 2))
+            .unwrap_or(point_count)
     }
 
     pub fn evals_at(&self, points: &[FlatK]) -> Result<Vec<FlatK>, NeoGpuError> {
@@ -743,6 +890,11 @@ impl MojoSplitNcEvaluator<'_> {
         let out_ptr_words = out.as_mut_ptr() as usize;
         let points_len = points.len() as u64;
         let out_len = out.len();
+        let total_tasks = self.total_tasks_for_points(points.len());
+        let mode = match self.kind {
+            SplitNcEvaluatorKind::Fe => self.session.fe_row_execution_mode(total_tasks),
+            SplitNcEvaluatorKind::Nc => self.session.nc_col_execution_mode(total_tasks),
+        };
         let status = call_for_device_api(device_api, move || unsafe {
             evals_at(
                 session_handle,
@@ -764,6 +916,17 @@ impl MojoSplitNcEvaluator<'_> {
                 status,
             });
         }
+        let mut diagnostics = self
+            .session
+            .diagnostics
+            .lock()
+            .expect("mojo session diagnostics lock");
+        let counters = match self.kind {
+            SplitNcEvaluatorKind::Fe => &mut diagnostics.snapshot.fe,
+            SplitNcEvaluatorKind::Nc => &mut diagnostics.snapshot.nc,
+        };
+        counters.eval_calls += 1;
+        counters.record_mode(mode, total_tasks);
         Ok(out)
     }
 
@@ -799,6 +962,16 @@ impl MojoSplitNcEvaluator<'_> {
                 status,
             });
         }
+        let mut diagnostics = self
+            .session
+            .diagnostics
+            .lock()
+            .expect("mojo session diagnostics lock");
+        let counters = match self.kind {
+            SplitNcEvaluatorKind::Fe => &mut diagnostics.snapshot.fe,
+            SplitNcEvaluatorKind::Nc => &mut diagnostics.snapshot.nc,
+        };
+        counters.fold_calls += 1;
         Ok(())
     }
 }
@@ -829,6 +1002,16 @@ impl Drop for MojoSplitNcEvaluator<'_> {
                 status,
             });
         }
+        let mut diagnostics = self
+            .session
+            .diagnostics
+            .lock()
+            .expect("mojo session diagnostics lock");
+        let counters = match self.kind {
+            SplitNcEvaluatorKind::Fe => &mut diagnostics.snapshot.fe,
+            SplitNcEvaluatorKind::Nc => &mut diagnostics.snapshot.nc,
+        };
+        counters.destroy_calls += 1;
     }
 }
 

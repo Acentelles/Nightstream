@@ -39,6 +39,7 @@ fn build_guest_rv64im_elf(guest_name: &str, binary_name: &str) -> Result<Vec<u8>
         .join("target")
         .join("rv64-guests")
         .join(guest_name);
+    let rustflags = format!("-C link-arg=-T{}", linker.display());
 
     let output = Command::new("cargo")
         .arg("+nightly")
@@ -53,7 +54,7 @@ fn build_guest_rv64im_elf(guest_name: &str, binary_name: &str) -> Result<Vec<u8>
         .arg("--target")
         .arg(&target_json)
         .env("CARGO_TARGET_DIR", &target_dir)
-        .env("RUSTFLAGS", format!("-C link-arg=-T{}", linker.display()))
+        .env("RUSTFLAGS", rustflags)
         .output()
         .map_err(|e| format!("failed to invoke cargo for RV64 guest build: {e}"))?;
 

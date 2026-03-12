@@ -1,4 +1,19 @@
 use super::*;
+use std::cell::RefCell;
+
+thread_local! {
+    static LAST_SHARD_PROVE_METRICS: RefCell<Option<ShardProveMetrics>> = const { RefCell::new(None) };
+}
+
+pub(crate) fn take_last_shard_prove_metrics() -> Option<ShardProveMetrics> {
+    LAST_SHARD_PROVE_METRICS.with(|slot| slot.borrow_mut().take())
+}
+
+fn set_last_shard_prove_metrics(metrics: ShardProveMetrics) {
+    LAST_SHARD_PROVE_METRICS.with(|slot| {
+        *slot.borrow_mut() = Some(metrics);
+    });
+}
 
 #[derive(Clone)]
 pub(crate) struct ShardProverContext {
@@ -260,6 +275,10 @@ where
     let mut poseidon_carry =
         initial_poseidon_carry.unwrap_or_else(crate::memory_sidecar::memory::PoseidonSidecarCarryState::new);
     let mut output_proof: Option<neo_memory::output_check::OutputBindingProof> = None;
+    let mut prove_metrics = ShardProveMetrics {
+        mojo_before: backend_ctx.diagnostics_snapshot(),
+        ..ShardProveMetrics::default()
+    };
     if ob.is_some() && steps.is_empty() {
         return Err(PiCcsError::InvalidInput("output binding requires >= 1 step".into()));
     }
@@ -1246,6 +1265,7 @@ where
             initial_prev_step
         };
         let prev_twist_decoded_ref = prev_twist_decoded.as_deref();
+        let route_a_finalize_start = time_now();
         let mut mem_proof = crate::memory_sidecar::memory::finalize_route_a_memory_prover(
             tr,
             params,
@@ -1297,9 +1317,12 @@ where
                 poseidon_r_local: poseidon_r_local.as_ref(),
             },
         )?;
+        prove_metrics.lane_durations.route_a_finalize +=
+            Duration::from_secs_f64(elapsed_ms(route_a_finalize_start) / 1_000.0);
         validate_me_batch_invariants(&ccs_out, "prove step ccs outputs")?;
 
         let want_main_wits = collect_val_lane_wits || idx + 1 < steps.len();
+        let main_fold_start = time_now();
         let (main_fold, Z_split) = prove_rlc_dec_lane(
             &mode,
             RlcLane::Main,
@@ -1320,6 +1343,7 @@ where
             l,
             mixers,
         )?;
+        prove_metrics.lane_durations.main_ccs_fold += Duration::from_secs_f64(elapsed_ms(main_fold_start) / 1_000.0);
         let RlcDecProof {
             rlc_rhos: rhos,
             rlc_parent: parent_pub,
@@ -1333,6 +1357,7 @@ where
         // --------------------------------------------------------------------
         let mut val_fold: Vec<RlcDecProof> = Vec::new();
         if !mem_proof.val_me_claims.is_empty() {
+            let val_lane_start = time_now();
             tr.append_message(b"fold/val_lane_start", &(step_idx as u64).to_le_bytes());
             let expected = 1usize + usize::from(has_prev);
             if mem_proof.val_me_claims.len() != expected {
@@ -1560,11 +1585,13 @@ where
                 }
                 val_fold.push(proof);
             }
+            prove_metrics.lane_durations.val_lane += Duration::from_secs_f64(elapsed_ms(val_lane_start) / 1_000.0);
         }
 
         // Additional WB folding lane(s): CPU ME openings used by wb/booleanity stage.
         let mut wb_fold: Vec<RlcDecProof> = Vec::new();
         if !mem_proof.wb_me_claims.is_empty() {
+            let wb_lane_start = time_now();
             let trace = Rv32TraceLayout::new();
             let wb_cols = crate::memory_sidecar::memory::riscv_trace_wb_columns(&trace);
             let core_t = s.t();
@@ -1743,11 +1770,13 @@ where
                     dec_children,
                 });
             }
+            prove_metrics.lane_durations.wb_lane += Duration::from_secs_f64(elapsed_ms(wb_lane_start) / 1_000.0);
         }
 
         // Additional WP folding lane(s): CPU ME openings used by wp/quiescence stage.
         let mut wp_fold: Vec<RlcDecProof> = Vec::new();
         if !mem_proof.wp_me_claims.is_empty() {
+            let wp_lane_start = time_now();
             let trace = Rv32TraceLayout::new();
             let t_len = crate::memory_sidecar::memory::infer_rv32_trace_t_len_for_wb_wp(step, &trace)?;
             let rv64_exact_words =
@@ -2011,6 +2040,7 @@ where
                     dec_children,
                 });
             }
+            prove_metrics.lane_durations.wp_lane += Duration::from_secs_f64(elapsed_ms(wp_lane_start) / 1_000.0);
         }
 
         let poseidon_fold_lanes = prove_poseidon_fold_lanes(
@@ -2031,6 +2061,8 @@ where
             l,
             mixers,
         )?;
+        prove_metrics.lane_durations.poseidon_cycle_lane += poseidon_fold_lanes.timings.cycle;
+        prove_metrics.lane_durations.poseidon_local_lane += poseidon_fold_lanes.timings.local;
         let poseidon_cycle_fold = poseidon_fold_lanes.cycle_fold;
         let poseidon_local_fold = poseidon_fold_lanes.local_fold;
 
@@ -2524,6 +2556,7 @@ where
                         &opening_unification,
                         &opening_batch_coeffs,
                     )?;
+                let stage8_fold_start = time_now();
                 let mut stage8_fold: Vec<RlcDecProof> = Vec::with_capacity(1);
                 let stage8_params = stage8_time_decomp_params(params)?;
                 let stage8_plan = crate::time_opening::joint_lane::build_stage8_fold_lane_plan(
@@ -2581,6 +2614,8 @@ where
                         "stage8 fold: missing lane plan for non-empty stage8 witnesses".into(),
                     ));
                 }
+                prove_metrics.lane_durations.stage8_lane +=
+                    Duration::from_secs_f64(elapsed_ms(stage8_fold_start) / 1_000.0);
                 (
                     opening_manifest,
                     opening_reduction,
@@ -2638,6 +2673,10 @@ where
             out.push(elapsed_ms(step_start));
         }
     }
+
+    prove_metrics.mojo_after = backend_ctx.diagnostics_snapshot();
+    prove_metrics.mojo_delta = prove_metrics.mojo_after - prove_metrics.mojo_before;
+    set_last_shard_prove_metrics(prove_metrics);
 
     Ok((
         ShardProof {

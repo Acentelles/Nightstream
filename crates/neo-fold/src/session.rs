@@ -54,7 +54,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::pi_ccs::FoldingMode;
-use crate::shard::{self, CommitMixers, ShardProof as FoldRun, ShardProverContext, StepLinkingConfig};
+use crate::shard::{
+    self, CommitMixers, ShardProof as FoldRun, ShardProveMetrics, ShardProverContext, StepLinkingConfig,
+};
 use crate::PiCcsError;
 use neo_reductions::engines::optimized_engine::oracle::SparseCache;
 use neo_reductions::engines::utils;
@@ -554,6 +556,7 @@ where
 
     /// Current threaded state y (if any). Length is determined by `NeoStep::state_len()`.
     curr_state: Option<Vec<F>>,
+    last_shard_prove_metrics: Option<ShardProveMetrics>,
 }
 
 #[derive(Clone)]
@@ -588,6 +591,7 @@ where
             acc0: None,
             step_claims: vec![],
             curr_state: None,
+            last_shard_prove_metrics: None,
         }
     }
 
@@ -607,6 +611,10 @@ where
     pub fn with_compute_backend(mut self, backend: ProverComputeBackend) -> Self {
         self.compute_backend = backend;
         self
+    }
+
+    pub fn last_shard_prove_metrics(&self) -> Option<&ShardProveMetrics> {
+        self.last_shard_prove_metrics.as_ref()
     }
 
     /// Returns the configured initial accumulator, if any.
@@ -1369,6 +1377,7 @@ where
         })();
 
         self.prover_ctx = Some(cache);
+        self.last_shard_prove_metrics = shard::take_last_shard_prove_metrics();
         result
     }
 
@@ -1449,6 +1458,7 @@ where
         })();
 
         self.prover_ctx = Some(cache);
+        self.last_shard_prove_metrics = shard::take_last_shard_prove_metrics();
         result
     }
 
@@ -1507,6 +1517,7 @@ where
         })();
 
         self.prover_ctx = Some(cache);
+        self.last_shard_prove_metrics = shard::take_last_shard_prove_metrics();
         result
     }
 

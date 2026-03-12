@@ -1031,6 +1031,13 @@ pub(crate) fn emit_poseidon_me_claims(
 pub(crate) struct PoseidonFoldLanes {
     pub cycle_fold: Vec<RlcDecProof>,
     pub local_fold: Vec<RlcDecProof>,
+    pub timings: PoseidonFoldLaneTimings,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct PoseidonFoldLaneTimings {
+    pub cycle: Duration,
+    pub local: Duration,
 }
 
 fn poseidon_strip_me_for_fold(
@@ -1096,7 +1103,9 @@ where
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {
     let mut cycle_fold: Vec<RlcDecProof> = Vec::new();
+    let mut timings = PoseidonFoldLaneTimings::default();
     if !mem_proof.poseidon_cycle_me_claims.is_empty() {
+        let cycle_start = time_now();
         tr.append_message(b"fold/poseidon_cycle_lane_start", &(step_idx as u64).to_le_bytes());
         let cycle_wits = poseidon_cycle_wits
             .ok_or_else(|| PiCcsError::ProtocolError("missing poseidon cycle witness chunks for fold lane".into()))?;
@@ -1147,10 +1156,12 @@ where
             mixers,
         )
         .map_err(|e| PiCcsError::ProtocolError(format!("poseidon cycle fold lane failed: {e}")))?;
+        timings.cycle += Duration::from_secs_f64(elapsed_ms(cycle_start) / 1_000.0);
     }
 
     let mut local_fold: Vec<RlcDecProof> = Vec::new();
     if !mem_proof.poseidon_local_me_claims.is_empty() {
+        let local_start = time_now();
         tr.append_message(b"fold/poseidon_local_lane_start", &(step_idx as u64).to_le_bytes());
         let local_wits = poseidon_local_wits
             .ok_or_else(|| PiCcsError::ProtocolError("missing poseidon local witness chunks for fold lane".into()))?;
@@ -1201,9 +1212,14 @@ where
             mixers,
         )
         .map_err(|e| PiCcsError::ProtocolError(format!("poseidon local fold lane failed: {e}")))?;
+        timings.local += Duration::from_secs_f64(elapsed_ms(local_start) / 1_000.0);
     }
 
-    Ok(PoseidonFoldLanes { cycle_fold, local_fold })
+    Ok(PoseidonFoldLanes {
+        cycle_fold,
+        local_fold,
+        timings,
+    })
 }
 
 pub(crate) fn verify_poseidon_fold_lanes<MR, MB>(

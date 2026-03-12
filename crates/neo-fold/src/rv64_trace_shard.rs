@@ -164,6 +164,7 @@ pub struct Rv64TraceWiringRun {
     memory_layout: RiscvGuestMemoryLayout,
     prove_duration: Duration,
     prove_phase_durations: Rv64TraceProvePhaseDurations,
+    shard_prove_metrics: Option<crate::shard::ShardProveMetrics>,
     verify_duration: Option<Duration>,
 }
 
@@ -777,6 +778,7 @@ impl Rv64TraceWiring {
             }
         }
         used_shout_table_ids.sort_unstable();
+        let shard_prove_metrics = session.last_shard_prove_metrics().copied();
 
         Ok(Rv64TraceWiringRun {
             session,
@@ -795,6 +797,7 @@ impl Rv64TraceWiring {
                 chunk_build_commit: chunk_build_commit_duration,
                 fold_and_prove: fold_and_prove_duration,
             },
+            shard_prove_metrics,
             verify_duration: None,
         })
     }
@@ -1019,6 +1022,10 @@ impl Rv64TraceWiringRun {
 
     pub fn prove_phase_durations(&self) -> Rv64TraceProvePhaseDurations {
         self.prove_phase_durations
+    }
+
+    pub fn shard_prove_metrics(&self) -> Option<crate::shard::ShardProveMetrics> {
+        self.shard_prove_metrics
     }
 
     pub fn verify_duration(&self) -> Option<Duration> {
