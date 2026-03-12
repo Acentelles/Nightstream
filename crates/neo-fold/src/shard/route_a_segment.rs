@@ -184,33 +184,36 @@ where
             .ok_or_else(|| PiCcsError::InvalidInput("step index overflow".into()))?;
         let chunk_ob = if end == steps.len() { ob } else { None };
 
-        let (
-            chunk_proof,
-            next_main_wits,
-            mut chunk_val_lane_wits,
+        let ShardProveArtifacts {
+            proof: chunk_proof,
+            final_main_wits: next_main_wits,
+            val_lane_wits: mut chunk_val_lane_wits,
             next_prev_twist_decoded,
             next_poseidon_carry,
-            chunk_audit,
-        ) =
-            fold_shard_prove_impl(
-                true,
-                mode.clone(),
-                tr,
-                params,
-                s_me,
-                chunk,
-                chunk_step_offset,
-                &accumulator,
-                &accumulator_wit,
-                l,
+            audit: chunk_audit,
+        } = fold_shard_prove_impl(
+            ShardProveOptions {
+                collect_val_lane_wits: true,
+                mode: mode.clone(),
+                step_idx_offset: chunk_step_offset,
                 mixers,
-                chunk_ob,
+                output_binding: chunk_ob,
                 prover_ctx,
-                None,
-                prev_step_ctx,
-                prev_twist_decoded.take(),
-                Some(poseidon_carry),
-            )?;
+                step_prove_ms_out: None,
+            },
+            tr,
+            params,
+            s_me,
+            chunk,
+            &accumulator,
+            &accumulator_wit,
+            l,
+            ShardCarryInput {
+                prev_step: prev_step_ctx,
+                prev_twist_decoded: prev_twist_decoded.take(),
+                poseidon_carry: Some(poseidon_carry),
+            },
+        )?;
         let next_accumulator = chunk_proof.compute_final_main_children(&accumulator);
         let ShardProof {
             steps: chunk_steps,
