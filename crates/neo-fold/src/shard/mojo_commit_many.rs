@@ -65,31 +65,34 @@ fn try_commit_many_seeded_with_mojo(
             let mut rng = ChaCha8Rng::from_seed(chunk_seed);
             let mut lhs_batch = Vec::new();
             let mut rhs_batch = Vec::new();
-            let mut target_mats = Vec::new();
-
-            for col_idx in start..end {
-                let lhs = FlatRq {
+            let mut lhs_by_col = Vec::with_capacity(end.saturating_sub(start));
+            for _col_idx in start..end {
+                lhs_by_col.push(FlatRq {
                     coeffs: sample_uniform_rq(&mut rng).0.map(|x| x.as_canonical_u64()),
-                };
-                for (z_idx, z) in zs.iter().enumerate() {
+                });
+            }
+            let mut slot_offsets = Vec::with_capacity(zs.len() + 1);
+            slot_offsets.push(0u64);
+            for z in zs.iter() {
+                for (local_col_idx, col_idx) in (start..end).enumerate() {
                     let Some(rhs) = flat_rq_from_mat_col_if_nonzero(z, col_idx) else {
                         continue;
                     };
-                    lhs_batch.push(lhs);
+                    lhs_batch.push(lhs_by_col[local_col_idx]);
                     rhs_batch.push(rhs);
-                    target_mats.push(z_idx);
                 }
+                slot_offsets.push(lhs_batch.len() as u64);
             }
 
             if lhs_batch.is_empty() {
                 continue;
             }
 
-            let products = match session.rq_mul_batch_u64x54(&lhs_batch, &rhs_batch) {
+            let products = match crate::shard::rq_accumulate_with_backend(session, &lhs_batch, &rhs_batch, &slot_offsets) {
                 Ok(values) => values,
                 Err(_) => return Ok(None),
             };
-            for (target_idx, product) in target_mats.into_iter().zip(products.into_iter()) {
+            for (target_idx, product) in products.into_iter().enumerate() {
                 for (dst, src) in out[target_idx]
                     .col_mut(row_idx)
                     .iter_mut()

@@ -564,6 +564,8 @@ where
             poseidon_cont_chals = Some(cont_chals);
         }
 
+        let poseidon_backend_ctx =
+            neo_reductions::accelerator::BackendContext::new(&ProverComputeBackend::Cpu)?;
         let (poseidon_cycle_commits, poseidon_local_commits) = if poseidon_cycle_enabled {
             let cycle_wits_ref = poseidon_cycle_wits
                 .as_ref()
@@ -572,9 +574,9 @@ where
                 .as_ref()
                 .ok_or_else(|| PiCcsError::ProtocolError("missing poseidon local witness chunks".into()))?;
             let cycle_cs =
-                commit_poseidon_lane_wits_batched(params, &backend_ctx, cycle_wits_ref, "poseidon cycle commit")?;
+                commit_poseidon_lane_wits_batched(params, &poseidon_backend_ctx, cycle_wits_ref, "poseidon cycle commit")?;
             let local_cs =
-                commit_poseidon_lane_wits_batched(params, &backend_ctx, local_wits_ref, "poseidon local commit")?;
+                commit_poseidon_lane_wits_batched(params, &poseidon_backend_ctx, local_wits_ref, "poseidon local commit")?;
             absorb_poseidon_lane_commitments_prover(tr, &cycle_cs, &local_cs);
             (Some(cycle_cs), Some(local_cs))
         } else {
@@ -2059,7 +2061,7 @@ where
             &ring,
             ell_d,
             step_idx,
-            &backend_ctx,
+            &poseidon_backend_ctx,
             &mem_proof,
             poseidon_cycle_wits.as_ref(),
             poseidon_cycle_open_specs.as_ref(),
@@ -2570,6 +2572,11 @@ where
                 let stage8_fold_start = time_now();
                 let mut stage8_fold: Vec<RlcDecProof> = Vec::with_capacity(1);
                 let stage8_params = stage8_time_decomp_params(params)?;
+                // Stage-8 is still dominated by commitment-side work where the current
+                // Mojo ring path loses to the CPU on both Metal and CUDA. Keep this
+                // lane on the CPU backend until its hot loops are truly batched.
+                let stage8_backend_ctx =
+                    neo_reductions::accelerator::BackendContext::new(&ProverComputeBackend::Cpu)?;
                 let stage8_plan = crate::time_opening::joint_lane::build_stage8_fold_lane_plan(
                     &joint_opening_lane,
                     &opening_unification,
@@ -2611,7 +2618,7 @@ where
                         ell_d,
                         k_dec,
                         step_idx,
-                        &backend_ctx,
+                        &stage8_backend_ctx,
                         None,
                         plan.claims.as_slice(),
                         wit_refs.as_slice(),

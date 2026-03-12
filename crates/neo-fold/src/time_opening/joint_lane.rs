@@ -51,7 +51,8 @@ fn elapsed_duration(start: TimePoint) -> Duration {
 
 #[inline]
 fn allow_stage8_commit_acceleration(backend_ctx: &neo_reductions::accelerator::BackendContext) -> bool {
-    !matches!(backend_ctx.selected_device_api(), Some(neo_gpu::DeviceApi::Metal))
+    let _ = backend_ctx;
+    false
 }
 
 fn build_claim_witness_from_step(

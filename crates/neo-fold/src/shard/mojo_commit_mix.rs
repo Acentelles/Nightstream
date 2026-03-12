@@ -64,27 +64,29 @@ fn try_mix_rhos_commits_with_mojo(
 
     let mut lhs_batch = Vec::with_capacity(rhos.len() * kappa);
     let mut rhs_batch = Vec::with_capacity(rhos.len() * kappa);
-    for (rho, c) in rhos.iter().zip(cs.iter()) {
-        let Some(rho_words) = flat_rq_from_rot_matrix(rho) else {
-            return Ok(None);
-        };
-        for col in 0..kappa {
+    let mut slot_offsets = Vec::with_capacity(kappa + 1);
+    slot_offsets.push(0u64);
+    for col in 0..kappa {
+        for (rho, c) in rhos.iter().zip(cs.iter()) {
+            let Some(rho_words) = flat_rq_from_rot_matrix(rho) else {
+                return Ok(None);
+            };
             let Some(col_words) = flat_rq_from_commitment_col(c, col) else {
                 return Ok(None);
             };
             lhs_batch.push(rho_words);
             rhs_batch.push(col_words);
         }
+        slot_offsets.push(lhs_batch.len() as u64);
     }
 
-    let products = match session.rq_mul_batch_u64x54(&lhs_batch, &rhs_batch) {
+    let products = match crate::shard::rq_accumulate_with_backend(session, &lhs_batch, &rhs_batch, &slot_offsets) {
         Ok(values) => values,
         Err(_) => return Ok(None),
     };
 
     let mut acc = Cmt::zeros(d, kappa);
-    for (pair_idx, prod) in products.iter().enumerate() {
-        let col = pair_idx % kappa;
+    for (col, prod) in products.iter().enumerate() {
         for (dst, src) in acc.col_mut(col).iter_mut().zip(prod.coeffs.iter()) {
             *dst += F::from_u64(*src);
         }
@@ -120,29 +122,31 @@ fn try_combine_b_pows_with_mojo(
 
     let mut lhs_batch = Vec::with_capacity((cs.len().saturating_sub(1)) * kappa);
     let mut rhs_batch = Vec::with_capacity((cs.len().saturating_sub(1)) * kappa);
-    let mut pow = F::from_u64(b as u64);
-    for c in cs.iter().skip(1) {
-        let rho_words = FlatRq {
-            coeffs: std::array::from_fn(|idx| if idx == 0 { pow.as_canonical_u64() } else { 0 }),
-        };
-        for col in 0..kappa {
+    let mut slot_offsets = Vec::with_capacity(kappa + 1);
+    slot_offsets.push(0u64);
+    for col in 0..kappa {
+        let mut pow = F::from_u64(b as u64);
+        for c in cs.iter().skip(1) {
+            let rho_words = FlatRq {
+                coeffs: std::array::from_fn(|idx| if idx == 0 { pow.as_canonical_u64() } else { 0 }),
+            };
             let Some(col_words) = flat_rq_from_commitment_col(c, col) else {
                 return Ok(None);
             };
             lhs_batch.push(rho_words);
             rhs_batch.push(col_words);
+            pow *= F::from_u64(b as u64);
         }
-        pow *= F::from_u64(b as u64);
+        slot_offsets.push(lhs_batch.len() as u64);
     }
 
-    let products = match session.rq_mul_batch_u64x54(&lhs_batch, &rhs_batch) {
+    let products = match crate::shard::rq_accumulate_with_backend(session, &lhs_batch, &rhs_batch, &slot_offsets) {
         Ok(values) => values,
         Err(_) => return Ok(None),
     };
 
     let mut acc = cs[0].clone();
-    for (pair_idx, prod) in products.iter().enumerate() {
-        let col = pair_idx % kappa;
+    for (col, prod) in products.iter().enumerate() {
         for (dst, src) in acc.col_mut(col).iter_mut().zip(prod.coeffs.iter()) {
             *dst += F::from_u64(*src);
         }

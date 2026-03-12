@@ -378,6 +378,55 @@ fn run_rv64_note_case(
         phases.chunk_build_commit.as_secs_f64() * 1000.0,
         phases.fold_and_prove.as_secs_f64() * 1000.0
     );
+    if let Some(metrics) = run.shard_prove_metrics() {
+        println!(
+            "{label}: lane_ms main={:.1} val={:.1} wb={:.1} wp={:.1} poseidon_cycle={:.1} poseidon_local={:.1} stage8={:.1} finalize={:.1}",
+            metrics.lane_durations.main_ccs_fold.as_secs_f64() * 1000.0,
+            metrics.lane_durations.val_lane.as_secs_f64() * 1000.0,
+            metrics.lane_durations.wb_lane.as_secs_f64() * 1000.0,
+            metrics.lane_durations.wp_lane.as_secs_f64() * 1000.0,
+            metrics.lane_durations.poseidon_cycle_lane.as_secs_f64() * 1000.0,
+            metrics.lane_durations.poseidon_local_lane.as_secs_f64() * 1000.0,
+            metrics.lane_durations.stage8_lane.as_secs_f64() * 1000.0,
+            metrics.lane_durations.route_a_finalize.as_secs_f64() * 1000.0,
+        );
+        println!(
+            "{label}: stage8_ms group_build={:.1} joint_commit_many={:.1} unified_fold_mix={:.1} rlc_dec={:.1}",
+            metrics.stage8_subphases.group_build.as_secs_f64() * 1000.0,
+            metrics.stage8_subphases.joint_commit_many.as_secs_f64() * 1000.0,
+            metrics.stage8_subphases.unified_fold_mix.as_secs_f64() * 1000.0,
+            metrics.stage8_subphases.rlc_dec.as_secs_f64() * 1000.0,
+        );
+        println!(
+            "{label}: mojo poseidon cpu={} host_fb={} accel={} states={} max_states={} fe create={} eval={} fold={} destroy={} fe_accel={} fe_tasks={} nc create={} eval={} fold={} destroy={} nc_accel={} nc_tasks={} rq_mul cpu={} host_fb={} accel={} items={} max_items={} superneo cpu={} host_fb={} accel={} items={}",
+            metrics.mojo_delta.poseidon2_batch.cpu_calls,
+            metrics.mojo_delta.poseidon2_batch.host_fallback_calls,
+            metrics.mojo_delta.poseidon2_batch.accelerator_calls,
+            metrics.mojo_delta.poseidon2_batch.total_items,
+            metrics.mojo_delta.poseidon2_batch.max_items,
+            metrics.mojo_delta.fe.create_calls,
+            metrics.mojo_delta.fe.eval_calls,
+            metrics.mojo_delta.fe.fold_calls,
+            metrics.mojo_delta.fe.destroy_calls,
+            metrics.mojo_delta.fe.accelerator_calls,
+            metrics.mojo_delta.fe.total_items,
+            metrics.mojo_delta.nc.create_calls,
+            metrics.mojo_delta.nc.eval_calls,
+            metrics.mojo_delta.nc.fold_calls,
+            metrics.mojo_delta.nc.destroy_calls,
+            metrics.mojo_delta.nc.accelerator_calls,
+            metrics.mojo_delta.nc.total_items,
+            metrics.mojo_delta.rq_mul.cpu_calls,
+            metrics.mojo_delta.rq_mul.host_fallback_calls,
+            metrics.mojo_delta.rq_mul.accelerator_calls,
+            metrics.mojo_delta.rq_mul.total_items,
+            metrics.mojo_delta.rq_mul.max_items,
+            metrics.mojo_delta.superneo.cpu_calls,
+            metrics.mojo_delta.superneo.host_fallback_calls,
+            metrics.mojo_delta.superneo.accelerator_calls,
+            metrics.mojo_delta.superneo.total_items,
+        );
+    }
     let verify_start = Instant::now();
     run.verify()
         .unwrap_or_else(|e| panic!("{label}: verify failed: {e}"));

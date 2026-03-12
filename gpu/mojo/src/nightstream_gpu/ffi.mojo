@@ -1,5 +1,4 @@
 from memory import UnsafePointer
-from sys import has_accelerator
 from nightstream_gpu import field, poseidon, ring, runtime, sumcheck, superneo
 
 
@@ -9,6 +8,14 @@ comptime DEVICE_API_CUDA = 2
 comptime DEVICE_API_HIP = 3
 comptime STATUS_OK = 0
 comptime STATUS_UNAVAILABLE = -1
+comptime PROBE_AVAILABLE = UInt32(1 << 0)
+comptime PROBE_ACCELERATOR_READY = UInt32(1 << 1)
+comptime PROBE_POSEIDON2 = UInt32(1 << 2)
+comptime PROBE_POSEIDON2_BATCH = UInt32(1 << 3)
+comptime PROBE_SPLIT_NC = UInt32(1 << 4)
+comptime PROBE_RQ_MUL = UInt32(1 << 5)
+comptime PROBE_SUPERNEO = UInt32(1 << 6)
+comptime PROBE_CPU_DIRECT = UInt32(1 << 7)
 fn request_word(req_addr: UInt) -> UInt64:
     var req_words = UnsafePointer[UInt64](unchecked_downcast_value=Int(req_addr))
     return req_words[0]
@@ -22,7 +29,7 @@ fn device_api_available(req_word: UInt64) -> Bool:
     if not accelerator_requested(req_word):
         return True
 
-    return has_accelerator()
+    return runtime.accelerator_ready_for_api(unpack_api(req_word), unpack_device_id(req_word))
 
 
 fn unpack_api(req_word: UInt64) -> UInt32:
@@ -33,11 +40,41 @@ fn unpack_device_id(req_word: UInt64) -> UInt32:
     return UInt32(req_word >> 32)
 
 
-fn pack_probe_response(status: Int32, available: Bool) -> UInt64:
-    var available_flag = UInt64(0)
+fn probe_capability_bits(req_word: UInt64) -> UInt32:
+    var api = unpack_api(req_word)
+    var device_id = unpack_device_id(req_word)
+    var accelerator_ready = runtime.accelerator_ready_for_api(api, device_id)
+    var supports_cpu_direct = (
+        poseidon.scaffold_ready()
+        or sumcheck.scaffold_ready()
+        or ring.scaffold_ready()
+        or superneo.scaffold_ready()
+    )
+    var available = supports_cpu_direct
+    if api != UInt32(DEVICE_API_CPU):
+        available = accelerator_ready
+
+    var bits = UInt32(0)
     if available:
-        available_flag = 1
-    return UInt64(UInt32(status)) | (available_flag << 32)
+        bits |= PROBE_AVAILABLE
+    if accelerator_ready:
+        bits |= PROBE_ACCELERATOR_READY
+    if poseidon.scaffold_ready():
+        bits |= PROBE_POSEIDON2
+        bits |= PROBE_POSEIDON2_BATCH
+    if sumcheck.scaffold_ready():
+        bits |= PROBE_SPLIT_NC
+    if ring.scaffold_ready():
+        bits |= PROBE_RQ_MUL
+    if superneo.scaffold_ready():
+        bits |= PROBE_SUPERNEO
+    if supports_cpu_direct:
+        bits |= PROBE_CPU_DIRECT
+    return bits
+
+
+fn pack_probe_response(status: Int32, capability_bits: UInt32) -> UInt64:
+    return UInt64(UInt32(status)) | (UInt64(capability_bits) << 32)
 
 
 fn abi_version() -> UInt32:
@@ -48,8 +85,8 @@ fn device_probe(
     req_addr: UInt,
     out_words: UnsafePointer[mut=True, UInt64],
 ) -> Int32:
-    var available = device_api_available(request_word(req_addr))
-    out_words[0] = pack_probe_response(Int32(STATUS_OK), available)
+    var req_word = request_word(req_addr)
+    out_words[0] = pack_probe_response(Int32(STATUS_OK), probe_capability_bits(req_word))
     return STATUS_OK
 
 
@@ -192,6 +229,18 @@ fn rq_mul_batch_u64x54(
     out_words: UnsafePointer[mut=True, UInt64],
 ) -> Int32:
     ring.rq_mul_batch_words(session, lhs_words, rhs_words, pair_count, out_words)
+    return STATUS_OK
+
+
+fn rq_accumulate_batch_u64x54(
+    session: UInt64,
+    lhs_words: UnsafePointer[UInt64],
+    rhs_words: UnsafePointer[UInt64],
+    slot_offsets_words: UnsafePointer[UInt64],
+    slot_count: UInt64,
+    out_words: UnsafePointer[mut=True, UInt64],
+) -> Int32:
+    ring.rq_accumulate_batch_words(session, lhs_words, rhs_words, slot_offsets_words, slot_count, out_words)
     return STATUS_OK
 
 

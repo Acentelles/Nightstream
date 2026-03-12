@@ -264,6 +264,13 @@ fn real_mojo_session_ring_and_superneo_match_cpu_reference() {
     let rq_mul = session.rq_mul_u64x54(&lhs_rq, &rhs_rq).expect("rq mul");
     assert_eq!(rq_mul.coeffs, rq_mul_cpu(lhs, rhs));
     assert_eq!(session.rq_ct_u64x54(&rq_mul).expect("rq ct"), rq_ct_cpu(rq_mul.coeffs));
+    let accumulated = session
+        .rq_accumulate_batch_u64x54(&[lhs_rq, rhs_rq], &[rhs_rq, lhs_rq], &[0, 2])
+        .expect("rq accumulate batch");
+    let prod0 = rq_mul_cpu(lhs, rhs);
+    let prod1 = rq_mul_cpu(rhs, lhs);
+    let expected_acc = std::array::from_fn(|idx| (Fq::from_u64(prod0[idx]) + Fq::from_u64(prod1[idx])).as_canonical_u64());
+    assert_eq!(accumulated[0].coeffs, expected_acc);
 
     let matrix = superneo_bar_matrix();
     let matrix_words = std::array::from_fn(|row| std::array::from_fn(|col| matrix[row][col].as_canonical_u64()));
@@ -286,5 +293,77 @@ fn real_mojo_session_ring_and_superneo_match_cpu_reference() {
     let dot = session
         .superneo_row_dot_blocks(&bar_blocks, &z)
         .expect("superneo row dot");
+    assert_eq!(dot, superneo_row_dot_cpu(&bar_blocks, &z));
+}
+
+#[test]
+#[ignore = "requires Metal-capable Mojo runtime"]
+fn real_mojo_metal_session_ring_and_superneo_match_cpu_reference() {
+    let Ok(session) = connect(&MojoBackendConfig::new(DeviceApi::Metal).with_library_path(build_real_mojo_library()))
+    else {
+        eprintln!("skipping: real Mojo Metal session unavailable");
+        return;
+    };
+
+    assert!(session.supports_rq_mul_api());
+    assert!(session.supports_superneo_api());
+
+    let lhs = sample_block(17);
+    let rhs = sample_block(101);
+    let actual = session
+        .rq_mul_batch_u64x54(
+            &[FlatRq { coeffs: lhs }, FlatRq { coeffs: rhs }],
+            &[FlatRq { coeffs: rhs }, FlatRq { coeffs: lhs }],
+        )
+        .expect("metal rq mul batch");
+    assert_eq!(actual[0].coeffs, rq_mul_cpu(lhs, rhs));
+    assert_eq!(actual[1].coeffs, rq_mul_cpu(rhs, lhs));
+
+    let matrix = superneo_bar_matrix().map(|row| row.map(|x| x.as_canonical_u64()));
+    let bar_block = session
+        .superneo_bar_block_u64x54(&matrix, &lhs)
+        .expect("metal superneo bar block");
+    assert_eq!(
+        bar_block,
+        superneo_bar_block(lhs.map(Fq::from_u64)).map(|x| x.as_canonical_u64())
+    );
+}
+
+#[test]
+#[ignore = "requires CUDA-capable Mojo runtime"]
+fn real_mojo_cuda_session_ring_and_superneo_match_cpu_reference() {
+    let Ok(session) = connect(&MojoBackendConfig::new(DeviceApi::Cuda).with_library_path(build_real_mojo_library()))
+    else {
+        eprintln!("skipping: real Mojo CUDA session unavailable");
+        return;
+    };
+
+    assert!(session.supports_rq_mul_api());
+    assert!(session.supports_superneo_api());
+
+    let lhs = sample_block(19);
+    let rhs = sample_block(131);
+    let actual = session
+        .rq_mul_batch_u64x54(
+            &[FlatRq { coeffs: lhs }, FlatRq { coeffs: rhs }],
+            &[FlatRq { coeffs: rhs }, FlatRq { coeffs: lhs }],
+        )
+        .expect("cuda rq mul batch");
+    assert_eq!(actual[0].coeffs, rq_mul_cpu(lhs, rhs));
+    assert_eq!(actual[1].coeffs, rq_mul_cpu(rhs, lhs));
+
+    let matrix = superneo_bar_matrix().map(|row| row.map(|x| x.as_canonical_u64()));
+    let bar_blocks = [
+        session
+            .superneo_bar_block_u64x54(&matrix, &lhs)
+            .expect("cuda superneo bar block lhs"),
+        session
+            .superneo_bar_block_u64x54(&matrix, &rhs)
+            .expect("cuda superneo bar block rhs"),
+    ];
+    let z = sample_z(D + 5, 77);
+    let dot = session
+        .superneo_row_dot_blocks(&bar_blocks, &z)
+        .expect("cuda superneo row dot");
     assert_eq!(dot, superneo_row_dot_cpu(&bar_blocks, &z));
 }

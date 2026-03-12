@@ -8,13 +8,19 @@ use std::sync::{Arc, Mutex};
 #[cfg(all(not(target_arch = "wasm32"), any(unix, windows)))]
 use libloading::Library;
 
-use crate::abi::{DeviceRequest, DeviceResponse, FlatFq, FlatK, SessionRequest, POSEIDON2_STATE_WIDTH};
+use crate::abi::{
+    DeviceRequest, DeviceResponse, FlatFq, FlatK, SessionRequest, DEVICE_PROBE_ACCELERATOR_READY_FLAG,
+    DEVICE_PROBE_AVAILABLE_FLAG, DEVICE_PROBE_CPU_DIRECT_FLAG, DEVICE_PROBE_POSEIDON2_BATCH_FLAG,
+    DEVICE_PROBE_POSEIDON2_FLAG, DEVICE_PROBE_RQ_MUL_FLAG, DEVICE_PROBE_SPLIT_NC_FLAG, DEVICE_PROBE_SUPERNEO_FLAG,
+    POSEIDON2_STATE_WIDTH,
+};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::abi::{
     ABI_VERSION, ABI_VERSION_SYMBOL, DEVICE_PROBE_SYMBOL, FE_CREATE_SYMBOL, FE_DESTROY_SYMBOL, FE_EVALS_AT_SYMBOL,
     FE_FOLD_SYMBOL, NC_CREATE_SYMBOL, NC_DESTROY_SYMBOL, NC_EVALS_AT_SYMBOL, NC_FOLD_SYMBOL,
-    POSEIDON2_PERMUTE_BATCH_SYMBOL, POSEIDON2_PERMUTE_SYMBOL, RQ_CT_SYMBOL, RQ_MUL_BATCH_SYMBOL, RQ_MUL_SYMBOL,
-    SESSION_CLOSE_SYMBOL, SESSION_OPEN_SYMBOL, SUPERNEO_BAR_BLOCK_SYMBOL, SUPERNEO_ROW_DOT_BLOCKS_SYMBOL,
+    POSEIDON2_PERMUTE_BATCH_SYMBOL, POSEIDON2_PERMUTE_SYMBOL, RQ_ACCUMULATE_BATCH_SYMBOL, RQ_CT_SYMBOL,
+    RQ_MUL_BATCH_SYMBOL, RQ_MUL_SYMBOL, SESSION_CLOSE_SYMBOL, SESSION_OPEN_SYMBOL, SUPERNEO_BAR_BLOCK_SYMBOL,
+    SUPERNEO_ROW_DOT_BLOCKS_SYMBOL,
 };
 use crate::{BackendActivationThresholds, DeviceApi, FlatRq, MojoBackendConfig, NeoGpuError};
 
@@ -31,6 +37,7 @@ type Poseidon2PermuteFn = unsafe extern "C" fn(usize, *mut FlatFq, u32) -> i32;
 type Poseidon2PermuteBatchFn = unsafe extern "C" fn(usize, *mut FlatFq, u32, u32) -> i32;
 type RqMulFn = unsafe extern "C" fn(u64, *mut u64, *mut u64, *mut u64) -> i32;
 type RqMulBatchFn = unsafe extern "C" fn(u64, *mut u64, *mut u64, u64, *mut u64) -> i32;
+type RqAccumulateBatchFn = unsafe extern "C" fn(u64, *mut u64, *mut u64, *mut u64, u64, *mut u64) -> i32;
 type RqCtFn = unsafe extern "C" fn(*mut u64, *mut u64) -> i32;
 type SuperneoBarBlockFn = unsafe extern "C" fn(*mut u64, *mut u64, *mut u64) -> i32;
 type SuperneoRowDotBlocksFn = unsafe extern "C" fn(*mut u64, u64, *mut u64, u64, *mut u64) -> i32;
@@ -82,6 +89,7 @@ pub struct MojoSessionDiagnostics {
     pub fe: MojoOperationCounters,
     pub nc: MojoOperationCounters,
     pub rq_mul: MojoOperationCounters,
+    pub superneo: MojoOperationCounters,
 }
 
 impl std::ops::Sub for MojoSessionDiagnostics {
@@ -113,7 +121,56 @@ impl std::ops::Sub for MojoSessionDiagnostics {
             fe: sub_counter(self.fe, rhs.fe),
             nc: sub_counter(self.nc, rhs.nc),
             rq_mul: sub_counter(self.rq_mul, rhs.rq_mul),
+            superneo: sub_counter(self.superneo, rhs.superneo),
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ProbeInfo {
+    pub status: i32,
+    pub capability_bits: u32,
+}
+
+impl ProbeInfo {
+    #[inline]
+    pub const fn available(self) -> bool {
+        self.capability_bits & DEVICE_PROBE_AVAILABLE_FLAG != 0
+    }
+
+    #[inline]
+    pub const fn accelerator_ready(self) -> bool {
+        self.capability_bits & DEVICE_PROBE_ACCELERATOR_READY_FLAG != 0
+    }
+
+    #[inline]
+    pub const fn supports_poseidon2(self) -> bool {
+        self.capability_bits & DEVICE_PROBE_POSEIDON2_FLAG != 0
+    }
+
+    #[inline]
+    pub const fn supports_poseidon2_batch(self) -> bool {
+        self.capability_bits & DEVICE_PROBE_POSEIDON2_BATCH_FLAG != 0
+    }
+
+    #[inline]
+    pub const fn supports_split_nc(self) -> bool {
+        self.capability_bits & DEVICE_PROBE_SPLIT_NC_FLAG != 0
+    }
+
+    #[inline]
+    pub const fn supports_rq_mul(self) -> bool {
+        self.capability_bits & DEVICE_PROBE_RQ_MUL_FLAG != 0
+    }
+
+    #[inline]
+    pub const fn supports_superneo(self) -> bool {
+        self.capability_bits & DEVICE_PROBE_SUPERNEO_FLAG != 0
+    }
+
+    #[inline]
+    pub const fn supports_cpu_direct(self) -> bool {
+        self.capability_bits & DEVICE_PROBE_CPU_DIRECT_FLAG != 0
     }
 }
 
@@ -262,6 +319,7 @@ struct OptionalEvaluatorFns {
     poseidon2_permute_batch: Option<Poseidon2PermuteBatchFn>,
     rq_mul: Option<RqMulFn>,
     rq_mul_batch: Option<RqMulBatchFn>,
+    rq_accumulate_batch: Option<RqAccumulateBatchFn>,
     rq_ct: Option<RqCtFn>,
     superneo_bar_block: Option<SuperneoBarBlockFn>,
     superneo_row_dot_blocks: Option<SuperneoRowDotBlocksFn>,
@@ -293,6 +351,19 @@ impl OptionalEvaluatorFns {
     #[inline]
     fn supports_cpu_direct_mode(&self) -> bool {
         self.supports_poseidon2() || self.supports_split_nc()
+    }
+
+    #[inline]
+    fn supports_rq_mul(&self) -> bool {
+        self.rq_mul.is_some()
+            && self.rq_mul_batch.is_some()
+            && self.rq_accumulate_batch.is_some()
+            && self.rq_ct.is_some()
+    }
+
+    #[inline]
+    fn supports_superneo(&self) -> bool {
+        self.superneo_bar_block.is_some() && self.superneo_row_dot_blocks.is_some()
     }
 }
 
@@ -360,6 +431,7 @@ impl MojoLibrary {
                 poseidon2_permute_batch: load_optional::<Poseidon2PermuteBatchFn>(&lib, POSEIDON2_PERMUTE_BATCH_SYMBOL),
                 rq_mul: load_optional::<RqMulFn>(&lib, RQ_MUL_SYMBOL),
                 rq_mul_batch: load_optional::<RqMulBatchFn>(&lib, RQ_MUL_BATCH_SYMBOL),
+                rq_accumulate_batch: load_optional::<RqAccumulateBatchFn>(&lib, RQ_ACCUMULATE_BATCH_SYMBOL),
                 rq_ct: load_optional::<RqCtFn>(&lib, RQ_CT_SYMBOL),
                 superneo_bar_block: load_optional::<SuperneoBarBlockFn>(&lib, SUPERNEO_BAR_BLOCK_SYMBOL),
                 superneo_row_dot_blocks: load_optional::<SuperneoRowDotBlocksFn>(&lib, SUPERNEO_ROW_DOT_BLOCKS_SYMBOL),
@@ -389,7 +461,7 @@ impl MojoLibrary {
         &self.path
     }
 
-    pub fn probe_device(&self, api: DeviceApi, device_id: u32) -> Result<bool, NeoGpuError> {
+    pub fn probe_info(&self, api: DeviceApi, device_id: u32) -> Result<ProbeInfo, NeoGpuError> {
         let req = DeviceRequest {
             api: api.as_u32(),
             device_id,
@@ -400,16 +472,67 @@ impl MojoLibrary {
         let resp_ptr = (&mut resp_word as *mut u64) as usize;
         let status = call_for_device_api(api, move || unsafe { device_probe(req_ptr, resp_ptr as *mut u64) });
         if status != 0 {
-            return Ok(api == DeviceApi::Cpu && self.supports_cpu_direct_mode());
+            let mut capability_bits = 0u32;
+            if api == DeviceApi::Cpu && self.supports_cpu_direct_mode() {
+                capability_bits |= DEVICE_PROBE_AVAILABLE_FLAG | DEVICE_PROBE_CPU_DIRECT_FLAG;
+            }
+            if self.supports_poseidon2_api() {
+                capability_bits |= DEVICE_PROBE_POSEIDON2_FLAG;
+            }
+            if self.supports_poseidon2_batch_api() {
+                capability_bits |= DEVICE_PROBE_POSEIDON2_BATCH_FLAG;
+            }
+            if self.supports_split_nc_api() {
+                capability_bits |= DEVICE_PROBE_SPLIT_NC_FLAG;
+            }
+            if self.supports_rq_mul_api() {
+                capability_bits |= DEVICE_PROBE_RQ_MUL_FLAG;
+            }
+            if self.supports_superneo_api() {
+                capability_bits |= DEVICE_PROBE_SUPERNEO_FLAG;
+            }
+            return Ok(ProbeInfo {
+                status,
+                capability_bits,
+            });
         }
         let resp = DeviceResponse {
             status: resp_word as u32 as i32,
             available: (resp_word >> 32) as u32 as i32,
         };
-        if resp.available != 0 {
-            return Ok(true);
+        let mut capability_bits = 0u32;
+        if resp.is_available() {
+            capability_bits |= DEVICE_PROBE_AVAILABLE_FLAG;
         }
-        Ok(false)
+        if resp.accelerator_ready() {
+            capability_bits |= DEVICE_PROBE_ACCELERATOR_READY_FLAG;
+        }
+        if resp.supports_poseidon2() {
+            capability_bits |= DEVICE_PROBE_POSEIDON2_FLAG;
+        }
+        if resp.supports_poseidon2_batch() {
+            capability_bits |= DEVICE_PROBE_POSEIDON2_BATCH_FLAG;
+        }
+        if resp.supports_split_nc() {
+            capability_bits |= DEVICE_PROBE_SPLIT_NC_FLAG;
+        }
+        if resp.supports_rq_mul() {
+            capability_bits |= DEVICE_PROBE_RQ_MUL_FLAG;
+        }
+        if resp.supports_superneo() {
+            capability_bits |= DEVICE_PROBE_SUPERNEO_FLAG;
+        }
+        if resp.supports_cpu_direct() {
+            capability_bits |= DEVICE_PROBE_CPU_DIRECT_FLAG;
+        }
+        Ok(ProbeInfo {
+            status: resp.status,
+            capability_bits,
+        })
+    }
+
+    pub fn probe_device(&self, api: DeviceApi, device_id: u32) -> Result<bool, NeoGpuError> {
+        Ok(self.probe_info(api, device_id)?.available())
     }
 
     #[inline]
@@ -425,6 +548,16 @@ impl MojoLibrary {
     #[inline]
     pub fn supports_poseidon2_batch_api(&self) -> bool {
         self.evaluators.supports_poseidon2_batch()
+    }
+
+    #[inline]
+    pub fn supports_rq_mul_api(&self) -> bool {
+        self.evaluators.supports_rq_mul()
+    }
+
+    #[inline]
+    pub fn supports_superneo_api(&self) -> bool {
+        self.evaluators.supports_superneo()
     }
 
     pub fn open_session(self, cfg: &MojoBackendConfig) -> Result<MojoSession, NeoGpuError> {
@@ -482,6 +615,8 @@ impl std::fmt::Debug for MojoLibrary {
             .field("supports_split_nc_api", &self.supports_split_nc_api())
             .field("supports_poseidon2_api", &self.supports_poseidon2_api())
             .field("supports_poseidon2_batch_api", &self.supports_poseidon2_batch_api())
+            .field("supports_rq_mul_api", &self.supports_rq_mul_api())
+            .field("supports_superneo_api", &self.supports_superneo_api())
             .finish()
     }
 }
@@ -614,6 +749,22 @@ impl MojoSession {
         self.library
             .as_ref()
             .map(MojoLibrary::supports_poseidon2_batch_api)
+            .unwrap_or(false)
+    }
+
+    #[inline]
+    pub fn supports_rq_mul_api(&self) -> bool {
+        self.library
+            .as_ref()
+            .map(MojoLibrary::supports_rq_mul_api)
+            .unwrap_or(false)
+    }
+
+    #[inline]
+    pub fn supports_superneo_api(&self) -> bool {
+        self.library
+            .as_ref()
+            .map(MojoLibrary::supports_superneo_api)
             .unwrap_or(false)
     }
 
@@ -970,6 +1121,86 @@ impl MojoSession {
             .collect()
     }
 
+    pub fn rq_accumulate_batch_u64x54(
+        &self,
+        lhs: &[FlatRq],
+        rhs: &[FlatRq],
+        slot_offsets: &[u64],
+    ) -> Result<Vec<FlatRq>, NeoGpuError> {
+        if lhs.len() != rhs.len() {
+            return Err(NeoGpuError::OperationFailed {
+                op: "rq_accumulate_batch_u64x54",
+                status: -1,
+            });
+        }
+        if slot_offsets.is_empty() {
+            return Ok(Vec::new());
+        }
+        if slot_offsets[0] != 0 || *slot_offsets.last().unwrap_or(&0) != lhs.len() as u64 {
+            return Err(NeoGpuError::OperationFailed {
+                op: "rq_accumulate_batch_u64x54",
+                status: -2,
+            });
+        }
+        let library = self
+            .library
+            .as_ref()
+            .ok_or(NeoGpuError::UnsupportedOperation {
+                op: "rq_accumulate_batch_u64x54",
+            })?;
+        let rq_accumulate_batch = library
+            .evaluators
+            .rq_accumulate_batch
+            .ok_or(NeoGpuError::UnsupportedOperation {
+                op: "rq_accumulate_batch_u64x54",
+            })?;
+        let mut lhs_words = lhs
+            .iter()
+            .flat_map(|value| value.coeffs.iter().copied())
+            .collect::<Vec<_>>();
+        let mut rhs_words = rhs
+            .iter()
+            .flat_map(|value| value.coeffs.iter().copied())
+            .collect::<Vec<_>>();
+        let mut slot_offsets_words = slot_offsets.to_vec();
+        let mut out_words = vec![0u64; slot_offsets.len().saturating_sub(1) * 54];
+        let device_api = self.device_api;
+        let lhs_ptr = lhs_words.as_mut_ptr() as usize;
+        let rhs_ptr = rhs_words.as_mut_ptr() as usize;
+        let offsets_ptr = slot_offsets_words.as_mut_ptr() as usize;
+        let out_ptr = out_words.as_mut_ptr() as usize;
+        let slot_count = slot_offsets.len().saturating_sub(1) as u64;
+        let session_handle = self.handle;
+        let status = call_for_device_api(device_api, move || unsafe {
+            rq_accumulate_batch(
+                session_handle as u64,
+                lhs_ptr as *mut u64,
+                rhs_ptr as *mut u64,
+                offsets_ptr as *mut u64,
+                slot_count,
+                out_ptr as *mut u64,
+            )
+        });
+        if status != 0 {
+            return Err(NeoGpuError::OperationFailed {
+                op: "rq_accumulate_batch_u64x54",
+                status,
+            });
+        }
+        let mode = self.rq_mul_execution_mode(lhs.len().saturating_mul(54));
+        let mut diagnostics = self
+            .diagnostics
+            .lock()
+            .expect("mojo session diagnostics lock");
+        diagnostics.snapshot.rq_mul.record_mode(mode, lhs.len());
+        Ok(out_words
+            .chunks_exact(54)
+            .map(|chunk| FlatRq {
+                coeffs: std::array::from_fn(|idx| chunk[idx]),
+            })
+            .collect())
+    }
+
     pub fn rq_ct_u64x54(&self, value: &FlatRq) -> Result<u64, NeoGpuError> {
         let library = self
             .library
@@ -1034,6 +1265,14 @@ impl MojoSession {
                 status,
             });
         }
+        let mut diagnostics = self
+            .diagnostics
+            .lock()
+            .expect("mojo session diagnostics lock");
+        diagnostics
+            .snapshot
+            .superneo
+            .record_mode(self.rq_mul_execution_mode(54), 1);
         Ok(out)
     }
 
@@ -1080,6 +1319,14 @@ impl MojoSession {
                 status,
             });
         }
+        let mut diagnostics = self
+            .diagnostics
+            .lock()
+            .expect("mojo session diagnostics lock");
+        diagnostics.snapshot.superneo.record_mode(
+            self.rq_mul_execution_mode(bar_blocks.len().saturating_mul(54)),
+            bar_blocks.len(),
+        );
         Ok(FlatK {
             re: out_words[0],
             im: out_words[1],

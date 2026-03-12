@@ -51,6 +51,14 @@ const SPLIT_NC_SNAPSHOT_VERSION: u64 = 1;
 const SPLIT_NC_FE_ROW_V1: u64 = 1;
 const SPLIT_NC_NC_COL_V1: u64 = 2;
 const MOCK_CPU_ONLY_DEVICE_ID: u32 = 0xFFFF_FF01;
+const PROBE_AVAILABLE: u32 = 1 << 0;
+const PROBE_ACCELERATOR_READY: u32 = 1 << 1;
+const PROBE_POSEIDON2: u32 = 1 << 2;
+const PROBE_POSEIDON2_BATCH: u32 = 1 << 3;
+const PROBE_SPLIT_NC: u32 = 1 << 4;
+const PROBE_RQ_MUL: u32 = 1 << 5;
+const PROBE_SUPERNEO: u32 = 1 << 6;
+const PROBE_CPU_DIRECT: u32 = 1 << 7;
 
 static NEXT_EVALUATOR_HANDLE: AtomicUsize = AtomicUsize::new(2);
 static FE_EVALS_AT_CALLS: AtomicUsize = AtomicUsize::new(0);
@@ -452,7 +460,21 @@ pub extern "C" fn nightstream_gpu_device_probe(_req: *const DeviceRequest, out: 
         };
         if let Some(out) = out.as_mut() {
             out.status = 0;
-            out.available = i32::from(req.api == 0 || req.device_id != MOCK_CPU_ONLY_DEVICE_ID);
+            let accelerator_ready = req.api != 0 && req.device_id != MOCK_CPU_ONLY_DEVICE_ID;
+            let available = req.api == 0 || accelerator_ready;
+            let mut bits = PROBE_POSEIDON2
+                | PROBE_POSEIDON2_BATCH
+                | PROBE_SPLIT_NC
+                | PROBE_RQ_MUL
+                | PROBE_SUPERNEO
+                | PROBE_CPU_DIRECT;
+            if available {
+                bits |= PROBE_AVAILABLE;
+            }
+            if accelerator_ready {
+                bits |= PROBE_ACCELERATOR_READY;
+            }
+            out.available = bits as i32;
         }
     }
     0
@@ -811,6 +833,50 @@ pub extern "C" fn nightstream_gpu_rq_mul_batch_u64x54(
 }
 
 #[no_mangle]
+pub extern "C" fn nightstream_gpu_rq_accumulate_batch_u64x54(
+    _session: usize,
+    lhs_ptr: *mut u64,
+    rhs_ptr: *mut u64,
+    slot_offsets_ptr: *mut u64,
+    slot_count: u64,
+    out_ptr: *mut u64,
+) -> i32 {
+    let pair_count = unsafe {
+        if slot_offsets_ptr.is_null() {
+            return -3;
+        }
+        *slot_offsets_ptr.add(slot_count as usize)
+    };
+    RQ_MUL_CALLS.fetch_add(pair_count as usize, Ordering::Relaxed);
+    unsafe {
+        if lhs_ptr.is_null() || rhs_ptr.is_null() || out_ptr.is_null() {
+            return -3;
+        }
+        let lhs = std::slice::from_raw_parts(lhs_ptr, pair_count as usize * D);
+        let rhs = std::slice::from_raw_parts(rhs_ptr, pair_count as usize * D);
+        let slot_offsets = std::slice::from_raw_parts(slot_offsets_ptr, slot_count as usize + 1);
+        let out = std::slice::from_raw_parts_mut(out_ptr, slot_count as usize * D);
+        for slot_idx in 0..slot_count as usize {
+            let out_base = slot_idx * D;
+            out[out_base..out_base + D].fill(0);
+            let start = slot_offsets[slot_idx] as usize;
+            let end = slot_offsets[slot_idx + 1] as usize;
+            for pair_idx in start..end {
+                let base = pair_idx * D;
+                let lhs_ring = Rq(std::array::from_fn(|idx| Fq::from_u64(lhs[base + idx])));
+                let rhs_ring = Rq(std::array::from_fn(|idx| Fq::from_u64(rhs[base + idx])));
+                let prod = lhs_ring.mul(&rhs_ring);
+                for (dst, src) in out[out_base..out_base + D].iter_mut().zip(prod.0.iter()) {
+                    let acc = Fq::from_u64(*dst) + *src;
+                    *dst = acc.as_canonical_u64();
+                }
+            }
+        }
+    }
+    0
+}
+
+#[no_mangle]
 pub extern "C" fn nightstream_gpu_rq_ct_u64x54(words_ptr: *mut u64, out_ptr: *mut u64) -> i32 {
     unsafe {
         if words_ptr.is_null() || out_ptr.is_null() {
@@ -840,6 +906,50 @@ pub extern "C" fn nightstream_gpu_superneo_bar_block_u64x54(
         for (dst, src) in out.iter_mut().zip(transformed.iter()) {
             *dst = src.as_canonical_u64();
         }
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn nightstream_gpu_superneo_row_dot_blocks(
+    bar_blocks_ptr: *mut u64,
+    num_blocks: u64,
+    z_ptr: *mut u64,
+    z_len: u64,
+    out_ptr: *mut u64,
+) -> i32 {
+    unsafe {
+        if bar_blocks_ptr.is_null() || z_ptr.is_null() || out_ptr.is_null() {
+            return -3;
+        }
+        let bar_blocks_words = std::slice::from_raw_parts(bar_blocks_ptr, num_blocks as usize * D);
+        let z_words = std::slice::from_raw_parts(z_ptr, z_len as usize * 2);
+        let out = std::slice::from_raw_parts_mut(out_ptr, 2);
+        let mut acc = K::ZERO;
+
+        for blk_idx in 0..num_blocks as usize {
+            let block = std::array::from_fn(|idx| Fq::from_u64(bar_blocks_words[blk_idx * D + idx]));
+            let base = blk_idx * D;
+            let z_re = std::array::from_fn(|idx| {
+                if base + idx < z_len as usize {
+                    Fq::from_u64(z_words[(base + idx) * 2])
+                } else {
+                    Fq::ZERO
+                }
+            });
+            let z_im = std::array::from_fn(|idx| {
+                if base + idx < z_len as usize {
+                    Fq::from_u64(z_words[(base + idx) * 2 + 1])
+                } else {
+                    Fq::ZERO
+                }
+            });
+            acc += from_complex(ct(&Rq(block).mul(&Rq(z_re))), ct(&Rq(block).mul(&Rq(z_im))));
+        }
+
+        let flat = k_to_flat(acc);
+        out[0] = flat.re;
+        out[1] = flat.im;
     }
     0
 }

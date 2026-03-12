@@ -103,8 +103,9 @@ Current verified status:
 ### Implemented But Still Stub-Like / Partial
 
 - `src/nightstream_gpu/ffi.mojo`
-  - production ABI exists, but `device_probe` / session selection are still lightweight wrappers
-    around the current runtime model rather than a large backend manager
+  - production ABI exists and now reports per-backend capability bits
+  - `device_probe` / session selection are still intentionally small and session-oriented rather
+    than a large global backend manager
 - `src/nightstream_gpu/ring.mojo`
   - `Rq` multiply batch exists and is wired into note-spend commitment paths
   - current GPU kernel shape is correctness-first and not yet tuned for Metal
@@ -119,6 +120,11 @@ Current verified status:
   - used to verify call routing and parity without requiring a real Mojo toolchain or GPU
 - Some `neo-fold` integration tests still validate “backend path was exercised” through the mock
   dylib instead of requiring a real accelerator session
+- Real shared-lib coverage now complements the mock path for:
+  - ring / SuperNeo session parity on local CPU-direct sessions
+  - Metal ring / SuperNeo session parity on macOS
+  - CUDA ring / SuperNeo session parity on the T4 VM
+  - seeded CCS-only commit-many parity through a real Mojo CPU session
 
 ### Explicitly Disabled / Gated Today
 

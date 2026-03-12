@@ -398,12 +398,24 @@ fn sample_rq_words(seed: u64) -> [u64; D] {
 fn loads_mock_library_and_probes_split_nc_support() {
     let cfg = MojoBackendConfig::new(DeviceApi::Metal).with_library_path(build_mock_library());
     let lib = MojoLibrary::load(&cfg).expect("load mock mojo gpu library");
+    let probe = lib
+        .probe_info(DeviceApi::Metal, 0)
+        .expect("probe mock mojo gpu library");
 
     assert_eq!(lib.path(), build_mock_library());
-    assert!(lib.probe_device(DeviceApi::Metal, 0).expect("probe device"));
+    assert!(probe.available());
+    assert!(probe.accelerator_ready());
+    assert!(probe.supports_poseidon2());
+    assert!(probe.supports_poseidon2_batch());
+    assert!(probe.supports_split_nc());
+    assert!(probe.supports_rq_mul());
+    assert!(probe.supports_superneo());
+    assert!(probe.supports_cpu_direct());
     assert!(lib.supports_split_nc_api());
     assert!(lib.supports_poseidon2_api());
     assert!(lib.supports_poseidon2_batch_api());
+    assert!(lib.supports_rq_mul_api());
+    assert!(lib.supports_superneo_api());
 }
 
 #[test]
@@ -418,6 +430,25 @@ fn connects_to_mock_library_session() {
     assert!(session.supports_split_nc_api());
     assert!(session.supports_poseidon2_api());
     assert!(session.supports_poseidon2_batch_api());
+    assert!(session.supports_rq_mul_api());
+    assert!(session.supports_superneo_api());
+}
+
+#[test]
+fn mock_probe_info_marks_cpu_direct_without_accelerator() {
+    let cfg = MojoBackendConfig::new(DeviceApi::Cuda)
+        .with_device_id(MOCK_CPU_ONLY_DEVICE_ID)
+        .with_library_path(build_mock_library());
+    let lib = MojoLibrary::load(&cfg).expect("load mock mojo gpu library");
+    let probe = lib
+        .probe_info(DeviceApi::Cuda, MOCK_CPU_ONLY_DEVICE_ID)
+        .expect("probe cpu-only mock device");
+
+    assert!(!probe.available());
+    assert!(!probe.accelerator_ready());
+    assert!(probe.supports_cpu_direct());
+    assert!(probe.supports_rq_mul());
+    assert!(probe.supports_superneo());
 }
 
 #[test]
@@ -466,6 +497,45 @@ fn mock_mojo_session_rq_mul_batch_matches_cpu_reference() {
         })
         .collect::<Vec<_>>();
     assert_eq!(actual, expected);
+}
+
+#[test]
+fn mock_mojo_session_rq_accumulate_batch_matches_cpu_reference() {
+    let cfg = MojoBackendConfig::new(DeviceApi::Cpu).with_library_path(build_mock_library());
+    let session = connect(&cfg).expect("connect to mock mojo gpu");
+
+    let lhs = vec![
+        FlatRq {
+            coeffs: sample_rq_words(7),
+        },
+        FlatRq {
+            coeffs: sample_rq_words(11),
+        },
+        FlatRq {
+            coeffs: sample_rq_words(13),
+        },
+    ];
+    let rhs = vec![
+        FlatRq {
+            coeffs: sample_rq_words(101),
+        },
+        FlatRq {
+            coeffs: sample_rq_words(103),
+        },
+        FlatRq {
+            coeffs: sample_rq_words(107),
+        },
+    ];
+    let slot_offsets = [0u64, 2, 3];
+    let actual = session
+        .rq_accumulate_batch_u64x54(&lhs, &rhs, &slot_offsets)
+        .expect("mock rq accumulate batch");
+    let p0 = rq_mul_cpu(lhs[0].coeffs, rhs[0].coeffs);
+    let p1 = rq_mul_cpu(lhs[1].coeffs, rhs[1].coeffs);
+    let expected0 = std::array::from_fn(|idx| (Fq::from_u64(p0[idx]) + Fq::from_u64(p1[idx])).as_canonical_u64());
+    let expected1 = rq_mul_cpu(lhs[2].coeffs, rhs[2].coeffs);
+    assert_eq!(actual[0].coeffs, expected0);
+    assert_eq!(actual[1].coeffs, expected1);
 }
 
 #[test]

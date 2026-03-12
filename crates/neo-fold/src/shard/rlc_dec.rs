@@ -5,10 +5,8 @@ fn allow_commit_acceleration_for_lane(
     backend_ctx: &neo_reductions::accelerator::BackendContext,
     lane: RlcLane,
 ) -> bool {
-    !matches!(
-        (lane, backend_ctx.selected_device_api()),
-        (RlcLane::Val, Some(neo_gpu::DeviceApi::Metal))
-    )
+    let _ = lane;
+    matches!(backend_ctx.selected_device_api(), Some(neo_gpu::DeviceApi::Cpu))
 }
 
 pub(crate) fn prove_rlc_dec_lane<L, MR, MB>(

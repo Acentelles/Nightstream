@@ -512,6 +512,60 @@ fn ccs_only_mcs_batched_seeded_mojo_backend_uses_rq_mul_for_commit_many() {
 }
 
 #[test]
+#[ignore = "requires local Mojo toolchain"]
+fn ccs_only_mcs_batched_seeded_real_mojo_cpu_matches_cpu() {
+    let n = 8usize;
+    let ccs = identity_ccs(n);
+    let params = high_batch_params(n);
+    let l = setup_seeded_ajtai_committer(&params, ccs.m, [77u8; 32]);
+    let mixers = default_mixers();
+    let batch_size = 40usize;
+
+    let steps: Vec<StepWitnessBundle<Cmt, F, K>> = (0..batch_size)
+        .map(|i| build_step(&params, &l, ccs.m, 2, 20_000 + (i as u64) * 97))
+        .collect();
+
+    let mut tr_cpu = Poseidon2Transcript::new(b"neo.fold/ccs_only_seeded_real_mojo_cpu");
+    let cpu_proof = fold_shard_prove_ccs_only_batched(
+        FoldingMode::Optimized,
+        &mut tr_cpu,
+        &params,
+        &ccs,
+        &steps,
+        &[],
+        &[],
+        &l,
+        mixers,
+        batch_size,
+        &ProverComputeBackend::Cpu,
+    )
+    .expect("cpu prove");
+
+    let backend =
+        ProverComputeBackend::Mojo(MojoBackendConfig::new(DeviceApi::Cpu).with_library_path(build_real_mojo_library()));
+    let mut tr_mojo = Poseidon2Transcript::new(b"neo.fold/ccs_only_seeded_real_mojo_cpu");
+    let mojo_proof = fold_shard_prove_ccs_only_batched(
+        FoldingMode::Optimized,
+        &mut tr_mojo,
+        &params,
+        &ccs,
+        &steps,
+        &[],
+        &[],
+        &l,
+        mixers,
+        batch_size,
+        &backend,
+    )
+    .expect("real mojo cpu prove");
+
+    assert_eq!(
+        serde_json::to_vec(&cpu_proof).expect("serialize cpu proof"),
+        serde_json::to_vec(&mojo_proof).expect("serialize mojo proof"),
+    );
+}
+
+#[test]
 fn ccs_only_mcs_batched_rejects_sidecars() {
     let n = 8usize;
     let ccs = identity_ccs(n);

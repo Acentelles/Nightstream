@@ -91,6 +91,8 @@ mod mixed_batched;
 mod mojo_commit_many;
 #[path = "shard/mojo_commit_mix.rs"]
 mod mojo_commit_mix;
+#[path = "shard/mojo_ring_accumulate.rs"]
+mod mojo_ring_accumulate;
 #[path = "shard/poseidon_lane_helpers.rs"]
 mod poseidon_lane_helpers;
 #[path = "shard/prover.rs"]
@@ -112,6 +114,7 @@ pub(crate) use core_utils::*;
 pub(crate) use mixed_batched::*;
 pub(crate) use mojo_commit_many::*;
 pub(crate) use mojo_commit_mix::*;
+pub(crate) use mojo_ring_accumulate::*;
 pub(crate) use poseidon_lane_helpers::*;
 pub(crate) use prover::*;
 pub(crate) use rlc_dec::*;

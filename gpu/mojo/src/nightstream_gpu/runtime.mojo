@@ -19,6 +19,19 @@ fn device_api_name(api: UInt32) -> String:
     return "cpu"
 
 
+fn accelerator_ready_for_api(api: UInt32, _device_id: UInt32) -> Bool:
+    if api == UInt32(DEVICE_API_CPU):
+        return False
+    if not has_accelerator():
+        return False
+
+    try:
+        _ = DeviceContext(api=device_api_name(api))
+        return True
+    except:
+        return False
+
+
 struct SessionState(Movable):
     var api: UInt32
     var device_id: UInt32
@@ -41,6 +54,9 @@ struct SessionState(Movable):
     var ring_out_host: Optional[HostBuffer[DType.uint64]]
     var ring_out_dev: Optional[DeviceBuffer[DType.uint64]]
     var ring_capacity_words: Int
+    var ring_meta_host: Optional[HostBuffer[DType.uint64]]
+    var ring_meta_dev: Optional[DeviceBuffer[DType.uint64]]
+    var ring_meta_capacity_words: Int
     var ring_kernel_cache_addr: UInt64
 
     fn __init__(out self, api: UInt32, device_id: UInt32):
@@ -65,6 +81,9 @@ struct SessionState(Movable):
         self.ring_out_host = Optional[HostBuffer[DType.uint64]]()
         self.ring_out_dev = Optional[DeviceBuffer[DType.uint64]]()
         self.ring_capacity_words = 0
+        self.ring_meta_host = Optional[HostBuffer[DType.uint64]]()
+        self.ring_meta_dev = Optional[DeviceBuffer[DType.uint64]]()
+        self.ring_meta_capacity_words = 0
         self.ring_kernel_cache_addr = 0
 
         if api == UInt32(DEVICE_API_CPU) or not has_accelerator():
@@ -141,10 +160,10 @@ struct SessionState(Movable):
         if grew:
             ctx.synchronize()
 
-    fn ensure_ring_buffers(mut self, word_count: Int) raises:
+    fn ensure_ring_buffers(mut self, word_count: Int, meta_word_count: Int = 0) raises:
         if not self.accelerator_ctx:
             raise Error("ring accelerator context unavailable")
-        if (
+        var have_main = (
             self.ring_capacity_words >= word_count
             and self.ring_lhs_host
             and self.ring_lhs_dev
@@ -152,30 +171,47 @@ struct SessionState(Movable):
             and self.ring_rhs_dev
             and self.ring_out_host
             and self.ring_out_dev
-        ):
+        )
+        var have_meta = (
+            meta_word_count == 0
+            or (
+                self.ring_meta_capacity_words >= meta_word_count
+                and self.ring_meta_host
+                and self.ring_meta_dev
+            )
+        )
+        if have_main and have_meta:
             return
-
         var ctx = self.accelerator_ctx.value()
-        self.ring_lhs_host = Optional[HostBuffer[DType.uint64]](
-            ctx.enqueue_create_host_buffer[DType.uint64](word_count)
-        )
-        self.ring_lhs_dev = Optional[DeviceBuffer[DType.uint64]](
-            ctx.enqueue_create_buffer[DType.uint64](word_count)
-        )
-        self.ring_rhs_host = Optional[HostBuffer[DType.uint64]](
-            ctx.enqueue_create_host_buffer[DType.uint64](word_count)
-        )
-        self.ring_rhs_dev = Optional[DeviceBuffer[DType.uint64]](
-            ctx.enqueue_create_buffer[DType.uint64](word_count)
-        )
-        self.ring_out_host = Optional[HostBuffer[DType.uint64]](
-            ctx.enqueue_create_host_buffer[DType.uint64](word_count)
-        )
-        self.ring_out_dev = Optional[DeviceBuffer[DType.uint64]](
-            ctx.enqueue_create_buffer[DType.uint64](word_count)
-        )
+        if not have_main:
+            self.ring_lhs_host = Optional[HostBuffer[DType.uint64]](
+                ctx.enqueue_create_host_buffer[DType.uint64](word_count)
+            )
+            self.ring_lhs_dev = Optional[DeviceBuffer[DType.uint64]](
+                ctx.enqueue_create_buffer[DType.uint64](word_count)
+            )
+            self.ring_rhs_host = Optional[HostBuffer[DType.uint64]](
+                ctx.enqueue_create_host_buffer[DType.uint64](word_count)
+            )
+            self.ring_rhs_dev = Optional[DeviceBuffer[DType.uint64]](
+                ctx.enqueue_create_buffer[DType.uint64](word_count)
+            )
+            self.ring_out_host = Optional[HostBuffer[DType.uint64]](
+                ctx.enqueue_create_host_buffer[DType.uint64](word_count)
+            )
+            self.ring_out_dev = Optional[DeviceBuffer[DType.uint64]](
+                ctx.enqueue_create_buffer[DType.uint64](word_count)
+            )
+            self.ring_capacity_words = word_count
+        if meta_word_count > 0 and not have_meta:
+            self.ring_meta_host = Optional[HostBuffer[DType.uint64]](
+                ctx.enqueue_create_host_buffer[DType.uint64](meta_word_count)
+            )
+            self.ring_meta_dev = Optional[DeviceBuffer[DType.uint64]](
+                ctx.enqueue_create_buffer[DType.uint64](meta_word_count)
+            )
+            self.ring_meta_capacity_words = meta_word_count
         ctx.synchronize()
-        self.ring_capacity_words = word_count
 
 
 fn session_api(session: UInt64) -> UInt32:

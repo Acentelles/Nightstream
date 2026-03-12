@@ -141,6 +141,20 @@ fn nightstream_gpu_rq_mul_batch_u64x54(
     return ffi.rq_mul_batch_u64x54(session, lhs_words, rhs_words, pair_count, out_words)
 
 
+@export("nightstream_gpu_rq_accumulate_batch_u64x54", ABI="C")
+fn nightstream_gpu_rq_accumulate_batch_u64x54(
+    session: UInt64,
+    lhs_words: UnsafePointer[UInt64, MutAnyOrigin],
+    rhs_words: UnsafePointer[UInt64, MutAnyOrigin],
+    slot_offsets_words: UnsafePointer[UInt64, MutAnyOrigin],
+    slot_count: UInt64,
+    out_words: UnsafePointer[UInt64, MutAnyOrigin],
+) -> Int32:
+    return ffi.rq_accumulate_batch_u64x54(
+        session, lhs_words, rhs_words, slot_offsets_words, slot_count, out_words
+    )
+
+
 @export("nightstream_gpu_rq_ct_u64x54", ABI="C")
 fn nightstream_gpu_rq_ct_u64x54(
     words: UnsafePointer[UInt64, MutAnyOrigin],
