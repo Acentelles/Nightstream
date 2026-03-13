@@ -336,15 +336,17 @@ fn test_poseidon2_ic_batch_size_40() {
 }
 
 #[test]
-fn test_poseidon2_ic_batch_size_1_mock_mojo_prove_verify() {
+fn test_poseidon2_ic_mock_mojo_prove_verify_matches_cpu_and_uses_poseidon_when_threshold_allows() {
     type ResetFn = unsafe extern "C" fn();
     type CounterFn = unsafe extern "C" fn() -> usize;
 
     let mut cpu_session;
     let mut mojo_session;
     let ccs;
+    let batch_size = 40usize;
+    let device_api = required_accelerator_api();
 
-    (cpu_session, ccs) = build_poseidon_session(1, None);
+    (cpu_session, ccs) = build_poseidon_session(batch_size, None);
 
     let cpu_run = cpu_session
         .fold_and_prove(ccs.as_ref())
@@ -372,9 +374,8 @@ fn test_poseidon2_ic_batch_size_1_mock_mojo_prove_verify() {
     };
     unsafe { reset() };
 
-    let backend =
-        ProverComputeBackend::Mojo(MojoBackendConfig::new(required_accelerator_api()).with_library_path(mock_library));
-    (mojo_session, _) = build_poseidon_session(1, Some(backend));
+    let backend = ProverComputeBackend::Mojo(MojoBackendConfig::new(device_api).with_library_path(mock_library));
+    (mojo_session, _) = build_poseidon_session(batch_size, Some(backend));
 
     let mojo_run = mojo_session
         .fold_and_prove(ccs.as_ref())
@@ -391,10 +392,20 @@ fn test_poseidon2_ic_batch_size_1_mock_mojo_prove_verify() {
         serde_json::to_vec(&mojo_run).expect("serialize mojo run"),
     );
     assert_eq!(unsafe { session_open_calls() }, 2);
-    assert!(
-        unsafe { poseidon2_batch_calls() } > 0,
-        "mock mojo backend should use batched Poseidon2 during prove/verify"
-    );
+    let poseidon2_batch_calls = unsafe { poseidon2_batch_calls() };
+    let expect_batched_poseidon =
+        batch_size >= device_api.activation_thresholds().poseidon2_batch_min_states;
+    if expect_batched_poseidon {
+        assert!(
+            poseidon2_batch_calls > 0,
+            "mock mojo backend should use batched Poseidon2 during prove/verify once the device threshold is met"
+        );
+    } else {
+        assert_eq!(
+            poseidon2_batch_calls, 0,
+            "mock mojo backend should stay on CPU when the selected device threshold is not met"
+        );
+    }
 }
 
 #[test]

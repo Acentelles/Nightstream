@@ -1,5 +1,21 @@
 use super::*;
 
+pub(crate) struct PreparedValMaterializedDec {
+    pub s_lane: CcsStructure<F>,
+    pub rlc_rhos: Vec<ccs::RotRho>,
+    pub rlc_parent: CeClaim<Cmt, F, K>,
+    pub dec_wits: Vec<Mat<F>>,
+    pub parent_wit: Option<Mat<F>>,
+}
+
+pub(crate) enum PreparedValRlcDec {
+    Complete {
+        proof: RlcDecProof,
+        witnesses: Vec<Mat<F>>,
+    },
+    PendingMaterialized(PreparedValMaterializedDec),
+}
+
 #[inline]
 fn allow_commit_acceleration_for_lane(
     backend_ctx: &neo_reductions::accelerator::BackendContext,
@@ -12,6 +28,313 @@ fn allow_commit_acceleration_for_lane(
             backend_ctx.selected_device_api(),
             None | Some(neo_gpu::DeviceApi::Metal)
         )
+}
+
+#[inline]
+fn effective_lane_structure(
+    s: &CcsStructure<F>,
+    lane: RlcLane,
+    me_inputs: &[CeClaim<Cmt, F, K>],
+    step_idx: usize,
+) -> Result<CcsStructure<F>, PiCcsError> {
+    if matches!(lane, RlcLane::Main) {
+        return Ok(s.clone());
+    }
+    let ell_lane = me_inputs[0].r.len();
+    let n_lane = 1usize
+        .checked_shl(ell_lane as u32)
+        .ok_or_else(|| PiCcsError::InvalidInput(format!("step {}: lane r dimension overflow", step_idx)))?;
+    let mut s_lane = s.clone();
+    s_lane.n = n_lane;
+    Ok(s_lane)
+}
+
+pub(crate) fn prepare_batched_val_rlc_dec<MB>(
+    mode: &FoldingMode,
+    params: &NeoParams,
+    s: &CcsStructure<F>,
+    ccs_sparse_cache: Option<&SparseCache<F>>,
+    ring: &ccs::RotRing,
+    ell_d: usize,
+    k_dec: usize,
+    step_idx: usize,
+    _backend_ctx: &neo_reductions::accelerator::BackendContext,
+    cpu_bus: Option<&neo_memory::cpu::BusLayout>,
+    me: &CeClaim<Cmt, F, K>,
+    wit: &Mat<F>,
+    want_witnesses: bool,
+    combine_b_pows: MB,
+    rlc_rhos: Vec<ccs::RotRho>,
+    parent_commitment: Cmt,
+) -> Result<PreparedValRlcDec, PiCcsError>
+where
+    MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
+{
+    let me_inputs = core::slice::from_ref(me);
+    let wit_inputs = [wit];
+    let s_lane = effective_lane_structure(s, RlcLane::Val, me_inputs, step_idx)?;
+    let inputs_have_extra_y = me.y_ring.len() > s_lane.t();
+    let k_rlc_min = neo_reductions::common::min_k_rho_for_rlc_count(params, ring, 1)? as usize;
+    let k_rho_eff = core::cmp::max(k_dec, k_rlc_min);
+    let rlc_rho_mats = ccs::rot_rhos_to_mats(&rlc_rhos);
+
+    let mix_rhos_commits = |_rhos: &[Mat<F>], _cs: &[Cmt]| parent_commitment.clone();
+    let mix_rhos_commits_result = |_rhos: &[Mat<F>], _cs: &[Cmt]| Ok(parent_commitment.clone());
+    let (rlc_parent, z_mix) = if inputs_have_extra_y {
+        let parent_pub = ccs::rlc_public_result(&s_lane, params, &rlc_rhos, me_inputs, mix_rhos_commits_result, ell_d)?;
+        let (_, z_mix_tmp) = neo_reductions::optimized_engine::rlc_reduction_optimized_with_commit_mix(
+            &s_lane,
+            params,
+            &rlc_rho_mats,
+            me_inputs,
+            &wit_inputs,
+            ell_d,
+            mix_rhos_commits,
+        );
+        (parent_pub, z_mix_tmp)
+    } else {
+        #[cfg(feature = "paper-exact")]
+        {
+            if matches!(mode, FoldingMode::PaperExact) {
+                let wit_owned = vec![(*wit).clone()];
+                neo_reductions::optimized_engine::rlc_reduction_paper_exact_with_commit_mix(
+                    &s_lane,
+                    params,
+                    &rlc_rho_mats,
+                    me_inputs,
+                    &wit_owned,
+                    ell_d,
+                    mix_rhos_commits,
+                )
+            } else {
+                neo_reductions::optimized_engine::rlc_reduction_optimized_with_commit_mix(
+                    &s_lane,
+                    params,
+                    &rlc_rho_mats,
+                    me_inputs,
+                    &wit_inputs,
+                    ell_d,
+                    mix_rhos_commits,
+                )
+            }
+        }
+        #[cfg(not(feature = "paper-exact"))]
+        {
+            neo_reductions::optimized_engine::rlc_reduction_optimized_with_commit_mix(
+                &s_lane,
+                params,
+                &rlc_rho_mats,
+                me_inputs,
+                &wit_inputs,
+                ell_d,
+                mix_rhos_commits,
+            )
+        }
+    };
+
+    let k_dec_eff = core::cmp::max(
+        k_rho_eff,
+        core::cmp::max(
+            required_dec_digits_for_matrix(params, &z_mix)?,
+            required_dec_digits_for_matrix(params, &rlc_parent.X)?,
+        ),
+    );
+    let has_stream_pp =
+        has_global_pp_for_dims(D, z_mix.cols()) || get_global_pp_seeded_params_for_dims(D, z_mix.cols()).is_ok();
+    let can_stream_dec = !want_witnesses && has_stream_pp && me.aux_openings.is_empty();
+
+    if can_stream_dec {
+        match dec_stream_no_witness(
+            params,
+            &s_lane,
+            &rlc_parent,
+            &z_mix,
+            ell_d,
+            k_dec_eff,
+            combine_b_pows,
+            ccs_sparse_cache,
+        ) {
+            Ok((dec_children, _child_cs, ok_y, ok_x, ok_c)) if ok_y && ok_x && ok_c => {
+                return Ok(PreparedValRlcDec::Complete {
+                    proof: RlcDecProof {
+                        rlc_rhos,
+                        rlc_parent,
+                        dec_children,
+                    },
+                    witnesses: Vec::new(),
+                });
+            }
+            Ok(_) | Err(_) => {}
+        }
+    }
+
+    let (dec_wits, _digit_nonzero) = ccs::split_b_matrix_k_with_nonzero_flags(&z_mix, k_dec_eff, params.b)?;
+    Ok(PreparedValRlcDec::PendingMaterialized(PreparedValMaterializedDec {
+        s_lane,
+        rlc_rhos,
+        rlc_parent,
+        dec_wits,
+        parent_wit: cpu_bus.filter(|bus| bus.bus_cols > 0).map(|_| wit.clone()),
+    }))
+}
+
+pub(crate) fn finalize_batched_val_rlc_dec<MB>(
+    mode: FoldingMode,
+    params: &NeoParams,
+    ccs_sparse_cache: Option<&SparseCache<F>>,
+    ell_d: usize,
+    step_idx: usize,
+    backend_ctx: &neo_reductions::accelerator::BackendContext,
+    cpu_bus: Option<&neo_memory::cpu::BusLayout>,
+    mut pending: PreparedValMaterializedDec,
+    child_cs: &[Cmt],
+    combine_b_pows: MB,
+) -> Result<RlcDecProof, PiCcsError>
+where
+    MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
+{
+    let allow_commit_accel = allow_commit_acceleration_for_lane(backend_ctx, RlcLane::Val, false);
+    let combine_b_pows_result = |cs: &[Cmt], b: u32| {
+        if allow_commit_accel {
+            combine_b_pows_with_backend_result(backend_ctx, combine_b_pows, cs, b)
+        } else {
+            Ok(combine_b_pows(cs, b))
+        }
+    };
+    let (mut dec_children, ok_y, ok_x, ok_c) = ccs::dec_children_with_commit_cached_result(
+        mode,
+        &pending.s_lane,
+        params,
+        &pending.rlc_parent,
+        &pending.dec_wits,
+        ell_d,
+        child_cs,
+        combine_b_pows_result,
+        ccs_sparse_cache,
+    )?;
+    if !(ok_y && ok_x && ok_c) {
+        let child0_x_shape = dec_children
+            .first()
+            .map(|c| (c.X.rows(), c.X.cols()))
+            .unwrap_or((0, 0));
+        return Err(PiCcsError::ProtocolError(format!(
+            "DEC(val) public check failed at step {} (y={}, X={}, c={}, parent.X={:?}, child0.X={:?}, parent.y_zcol.len()={}, child0.y_zcol.len()={}, parent.y_ring.len()={}, child0.y_ring.len()={})",
+            step_idx,
+            ok_y,
+            ok_x,
+            ok_c,
+            (pending.rlc_parent.X.rows(), pending.rlc_parent.X.cols()),
+            child0_x_shape,
+            pending.rlc_parent.y_zcol.len(),
+            dec_children.first().map(|c| c.y_zcol.len()).unwrap_or(0),
+            pending.rlc_parent.y_ring.len(),
+            dec_children.first().map(|c| c.y_ring.len()).unwrap_or(0)
+        )));
+    }
+    if let Some(cpu_bus) = cpu_bus {
+        if cpu_bus.bus_cols > 0 {
+            let core_t = pending.s_lane.t();
+            let want_len = core_t
+                .checked_add(cpu_bus.bus_cols)
+                .ok_or_else(|| PiCcsError::InvalidInput("core_t + bus_cols overflow".into()))?;
+            let parent_has_prefilled_bus =
+                pending.rlc_parent.y_ring.len() > core_t || pending.rlc_parent.ct.len() > core_t;
+            let parent_supports_bus_point =
+                crate::memory_sidecar::cpu_bus::point_covers_bus_time_rows(cpu_bus, pending.rlc_parent.r.as_slice())?;
+            if !parent_has_prefilled_bus && !parent_supports_bus_point {
+                crate::memory_sidecar::cpu_bus::append_zero_bus_openings_to_me_instance(
+                    params,
+                    cpu_bus,
+                    core_t,
+                    &mut pending.rlc_parent,
+                )?;
+                for child in dec_children.iter_mut() {
+                    crate::memory_sidecar::cpu_bus::append_zero_bus_openings_to_me_instance(
+                        params, cpu_bus, core_t, child,
+                    )?;
+                }
+            } else if let Some(parent_wit) = pending.parent_wit.as_ref() {
+                if parent_wit.cols() == cpu_bus.m && !parent_has_prefilled_bus {
+                    crate::memory_sidecar::cpu_bus::append_bus_openings_to_me_instance(
+                        params,
+                        cpu_bus,
+                        core_t,
+                        parent_wit,
+                        &mut pending.rlc_parent,
+                    )?;
+                    for (child, zi) in dec_children.iter_mut().zip(pending.dec_wits.iter()) {
+                        let child_supports_bus_point =
+                            crate::memory_sidecar::cpu_bus::point_covers_bus_time_rows(cpu_bus, child.r.as_slice())?;
+                        if child_supports_bus_point {
+                            crate::memory_sidecar::cpu_bus::append_bus_openings_to_me_instance(
+                                params, cpu_bus, core_t, zi, child,
+                            )?;
+                        } else {
+                            crate::memory_sidecar::cpu_bus::append_zero_bus_openings_to_me_instance(
+                                params, cpu_bus, core_t, child,
+                            )?;
+                        }
+                    }
+                } else {
+                    if pending.rlc_parent.y_ring.len() == core_t && pending.rlc_parent.ct.len() == core_t {
+                        crate::memory_sidecar::cpu_bus::append_zero_bus_openings_to_me_instance(
+                            params,
+                            cpu_bus,
+                            core_t,
+                            &mut pending.rlc_parent,
+                        )?;
+                    } else if pending.rlc_parent.y_ring.len() != want_len || pending.rlc_parent.ct.len() != want_len {
+                        return Err(PiCcsError::ProtocolError(format!(
+                            "step {}: val-lane non-physical bus path expects exact parent y/ct len {} (got y.len()={}, ct.len()={})",
+                            step_idx,
+                            want_len,
+                            pending.rlc_parent.y_ring.len(),
+                            pending.rlc_parent.ct.len()
+                        )));
+                    }
+                    let y_pad = (params.d as usize).next_power_of_two();
+                    for (child_idx, child) in dec_children.iter_mut().enumerate() {
+                        if child.y_ring.len() < core_t || child.ct.len() < core_t {
+                            return Err(PiCcsError::ProtocolError(format!(
+                                "step {}: val-lane non-physical bus path expects child y/ct len >= core_t={} (got y.len()={}, ct.len()={})",
+                                step_idx,
+                                core_t,
+                                child.y_ring.len(),
+                                child.ct.len()
+                            )));
+                        }
+                        child.y_ring.truncate(core_t);
+                        child.ct.truncate(core_t);
+                        for col_id in 0..cpu_bus.bus_cols {
+                            if child_idx == 0 {
+                                child
+                                    .y_ring
+                                    .push(pending.rlc_parent.y_ring[core_t + col_id].clone());
+                                child.ct.push(pending.rlc_parent.ct[core_t + col_id]);
+                            } else {
+                                child.y_ring.push(vec![K::ZERO; y_pad]);
+                                child.ct.push(K::ZERO);
+                            }
+                        }
+                        if child.y_ring.len() != want_len || child.ct.len() != want_len {
+                            return Err(PiCcsError::ProtocolError(format!(
+                                "step {}: val-lane child suffix-length drift (child y/ct={}/{}, expected={})",
+                                step_idx,
+                                child.y_ring.len(),
+                                child.ct.len(),
+                                want_len
+                            )));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(RlcDecProof {
+        rlc_rhos: pending.rlc_rhos,
+        rlc_parent: pending.rlc_parent,
+        dec_children,
+    })
 }
 
 pub(crate) fn prove_rlc_dec_lane<L, MR, MB>(
@@ -34,6 +357,8 @@ pub(crate) fn prove_rlc_dec_lane<L, MR, MB>(
     want_witnesses: bool,
     l: &L,
     mixers: CommitMixers<MR, MB>,
+    precomputed_rlc_rhos: Option<Vec<ccs::RotRho>>,
+    precomputed_parent_commitment: Option<Cmt>,
 ) -> Result<(RlcDecProof, Vec<Mat<F>>), PiCcsError>
 where
     L: SModuleHomomorphism<F, Cmt> + Sync + std::any::Any,
@@ -63,31 +388,26 @@ where
             wit_inputs.len()
         )));
     }
-    let s_lane_owned: CcsStructure<F>;
-    let s_lane: &CcsStructure<F> = if matches!(lane, RlcLane::Main) {
-        s
-    } else {
-        let ell_lane = me_inputs[0].r.len();
-        let n_lane = 1usize
-            .checked_shl(ell_lane as u32)
-            .ok_or_else(|| PiCcsError::InvalidInput(format!("step {}: lane r dimension overflow", step_idx)))?;
-        let mut s_tmp = s.clone();
-        s_tmp.n = n_lane;
-        s_lane_owned = s_tmp;
-        &s_lane_owned
-    };
+    let s_lane_owned = effective_lane_structure(s, lane, me_inputs, step_idx)?;
+    let s_lane = &s_lane_owned;
     let s = s_lane;
     let inputs_have_extra_y = me_inputs.iter().any(|me| me.y_ring.len() > s.t());
-
-    bind_rlc_inputs_with_context(tr, lane, step_idx, me_inputs, backend_ctx)?;
     let k_rlc_min = neo_reductions::common::min_k_rho_for_rlc_count(params, ring, me_inputs.len())? as usize;
     let k_rho_eff = core::cmp::max(k_dec, k_rlc_min);
-    let mut params_rlc = params.clone();
-    params_rlc.k_rho = k_rho_eff as u32;
-    let rlc_rhos = ccs::sample_rot_rhos_n_typed(tr, &params_rlc, ring, me_inputs.len())?;
+
+    let rlc_rhos = if let Some(rlc_rhos) = precomputed_rlc_rhos {
+        rlc_rhos
+    } else {
+        bind_rlc_inputs_with_context(tr, lane, step_idx, me_inputs, backend_ctx)?;
+        let mut params_rlc = params.clone();
+        params_rlc.k_rho = k_rho_eff as u32;
+        ccs::sample_rot_rhos_n_typed(tr, &params_rlc, ring, me_inputs.len())?
+    };
     let rlc_rho_mats = ccs::rot_rhos_to_mats(&rlc_rhos);
     let input_commitments: Vec<Cmt> = me_inputs.iter().map(|me| me.c.clone()).collect();
-    let parent_commitment = if allow_commit_accel {
+    let parent_commitment = if let Some(commitment) = precomputed_parent_commitment {
+        Some(commitment)
+    } else if allow_commit_accel {
         Some(mix_rhos_commits_with_backend_result(
             backend_ctx,
             mixers.mix_rhos_commits,

@@ -146,6 +146,108 @@ Current verified status:
   on Metal
 - End-to-end note-spend GPU wins are still small on CUDA and negative on Metal
 
+## Paper-Informed Performance Roadmap
+
+The SuperNeo, Twist/Shout, and Jolt papers all point to the same conclusion: real prover wins
+come from changing the shape of the prover work so the accelerator sees a few large resident jobs,
+not from offloading many small scalar loops one by one.
+
+Protocol takeaways we should follow:
+
+- SuperNeo's evaluation homomorphism wants ring-linear combinations to stay in ring space until
+  the final constant-term extraction.
+- Twist/Shout's fast prover implementations win by grouping terms that share multiplicative updates,
+  choosing a GPU-friendly variable-binding order, and rebuilding larger partial aggregates instead
+  of processing fragmented rows independently.
+- Jolt's qualitative cost model reinforces that commitment-side and memory-checking work dominate
+  prover time once primitive hashes are no longer the bottleneck.
+
+Current implementation mismatch:
+
+- Stage-8 still clusters only by identical `(point, domain)` groups, which is better than the old
+  one-group-per-proof path but still too fragmented for the dominant hot loop.
+- `Rq` acceleration exists, but Stage-8 / WB / WP / `Val` work is still launched as many smaller
+  jobs rather than a few large resident batches.
+- SuperNeo row-dot still materializes intermediate channel buffers and performs the final constant
+  term extraction after the accumulated ring products, leaving fusion headroom.
+- Split-NC FE/NC kernels still emit grouped partials that are reduced on the host rather than
+  finishing the reduction on-device.
+
+Concrete optimization roadmap:
+
+1. Step-level ring super-batching
+   - Batch Stage-8, WB, WP, and `Val` parent commitment mixing through shared `rq_accumulate`
+     backend calls.
+   - Extend that same batching strategy to DEC child `commit_many` work so we stop paying per-lane
+     submission overhead.
+   - Goal: move from lane-local GPU calls to a small number of step-local ring jobs.
+
+2. Stage-8 clustering by update structure, not only point/domain
+   - Reorganize Stage-8 around shared challenge/update structure so heterogeneous groups can still
+     collapse when they share the same multiplicative schedule.
+   - Goal: match the Twist/Shout lesson of aggregating terms with identical update factors.
+
+3. Fully fused SuperNeo row-dot
+   - Replace the current `bar_blocks -> rq_accumulate -> rq_ct` split with one device-resident
+     reduction that multiplies, accumulates, and extracts the final constant terms on device.
+   - Goal: turn SuperNeo into the dominant backend for the hot ring-dot loops instead of a helper.
+
+4. Device-side Split-NC reductions
+   - Keep FE/NC snapshot creation in Rust, but finish grouped partial reductions on device instead
+     of copying partials back for host reduction.
+   - Goal: keep one oracle round resident until final outputs are ready.
+
+5. GPU-first buffer layout
+   - Store hot Stage-8 / SuperNeo / `Rq` batches in coefficient-packed, coalesced layouts instead
+     of repacking CPU-oriented matrices before every kernel launch.
+   - Goal: make large resident jobs cheap to launch and cheap to feed.
+
+Roadmap status on this branch:
+
+1. Step-level ring super-batching
+   - Implemented:
+     - `Val` parent commitment mixing is batched across claims before lane proving.
+     - `Val` materialized DEC child commitments now share one batched `commit_many` finalize path.
+     - WB/WP parent mixing and materialized DEC child commitments already share batched commit paths.
+     - Stage-8 joint groups already share batched `joint_commit_many`.
+     - Stage-8 multi-group cluster witnesses now share one batched commit pass instead of one commit per cluster.
+   - Still missing:
+     - Stage-8, WB, WP, and `Val` are still separate jobs; they are not yet collapsed into one step-global resident ring job.
+     - Stage-8 unified-fold and cluster planning still creates more jobs than the paper-guided ideal.
+
+2. Stage-8 clustering by update structure, not only point/domain
+   - Implemented:
+     - Stage-8 can collapse to one fold claim when groups share the same point/domain.
+     - Heterogeneous Stage-8 groups now fall back to one committed synthetic cluster instead of many point-based clusters.
+   - Still missing:
+     - The synthetic fallback is still generic transcript mixing, not true clustering by shared multiplicative update structure.
+     - We still do not exploit finer-grained update-schedule structure inside the heterogeneous batch.
+
+3. Fully fused SuperNeo row-dot
+   - Implemented:
+     - SuperNeo routes the heavy ring products through the GPU `Rq` path.
+   - Still missing:
+     - The final row-dot remains a staged flow rather than one fully fused on-device reduction.
+     - Constant-term extraction is not yet integrated into one dominant resident SuperNeo kernel.
+
+4. Device-side Split-NC reductions
+   - Implemented:
+     - FE/NC evaluation parity and backend routing are in place for CUDA and Metal.
+   - Still missing:
+     - Grouped partials are still copied back and reduced on the host.
+
+5. GPU-first buffer layout
+   - Implemented:
+     - None as a dedicated layout layer yet; current improvements still reuse mostly CPU-oriented layouts.
+   - Still missing:
+     - Hot Stage-8 / SuperNeo / `Rq` buffers are still repacked per operation instead of stored in a GPU-first resident format.
+
+Execution plan for this branch:
+
+- Step 1 now: keep widening Stage-8 batching so cluster/unified commitments are paid once per phase.
+- Step 2 next: redesign Stage-8 clustering around shared update structure instead of only point/domain.
+- Step 3 after that: fuse SuperNeo row-dot into one device-resident reduction.
+
 ### Practical Backend Status
 
 | Area | CPU | Metal | CUDA | Notes |

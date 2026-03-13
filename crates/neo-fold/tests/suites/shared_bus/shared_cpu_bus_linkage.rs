@@ -698,34 +698,24 @@ fn shared_cpu_bus_stage8_tamper_matrix_fails() {
     .expect("build Stage-8 plan")
     .expect("non-empty Stage-8 plan");
     let groups = &proof.steps[0].fold.joint_opening_lane.groups;
-    let mut expected_stage8_claims = 0usize;
-    let mut seen_clusters = Vec::new();
-    for group in groups {
-        if !seen_clusters
-            .iter()
-            .any(|(point, domain)| *point == group.point && *domain == group.domain)
-        {
-            seen_clusters.push((group.point.clone(), group.domain));
-            expected_stage8_claims += 1;
-        }
-    }
+    let expected_stage8_claims = if groups.is_empty() { 0usize } else { 1usize };
     assert_eq!(
         stage8_plan.claims.len(),
         expected_stage8_claims,
-        "Stage-8 fold plan should collapse sibling groups by point/domain cluster"
+        "Stage-8 fold plan should collapse the lane to one synthetic cluster when groups are present"
     );
     if expected_stage8_claims == 1 {
-        let unified_commitment = proof.steps[0]
+        let stage8_commitment = proof.steps[0]
             .fold
             .joint_opening_lane
-            .unified_fold
-            .as_ref()
-            .expect("unified fold present")
+            .stage8_clusters
+            .first()
+            .expect("stage8 cluster present")
             .joint_commitment
             .clone();
         assert_eq!(
-            stage8_plan.claims[0].c, unified_commitment,
-            "Stage-8 fold plan should reuse the already-verified unified commitment"
+            stage8_plan.claims[0].c, stage8_commitment,
+            "Stage-8 fold plan should reuse the already-verified synthetic cluster commitment"
         );
     }
 

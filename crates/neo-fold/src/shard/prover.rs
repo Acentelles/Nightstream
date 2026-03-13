@@ -209,6 +209,13 @@ struct PreparedMaterializedLane {
     suffix_len: usize,
 }
 
+struct PreparedValLane<'a> {
+    claim_idx: usize,
+    me: CeClaim<Cmt, F, K>,
+    rlc_rhos: Vec<ccs::RotRho>,
+    wit: &'a Mat<F>,
+}
+
 fn attach_parent_suffix_openings(
     params: &NeoParams,
     step_idx: usize,
@@ -1497,6 +1504,8 @@ where
             want_main_wits,
             l,
             mixers,
+            None,
+            None,
         )?;
         prove_metrics.lane_durations.main_ccs_fold += Duration::from_secs_f64(elapsed_ms(main_fold_start) / 1_000.0);
         let RlcDecProof {
@@ -1526,6 +1535,7 @@ where
             // Disabled: once Π_RLC(k=1) applies sampled ρ (non-identity),
             // val-lane parents are no longer compatible with main-lane Z_split reuse.
             let shared_val_lane_child_cs: Option<Vec<Cmt>> = None;
+            let mut prepared_val: Vec<PreparedValLane<'_>> = Vec::with_capacity(mem_proof.val_me_claims.len());
 
             for (claim_idx, me) in mem_proof.val_me_claims.iter().enumerate() {
                 let (wit, ctx) = match claim_idx {
@@ -1718,30 +1728,121 @@ where
                     }
                 }
 
-                let (proof, mut Z_split_val) = prove_rlc_dec_lane(
+                let n_lane = 1usize
+                    .checked_shl(me.r.len() as u32)
+                    .ok_or_else(|| PiCcsError::InvalidInput("val-lane r dimension overflow".into()))?;
+                let mut s_lane = s.clone();
+                s_lane.n = n_lane;
+                bind_rlc_inputs_with_context(tr, RlcLane::Val, step_idx, core::slice::from_ref(me), &backend_ctx)?;
+                let k_rlc_min = neo_reductions::common::min_k_rho_for_rlc_count(params, &ring, 1)? as usize;
+                let k_rho_eff = core::cmp::max(k_dec, k_rlc_min);
+                let mut params_rlc = params.clone();
+                params_rlc.k_rho = k_rho_eff as u32;
+                let rlc_rhos = ccs::sample_rot_rhos_n_typed(tr, &params_rlc, &ring, 1)?;
+                prepared_val.push(PreparedValLane {
+                    claim_idx,
+                    me: me.clone(),
+                    rlc_rhos,
+                    wit,
+                });
+            }
+            let parent_mix_rhos: Vec<Vec<Mat<F>>> = prepared_val
+                .iter()
+                .map(|prepared| ccs::rot_rhos_to_mats(&prepared.rlc_rhos))
+                .collect();
+            let parent_mix_cs: Vec<Vec<Cmt>> = prepared_val
+                .iter()
+                .map(|prepared| vec![prepared.me.c.clone()])
+                .collect();
+            let parent_commitments = crate::shard::mix_many_rhos_commits_with_backend(
+                &backend_ctx,
+                |rhos, cs| (mixers.mix_rhos_commits)(rhos, cs),
+                &parent_mix_rhos,
+                &parent_mix_cs,
+            )?;
+            if parent_commitments.len() != prepared_val.len() {
+                return Err(PiCcsError::ProtocolError(format!(
+                    "val parent commitment batch returned {} commitments for {} claims",
+                    parent_commitments.len(),
+                    prepared_val.len()
+                )));
+            }
+            let mut val_fold_by_claim: Vec<Option<RlcDecProof>> = vec![None; prepared_val.len()];
+            let mut val_wits_by_claim: Vec<Option<Vec<Mat<F>>>> = collect_val_lane_wits
+                .then(|| vec![None; prepared_val.len()])
+                .unwrap_or_default();
+            let mut pending_val_materialized: Vec<(usize, PreparedValMaterializedDec)> = Vec::new();
+            for (prepared, parent_commitment) in prepared_val.into_iter().zip(parent_commitments.into_iter()) {
+                match prepare_batched_val_rlc_dec(
                     &mode,
-                    RlcLane::Val,
-                    tr,
                     params,
                     &s,
                     ccs_sparse_cache.as_deref(),
-                    Some(&cpu_bus),
                     &ring,
                     ell_d,
                     k_dec,
                     step_idx,
                     &backend_ctx,
-                    false,
-                    None,
-                    core::slice::from_ref(me),
-                    core::slice::from_ref(&wit),
+                    Some(&cpu_bus),
+                    &prepared.me,
+                    prepared.wit,
                     collect_val_lane_wits,
-                    l,
-                    mixers,
-                )?;
-                if collect_val_lane_wits {
-                    val_lane_wits.extend(Z_split_val.drain(..));
+                    mixers.combine_b_pows,
+                    prepared.rlc_rhos,
+                    parent_commitment,
+                )? {
+                    PreparedValRlcDec::Complete { proof, witnesses } => {
+                        val_fold_by_claim[prepared.claim_idx] = Some(proof);
+                        if collect_val_lane_wits {
+                            val_wits_by_claim[prepared.claim_idx] = Some(witnesses);
+                        }
+                    }
+                    PreparedValRlcDec::PendingMaterialized(pending) => {
+                        pending_val_materialized.push((prepared.claim_idx, pending));
+                    }
                 }
+            }
+            if !pending_val_materialized.is_empty() {
+                let zero_c = Cmt::zeros(mcs_inst.c.d, mcs_inst.c.kappa);
+                let batched_wits: Vec<Vec<Mat<F>>> = pending_val_materialized
+                    .iter()
+                    .map(|(_, pending)| pending.dec_wits.clone())
+                    .collect();
+                let child_cs_batches = commit_dec_wits_batched(&backend_ctx, l, &batched_wits, &zero_c)?;
+                for ((claim_idx, pending), child_cs) in pending_val_materialized
+                    .into_iter()
+                    .zip(child_cs_batches.into_iter())
+                {
+                    let materialized_wits = collect_val_lane_wits.then(|| pending.dec_wits.clone());
+                    let proof = finalize_batched_val_rlc_dec(
+                        mode.clone(),
+                        params,
+                        ccs_sparse_cache.as_deref(),
+                        ell_d,
+                        step_idx,
+                        &backend_ctx,
+                        Some(&cpu_bus),
+                        pending,
+                        &child_cs,
+                        mixers.combine_b_pows,
+                    )?;
+                    if collect_val_lane_wits {
+                        val_wits_by_claim[claim_idx] = materialized_wits;
+                    }
+                    val_fold_by_claim[claim_idx] = Some(proof);
+                }
+            }
+            if collect_val_lane_wits {
+                for claim_wits in val_wits_by_claim.into_iter() {
+                    if let Some(mut claim_wits) = claim_wits {
+                        val_lane_wits.append(&mut claim_wits);
+                    }
+                }
+            }
+            for (claim_idx, proof) in val_fold_by_claim.into_iter().enumerate() {
+                let proof = proof.ok_or_else(|| {
+                    PiCcsError::ProtocolError(format!("missing val fold proof for claim_idx={claim_idx}"))
+                })?;
                 val_fold.push(proof);
             }
             prove_metrics.lane_durations.val_lane += Duration::from_secs_f64(elapsed_ms(val_lane_start) / 1_000.0);
@@ -2716,6 +2817,8 @@ where
                         false,
                         &stage8_committer,
                         mixers,
+                        None,
+                        None,
                     )?;
                     stage8_fold.push(stage8_proof);
                 } else if !stage8_joint_wits.is_empty() {
