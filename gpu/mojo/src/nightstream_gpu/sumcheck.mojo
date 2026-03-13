@@ -2,6 +2,7 @@ from gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from gpu import block_dim, block_idx, thread_idx
 from memory import UnsafePointer, alloc
 from nightstream_gpu import field, runtime
+from sys import has_accelerator
 
 
 comptime SPLIT_NC_SNAPSHOT_MAGIC = UInt64(0x4E53504C49544E43)
@@ -18,12 +19,6 @@ comptime DEVICE_API_CPU = 0
 comptime DEVICE_API_METAL = 1
 comptime DEVICE_API_CUDA = 2
 comptime DEVICE_API_HIP = 3
-comptime FePartialKernelT = type_of(
-    DeviceContext().compile_function[fe_partial_group_gpu_kernel, fe_partial_group_gpu_kernel_sig]()
-)
-comptime NcPartialKernelT = type_of(
-    DeviceContext().compile_function[nc_partial_group_gpu_kernel, nc_partial_group_gpu_kernel_sig]()
-)
 
 
 struct KVal(Copyable, ImplicitlyCopyable, Movable):
@@ -706,45 +701,10 @@ fn nc_partial_group_gpu_kernel_sig(
     pass
 
 
-struct SumcheckGpuCache(Movable):
-    var fe_kernel: FePartialKernelT
-    var nc_kernel: NcPartialKernelT
-
-    fn __init__(out self, ctx: DeviceContext) raises:
-        self.fe_kernel = ctx.compile_function[
-            fe_partial_group_gpu_kernel, fe_partial_group_gpu_kernel_sig
-        ]()
-        self.nc_kernel = ctx.compile_function[
-            nc_partial_group_gpu_kernel, nc_partial_group_gpu_kernel_sig
-        ]()
-
-
-fn sumcheck_gpu_cache_ptr(session: UInt64) -> UnsafePointer[SumcheckGpuCache, MutAnyOrigin]:
-    var addr = runtime.session_state_ptr(session)[].sumcheck_kernel_cache_addr
-    return UnsafePointer[SumcheckGpuCache, MutAnyOrigin](unsafe_from_address=Int(addr))
-
-
-fn ensure_sumcheck_gpu_cache(session: UInt64) raises:
-    ref session_state = runtime.session_state_ptr(session)[]
-    if session_state.sumcheck_kernel_cache_addr != 0:
-        return
-
-    var ptr = alloc[SumcheckGpuCache](1)
-    ptr.init_pointee_move(SumcheckGpuCache(session_state.accelerator_ctx.value()))
-    session_state.sumcheck_kernel_cache_addr = UInt64(Int(ptr))
-
-
 fn destroy_session_cache(session: UInt64):
     if session <= 1:
         return
-    ref session_state = runtime.session_state_ptr(session)[]
-    if session_state.sumcheck_kernel_cache_addr == 0:
-        return
-
-    var ptr = sumcheck_gpu_cache_ptr(session)
-    ptr.destroy_pointee()
-    ptr.free()
-    session_state.sumcheck_kernel_cache_addr = 0
+    runtime.session_state_ptr(session)[].sumcheck_kernel_cache_addr = 0
 
 
 struct FeEvaluatorState(Movable):
@@ -881,39 +841,41 @@ fn fe_evals_at_gpu(
     points_len: UInt64,
     out_ptr: UnsafePointer[mut=True, UInt64],
 ) raises:
-    var point_count = Int(UInt(points_len))
-    var tail_len = Int(read_snapshot_word(evaluator[].snapshot_words, 5)) // 2
-    var groups_per_point = (tail_len + SUMCHECK_PAIR_GROUP - 1) // SUMCHECK_PAIR_GROUP
-    var partial_word_count = point_count * groups_per_point * 2
-    var session_ptr = runtime.session_state_ptr(session)
-    ref session_state = session_ptr[]
-    session_state.ensure_sumcheck_buffers(point_count * 2, partial_word_count)
-    ensure_sumcheck_gpu_cache(session)
-    ensure_fe_snapshot_uploaded(session, evaluator)
-    var ctx = session_state.accelerator_ctx.value()
-    var host_points = session_state.sumcheck_points_host.value()
-    var host_partials = session_state.sumcheck_partials_host.value()
-    var dev_points = session_state.sumcheck_points_dev.value()
-    var dev_partials = session_state.sumcheck_partials_dev.value()
-    var dev_snapshot = evaluator[].snapshot_dev.value()
-    ref cache = sumcheck_gpu_cache_ptr(session)[]
+    if not has_accelerator():
+        raise Error("sumcheck accelerator unavailable at compile time")
+    else:
+        var point_count = Int(UInt(points_len))
+        var tail_len = Int(read_snapshot_word(evaluator[].snapshot_words, 5)) // 2
+        var groups_per_point = (tail_len + SUMCHECK_PAIR_GROUP - 1) // SUMCHECK_PAIR_GROUP
+        var partial_word_count = point_count * groups_per_point * 2
+        var session_ptr = runtime.session_state_ptr(session)
+        ref session_state = session_ptr[]
+        session_state.ensure_sumcheck_buffers(point_count * 2, partial_word_count)
+        ensure_fe_snapshot_uploaded(session, evaluator)
+        var ctx = session_state.accelerator_ctx.value()
+        var host_points = session_state.sumcheck_points_host.value()
+        var host_partials = session_state.sumcheck_partials_host.value()
+        var dev_points = session_state.sumcheck_points_dev.value()
+        var dev_partials = session_state.sumcheck_partials_dev.value()
+        var dev_snapshot = evaluator[].snapshot_dev.value()
 
-    for idx in range(point_count * 2):
-        host_points[idx] = points_words[idx]
+        for idx in range(point_count * 2):
+            host_points[idx] = points_words[idx]
 
-    ctx.enqueue_copy(src_buf=host_points, dst_buf=dev_points)
-    ctx.enqueue_function(
-        cache.fe_kernel,
-        dev_snapshot.unsafe_ptr(),
-        dev_points.unsafe_ptr(),
-        dev_partials.unsafe_ptr(),
-        point_count,
-        grid_dim=grid_dim_for(point_count * groups_per_point),
-        block_dim=SUMCHECK_GPU_BLOCK_SIZE,
-    )
-    ctx.enqueue_copy(src_buf=dev_partials, dst_buf=host_partials)
-    ctx.synchronize()
-    reduce_partials_host(host_partials.unsafe_ptr(), point_count, groups_per_point, out_ptr)
+        ctx.enqueue_copy(src_buf=host_points, dst_buf=dev_points)
+        ctx.enqueue_function[
+            fe_partial_group_gpu_kernel, fe_partial_group_gpu_kernel_sig
+        ](
+            dev_snapshot.unsafe_ptr(),
+            dev_points.unsafe_ptr(),
+            dev_partials.unsafe_ptr(),
+            point_count,
+            grid_dim=grid_dim_for(point_count * groups_per_point),
+            block_dim=SUMCHECK_GPU_BLOCK_SIZE,
+        )
+        ctx.enqueue_copy(src_buf=dev_partials, dst_buf=host_partials)
+        ctx.synchronize()
+        reduce_partials_host(host_partials.unsafe_ptr(), point_count, groups_per_point, out_ptr)
 
 
 fn nc_evals_at_gpu(
@@ -923,39 +885,41 @@ fn nc_evals_at_gpu(
     points_len: UInt64,
     out_ptr: UnsafePointer[mut=True, UInt64],
 ) raises:
-    var point_count = Int(UInt(points_len))
-    var tail_len = Int(read_snapshot_word(evaluator[].snapshot_words, 5)) // 2
-    var groups_per_point = (tail_len + SUMCHECK_PAIR_GROUP - 1) // SUMCHECK_PAIR_GROUP
-    var partial_word_count = point_count * groups_per_point * 2
-    var session_ptr = runtime.session_state_ptr(session)
-    ref session_state = session_ptr[]
-    session_state.ensure_sumcheck_buffers(point_count * 2, partial_word_count)
-    ensure_sumcheck_gpu_cache(session)
-    ensure_nc_snapshot_uploaded(session, evaluator)
-    var ctx = session_state.accelerator_ctx.value()
-    var host_points = session_state.sumcheck_points_host.value()
-    var host_partials = session_state.sumcheck_partials_host.value()
-    var dev_points = session_state.sumcheck_points_dev.value()
-    var dev_partials = session_state.sumcheck_partials_dev.value()
-    var dev_snapshot = evaluator[].snapshot_dev.value()
-    ref cache = sumcheck_gpu_cache_ptr(session)[]
+    if not has_accelerator():
+        raise Error("sumcheck accelerator unavailable at compile time")
+    else:
+        var point_count = Int(UInt(points_len))
+        var tail_len = Int(read_snapshot_word(evaluator[].snapshot_words, 5)) // 2
+        var groups_per_point = (tail_len + SUMCHECK_PAIR_GROUP - 1) // SUMCHECK_PAIR_GROUP
+        var partial_word_count = point_count * groups_per_point * 2
+        var session_ptr = runtime.session_state_ptr(session)
+        ref session_state = session_ptr[]
+        session_state.ensure_sumcheck_buffers(point_count * 2, partial_word_count)
+        ensure_nc_snapshot_uploaded(session, evaluator)
+        var ctx = session_state.accelerator_ctx.value()
+        var host_points = session_state.sumcheck_points_host.value()
+        var host_partials = session_state.sumcheck_partials_host.value()
+        var dev_points = session_state.sumcheck_points_dev.value()
+        var dev_partials = session_state.sumcheck_partials_dev.value()
+        var dev_snapshot = evaluator[].snapshot_dev.value()
 
-    for idx in range(point_count * 2):
-        host_points[idx] = points_words[idx]
+        for idx in range(point_count * 2):
+            host_points[idx] = points_words[idx]
 
-    ctx.enqueue_copy(src_buf=host_points, dst_buf=dev_points)
-    ctx.enqueue_function(
-        cache.nc_kernel,
-        dev_snapshot.unsafe_ptr(),
-        dev_points.unsafe_ptr(),
-        dev_partials.unsafe_ptr(),
-        point_count,
-        grid_dim=grid_dim_for(point_count * groups_per_point),
-        block_dim=SUMCHECK_GPU_BLOCK_SIZE,
-    )
-    ctx.enqueue_copy(src_buf=dev_partials, dst_buf=host_partials)
-    ctx.synchronize()
-    reduce_partials_host(host_partials.unsafe_ptr(), point_count, groups_per_point, out_ptr)
+        ctx.enqueue_copy(src_buf=host_points, dst_buf=dev_points)
+        ctx.enqueue_function[
+            nc_partial_group_gpu_kernel, nc_partial_group_gpu_kernel_sig
+        ](
+            dev_snapshot.unsafe_ptr(),
+            dev_points.unsafe_ptr(),
+            dev_partials.unsafe_ptr(),
+            point_count,
+            grid_dim=grid_dim_for(point_count * groups_per_point),
+            block_dim=SUMCHECK_GPU_BLOCK_SIZE,
+        )
+        ctx.enqueue_copy(src_buf=dev_partials, dst_buf=host_partials)
+        ctx.synchronize()
+        reduce_partials_host(host_partials.unsafe_ptr(), point_count, groups_per_point, out_ptr)
 
 
 fn fe_create(

@@ -74,7 +74,15 @@ fn setup_ajtai_committer(params: &NeoParams, m: usize) -> AjtaiSModule {
 
 fn setup_seeded_ajtai_committer(params: &NeoParams, m: usize, seed: [u8; 32]) -> AjtaiSModule {
     let m_commit = commit_cols_for_ccs_m(m);
-    set_global_pp_seeded(D, params.kappa as usize, m_commit, seed).expect("set_global_pp_seeded");
+    match set_global_pp_seeded(D, params.kappa as usize, m_commit, seed) {
+        Ok(()) => {}
+        Err(err) => {
+            let msg = err.to_string();
+            if !msg.contains("already loaded") && !msg.contains("already registered") {
+                panic!("set_global_pp_seeded: {err}");
+            }
+        }
+    }
     AjtaiSModule::from_global_for_dims(D, m_commit).expect("AjtaiSModule init")
 }
 

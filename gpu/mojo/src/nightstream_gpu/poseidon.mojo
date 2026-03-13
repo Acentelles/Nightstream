@@ -2,6 +2,7 @@ from gpu.host import DeviceContext
 from gpu import block_dim, block_idx, thread_idx
 from memory import UnsafePointer, alloc
 from nightstream_gpu import field, runtime
+from sys import has_accelerator
 
 
 comptime POSEIDON2_WIDTH = 8
@@ -15,9 +16,6 @@ comptime DEVICE_API_CPU = 0
 comptime DEVICE_API_METAL = 1
 comptime DEVICE_API_CUDA = 2
 comptime DEVICE_API_HIP = 3
-comptime PoseidonBatchKernelT = type_of(
-    DeviceContext().compile_function[poseidon2_gpu_batch_kernel, poseidon2_gpu_batch_kernel_sig]()
-)
 
 
 fn scaffold_ready() -> Bool:
@@ -94,41 +92,10 @@ fn poseidon2_gpu_batch_kernel_sig(
     pass
 
 
-struct PoseidonGpuCache(Movable):
-    var batch_kernel: PoseidonBatchKernelT
-
-    fn __init__(out self, ctx: DeviceContext) raises:
-        self.batch_kernel = ctx.compile_function[
-            poseidon2_gpu_batch_kernel, poseidon2_gpu_batch_kernel_sig
-        ]()
-
-
-fn poseidon_gpu_cache_ptr(session: UInt64) -> UnsafePointer[PoseidonGpuCache, MutAnyOrigin]:
-    var addr = runtime.session_state_ptr(session)[].poseidon_kernel_cache_addr
-    return UnsafePointer[PoseidonGpuCache, MutAnyOrigin](unsafe_from_address=Int(addr))
-
-
-fn ensure_poseidon_gpu_cache(session: UInt64) raises:
-    ref session_state = runtime.session_state_ptr(session)[]
-    if session_state.poseidon_kernel_cache_addr != 0:
-        return
-
-    var ptr = alloc[PoseidonGpuCache](1)
-    ptr.init_pointee_move(PoseidonGpuCache(session_state.accelerator_ctx.value()))
-    session_state.poseidon_kernel_cache_addr = UInt64(Int(ptr))
-
-
 fn destroy_session_cache(session: UInt64):
     if session <= 1:
         return
-    ref session_state = runtime.session_state_ptr(session)[]
-    if session_state.poseidon_kernel_cache_addr == 0:
-        return
-
-    var ptr = poseidon_gpu_cache_ptr(session)
-    ptr.destroy_pointee()
-    ptr.free()
-    session_state.poseidon_kernel_cache_addr = 0
+    runtime.session_state_ptr(session)[].poseidon_kernel_cache_addr = 0
 
 
 fn permute_batch_cpu_in_place(state_words: UnsafePointer[mut=True, UInt64], num_states: Int):
@@ -141,32 +108,34 @@ fn permute_batch_gpu_in_place(
     state_words: UnsafePointer[mut=True, UInt64],
     num_states: Int,
 ) raises:
-    var word_count = words_for_states(num_states)
-    var session_ptr = runtime.session_state_ptr(UInt64(session))
-    ref session_state = session_ptr[]
-    session_state.ensure_poseidon_buffers(word_count)
-    ensure_poseidon_gpu_cache(UInt64(session))
-    var ctx = session_state.accelerator_ctx.value()
-    var host = session_state.poseidon_host.value()
-    var dev = session_state.poseidon_dev.value()
-    ref cache = poseidon_gpu_cache_ptr(UInt64(session))[]
+    if not has_accelerator():
+        raise Error("poseidon accelerator unavailable at compile time")
+    else:
+        var word_count = words_for_states(num_states)
+        var session_ptr = runtime.session_state_ptr(UInt64(session))
+        ref session_state = session_ptr[]
+        session_state.ensure_poseidon_buffers(word_count)
+        var ctx = session_state.accelerator_ctx.value()
+        var host = session_state.poseidon_host.value()
+        var dev = session_state.poseidon_dev.value()
 
-    for i in range(word_count):
-        host[i] = state_words[i]
+        for i in range(word_count):
+            host[i] = state_words[i]
 
-    ctx.enqueue_copy(src_buf=host, dst_buf=dev)
-    ctx.enqueue_function(
-        cache.batch_kernel,
-        dev.unsafe_ptr(),
-        num_states,
-        grid_dim=grid_dim_for(num_states),
-        block_dim=GPU_BLOCK_SIZE,
-    )
-    ctx.enqueue_copy(src_buf=dev, dst_buf=host)
-    ctx.synchronize()
+        ctx.enqueue_copy(src_buf=host, dst_buf=dev)
+        ctx.enqueue_function[
+            poseidon2_gpu_batch_kernel, poseidon2_gpu_batch_kernel_sig
+        ](
+            dev.unsafe_ptr(),
+            num_states,
+            grid_dim=grid_dim_for(num_states),
+            block_dim=GPU_BLOCK_SIZE,
+        )
+        ctx.enqueue_copy(src_buf=dev, dst_buf=host)
+        ctx.synchronize()
 
-    for i in range(word_count):
-        state_words[i] = host[i]
+        for i in range(word_count):
+            state_words[i] = host[i]
 
 
 fn session_prefers_gpu(session: UInt) -> Bool:

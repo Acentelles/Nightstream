@@ -2,6 +2,7 @@ from gpu.host import DeviceContext
 from gpu import block_dim, block_idx, thread_idx
 from memory import UnsafePointer, alloc
 from nightstream_gpu import field, ring, runtime
+from sys import has_accelerator
 
 
 comptime D_WIDTH = 54
@@ -12,11 +13,6 @@ comptime DEVICE_API_CPU = 0
 comptime DEVICE_API_METAL = 1
 comptime DEVICE_API_CUDA = 2
 comptime DEVICE_API_HIP = 3
-comptime SuperneoBarBlockKernelT = type_of(
-    DeviceContext().compile_function[
-        superneo_bar_block_gpu_kernel, superneo_bar_block_gpu_kernel_sig
-    ]()
-)
 
 
 fn scaffold_ready() -> Bool:
@@ -148,41 +144,10 @@ fn superneo_bar_block_gpu_kernel_sig(
     pass
 
 
-struct SuperneoGpuCache(Movable):
-    var bar_block_kernel: SuperneoBarBlockKernelT
-
-    fn __init__(out self, ctx: DeviceContext) raises:
-        self.bar_block_kernel = ctx.compile_function[
-            superneo_bar_block_gpu_kernel, superneo_bar_block_gpu_kernel_sig
-        ]()
-
-
-fn superneo_gpu_cache_ptr(session: UInt64) -> UnsafePointer[SuperneoGpuCache, MutAnyOrigin]:
-    var addr = runtime.session_state_ptr(session)[].superneo_kernel_cache_addr
-    return UnsafePointer[SuperneoGpuCache, MutAnyOrigin](unsafe_from_address=Int(addr))
-
-
-fn ensure_superneo_gpu_cache(session: UInt64) raises:
-    ref session_state = runtime.session_state_ptr(session)[]
-    if session_state.superneo_kernel_cache_addr != 0:
-        return
-
-    var ptr = alloc[SuperneoGpuCache](1)
-    ptr.init_pointee_move(SuperneoGpuCache(session_state.accelerator_ctx.value()))
-    session_state.superneo_kernel_cache_addr = UInt64(Int(ptr))
-
-
 fn destroy_session_cache(session: UInt64):
     if session <= 1:
         return
-    ref session_state = runtime.session_state_ptr(session)[]
-    if session_state.superneo_kernel_cache_addr == 0:
-        return
-
-    var ptr = superneo_gpu_cache_ptr(session)
-    ptr.destroy_pointee()
-    ptr.free()
-    session_state.superneo_kernel_cache_addr = 0
+    runtime.session_state_ptr(session)[].superneo_kernel_cache_addr = 0
 
 
 fn superneo_bar_block_gpu_words(
@@ -191,39 +156,41 @@ fn superneo_bar_block_gpu_words(
     block_words: UnsafePointer[UInt64],
     out_words: UnsafePointer[mut=True, UInt64],
 ) raises:
-    var session_ptr = runtime.session_state_ptr(session)
-    ref session_state = session_ptr[]
-    session_state.ensure_superneo_buffers(MATRIX_WORDS, BLOCK_WORDS, BLOCK_WORDS)
-    ensure_superneo_gpu_cache(session)
-    var ctx = session_state.accelerator_ctx.value()
-    var a_host = session_state.superneo_a_host.value()
-    var a_dev = session_state.superneo_a_dev.value()
-    var b_host = session_state.superneo_b_host.value()
-    var b_dev = session_state.superneo_b_dev.value()
-    var out_host = session_state.superneo_out_host.value()
-    var out_dev = session_state.superneo_out_dev.value()
-    ref cache = superneo_gpu_cache_ptr(session)[]
+    if not has_accelerator():
+        raise Error("superneo accelerator unavailable at compile time")
+    else:
+        var session_ptr = runtime.session_state_ptr(session)
+        ref session_state = session_ptr[]
+        session_state.ensure_superneo_buffers(MATRIX_WORDS, BLOCK_WORDS, BLOCK_WORDS)
+        var ctx = session_state.accelerator_ctx.value()
+        var a_host = session_state.superneo_a_host.value()
+        var a_dev = session_state.superneo_a_dev.value()
+        var b_host = session_state.superneo_b_host.value()
+        var b_dev = session_state.superneo_b_dev.value()
+        var out_host = session_state.superneo_out_host.value()
+        var out_dev = session_state.superneo_out_dev.value()
 
-    for idx in range(MATRIX_WORDS):
-        a_host[idx] = matrix_words[idx]
-    for idx in range(BLOCK_WORDS):
-        b_host[idx] = block_words[idx]
+        for idx in range(MATRIX_WORDS):
+            a_host[idx] = matrix_words[idx]
+        for idx in range(BLOCK_WORDS):
+            b_host[idx] = block_words[idx]
 
-    ctx.enqueue_copy(src_buf=a_host, dst_buf=a_dev)
-    ctx.enqueue_copy(src_buf=b_host, dst_buf=b_dev)
-    ctx.enqueue_function(
-        cache.bar_block_kernel,
-        a_dev.unsafe_ptr(),
-        b_dev.unsafe_ptr(),
-        out_dev.unsafe_ptr(),
-        grid_dim=(D_WIDTH + GPU_BLOCK_SIZE - 1) // GPU_BLOCK_SIZE,
-        block_dim=GPU_BLOCK_SIZE,
-    )
-    ctx.enqueue_copy(src_buf=out_dev, dst_buf=out_host)
-    ctx.synchronize()
+        ctx.enqueue_copy(src_buf=a_host, dst_buf=a_dev)
+        ctx.enqueue_copy(src_buf=b_host, dst_buf=b_dev)
+        ctx.enqueue_function[
+            superneo_bar_block_gpu_kernel, superneo_bar_block_gpu_kernel_sig
+        ](
+            a_dev.unsafe_ptr(),
+            b_dev.unsafe_ptr(),
+            out_dev.unsafe_ptr(),
+            grid_dim=(D_WIDTH + GPU_BLOCK_SIZE - 1) // GPU_BLOCK_SIZE,
+            block_dim=GPU_BLOCK_SIZE,
+        )
+        ctx.enqueue_copy(src_buf=out_dev, dst_buf=out_host)
+        ctx.synchronize()
 
-    for idx in range(BLOCK_WORDS):
-        out_words[idx] = out_host[idx]
+        for idx in range(BLOCK_WORDS):
+            out_words[idx] = out_host[idx]
 
 
 fn superneo_row_dot_blocks_gpu_words(

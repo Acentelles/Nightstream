@@ -2,6 +2,7 @@ from gpu.host import DeviceContext
 from gpu import block_dim, block_idx, thread_idx
 from memory import UnsafePointer, alloc
 from nightstream_gpu import field, runtime
+from sys import has_accelerator
 
 
 comptime D_WIDTH = 54
@@ -18,14 +19,6 @@ comptime DEVICE_API_CPU = 0
 comptime DEVICE_API_METAL = 1
 comptime DEVICE_API_CUDA = 2
 comptime DEVICE_API_HIP = 3
-comptime RqMulBatchKernelT = type_of(
-    DeviceContext().compile_function[rq_mul_batch_gpu_kernel, rq_mul_batch_gpu_kernel_sig]()
-)
-comptime RqAccumulateBatchKernelT = type_of(
-    DeviceContext().compile_function[
-        rq_accumulate_batch_gpu_kernel, rq_accumulate_batch_gpu_kernel_sig
-    ]()
-)
 
 
 fn scaffold_ready() -> Bool:
@@ -261,45 +254,10 @@ fn rq_accumulate_batch_gpu_kernel_sig(
     pass
 
 
-struct RingGpuCache(Movable):
-    var batch_kernel: RqMulBatchKernelT
-    var accumulate_kernel: RqAccumulateBatchKernelT
-
-    fn __init__(out self, ctx: DeviceContext) raises:
-        self.batch_kernel = ctx.compile_function[
-            rq_mul_batch_gpu_kernel, rq_mul_batch_gpu_kernel_sig
-        ]()
-        self.accumulate_kernel = ctx.compile_function[
-            rq_accumulate_batch_gpu_kernel, rq_accumulate_batch_gpu_kernel_sig
-        ]()
-
-
-fn ring_gpu_cache_ptr(session: UInt64) -> UnsafePointer[RingGpuCache, MutAnyOrigin]:
-    var addr = runtime.session_state_ptr(session)[].ring_kernel_cache_addr
-    return UnsafePointer[RingGpuCache, MutAnyOrigin](unsafe_from_address=Int(addr))
-
-
-fn ensure_ring_gpu_cache(session: UInt64) raises:
-    ref session_state = runtime.session_state_ptr(session)[]
-    if session_state.ring_kernel_cache_addr != 0:
-        return
-
-    var ptr = alloc[RingGpuCache](1)
-    ptr.init_pointee_move(RingGpuCache(session_state.accelerator_ctx.value()))
-    session_state.ring_kernel_cache_addr = UInt64(Int(ptr))
-
-
 fn destroy_session_cache(session: UInt64):
     if session <= 1:
         return
-    ref session_state = runtime.session_state_ptr(session)[]
-    if session_state.ring_kernel_cache_addr == 0:
-        return
-
-    var ptr = ring_gpu_cache_ptr(session)
-    ptr.destroy_pointee()
-    ptr.free()
-    session_state.ring_kernel_cache_addr = 0
+    runtime.session_state_ptr(session)[].ring_kernel_cache_addr = 0
 
 
 fn rq_mul_batch_gpu_words(
@@ -309,40 +267,42 @@ fn rq_mul_batch_gpu_words(
     pair_count: Int,
     out_words: UnsafePointer[mut=True, UInt64],
 ) raises:
-    var word_count = pair_count * D_WIDTH
-    var session_ptr = runtime.session_state_ptr(session)
-    ref session_state = session_ptr[]
-    session_state.ensure_ring_buffers(word_count)
-    ensure_ring_gpu_cache(session)
-    var ctx = session_state.accelerator_ctx.value()
-    var lhs_host = session_state.ring_lhs_host.value()
-    var lhs_dev = session_state.ring_lhs_dev.value()
-    var rhs_host = session_state.ring_rhs_host.value()
-    var rhs_dev = session_state.ring_rhs_dev.value()
-    var out_host = session_state.ring_out_host.value()
-    var out_dev = session_state.ring_out_dev.value()
-    ref cache = ring_gpu_cache_ptr(session)[]
+    if not has_accelerator():
+        raise Error("ring accelerator unavailable at compile time")
+    else:
+        var word_count = pair_count * D_WIDTH
+        var session_ptr = runtime.session_state_ptr(session)
+        ref session_state = session_ptr[]
+        session_state.ensure_ring_buffers(word_count)
+        var ctx = session_state.accelerator_ctx.value()
+        var lhs_host = session_state.ring_lhs_host.value()
+        var lhs_dev = session_state.ring_lhs_dev.value()
+        var rhs_host = session_state.ring_rhs_host.value()
+        var rhs_dev = session_state.ring_rhs_dev.value()
+        var out_host = session_state.ring_out_host.value()
+        var out_dev = session_state.ring_out_dev.value()
 
-    for idx in range(word_count):
-        lhs_host[idx] = lhs_words[idx]
-        rhs_host[idx] = rhs_words[idx]
+        for idx in range(word_count):
+            lhs_host[idx] = lhs_words[idx]
+            rhs_host[idx] = rhs_words[idx]
 
-    ctx.enqueue_copy(src_buf=lhs_host, dst_buf=lhs_dev)
-    ctx.enqueue_copy(src_buf=rhs_host, dst_buf=rhs_dev)
-    ctx.enqueue_function(
-        cache.batch_kernel,
-        lhs_dev.unsafe_ptr(),
-        rhs_dev.unsafe_ptr(),
-        out_dev.unsafe_ptr(),
-        pair_count,
-        grid_dim=(pair_count + GPU_BLOCK_SIZE - 1) // GPU_BLOCK_SIZE,
-        block_dim=GPU_BLOCK_SIZE,
-    )
-    ctx.enqueue_copy(src_buf=out_dev, dst_buf=out_host)
-    ctx.synchronize()
+        ctx.enqueue_copy(src_buf=lhs_host, dst_buf=lhs_dev)
+        ctx.enqueue_copy(src_buf=rhs_host, dst_buf=rhs_dev)
+        ctx.enqueue_function[
+            rq_mul_batch_gpu_kernel, rq_mul_batch_gpu_kernel_sig
+        ](
+            lhs_dev.unsafe_ptr(),
+            rhs_dev.unsafe_ptr(),
+            out_dev.unsafe_ptr(),
+            pair_count,
+            grid_dim=(pair_count + GPU_BLOCK_SIZE - 1) // GPU_BLOCK_SIZE,
+            block_dim=GPU_BLOCK_SIZE,
+        )
+        ctx.enqueue_copy(src_buf=out_dev, dst_buf=out_host)
+        ctx.synchronize()
 
-    for idx in range(word_count):
-        out_words[idx] = out_host[idx]
+        for idx in range(word_count):
+            out_words[idx] = out_host[idx]
 
 
 fn rq_accumulate_batch_words(
@@ -390,53 +350,55 @@ fn rq_accumulate_batch_gpu_words(
     slot_count: Int,
     out_words: UnsafePointer[mut=True, UInt64],
 ) raises:
-    if slot_count < RQ_ACCUMULATE_GPU_MIN_SLOTS:
-        rq_accumulate_batch_gpu_host_reduce_words(
-            session, lhs_words, rhs_words, slot_offsets_words, pair_count, slot_count, out_words
+    if not has_accelerator():
+        raise Error("ring accelerator unavailable at compile time")
+    else:
+        if slot_count < RQ_ACCUMULATE_GPU_MIN_SLOTS:
+            rq_accumulate_batch_gpu_host_reduce_words(
+                session, lhs_words, rhs_words, slot_offsets_words, pair_count, slot_count, out_words
+            )
+            return
+        var word_count = pair_count * D_WIDTH
+        var out_word_count = slot_count * D_WIDTH
+        var meta_word_count = slot_count + 1
+        var session_ptr = runtime.session_state_ptr(session)
+        ref session_state = session_ptr[]
+        session_state.ensure_ring_buffers(word_count, meta_word_count)
+        var ctx = session_state.accelerator_ctx.value()
+        var lhs_host = session_state.ring_lhs_host.value()
+        var lhs_dev = session_state.ring_lhs_dev.value()
+        var rhs_host = session_state.ring_rhs_host.value()
+        var rhs_dev = session_state.ring_rhs_dev.value()
+        var out_host = session_state.ring_out_host.value()
+        var out_dev = session_state.ring_out_dev.value()
+        var meta_host = session_state.ring_meta_host.value()
+        var meta_dev = session_state.ring_meta_dev.value()
+
+        for idx in range(word_count):
+            lhs_host[idx] = lhs_words[idx]
+            rhs_host[idx] = rhs_words[idx]
+        for idx in range(meta_word_count):
+            meta_host[idx] = slot_offsets_words[idx]
+
+        ctx.enqueue_copy(src_buf=lhs_host, dst_buf=lhs_dev)
+        ctx.enqueue_copy(src_buf=rhs_host, dst_buf=rhs_dev)
+        ctx.enqueue_copy(src_buf=meta_host, dst_buf=meta_dev)
+        ctx.enqueue_function[
+            rq_accumulate_batch_gpu_kernel, rq_accumulate_batch_gpu_kernel_sig
+        ](
+            lhs_dev.unsafe_ptr(),
+            rhs_dev.unsafe_ptr(),
+            meta_dev.unsafe_ptr(),
+            out_dev.unsafe_ptr(),
+            slot_count,
+            grid_dim=(slot_count + GPU_BLOCK_SIZE - 1) // GPU_BLOCK_SIZE,
+            block_dim=GPU_BLOCK_SIZE,
         )
-        return
-    var word_count = pair_count * D_WIDTH
-    var out_word_count = slot_count * D_WIDTH
-    var meta_word_count = slot_count + 1
-    var session_ptr = runtime.session_state_ptr(session)
-    ref session_state = session_ptr[]
-    session_state.ensure_ring_buffers(word_count, meta_word_count)
-    ensure_ring_gpu_cache(session)
-    var ctx = session_state.accelerator_ctx.value()
-    var lhs_host = session_state.ring_lhs_host.value()
-    var lhs_dev = session_state.ring_lhs_dev.value()
-    var rhs_host = session_state.ring_rhs_host.value()
-    var rhs_dev = session_state.ring_rhs_dev.value()
-    var out_host = session_state.ring_out_host.value()
-    var out_dev = session_state.ring_out_dev.value()
-    var meta_host = session_state.ring_meta_host.value()
-    var meta_dev = session_state.ring_meta_dev.value()
-    ref cache = ring_gpu_cache_ptr(session)[]
+        ctx.enqueue_copy(src_buf=out_dev, dst_buf=out_host)
+        ctx.synchronize()
 
-    for idx in range(word_count):
-        lhs_host[idx] = lhs_words[idx]
-        rhs_host[idx] = rhs_words[idx]
-    for idx in range(meta_word_count):
-        meta_host[idx] = slot_offsets_words[idx]
-
-    ctx.enqueue_copy(src_buf=lhs_host, dst_buf=lhs_dev)
-    ctx.enqueue_copy(src_buf=rhs_host, dst_buf=rhs_dev)
-    ctx.enqueue_copy(src_buf=meta_host, dst_buf=meta_dev)
-    ctx.enqueue_function(
-        cache.accumulate_kernel,
-        lhs_dev.unsafe_ptr(),
-        rhs_dev.unsafe_ptr(),
-        meta_dev.unsafe_ptr(),
-        out_dev.unsafe_ptr(),
-        slot_count,
-        grid_dim=(slot_count + GPU_BLOCK_SIZE - 1) // GPU_BLOCK_SIZE,
-        block_dim=GPU_BLOCK_SIZE,
-    )
-    ctx.enqueue_copy(src_buf=out_dev, dst_buf=out_host)
-    ctx.synchronize()
-
-    for idx in range(out_word_count):
-        out_words[idx] = out_host[idx]
+        for idx in range(out_word_count):
+            out_words[idx] = out_host[idx]
 
 
 fn rq_accumulate_batch_gpu_host_reduce_words(
@@ -448,46 +410,48 @@ fn rq_accumulate_batch_gpu_host_reduce_words(
     slot_count: Int,
     out_words: UnsafePointer[mut=True, UInt64],
 ) raises:
-    var word_count = pair_count * D_WIDTH
-    var session_ptr = runtime.session_state_ptr(session)
-    ref session_state = session_ptr[]
-    session_state.ensure_ring_buffers(word_count)
-    ensure_ring_gpu_cache(session)
-    var ctx = session_state.accelerator_ctx.value()
-    var lhs_host = session_state.ring_lhs_host.value()
-    var lhs_dev = session_state.ring_lhs_dev.value()
-    var rhs_host = session_state.ring_rhs_host.value()
-    var rhs_dev = session_state.ring_rhs_dev.value()
-    var out_host = session_state.ring_out_host.value()
-    var out_dev = session_state.ring_out_dev.value()
-    ref cache = ring_gpu_cache_ptr(session)[]
+    if not has_accelerator():
+        raise Error("ring accelerator unavailable at compile time")
+    else:
+        var word_count = pair_count * D_WIDTH
+        var session_ptr = runtime.session_state_ptr(session)
+        ref session_state = session_ptr[]
+        session_state.ensure_ring_buffers(word_count)
+        var ctx = session_state.accelerator_ctx.value()
+        var lhs_host = session_state.ring_lhs_host.value()
+        var lhs_dev = session_state.ring_lhs_dev.value()
+        var rhs_host = session_state.ring_rhs_host.value()
+        var rhs_dev = session_state.ring_rhs_dev.value()
+        var out_host = session_state.ring_out_host.value()
+        var out_dev = session_state.ring_out_dev.value()
 
-    for idx in range(word_count):
-        lhs_host[idx] = lhs_words[idx]
-        rhs_host[idx] = rhs_words[idx]
+        for idx in range(word_count):
+            lhs_host[idx] = lhs_words[idx]
+            rhs_host[idx] = rhs_words[idx]
 
-    ctx.enqueue_copy(src_buf=lhs_host, dst_buf=lhs_dev)
-    ctx.enqueue_copy(src_buf=rhs_host, dst_buf=rhs_dev)
-    ctx.enqueue_function(
-        cache.batch_kernel,
-        lhs_dev.unsafe_ptr(),
-        rhs_dev.unsafe_ptr(),
-        out_dev.unsafe_ptr(),
-        pair_count,
-        grid_dim=(pair_count + GPU_BLOCK_SIZE - 1) // GPU_BLOCK_SIZE,
-        block_dim=GPU_BLOCK_SIZE,
-    )
-    ctx.enqueue_copy(src_buf=out_dev, dst_buf=out_host)
-    ctx.synchronize()
+        ctx.enqueue_copy(src_buf=lhs_host, dst_buf=lhs_dev)
+        ctx.enqueue_copy(src_buf=rhs_host, dst_buf=rhs_dev)
+        ctx.enqueue_function[
+            rq_mul_batch_gpu_kernel, rq_mul_batch_gpu_kernel_sig
+        ](
+            lhs_dev.unsafe_ptr(),
+            rhs_dev.unsafe_ptr(),
+            out_dev.unsafe_ptr(),
+            pair_count,
+            grid_dim=(pair_count + GPU_BLOCK_SIZE - 1) // GPU_BLOCK_SIZE,
+            block_dim=GPU_BLOCK_SIZE,
+        )
+        ctx.enqueue_copy(src_buf=out_dev, dst_buf=out_host)
+        ctx.synchronize()
 
-    for slot_idx in range(slot_count):
-        var out_off = slot_idx * D_WIDTH
-        rq_zero_words(out_words + out_off)
-        var start = Int(slot_offsets_words[slot_idx])
-        var end = Int(slot_offsets_words[slot_idx + 1])
-        for pair_idx in range(start, end):
-            var pair_off = pair_idx * D_WIDTH
-            rq_add_words(out_words + out_off, out_host.unsafe_ptr() + pair_off, out_words + out_off)
+        for slot_idx in range(slot_count):
+            var out_off = slot_idx * D_WIDTH
+            rq_zero_words(out_words + out_off)
+            var start = Int(slot_offsets_words[slot_idx])
+            var end = Int(slot_offsets_words[slot_idx + 1])
+            for pair_idx in range(start, end):
+                var pair_off = pair_idx * D_WIDTH
+                rq_add_words(out_words + out_off, out_host.unsafe_ptr() + pair_off, out_words + out_off)
 
 
 fn rq_mul_gpu_min_pairs_for_api(api: UInt32) -> Int:

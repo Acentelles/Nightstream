@@ -2,7 +2,7 @@ use std::sync::{Mutex, MutexGuard};
 
 pub(super) fn lock_mock_backend_counters() -> MutexGuard<'static, ()> {
     static LOCK: Mutex<()> = Mutex::new(());
-    LOCK.lock().expect("lock mock backend counter guard")
+    LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 mod ccs_only_mcs_batched;
