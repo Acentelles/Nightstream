@@ -180,7 +180,7 @@ pub(super) fn prove_route_a_time_phase(
     step: &StepWitnessBundle<Cmt, F, K>,
     step_idx: usize,
     ell_t: usize,
-    ell_n: usize,
+    _ell_n: usize,
     include_output_binding: bool,
     output_binding: Option<&crate::output_binding::OutputBindingConfig>,
     exact_reg_output_binding_active: bool,
@@ -231,31 +231,6 @@ pub(super) fn prove_route_a_time_phase(
                 oracle,
                 claimed_sum: K::ZERO,
                 label: b"trace_opening/quiescence",
-            },
-        );
-
-    let (decode_fields_built, decode_immediates_built) =
-        crate::memory_sidecar::memory::build_route_a_decode_time_claims(params, step, &r_cycle)?;
-    let decode_required = crate::memory_sidecar::memory::decode_stage_required_for_step_witness(step);
-    if decode_required && (decode_fields_built.is_none() || decode_immediates_built.is_none()) {
-        return Err(PiCcsError::ProtocolError(
-            "decode stage claims are required in RV32 trace mode but were not built".into(),
-        ));
-    }
-    let decode_fields_claim =
-        decode_fields_built.map(
-            |(oracle, _)| crate::memory_sidecar::route_a_time::ExtraBatchedTimeClaim {
-                oracle,
-                claimed_sum: K::ZERO,
-                label: b"decode/fields",
-            },
-        );
-    let decode_immediates_claim =
-        decode_immediates_built.map(
-            |(oracle, _)| crate::memory_sidecar::route_a_time::ExtraBatchedTimeClaim {
-                oracle,
-                claimed_sum: K::ZERO,
-                label: b"decode/immediates",
             },
         );
 
@@ -372,7 +347,7 @@ pub(super) fn prove_route_a_time_phase(
         params,
         step,
         &r_cycle,
-        ell_n,
+        ell_t,
         poseidon_cycle_enabled,
         poseidon_sidecar,
         poseidon_cycle_wit,
@@ -482,18 +457,14 @@ pub(super) fn prove_route_a_time_phase(
         crate::memory_sidecar::route_a_time::RouteABatchedTimeClaims {
             booleanity: booleanity_time_claim,
             trace_opening: trace_opening_time_claim,
-            decode: crate::memory_sidecar::route_a_time::DecodeTimeClaims {
-                decode_fields: decode_fields_claim,
-                decode_immediates: decode_immediates_claim,
-            },
-            width: crate::memory_sidecar::route_a_time::WidthTimeClaims {
+            width: crate::memory_sidecar::route_a_time::LegacyWidthStageTimeClaims {
                 bitness: width_bitness_claim,
                 quiescence: width_quiescence_claim,
                 selector_linkage: width_selector_linkage_claim,
                 load_semantics: width_load_semantics_claim,
                 store_semantics: width_store_semantics_claim,
             },
-            control: crate::memory_sidecar::route_a_time::ControlTimeClaims {
+            control: crate::memory_sidecar::route_a_time::Rv64ControlStageTimeClaims {
                 next_pc_linear: control_next_pc_linear_claim,
                 next_pc_control: control_next_pc_control_claim,
                 branch_semantics: control_branch_semantics_claim,

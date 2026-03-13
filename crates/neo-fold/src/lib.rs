@@ -24,7 +24,6 @@ pub mod finalize;
 pub mod shard;
 
 pub mod frontends;
-pub use frontends::riscv_trace_shard;
 pub use frontends::rv64_trace_shard;
 pub use frontends::test_export;
 

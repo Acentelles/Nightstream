@@ -18,7 +18,6 @@ use crate::memory_sidecar::memory::{RouteAMemoryOracles, ShoutRouteAProtocol, Ti
 use crate::memory_sidecar::route_a_compiler::shadow_assert_compiled_schedule_matches_metas;
 use crate::memory_sidecar::sumcheck_ds::{run_batched_sumcheck_prover_ds, verify_batched_sumcheck_rounds_ds};
 use crate::memory_sidecar::transcript::bind_batched_dynamic_claims;
-use crate::memory_sidecar::utils::RoundOraclePrefix;
 use crate::shard_proof_types::BatchedTimeProof;
 use crate::PiCcsError;
 
@@ -34,13 +33,7 @@ pub struct ExtraBatchedTimeClaim {
 }
 
 #[derive(Default)]
-pub struct DecodeTimeClaims {
-    pub decode_fields: Option<ExtraBatchedTimeClaim>,
-    pub decode_immediates: Option<ExtraBatchedTimeClaim>,
-}
-
-#[derive(Default)]
-pub struct WidthTimeClaims {
+pub struct LegacyWidthStageTimeClaims {
     pub bitness: Option<ExtraBatchedTimeClaim>,
     pub quiescence: Option<ExtraBatchedTimeClaim>,
     pub selector_linkage: Option<ExtraBatchedTimeClaim>,
@@ -49,7 +42,7 @@ pub struct WidthTimeClaims {
 }
 
 #[derive(Default)]
-pub struct ControlTimeClaims {
+pub struct Rv64ControlStageTimeClaims {
     pub next_pc_linear: Option<ExtraBatchedTimeClaim>,
     pub next_pc_control: Option<ExtraBatchedTimeClaim>,
     pub branch_semantics: Option<ExtraBatchedTimeClaim>,
@@ -79,18 +72,13 @@ pub struct OutputBindingTimeClaims {
 pub struct RouteABatchedTimeClaims {
     pub booleanity: Option<ExtraBatchedTimeClaim>,
     pub trace_opening: Option<ExtraBatchedTimeClaim>,
-    pub decode: DecodeTimeClaims,
-    pub width: WidthTimeClaims,
-    pub control: ControlTimeClaims,
+    pub width: LegacyWidthStageTimeClaims,
+    pub control: Rv64ControlStageTimeClaims,
     pub poseidon: PoseidonCycleTimeClaims,
     pub output_binding: OutputBindingTimeClaims,
 }
 
 impl RouteABatchedTimeClaims {
-    fn decode_stage_enabled(&self) -> bool {
-        self.decode.decode_fields.is_some() || self.decode.decode_immediates.is_some()
-    }
-
     fn width_stage_enabled(&self) -> bool {
         self.width.bitness.is_some()
             || self.width.quiescence.is_some()
@@ -127,7 +115,6 @@ pub struct OutputBindingTimeVerifyConfig {
 pub struct RouteABatchedTimeVerifyConfig {
     pub booleanity_enabled: bool,
     pub trace_opening_enabled: bool,
-    pub decode_stage_enabled: bool,
     pub width_stage_enabled: bool,
     pub control_stage_enabled: bool,
     pub poseidon_cycle_enabled: bool,
@@ -185,14 +172,12 @@ pub fn prove_route_a_batched_time(
 ) -> Result<RouteABatchedTimeProverOutput, PiCcsError> {
     let booleanity_enabled = claims.booleanity.is_some();
     let trace_opening_enabled = claims.trace_opening.is_some();
-    let decode_stage_enabled = claims.decode_stage_enabled();
     let width_stage_enabled = claims.width_stage_enabled();
     let control_stage_enabled = claims.control_stage_enabled();
     let poseidon_cycle_enabled = claims.poseidon_cycle_enabled();
     let RouteABatchedTimeClaims {
         booleanity,
         trace_opening,
-        decode,
         width,
         control,
         poseidon,
@@ -214,24 +199,6 @@ pub fn prove_route_a_batched_time(
         &mut claim_is_dynamic,
         &mut claims,
     )?;
-
-    // Optional: event-table Shout linkage trace hash claim.
-    let shout_event_trace_hash_claim = mem_oracles.shout_event_trace_hash.as_ref().map(|o| o.claim);
-    let mut shout_event_trace_hash_prefix = mem_oracles
-        .shout_event_trace_hash
-        .as_mut()
-        .map(|o| RoundOraclePrefix::new(o.oracle.as_mut(), ell_t));
-    if let (Some(claim), Some(prefix)) = (shout_event_trace_hash_claim, shout_event_trace_hash_prefix.as_mut()) {
-        claimed_sums.push(claim);
-        degree_bounds.push(prefix.degree_bound());
-        labels.push(b"shout/event_trace_hash");
-        claim_is_dynamic.push(true);
-        claims.push(BatchedClaim {
-            oracle: prefix,
-            claimed_sum: claim,
-            label: b"shout/event_trace_hash",
-        });
-    }
 
     let mut twist_protocol =
         TwistRouteAProtocol::new(&mut mem_oracles.twist, ell_t, twist_read_claims, twist_write_claims)?;
@@ -300,22 +267,6 @@ pub fn prove_route_a_batched_time(
         trace_opening_time_label,
         "missing trace_opening_time label",
         "missing trace_opening_time claimed_sum"
-    );
-    append_zero_optional_claim!(
-        decode.decode_fields,
-        _decode_decode_fields_degree_bound,
-        decode_decode_fields_oracle,
-        decode_decode_fields_label,
-        "missing decode_fields label",
-        "missing decode_fields claimed_sum"
-    );
-    append_zero_optional_claim!(
-        decode.decode_immediates,
-        _decode_decode_immediates_degree_bound,
-        decode_decode_immediates_oracle,
-        decode_decode_immediates_label,
-        "missing decode_immediates label",
-        "missing decode_immediates claimed_sum"
     );
     append_zero_optional_claim!(
         width.bitness,
@@ -485,7 +436,6 @@ pub fn prove_route_a_batched_time(
         step.mem_instances.iter().map(|(inst, _)| inst),
         booleanity_enabled,
         trace_opening_enabled,
-        decode_stage_enabled,
         width_stage_enabled,
         control_stage_enabled,
         poseidon_cycle_enabled,
@@ -572,7 +522,6 @@ pub fn verify_route_a_batched_time(
         step,
         config.booleanity_enabled,
         config.trace_opening_enabled,
-        config.decode_stage_enabled,
         config.width_stage_enabled,
         config.control_stage_enabled,
         config.poseidon_cycle_enabled,

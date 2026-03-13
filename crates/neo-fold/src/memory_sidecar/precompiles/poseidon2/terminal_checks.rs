@@ -76,7 +76,7 @@ fn poseidon_cycle_openings_from_me(core_t: usize, side_mes: &[&CeClaim<Cmt, F, K
 
 pub(crate) fn verify_route_a_poseidon_cycle_terminals(
     core_t: usize,
-    cpu_bus: &BusLayout,
+    _cpu_bus: &BusLayout,
     step: &StepInstanceBundle<Cmt, F, K>,
     r_time: &[K],
     r_cycle: &[K],
@@ -136,8 +136,8 @@ pub(crate) fn verify_route_a_poseidon_cycle_terminals(
             "poseidon cycle trace-opening ME claim m_in mismatch".into(),
         ));
     }
-
     let decode = Rv32DecodeSidecarLayout::new();
+    let trace_layout = neo_memory::riscv::trace::Rv64TraceLayout::new();
     let cpu_cols = poseidon_cpu_word_cols_for_cpu_len(step.time_columns.cpu_cols.len());
     let mut trace_opening_required_cols = vec![
         cpu_cols.active,
@@ -147,6 +147,27 @@ pub(crate) fn verify_route_a_poseidon_cycle_terminals(
         cpu_cols.rd_word,
         cpu_cols.shout_has_lookup,
     ];
+    for &col_id in [
+        decode.op_custom,
+        decode.rd_has_write,
+        decode.rd_is_zero,
+        decode.ram_has_read,
+        decode.ram_has_write,
+        decode.funct3_bit[0],
+        decode.funct3_bit[1],
+        decode.funct3_bit[2],
+        decode.funct7_bit[0],
+        decode.funct7_bit[1],
+        decode.funct7_bit[2],
+        decode.funct7_bit[3],
+        decode.funct7_bit[4],
+        decode.funct7_bit[5],
+        decode.funct7_bit[6],
+    ]
+    .iter()
+    {
+        trace_opening_required_cols.push(poseidon_rv64_decode_trace_col(&decode, &trace_layout, col_id)?);
+    }
     trace_opening_required_cols.sort_unstable();
     trace_opening_required_cols.dedup();
     let (_trace_opening_entry, trace_opening_map) = require_time_openings_covering_point(
@@ -158,17 +179,9 @@ pub(crate) fn verify_route_a_poseidon_cycle_terminals(
     let trace_opening_col = |col_id: usize| -> Result<K, PiCcsError> {
         named_opening(&trace_opening_map, col_id, "poseidon cycle trace-opening")
     };
-    let decode_open_map = decode_lookup_open_map_from_committed_openings(
-        step,
-        cpu_bus,
-        r_time,
-        step_time_openings,
-        "poseidon cycle decode",
-    )?;
     let decode_open_col = |col_id: usize| -> Result<K, PiCcsError> {
-        decode_open_map.get(&col_id).copied().ok_or_else(|| {
-            PiCcsError::ProtocolError(format!("poseidon(shared) missing decode opening col_id={col_id}"))
-        })
+        let trace_col = poseidon_rv64_decode_trace_col(&decode, &trace_layout, col_id)?;
+        trace_opening_col(trace_col)
     };
 
     let side_open = poseidon_cycle_openings_from_me(core_t, &side_mes)?;

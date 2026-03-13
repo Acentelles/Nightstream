@@ -4,11 +4,9 @@ use neo_memory::riscv::lookups::{
     RiscvOpcode, POSEIDON2_ABSORB_FUNCT7, POSEIDON2_CUSTOM_OPCODE, POSEIDON2_FINALIZE_FUNCT7, POSEIDON2_SQUEEZE_FUNCT7,
     PROG_ID, RAM_ID, REG_ID,
 };
-use neo_memory::riscv::trace::{riscv_is_decode_lookup_table_id, riscv_trace_is_width_lookup_table_id};
 use neo_memory::witness::{LutInstance, LutTableSpec, MemInstance, StepInstanceBundle, StepWitnessBundle};
 use p3_field::PrimeField64;
 
-use crate::memory_sidecar::memory::DECODE_FIELDS_DEGREE_BOUND;
 use crate::PiCcsError;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -108,9 +106,7 @@ pub fn poseidon_local_time_claim_metas() -> &'static [TimeClaimMeta] {
 pub struct ShoutLaneTimeClaimIdx {
     pub value: Option<usize>,
     pub adapter: Option<usize>,
-    pub event_table_hash: Option<usize>,
     pub gamma_group: Option<usize>,
-    pub transport_only: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -118,7 +114,6 @@ pub struct ShoutTimeClaimIdx {
     pub lanes: Vec<ShoutLaneTimeClaimIdx>,
     pub bitness: Option<usize>,
     pub ell_addr: usize,
-    pub transport_only: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -165,12 +160,9 @@ pub struct RouteATimeClaimPlan {
     pub claim_idx_end: usize,
     pub shout: Vec<ShoutTimeClaimIdx>,
     pub shout_gamma_groups: Vec<ShoutGammaGroupTimeClaimIdx>,
-    pub shout_event_trace_hash: Option<usize>,
     pub twist: Vec<TwistTimeClaimIdx>,
     pub booleanity_claim: Option<usize>,
     pub trace_opening_quiescence: Option<usize>,
-    pub decode_fields: Option<usize>,
-    pub decode_immediates: Option<usize>,
     pub width_bitness: Option<usize>,
     pub width_quiescence: Option<usize>,
     pub width_selector_linkage: Option<usize>,
@@ -192,11 +184,6 @@ pub struct RouteATimeClaimPlan {
 }
 
 impl RouteATimeClaimPlan {
-    #[inline]
-    pub(crate) fn route_a_transport_only_shout_table(table_id: u32) -> bool {
-        riscv_is_decode_lookup_table_id(table_id) || riscv_trace_is_width_lookup_table_id(table_id)
-    }
-
     fn is_poseidon_precompile_word(word: u32) -> bool {
         let opcode = word & 0x7f;
         if opcode != POSEIDON2_CUSTOM_OPCODE {
@@ -261,24 +248,17 @@ impl RouteATimeClaimPlan {
         // Group all non-packed lookup families that share an address group.
         // The addr_group is carried on each LutInstance (set by the bus config for trace mode,
         // None when no lookup-family sharing is configured). This collapses per-column decode/width families into one
-        // gamma-batched claim pair while keeping packed/event-table specs on their existing
-        // per-lane schedule.
+        // gamma-batched claim pair while keeping packed specs on their existing per-lane
+        // schedule.
         let mut grouped: std::collections::BTreeMap<u64, Vec<ShoutGammaGroupLaneRef>> =
             std::collections::BTreeMap::new();
         let mut grouped_ell: std::collections::BTreeMap<u64, usize> = std::collections::BTreeMap::new();
 
         let mut flat_lane_idx = 0usize;
         for (inst_idx, lut_inst) in lut_insts.iter().enumerate() {
-            if Self::route_a_transport_only_shout_table(lut_inst.table_id) {
-                flat_lane_idx += lut_inst.lanes.max(1);
-                continue;
-            }
             let lanes = lut_inst.lanes.max(1);
             let ell_addr = lut_inst.d * lut_inst.ell;
-            let is_packed = matches!(
-                lut_inst.table_spec,
-                Some(LutTableSpec::RiscvOpcodePacked { .. } | LutTableSpec::RiscvOpcodeEventTablePacked { .. })
-            );
+            let is_packed = matches!(lut_inst.table_spec, Some(LutTableSpec::RiscvOpcodePacked { .. }));
             let is_gamma_candidate = !is_packed && lut_inst.addr_group.is_some();
             for lane_idx in 0..lanes {
                 if is_gamma_candidate {
@@ -316,7 +296,6 @@ impl RouteATimeClaimPlan {
         mem_insts: MI,
         booleanity_enabled: bool,
         trace_opening_enabled: bool,
-        decode_stage_enabled: bool,
         width_stage_enabled: bool,
         control_stage_enabled: bool,
         poseidon_cycle_enabled: bool,
@@ -336,10 +315,6 @@ impl RouteATimeClaimPlan {
                 lane_gamma_map.insert((lane.inst_idx, lane.lane_idx), g_idx);
             }
         }
-        let any_event_table_shout = lut_insts
-            .iter()
-            .any(|inst| matches!(inst.table_spec, Some(LutTableSpec::RiscvOpcodeEventTablePacked { .. })));
-
         let mut out = Vec::new();
         let mut gamma_value_degree_bounds = vec![0usize; shout_gamma_groups.len()];
         let mut gamma_adapter_degree_bounds = vec![0usize; shout_gamma_groups.len()];
@@ -349,9 +324,6 @@ impl RouteATimeClaimPlan {
                 .any(|inst| inst.mem_id == RAM_ID.0 && inst.guest_addr_remap.is_some());
 
         for (inst_idx, lut_inst) in lut_insts.iter().enumerate() {
-            if Self::route_a_transport_only_shout_table(lut_inst.table_id) {
-                continue;
-            }
             let ell_addr = lut_inst.d * lut_inst.ell;
             let lanes = lut_inst.lanes.max(1);
             let (packed_opcode, _packed_base_ell_addr) = match &lut_inst.table_spec {
@@ -360,11 +332,6 @@ impl RouteATimeClaimPlan {
                 {
                     (Some(*opcode), ell_addr)
                 }
-                Some(LutTableSpec::RiscvOpcodeEventTablePacked {
-                    opcode,
-                    xlen: 32,
-                    time_bits,
-                }) => (Some(*opcode), ell_addr.saturating_sub(*time_bits)),
                 _ => (None, ell_addr),
             };
 
@@ -407,13 +374,6 @@ impl RouteATimeClaimPlan {
                         is_dynamic: true,
                     });
                 }
-                if let Some(LutTableSpec::RiscvOpcodeEventTablePacked { time_bits, .. }) = &lut_inst.table_spec {
-                    out.push(TimeClaimMeta {
-                        label: b"shout/event_table_hash",
-                        degree_bound: 2 + *time_bits,
-                        is_dynamic: true,
-                    });
-                }
             }
 
             if has_ungrouped_lane {
@@ -440,14 +400,6 @@ impl RouteATimeClaimPlan {
                 label: b"shout/bitness",
                 degree_bound: 3,
                 is_dynamic: false,
-            });
-        }
-
-        if any_event_table_shout {
-            out.push(TimeClaimMeta {
-                label: b"shout/event_trace_hash",
-                degree_bound: 3,
-                is_dynamic: true,
             });
         }
 
@@ -495,19 +447,6 @@ impl RouteATimeClaimPlan {
         if trace_opening_enabled {
             out.push(TimeClaimMeta {
                 label: b"trace_opening/quiescence",
-                degree_bound: 3,
-                is_dynamic: false,
-            });
-        }
-
-        if decode_stage_enabled {
-            out.push(TimeClaimMeta {
-                label: b"decode/fields",
-                degree_bound: DECODE_FIELDS_DEGREE_BOUND,
-                is_dynamic: false,
-            });
-            out.push(TimeClaimMeta {
-                label: b"decode/immediates",
                 degree_bound: 3,
                 is_dynamic: false,
             });
@@ -598,7 +537,6 @@ impl RouteATimeClaimPlan {
         step: &StepInstanceBundle<Cmt, F, K>,
         booleanity_enabled: bool,
         trace_opening_enabled: bool,
-        decode_stage_enabled: bool,
         width_stage_enabled: bool,
         control_stage_enabled: bool,
         poseidon_cycle_enabled: bool,
@@ -610,7 +548,6 @@ impl RouteATimeClaimPlan {
             step.mem_insts.iter(),
             booleanity_enabled,
             trace_opening_enabled,
-            decode_stage_enabled,
             width_stage_enabled,
             control_stage_enabled,
             poseidon_cycle_enabled,
@@ -624,7 +561,6 @@ impl RouteATimeClaimPlan {
         claim_idx_start: usize,
         booleanity_enabled: bool,
         trace_opening_enabled: bool,
-        decode_stage_enabled: bool,
         width_stage_enabled: bool,
         control_stage_enabled: bool,
         poseidon_cycle_enabled: bool,
@@ -638,32 +574,16 @@ impl RouteATimeClaimPlan {
                 lane_gamma_map.insert((lane.inst_idx, lane.lane_idx), g_idx);
             }
         }
-        let any_event_table_shout = step
-            .lut_insts
-            .iter()
-            .filter(|inst| !Self::route_a_transport_only_shout_table(inst.table_id))
-            .any(|inst| matches!(inst.table_spec, Some(LutTableSpec::RiscvOpcodeEventTablePacked { .. })));
         let mut twist = Vec::with_capacity(step.mem_insts.len());
 
         for (inst_idx, lut_inst) in step.lut_insts.iter().enumerate() {
-            let transport_only = Self::route_a_transport_only_shout_table(lut_inst.table_id);
             let ell_addr = lut_inst.d * lut_inst.ell;
             let lanes = lut_inst.lanes.max(1);
-            let is_event_table = matches!(
-                lut_inst.table_spec,
-                Some(LutTableSpec::RiscvOpcodeEventTablePacked { .. })
-            );
             let mut lane_claims: Vec<ShoutLaneTimeClaimIdx> = Vec::with_capacity(lanes);
             let mut has_ungrouped_lane = false;
             for lane_idx in 0..lanes {
-                let gamma_group = if transport_only {
-                    None
-                } else {
-                    lane_gamma_map.get(&(inst_idx, lane_idx)).copied()
-                };
-                let (value, adapter) = if transport_only {
-                    (None, None)
-                } else if gamma_group.is_some() {
+                let gamma_group = lane_gamma_map.get(&(inst_idx, lane_idx)).copied();
+                let (value, adapter) = if gamma_group.is_some() {
                     (None, None)
                 } else {
                     has_ungrouped_lane = true;
@@ -673,26 +593,13 @@ impl RouteATimeClaimPlan {
                     idx += 1;
                     (Some(value), Some(adapter))
                 };
-                let event_table_hash = if transport_only {
-                    None
-                } else if is_event_table {
-                    let h = idx;
-                    idx += 1;
-                    Some(h)
-                } else {
-                    None
-                };
                 lane_claims.push(ShoutLaneTimeClaimIdx {
                     value,
                     adapter,
-                    event_table_hash,
                     gamma_group,
-                    transport_only,
                 });
             }
-            let bitness = if transport_only {
-                None
-            } else if has_ungrouped_lane {
+            let bitness = if has_ungrouped_lane {
                 let out = idx;
                 idx += 1;
                 Some(out)
@@ -704,7 +611,6 @@ impl RouteATimeClaimPlan {
                 lanes: lane_claims,
                 bitness,
                 ell_addr,
-                transport_only,
             });
         }
 
@@ -725,14 +631,6 @@ impl RouteATimeClaimPlan {
                 bitness,
             });
         }
-
-        let shout_event_trace_hash = if any_event_table_shout {
-            let out = idx;
-            idx += 1;
-            Some(out)
-        } else {
-            None
-        };
 
         for mem_inst in &step.mem_insts {
             let ell_addr = mem_inst.d * mem_inst.ell;
@@ -777,22 +675,6 @@ impl RouteATimeClaimPlan {
         };
 
         let trace_opening_quiescence = if trace_opening_enabled {
-            let out = idx;
-            idx += 1;
-            Some(out)
-        } else {
-            None
-        };
-
-        let decode_fields = if decode_stage_enabled {
-            let out = idx;
-            idx += 1;
-            Some(out)
-        } else {
-            None
-        };
-
-        let decode_immediates = if decode_stage_enabled {
             let out = idx;
             idx += 1;
             Some(out)
@@ -950,12 +832,9 @@ impl RouteATimeClaimPlan {
             claim_idx_end: idx,
             shout,
             shout_gamma_groups,
-            shout_event_trace_hash,
             twist,
             booleanity_claim,
             trace_opening_quiescence,
-            decode_fields,
-            decode_immediates,
             width_bitness,
             width_quiescence,
             width_selector_linkage,

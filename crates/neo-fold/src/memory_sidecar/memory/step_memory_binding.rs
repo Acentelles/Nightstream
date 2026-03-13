@@ -21,22 +21,10 @@ pub(crate) fn bind_shout_table_spec(tr: &mut Poseidon2Transcript, spec: &Option<
                 .0 as u64;
             tr.append_u64s(b"shout/table_spec/meta_u64", &[2u64, opcode_id, *xlen as u64, 0u64]);
         }
-        LutTableSpec::RiscvOpcodeEventTablePacked {
-            opcode,
-            xlen,
-            time_bits,
-        } => {
-            let opcode_id = neo_memory::riscv::lookups::RiscvShoutTables::new(*xlen)
-                .opcode_to_id(*opcode)
-                .0 as u64;
-            tr.append_u64s(
-                b"shout/table_spec/meta_u64",
-                &[3u64, opcode_id, *xlen as u64, *time_bits as u64],
-            );
-        }
         LutTableSpec::IdentityU32 => {
-            tr.append_u64s(b"shout/table_spec/meta_u64", &[4u64, 0, 0, 0]);
+            tr.append_u64s(b"shout/table_spec/meta_u64", &[3u64, 0, 0, 0]);
         }
+        _ => unreachable!("unsupported shout table spec in neo-fold transcript binding"),
     }
 }
 

@@ -1,7 +1,7 @@
 use super::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Rv32PackedShoutOp {
+pub(crate) enum PackedOpcodeKind {
     And,
     Andn,
     Add,
@@ -25,71 +25,54 @@ pub(crate) enum Rv32PackedShoutOp {
     Remu,
 }
 
-pub(crate) fn rv32_packed_shout_layout(
+pub(crate) fn packed_opcode_layout(
     spec: &Option<LutTableSpec>,
-) -> Result<Option<(Rv32PackedShoutOp, usize, usize)>, PiCcsError> {
-    let (opcode, xlen, time_bits) = match spec {
-        Some(LutTableSpec::RiscvOpcodePacked { opcode, xlen }) => (*opcode, *xlen, 0usize),
-        Some(LutTableSpec::RiscvOpcodeEventTablePacked {
-            opcode,
-            xlen,
-            time_bits,
-        }) => (*opcode, *xlen, *time_bits),
+) -> Result<Option<(PackedOpcodeKind, usize)>, PiCcsError> {
+    let (opcode, xlen) = match spec {
+        Some(LutTableSpec::RiscvOpcodePacked { opcode, xlen }) => (*opcode, *xlen),
         _ => return Ok(None),
     };
 
     if !matches!(xlen, 32 | 64) {
         return Err(PiCcsError::InvalidInput(format!(
-            "packed RISC-V Shout requires xlen=32 or 64 in Route A (got xlen={xlen})"
+            "packed RISC-V opcode lanes require xlen=32 or 64 in Route A (got xlen={xlen})"
         )));
     }
-    if time_bits == 0 {
-        if matches!(spec, Some(LutTableSpec::RiscvOpcodeEventTablePacked { .. })) {
-            return Err(PiCcsError::InvalidInput(
-                "RiscvOpcodeEventTablePacked requires time_bits >= 1".into(),
-            ));
-        }
-    } else if xlen != 32 {
-        return Err(PiCcsError::InvalidInput(
-            "packed RV64 Shout does not support event-table mode in Route A".into(),
-        ));
-    }
-
     let op =
         match opcode {
-            neo_memory::riscv::lookups::RiscvOpcode::And => Rv32PackedShoutOp::And,
-            neo_memory::riscv::lookups::RiscvOpcode::Andn => Rv32PackedShoutOp::Andn,
-            neo_memory::riscv::lookups::RiscvOpcode::Add => Rv32PackedShoutOp::Add,
-            neo_memory::riscv::lookups::RiscvOpcode::Or => Rv32PackedShoutOp::Or,
-            neo_memory::riscv::lookups::RiscvOpcode::Sub => Rv32PackedShoutOp::Sub,
-            neo_memory::riscv::lookups::RiscvOpcode::Xor => Rv32PackedShoutOp::Xor,
-            neo_memory::riscv::lookups::RiscvOpcode::Eq => Rv32PackedShoutOp::Eq,
-            neo_memory::riscv::lookups::RiscvOpcode::Neq => Rv32PackedShoutOp::Neq,
-            neo_memory::riscv::lookups::RiscvOpcode::Slt => Rv32PackedShoutOp::Slt,
-            neo_memory::riscv::lookups::RiscvOpcode::Sll => Rv32PackedShoutOp::Sll,
-            neo_memory::riscv::lookups::RiscvOpcode::Srl => Rv32PackedShoutOp::Srl,
+            neo_memory::riscv::lookups::RiscvOpcode::And => PackedOpcodeKind::And,
+            neo_memory::riscv::lookups::RiscvOpcode::Andn => PackedOpcodeKind::Andn,
+            neo_memory::riscv::lookups::RiscvOpcode::Add => PackedOpcodeKind::Add,
+            neo_memory::riscv::lookups::RiscvOpcode::Or => PackedOpcodeKind::Or,
+            neo_memory::riscv::lookups::RiscvOpcode::Sub => PackedOpcodeKind::Sub,
+            neo_memory::riscv::lookups::RiscvOpcode::Xor => PackedOpcodeKind::Xor,
+            neo_memory::riscv::lookups::RiscvOpcode::Eq => PackedOpcodeKind::Eq,
+            neo_memory::riscv::lookups::RiscvOpcode::Neq => PackedOpcodeKind::Neq,
+            neo_memory::riscv::lookups::RiscvOpcode::Slt => PackedOpcodeKind::Slt,
+            neo_memory::riscv::lookups::RiscvOpcode::Sll => PackedOpcodeKind::Sll,
+            neo_memory::riscv::lookups::RiscvOpcode::Srl => PackedOpcodeKind::Srl,
             neo_memory::riscv::lookups::RiscvOpcode::Sra
-            | neo_memory::riscv::lookups::RiscvOpcode::VirtualMovsignWord => Rv32PackedShoutOp::Sra,
-            neo_memory::riscv::lookups::RiscvOpcode::Sltu => Rv32PackedShoutOp::Sltu,
+            | neo_memory::riscv::lookups::RiscvOpcode::VirtualMovsignWord => PackedOpcodeKind::Sra,
+            neo_memory::riscv::lookups::RiscvOpcode::Sltu => PackedOpcodeKind::Sltu,
             neo_memory::riscv::lookups::RiscvOpcode::Mul | neo_memory::riscv::lookups::RiscvOpcode::VirtualMulWord => {
-                Rv32PackedShoutOp::Mul
+                PackedOpcodeKind::Mul
             }
-            neo_memory::riscv::lookups::RiscvOpcode::Mulh => Rv32PackedShoutOp::Mulh,
-            neo_memory::riscv::lookups::RiscvOpcode::Mulhu => Rv32PackedShoutOp::Mulhu,
-            neo_memory::riscv::lookups::RiscvOpcode::Mulhsu => Rv32PackedShoutOp::Mulhsu,
+            neo_memory::riscv::lookups::RiscvOpcode::Mulh => PackedOpcodeKind::Mulh,
+            neo_memory::riscv::lookups::RiscvOpcode::Mulhu => PackedOpcodeKind::Mulhu,
+            neo_memory::riscv::lookups::RiscvOpcode::Mulhsu => PackedOpcodeKind::Mulhsu,
             neo_memory::riscv::lookups::RiscvOpcode::Div | neo_memory::riscv::lookups::RiscvOpcode::VirtualDivWord => {
-                Rv32PackedShoutOp::Div
+                PackedOpcodeKind::Div
             }
             neo_memory::riscv::lookups::RiscvOpcode::Divu
-            | neo_memory::riscv::lookups::RiscvOpcode::VirtualDivuWord => Rv32PackedShoutOp::Divu,
+            | neo_memory::riscv::lookups::RiscvOpcode::VirtualDivuWord => PackedOpcodeKind::Divu,
             neo_memory::riscv::lookups::RiscvOpcode::Rem | neo_memory::riscv::lookups::RiscvOpcode::VirtualRemWord => {
-                Rv32PackedShoutOp::Rem
+                PackedOpcodeKind::Rem
             }
             neo_memory::riscv::lookups::RiscvOpcode::Remu
-            | neo_memory::riscv::lookups::RiscvOpcode::VirtualRemuWord => Rv32PackedShoutOp::Remu,
+            | neo_memory::riscv::lookups::RiscvOpcode::VirtualRemuWord => PackedOpcodeKind::Remu,
             _ => {
                 return Err(PiCcsError::InvalidInput(format!(
-                    "packed RISC-V Shout is unsupported in Route A for opcode={opcode:?}, xlen={xlen}"
+                    "packed RISC-V opcode lanes are unsupported in Route A for opcode={opcode:?}, xlen={xlen}"
                 )));
             }
         };
@@ -108,33 +91,37 @@ pub(crate) fn rv32_packed_shout_layout(
         )
     {
         return Err(PiCcsError::InvalidInput(format!(
-            "packed RV64 Shout is currently only supported for exact base M-family ops in Route A (got opcode={opcode:?})"
+            "packed RV64 opcode lanes are currently only supported for exact base M-family ops in Route A (got opcode={opcode:?})"
         )));
     }
 
-    Ok(Some((op, xlen, time_bits)))
+    Ok(Some((op, xlen)))
 }
 
-pub(crate) fn rv32_shout_table_id_from_spec(spec: &Option<LutTableSpec>) -> Result<u32, PiCcsError> {
+pub(crate) fn opcode_table_id_from_spec(spec: &Option<LutTableSpec>) -> Result<u32, PiCcsError> {
     let (opcode, xlen) = match spec {
         Some(LutTableSpec::RiscvOpcode { opcode, xlen }) => (*opcode, *xlen),
         Some(LutTableSpec::RiscvOpcodePacked { opcode, xlen }) => (*opcode, *xlen),
-        Some(LutTableSpec::RiscvOpcodeEventTablePacked { opcode, xlen, .. }) => (*opcode, *xlen),
         Some(LutTableSpec::IdentityU32) => {
             return Err(PiCcsError::InvalidInput(
-                "trace linkage expects RISC-V shout table specs (IdentityU32 is unsupported)".into(),
+                "trace linkage expects RISC-V opcode table specs (IdentityU32 is unsupported)".into(),
+            ));
+        }
+        Some(_) => {
+            return Err(PiCcsError::InvalidInput(
+                "unsupported packed opcode table spec in neo-fold".into(),
             ));
         }
         None => {
             return Err(PiCcsError::InvalidInput(
-                "trace linkage requires LutTableSpec on Shout instances".into(),
+                "trace linkage requires LutTableSpec on opcode lookup instances".into(),
             ));
         }
     };
 
     if !matches!(xlen, 32 | 64) {
         return Err(PiCcsError::InvalidInput(format!(
-            "trace linkage expects RISC-V shout specs with xlen=32 or 64 (got xlen={xlen})"
+            "trace linkage expects RISC-V opcode specs with xlen=32 or 64 (got xlen={xlen})"
         )));
     }
     Ok(neo_memory::riscv::lookups::RiscvShoutTables::new(xlen)
@@ -142,11 +129,14 @@ pub(crate) fn rv32_shout_table_id_from_spec(spec: &Option<LutTableSpec>) -> Resu
         .0)
 }
 
-pub(crate) fn rv32_trace_link_table_id_from_spec(spec: &Option<LutTableSpec>) -> Result<Option<u32>, PiCcsError> {
+pub(crate) fn trace_link_opcode_table_id_from_spec(spec: &Option<LutTableSpec>) -> Result<Option<u32>, PiCcsError> {
     match spec {
-        Some(LutTableSpec::RiscvOpcode { .. })
-        | Some(LutTableSpec::RiscvOpcodePacked { .. })
-        | Some(LutTableSpec::RiscvOpcodeEventTablePacked { .. }) => Ok(Some(rv32_shout_table_id_from_spec(spec)?)),
+        Some(LutTableSpec::RiscvOpcode { .. }) | Some(LutTableSpec::RiscvOpcodePacked { .. }) => {
+            Ok(Some(opcode_table_id_from_spec(spec)?))
+        }
         Some(LutTableSpec::IdentityU32) | None => Ok(None),
+        Some(_) => Err(PiCcsError::InvalidInput(
+            "unsupported packed opcode table spec in neo-fold".into(),
+        )),
     }
 }

@@ -100,10 +100,7 @@ pub(crate) fn prove_shout_addr_pre_time(
 
         let z = &cpu_z_k;
         let inst_ell_addr = lut_inst.d * lut_inst.ell;
-        let is_packed_spec = matches!(
-            lut_inst.table_spec,
-            Some(LutTableSpec::RiscvOpcodePacked { .. } | LutTableSpec::RiscvOpcodeEventTablePacked { .. })
-        );
+        let is_packed_spec = matches!(lut_inst.table_spec, Some(LutTableSpec::RiscvOpcodePacked { .. }));
         let inst_ell_addr_u32 = u32::try_from(inst_ell_addr)
             .map_err(|_| PiCcsError::InvalidInput("Shout(Route A): ell_addr overflows u32".into()))?;
         groups
@@ -244,10 +241,9 @@ pub(crate) fn prove_shout_addr_pre_time(
                         )?;
                         (Box::new(o), sum)
                     }
-                    Some(LutTableSpec::RiscvOpcodePacked { .. })
-                    | Some(LutTableSpec::RiscvOpcodeEventTablePacked { .. }) => {
+                    Some(LutTableSpec::RiscvOpcodePacked { .. }) => {
                         return Err(PiCcsError::ProtocolError(
-                            "packed shout lane unexpectedly reached implicit addr-pre oracle path".into(),
+                            "packed opcode lane unexpectedly reached implicit addr-pre oracle path".into(),
                         ));
                     }
                     Some(LutTableSpec::IdentityU32) => {
@@ -258,6 +254,11 @@ pub(crate) fn prove_shout_addr_pre_time(
                             r_cycle,
                         )?;
                         (Box::new(o), sum)
+                    }
+                    Some(_) => {
+                        return Err(PiCcsError::InvalidInput(
+                            "unsupported packed opcode table spec in Route-A addr-pre".into(),
+                        ));
                     }
                 };
 

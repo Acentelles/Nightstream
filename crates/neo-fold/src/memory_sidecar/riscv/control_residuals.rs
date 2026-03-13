@@ -1,6 +1,6 @@
 use super::*;
 
-pub(crate) type ControlTimeClaims = (
+pub(crate) type Rv64ControlResidualTimeClaims = (
     Option<(Box<dyn RoundOracle + Send>, K)>,
     Option<(Box<dyn RoundOracle + Send>, K)>,
     Option<(Box<dyn RoundOracle + Send>, K)>,
@@ -131,53 +131,21 @@ pub(crate) fn build_route_a_control_time_claims(
     params: &NeoParams,
     step: &StepWitnessBundle<Cmt, F, K>,
     r_cycle: &[K],
-) -> Result<ControlTimeClaims, PiCcsError> {
+) -> Result<Rv64ControlResidualTimeClaims, PiCcsError> {
     if !control_stage_required_for_step_witness(step) {
         return Ok((None, None, None, None));
     }
-    let machine_xlen =
-        neo_memory::riscv::trace::infer_riscv_trace_machine_xlen(step.time_columns.cpu_cols.len()).unwrap_or(32);
-    let rv64_trace = (machine_xlen == 64).then(neo_memory::riscv::trace::Rv64TraceLayout::new);
-    let (
-        trace_cols,
-        trace_active,
-        trace_is_virtual,
-        trace_instr_word,
-        trace_pc_before,
-        trace_pc_after,
-        trace_rs1_val,
-        trace_rd_val,
-        trace_shout_val,
-        trace_jalr_drop_bit,
-    ) = if machine_xlen == 64 {
-        let trace = neo_memory::riscv::trace::Rv64TraceLayout::new();
-        (
-            trace.cols,
-            trace.active,
-            trace.is_virtual,
-            trace.instr_word,
-            trace.pc_before,
-            trace.pc_after,
-            trace.rs1_val,
-            trace.rd_val,
-            trace.shout_val,
-            trace.jalr_drop_bit,
-        )
-    } else {
-        let trace = Rv32TraceLayout::new();
-        (
-            trace.cols,
-            trace.active,
-            trace.is_virtual,
-            trace.instr_word,
-            trace.pc_before,
-            trace.pc_after,
-            trace.rs1_val,
-            trace.rd_val,
-            trace.shout_val,
-            trace.jalr_drop_bit,
-        )
-    };
+    let trace = neo_memory::riscv::trace::Rv64TraceLayout::new();
+    let trace_cols = trace.cols;
+    let trace_active = trace.active;
+    let trace_is_virtual = trace.is_virtual;
+    let trace_instr_word = trace.instr_word;
+    let trace_pc_before = trace.pc_before;
+    let trace_pc_after = trace.pc_after;
+    let trace_rs1_val = trace.rs1_val;
+    let trace_rd_val = trace.rd_val;
+    let trace_shout_val = trace.shout_val;
+    let trace_jalr_drop_bit = trace.jalr_drop_bit;
     let decode = Rv32DecodeSidecarLayout::new();
     let m_in = step.mcs.0.m_in;
     let ell_n = r_cycle.len();
@@ -189,7 +157,7 @@ pub(crate) fn build_route_a_control_time_claims(
     }
     if step.time_columns.cpu_cols.len() < trace_cols {
         return Err(PiCcsError::InvalidInput(format!(
-            "booleanity/trace-opening requires canonical RV{machine_xlen} time cpu prefix columns (got {}, expected at least {})",
+            "booleanity/trace-opening requires canonical RV64 time cpu prefix columns (got {}, expected at least {})",
             step.time_columns.cpu_cols.len(),
             trace_cols
         )));
@@ -209,9 +177,7 @@ pub(crate) fn build_route_a_control_time_claims(
         trace_shout_val,
         trace_jalr_drop_bit,
     ];
-    if let Some(trace64) = rv64_trace.as_ref() {
-        main_col_ids.extend(rv64_control_trace_metadata_columns(trace64));
-    }
+    main_col_ids.extend(rv64_control_trace_metadata_columns(&trace));
     let decode_col_ids = vec![
         decode.op_lui,
         decode.op_auipc,
@@ -259,58 +225,7 @@ pub(crate) fn build_route_a_control_time_claims(
     ];
 
     let main_decoded = decode_trace_col_values_batch(params, step, t_len, &main_col_ids)?;
-    let decode_decoded = if let Some(trace64) = rv64_trace.as_ref() {
-        rv64_control_decode_cols_from_trace(trace64, &decode, &main_decoded, &decode_col_ids)?
-    } else {
-        let instr_vals = main_decoded
-            .get(&trace_instr_word)
-            .ok_or_else(|| PiCcsError::ProtocolError("control(shared): missing instr_word decode column".into()))?;
-        let active_vals = main_decoded
-            .get(&trace_active)
-            .ok_or_else(|| PiCcsError::ProtocolError("control(shared): missing active decode column".into()))?;
-        if instr_vals.len() != t_len || active_vals.len() != t_len {
-            return Err(PiCcsError::ProtocolError(format!(
-                "control(shared): decoded CPU column lengths drift (instr={}, active={}, t_len={t_len})",
-                instr_vals.len(),
-                active_vals.len()
-            )));
-        }
-        let mut decoded = BTreeMap::<usize, Vec<K>>::new();
-        for &col_id in decode_col_ids.iter() {
-            decoded.insert(col_id, Vec::with_capacity(t_len));
-        }
-        for j in 0..t_len {
-            let instr_word = decode_k_to_u32(instr_vals[j], "control(shared)/instr_word")?;
-            let active = active_vals[j] != K::ZERO;
-            let mut row = riscv_decode_lookup_backed_row_from_instr_word(&decode, instr_word, active);
-            if !active {
-                row.fill(F::ZERO);
-            }
-            let rd_has_write = if active {
-                K::ONE - K::from(row[decode.rd_is_zero])
-            } else {
-                K::ZERO
-            };
-            let op_lui = K::from(row[decode.op_lui]);
-            let op_auipc = K::from(row[decode.op_auipc]);
-            let op_jal = K::from(row[decode.op_jal]);
-            let op_jalr = K::from(row[decode.op_jalr]);
-            for &col_id in decode_col_ids.iter() {
-                let val = match col_id {
-                    c if c == decode.op_lui_write => op_lui * rd_has_write,
-                    c if c == decode.op_auipc_write => op_auipc * rd_has_write,
-                    c if c == decode.op_jal_write => op_jal * rd_has_write,
-                    c if c == decode.op_jalr_write => op_jalr * rd_has_write,
-                    _ => K::from(row[col_id]),
-                };
-                decoded
-                    .get_mut(&col_id)
-                    .ok_or_else(|| PiCcsError::ProtocolError("control(shared): decode map build failed".into()))?
-                    .push(val);
-            }
-        }
-        decoded
-    };
+    let decode_decoded = rv64_control_decode_cols_from_trace(&trace, &decode, &main_decoded, &decode_col_ids)?;
 
     #[cfg(debug_assertions)]
     for j in 0..t_len {
@@ -626,7 +541,7 @@ pub(crate) fn build_route_a_control_time_claims(
                 .and_then(|v| v.get(j))
                 .ok_or_else(|| PiCcsError::ProtocolError("control(shared): missing funct7_bit[6] row".into()))?,
         ];
-        let imm_u = control_imm_u_value_from_bits(funct3_bits, rs1_bits, rs2_bits, funct7_bits, machine_xlen);
+        let imm_u = control_imm_u_value_from_bits(funct3_bits, rs1_bits, rs2_bits, funct7_bits, 64);
         let op_lui_write = op_lui * (K::ONE - rd_is_zero);
         let op_auipc_write = op_auipc * (K::ONE - rd_is_zero);
         let op_jal_write = op_jal * (K::ONE - rd_is_zero);
@@ -786,7 +701,7 @@ pub(crate) fn build_route_a_control_time_claims(
         let rs1_bits = [vals[10], vals[11], vals[12], vals[13], vals[14]];
         let rs2_bits = [vals[15], vals[16], vals[17], vals[18], vals[19]];
         let funct7_bits = [vals[20], vals[21], vals[22], vals[23], vals[24], vals[25], vals[26]];
-        let imm_u = control_imm_u_value_from_bits(funct3_bits, rs1_bits, rs2_bits, funct7_bits, machine_xlen);
+        let imm_u = control_imm_u_value_from_bits(funct3_bits, rs1_bits, rs2_bits, funct7_bits, 64);
         let residuals = control_writeback_residuals(
             rd_val,
             pc_before,
@@ -812,7 +727,7 @@ pub(crate) fn build_route_a_control_time_claims(
 }
 
 pub(crate) fn verify_route_a_control_terminals(
-    cpu_bus: &BusLayout,
+    _cpu_bus: &BusLayout,
     step: &StepInstanceBundle<Cmt, F, K>,
     r_time: &[K],
     r_cycle: &[K],
@@ -834,10 +749,7 @@ pub(crate) fn verify_route_a_control_terminals(
             "control stage requires trace-opening ME openings for main-trace terminals".into(),
         ));
     }
-    let machine_xlen =
-        neo_memory::riscv::trace::infer_riscv_trace_machine_xlen(step.time_columns.cpu_cols.len()).unwrap_or(32);
-    let trace = Rv32TraceLayout::new();
-    let rv64_trace = (machine_xlen == 64).then(neo_memory::riscv::trace::Rv64TraceLayout::new);
+    let rv64_trace = neo_memory::riscv::trace::Rv64TraceLayout::new();
     let decode = Rv32DecodeSidecarLayout::new();
 
     let trace_opening_me = &mem_proof.trace_opening_me_claims[0];
@@ -856,13 +768,42 @@ pub(crate) fn verify_route_a_control_terminals(
             "control stage trace-opening ME claim m_in mismatch".into(),
         ));
     }
-    let trace_opening_base_cols = riscv_trace_opening_columns(&trace);
-    let control_extra_cols = riscv_trace_control_extra_opening_columns(&trace);
-    let mut trace_opening_all_cols = trace_opening_base_cols.clone();
-    trace_opening_all_cols.extend(control_extra_cols.iter().copied());
-    if let Some(trace64) = rv64_trace.as_ref() {
-        trace_opening_all_cols.extend(rv64_control_trace_metadata_columns(trace64));
-    }
+    let (
+        trace_active,
+        trace_is_virtual,
+        trace_pc_before,
+        trace_pc_after,
+        trace_rs1_val,
+        trace_rd_val,
+        trace_jalr_drop_bit,
+        trace_shout_val,
+        mut trace_opening_all_cols,
+    ) = (
+        rv64_trace.active,
+        rv64_trace.is_virtual,
+        rv64_trace.pc_before,
+        rv64_trace.pc_after,
+        rv64_trace.rs1_val,
+        rv64_trace.rd_val,
+        rv64_trace.jalr_drop_bit,
+        rv64_trace.shout_val,
+        {
+            let mut cols = vec![
+                rv64_trace.active,
+                rv64_trace.is_virtual,
+                rv64_trace.pc_before,
+                rv64_trace.pc_after,
+                rv64_trace.rs1_val,
+                rv64_trace.rd_val,
+                rv64_trace.shout_val,
+                rv64_trace.jalr_drop_bit,
+            ];
+            cols.extend(rv64_control_trace_metadata_columns(&rv64_trace));
+            cols
+        },
+    );
+    let mut seen_trace_opening_cols = std::collections::BTreeSet::new();
+    trace_opening_all_cols.retain(|col_id| seen_trace_opening_cols.insert(*col_id));
     let (_trace_opening_entry, trace_opening_map) = require_time_openings_covering_point(
         step_time_openings,
         trace_opening_me.r.as_slice(),
@@ -872,40 +813,19 @@ pub(crate) fn verify_route_a_control_terminals(
     let trace_opening_col = |col_id: usize| -> Result<K, PiCcsError> {
         named_opening(&trace_opening_map, col_id, "control stage trace-opening")
     };
-    let decode_open_map = if rv64_trace.is_none() {
-        Some(decode_lookup_open_map_from_committed_openings(
-            step,
-            cpu_bus,
-            r_time,
-            step_time_openings,
-            "control stage decode",
-        )?)
-    } else {
-        None
-    };
     let decode_open_col = |col_id: usize| -> Result<K, PiCcsError> {
-        if let Some(trace64) = rv64_trace.as_ref() {
-            let trace_col = rv64_control_decode_col_from_trace(trace64, &decode, col_id)?;
-            trace_opening_col(trace_col)
-        } else {
-            named_opening(
-                decode_open_map
-                    .as_ref()
-                    .ok_or_else(|| PiCcsError::ProtocolError("control stage decode openings missing".into()))?,
-                col_id,
-                "control stage decode",
-            )
-        }
+        let trace_col = rv64_control_decode_col_from_trace(&rv64_trace, &decode, col_id)?;
+        trace_opening_col(trace_col)
     };
 
-    let active = trace_opening_col(trace.active)?;
-    let is_virtual = trace_opening_col(trace.is_virtual)?;
-    let pc_before = trace_opening_col(trace.pc_before)?;
-    let pc_after = trace_opening_col(trace.pc_after)?;
-    let rs1_val = trace_opening_col(trace.rs1_val)?;
-    let rd_val = trace_opening_col(trace.rd_val)?;
-    let jalr_drop_bit = trace_opening_col(trace.jalr_drop_bit)?;
-    let shout_val = trace_opening_col(trace.shout_val)?;
+    let active = trace_opening_col(trace_active)?;
+    let is_virtual = trace_opening_col(trace_is_virtual)?;
+    let pc_before = trace_opening_col(trace_pc_before)?;
+    let pc_after = trace_opening_col(trace_pc_after)?;
+    let rs1_val = trace_opening_col(trace_rs1_val)?;
+    let rd_val = trace_opening_col(trace_rd_val)?;
+    let jalr_drop_bit = trace_opening_col(trace_jalr_drop_bit)?;
+    let shout_val = trace_opening_col(trace_shout_val)?;
     let funct3_bits = [
         decode_open_col(decode.funct3_bit[0])?,
         decode_open_col(decode.funct3_bit[1])?,
@@ -1058,7 +978,7 @@ pub(crate) fn verify_route_a_control_terminals(
                 "control/writeback claim index out of range".into(),
             ));
         }
-        let imm_u = control_imm_u_value_from_bits(funct3_bits, rs1_bits, rs2_bits, funct7_bits, machine_xlen);
+        let imm_u = control_imm_u_value_from_bits(funct3_bits, rs1_bits, rs2_bits, funct7_bits, 64);
         let residuals = control_writeback_residuals(
             rd_val,
             pc_before,

@@ -1,12 +1,12 @@
 use super::*;
 
 #[inline]
-fn packed_trace_link_operands(op: Rv32PackedShoutOp, addr_bits: &[K]) -> Result<(K, K), PiCcsError> {
+fn packed_trace_link_operands(op: PackedOpcodeKind, addr_bits: &[K]) -> Result<(K, K), PiCcsError> {
     let lhs = *addr_bits
         .first()
-        .ok_or_else(|| PiCcsError::InvalidInput("packed Shout trace linkage requires lhs in addr_bits[0]".into()))?;
+        .ok_or_else(|| PiCcsError::InvalidInput("packed opcode trace linkage requires lhs in addr_bits[0]".into()))?;
     let rhs = match op {
-        Rv32PackedShoutOp::Sll | Rv32PackedShoutOp::Srl | Rv32PackedShoutOp::Sra => {
+        PackedOpcodeKind::Sll | PackedOpcodeKind::Srl | PackedOpcodeKind::Sra => {
             if addr_bits.len() < 6 {
                 return Err(PiCcsError::InvalidInput(
                     "packed shift trace linkage requires 5 shamt bits after lhs".into(),
@@ -22,7 +22,7 @@ fn packed_trace_link_operands(op: Rv32PackedShoutOp, addr_bits: &[K]) -> Result<
             acc
         }
         _ => *addr_bits.get(1).ok_or_else(|| {
-            PiCcsError::InvalidInput("packed Shout trace linkage requires rhs in addr_bits[1]".into())
+            PiCcsError::InvalidInput("packed opcode trace linkage requires rhs in addr_bits[1]".into())
         })?,
     };
     Ok((lhs, rhs))
@@ -180,7 +180,6 @@ pub fn verify_route_a_memory_step(
     };
     let booleanity_enabled = trace_opening_path_required_for_step_instance(step);
     let trace_opening_enabled = trace_opening_path_required_for_step_instance(step);
-    let decode_stage_enabled = decode_stage_required_for_step_instance(step);
     let width_stage_enabled = width_stage_required_for_step_instance(step) || rv64_fullword_width_stage_from_proof;
     let control_enabled = control_stage_required_for_step_instance(step);
     let poseidon_cycle_enabled = RouteATimeClaimPlan::poseidon_stage_required_for_step_instance(step)?;
@@ -189,7 +188,6 @@ pub fn verify_route_a_memory_step(
         claim_idx_start,
         booleanity_enabled,
         trace_opening_enabled,
-        decode_stage_enabled,
         width_stage_enabled,
         control_enabled,
         poseidon_cycle_enabled,
@@ -231,8 +229,8 @@ pub fn verify_route_a_memory_step(
                 "virtual-domain check: trace-opening ME m_in mismatch".into(),
             ));
         }
-        let trace_layout = Rv32TraceLayout::new();
-        let trace_opening_cols = riscv_trace_opening_columns(&trace_layout);
+        let trace_layout = neo_memory::riscv::trace::Rv64TraceLayout::new();
+        let trace_opening_cols = rv64_trace_opening_columns(&trace_layout);
         let (trace_opening_entry, trace_opening_openings) = require_time_openings_covering_point(
             step_time_openings,
             r_time,
@@ -294,7 +292,7 @@ pub fn verify_route_a_memory_step(
     let mut shout_addr_range_counts_combined = std::collections::HashMap::<(usize, usize), usize>::new();
     if enforce_trace_shout_linkage {
         for (inst, inst_cols) in step.lut_insts.iter().zip(cpu_bus.shout_cols.iter()) {
-            let table_id = rv32_trace_link_table_id_from_spec(&inst.table_spec)?;
+            let table_id = trace_link_opcode_table_id_from_spec(&inst.table_spec)?;
             let is_combined_lane = table_id
                 .map(neo_memory::riscv::trace::rv32_trace_uses_combined_operand_key_table_id)
                 .unwrap_or(false);
@@ -316,13 +314,8 @@ pub fn verify_route_a_memory_step(
             MemOrLutProof::Shout(_proof) => {}
             _ => return Err(PiCcsError::InvalidInput("expected Shout proof".into())),
         }
-        let packed_layout = rv32_packed_shout_layout(&inst.table_spec)?;
-        if matches!(packed_layout, Some((_op, _xlen, time_bits)) if time_bits != 0) {
-            return Err(PiCcsError::InvalidInput(
-                "RiscvOpcodeEventTablePacked is not supported in shared-bus Route-A verification".into(),
-            ));
-        }
-        let packed_xlen = packed_layout.map(|(_op, xlen, _)| xlen).unwrap_or(0);
+        let packed_layout = packed_opcode_layout(&inst.table_spec)?;
+        let packed_xlen = packed_layout.map(|(_op, xlen)| xlen).unwrap_or(0);
         let packed_opcode = match &inst.table_spec {
             Some(LutTableSpec::RiscvOpcodePacked { opcode, xlen }) => {
                 if !neo_memory::riscv::packed::rv_packed_supported_opcode(*opcode, *xlen) {
@@ -334,12 +327,12 @@ pub fn verify_route_a_memory_step(
             }
             _ => None,
         };
-        let packed_trace_op = packed_layout.map(|(op, _, _)| op);
+        let packed_trace_op = packed_layout.map(|(op, _)| op);
 
         let ell_addr = inst.d * inst.ell;
         let expected_lanes = inst.lanes.max(1);
         let lane_table_id_u32 = if enforce_trace_shout_linkage {
-            rv32_trace_link_table_id_from_spec(&inst.table_spec)?
+            trace_link_opcode_table_id_from_spec(&inst.table_spec)?
         } else {
             None
         };
@@ -407,11 +400,6 @@ pub fn verify_route_a_memory_step(
                 shout_claims.lanes.len()
             )));
         }
-        if shout_claims.transport_only && shout_claims.bitness.is_some() {
-            return Err(PiCcsError::ProtocolError(format!(
-                "transport-only shout table unexpectedly has bitness claim at lut_idx={proof_idx}"
-            )));
-        }
         if shout_lane_base
             .checked_add(expected_lanes)
             .ok_or_else(|| PiCcsError::ProtocolError("shout lane index overflow".into()))?
@@ -424,35 +412,17 @@ pub fn verify_route_a_memory_step(
         // - value (time rounds only) per lane
         // - adapter (time rounds only) per lane
         // - aggregated bitness for ungrouped lanes only (grouped lanes are checked in gamma groups)
-        if !shout_claims.transport_only {
-            for lane_claim in shout_claims.lanes.iter() {
-                if lane_claim.transport_only {
-                    continue;
-                }
-                if lane_claim.gamma_group.is_none() {
-                    if lane_claim.value.is_none() || lane_claim.adapter.is_none() {
-                        return Err(PiCcsError::ProtocolError(
-                            "missing shout lane claim indices for non-grouped lane".into(),
-                        ));
-                    }
-                } else if lane_claim.value.is_some() || lane_claim.adapter.is_some() {
+        for lane_claim in shout_claims.lanes.iter() {
+            if lane_claim.gamma_group.is_none() {
+                if lane_claim.value.is_none() || lane_claim.adapter.is_none() {
                     return Err(PiCcsError::ProtocolError(
-                        "grouped shout lane must not carry direct value/adapter indices".into(),
+                        "missing shout lane claim indices for non-grouped lane".into(),
                     ));
                 }
-            }
-        } else {
-            for lane_claim in shout_claims.lanes.iter() {
-                if lane_claim.value.is_some()
-                    || lane_claim.adapter.is_some()
-                    || lane_claim.event_table_hash.is_some()
-                    || lane_claim.gamma_group.is_some()
-                    || !lane_claim.transport_only
-                {
-                    return Err(PiCcsError::ProtocolError(format!(
-                        "transport-only shout lane schedule drift at lut_idx={proof_idx}"
-                    )));
-                }
+            } else if lane_claim.value.is_some() || lane_claim.adapter.is_some() {
+                return Err(PiCcsError::ProtocolError(
+                    "grouped shout lane must not carry direct value/adapter indices".into(),
+                ));
             }
         }
         if let Some(bitness_idx) = shout_claims.bitness {
@@ -500,7 +470,7 @@ pub fn verify_route_a_memory_step(
                     "shout/bitness terminal value mismatch".into(),
                 ));
             }
-        } else if !shout_claims.transport_only {
+        } else {
             let has_non_grouped_lane = shout_claims
                 .lanes
                 .iter()
@@ -573,14 +543,11 @@ pub fn verify_route_a_memory_step(
                 .lanes
                 .get(lane_idx)
                 .ok_or_else(|| PiCcsError::ProtocolError("shout claim schedule lane idx drift".into()))?;
-            if shout_claims.transport_only {
-                continue;
-            }
 
             if lane_claims.gamma_group.is_some() {
                 if packed_opcode.is_some() {
                     return Err(PiCcsError::ProtocolError(
-                        "packed shout lane unexpectedly assigned to gamma group".into(),
+                        "packed opcode lane unexpectedly assigned to gamma group".into(),
                     ));
                 }
                 if !pre.is_active {
@@ -614,7 +581,7 @@ pub fn verify_route_a_memory_step(
                     // required to be zero in general.
                     if value_claim != K::ZERO || adapter_claim != K::ZERO {
                         return Err(PiCcsError::ProtocolError(format!(
-                            "packed shout lane zero-claim invariant mismatch at lut_idx={proof_idx}, lane_idx={lane_idx}: value_claim={value_claim:?}, adapter_claim={adapter_claim:?}"
+                            "packed opcode lane zero-claim invariant mismatch at lut_idx={proof_idx}, lane_idx={lane_idx}: value_claim={value_claim:?}, adapter_claim={adapter_claim:?}"
                         )));
                     }
                     if pre.is_active
@@ -623,7 +590,7 @@ pub fn verify_route_a_memory_step(
                         || pre.table_eval_at_r_addr != K::ZERO
                     {
                         return Err(PiCcsError::ProtocolError(
-                            "packed shout lane addr-pre invariants mismatch".into(),
+                            "packed opcode lane addr-pre invariants mismatch".into(),
                         ));
                     }
                     continue;
@@ -1342,16 +1309,6 @@ pub fn verify_route_a_memory_step(
     }
 
     verify_route_a_trace_opening_terminals(
-        step,
-        r_time,
-        r_cycle,
-        batched_final_values,
-        &claim_plan,
-        mem_proof,
-        step_time_openings,
-    )?;
-    verify_route_a_decode_terminals(
-        cpu_bus,
         step,
         r_time,
         r_cycle,

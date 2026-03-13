@@ -307,7 +307,7 @@ where
         }
     }
 
-    // If the main lane carries RV32 trace linkage openings, propagate them through Π_DEC so child
+    // If the main lane carries trace linkage openings, propagate them through Π_DEC so child
     // instances keep the same aux_openings shape (after optional shared-bus openings).
     if matches!(lane, RlcLane::Main) && trace_linkage_t_len.is_some() {
         let core_t = s.t();
@@ -317,7 +317,7 @@ where
             .len()
             .checked_sub(trace_open_base)
             .ok_or_else(|| PiCcsError::InvalidInput("trace linkage aux base underflow".into()))?;
-        let trace = Rv32TraceLayout::new();
+        let trace = neo_memory::riscv::trace::Rv64TraceLayout::new();
         let trace_cols_to_open: Vec<usize> = vec![
             trace.active,
             trace.cycle,
@@ -894,7 +894,7 @@ where
                 crate::memory_sidecar::cpu_bus::append_bus_openings_to_me_instance(params, cpu_bus, core_t, Z, out)?;
             }
 
-            let trace = Rv32TraceLayout::new();
+            let trace = neo_memory::riscv::trace::Rv64TraceLayout::new();
             let trace_cols_to_open: Vec<usize> = vec![
                 trace.active,
                 trace.cycle,

@@ -10,12 +10,9 @@ pub struct RouteAShoutTimeClaimsGuard<'a> {
 pub struct RouteAShoutTimeLaneClaims<'a> {
     pub value_prefix: RoundOraclePrefix<'a>,
     pub adapter_prefix: RoundOraclePrefix<'a>,
-    pub event_table_hash_prefix: Option<RoundOraclePrefix<'a>>,
     pub value_claim: K,
     pub adapter_claim: K,
-    pub event_table_hash_claim: Option<K>,
     pub gamma_group: Option<usize>,
-    pub transport_only: bool,
 }
 
 pub struct RouteAShoutTimeGammaGroupClaims<'a> {
@@ -43,15 +40,9 @@ pub fn build_route_a_shout_time_claims_guard<'a>(
             lanes.push(RouteAShoutTimeLaneClaims {
                 value_prefix: RoundOraclePrefix::new(lane.value.as_mut(), ell_n),
                 adapter_prefix: RoundOraclePrefix::new(lane.adapter.as_mut(), ell_n),
-                event_table_hash_prefix: lane
-                    .event_table_hash
-                    .as_deref_mut()
-                    .map(|o| RoundOraclePrefix::new(o, ell_n)),
                 value_claim: lane.value_claim,
                 adapter_claim: lane.adapter_claim,
-                event_table_hash_claim: lane.event_table_hash_claim,
                 gamma_group: lane.gamma_group,
-                transport_only: lane.transport_only,
             });
         }
         let end = lanes.len();
@@ -140,7 +131,7 @@ pub fn append_route_a_shout_time_claims<'a>(
     let mut bitness_iter = guard.bitness.iter_mut();
 
     for (lane_idx, lane) in guard.lanes.iter_mut().enumerate() {
-        if !lane.transport_only && lane.gamma_group.is_none() {
+        if lane.gamma_group.is_none() {
             claimed_sums.push(lane.value_claim);
             degree_bounds.push(lane.value_prefix.degree_bound());
             labels.push(b"shout/value");
@@ -159,21 +150,6 @@ pub fn append_route_a_shout_time_claims<'a>(
                 oracle: &mut lane.adapter_prefix,
                 claimed_sum: lane.adapter_claim,
                 label: b"shout/adapter",
-            });
-        }
-
-        if let Some(prefix) = lane.event_table_hash_prefix.as_mut() {
-            let claim = lane.event_table_hash_claim.ok_or_else(|| {
-                PiCcsError::ProtocolError(format!("event_table_hash_claim missing for shout lane_idx={lane_idx}"))
-            })?;
-            claimed_sums.push(claim);
-            degree_bounds.push(prefix.degree_bound());
-            labels.push(b"shout/event_table_hash");
-            claim_is_dynamic.push(true);
-            claims.push(BatchedClaim {
-                oracle: prefix,
-                claimed_sum: claim,
-                label: b"shout/event_table_hash",
             });
         }
 

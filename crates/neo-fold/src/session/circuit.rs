@@ -294,10 +294,8 @@ fn shout_meta_for_bus(
                     .map_err(|e| format!("invalid packed opcode spec: {e}"))?;
                 Ok((d, 2usize))
             }
-            LutTableSpec::RiscvOpcodeEventTablePacked { .. } => {
-                Err("RiscvOpcodeEventTablePacked is not supported in shared-bus circuits".into())
-            }
             LutTableSpec::IdentityU32 => Ok((32usize, 2usize)),
+            _ => Err("unsupported shout table spec in shared-bus circuits".into()),
         }
     } else {
         Err(format!("missing shout table metadata for table_id={table_id}"))

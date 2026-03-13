@@ -480,9 +480,9 @@ pub(super) fn table_ell_addr_for_shared_bus(
             LutTableSpec::RiscvOpcodePacked { opcode, xlen } => {
                 (neo_memory::riscv::packed::rv_packed_d(*opcode, *xlen)?, 2usize)
             }
-            LutTableSpec::RiscvOpcodeEventTablePacked { .. } => {
+            _ => {
                 return Err(PiCcsError::InvalidInput(
-                    "RV64 trace proving slice does not support packed event-table opcode tables".into(),
+                    "unsupported shout table spec in the RV64 trace proving slice".into(),
                 ));
             }
         }

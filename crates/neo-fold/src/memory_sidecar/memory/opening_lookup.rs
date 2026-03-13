@@ -198,26 +198,6 @@ pub(crate) fn bus_logical_col_ids_for_step_instance(
     Ok(step.time_columns.col_ids[cpu_cols_len..].to_vec())
 }
 
-pub(crate) fn infer_rv32_trace_t_len_for_trace_openings(
-    step: &StepWitnessBundle<Cmt, F, K>,
-    trace: &Rv32TraceLayout,
-) -> Result<usize, PiCcsError> {
-    let t_len = step.time_columns.t;
-    if t_len == 0 {
-        return Err(PiCcsError::InvalidInput(
-            "booleanity/trace-opening requires canonical time columns with t >= 1".into(),
-        ));
-    }
-    if step.time_columns.cpu_cols.len() < trace.cols {
-        return Err(PiCcsError::InvalidInput(format!(
-            "booleanity/trace-opening requires canonical RV32 time cpu prefix columns (got {}, expected at least {})",
-            step.time_columns.cpu_cols.len(),
-            trace.cols
-        )));
-    }
-    Ok(t_len)
-}
-
 pub(crate) fn decode_trace_col_values_batch(
     _params: &NeoParams,
     step: &StepWitnessBundle<Cmt, F, K>,
@@ -251,44 +231,5 @@ pub(crate) fn decode_trace_col_values_batch(
         decoded.insert(col_id, vals.iter().copied().map(K::from).collect());
     }
 
-    Ok(decoded)
-}
-
-pub(crate) fn decode_lookup_backed_col_values_batch(
-    t_len: usize,
-    max_cols: usize,
-    time_mem_cols: Option<&[Vec<F>]>,
-    col_ids: &[usize],
-) -> Result<BTreeMap<usize, Vec<K>>, PiCcsError> {
-    let mem_cols = time_mem_cols
-        .ok_or_else(|| PiCcsError::InvalidInput("decode: canonical time mem columns are required".into()))?;
-    if mem_cols.is_empty() {
-        return Err(PiCcsError::InvalidInput(
-            "decode: canonical time mem columns are required".into(),
-        ));
-    }
-
-    let unique_col_ids: BTreeSet<usize> = col_ids.iter().copied().collect();
-    let mut decoded = BTreeMap::<usize, Vec<K>>::new();
-    for col_id in unique_col_ids {
-        if col_id >= max_cols {
-            return Err(PiCcsError::InvalidInput(format!(
-                "decode: decode lookup-backed column out of range (col_id={col_id}, cols={max_cols})"
-            )));
-        }
-        let vals = mem_cols.get(col_id).ok_or_else(|| {
-            PiCcsError::InvalidInput(format!(
-                "decode: missing time mem column col_id={col_id} (mem_cols={})",
-                mem_cols.len()
-            ))
-        })?;
-        if vals.len() != t_len {
-            return Err(PiCcsError::InvalidInput(format!(
-                "decode: time mem column length mismatch for col_id={col_id} (len={}, t_len={t_len})",
-                vals.len()
-            )));
-        }
-        decoded.insert(col_id, vals.iter().copied().map(K::from).collect());
-    }
     Ok(decoded)
 }

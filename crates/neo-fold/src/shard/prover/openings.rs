@@ -190,8 +190,9 @@ where
             });
         }
         if let Some(booleanity_me) = mem_proof.booleanity_me_claims.first() {
-            let trace = Rv32TraceLayout::new();
-            let booleanity_cols = crate::memory_sidecar::memory::riscv_trace_booleanity_columns(&trace);
+            let booleanity_cols = crate::memory_sidecar::memory::rv64_trace_booleanity_columns(
+                &neo_memory::riscv::trace::Rv64TraceLayout::new(),
+            );
             let can_use_time_cpu_cols = step.time_columns.t > 0
                 && !step.time_columns.cpu_cols.is_empty()
                 && booleanity_cols
@@ -233,24 +234,17 @@ where
             });
         }
         if let Some(trace_opening_me) = mem_proof.trace_opening_me_claims.first() {
-            let trace = Rv32TraceLayout::new();
-            let rv64_exact_words =
-                crate::memory_sidecar::memory::trace_uses_rv64_exact_words(step.time_columns.cpu_cols.len());
-            let mut trace_opening_cols = crate::memory_sidecar::memory::riscv_trace_opening_columns(&trace);
-            if rv64_exact_words {
-                trace_opening_cols.extend(crate::memory_sidecar::memory::rv64_trace_exact_word_opening_columns());
-            }
+            let mut trace_opening_cols = crate::memory_sidecar::memory::rv64_trace_opening_columns(
+                &neo_memory::riscv::trace::Rv64TraceLayout::new(),
+            );
+            trace_opening_cols.extend(crate::memory_sidecar::memory::rv64_trace_exact_word_opening_columns());
             if control_required {
-                trace_opening_cols
-                    .extend(crate::memory_sidecar::memory::riscv_trace_control_extra_opening_columns(&trace));
-            }
-            if rv64_exact_words && control_required {
+                trace_opening_cols.extend(crate::memory_sidecar::memory::rv64_trace_control_extra_opening_columns(
+                    &neo_memory::riscv::trace::Rv64TraceLayout::new(),
+                ));
                 trace_opening_cols.extend(crate::memory_sidecar::memory::rv64_control_trace_metadata_columns(
                     &neo_memory::riscv::trace::Rv64TraceLayout::new(),
                 ));
-            }
-            if crate::memory_sidecar::memory::rv64_fullword_width_stage_required_for_step_witness(step) {
-                trace_opening_cols.extend(crate::memory_sidecar::memory::rv64_fullword_trace_opening_columns());
             }
             let mut seen_trace_opening_cols = std::collections::BTreeSet::new();
             trace_opening_cols.retain(|col_id| seen_trace_opening_cols.insert(*col_id));

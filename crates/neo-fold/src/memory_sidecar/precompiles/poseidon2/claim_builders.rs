@@ -516,33 +516,47 @@ pub(crate) struct PoseidonCpuWordCols {
 }
 
 #[inline]
-pub(crate) fn poseidon_cpu_word_cols_for_cpu_len(cpu_cols_len: usize) -> PoseidonCpuWordCols {
-    let rv32 = Rv32TraceLayout::new();
-    if neo_memory::riscv::trace::infer_riscv_trace_machine_xlen(cpu_cols_len) == Some(64) {
-        let rv64 = Rv64TraceLayout::new();
-        PoseidonCpuWordCols {
-            active: rv64.active,
-            instr_word: rv64.instr_word,
-            rs1_word: rv64.rs1_val_lo32,
-            rs2_word: rv64.rs2_val_lo32,
-            rd_word: rv64.rd_val_lo32,
-            shout_has_lookup: rv64.shout_has_lookup,
-        }
-    } else {
-        PoseidonCpuWordCols {
-            active: rv32.active,
-            instr_word: rv32.instr_word,
-            rs1_word: rv32.rs1_val,
-            rs2_word: rv32.rs2_val,
-            rd_word: rv32.rd_val,
-            shout_has_lookup: rv32.shout_has_lookup,
-        }
+pub(crate) fn poseidon_cpu_word_cols_for_cpu_len(_cpu_cols_len: usize) -> PoseidonCpuWordCols {
+    let rv64 = Rv64TraceLayout::new();
+    PoseidonCpuWordCols {
+        active: rv64.active,
+        instr_word: rv64.instr_word,
+        rs1_word: rv64.rs1_val_lo32,
+        rs2_word: rv64.rs2_val_lo32,
+        rd_word: rv64.rd_val_lo32,
+        shout_has_lookup: rv64.shout_has_lookup,
     }
 }
 
 #[inline]
 fn poseidon_cpu_word_cols(step: &StepWitnessBundle<Cmt, F, K>) -> PoseidonCpuWordCols {
     poseidon_cpu_word_cols_for_cpu_len(step.time_columns.cpu_cols.len())
+}
+
+pub(crate) fn poseidon_rv64_decode_trace_col(
+    decode: &Rv32DecodeSidecarLayout,
+    trace: &Rv64TraceLayout,
+    col_id: usize,
+) -> Result<usize, PiCcsError> {
+    if col_id == decode.op_custom {
+        Ok(trace.op_custom)
+    } else if col_id == decode.rd_has_write {
+        Ok(trace.rd_has_write)
+    } else if col_id == decode.rd_is_zero {
+        Ok(trace.rd_is_zero)
+    } else if col_id == decode.ram_has_read {
+        Ok(trace.ram_has_read)
+    } else if col_id == decode.ram_has_write {
+        Ok(trace.ram_has_write)
+    } else if let Some(idx) = decode.funct3_bit.iter().position(|&id| id == col_id) {
+        Ok(trace.funct3_bit[idx])
+    } else if let Some(idx) = decode.funct7_bit.iter().position(|&id| id == col_id) {
+        Ok(trace.funct7_bit[idx])
+    } else {
+        Err(PiCcsError::ProtocolError(format!(
+            "poseidon(shared): unsupported RV64 trace metadata mapping for decode col_id={col_id}"
+        )))
+    }
 }
 
 pub(crate) fn build_poseidon_sidecar_table_from_step_witness(
@@ -553,9 +567,8 @@ pub(crate) fn build_poseidon_sidecar_table_from_step_witness(
     const RATE: usize = neo_ccs::crypto::poseidon2_goldilocks::RATE;
     const DIGEST_LEN: usize = neo_ccs::crypto::poseidon2_goldilocks::DIGEST_LEN;
 
-    let trace = Rv32TraceLayout::new();
     let cpu_cols = poseidon_cpu_word_cols(step);
-    let t_len = infer_rv32_trace_t_len_for_trace_openings(step, &trace)?;
+    let t_len = step.time_columns.t;
     if t_len == 0 {
         return Err(PiCcsError::InvalidInput(
             "poseidon sidecar build: t_len must be >= 1".into(),
@@ -973,9 +986,8 @@ pub(crate) fn build_poseidon_cycle_trace_matrix(
     step: &StepWitnessBundle<Cmt, F, K>,
     sidecar: &RiscvPoseidonSidecarTable,
 ) -> Result<(Mat<F>, usize, usize, Vec<usize>), PiCcsError> {
-    let trace = Rv32TraceLayout::new();
     let layout = PoseidonCycleTraceLayout::new();
-    let t_len = infer_rv32_trace_t_len_for_trace_openings(step, &trace)?;
+    let t_len = step.time_columns.t;
     if t_len == 0 {
         return Err(PiCcsError::InvalidInput(
             "poseidon cycle trace matrix: t_len must be >= 1".into(),
@@ -1033,28 +1045,18 @@ pub(crate) fn build_route_a_poseidon_cycle_claims(
     let sidecar =
         sidecar.ok_or_else(|| PiCcsError::ProtocolError("poseidon cycle claims require sidecar table".into()))?;
 
-    let trace = Rv32TraceLayout::new();
+    let trace = Rv64TraceLayout::new();
     let cpu_cols = poseidon_cpu_word_cols(step);
     let decode = Rv32DecodeSidecarLayout::new();
     let layout = PoseidonCycleTraceLayout::new();
     let m_in = step.mcs.0.m_in;
     let ell_n = r_cycle.len();
-    let t_len = infer_rv32_trace_t_len_for_trace_openings(step, &trace)?;
+    let t_len = step.time_columns.t;
     if t_len == 0 {
         return Err(PiCcsError::InvalidInput(
             "poseidon cycle stage: t_len must be >= 1".into(),
         ));
     }
-
-    let main_col_ids = vec![
-        cpu_cols.active,
-        cpu_cols.instr_word,
-        cpu_cols.rs1_word,
-        cpu_cols.rs2_word,
-        cpu_cols.rd_word,
-        cpu_cols.shout_has_lookup,
-    ];
-    let main_decoded = decode_trace_col_values_batch(params, step, t_len, &main_col_ids)?;
 
     let decode_col_ids = vec![
         decode.op_custom,
@@ -1073,40 +1075,18 @@ pub(crate) fn build_route_a_poseidon_cycle_claims(
         decode.funct7_bit[5],
         decode.funct7_bit[6],
     ];
-    let decode_decoded = {
-        let instr_vals = main_decoded
-            .get(&cpu_cols.instr_word)
-            .ok_or_else(|| PiCcsError::ProtocolError("poseidon(shared): missing instr_word decode column".into()))?;
-        let active_vals = main_decoded
-            .get(&cpu_cols.active)
-            .ok_or_else(|| PiCcsError::ProtocolError("poseidon(shared): missing active decode column".into()))?;
-        if instr_vals.len() != t_len || active_vals.len() != t_len {
-            return Err(PiCcsError::ProtocolError(format!(
-                "poseidon(shared): decoded CPU column lengths drift (instr={}, active={}, t_len={t_len})",
-                instr_vals.len(),
-                active_vals.len()
-            )));
-        }
-        let mut decoded = BTreeMap::<usize, Vec<K>>::new();
-        for &col_id in decode_col_ids.iter() {
-            decoded.insert(col_id, Vec::with_capacity(t_len));
-        }
-        for j in 0..t_len {
-            let instr_word = decode_k_to_u32(instr_vals[j], "poseidon(shared)/instr_word")?;
-            let active = active_vals[j] != K::ZERO;
-            let mut row = riscv_decode_lookup_backed_row_from_instr_word(&decode, instr_word, active);
-            if !active {
-                row.fill(F::ZERO);
-            }
-            for &col_id in decode_col_ids.iter() {
-                decoded
-                    .get_mut(&col_id)
-                    .ok_or_else(|| PiCcsError::ProtocolError("poseidon(shared): decode map build failed".into()))?
-                    .push(K::from(row[col_id]));
-            }
-        }
-        decoded
-    };
+    let mut main_col_ids = vec![
+        cpu_cols.active,
+        cpu_cols.instr_word,
+        cpu_cols.rs1_word,
+        cpu_cols.rs2_word,
+        cpu_cols.rd_word,
+        cpu_cols.shout_has_lookup,
+    ];
+    for &col_id in decode_col_ids.iter() {
+        main_col_ids.push(poseidon_rv64_decode_trace_col(&decode, &trace, col_id)?);
+    }
+    let main_decoded = decode_trace_col_values_batch(params, step, t_len, &main_col_ids)?;
 
     let side_vals = build_poseidon_cycle_col_values(t_len, sidecar)?;
 
@@ -1116,13 +1096,6 @@ pub(crate) fn build_route_a_poseidon_cycle_claims(
             .get(&col_id)
             .ok_or_else(|| PiCcsError::ProtocolError(format!("poseidon missing main decoded column {col_id}")))?;
         main_sparse.insert(col_id, sparse_trace_col_from_values(m_in, ell_n, vals)?);
-    }
-    let mut decode_sparse = BTreeMap::<usize, SparseIdxVec<K>>::new();
-    for &col_id in decode_col_ids.iter() {
-        let vals = decode_decoded
-            .get(&col_id)
-            .ok_or_else(|| PiCcsError::ProtocolError(format!("poseidon missing decode decoded column {col_id}")))?;
-        decode_sparse.insert(col_id, sparse_trace_col_from_values(m_in, ell_n, vals)?);
     }
     let mut side_sparse = BTreeMap::<usize, SparseIdxVec<K>>::new();
     for col_id in 0..layout.cols() {
@@ -1139,10 +1112,11 @@ pub(crate) fn build_route_a_poseidon_cycle_claims(
             .ok_or_else(|| PiCcsError::ProtocolError(format!("poseidon missing main sparse column {col_id}")))
     };
     let decode_col = |col_id: usize| -> Result<SparseIdxVec<K>, PiCcsError> {
-        decode_sparse
-            .get(&col_id)
+        let trace_col = poseidon_rv64_decode_trace_col(&decode, &trace, col_id)?;
+        main_sparse
+            .get(&trace_col)
             .cloned()
-            .ok_or_else(|| PiCcsError::ProtocolError(format!("poseidon missing decode sparse column {col_id}")))
+            .ok_or_else(|| PiCcsError::ProtocolError(format!("poseidon missing decode sparse column {trace_col}")))
     };
     let side_col = |col_id: usize| -> Result<SparseIdxVec<K>, PiCcsError> {
         side_sparse

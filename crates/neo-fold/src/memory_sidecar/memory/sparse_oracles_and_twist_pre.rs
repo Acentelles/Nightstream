@@ -1160,10 +1160,7 @@ pub(crate) fn extract_trace_cpu_link_openings(
         return Ok(None);
     }
 
-    // RV32 trace linkage: the prover appends time-combined openings for selected CPU trace columns
-    // to the CCS ME output at r_time. We use those to bind Twist instances (PROG/REG/RAM) to the
-    // same trace, without embedding a shared CPU bus tail.
-    let trace = Rv32TraceLayout::new();
+    let trace = neo_memory::riscv::trace::Rv64TraceLayout::new();
     let trace_cols_to_open: Vec<usize> = vec![
         trace.active,
         trace.cycle,
@@ -1210,58 +1207,13 @@ pub(crate) fn extract_trace_cpu_link_openings(
 }
 
 pub(crate) fn expected_trace_shout_table_id_from_openings(
-    step: &StepInstanceBundle<Cmt, F, K>,
+    _step: &StepInstanceBundle<Cmt, F, K>,
     _cpu_bus: &BusLayout,
-    mem_proof: &MemSidecarProof<Cmt, F, K>,
-    step_time_openings: &[crate::shard_proof_types::TimePointOpening],
-    r_time: &[K],
+    _mem_proof: &MemSidecarProof<Cmt, F, K>,
+    _step_time_openings: &[crate::shard_proof_types::TimePointOpening],
+    _r_time: &[K],
 ) -> Result<Option<K>, PiCcsError> {
-    if !decode_stage_required_for_step_instance(step) {
-        return Ok(None);
-    }
-
-    if mem_proof.trace_opening_me_claims.len() != 1 {
-        return Err(PiCcsError::ProtocolError(
-            "decode-linked Shout table_id check requires one trace-opening ME claim".into(),
-        ));
-    }
-    let trace_opening_me = &mem_proof.trace_opening_me_claims[0];
-    if trace_opening_me.r.as_slice() != r_time {
-        return Err(PiCcsError::ProtocolError(
-            "decode-linked Shout table_id check: trace-opening ME r mismatch".into(),
-        ));
-    }
-    if trace_opening_me.c != step.mcs_inst.c {
-        return Err(PiCcsError::ProtocolError(
-            "decode-linked Shout table_id check: trace-opening ME commitment mismatch".into(),
-        ));
-    }
-    if trace_opening_me.m_in != step.mcs_inst.m_in {
-        return Err(PiCcsError::ProtocolError(
-            "decode-linked Shout table_id check: trace-opening ME m_in mismatch".into(),
-        ));
-    }
-
-    let trace_layout = Rv32TraceLayout::new();
-    let trace_opening_cols = riscv_trace_opening_columns(&trace_layout);
-    let (trace_opening_entry, trace_opening_map) = require_time_openings_covering_point(
-        step_time_openings,
-        r_time,
-        &trace_opening_cols,
-        "decode-linked Shout table_id check/trace-opening",
-    )?;
-    if trace_opening_entry.source != crate::shard_proof_types::TimeOpeningSource::CommittedOpening {
-        return Err(PiCcsError::ProtocolError(format!(
-            "decode-linked Shout table_id check/trace-opening requires CommittedOpening source (got {:?})",
-            trace_opening_entry.source
-        )));
-    }
-    let shout_table_id = named_opening(
-        &trace_opening_map,
-        trace_layout.shout_table_id,
-        "decode-linked Shout table_id check",
-    )?;
-    Ok(Some(shout_table_id))
+    Ok(None)
 }
 
 pub(crate) fn prove_twist_addr_pre_time(

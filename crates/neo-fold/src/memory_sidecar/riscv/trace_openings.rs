@@ -1,27 +1,13 @@
 use super::*;
 
 #[inline]
-pub(crate) fn has_trace_lookup_families_instance(step: &StepInstanceBundle<Cmt, F, K>) -> bool {
-    step.lut_insts.iter().any(|inst| {
-        riscv_is_decode_lookup_table_id(inst.table_id) || riscv_trace_is_width_lookup_table_id(inst.table_id)
-    })
-}
-
-#[inline]
-pub(crate) fn has_trace_lookup_families_witness(step: &StepWitnessBundle<Cmt, F, K>) -> bool {
-    step.lut_instances.iter().any(|(inst, _)| {
-        riscv_is_decode_lookup_table_id(inst.table_id) || riscv_trace_is_width_lookup_table_id(inst.table_id)
-    })
-}
-
-#[inline]
 pub(crate) fn trace_opening_path_required_for_step_instance(step: &StepInstanceBundle<Cmt, F, K>) -> bool {
-    has_trace_lookup_families_instance(step) || trace_uses_rv64_exact_words(step.time_columns.cpu_cols.len())
+    trace_uses_rv64_exact_words(step.time_columns.cpu_cols.len())
 }
 
 #[inline]
 pub(crate) fn trace_opening_path_required_for_step_witness(step: &StepWitnessBundle<Cmt, F, K>) -> bool {
-    has_trace_lookup_families_witness(step) || trace_uses_rv64_exact_words(step.time_columns.cpu_cols.len())
+    trace_uses_rv64_exact_words(step.time_columns.cpu_cols.len())
 }
 
 pub(crate) fn build_bus_layout_for_step_witness(
@@ -90,190 +76,24 @@ pub(crate) fn build_bus_layout_for_step_witness(
     Ok(layout)
 }
 
-pub(crate) fn resolve_shared_decode_lookup_lut_indices(
-    step: &StepWitnessBundle<Cmt, F, K>,
-    decode_layout: &Rv32DecodeSidecarLayout,
-) -> Result<(Vec<usize>, Vec<(usize, usize)>), PiCcsError> {
-    let decode_open_cols = riscv_decode_lookup_transport_cols(decode_layout);
-    let mut decode_lut_slots = Vec::with_capacity(decode_open_cols.len());
-    for &col_id in decode_open_cols.iter() {
-        let table_id = riscv_decode_lookup_table_id_for_col(col_id);
-        let lut_idx = step
-            .lut_instances
-            .iter()
-            .position(|(inst, _)| inst.table_id == table_id)
-            .ok_or_else(|| {
-                PiCcsError::ProtocolError(format!(
-                    "decode(shared): missing decode lookup table_id={table_id} for col_id={col_id}"
-                ))
-            })?;
-        let val_slot = riscv_decode_lookup_val_slot_for_col(col_id).ok_or_else(|| {
-            PiCcsError::ProtocolError(format!(
-                "decode(shared): decode col_id={col_id} is not part of decode lookup transport slot map"
-            ))
-        })?;
-        decode_lut_slots.push((lut_idx, val_slot));
-    }
-
-    Ok((decode_open_cols, decode_lut_slots))
-}
-
-pub(crate) fn resolve_shared_width_lookup_lut_indices(
-    step: &StepWitnessBundle<Cmt, F, K>,
-    width_layout: &Rv32WidthSidecarLayout,
-) -> Result<(Vec<usize>, Vec<(usize, usize)>), PiCcsError> {
-    let width_open_cols = riscv_trace_shared_width_lookup_backed_cols(width_layout);
-    let mut width_lut_slots = Vec::with_capacity(width_open_cols.len());
-    for &col_id in width_open_cols.iter() {
-        let table_id = riscv_trace_shared_width_lookup_table_id_for_col(col_id);
-        let lut_idx = step
-            .lut_instances
-            .iter()
-            .position(|(inst, _)| inst.table_id == table_id)
-            .ok_or_else(|| {
-                PiCcsError::ProtocolError(format!(
-                    "width(shared): missing width lookup table_id={table_id} for col_id={col_id}"
-                ))
-            })?;
-        let val_slot = riscv_trace_shared_width_lookup_val_slot_for_col(col_id).ok_or_else(|| {
-            PiCcsError::ProtocolError(format!(
-                "width(shared): width col_id={col_id} is not part of width lookup transport slot map"
-            ))
-        })?;
-        width_lut_slots.push((lut_idx, val_slot));
-    }
-
-    Ok((width_open_cols, width_lut_slots))
+#[inline]
+pub(crate) fn width_stage_required_for_step_instance(_step: &StepInstanceBundle<Cmt, F, K>) -> bool {
+    false
 }
 
 #[inline]
-pub(crate) fn decode_stage_required_for_step_instance(step: &StepInstanceBundle<Cmt, F, K>) -> bool {
-    trace_opening_path_required_for_step_instance(step)
-        && step
-            .lut_insts
-            .iter()
-            .any(|inst| riscv_is_decode_lookup_table_id(inst.table_id))
-}
-
-#[inline]
-pub(crate) fn decode_stage_required_for_step_witness(step: &StepWitnessBundle<Cmt, F, K>) -> bool {
-    trace_opening_path_required_for_step_witness(step)
-        && step
-            .lut_instances
-            .iter()
-            .any(|(inst, _)| riscv_is_decode_lookup_table_id(inst.table_id))
-}
-
-#[inline]
-pub(crate) fn width_stage_required_for_step_instance(step: &StepInstanceBundle<Cmt, F, K>) -> bool {
-    trace_opening_path_required_for_step_instance(step)
-        && (step
-            .lut_insts
-            .iter()
-            .any(|inst| riscv_trace_uses_shared_width_lookup_table_id(inst.table_id))
-            || rv64_fullword_width_stage_required_for_step_instance(step))
-}
-
-#[inline]
-pub(crate) fn width_stage_required_for_step_witness(step: &StepWitnessBundle<Cmt, F, K>) -> bool {
-    trace_opening_path_required_for_step_witness(step)
-        && (step
-            .lut_instances
-            .iter()
-            .any(|(inst, _)| riscv_trace_uses_shared_width_lookup_table_id(inst.table_id))
-            || rv64_fullword_width_stage_required_for_step_witness(step))
+pub(crate) fn width_stage_required_for_step_witness(_step: &StepWitnessBundle<Cmt, F, K>) -> bool {
+    false
 }
 
 #[inline]
 pub(crate) fn control_stage_required_for_step_instance(step: &StepInstanceBundle<Cmt, F, K>) -> bool {
-    if trace_uses_rv64_exact_words(step.time_columns.cpu_cols.len()) {
-        return trace_opening_path_required_for_step_instance(step);
-    }
-    decode_stage_required_for_step_instance(step)
+    trace_opening_path_required_for_step_instance(step)
 }
 
 #[inline]
 pub(crate) fn control_stage_required_for_step_witness(step: &StepWitnessBundle<Cmt, F, K>) -> bool {
-    if trace_uses_rv64_exact_words(step.time_columns.cpu_cols.len()) {
-        return trace_opening_path_required_for_step_witness(step);
-    }
-    decode_stage_required_for_step_witness(step)
-}
-
-#[inline]
-pub(crate) fn time_mem_logical_col_id_for_step(
-    step: &StepWitnessBundle<Cmt, F, K>,
-    mem_local_col: usize,
-    label: &str,
-) -> Result<usize, PiCcsError> {
-    let cpu_cols_len = step.time_columns.cpu_cols.len();
-    let mem_cols_len = step.time_columns.mem_cols.len();
-    let total_cols = cpu_cols_len
-        .checked_add(mem_cols_len)
-        .ok_or_else(|| PiCcsError::InvalidInput(format!("{label}: cpu_cols + mem_cols overflow")))?;
-    if step.time_columns.col_ids.len() != total_cols {
-        return Err(PiCcsError::ProtocolError(format!(
-            "{label}: time column id table mismatch (col_ids={}, cpu_cols={}, mem_cols={})",
-            step.time_columns.col_ids.len(),
-            cpu_cols_len,
-            mem_cols_len
-        )));
-    }
-    let idx = cpu_cols_len
-        .checked_add(mem_local_col)
-        .ok_or_else(|| PiCcsError::InvalidInput(format!("{label}: cpu_cols + mem_local_col overflow")))?;
-    step.time_columns.col_ids.get(idx).copied().ok_or_else(|| {
-        PiCcsError::ProtocolError(format!(
-            "{label}: missing logical id for mem local col {} (cpu_cols={}, mem_cols={})",
-            mem_local_col, cpu_cols_len, mem_cols_len
-        ))
-    })
-}
-
-#[inline]
-pub(crate) fn time_mem_local_col_for_step(
-    step: &StepWitnessBundle<Cmt, F, K>,
-    logical_col_id: usize,
-    label: &str,
-) -> Result<usize, PiCcsError> {
-    let cpu_cols_len = step.time_columns.cpu_cols.len();
-    let mem_cols_len = step.time_columns.mem_cols.len();
-    let total_cols = cpu_cols_len
-        .checked_add(mem_cols_len)
-        .ok_or_else(|| PiCcsError::InvalidInput(format!("{label}: cpu_cols + mem_cols overflow")))?;
-    if step.time_columns.col_ids.len() != total_cols {
-        return Err(PiCcsError::ProtocolError(format!(
-            "{label}: time column id table mismatch (col_ids={}, cpu_cols={}, mem_cols={})",
-            step.time_columns.col_ids.len(),
-            cpu_cols_len,
-            mem_cols_len
-        )));
-    }
-    let abs_pos = step
-        .time_columns
-        .col_ids
-        .iter()
-        .position(|&id| id == logical_col_id)
-        .ok_or_else(|| {
-            PiCcsError::ProtocolError(format!(
-                "{label}: logical col_id={} is not present in step.time_columns.col_ids",
-                logical_col_id
-            ))
-        })?;
-    if abs_pos < cpu_cols_len {
-        return Err(PiCcsError::ProtocolError(format!(
-            "{label}: logical col_id={} resolved to CPU column position {} (expected mem column)",
-            logical_col_id, abs_pos
-        )));
-    }
-    let mem_local = abs_pos - cpu_cols_len;
-    if mem_local >= mem_cols_len {
-        return Err(PiCcsError::ProtocolError(format!(
-            "{label}: logical col_id={} resolved out of mem column range (mem_local={}, mem_cols={})",
-            logical_col_id, mem_local, mem_cols_len
-        )));
-    }
-    Ok(mem_local)
+    trace_opening_path_required_for_step_witness(step)
 }
 
 pub(crate) fn build_route_a_trace_opening_time_claims(
@@ -291,12 +111,12 @@ pub(crate) fn build_route_a_trace_opening_time_claims(
         return Ok((None, None));
     }
 
-    let trace = Rv32TraceLayout::new();
-    let t_len = infer_rv32_trace_t_len_for_trace_openings(step, &trace)?;
+    let trace = neo_memory::riscv::trace::Rv64TraceLayout::new();
+    let t_len = step.time_columns.t;
     let m_in = step.mcs.0.m_in;
     let ell_n = r_cycle.len();
-    let booleanity_cols = riscv_trace_booleanity_columns(&trace);
-    let trace_opening_cols = riscv_trace_quiescence_columns(&trace);
+    let booleanity_cols = rv64_trace_booleanity_columns(&trace);
+    let trace_opening_cols = rv64_trace_quiescence_columns(&trace);
 
     let mut decode_cols = Vec::with_capacity(1 + booleanity_cols.len() + trace_opening_cols.len());
     decode_cols.push(trace.active);
@@ -306,31 +126,30 @@ pub(crate) fn build_route_a_trace_opening_time_claims(
 
     let booleanity_weights = booleanity_weight_vector(r_cycle, booleanity_cols.len());
     let mut booleanity_sparse_cols: Vec<SparseIdxVec<K>> = Vec::with_capacity(booleanity_cols.len());
-    for &col_id in booleanity_cols.iter() {
+    for &col_id in &booleanity_cols {
         let vals = decoded
             .get(&col_id)
             .ok_or_else(|| PiCcsError::ProtocolError(format!("booleanity: missing decoded bool column {col_id}")))?;
         booleanity_sparse_cols.push(sparse_trace_col_from_values(m_in, ell_n, vals)?);
     }
-
     let booleanity_oracle =
         LazyWeightedBitnessOracleSparseTime::new_with_cycle(r_cycle, booleanity_sparse_cols, booleanity_weights);
 
     let weights = trace_opening_weight_vector(r_cycle, trace_opening_cols.len());
-    let active_vals = decoded.get(&trace.active).ok_or_else(|| {
-        PiCcsError::ProtocolError(format!("trace-opening: missing decoded active column {}", trace.active))
-    })?;
-    let active = sparse_trace_col_from_values(m_in, ell_n, &active_vals)?;
+    let active_vals = decoded
+        .get(&trace.active)
+        .ok_or_else(|| PiCcsError::ProtocolError("trace-opening: missing decoded active column".into()))?;
+    let active = sparse_trace_col_from_values(m_in, ell_n, active_vals)?;
 
     let mut sparse_cols: Vec<SparseIdxVec<K>> = Vec::with_capacity(trace_opening_cols.len());
-    for &col_id in trace_opening_cols.iter() {
+    for &col_id in &trace_opening_cols {
         let vals = decoded
             .get(&col_id)
             .ok_or_else(|| PiCcsError::ProtocolError(format!("trace-opening: missing decoded column {col_id}")))?;
-        sparse_cols.push(sparse_trace_col_from_values(m_in, ell_n, &vals)?);
+        sparse_cols.push(sparse_trace_col_from_values(m_in, ell_n, vals)?);
     }
-
     let oracle = WeightedMaskOracleSparseTime::new(active, sparse_cols, weights, r_cycle);
+
     Ok((
         Some((Box::new(booleanity_oracle), K::ZERO)),
         Some((Box::new(oracle), K::ZERO)),
@@ -348,13 +167,13 @@ pub(crate) fn emit_route_a_trace_opening_me_claims(
         return Ok((Vec::new(), Vec::new()));
     }
 
-    let trace = Rv32TraceLayout::new();
-    let t_len = infer_rv32_trace_t_len_for_trace_openings(step, &trace)?;
+    let trace = neo_memory::riscv::trace::Rv64TraceLayout::new();
+    let t_len = step.time_columns.t;
     let m_in = step.mcs.0.m_in;
     let core_t = s.t();
     let (mcs_inst, mcs_wit) = &step.mcs;
 
-    let booleanity_cols = riscv_trace_booleanity_columns(&trace);
+    let booleanity_cols = rv64_trace_booleanity_columns(&trace);
     let mut booleanity_claims = ts::emit_me_claims_for_mats(
         tr,
         b"cpu/me_digest_wb_time",
@@ -371,6 +190,7 @@ pub(crate) fn emit_route_a_trace_opening_me_claims(
             booleanity_claims.len()
         )));
     }
+
     let mut trace_opening_claims = booleanity_claims.clone();
     if trace_opening_claims.len() != 1 {
         return Err(PiCcsError::ProtocolError(format!(
@@ -405,54 +225,11 @@ pub(crate) fn emit_route_a_trace_opening_me_claims(
         &mut booleanity_claims[0],
     )?;
 
-    let rv64_exact_words = trace_uses_rv64_exact_words(step.time_columns.cpu_cols.len());
-    let mut trace_opening_cols = riscv_trace_opening_columns(&trace);
-    if rv64_exact_words {
-        trace_opening_cols.extend(rv64_trace_exact_word_opening_columns());
-    }
-    let control_required = control_stage_required_for_step_witness(step);
-    let decode_required = decode_stage_required_for_step_witness(step);
-    if control_required {
-        trace_opening_cols.extend(riscv_trace_control_extra_opening_columns(&trace));
-    }
-    if rv64_exact_words && control_required {
-        trace_opening_cols.extend(rv64_control_trace_metadata_columns(
-            &neo_memory::riscv::trace::Rv64TraceLayout::new(),
-        ));
-    }
-    if decode_required && !rv64_exact_words {
-        let decode_layout = Rv32DecodeSidecarLayout::new();
-        let (_decode_open_cols, decode_lut_slots) = resolve_shared_decode_lookup_lut_indices(step, &decode_layout)?;
-        let bus = build_bus_layout_for_step_witness(step, t_len)?;
-        if bus.shout_cols.len() != step.lut_instances.len() {
-            return Err(PiCcsError::ProtocolError(
-                "decode(shared): bus layout shout lane count drift".into(),
-            ));
-        }
-        for &(lut_idx, val_slot) in decode_lut_slots.iter() {
-            let inst_cols = bus.shout_cols.get(lut_idx).ok_or_else(|| {
-                PiCcsError::ProtocolError("decode(shared): missing shout cols for decode lookup table".into())
-            })?;
-            let lane0 = inst_cols.lanes.get(0).ok_or_else(|| {
-                PiCcsError::ProtocolError("decode(shared): expected one shout lane for decode lookup table".into())
-            })?;
-            let val_col = lane0.vals.get(val_slot).copied().ok_or_else(|| {
-                PiCcsError::ProtocolError(format!(
-                    "decode(shared): decode val_slot={} out of range for lut_idx={} (n_vals={})",
-                    val_slot,
-                    lut_idx,
-                    lane0.vals.len()
-                ))
-            })?;
-            let logical_bus_col = time_mem_logical_col_id_for_step(step, val_col, "decode(shared)")?;
-            trace_opening_cols.push(logical_bus_col);
-        }
-    }
-    if width_stage_required_for_step_witness(step) && !rv64_fullword_width_stage_required_for_step_witness(step) {
-        trace_opening_cols.extend(width_lookup_bus_val_cols_witness(step, t_len)?);
-    }
-    if rv64_fullword_width_stage_required_for_step_witness(step) {
-        trace_opening_cols.extend(rv64_fullword_trace_opening_columns());
+    let mut trace_opening_cols = rv64_trace_opening_columns(&trace);
+    trace_opening_cols.extend(rv64_trace_exact_word_opening_columns());
+    if control_stage_required_for_step_witness(step) {
+        trace_opening_cols.extend(rv64_trace_control_extra_opening_columns(&trace));
+        trace_opening_cols.extend(rv64_control_trace_metadata_columns(&trace));
     }
     let trace_opening_use_time_cols = step.time_columns.t == t_len
         && !step.time_columns.cpu_cols.is_empty()
@@ -492,7 +269,7 @@ pub(crate) fn verify_route_a_trace_opening_terminals(
         return Ok(());
     }
 
-    let trace = Rv32TraceLayout::new();
+    let trace = neo_memory::riscv::trace::Rv64TraceLayout::new();
     let requires_trace_openings = claim_plan.booleanity_claim.is_some()
         || claim_plan.trace_opening_quiescence.is_some()
         || !mem_proof.booleanity_me_claims.is_empty()
@@ -500,6 +277,7 @@ pub(crate) fn verify_route_a_trace_opening_terminals(
     if !requires_trace_openings {
         return Ok(());
     }
+
     let cpu_cols_len = step.time_columns.cpu_cols.len();
     let mem_cols_len = step.time_columns.mem_cols.len();
     let expected_logical_cols = cpu_cols_len.saturating_add(mem_cols_len);
@@ -538,7 +316,7 @@ pub(crate) fn verify_route_a_trace_opening_terminals(
             return Err(PiCcsError::ProtocolError("booleanity ME claim m_in mismatch".into()));
         }
 
-        let booleanity_cols = riscv_trace_booleanity_columns(&trace);
+        let booleanity_cols = rv64_trace_booleanity_columns(&trace);
         let (booleanity_opening_entry, booleanity_opening_map) =
             require_time_openings_covering_point(step_time_openings, r_time, &booleanity_cols, "booleanity")?;
         if booleanity_opening_entry.source != crate::shard_proof_types::TimeOpeningSource::CommittedOpening {
@@ -553,10 +331,8 @@ pub(crate) fn verify_route_a_trace_opening_terminals(
             let b = named_opening(&booleanity_opening_map, col_id, "booleanity")?;
             booleanity_weighted_sum += w * b * (b - K::ONE);
         }
-
         let expected_terminal = eq_points(r_time, r_cycle) * booleanity_weighted_sum;
-        let observed_terminal = batched_final_values[claim_idx];
-        if observed_terminal != expected_terminal {
+        if batched_final_values[claim_idx] != expected_terminal {
             return Err(PiCcsError::ProtocolError("booleanity terminal value mismatch".into()));
         }
     } else if !mem_proof.booleanity_me_claims.is_empty() {
@@ -592,11 +368,8 @@ pub(crate) fn verify_route_a_trace_opening_terminals(
             return Err(PiCcsError::ProtocolError("trace-opening ME claim m_in mismatch".into()));
         }
 
-        let rv64_exact_words = trace_uses_rv64_exact_words(step.time_columns.cpu_cols.len());
-        let mut trace_opening_cols = riscv_trace_opening_columns(&trace);
-        if rv64_exact_words {
-            trace_opening_cols.extend(rv64_trace_exact_word_opening_columns());
-        }
+        let mut trace_opening_cols = rv64_trace_opening_columns(&trace);
+        trace_opening_cols.extend(rv64_trace_exact_word_opening_columns());
         let (trace_opening_entry, trace_opening_map) =
             require_time_openings_covering_point(step_time_openings, r_time, &trace_opening_cols, "trace-opening")?;
         if trace_opening_entry.source != crate::shard_proof_types::TimeOpeningSource::CommittedOpening {
@@ -606,7 +379,7 @@ pub(crate) fn verify_route_a_trace_opening_terminals(
             )));
         }
         let active_open = named_opening(&trace_opening_map, trace.active, "trace-opening")?;
-        let trace_opening_cols_no_active = riscv_trace_quiescence_columns(&trace);
+        let trace_opening_cols_no_active = rv64_trace_quiescence_columns(&trace);
         let trace_opening_weights = trace_opening_weight_vector(r_cycle, trace_opening_cols_no_active.len());
         let mut trace_opening_weighted_sum = K::ZERO;
         for (&col_id, &w) in trace_opening_cols_no_active
@@ -617,8 +390,7 @@ pub(crate) fn verify_route_a_trace_opening_terminals(
             trace_opening_weighted_sum += w * v;
         }
         let expected_terminal = eq_points(r_time, r_cycle) * (K::ONE - active_open) * trace_opening_weighted_sum;
-        let observed_terminal = batched_final_values[claim_idx];
-        if observed_terminal != expected_terminal {
+        if batched_final_values[claim_idx] != expected_terminal {
             return Err(PiCcsError::ProtocolError(
                 "trace-opening/quiescence terminal value mismatch".into(),
             ));

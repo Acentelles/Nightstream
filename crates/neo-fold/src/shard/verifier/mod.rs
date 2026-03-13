@@ -424,7 +424,6 @@ where
         let twist_pre = crate::memory_sidecar::memory::verify_twist_addr_pre_time(tr, step, &step_proof.mem)?;
         let booleanity_enabled = crate::memory_sidecar::memory::trace_opening_path_required_for_step_instance(step);
         let trace_opening_enabled = crate::memory_sidecar::memory::trace_opening_path_required_for_step_instance(step);
-        let decode_stage_enabled = crate::memory_sidecar::memory::decode_stage_required_for_step_instance(step);
         let width_stage_enabled = crate::memory_sidecar::memory::width_stage_required_for_step_instance(step)
             || crate::memory_sidecar::memory::rv64_fullword_width_stage_required_from_proof(
                 step,
@@ -443,7 +442,6 @@ where
             crate::memory_sidecar::route_a_time::RouteABatchedTimeVerifyConfig {
                 booleanity_enabled,
                 trace_opening_enabled,
-                decode_stage_enabled,
                 width_stage_enabled,
                 control_stage_enabled,
                 poseidon_cycle_enabled,

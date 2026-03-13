@@ -286,7 +286,7 @@ pub(crate) fn validate_step_time_openings_consistency(
     }
 
     if crate::memory_sidecar::memory::trace_opening_path_required_for_step_instance(step) && step.mcs_inst.m_in == 5 {
-        let trace = neo_memory::riscv::trace::Rv32TraceLayout::new();
+        let trace = neo_memory::riscv::trace::Rv64TraceLayout::new();
         let trace_cols: Vec<usize> = vec![
             trace.active,
             trace.cycle,
@@ -322,8 +322,9 @@ pub(crate) fn validate_step_time_openings_consistency(
     }
 
     if let Some(booleanity_me) = step_proof.mem.booleanity_me_claims.first() {
-        let trace = neo_memory::riscv::trace::Rv32TraceLayout::new();
-        let booleanity_cols = crate::memory_sidecar::memory::riscv_trace_booleanity_columns(&trace);
+        let booleanity_cols = crate::memory_sidecar::memory::rv64_trace_booleanity_columns(
+            &neo_memory::riscv::trace::Rv64TraceLayout::new(),
+        );
         let opening_entry = crate::memory_sidecar::memory::require_time_opening_entry_for_point(
             openings,
             booleanity_me.r.as_slice(),
@@ -339,25 +340,18 @@ pub(crate) fn validate_step_time_openings_consistency(
     }
 
     if let Some(trace_opening_me) = step_proof.mem.trace_opening_me_claims.first() {
-        let trace = neo_memory::riscv::trace::Rv32TraceLayout::new();
-        let rv64_exact_words =
-            crate::memory_sidecar::memory::trace_uses_rv64_exact_words(step.time_columns.cpu_cols.len());
-        let mut trace_opening_cols = crate::memory_sidecar::memory::riscv_trace_opening_columns(&trace);
-        if rv64_exact_words {
-            trace_opening_cols.extend(crate::memory_sidecar::memory::rv64_trace_exact_word_opening_columns());
-        }
+        let mut trace_opening_cols = crate::memory_sidecar::memory::rv64_trace_opening_columns(
+            &neo_memory::riscv::trace::Rv64TraceLayout::new(),
+        );
+        trace_opening_cols.extend(crate::memory_sidecar::memory::rv64_trace_exact_word_opening_columns());
         let control_required = crate::memory_sidecar::memory::control_stage_required_for_step_instance(step);
         if control_required {
-            trace_opening_cols.extend(crate::memory_sidecar::memory::riscv_trace_control_extra_opening_columns(&trace));
-        }
-        if rv64_exact_words && control_required {
+            trace_opening_cols.extend(crate::memory_sidecar::memory::rv64_trace_control_extra_opening_columns(
+                &neo_memory::riscv::trace::Rv64TraceLayout::new(),
+            ));
             trace_opening_cols.extend(crate::memory_sidecar::memory::rv64_control_trace_metadata_columns(
                 &neo_memory::riscv::trace::Rv64TraceLayout::new(),
             ));
-        }
-        if crate::memory_sidecar::memory::rv64_fullword_width_stage_required_from_proof(step, &step_proof.batched_time)
-        {
-            trace_opening_cols.extend(crate::memory_sidecar::memory::rv64_fullword_trace_opening_columns());
         }
         let mut seen_trace_opening_cols = std::collections::BTreeSet::new();
         trace_opening_cols.retain(|col_id| seen_trace_opening_cols.insert(*col_id));

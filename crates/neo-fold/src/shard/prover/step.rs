@@ -498,22 +498,8 @@ where
         let t_len = (step.time_columns.t > 0 && !step.time_columns.cpu_cols.is_empty())
             .then_some(step.time_columns.t)
             .or_else(|| step.mem_instances.first().map(|(inst, _)| inst.steps))
-            .or_else(|| {
-                step.lut_instances
-                    .iter()
-                    .find(|(inst, _)| {
-                        !matches!(inst.table_spec, Some(LutTableSpec::RiscvOpcodeEventTablePacked { .. }))
-                    })
-                    .map(|(inst, _)| inst.steps)
-            })
-            .or_else(|| {
-                let trace = Rv32TraceLayout::new();
-                let w = s.m.checked_sub(m_in)?;
-                if trace.cols == 0 || w % trace.cols != 0 {
-                    return None;
-                }
-                Some(w / trace.cols)
-            })
+            .or_else(|| step.lut_instances.first().map(|(inst, _)| inst.steps))
+            .or_else(|| Some(step.time_columns.t))
             .ok_or_else(|| PiCcsError::InvalidInput("missing mem/lut instances".into()))?;
         if t_len == 0 {
             return Err(PiCcsError::InvalidInput("trace linkage requires steps>=1".into()));
@@ -527,34 +513,39 @@ where
             }
         }
 
-        let trace = Rv32TraceLayout::new();
-        let trace_cols_to_open_dense: Vec<usize> = vec![
-            trace.active,
-            trace.cycle,
-            trace.pc_before,
-            trace.instr_word,
-            trace.rs1_addr,
-            trace.rs1_val,
-            trace.rs2_addr,
-            trace.rs2_val,
-            trace.rd_addr,
-            trace.rd_val,
-            trace.ram_addr,
-            trace.ram_rv,
-            trace.ram_wv,
-        ];
-        let trace_cols_to_open_shout: Vec<usize> = vec![
-            trace.shout_has_lookup,
-            trace.shout_val,
-            trace.shout_link_lhs,
-            trace.shout_link_rhs,
-            trace.shout_add_sub_key,
-        ];
+        let trace = neo_memory::riscv::trace::Rv64TraceLayout::new();
+        let (trace_cols_to_open_dense, trace_cols_to_open_shout): (Vec<usize>, Vec<usize>) = (
+            vec![
+                trace.active,
+                trace.cycle,
+                trace.pc_before,
+                trace.instr_word,
+                trace.rs1_addr,
+                trace.rs1_val,
+                trace.rs2_addr,
+                trace.rs2_val,
+                trace.rd_addr,
+                trace.rd_val,
+                trace.ram_addr,
+                trace.ram_rv,
+                trace.ram_wv,
+            ],
+            vec![
+                trace.shout_has_lookup,
+                trace.shout_val,
+                trace.shout_link_lhs,
+                trace.shout_link_rhs,
+                trace.shout_add_sub_key,
+            ],
+        );
         let trace_cols_to_open_all: Vec<usize> = trace_cols_to_open_dense
             .iter()
             .chain(trace_cols_to_open_shout.iter())
             .copied()
             .collect();
+        let shout_has_lookup_col = *trace_cols_to_open_shout
+            .first()
+            .ok_or_else(|| PiCcsError::ProtocolError("trace linkage requires shout opening columns".into()))?;
         let trace_open_base = core_t + cpu_bus.bus_cols;
         let can_use_time_cpu_cols = step.time_columns.t == t_len
             && !step.time_columns.cpu_cols.is_empty()
@@ -570,7 +561,7 @@ where
             )));
         }
 
-        let active_shout_js: Vec<usize> = step.time_columns.cpu_cols[trace.shout_has_lookup]
+        let active_shout_js: Vec<usize> = step.time_columns.cpu_cols[shout_has_lookup_col]
             .iter()
             .enumerate()
             .filter_map(|(j, v)| (*v != F::ZERO).then_some(j))
@@ -759,8 +750,8 @@ where
     let mut booleanity_fold = Vec::new();
     let mut booleanity_lane_audits = Vec::new();
     if !mem_proof.booleanity_me_claims.is_empty() {
-        let trace = Rv32TraceLayout::new();
-        let booleanity_cols = crate::memory_sidecar::memory::riscv_trace_booleanity_columns(&trace);
+        let trace = neo_memory::riscv::trace::Rv64TraceLayout::new();
+        let booleanity_cols = crate::memory_sidecar::memory::rv64_trace_booleanity_columns(&trace);
         let booleanity_lane = prove_aux_cpu_me_lane(
             AuxCpuLaneConfig {
                 start_label: b"fold/booleanity_lane_start",
@@ -790,102 +781,20 @@ where
         booleanity_lane_audits = booleanity_lane.audits;
     }
 
-    let decode_required = crate::memory_sidecar::memory::decode_stage_required_for_step_witness(step);
-    let width_required = crate::memory_sidecar::memory::width_stage_required_for_step_witness(step);
     let mut trace_opening_fold = Vec::new();
     let mut trace_opening_lane_audits = Vec::new();
     if !mem_proof.trace_opening_me_claims.is_empty() {
-        let trace = Rv32TraceLayout::new();
-        let t_len = crate::memory_sidecar::memory::infer_rv32_trace_t_len_for_trace_openings(step, &trace)?;
-        let rv64_exact_words =
-            crate::memory_sidecar::memory::trace_uses_rv64_exact_words(step.time_columns.cpu_cols.len());
-        let mut trace_opening_cols = crate::memory_sidecar::memory::riscv_trace_opening_columns(&trace);
-        if rv64_exact_words {
-            trace_opening_cols.extend(crate::memory_sidecar::memory::rv64_trace_exact_word_opening_columns());
-        }
+        let mut trace_opening_cols = crate::memory_sidecar::memory::rv64_trace_opening_columns(
+            &neo_memory::riscv::trace::Rv64TraceLayout::new(),
+        );
+        trace_opening_cols.extend(crate::memory_sidecar::memory::rv64_trace_exact_word_opening_columns());
         if control_required {
-            trace_opening_cols.extend(crate::memory_sidecar::memory::riscv_trace_control_extra_opening_columns(&trace));
-        }
-        if rv64_exact_words && control_required {
+            trace_opening_cols.extend(crate::memory_sidecar::memory::rv64_trace_control_extra_opening_columns(
+                &neo_memory::riscv::trace::Rv64TraceLayout::new(),
+            ));
             trace_opening_cols.extend(crate::memory_sidecar::memory::rv64_control_trace_metadata_columns(
                 &neo_memory::riscv::trace::Rv64TraceLayout::new(),
             ));
-        }
-        if decode_required && !rv64_exact_words {
-            let decode_layout = Rv32DecodeSidecarLayout::new();
-            let (_decode_open_cols, decode_lut_slots) =
-                crate::memory_sidecar::memory::resolve_shared_decode_lookup_lut_indices(step, &decode_layout)?;
-            let bus = crate::memory_sidecar::memory::build_bus_layout_for_step_witness(step, t_len)?;
-            if bus.shout_cols.len() != step.lut_instances.len() {
-                return Err(PiCcsError::ProtocolError(
-                    "decode(shared): bus layout shout lane count drift in trace-opening fold".into(),
-                ));
-            }
-            if step.time_columns.t != t_len || step.time_columns.cpu_cols.is_empty() {
-                return Err(PiCcsError::ProtocolError(format!(
-                    "decode(shared): canonical time CPU columns required in trace-opening fold (time_t={}, cpu_cols={}, expected_t={t_len})",
-                    step.time_columns.t,
-                    step.time_columns.cpu_cols.len()
-                )));
-            }
-            let cpu_cols_len = step.time_columns.cpu_cols.len();
-            let mem_cols_len = step.time_columns.mem_cols.len();
-            let expected_logical_cols = cpu_cols_len.checked_add(mem_cols_len).ok_or_else(|| {
-                PiCcsError::InvalidInput("decode(shared): cpu_cols + mem_cols overflow in trace-opening fold".into())
-            })?;
-            if step.time_columns.col_ids.len() != expected_logical_cols {
-                return Err(PiCcsError::ProtocolError(format!(
-                    "decode(shared): time column id table mismatch in trace-opening fold (col_ids={}, cpu_cols={}, mem_cols={})",
-                    step.time_columns.col_ids.len(),
-                    cpu_cols_len,
-                    mem_cols_len
-                )));
-            }
-            for &(lut_idx, val_slot) in decode_lut_slots.iter() {
-                let inst_cols = bus.shout_cols.get(lut_idx).ok_or_else(|| {
-                    PiCcsError::ProtocolError(
-                        "decode(shared): missing shout cols for decode lookup table in trace-opening fold".into(),
-                    )
-                })?;
-                let lane0 = inst_cols.lanes.get(0).ok_or_else(|| {
-                    PiCcsError::ProtocolError(
-                        "decode(shared): expected one shout lane for decode lookup table in trace-opening fold".into(),
-                    )
-                })?;
-                let val_col = lane0.vals.get(val_slot).copied().ok_or_else(|| {
-                    PiCcsError::ProtocolError(format!(
-                        "decode(shared): decode val_slot={} out of range for lut_idx={} in trace-opening fold (n_vals={})",
-                        val_slot,
-                        lut_idx,
-                        lane0.vals.len()
-                    ))
-                })?;
-                let logical_idx = cpu_cols_len.checked_add(val_col).ok_or_else(|| {
-                    PiCcsError::InvalidInput(
-                        "decode(shared): cpu_cols + lane primary value overflow in trace-opening fold".into(),
-                    )
-                })?;
-                let logical_col = step
-                    .time_columns
-                    .col_ids
-                    .get(logical_idx)
-                    .copied()
-                    .ok_or_else(|| {
-                        PiCcsError::ProtocolError(format!(
-                            "decode(shared): missing logical id for mem local col {} in trace-opening fold",
-                            val_col
-                        ))
-                    })?;
-                trace_opening_cols.push(logical_col);
-            }
-        }
-        if width_required && !crate::memory_sidecar::memory::rv64_fullword_width_stage_required_for_step_witness(step) {
-            trace_opening_cols.extend(crate::memory_sidecar::memory::width_lookup_bus_val_cols_witness(
-                step, t_len,
-            )?);
-        }
-        if crate::memory_sidecar::memory::rv64_fullword_width_stage_required_for_step_witness(step) {
-            trace_opening_cols.extend(crate::memory_sidecar::memory::rv64_fullword_trace_opening_columns());
         }
 
         let trace_opening_lane = prove_aux_cpu_me_lane(
