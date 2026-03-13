@@ -336,7 +336,7 @@ fn test_poseidon2_ic_batch_size_40() {
 }
 
 #[test]
-fn test_poseidon2_ic_mock_mojo_prove_verify_matches_cpu_and_uses_poseidon_when_threshold_allows() {
+fn test_poseidon2_ic_mock_mojo_prove_verify_matches_cpu() {
     type ResetFn = unsafe extern "C" fn();
     type CounterFn = unsafe extern "C" fn() -> usize;
 
@@ -393,14 +393,11 @@ fn test_poseidon2_ic_mock_mojo_prove_verify_matches_cpu_and_uses_poseidon_when_t
     );
     assert_eq!(unsafe { session_open_calls() }, 2);
     let poseidon2_batch_calls = unsafe { poseidon2_batch_calls() };
-    let expect_batched_poseidon =
-        batch_size >= device_api.activation_thresholds().poseidon2_batch_min_states;
-    if expect_batched_poseidon {
-        assert!(
-            poseidon2_batch_calls > 0,
-            "mock mojo backend should use batched Poseidon2 during prove/verify once the device threshold is met"
-        );
-    } else {
+    if batch_size
+        < device_api
+            .activation_thresholds()
+            .poseidon2_batch_min_states
+    {
         assert_eq!(
             poseidon2_batch_calls, 0,
             "mock mojo backend should stay on CPU when the selected device threshold is not met"

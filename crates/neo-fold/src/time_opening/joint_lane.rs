@@ -258,6 +258,7 @@ struct PendingStage8ClusterCommit {
     domain: OpeningDomain,
     group_indices: Vec<usize>,
     cluster_digest: [u8; 32],
+    update_class_digest: [u8; 32],
     expected_commitment: Cmt,
     expected_claim_digits: Vec<K>,
 }
@@ -285,11 +286,18 @@ fn unified_fold_digest(groups: &[JointOpeningGroupProof]) -> [u8; 32] {
 }
 
 fn build_stage8_group_clusters(groups: &[JointOpeningGroupProof]) -> Vec<Vec<usize>> {
-    if groups.is_empty() {
-        Vec::new()
-    } else {
-        vec![(0..groups.len()).collect()]
+    let mut clusters: Vec<Vec<usize>> = Vec::new();
+    for (group_idx, group) in groups.iter().enumerate() {
+        if let Some(cluster) = clusters
+            .iter_mut()
+            .find(|cluster| groups[cluster[0]].update_class_digest == group.update_class_digest)
+        {
+            cluster.push(group_idx);
+        } else {
+            clusters.push(vec![group_idx]);
+        }
     }
+    clusters
 }
 
 fn stage8_cluster_digest(groups: &[&JointOpeningGroupProof]) -> [u8; 32] {
@@ -301,6 +309,21 @@ fn stage8_cluster_digest(groups: &[&JointOpeningGroupProof]) -> [u8; 32] {
         group_digests_flat.extend_from_slice(&group.group_digest);
     }
     tr.append_bytes_packed(b"stage8/cluster_fold_digest/group_digests_flat", &group_digests_flat);
+    tr.digest32()
+}
+
+fn stage8_update_class_digest(groups: &[&JointOpeningGroupProof]) -> [u8; 32] {
+    let mut tr = neo_transcript::Poseidon2Transcript::new(b"stage8/cluster_update_class_digest");
+    tr.append_message(b"stage8/cluster_update_class_digest/version", b"v1");
+    tr.append_u64s(b"stage8/cluster_update_class_digest/groups_len", &[groups.len() as u64]);
+    let mut update_digests_flat = Vec::with_capacity(groups.len() * 32);
+    for group in groups {
+        update_digests_flat.extend_from_slice(&group.update_class_digest);
+    }
+    tr.append_bytes_packed(
+        b"stage8/cluster_update_class_digest/group_update_digests_flat",
+        &update_digests_flat,
+    );
     tr.digest32()
 }
 
@@ -649,7 +672,7 @@ pub fn prove_joint_opening_lane_with_witnesses(
     time_col_ids: &[usize],
     opening_proofs: &[TimeOpeningProof],
     manifest_digest: &[u8; 32],
-    reduction: &OpeningReductionProof,
+    reduction: &mut OpeningReductionProof,
     opening_unification: &OpeningUnificationProof,
     claim_eta_coeffs: &[Vec<Mat<F>>],
 ) -> Result<(JointOpeningLaneProof, Vec<Mat<F>>), PiCcsError> {
@@ -684,7 +707,7 @@ pub fn prove_joint_opening_lane_with_witnesses_and_metrics(
     time_col_ids: &[usize],
     opening_proofs: &[TimeOpeningProof],
     manifest_digest: &[u8; 32],
-    reduction: &OpeningReductionProof,
+    reduction: &mut OpeningReductionProof,
     opening_unification: &OpeningUnificationProof,
     claim_eta_coeffs: &[Vec<Mat<F>>],
 ) -> Result<(JointOpeningLaneProof, Vec<Mat<F>>, JointOpeningLaneDurations), PiCcsError> {
@@ -715,6 +738,20 @@ pub fn prove_joint_opening_lane_with_witnesses_and_metrics(
         return Err(PiCcsError::ProtocolError(
             "time/opening joint/prove: sampled group rho count mismatch".into(),
         ));
+    }
+    for (group_idx, group) in reduction.groups.iter_mut().enumerate() {
+        let rhos = group_rhos.get(group_idx).ok_or_else(|| {
+            PiCcsError::ProtocolError(format!(
+                "time/opening joint/prove: missing update-schedule rhos for group {}",
+                group_idx
+            ))
+        })?;
+        group.update_class_digest = crate::time_opening::reduction::group_update_schedule_digest(
+            group,
+            opening_proofs,
+            claim_eta_coeffs,
+            rhos.as_slice(),
+        )?;
     }
 
     let committer = neo_ajtai::AjtaiSModule::from_global_for_dims(D, t).map_err(|e| {
@@ -933,6 +970,7 @@ pub fn prove_joint_opening_lane_with_witnesses_and_metrics(
             domain: group_work.domain,
             claim_indices: group_work.claim_indices,
             group_digest: group_work.group_digest,
+            update_class_digest: reduction.groups[group_idx].update_class_digest,
             joint_claim_digits: group_work.joint_claim_digits,
             joint_claim,
             joint_commitment,
@@ -968,6 +1006,7 @@ pub fn prove_joint_opening_lane_with_witnesses_and_metrics(
                         domain: group.domain,
                         group_indices: vec![idx],
                         cluster_digest,
+                        update_class_digest: stage8_update_class_digest(&member_groups),
                         joint_claim_digits: group.joint_claim_digits.clone(),
                         joint_claim: group.joint_claim,
                         joint_commitment: group.joint_commitment.clone(),
@@ -1065,6 +1104,7 @@ pub fn prove_joint_opening_lane_with_witnesses_and_metrics(
                     domain: cluster_domain,
                     group_indices: group_indices.clone(),
                     cluster_digest,
+                    update_class_digest: stage8_update_class_digest(member_groups.as_slice()),
                     expected_commitment,
                     expected_claim_digits: cluster_claim_digits,
                 });
@@ -1108,6 +1148,7 @@ pub fn prove_joint_opening_lane_with_witnesses_and_metrics(
                         domain: pending.domain,
                         group_indices: pending.group_indices,
                         cluster_digest: pending.cluster_digest,
+                        update_class_digest: pending.update_class_digest,
                         joint_claim: recompose_digits_to_scalar(
                             pending.expected_claim_digits.as_slice(),
                             crate::time_opening::STAGE8_TIME_DECOMP_BASE,
@@ -1232,6 +1273,7 @@ pub fn prove_joint_opening_lane_with_witnesses_and_metrics(
             domain: unified_domain,
             claim_indices: (0..out_groups.len()).collect(),
             group_digest: unified_fold_digest(&out_groups),
+            update_class_digest: stage8_update_class_digest(&out_groups.iter().collect::<Vec<_>>()),
             joint_claim_digits: unified_claim_digits,
             joint_claim: unified_claim,
             joint_commitment: unified_commitment,
@@ -1243,6 +1285,7 @@ pub fn prove_joint_opening_lane_with_witnesses_and_metrics(
                 domain: anchor.domain,
                 group_indices: (0..out_groups.len()).collect(),
                 cluster_digest: stage8_cluster_digest(&out_groups.iter().collect::<Vec<_>>()),
+                update_class_digest: stage8_update_class_digest(&out_groups.iter().collect::<Vec<_>>()),
                 joint_claim_digits: unified_fold
                     .as_ref()
                     .expect("stage8 cluster unified fold")
@@ -1288,7 +1331,7 @@ pub fn prove_joint_opening_lane(
     time_col_ids: &[usize],
     opening_proofs: &[TimeOpeningProof],
     manifest_digest: &[u8; 32],
-    reduction: &OpeningReductionProof,
+    reduction: &mut OpeningReductionProof,
     opening_unification: &OpeningUnificationProof,
     claim_eta_coeffs: &[Vec<Mat<F>>],
 ) -> Result<JointOpeningLaneProof, PiCcsError> {
@@ -1363,20 +1406,27 @@ pub fn verify_joint_opening_lane(
 
     let cpu_cols_len = time_cpu_commitments.len();
     for (group_idx, (group, pf_group)) in reduction.groups.iter().zip(lane.groups.iter()).enumerate() {
+        let rhos = group_rhos.get(group_idx).ok_or_else(|| {
+            PiCcsError::ProtocolError("time/opening joint/verify: missing sampled group coefficients".into())
+        })?;
+        let expected_update_class_digest = crate::time_opening::reduction::group_update_schedule_digest(
+            group,
+            opening_proofs,
+            claim_eta_coeffs,
+            rhos.as_slice(),
+        )?;
         if group.point != pf_group.point
             || group.domain != pf_group.domain
             || group.claim_indices != pf_group.claim_indices
             || group.group_digest != pf_group.group_digest
+            || group.update_class_digest != expected_update_class_digest
+            || pf_group.update_class_digest != expected_update_class_digest
         {
             return Err(PiCcsError::ProtocolError(format!(
                 "time/opening joint/verify: group {} metadata mismatch between reduction and proof",
                 group_idx
             )));
         }
-
-        let rhos = group_rhos.get(group_idx).ok_or_else(|| {
-            PiCcsError::ProtocolError("time/opening joint/verify: missing sampled group coefficients".into())
-        })?;
         if rhos.len() != group.claim_indices.len() {
             return Err(PiCcsError::ProtocolError(format!(
                 "time/opening joint/verify: group {} rho len {} != claim_indices len {}",
@@ -1503,6 +1553,11 @@ pub fn verify_joint_opening_lane(
             "time/opening joint/verify: unified_fold digest mismatch".into(),
         ));
     }
+    if unified.update_class_digest != stage8_update_class_digest(&lane.groups.iter().collect::<Vec<_>>()) {
+        return Err(PiCcsError::ProtocolError(
+            "time/opening joint/verify: unified_fold update-class digest mismatch".into(),
+        ));
+    }
     if unified.joint_claim_digits.len() != D {
         return Err(PiCcsError::ProtocolError(format!(
             "time/opening joint/verify: unified_fold joint_claim_digits.len()={} != D={D}",
@@ -1554,6 +1609,12 @@ pub fn verify_joint_opening_lane(
         if cluster.cluster_digest != stage8_cluster_digest(&member_groups) {
             return Err(PiCcsError::ProtocolError(format!(
                 "time/opening joint/verify: stage8 cluster {} digest mismatch",
+                cluster_idx
+            )));
+        }
+        if cluster.update_class_digest != stage8_update_class_digest(&member_groups) {
+            return Err(PiCcsError::ProtocolError(format!(
+                "time/opening joint/verify: stage8 cluster {} update-class digest mismatch",
                 cluster_idx
             )));
         }

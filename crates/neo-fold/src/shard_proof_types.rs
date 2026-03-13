@@ -82,6 +82,9 @@ pub struct OpeningReductionGroup {
     pub claim_indices: Vec<usize>,
     /// Canonical digest of `(domain, point, claim_indices)` under Stage-8 v1 encoding.
     pub group_digest: [u8; 32],
+    /// Canonical digest of the ordered opening-layout/update structure for this group,
+    /// intentionally excluding the evaluation point so same-shape groups can cluster.
+    pub update_class_digest: [u8; 32],
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -105,6 +108,7 @@ pub struct JointOpeningGroupProof {
     pub domain: OpeningDomain,
     pub claim_indices: Vec<usize>,
     pub group_digest: [u8; 32],
+    pub update_class_digest: [u8; 32],
     /// Vector-partial joint claim (ME-native) at `point`.
     pub joint_claim_digits: Vec<K>,
     /// Scalar recomposition of `joint_claim_digits` under base `b`.
@@ -144,6 +148,7 @@ pub struct Stage8ClusterProof {
     /// Indices into `JointOpeningLaneProof.groups`.
     pub group_indices: Vec<usize>,
     pub cluster_digest: [u8; 32],
+    pub update_class_digest: [u8; 32],
     pub joint_claim_digits: Vec<K>,
     pub joint_claim: K,
     pub joint_commitment: Cmt,

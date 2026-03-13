@@ -698,24 +698,30 @@ fn shared_cpu_bus_stage8_tamper_matrix_fails() {
     .expect("build Stage-8 plan")
     .expect("non-empty Stage-8 plan");
     let groups = &proof.steps[0].fold.joint_opening_lane.groups;
-    let expected_stage8_claims = if groups.is_empty() { 0usize } else { 1usize };
+    let expected_stage8_claims = if groups.is_empty() {
+        0usize
+    } else {
+        let mut distinct_update_classes = std::collections::BTreeSet::new();
+        for group in groups {
+            distinct_update_classes.insert(group.update_class_digest);
+        }
+        distinct_update_classes.len()
+    };
     assert_eq!(
         stage8_plan.claims.len(),
         expected_stage8_claims,
-        "Stage-8 fold plan should collapse the lane to one synthetic cluster when groups are present"
+        "Stage-8 fold plan should collapse the lane to one cluster per update-class digest"
     );
-    if expected_stage8_claims == 1 {
-        let stage8_commitment = proof.steps[0]
+    for (plan_claim, cluster) in stage8_plan.claims.iter().zip(
+        proof.steps[0]
             .fold
             .joint_opening_lane
             .stage8_clusters
-            .first()
-            .expect("stage8 cluster present")
-            .joint_commitment
-            .clone();
+            .iter(),
+    ) {
         assert_eq!(
-            stage8_plan.claims[0].c, stage8_commitment,
-            "Stage-8 fold plan should reuse the already-verified synthetic cluster commitment"
+            plan_claim.c, cluster.joint_commitment,
+            "Stage-8 fold plan should reuse the already-verified clustered commitment"
         );
     }
 
@@ -743,7 +749,15 @@ fn shared_cpu_bus_stage8_tamper_matrix_fails() {
         "tampering reduction group digest must fail verification"
     );
 
-    // 3) Unification proof tamper must fail.
+    // 3) Reduction update-class digest tamper must fail.
+    let mut tampered_update_class = proof.clone();
+    tampered_update_class.steps[0].fold.opening_reduction.groups[0].update_class_digest[0] ^= 1;
+    assert!(
+        verify(&tampered_update_class).is_err(),
+        "tampering reduction update-class digest must fail verification"
+    );
+
+    // 4) Unification proof tamper must fail.
     let mut tampered_unification = proof.clone();
     assert!(
         !tampered_unification.steps[0]
@@ -762,7 +776,7 @@ fn shared_cpu_bus_stage8_tamper_matrix_fails() {
         "tampering opening unification sumcheck proof must fail verification"
     );
 
-    // 4) Unified claim tamper must fail.
+    // 5) Unified claim tamper must fail.
     let mut tampered_unified_claim = proof.clone();
     let unified = tampered_unified_claim.steps[0]
         .fold
@@ -776,7 +790,7 @@ fn shared_cpu_bus_stage8_tamper_matrix_fails() {
         "tampering Stage-8 unified claim must fail verification"
     );
 
-    // 5) Missing stage8_fold proof with non-empty Stage-8 groups must fail.
+    // 6) Missing stage8_fold proof with non-empty Stage-8 groups must fail.
     let mut tampered_stage8_lane = proof.clone();
     tampered_stage8_lane.steps[0].stage8_fold.clear();
     assert!(

@@ -41,6 +41,100 @@ fn group_digest(
     h.digest32()
 }
 
+pub fn group_update_schedule_digest(
+    group: &OpeningReductionGroup,
+    opening_proofs: &[crate::shard_proof_types::TimeOpeningProof],
+    claim_eta_coeffs: &[Vec<Mat<F>>],
+    group_rhos: &[Mat<F>],
+) -> Result<[u8; 32], PiCcsError> {
+    if group.claim_indices.len() != group_rhos.len() {
+        return Err(PiCcsError::ProtocolError(format!(
+            "stage8/reduction/update_schedule_digest: claim_indices len {} != group_rhos len {}",
+            group.claim_indices.len(),
+            group_rhos.len()
+        )));
+    }
+
+    let mut h = Poseidon2Transcript::new(b"stage8/reduction/update_schedule_digest");
+    h.append_message(b"stage8/reduction/update_schedule_digest/version", b"v2");
+    let dom = match group.domain {
+        OpeningDomain::Cpu => 1u64,
+        OpeningDomain::Mem => 2u64,
+    };
+    h.append_u64s(b"stage8/reduction/update_schedule_digest/domain", &[dom]);
+    h.append_u64s(
+        b"stage8/reduction/update_schedule_digest/group_claim_len",
+        &[group.claim_indices.len() as u64],
+    );
+
+    for (local_idx, (&claim_idx, rho)) in group
+        .claim_indices
+        .iter()
+        .zip(group_rhos.iter())
+        .enumerate()
+    {
+        let open_pf = opening_proofs.get(claim_idx).ok_or_else(|| {
+            PiCcsError::ProtocolError(format!(
+                "stage8/reduction/update_schedule_digest: claim index {} out of range",
+                claim_idx
+            ))
+        })?;
+        let eta = claim_eta_coeffs.get(claim_idx).ok_or_else(|| {
+            PiCcsError::ProtocolError(format!(
+                "stage8/reduction/update_schedule_digest: missing eta coeffs for claim {}",
+                claim_idx
+            ))
+        })?;
+        if eta.len() != open_pf.col_ids.len() {
+            return Err(PiCcsError::ProtocolError(format!(
+                "stage8/reduction/update_schedule_digest: eta len {} != col_ids len {} for claim {}",
+                eta.len(),
+                open_pf.col_ids.len(),
+                claim_idx
+            )));
+        }
+        if rho.rows() != neo_math::D || rho.cols() != neo_math::D {
+            return Err(PiCcsError::ProtocolError(format!(
+                "stage8/reduction/update_schedule_digest: rho shape {}x{} != D x D",
+                rho.rows(),
+                rho.cols()
+            )));
+        }
+
+        h.append_u64s(
+            b"stage8/reduction/update_schedule_digest/local_idx",
+            &[local_idx as u64],
+        );
+        h.append_u64s(
+            b"stage8/reduction/update_schedule_digest/claim_idx",
+            &[claim_idx as u64],
+        );
+        h.append_u64s(
+            b"stage8/reduction/update_schedule_digest/col_ids_len",
+            &[open_pf.col_ids.len() as u64],
+        );
+        let col_ids_u64: Vec<u64> = open_pf
+            .col_ids
+            .iter()
+            .map(|&col_id| col_id as u64)
+            .collect();
+        h.append_u64s(b"stage8/reduction/update_schedule_digest/col_ids", &col_ids_u64);
+        h.append_u64s(b"stage8/reduction/update_schedule_digest/eta_len", &[eta.len() as u64]);
+        h.append_fields_iter(
+            b"stage8/reduction/update_schedule_digest/eta_mats",
+            eta.len() * neo_math::D * neo_math::D,
+            eta.iter().flat_map(|mat| mat.as_slice().iter().copied()),
+        );
+        h.append_fields_iter(
+            b"stage8/reduction/update_schedule_digest/group_rho",
+            neo_math::D * neo_math::D,
+            rho.as_slice().iter().copied(),
+        );
+    }
+
+    Ok(h.digest32())
+}
+
 pub fn build_opening_reduction(manifest: &OpeningClaimManifest) -> Result<OpeningReductionProof, PiCcsError> {
     let mut groups: Vec<OpeningReductionGroup> = Vec::new();
     for (idx, entry) in manifest.entries.iter().enumerate() {
@@ -55,6 +149,7 @@ pub fn build_opening_reduction(manifest: &OpeningClaimManifest) -> Result<Openin
                 domain: OpeningDomain::Cpu,
                 claim_indices: vec![idx],
                 group_digest: [0u8; 32],
+                update_class_digest: [0u8; 32],
             });
         }
     }
@@ -81,6 +176,8 @@ pub fn build_opening_reduction(manifest: &OpeningClaimManifest) -> Result<Openin
             group.domain,
             group.claim_indices.as_slice(),
         );
+        // Filled later once the actual eta/rho update schedule is bound.
+        group.update_class_digest = [0u8; 32];
     }
 
     Ok(OpeningReductionProof { groups })

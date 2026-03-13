@@ -218,10 +218,15 @@ Roadmap status on this branch:
 2. Stage-8 clustering by update structure, not only point/domain
    - Implemented:
      - Stage-8 can collapse to one fold claim when groups share the same point/domain.
-     - Heterogeneous Stage-8 groups now fall back to one committed synthetic cluster instead of many point-based clusters.
+     - Each reduction group now carries an `update_class_digest` derived from the actual ordered
+       multiplicative update schedule: per-claim opening-batch `eta` matrices plus the reduction-level
+       `rho` mixers used to form the Stage-8 joint group.
+     - Heterogeneous Stage-8 groups now cluster by shared `update_class_digest`, so groups only share a
+       cluster when the prover is applying the same real update schedule rather than just a matching layout.
    - Still missing:
-     - The synthetic fallback is still generic transcript mixing, not true clustering by shared multiplicative update structure.
-     - We still do not exploit finer-grained update-schedule structure inside the heterogeneous batch.
+     - The current digest is group-local. We still do not derive a larger step-global schedule that can
+       coalesce Stage-8, WB, WP, and `Val` work into a single resident ring job.
+     - We still do not exploit finer-grained update-schedule structure inside each clustered batch.
 
 3. Fully fused SuperNeo row-dot
    - Implemented:
@@ -408,7 +413,7 @@ Post-review audit of the `feature/gpu-acceleration` branch against the issues ra
 
 | Priority | Issue | Location | Detail |
 |----------|-------|----------|--------|
-| **P1** | Stage-8 `prove_rlc_dec_lane` is still the dominant bottleneck | `crates/neo-fold` | Stage-8 now uses the backend-aware commit path and reuses the joint-opening `unified_fold` as a single Stage-8 claim when sibling groups share point/domain, but heterogeneous Stage-8 groups still fall back to per-group folding and note-spend end-to-end wins remain modest on CUDA and negative on Metal. |
+| **P1** | Stage-8 `prove_rlc_dec_lane` is still the dominant bottleneck | `crates/neo-fold` | Stage-8 now uses the backend-aware commit path and clusters heterogeneous groups by a digest of the real per-group `eta`/`rho` update schedule, but the work is still only clustered within Stage-8 itself and note-spend end-to-end wins remain modest on CUDA and negative on Metal. |
 | **P2** | Metal `Rq` batch slower than CPU | `ring.mojo` | Parity-correct but too slow for hot lanes. Stage-8 joint-opening and `RlcLane::Val` acceleration are gated off on Metal. |
 | **P2** | Note-spend lane batching incomplete | `crates/neo-fold` | Collapsible Stage-8 sibling groups now reduce to one fold claim, but WB/WP / heterogeneous Stage-8 groups are still not collapsed into a few large resident GPU jobs. |
 | **P3** | No automated accelerator CI gate | CI | GitHub Actions now runs a real Mojo CPU parity lane and a manual self-hosted Metal/CUDA parity workflow, but accelerator coverage is still not a required merge gate. GPU-breaking changes can still merge unless someone runs the manual GPU workflow. |

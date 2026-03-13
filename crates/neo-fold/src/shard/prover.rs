@@ -2738,7 +2738,7 @@ where
                 crate::time_opening::manifest::bind_opening_claim_manifest(tr, step_idx, &opening_manifest);
                 let opening_batch_coeffs =
                     bind_time_opening_batches_and_sample_coeffs(tr, params, step_idx, &opening_proofs)?;
-                let opening_reduction = crate::time_opening::reduction::build_opening_reduction(&opening_manifest)?;
+                let mut opening_reduction = crate::time_opening::reduction::build_opening_reduction(&opening_manifest)?;
                 let opening_unification = crate::time_opening::reduction::prove_opening_unification_sumcheck(
                     tr,
                     step_idx,
@@ -2757,7 +2757,7 @@ where
                         &step.time_columns.col_ids,
                         &opening_proofs,
                         &opening_manifest.digest,
-                        &opening_reduction,
+                        &mut opening_reduction,
                         &opening_unification,
                         &opening_batch_coeffs,
                     )?;
