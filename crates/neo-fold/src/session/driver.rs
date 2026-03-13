@@ -676,7 +676,7 @@ where
         };
 
         // Val-lane obligations are expected when the session carries any sidecar val lane:
-        // Twist/Shout folds, or booleanity/trace-opening folds over RV32 trace openings.
+        // Twist/generic-lookup folds, or booleanity/trace-opening folds over canonical trace openings.
         let has_twist_or_shout = self.has_twist_instances() || self.has_shout_instances();
         let has_trace_opening_sidecars = run.steps.iter().any(|step| {
             !step.mem.booleanity_me_claims.is_empty()

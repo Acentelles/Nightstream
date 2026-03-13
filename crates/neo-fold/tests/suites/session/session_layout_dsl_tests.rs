@@ -1,6 +1,6 @@
 use neo_fold::session::witness_layout;
 use neo_fold::session::{
-    Lane, Public, Scalar, SharedBusResources, ShoutPort, TwistPort, TwistPortWithInc, WitnessLayout,
+    Lane, LookupPort, Public, Scalar, SharedBusResources, TwistPort, TwistPortWithInc, WitnessLayout,
     WitnessLayoutAllocator,
 };
 use neo_math::F;
@@ -14,7 +14,7 @@ witness_layout! {
         pub one: Public<Scalar>,
         pub a: Lane<N>,
         pub twist0: TwistPort<N>,
-        pub shout0: ShoutPort<N>,
+        pub lookup0: LookupPort<N>,
     }
 }
 
@@ -44,9 +44,9 @@ fn witness_layout_allocates_contiguously() {
     assert_eq!(l.twist0.rv.base(), 21);
     assert_eq!(l.twist0.wv.base(), 25);
 
-    assert_eq!(l.shout0.has_lookup.base(), 29);
-    assert_eq!(l.shout0.addr.base(), 33);
-    assert_eq!(l.shout0.val.base(), 37);
+    assert_eq!(l.lookup0.has_lookup.base(), 29);
+    assert_eq!(l.lookup0.addr.base(), 33);
+    assert_eq!(l.lookup0.val.base(), 37);
 
     let tb = l.twist0.cpu_binding();
     assert_eq!(tb.has_read, l.twist0.has_read.base());
@@ -57,10 +57,10 @@ fn witness_layout_allocates_contiguously() {
     assert_eq!(tb.wv, l.twist0.wv.base());
     assert!(tb.inc.is_none());
 
-    let sb = l.shout0.cpu_binding();
-    assert_eq!(sb.has_lookup, l.shout0.has_lookup.base());
-    assert_eq!(sb.addr, Some(l.shout0.addr.base()));
-    assert_eq!(sb.val, l.shout0.val.base());
+    let sb = l.lookup0.cpu_binding();
+    assert_eq!(sb.has_lookup, l.lookup0.has_lookup.base());
+    assert_eq!(sb.addr, Some(l.lookup0.addr.base()));
+    assert_eq!(sb.val, l.lookup0.val.base());
 }
 
 #[test]
@@ -85,11 +85,11 @@ fn allocator_rejects_public_after_private() {
 #[test]
 fn shared_bus_resources_resolve_shout_conflicts() {
     let mut r = SharedBusResources::new();
-    r.set_binary_table(0, vec![F::ZERO, F::ONE]);
+    r.set_binary_lookup_table(0, vec![F::ZERO, F::ONE]);
     assert!(r.lut_tables.contains_key(&0));
     assert!(!r.lut_table_specs.contains_key(&0));
 
-    r.shout(0).spec(LutTableSpec::RiscvOpcode {
+    r.lookup(0).spec(LutTableSpec::RiscvOpcode {
         opcode: RiscvOpcode::And,
         xlen: 32,
     });
@@ -100,7 +100,7 @@ fn shared_bus_resources_resolve_shout_conflicts() {
 #[test]
 fn shared_bus_resources_binary_table_uses_pow2_geometry() {
     let mut r = SharedBusResources::new();
-    r.set_binary_table(7, (0u64..8).map(F::from_u64).collect());
+    r.set_binary_lookup_table(7, (0u64..8).map(F::from_u64).collect());
 
     let t = r.lut_tables.get(&7).expect("table inserted");
     assert_eq!(t.k, 8);
@@ -185,13 +185,13 @@ fn ports_fill_from_trace_writes_expected_cells() {
     };
     let chunk = vec![step0, step1];
 
-    l.shout0
+    l.lookup0
         .fill_from_trace(&chunk, 0, &mut z)
-        .expect("shout fill should succeed");
-    assert_eq!(z[l.shout0.has_lookup.at(0)], F::ONE);
-    assert_eq!(z[l.shout0.addr.at(0)], F::from_u64(1));
-    assert_eq!(z[l.shout0.val.at(0)], F::from_u64(123));
-    assert_eq!(z[l.shout0.has_lookup.at(1)], F::ZERO);
+        .expect("lookup fill should succeed");
+    assert_eq!(z[l.lookup0.has_lookup.at(0)], F::ONE);
+    assert_eq!(z[l.lookup0.addr.at(0)], F::from_u64(1));
+    assert_eq!(z[l.lookup0.val.at(0)], F::from_u64(123));
+    assert_eq!(z[l.lookup0.has_lookup.at(1)], F::ZERO);
 
     l.twist0
         .fill_from_trace(&chunk, 0, &mut z)
@@ -254,5 +254,5 @@ fn ports_fill_from_trace_rejects_multiple_events() {
     let chunk = vec![step];
 
     assert!(l.twist0.fill_from_trace(&chunk, 0, &mut z).is_err());
-    assert!(l.shout0.fill_from_trace(&chunk, 0, &mut z).is_err());
+    assert!(l.lookup0.fill_from_trace(&chunk, 0, &mut z).is_err());
 }

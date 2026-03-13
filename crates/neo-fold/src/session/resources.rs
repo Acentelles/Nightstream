@@ -5,7 +5,7 @@ use p3_field::PrimeCharacteristicRing;
 use std::collections::HashMap;
 use std::iter;
 
-/// Declarative resource configuration for shared-CPU-bus runs (Twist + Shout).
+/// Declarative resource configuration for shared-CPU-bus runs (Twist + generic lookup).
 ///
 /// This is a thin convenience wrapper around the maps consumed by
 /// `neo_memory::builder::build_shard_witness_shared_cpu_bus*`.
@@ -15,7 +15,7 @@ pub struct SharedBusResources {
     pub initial_mem: HashMap<(u32, u64), F>,
     pub lut_tables: HashMap<u32, LutTable<F>>,
     pub lut_table_specs: HashMap<u32, LutTableSpec>,
-    /// Number of lookup lanes per VM step for each Shout table_id.
+    /// Number of lookup lanes per VM step for each generic lookup table_id.
     ///
     /// Defaults to 1 when absent.
     pub lut_lanes: HashMap<u32, usize>,
@@ -33,8 +33,8 @@ impl SharedBusResources {
         }
     }
 
-    pub fn shout(&mut self, table_id: u32) -> ShoutResource<'_> {
-        ShoutResource {
+    pub fn lookup(&mut self, table_id: u32) -> LookupResource<'_> {
+        LookupResource {
             resources: self,
             table_id,
         }
@@ -42,25 +42,25 @@ impl SharedBusResources {
 
     /// Convenience: set a power-of-two sized table under binary addressing (`n_side = 2`).
     ///
-    /// This treats the Shout `key` as an index in `[0, k)` encoded in little-endian bits, with:
+    /// This treats the lookup `key` as an index in `[0, k)` encoded in little-endian bits, with:
     /// - `k = content.len()`
     /// - `d = log2(k)`
     /// - `n_side = 2`
-    pub fn set_binary_table(&mut self, table_id: u32, content: Vec<F>) {
-        self.shout(table_id).binary_table(content);
+    pub fn set_binary_lookup_table(&mut self, table_id: u32, content: Vec<F>) {
+        self.lookup(table_id).binary_table(content);
     }
 
     /// Convenience: set a (possibly non-power-of-two sized) table under binary addressing (`n_side = 2`),
     /// padding with `0`s up to the next power of two.
     ///
-    /// This treats the Shout `key` as an index in `[0, k)` encoded in little-endian bits, with:
+    /// This treats the lookup `key` as an index in `[0, k)` encoded in little-endian bits, with:
     /// - `k = next_power_of_two(content.len())`
     /// - `d = log2(k)`
     /// - `n_side = 2`
     ///
     /// Padding is convenient when you want a small lookup table without manually choosing `(k, d)`.
-    pub fn set_padded_binary_table(&mut self, table_id: u32, content: Vec<F>) {
-        self.shout(table_id).padded_binary_table(content);
+    pub fn set_padded_binary_lookup_table(&mut self, table_id: u32, content: Vec<F>) {
+        self.lookup(table_id).padded_binary_table(content);
     }
 
     /// Convenience: set a power-of-two sized memory under binary addressing (`n_side = 2`).
@@ -84,7 +84,7 @@ impl SharedBusResources {
     }
 
     /// Remove any explicit table when switching a table_id to an implicit spec (or vice-versa).
-    fn clear_shout_conflicts(&mut self, table_id: u32, keep_spec: bool) {
+    fn clear_lookup_conflicts(&mut self, table_id: u32, keep_spec: bool) {
         if keep_spec {
             self.lut_tables.remove(&table_id);
         } else {
@@ -128,12 +128,12 @@ impl TwistResource<'_> {
     }
 }
 
-pub struct ShoutResource<'a> {
+pub struct LookupResource<'a> {
     resources: &'a mut SharedBusResources,
     table_id: u32,
 }
 
-impl ShoutResource<'_> {
+impl LookupResource<'_> {
     pub fn lanes(self, lanes: usize) -> Self {
         self.resources.lut_lanes.insert(self.table_id, lanes.max(1));
         self
@@ -142,7 +142,7 @@ impl ShoutResource<'_> {
     pub fn table(self, mut table: LutTable<F>) -> Self {
         table.table_id = self.table_id;
         self.resources
-            .clear_shout_conflicts(self.table_id, /*keep_spec=*/ false);
+            .clear_lookup_conflicts(self.table_id, /*keep_spec=*/ false);
         self.resources.lut_tables.insert(self.table_id, table);
         self
     }
@@ -183,7 +183,7 @@ impl ShoutResource<'_> {
 
     pub fn spec(self, spec: LutTableSpec) -> Self {
         self.resources
-            .clear_shout_conflicts(self.table_id, /*keep_spec=*/ true);
+            .clear_lookup_conflicts(self.table_id, /*keep_spec=*/ true);
         self.resources.lut_table_specs.insert(self.table_id, spec);
         self
     }

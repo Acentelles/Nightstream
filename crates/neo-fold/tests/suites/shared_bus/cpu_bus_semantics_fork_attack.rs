@@ -3,13 +3,14 @@
 //! ## Attack Description
 //!
 //! This test catches the "dead witness" class of bug where the CPU's **semantic** columns for
-//! memory/lookup are not constrained to equal the **shared CPU bus** columns that Twist/Shout
+//! memory/lookup are not constrained to equal the **shared CPU bus** columns that the memory-side
+//! and generic-lookup layers
 //! consume.
 //!
 //! The attack shape:
 //! 1. Build a CPU witness with both "shadow" columns (used internally by CPU constraints) and
-//!    "bus" columns (the shared bus region consumed by Twist/Shout).
-//! 2. Keep the bus region consistent with the real memory trace (so Twist/Shout pass).
+//!    "bus" columns (the shared bus region consumed by the memory-side and generic-lookup layers).
+//! 2. Keep the bus region consistent with the real memory trace (so those side checks pass).
 //! 3. Tamper the CPU's internal "shadow" columns to an inconsistent value.
 //! 4. Prove + verify.
 //!
@@ -296,7 +297,7 @@ fn cpu_semantic_shadow_fork_attack_should_be_rejected() {
                 ║   - Shared bus column (bus_rv) = 0                               ║\n\
                 ║                                                                  ║\n\
                 ║ This means CPU constraints are NOT linked to the shared bus.     ║\n\
-                ║ An attacker can prove arbitrary CPU semantics while Twist/Shout  ║\n\
+                ║ An attacker can prove arbitrary CPU semantics while memory/lookup ║\n\
                 ║ verify a completely different memory/lookup story.               ║\n\
                 ║                                                                  ║\n\
                 ║ FIX: Add constraints enforcing shadow_rv == bus_rv for all       ║\n\

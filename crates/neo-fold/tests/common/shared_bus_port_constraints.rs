@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use neo_fold::session::{CcsBuilder, ShoutPort, TwistPortWithInc};
+use neo_fold::session::{CcsBuilder, LookupPort, TwistPortWithInc};
 use neo_math::F;
 use neo_memory::cpu::constraints::{CpuConstraint, CpuConstraintBuilder};
 use neo_memory::cpu::{
@@ -17,7 +17,7 @@ pub fn constrain_zero_when_inactive(cs: &mut CcsBuilder<F>, one: usize, flag: us
     cs.r1cs_terms([(one, F::ONE), (flag, -F::ONE)], [(field, F::ONE)], []);
 }
 
-pub fn constrain_shout_port<const N: usize>(cs: &mut CcsBuilder<F>, one: usize, port: &ShoutPort<N>) {
+pub fn constrain_lookup_port<const N: usize>(cs: &mut CcsBuilder<F>, one: usize, port: &LookupPort<N>) {
     for j in 0..N {
         let has_lookup = port.has_lookup.at(j);
         constrain_boolean(cs, one, has_lookup);

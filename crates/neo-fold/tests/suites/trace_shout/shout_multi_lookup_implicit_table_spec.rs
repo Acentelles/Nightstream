@@ -6,7 +6,7 @@ use std::sync::Arc;
 use neo_ajtai::{setup as ajtai_setup, AjtaiSModule};
 use neo_fold::pi_ccs::FoldingMode;
 use neo_fold::session::{preprocess_shared_bus_r1cs, witness_layout, FoldingSession, NeoCircuit, SharedBusResources};
-use neo_fold::session::{Public, Scalar, ShoutPort};
+use neo_fold::session::{LookupPort, Public, Scalar};
 use neo_math::{D, F};
 use neo_memory::ajtai::commit_cols_for_ccs_m;
 use neo_memory::cpu::ShoutCpuBinding;
@@ -26,8 +26,8 @@ witness_layout! {
     #[derive(Clone, Debug)]
     pub MultiLookupImplicitSpecCols<const N: usize> {
         pub one: Public<Scalar>,
-        pub shout0_lane0: ShoutPort<N>,
-        pub shout0_lane1: ShoutPort<N>,
+        pub lookup0_lane0: LookupPort<N>,
+        pub lookup0_lane1: LookupPort<N>,
     }
 }
 
@@ -46,10 +46,13 @@ impl<const N: usize> NeoCircuit for MultiLookupImplicitSpecCircuit<N> {
     }
 
     fn resources(&self, resources: &mut SharedBusResources) {
-        resources.shout(0).lanes(2).spec(LutTableSpec::RiscvOpcode {
-            opcode: RiscvOpcode::Add,
-            xlen: 32,
-        });
+        resources
+            .lookup(0)
+            .lanes(2)
+            .spec(LutTableSpec::RiscvOpcode {
+                opcode: RiscvOpcode::Add,
+                xlen: 32,
+            });
     }
 
     fn cpu_bindings(
@@ -65,7 +68,7 @@ impl<const N: usize> NeoCircuit for MultiLookupImplicitSpecCircuit<N> {
         Ok((
             HashMap::from([(
                 0u32,
-                vec![layout.shout0_lane0.cpu_binding(), layout.shout0_lane1.cpu_binding()],
+                vec![layout.lookup0_lane0.cpu_binding(), layout.lookup0_lane1.cpu_binding()],
             )]),
             HashMap::new(),
         ))
@@ -96,8 +99,8 @@ impl<const N: usize> NeoCircuit for MultiLookupImplicitSpecCircuit<N> {
         let mut z = <Self::Layout as neo_fold::session::WitnessLayout>::zero_witness_prefix();
         z[layout.one] = F::ONE;
 
-        ShoutPort::fill_lanes_from_trace(
-            &[layout.shout0_lane0, layout.shout0_lane1],
+        LookupPort::fill_lanes_from_trace(
+            &[layout.lookup0_lane0, layout.lookup0_lane1],
             chunk,
             /*shout_id=*/ 0,
             &mut z,

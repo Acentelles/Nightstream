@@ -77,12 +77,12 @@ impl<const N: usize> WitnessLayoutPublic for Lane<N> {
     }
 }
 
-impl<const N: usize> WitnessLayoutField for ShoutPort<N> {
-    type Field = ShoutPort<N>;
+impl<const N: usize> WitnessLayoutField for LookupPort<N> {
+    type Field = LookupPort<N>;
     const LEN: usize = 3 * N;
 
     fn alloc(alloc: &mut WitnessLayoutAllocator) -> Self::Field {
-        alloc.shout_port::<N>()
+        alloc.lookup_port::<N>()
     }
 }
 
@@ -178,8 +178,8 @@ impl WitnessLayoutAllocator {
         lane
     }
 
-    pub fn shout_port<const N: usize>(&mut self) -> ShoutPort<N> {
-        ShoutPort {
+    pub fn lookup_port<const N: usize>(&mut self) -> LookupPort<N> {
+        LookupPort {
             has_lookup: self.lane::<N>(),
             addr: self.lane::<N>(),
             val: self.lane::<N>(),
@@ -261,15 +261,15 @@ impl<const N: usize> Lane<N> {
     }
 }
 
-/// Typed bundle of CPU binding lanes for a single Shout instance.
+/// Typed bundle of CPU binding lanes for a single generic lookup instance.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ShoutPort<const N: usize> {
+pub struct LookupPort<const N: usize> {
     pub has_lookup: Lane<N>,
     pub addr: Lane<N>,
     pub val: Lane<N>,
 }
 
-impl<const N: usize> ShoutPort<N> {
+impl<const N: usize> LookupPort<N> {
     pub fn cpu_binding(&self) -> ShoutCpuBinding {
         ShoutCpuBinding {
             has_lookup: self.has_lookup.base(),
@@ -278,13 +278,13 @@ impl<const N: usize> ShoutPort<N> {
         }
     }
 
-    /// Fill CPU binding columns from `StepTrace` events (common case).
+    /// Fill CPU binding columns from lookup events in `StepTrace` (common case).
     ///
     /// If no event is present for a lane, fills selector/address/value with zeros.
     pub fn fill_from_trace<Key>(
         &self,
         chunk: &[StepTrace<u64, u64, Key>],
-        shout_id: u32,
+        lookup_id: u32,
         z: &mut [F],
     ) -> Result<(), String>
     where
@@ -293,7 +293,7 @@ impl<const N: usize> ShoutPort<N> {
     {
         if chunk.len() != N {
             return Err(format!(
-                "ShoutPort::fill_from_trace: chunk len {} != expected {}",
+                "LookupPort::fill_from_trace: chunk len {} != expected {}",
                 chunk.len(),
                 N
             ));
@@ -301,16 +301,15 @@ impl<const N: usize> ShoutPort<N> {
         for (j, step) in chunk.iter().enumerate() {
             let mut found: Option<(u64, u64)> = None;
             for ev in &step.shout_events {
-                if ev.shout_id.0 != shout_id {
+                if ev.shout_id.0 != lookup_id {
                     continue;
                 }
-                let key = ev
-                    .key
-                    .try_into()
-                    .map_err(|_| format!("shout key does not fit u64 for shout_id={shout_id} in one step (j={j})"))?;
+                let key = ev.key.try_into().map_err(|_| {
+                    format!("lookup key does not fit u64 for lookup_id={lookup_id} in one step (j={j})")
+                })?;
                 if found.replace((key, ev.value)).is_some() {
                     return Err(format!(
-                        "multiple shout events for shout_id={shout_id} in one step (j={j})"
+                        "multiple lookup events for lookup_id={lookup_id} in one step (j={j})"
                     ));
                 }
             }
@@ -327,14 +326,14 @@ impl<const N: usize> ShoutPort<N> {
         Ok(())
     }
 
-    /// Fill multiple Shout lookup lanes from a single `shout_id` trace stream.
+    /// Fill multiple generic lookup lanes from a single `lookup_id` trace stream.
     ///
     /// Each lane supports at most one lookup per VM step. If the trace contains more lookups than
     /// lanes can support, this returns an error.
     pub fn fill_lanes_from_trace<Key>(
-        lanes: &[ShoutPort<N>],
+        lanes: &[LookupPort<N>],
         chunk: &[StepTrace<u64, u64, Key>],
-        shout_id: u32,
+        lookup_id: u32,
         z: &mut [F],
     ) -> Result<(), String>
     where
@@ -342,11 +341,11 @@ impl<const N: usize> ShoutPort<N> {
         <Key as TryInto<u64>>::Error: std::fmt::Debug,
     {
         if lanes.is_empty() {
-            return Err("ShoutPort::fill_lanes_from_trace: lanes must be non-empty".into());
+            return Err("LookupPort::fill_lanes_from_trace: lanes must be non-empty".into());
         }
         if chunk.len() != N {
             return Err(format!(
-                "ShoutPort::fill_lanes_from_trace: chunk len {} != expected {}",
+                "LookupPort::fill_lanes_from_trace: chunk len {} != expected {}",
                 chunk.len(),
                 N
             ));
@@ -359,19 +358,18 @@ impl<const N: usize> ShoutPort<N> {
             let mut used = 0usize;
 
             for ev in &step.shout_events {
-                if ev.shout_id.0 != shout_id {
+                if ev.shout_id.0 != lookup_id {
                     continue;
                 }
                 if used >= lookups.len() {
                     return Err(format!(
-                        "too many shout events for shout_id={shout_id} in one step (j={j}): lanes={}",
+                        "too many lookup events for lookup_id={lookup_id} in one step (j={j}): lanes={}",
                         lanes.len()
                     ));
                 }
-                let key = ev
-                    .key
-                    .try_into()
-                    .map_err(|_| format!("shout key does not fit u64 for shout_id={shout_id} in one step (j={j})"))?;
+                let key = ev.key.try_into().map_err(|_| {
+                    format!("lookup key does not fit u64 for lookup_id={lookup_id} in one step (j={j})")
+                })?;
                 lookups[used] = Some((key, ev.value));
                 used += 1;
             }
@@ -841,14 +839,14 @@ impl<const N: usize> TwistPortWithInc<N> {
     }
 }
 
-/// Declare a witness-column layout with typed lanes and Twist/Shout ports.
+/// Declare a witness-column layout with typed lanes and Twist/generic-lookup ports.
 ///
 /// Notes:
 /// - All `Public<...>` fields must appear before any private fields.
 /// - `Scalar` expands to a single column index; `Lane<N>` expands to `N` consecutive indices.
 /// - `TwistPort<N>` expands to 6 `Lane<N>`s (no CPU `inc` binding).
 /// - `TwistPortWithInc<N>` expands to 7 `Lane<N>`s (includes CPU `inc` binding).
-/// - `ShoutPort<N>` expands to 3 `Lane<N>`s.
+/// - `LookupPort<N>` expands to 3 `Lane<N>`s.
 #[macro_export]
 macro_rules! witness_layout {
     (

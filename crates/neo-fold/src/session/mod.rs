@@ -68,8 +68,8 @@ pub struct OutputClaim<Ff> {
     pub expected: Ff,
 }
 
-// Twist/Shout linkage is supported only via the shared CPU-bus path. Callers must provide:
-// - metadata-only Twist/Shout instances (no independent mem/lut commitments), and
+// Twist/generic-lookup linkage is supported only via the shared CPU-bus path. Callers must provide:
+// - metadata-only Twist/generic-lookup instances (no independent mem/lut commitments), and
 // - a CPU witness/CCS that binds those bus fields (binding + padding constraints).
 
 /// Direct inputs for a single step when you don't want to implement `NeoStep`.
@@ -692,7 +692,7 @@ where
         self.steps.iter().map(|step| step.mcs.0.clone()).collect()
     }
 
-    /// Access the collected *public* per-step bundles (MCS + optional Twist/Shout instances).
+    /// Access the collected *public* per-step bundles (MCS + optional Twist/generic-lookup instances).
     ///
     /// This is useful for specialized verifiers that need access
     /// to memory/lookup instances, not just the MCS list.
@@ -915,7 +915,7 @@ where
     /// This is the low-level API for when you have already constructed a `StepWitnessBundle`
     /// with memory (Twist) and/or lookup (Shout) instances.
     ///
-    /// Use this method when your proof requires Twist/Shout arguments in addition to CCS.
+    /// Use this method when your proof requires Twist/generic-lookup arguments in addition to CCS.
     pub fn add_step_bundle(&mut self, bundle: StepWitnessBundle<Cmt, F, K>) {
         self.shared_bus_aux = None;
         self.steps.push(bundle);
