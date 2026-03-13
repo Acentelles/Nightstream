@@ -41,6 +41,61 @@ fn group_digest(
     h.digest32()
 }
 
+pub(crate) fn update_class_digest(
+    claim_indices: &[usize],
+    claim_eta_coeffs: &[Vec<Mat<F>>],
+) -> Result<[u8; 32], PiCcsError> {
+    let mut h = Poseidon2Transcript::new(b"stage8/reduction/update_class_digest");
+    h.append_message(b"stage8/reduction/update_class_digest/version", b"v1");
+    h.append_u64s(
+        b"stage8/reduction/update_class_digest/claims_len",
+        &[claim_indices.len() as u64],
+    );
+    for (local_idx, &claim_idx) in claim_indices.iter().enumerate() {
+        let eta_coeffs = claim_eta_coeffs.get(claim_idx).ok_or_else(|| {
+            PiCcsError::ProtocolError(format!(
+                "time/opening reduction: missing eta coeffs for claim index {}",
+                claim_idx
+            ))
+        })?;
+        h.append_u64s(
+            b"stage8/reduction/update_class_digest/claim_local_idx",
+            &[local_idx as u64],
+        );
+        h.append_u64s(
+            b"stage8/reduction/update_class_digest/eta_len",
+            &[eta_coeffs.len() as u64],
+        );
+        for (eta_idx, eta) in eta_coeffs.iter().enumerate() {
+            h.append_u64s(
+                b"stage8/reduction/update_class_digest/eta_meta",
+                &[eta_idx as u64, eta.rows() as u64, eta.cols() as u64],
+            );
+            h.append_fields_iter(
+                b"stage8/reduction/update_class_digest/eta_values",
+                eta.as_slice().len(),
+                eta.as_slice().iter().copied(),
+            );
+        }
+    }
+    Ok(h.digest32())
+}
+
+pub(crate) fn combined_update_class_digest(update_class_digests: &[[u8; 32]]) -> [u8; 32] {
+    let mut h = Poseidon2Transcript::new(b"stage8/reduction/combined_update_class_digest");
+    h.append_message(b"stage8/reduction/combined_update_class_digest/version", b"v1");
+    h.append_u64s(
+        b"stage8/reduction/combined_update_class_digest/len",
+        &[update_class_digests.len() as u64],
+    );
+    let mut flat = Vec::with_capacity(update_class_digests.len() * 32);
+    for digest in update_class_digests.iter() {
+        flat.extend_from_slice(digest);
+    }
+    h.append_bytes_packed(b"stage8/reduction/combined_update_class_digest/flat", flat.as_slice());
+    h.digest32()
+}
+
 pub fn build_opening_reduction(manifest: &OpeningClaimManifest) -> Result<OpeningReductionProof, PiCcsError> {
     let mut groups: Vec<OpeningReductionGroup> = Vec::new();
     for (idx, entry) in manifest.entries.iter().enumerate() {

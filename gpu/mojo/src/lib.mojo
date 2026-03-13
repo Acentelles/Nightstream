@@ -183,3 +183,24 @@ fn nightstream_gpu_superneo_row_dot_blocks(
     out_words: UnsafePointer[UInt64, MutAnyOrigin],
 ) -> Int32:
     return ffi.superneo_row_dot_blocks(session, bar_blocks_words, num_blocks, z_words, z_len, out_words)
+
+
+@export("nightstream_gpu_superneo_row_dot_blocks_dual", ABI="C")
+fn nightstream_gpu_superneo_row_dot_blocks_dual(
+    session: UInt64,
+    re_bar_blocks_words: UnsafePointer[UInt64, MutAnyOrigin],
+    im_bar_blocks_words: UnsafePointer[UInt64, MutAnyOrigin],
+    num_blocks: UInt64,
+    z_words: UnsafePointer[UInt64, MutAnyOrigin],
+    z_len: UInt64,
+    out_words: UnsafePointer[UInt64, MutAnyOrigin],
+) -> Int32:
+    return ffi.superneo_row_dot_blocks_dual(
+        session,
+        re_bar_blocks_words,
+        im_bar_blocks_words,
+        num_blocks,
+        z_words,
+        z_len,
+        out_words,
+    )

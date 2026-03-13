@@ -780,6 +780,31 @@ fn reduce_partials_host(
         store_out(out_ptr, point_idx, acc)
 
 
+fn reduce_partials_gpu_kernel(
+    partial_words: UnsafePointer[mut=True, UInt64],
+    out_words: UnsafePointer[mut=True, UInt64],
+    points_len: Int,
+    groups_per_point: Int,
+):
+    var point_idx = Int(block_idx.x * block_dim.x + thread_idx.x)
+    if point_idx >= points_len:
+        return
+    var acc = k_zero()
+    var base = point_idx * groups_per_point
+    for group_idx in range(groups_per_point):
+        acc = k_add(acc, k_load(partial_words, (base + group_idx) * 2))
+    k_store(out_words, point_idx * 2, acc)
+
+
+fn reduce_partials_gpu_kernel_sig(
+    partial_words: UnsafePointer[UInt64, MutAnyOrigin],
+    out_words: UnsafePointer[UInt64, MutAnyOrigin],
+    points_len: Int,
+    groups_per_point: Int,
+):
+    pass
+
+
 fn ensure_fe_snapshot_uploaded(session: UInt64, evaluator: UnsafePointer[FeEvaluatorState, MutAnyOrigin]) raises:
     ref session_state = runtime.session_state_ptr(session)[]
     var ctx = session_state.accelerator_ctx.value()
@@ -873,9 +898,20 @@ fn fe_evals_at_gpu(
             grid_dim=grid_dim_for(point_count * groups_per_point),
             block_dim=SUMCHECK_GPU_BLOCK_SIZE,
         )
-        ctx.enqueue_copy(src_buf=dev_partials, dst_buf=host_partials)
+        ctx.enqueue_function[
+            reduce_partials_gpu_kernel, reduce_partials_gpu_kernel_sig
+        ](
+            dev_partials.unsafe_ptr(),
+            dev_points.unsafe_ptr(),
+            point_count,
+            groups_per_point,
+            grid_dim=grid_dim_for(point_count),
+            block_dim=SUMCHECK_GPU_BLOCK_SIZE,
+        )
+        ctx.enqueue_copy(src_buf=dev_points, dst_buf=host_points)
         ctx.synchronize()
-        reduce_partials_host(host_partials.unsafe_ptr(), point_count, groups_per_point, out_ptr)
+        for point_idx in range(point_count):
+            store_out(out_ptr, point_idx, k_load(host_points.unsafe_ptr(), point_idx * 2))
 
 
 fn nc_evals_at_gpu(
@@ -917,9 +953,20 @@ fn nc_evals_at_gpu(
             grid_dim=grid_dim_for(point_count * groups_per_point),
             block_dim=SUMCHECK_GPU_BLOCK_SIZE,
         )
-        ctx.enqueue_copy(src_buf=dev_partials, dst_buf=host_partials)
+        ctx.enqueue_function[
+            reduce_partials_gpu_kernel, reduce_partials_gpu_kernel_sig
+        ](
+            dev_partials.unsafe_ptr(),
+            dev_points.unsafe_ptr(),
+            point_count,
+            groups_per_point,
+            grid_dim=grid_dim_for(point_count),
+            block_dim=SUMCHECK_GPU_BLOCK_SIZE,
+        )
+        ctx.enqueue_copy(src_buf=dev_points, dst_buf=host_points)
         ctx.synchronize()
-        reduce_partials_host(host_partials.unsafe_ptr(), point_count, groups_per_point, out_ptr)
+        for point_idx in range(point_count):
+            store_out(out_ptr, point_idx, k_load(host_points.unsafe_ptr(), point_idx * 2))
 
 
 fn fe_create(

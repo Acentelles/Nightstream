@@ -209,49 +209,74 @@ Roadmap status on this branch:
      - `Val` parent commitment mixing is batched across claims before lane proving.
      - `Val` materialized DEC child commitments now share one batched `commit_many` finalize path.
      - WB/WP parent mixing and materialized DEC child commitments already share batched commit paths.
+     - `Val` and WB/WP now also share one combined parent ring-mix batch and one combined materialized
+       DEC child commit batch, so those lanes no longer pay separate commit-side launches.
+     - Materialized DEC child finalization now groups `commit_many` work by actual Ajtai width / global
+       committer availability instead of assuming one committer shape for every pending batch.
      - Stage-8 joint groups already share batched `joint_commit_many`.
      - Stage-8 multi-group cluster witnesses now share one batched commit pass instead of one commit per cluster.
+     - Stage-8 now pre-samples its own `ρ` schedule and joins the same step-level parent ring-mix batch as
+       the earlier folding lanes instead of paying a standalone parent mix.
    - Still missing:
-     - Stage-8, WB, WP, and `Val` are still separate jobs; they are not yet collapsed into one step-global resident ring job.
+     - Stage-8 still uses its own downstream DEC/commit path after the shared parent batch; we do not yet
+       have one fully resident step-global ring/DEC job.
      - Stage-8 unified-fold and cluster planning still creates more jobs than the paper-guided ideal.
 
 2. Stage-8 clustering by update structure, not only point/domain
    - Implemented:
      - Stage-8 can collapse to one fold claim when groups share the same point/domain.
-     - Each reduction group now carries an `update_class_digest` derived from the actual ordered
-       multiplicative update schedule: per-claim opening-batch `eta` matrices plus the reduction-level
-       `rho` mixers used to form the Stage-8 joint group.
-     - Heterogeneous Stage-8 groups now cluster by shared `update_class_digest`, so groups only share a
-       cluster when the prover is applying the same real update schedule rather than just a matching layout.
+     - Each joint-opening group now carries a schedule-derived `update_class_digest` bound to the ordered
+       per-claim `eta` matrices used to build that group's Stage-8 witness.
+     - Heterogeneous Stage-8 groups now cluster by shared `update_class_digest` instead of only by identical
+       `(point, domain)` anchors.
+     - When a clustered batch is heterogeneous in `(point, domain)`, the prover/verifier now treat it as a
+       transcript-mixed synthetic Stage-8 cluster anchored at `(r_unify, Cpu)` rather than pretending it is a
+       real opening at one member point. `trace_shout` and integration parity cover this path.
    - Still missing:
-     - The current digest is group-local. We still do not derive a larger step-global schedule that can
-       coalesce Stage-8, WB, WP, and `Val` work into a single resident ring job.
+     - We still do not derive a larger step-global schedule that can coalesce Stage-8, WB, WP, and `Val`
+       work into a single resident ring job.
      - We still do not exploit finer-grained update-schedule structure inside each clustered batch.
 
 3. Fully fused SuperNeo row-dot
    - Implemented:
      - SuperNeo routes the heavy ring products through the GPU `Rq` path.
+     - The GPU row-dot path now emits the final `(re, im)` constant terms from one device-resident
+       kernel instead of staging `rq_accumulate` outputs back to the host and calling `rq_ct` there.
+     - The fused GPU row-dot path now parallelizes over bar blocks, writes packed per-block partials into
+       a resident device buffer, and performs the final reduction on device.
    - Still missing:
-     - The final row-dot remains a staged flow rather than one fully fused on-device reduction.
-     - Constant-term extraction is not yet integrated into one dominant resident SuperNeo kernel.
+     - The fused row-dot kernel is still correctness-first; it is not yet the dominant,
+       throughput-tuned SuperNeo kernel for note-spend hot loops.
+     - Stage-8 and sibling lanes still do not feed SuperNeo through a GPU-first resident buffer layout.
 
 4. Device-side Split-NC reductions
    - Implemented:
      - FE/NC evaluation parity and backend routing are in place for CUDA and Metal.
+     - FE/NC grouped partials are now reduced on device; only final per-point outputs are copied back.
    - Still missing:
-     - Grouped partials are still copied back and reduced on the host.
+     - Snapshot creation/folding still starts from CPU-owned layouts, so FE/NC rounds are not yet fully
+       end-to-end resident.
 
 5. GPU-first buffer layout
    - Implemented:
-     - None as a dedicated layout layer yet; current improvements still reuse mostly CPU-oriented layouts.
+     - SuperNeo row-dot now uses a dedicated packed resident buffer layout for block words, interleaved
+       `z` channels, and per-block partial outputs on device.
+     - Split-NC FE/NC now reuses resident device buffers for points, grouped partials, and final outputs.
+     - `Rq` multiply / accumulate kernels now choose the sparser operand for the outer loop and skip zero
+       coefficients entirely, which better matches the low-norm decomposed witness shape in Ajtai-heavy paths.
+     - Scalar-only ring factors now use a dedicated fast path in `ring.mojo`, which helps `combine_b_pows`
+       and other constant-term-heavy commitment mixing avoid the general convolution loop.
    - Still missing:
-     - Hot Stage-8 / SuperNeo / `Rq` buffers are still repacked per operation instead of stored in a GPU-first resident format.
+     - Hot Stage-8 / generic `Rq` lane buffers are still repacked per operation instead of stored in one
+       step-resident GPU-first format.
 
 Execution plan for this branch:
 
-- Step 1 now: keep widening Stage-8 batching so cluster/unified commitments are paid once per phase.
-- Step 2 next: redesign Stage-8 clustering around shared update structure instead of only point/domain.
-- Step 3 after that: fuse SuperNeo row-dot into one device-resident reduction.
+- Step 1 now: push Stage-8 past the shared parent ring-mix into the same downstream DEC/commit finalize path as the
+  other folding lanes when the shapes line up.
+- Step 2 now: derive a larger step-global schedule that can coalesce Stage-8, WB, WP, and `Val` work into fewer
+  resident ring jobs.
+- Step 3 next: keep more Split-NC snapshot/fold state resident instead of rebuilding from CPU-owned layouts.
 
 ### Practical Backend Status
 
@@ -395,19 +420,19 @@ Post-review audit of the `feature/gpu-acceleration` branch against the issues ra
 | `enqueue_function` deprecation | P3 | Non-issue: Mojo 0.26.1 renamed `enqueue_function_checked` to `enqueue_function`. Current calls are the checked API. |
 | Poseidon2 batch race condition | MEDIUM | `batch` array is a temporary rebuilt per chunk; `states[input_idx]` only written after successful permutation. Failure returns `Ok(None)` or `Err`. |
 | Non-constant-time field ops | MEDIUM | `field.mojo` now documents: "These helpers are only used for public/hash-side arithmetic today. They are not written as constant-time primitives for secret witness handling." |
-| SuperNeo was CPU-only | P2 | Real GPU kernel (`superneo_bar_block_gpu_kernel`) with per-thread row parallelism. `superneo_row_dot_blocks_gpu_words` batches ring multiplies through the GPU path. Rust-side `SuperneoMatrixCache` / `SuperneoLinearForm` / `SuperneoZBlocks` now cache transformed blocks for repeated evaluations. |
+| SuperNeo was CPU-only | P2 | Real GPU kernel (`superneo_bar_block_gpu_kernel`) with per-thread row parallelism. `superneo_row_dot_blocks_gpu_kernel` now fuses ring multiply and constant-term extraction into one device-resident kernel via `rq_mul_ct_z_channel_words`, eliminating the old staged `rq_accumulate → rq_ct` round-trip. Session-owned SuperNeo buffers (`ensure_superneo_buffers`) avoid per-call allocation. Rust-side `SuperneoMatrixCache` / `SuperneoLinearForm` / `SuperneoZBlocks` cache transformed blocks for repeated evaluations. |
 | Note-spend e2e GPU test missing | P0 | `test_rv64_note_from_elf.rs` has: strict-Mojo prove + verify, byte-exact CPU-vs-Mojo proof parity, multi-iteration median benchmarks, and `accelerator_calls > 0` assertions. `split_nc_gpu_parity.rs` adds 211 lines of new FE/NC/SuperNeo parity tests. All `#[ignore]` (slow perf repros). |
 | Ring host-reduce inefficiency | P2 | Stage-8/commit-side Rust routing now prefers fused `rq_accumulate` for accelerator sessions, and `RQ_ACCUMULATE_GPU_MIN_SLOTS = 1` keeps the dedicated accumulate kernel on the fast path. Host-reduce fallback only used when `slot_count < 1` (effectively never). |
 | Stage-8 `prove_rlc_dec_lane` was CPU-only | P1 | `prove_rlc_dec_lane` now accepts `force_backend_commit_accel` and routes `mix_rhos_commits` / `combine_b_pows` through the Mojo `rq_accumulate` path. `mojo_commit_mix.rs` expanded with batched multi-group ring mix (`mix_many_rhos_commits_with_mojo`) and `combine_b_pows_with_mojo`. FE oracle's Ajtai-phase evals now thread through `evals_at_with_backend` for backend-aware SuperNeo evaluation. |
-| HIP was half-exposed in Rust config | P3 | Rust now only exposes `Cpu` / `Metal` / `Cuda` / `Auto`. The branch no longer advertises `DeviceApi::Hip` as a selectable backend while HIP remains unsupported in the real Mojo runtime. |
+| HIP was half-exposed in Rust config | P3 | `DeviceApi::Hip` variant fully removed from the Rust enum. `candidate_order` is `[Metal, Cpu]` on macOS, `[Cuda, Cpu]` on Linux. Mojo-side `accelerator_ready_for_api` returns `False` for the HIP constant. |
 
 ### Mitigated (acceptable but not fully closed)
 
 | Issue | Original Severity | Current State | Remaining Gap |
 |-------|-------------------|---------------|---------------|
-| GPU fold failure causes state misalignment | P0 HIGH | FE/NC fold is now atomic at the wrapper level: a fresh shadow evaluator folds first, the live GPU evaluator is only swapped in on success, and failures fall back to the canonical CPU snapshot. No divergent GPU state is kept after an error, and later rounds may recreate the evaluator from CPU state. | There is still no proof-level retry/abort transaction. A failed accelerator fold wastes that attempt's GPU work and the proof continues from CPU-owned state. |
-| Inconsistent error handling | P1 HIGH | Split-NC oracle wrappers now capture strict-mode FE/NC create/eval/fold failures as deferred `PiCcsError`s and surface them through the prover instead of panicking. Optional paths still downgrade to CPU fallback through the backend breaker. | Some strict commit-mix helper paths still use `panic!()` in no-fallback mode because the surrounding ring-mix APIs are still `Cmt`-returning rather than `Result`-returning. |
-| Circuit breaker for GPU failures | P2 | Two-level breaker: per-oracle (`SPLIT_NC_MAX_FAILURES_PER_ORACLE = 1`) and per-session (`BACKEND_MAX_FAILURES_PER_SESSION = 1`). After one create/eval failure the backend is disabled for the remainder of the oracle/session, and breaker activations are emitted to stderr. Atomic fold failures now drop only the evaluator and retry from CPU snapshot on the next round. | No exponential backoff, no cooldown period, and breaker logging is visible but still ad hoc rather than a structured telemetry stream. |
+| GPU fold failure causes state misalignment | P0 HIGH | FE/NC fold is now atomic at the wrapper level: a fresh shadow evaluator folds first, the live GPU evaluator is only swapped in on success, and failures fall back to the canonical CPU snapshot. No divergent GPU state is kept after an error, and later rounds may recreate the evaluator from CPU state. Poseidon2 digest failures now route through `record_poseidon_backend_failure` for consistent breaker integration. | There is still no proof-level retry/abort transaction. A failed accelerator fold wastes that attempt's GPU work and the proof continues from CPU-owned state. |
+| Inconsistent error handling | P1 HIGH | Split-NC oracle wrappers capture strict-mode FE/NC create/eval/fold failures as deferred `PiCcsError`s via `pending_error: Option<PiCcsError>` and surface them through `RoundOracle::take_error()`. The sumcheck prover checks `take_error()` after every `evals_at` and `fold`. `SumcheckError::Runtime(String)` variant added for deferred-error propagation. Stage-8 batched fallback commitment mixing now runs through a `Result`-returning helper instead of `expect()`-based fallback closures. Optional paths still downgrade to CPU fallback through the backend breaker. | Some ring-mix call surfaces are still `Cmt`-returning rather than `Result`-returning, so strict no-fallback behavior is not fully normalized across every helper yet. |
+| Circuit breaker for GPU failures | P2 | Two-level breaker: per-oracle (`SPLIT_NC_MAX_FAILURES_PER_ORACLE = 1`) and per-session (`BACKEND_MAX_FAILURES_PER_SESSION = 1`) via `BackendFailureState` struct tracking poseidon/split_nc/aux failures independently behind `Mutex`. `BackendOperation` enum routes `ensure_backend_enabled()` / `record_backend_failure()` per operation type. Atomic fold failures drop only the evaluator and retry from CPU snapshot on the next round. `split_nc_gpu_parity.rs` has fault-injection tests: `split_nc_fe_row_recovers_gpu_after_atomic_fold_failure` and `split_nc_session_breaker_disables_gpu_across_oracles_after_fe_failure`. | No exponential backoff, no cooldown period, and breaker logging is visible but still ad hoc rather than a structured telemetry stream. |
 
 ### Open (requires further work)
 
@@ -415,12 +440,61 @@ Post-review audit of the `feature/gpu-acceleration` branch against the issues ra
 |----------|-------|----------|--------|
 | **P1** | Stage-8 `prove_rlc_dec_lane` is still the dominant bottleneck | `crates/neo-fold` | Stage-8 now uses the backend-aware commit path and clusters heterogeneous groups by a digest of the real per-group `eta`/`rho` update schedule, but the work is still only clustered within Stage-8 itself and note-spend end-to-end wins remain modest on CUDA and negative on Metal. |
 | **P2** | Metal `Rq` batch slower than CPU | `ring.mojo` | Parity-correct but too slow for hot lanes. Stage-8 joint-opening and `RlcLane::Val` acceleration are gated off on Metal. |
-| **P2** | Note-spend lane batching incomplete | `crates/neo-fold` | Collapsible Stage-8 sibling groups now reduce to one fold claim, but WB/WP / heterogeneous Stage-8 groups are still not collapsed into a few large resident GPU jobs. |
+| **P2** | Note-spend lane batching incomplete | `crates/neo-fold` | `Val`, WB, and WP now share parent-mix and materialized-child commit batches, but Stage-8 is still outside that combined batch and the proof step still does not collapse into a few large resident GPU jobs. |
+| **P2** | Ajtai kernels still need deeper bit-width specialization | `ring.mojo` / `mojo_commit_many.rs` | `Rq` multiply now skips zero coefficients, iterates with the sparser operand outermost, and has a scalar-only fast path for constant factors. We still do not have digit-range-specialized kernels or a dedicated packed Ajtai descriptor format. |
 | **P3** | No automated accelerator CI gate | CI | GitHub Actions now runs a real Mojo CPU parity lane and a manual self-hosted Metal/CUDA parity workflow, but accelerator coverage is still not a required merge gate. GPU-breaking changes can still merge unless someone runs the manual GPU workflow. |
+
+## SuperNeo Paper Cross-Reference
+
+Mapping between the SuperNeo paper's core operations and the current GPU branch implementation.
+
+### Paper Operation → Code Mapping
+
+| Paper Concept | Paper Reference | Code Location | GPU Status |
+|---------------|-----------------|---------------|------------|
+| Goldilocks field F (q = 2^64 - 2^32 + 1) | §2 | `field.mojo`: `fq_add`, `fq_sub`, `fq_mul`, `fq_canonicalize` | GPU kernels use these directly. |
+| Extension field K = F_{q^2} | §2 | `field.mojo` / `sumcheck.mojo`: `k_add`, `k_sub`, `k_mul` with δ=7 | Used in FE/NC evaluator kernels. |
+| Cyclotomic ring R_F = F[X]/(X^54 + X^27 + 1) | §2, Def 1 | `ring.mojo`: `rq_mul_batch_words`, `rq_accumulate_batch_words` | GPU ring multiply and accumulate kernels exist. D_WIDTH=54 matches paper's d=54. |
+| SuperNeo embedding (z ∈ F^{d·n} → z ∈ R_F^n) | §4, Def 8 | `superneo_eval.rs`: `SuperneoZBlocks::from_z` packs d-element chunks as ring coefficients | Host-side; feeds GPU ring kernels. |
+| Bar transform (σ̄: F^d → F^d) | §3, Thm 3 | `superneo.mojo`: `superneo_bar_block_gpu_kernel` — per-thread row parallelism over D_WIDTH=54 | Real GPU kernel with session-owned buffers. |
+| Constant-term extraction ct(M̄z(r)) = Mz(r) | §4, Thm 4 | `superneo.mojo`: `rq_mul_ct_z_channel_words` fuses ring multiply + ct extraction | Fused into `superneo_row_dot_blocks_gpu_kernel`. |
+| Weighted ring linear combination (Σ χ_r · M̄_i) | §4, Def 9 | `superneo_eval.rs`: `WeightedSuperneoBlocks` / `build_weighted_blocks` — sparse accumulation by chi_r | Host-side sparse accumulation; GPU `rq_accumulate_batch_u64x54` for dense phase. |
+| Π_CCS sumcheck reduction | §5.1 | `sumcheck.rs`: `run_sumcheck_prover` / `run_batched_sumcheck_prover` with Split-NC oracle | FE/NC evaluator kernels on GPU via `fe_partial_group_gpu_kernel` / `nc_partial_group_gpu_kernel`. |
+| Π_RLC random linear combination | §5.2 | `rlc_dec.rs`: `prove_rlc_dec_lane` with ring scalar mixing from sampling set C | Ring mix routed through `mix_rhos_commits_with_backend` / `rq_accumulate`. |
+| Π_DEC b-ary decomposition | §5.3 | `rlc_dec.rs`: `split_b_matrix_k` decomposes witness; `commit_dec_wits_batched` for batch commit | Commitment batched across lanes; b=2 matches paper's binary decomposition. |
+| Ajtai commitment Az | §2, §6 | `mojo_commit_many.rs`: `commit_many_with_backend` / `mix_many_rhos_commits_with_mojo` | GPU `rq_accumulate` for ring matrix-vector products. |
+| Pay-per-bit commitment cost | §4.2 | `superneo_eval.rs`: ring path uses 2 or 4 `accumulate_weighted_blocks` calls depending on `z.imag_all_zero` | Optimization: skips imaginary channel when all-zero, halving ring work. |
+| Strong sampling set C (coeffs in [-2,-1,0,1,2]) | §2, Def 3 | Rust-side challenge generation; not GPU-specific | N/A — challenge sampling stays on host. |
+
+### Paper-Informed GPU Optimization Opportunities
+
+The paper identifies the dominant prover costs (§6, Table 2) as:
+
+1. **Ajtai commitment Az** — ring matrix-vector product, cost scales with witness bit-width
+2. **Sumcheck polynomial evaluation** — d evaluations per round per constraint
+3. **Π_DEC decomposition** — b-ary split and re-commitment of decomposed witnesses
+
+Current GPU coverage vs paper-predicted bottlenecks:
+
+| Paper Bottleneck | Current GPU Coverage | Optimization Opportunity |
+|------------------|---------------------|--------------------------|
+| Ajtai commitment Az | `rq_accumulate_batch` routes through GPU; session buffers exist. `Rq` multiply now skips zero coefficients, chooses the sparser operand as the outer loop, and fast-paths scalar-only factors. | Remaining work is digit-range-aware specialization and step-resident Ajtai descriptors so decomposed witnesses avoid repeated repacking. |
+| Sumcheck evaluation | FE/NC evaluators on GPU with grouped partials (`SUMCHECK_PAIR_GROUP = 128`) | Grouped partials now reduce on device; remaining work is keeping snapshot creation/folding resident instead of CPU-owned. |
+| Π_DEC re-commitment | `commit_dec_wits_batched` across lanes | **Step-global DEC batching**: currently lanes batch independently within Val/WB/WP groups. Paper shows DEC dominates for deep folding (k=14 digits × many lanes). One step-global DEC commit pass would amortize launch overhead. |
+| SuperNeo ring-dot evaluation | `superneo_row_dot_blocks_gpu_kernel` now parallelizes across blocks and reduces on device | Remaining work is throughput tuning and pushing more of Stage-8/sibling-lane traffic through this path. |
+| Weighted block accumulation | `build_weighted_blocks` on host, dual-channel SuperNeo row-dot on GPU | Real/imaginary scalar accumulation is now fused in one GPU call; ring-valued accumulation still uses separate weighted `rq_accumulate_batch` passes. |
+
+### What the Paper Suggests We Should NOT GPU-Accelerate
+
+- **Challenge sampling** (random oracle / Fiat-Shamir): sequential, transcript-dependent, tiny cost.
+- **Sparse weighted block construction** (`build_weighted_blocks`): paper's CCS structure makes this sparse — host-side accumulation by non-zero chi_r entries is correct.
+- **Proof serialization / verification**: verifier cost is sublinear and not a prover bottleneck.
 
 ## Current Optimization Priorities
 
-1. Reduce note-spend Stage-8 `prove_rlc_dec_lane` time.
-2. Batch more commitment/ring work across sibling lanes.
-3. Improve the Metal `Rq` batch kernel enough to remove current hot-lane gates.
-4. Keep CUDA promoted where it beats CPU, and keep Metal conservative until it does.
+1. **Extend step-global batching beyond the shared parent ring-mix**: Stage-8 still needs to join a unified downstream DEC/commit path with the other lanes.
+2. **Deepen the new sparse-aware Ajtai kernels**: add digit-range-aware specialization and step-resident Ajtai descriptors on top of the zero-skipping / scalar-fast-path `Rq` kernels.
+3. **Improve the Metal `Rq` batch kernel enough to remove current hot-lane gates**.
+4. **Keep more Split-NC state resident**: snapshot creation/folding still begins from CPU-owned layouts.
+5. **Push more Stage-8 / sibling-lane traffic through the tuned SuperNeo path**.
+6. Keep CUDA promoted where it beats CPU, and keep Metal conservative until it does.

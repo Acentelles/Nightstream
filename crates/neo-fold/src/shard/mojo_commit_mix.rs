@@ -182,13 +182,13 @@ pub(crate) fn mix_rhos_commits_with_backend_result<MR>(
     cs: &[Cmt],
 ) -> Result<Cmt, PiCcsError>
 where
-    MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt,
+    MR: Fn(&[Mat<F>], &[Cmt]) -> Result<Cmt, PiCcsError>,
 {
     match try_mix_rhos_commits_with_mojo(backend_ctx, rhos, cs) {
         Ok(Some(commitment)) => Ok(commitment),
-        Ok(None) => Ok(fallback(rhos, cs)),
+        Ok(None) => fallback(rhos, cs),
         Err(err) if backend_ctx.mojo_required() => Err(err),
-        Err(_) => Ok(fallback(rhos, cs)),
+        Err(_) => fallback(rhos, cs),
     }
 }
 
@@ -292,19 +292,31 @@ pub(crate) fn mix_many_rhos_commits_with_backend<MR>(
 where
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Copy,
 {
+    mix_many_rhos_commits_with_backend_result(backend_ctx, |rhos, cs| Ok(fallback(rhos, cs)), rhos_groups, cs_groups)
+}
+
+pub(crate) fn mix_many_rhos_commits_with_backend_result<MR>(
+    backend_ctx: &neo_reductions::accelerator::BackendContext,
+    fallback: MR,
+    rhos_groups: &[Vec<Mat<F>>],
+    cs_groups: &[Vec<Cmt>],
+) -> Result<Vec<Cmt>, PiCcsError>
+where
+    MR: Fn(&[Mat<F>], &[Cmt]) -> Result<Cmt, PiCcsError> + Copy,
+{
     match try_mix_many_rhos_commits_with_mojo(backend_ctx, rhos_groups, cs_groups) {
         Ok(Some(commitments)) => Ok(commitments),
-        Ok(None) => Ok(rhos_groups
+        Ok(None) => rhos_groups
             .iter()
             .zip(cs_groups.iter())
             .map(|(rhos, cs)| fallback(rhos, cs))
-            .collect()),
+            .collect(),
         Err(err) if backend_ctx.mojo_required() => Err(err),
-        Err(_) => Ok(rhos_groups
+        Err(_) => rhos_groups
             .iter()
             .zip(cs_groups.iter())
             .map(|(rhos, cs)| fallback(rhos, cs))
-            .collect()),
+            .collect(),
     }
 }
 

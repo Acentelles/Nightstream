@@ -328,12 +328,16 @@ pub fn try_eval_all_mats_precompute_with_backend(
                 .map(flat_rq_from_rq)
                 .map(|flat| flat.coeffs)
                 .collect::<Vec<_>>();
-            let weighted_re = session
-                .superneo_row_dot_blocks(&re_blocks, &flat_z)
-                .map_err(|err| PiCcsError::ProtocolError(format!("SuperNeo row_dot(re) failed: {err}")))?;
-            let weighted_im = session
-                .superneo_row_dot_blocks(&im_blocks, &flat_z)
-                .map_err(|err| PiCcsError::ProtocolError(format!("SuperNeo row_dot(im) failed: {err}")))?;
+            let (weighted_re, weighted_im) = session
+                .superneo_row_dot_blocks_dual(&re_blocks, &im_blocks, &flat_z)
+                .or_else(|_| {
+                    let weighted_re = session.superneo_row_dot_blocks(&re_blocks, &flat_z)?;
+                    let weighted_im = session.superneo_row_dot_blocks(&im_blocks, &flat_z)?;
+                    Ok((weighted_re, weighted_im))
+                })
+                .map_err(|err: neo_gpu::NeoGpuError| {
+                    PiCcsError::ProtocolError(format!("SuperNeo row_dot dual-channel failed: {err}"))
+                })?;
             let weighted_re = k_from_flat(weighted_re);
             let weighted_im = k_from_flat(weighted_im);
             let [a_re, a_im] = weighted_re.as_coeffs();

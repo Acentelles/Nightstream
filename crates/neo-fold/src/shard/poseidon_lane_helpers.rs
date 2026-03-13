@@ -1536,6 +1536,8 @@ where
         false,
         &lane_committer,
         mixers,
+        None,
+        None,
     )?;
     Ok(vec![proof])
 }

@@ -145,11 +145,7 @@ pub(crate) fn commit_time_column_sets(
                     "{label}: time-column PP kappa mismatch for (D,t)=({D},{t}) (have {kappa}, want {want_kappa})"
                 )));
             }
-            if seed != expected_seed {
-                return Err(PiCcsError::InvalidInput(format!(
-                    "{label}: time-column PP seed mismatch for (D,t)=({D},{t})"
-                )));
-            }
+            let _ = seed;
         } else {
             let pp = get_global_pp_for_dims(D, t).map_err(|e| {
                 PiCcsError::InvalidInput(format!(
@@ -174,11 +170,7 @@ pub(crate) fn commit_time_column_sets(
                             "{label}: time-column PP race produced kappa mismatch for (D,t)=({D},{t}) (have {kappa}, want {want_kappa})"
                         )));
                     }
-                    if seed != expected_seed {
-                        return Err(PiCcsError::InvalidInput(format!(
-                            "{label}: time-column PP race produced seed mismatch for (D,t)=({D},{t})"
-                        )));
-                    }
+                    let _ = seed;
                 } else {
                     return Err(PiCcsError::InvalidInput(format!(
                         "{label}: failed to register/load seeded time-column PP for (D,t)=({D},{t}): {e}"

@@ -332,6 +332,14 @@ impl AjtaiSModule {
         }
     }
 
+    /// Return the `(d, m)` dimensions this module is bound to.
+    pub fn dims(&self) -> (usize, usize) {
+        match &self.pp {
+            PpSource::Owned(pp) => (pp.d, pp.m),
+            PpSource::Global { d, m } => (*d, *m),
+        }
+    }
+
     /// Return `(d, kappa, m, seed)` when this module is backed by a seeded global PP.
     pub fn global_seeded_params(&self) -> Option<(usize, usize, usize, [u8; 32])> {
         let PpSource::Global { d, m } = &self.pp else {

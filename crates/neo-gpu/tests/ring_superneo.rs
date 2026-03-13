@@ -122,6 +122,22 @@ fn sample_block(seed: u64) -> [u64; D] {
     std::array::from_fn(|i| seed.wrapping_mul(17).wrapping_add((i as u64) * 9 + 3))
 }
 
+fn sample_sparse_block(seed: u64, stride: usize) -> [u64; D] {
+    std::array::from_fn(|i| {
+        if i % stride == 0 {
+            seed.wrapping_mul(19).wrapping_add((i as u64) * 5 + 7)
+        } else {
+            0
+        }
+    })
+}
+
+fn sample_scalar_block(seed: u64) -> [u64; D] {
+    let mut out = [0u64; D];
+    out[0] = seed.wrapping_mul(23).wrapping_add(11);
+    out
+}
+
 fn sample_z(len: usize, seed: u64) -> Vec<FlatK> {
     (0..len)
         .map(|i| FlatK {
@@ -148,26 +164,40 @@ fn real_mojo_rq_mul_and_ct_match_cpu_reference() {
     for seed in [3u64, 7, 29] {
         let lhs = sample_block(seed);
         let rhs = sample_block(seed + 100);
-        let cpu = rq_mul_cpu(lhs, rhs);
+        let sparse_lhs = sample_sparse_block(seed + 200, 5);
+        let sparse_rhs = sample_sparse_block(seed + 400, 7);
+        let scalar_lhs = sample_scalar_block(seed + 600);
+        let scalar_rhs = sample_scalar_block(seed + 800);
+        for (case, lhs, rhs) in [
+            ("dense", lhs, rhs),
+            ("sparse_lhs", sparse_lhs, rhs),
+            ("sparse_rhs", lhs, sparse_rhs),
+            ("sparse_both", sparse_lhs, sparse_rhs),
+            ("scalar_lhs", scalar_lhs, rhs),
+            ("scalar_rhs", lhs, scalar_rhs),
+            ("scalar_both", scalar_lhs, scalar_rhs),
+        ] {
+            let cpu = rq_mul_cpu(lhs, rhs);
 
-        let mut lhs_words = lhs;
-        let mut rhs_words = rhs;
-        let mut out_words = [0u64; D];
-        let status = unsafe {
-            rq_mul(
-                1,
-                lhs_words.as_mut_ptr(),
-                rhs_words.as_mut_ptr(),
-                out_words.as_mut_ptr(),
-            )
-        };
-        assert_eq!(status, 0, "rq mul status");
-        assert_eq!(out_words, cpu, "rq mul parity seed={seed}");
+            let mut lhs_words = lhs;
+            let mut rhs_words = rhs;
+            let mut out_words = [0u64; D];
+            let status = unsafe {
+                rq_mul(
+                    1,
+                    lhs_words.as_mut_ptr(),
+                    rhs_words.as_mut_ptr(),
+                    out_words.as_mut_ptr(),
+                )
+            };
+            assert_eq!(status, 0, "rq mul status case={case} seed={seed}");
+            assert_eq!(out_words, cpu, "rq mul parity case={case} seed={seed}");
 
-        let mut ct_out = [0u64; 1];
-        let status = unsafe { rq_ct(out_words.as_mut_ptr(), ct_out.as_mut_ptr()) };
-        assert_eq!(status, 0, "rq ct status");
-        assert_eq!(ct_out[0], rq_ct_cpu(cpu), "rq ct parity seed={seed}");
+            let mut ct_out = [0u64; 1];
+            let status = unsafe { rq_ct(out_words.as_mut_ptr(), ct_out.as_mut_ptr()) };
+            assert_eq!(status, 0, "rq ct status case={case} seed={seed}");
+            assert_eq!(ct_out[0], rq_ct_cpu(cpu), "rq ct parity case={case} seed={seed}");
+        }
     }
 }
 
@@ -303,6 +333,13 @@ fn real_mojo_session_ring_and_superneo_match_cpu_reference() {
         .superneo_row_dot_blocks(&bar_blocks, &z)
         .expect("superneo row dot");
     assert_eq!(dot, superneo_row_dot_cpu(&bar_blocks, &z));
+
+    let dual = session
+        .superneo_row_dot_blocks_dual(&bar_blocks, &bar_blocks, &z)
+        .expect("superneo row dot dual");
+    let expected = superneo_row_dot_cpu(&bar_blocks, &z);
+    assert_eq!(dual.0, expected);
+    assert_eq!(dual.1, expected);
 }
 
 #[test]

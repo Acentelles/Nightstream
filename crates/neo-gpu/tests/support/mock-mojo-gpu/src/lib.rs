@@ -1000,6 +1000,43 @@ pub extern "C" fn nightstream_gpu_superneo_row_dot_blocks(
 }
 
 #[no_mangle]
+pub extern "C" fn nightstream_gpu_superneo_row_dot_blocks_dual(
+    session: u64,
+    re_bar_blocks_ptr: *mut u64,
+    im_bar_blocks_ptr: *mut u64,
+    num_blocks: u64,
+    z_ptr: *mut u64,
+    z_len: u64,
+    out_ptr: *mut u64,
+) -> i32 {
+    SUPERNEO_CALLS.fetch_add(1, Ordering::Relaxed);
+    unsafe {
+        if re_bar_blocks_ptr.is_null() || im_bar_blocks_ptr.is_null() || z_ptr.is_null() || out_ptr.is_null() {
+            return -3;
+        }
+        let status_re = nightstream_gpu_superneo_row_dot_blocks(
+            session,
+            re_bar_blocks_ptr,
+            num_blocks,
+            z_ptr,
+            z_len,
+            out_ptr,
+        );
+        if status_re != 0 {
+            return status_re;
+        }
+        nightstream_gpu_superneo_row_dot_blocks(
+            session,
+            im_bar_blocks_ptr,
+            num_blocks,
+            z_ptr,
+            z_len,
+            out_ptr.add(2),
+        )
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn nightstream_gpu_test_reset_counters() {
     FE_EVALS_AT_CALLS.store(0, Ordering::Relaxed);
     NC_EVALS_AT_CALLS.store(0, Ordering::Relaxed);

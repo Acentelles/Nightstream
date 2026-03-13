@@ -20,7 +20,7 @@ use crate::abi::{
     FE_FOLD_SYMBOL, NC_CREATE_SYMBOL, NC_DESTROY_SYMBOL, NC_EVALS_AT_SYMBOL, NC_FOLD_SYMBOL,
     POSEIDON2_PERMUTE_BATCH_SYMBOL, POSEIDON2_PERMUTE_SYMBOL, RQ_ACCUMULATE_BATCH_SYMBOL, RQ_CT_SYMBOL,
     RQ_MUL_BATCH_SYMBOL, RQ_MUL_SYMBOL, SESSION_CLOSE_SYMBOL, SESSION_OPEN_SYMBOL, SUPERNEO_BAR_BLOCK_SYMBOL,
-    SUPERNEO_ROW_DOT_BLOCKS_SYMBOL,
+    SUPERNEO_ROW_DOT_BLOCKS_DUAL_SYMBOL, SUPERNEO_ROW_DOT_BLOCKS_SYMBOL,
 };
 use crate::{BackendActivationThresholds, DeviceApi, FlatRq, MojoBackendConfig, NeoGpuError};
 
@@ -41,6 +41,7 @@ type RqAccumulateBatchFn = unsafe extern "C" fn(u64, *mut u64, *mut u64, *mut u6
 type RqCtFn = unsafe extern "C" fn(*mut u64, *mut u64) -> i32;
 type SuperneoBarBlockFn = unsafe extern "C" fn(u64, *mut u64, *mut u64, *mut u64) -> i32;
 type SuperneoRowDotBlocksFn = unsafe extern "C" fn(u64, *mut u64, u64, *mut u64, u64, *mut u64) -> i32;
+type SuperneoRowDotBlocksDualFn = unsafe extern "C" fn(u64, *mut u64, *mut u64, u64, *mut u64, u64, *mut u64) -> i32;
 
 #[cfg(all(not(target_arch = "wasm32"), any(unix, windows)))]
 type PlatformLibrary = Library;
@@ -323,6 +324,7 @@ struct OptionalEvaluatorFns {
     rq_ct: Option<RqCtFn>,
     superneo_bar_block: Option<SuperneoBarBlockFn>,
     superneo_row_dot_blocks: Option<SuperneoRowDotBlocksFn>,
+    superneo_row_dot_blocks_dual: Option<SuperneoRowDotBlocksDualFn>,
 }
 
 impl OptionalEvaluatorFns {
@@ -435,6 +437,10 @@ impl MojoLibrary {
                 rq_ct: load_optional::<RqCtFn>(&lib, RQ_CT_SYMBOL),
                 superneo_bar_block: load_optional::<SuperneoBarBlockFn>(&lib, SUPERNEO_BAR_BLOCK_SYMBOL),
                 superneo_row_dot_blocks: load_optional::<SuperneoRowDotBlocksFn>(&lib, SUPERNEO_ROW_DOT_BLOCKS_SYMBOL),
+                superneo_row_dot_blocks_dual: load_optional::<SuperneoRowDotBlocksDualFn>(
+                    &lib,
+                    SUPERNEO_ROW_DOT_BLOCKS_DUAL_SYMBOL,
+                ),
             }
         };
 
@@ -1358,6 +1364,88 @@ impl MojoSession {
             re: out_words[0],
             im: out_words[1],
         })
+    }
+
+    pub fn superneo_row_dot_blocks_dual(
+        &self,
+        re_bar_blocks: &[[u64; 54]],
+        im_bar_blocks: &[[u64; 54]],
+        z: &[FlatK],
+    ) -> Result<(FlatK, FlatK), NeoGpuError> {
+        let library = self
+            .library
+            .as_ref()
+            .ok_or(NeoGpuError::UnsupportedOperation {
+                op: "superneo_row_dot_blocks_dual",
+            })?;
+        let row_dot = library
+            .evaluators
+            .superneo_row_dot_blocks_dual
+            .ok_or(NeoGpuError::UnsupportedOperation {
+                op: "superneo_row_dot_blocks_dual",
+            })?;
+        if re_bar_blocks.len() != im_bar_blocks.len() {
+            return Err(NeoGpuError::InvalidInput {
+                op: "superneo_row_dot_blocks_dual",
+                reason: "re/im block count mismatch".into(),
+            });
+        }
+        let mut re_words = re_bar_blocks
+            .iter()
+            .flat_map(|block| block.iter().copied())
+            .collect::<Vec<_>>();
+        let mut im_words = im_bar_blocks
+            .iter()
+            .flat_map(|block| block.iter().copied())
+            .collect::<Vec<_>>();
+        let mut z_words = z
+            .iter()
+            .flat_map(|value| [value.re, value.im])
+            .collect::<Vec<_>>();
+        let mut out_words = [0u64; 4];
+        let device_api = self.device_api;
+        let re_ptr = re_words.as_mut_ptr() as usize;
+        let im_ptr = im_words.as_mut_ptr() as usize;
+        let z_ptr = z_words.as_mut_ptr() as usize;
+        let out_ptr = out_words.as_mut_ptr() as usize;
+        let num_blocks = re_bar_blocks.len() as u64;
+        let z_len = z.len() as u64;
+        let session_handle = self.handle;
+        let status = call_for_device_api(device_api, move || unsafe {
+            row_dot(
+                session_handle as u64,
+                re_ptr as *mut u64,
+                im_ptr as *mut u64,
+                num_blocks,
+                z_ptr as *mut u64,
+                z_len,
+                out_ptr as *mut u64,
+            )
+        });
+        if status != 0 {
+            return Err(NeoGpuError::OperationFailed {
+                op: "superneo_row_dot_blocks_dual",
+                status,
+            });
+        }
+        let mut diagnostics = self
+            .diagnostics
+            .lock()
+            .expect("mojo session diagnostics lock");
+        diagnostics.snapshot.superneo.record_mode(
+            self.superneo_row_dot_execution_mode(re_bar_blocks.len()),
+            re_bar_blocks.len() * 2,
+        );
+        Ok((
+            FlatK {
+                re: out_words[0],
+                im: out_words[1],
+            },
+            FlatK {
+                re: out_words[2],
+                im: out_words[3],
+            },
+        ))
     }
 }
 

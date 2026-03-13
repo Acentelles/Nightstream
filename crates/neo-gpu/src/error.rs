@@ -21,6 +21,8 @@ pub enum NeoGpuError {
     SessionOpenFailed { status: i32 },
     #[error("GPU session close failed with status code {status}")]
     SessionCloseFailed { status: i32 },
+    #[error("invalid GPU input for `{op}`: {reason}")]
+    InvalidInput { op: &'static str, reason: String },
     #[error("GPU operation `{op}` is unavailable in the loaded backend")]
     UnsupportedOperation { op: &'static str },
     #[error("GPU operation `{op}` failed with status code {status}")]

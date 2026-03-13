@@ -319,6 +319,8 @@ where
             true,
             l,
             mixers,
+            None,
+            None,
         )?;
         let RlcDecProof {
             rlc_rhos,

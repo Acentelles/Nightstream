@@ -34,6 +34,8 @@ pub(crate) fn prove_rlc_dec_lane<L, MR, MB>(
     want_witnesses: bool,
     l: &L,
     mixers: CommitMixers<MR, MB>,
+    precomputed_rlc_rhos: Option<&[ccs::RotRho]>,
+    precomputed_parent_commitment: Option<&Cmt>,
 ) -> Result<(RlcDecProof, Vec<Mat<F>>), PiCcsError>
 where
     L: SModuleHomomorphism<F, Cmt> + Sync + std::any::Any,
@@ -79,18 +81,24 @@ where
     let s = s_lane;
     let inputs_have_extra_y = me_inputs.iter().any(|me| me.y_ring.len() > s.t());
 
-    bind_rlc_inputs_with_context(tr, lane, step_idx, me_inputs, backend_ctx)?;
     let k_rlc_min = neo_reductions::common::min_k_rho_for_rlc_count(params, ring, me_inputs.len())? as usize;
     let k_rho_eff = core::cmp::max(k_dec, k_rlc_min);
     let mut params_rlc = params.clone();
     params_rlc.k_rho = k_rho_eff as u32;
-    let rlc_rhos = ccs::sample_rot_rhos_n_typed(tr, &params_rlc, ring, me_inputs.len())?;
+    let rlc_rhos = if let Some(precomputed) = precomputed_rlc_rhos {
+        precomputed.to_vec()
+    } else {
+        bind_rlc_inputs_with_context(tr, lane, step_idx, me_inputs, backend_ctx)?;
+        ccs::sample_rot_rhos_n_typed(tr, &params_rlc, ring, me_inputs.len())?
+    };
     let rlc_rho_mats = ccs::rot_rhos_to_mats(&rlc_rhos);
     let input_commitments: Vec<Cmt> = me_inputs.iter().map(|me| me.c.clone()).collect();
-    let parent_commitment = if allow_commit_accel {
+    let parent_commitment = if let Some(commitment) = precomputed_parent_commitment {
+        Some(commitment.clone())
+    } else if allow_commit_accel {
         Some(mix_rhos_commits_with_backend_result(
             backend_ctx,
-            mixers.mix_rhos_commits,
+            |rhos, cs| Ok((mixers.mix_rhos_commits)(rhos, cs)),
             &rlc_rho_mats,
             &input_commitments,
         )?)
@@ -574,7 +582,12 @@ where
         rlc_inputs,
         |rhos, cs| {
             if allow_commit_accel {
-                mix_rhos_commits_with_backend_result(backend_ctx, mixers.mix_rhos_commits, rhos, cs)
+                mix_rhos_commits_with_backend_result(
+                    backend_ctx,
+                    |mix_rhos, mix_cs| Ok((mixers.mix_rhos_commits)(mix_rhos, mix_cs)),
+                    rhos,
+                    cs,
+                )
             } else {
                 Ok((mixers.mix_rhos_commits)(rhos, cs))
             }

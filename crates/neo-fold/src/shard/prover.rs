@@ -153,33 +153,47 @@ where
     if batches.is_empty() {
         return Ok(Vec::new());
     }
-    let mut refs: Vec<&Mat<F>> = Vec::new();
-    let mut positions: Vec<(usize, usize)> = Vec::new();
+    let primary_ajtai_dims = (committer as &dyn std::any::Any)
+        .downcast_ref::<neo_ajtai::AjtaiSModule>()
+        .map(neo_ajtai::AjtaiSModule::dims);
     let mut out: Vec<Vec<Cmt>> = batches
         .iter()
         .map(|batch| vec![zero_c.clone(); batch.len()])
         .collect();
+    let mut by_cols: std::collections::BTreeMap<usize, Vec<(usize, usize, &Mat<F>)>> =
+        std::collections::BTreeMap::new();
     for (batch_idx, batch) in batches.iter().enumerate() {
         for (mat_idx, mat) in batch.iter().enumerate() {
             if mat.as_slice().iter().any(|v| *v != F::ZERO) {
-                refs.push(mat);
-                positions.push((batch_idx, mat_idx));
+                by_cols
+                    .entry(mat.cols())
+                    .or_default()
+                    .push((batch_idx, mat_idx, mat));
             }
         }
     }
-    if refs.is_empty() {
+    if by_cols.is_empty() {
         return Ok(out);
     }
-    let commits = commit_many_with_backend(backend_ctx, committer, &refs)?;
-    if commits.len() != refs.len() {
-        return Err(PiCcsError::ProtocolError(format!(
-            "batched DEC commit_many returned {} commitments for {} matrices",
-            commits.len(),
-            refs.len()
-        )));
-    }
-    for ((batch_idx, mat_idx), commit) in positions.into_iter().zip(commits.into_iter()) {
-        out[batch_idx][mat_idx] = commit;
+    for (cols, grouped) in by_cols.into_iter() {
+        let refs: Vec<&Mat<F>> = grouped.iter().map(|(_, _, mat)| *mat).collect();
+        let commits = if primary_ajtai_dims == Some((D, cols)) {
+            commit_many_with_backend(backend_ctx, committer, &refs)?
+        } else if let Ok(global_committer) = neo_ajtai::AjtaiSModule::from_global_for_dims(D, cols) {
+            commit_many_with_backend(backend_ctx, &global_committer, &refs)?
+        } else {
+            commit_many_with_backend(backend_ctx, committer, &refs)?
+        };
+        if commits.len() != refs.len() {
+            return Err(PiCcsError::ProtocolError(format!(
+                "batched DEC commit_many returned {} commitments for {} matrices at cols={cols}",
+                commits.len(),
+                refs.len()
+            )));
+        }
+        for ((batch_idx, mat_idx, _), commit) in grouped.into_iter().zip(commits.into_iter()) {
+            out[batch_idx][mat_idx] = commit;
+        }
     }
     Ok(out)
 }
@@ -207,6 +221,14 @@ struct PreparedMaterializedLane {
     s_lane: CcsStructure<F>,
     rlc_rhos: Vec<ccs::RotRho>,
     suffix_len: usize,
+}
+
+struct PreparedStage8Lane {
+    params: NeoParams,
+    plan: crate::time_opening::joint_lane::Stage8FoldLanePlan,
+    committer: neo_ajtai::AjtaiSModule,
+    rlc_rhos: Vec<ccs::RotRho>,
+    joint_wits: Vec<Mat<F>>,
 }
 
 fn attach_parent_suffix_openings(
@@ -1497,6 +1519,8 @@ where
             want_main_wits,
             l,
             mixers,
+            None,
+            None,
         )?;
         prove_metrics.lane_durations.main_ccs_fold += Duration::from_secs_f64(elapsed_ms(main_fold_start) / 1_000.0);
         let RlcDecProof {
@@ -1567,7 +1591,12 @@ where
                             &rlc_rhos,
                             core::slice::from_ref(me),
                             |rhos, cs| {
-                                mix_rhos_commits_with_backend_result(&backend_ctx, mixers.mix_rhos_commits, rhos, cs)
+                                mix_rhos_commits_with_backend_result(
+                                    &backend_ctx,
+                                    |mix_rhos, mix_cs| Ok((mixers.mix_rhos_commits)(mix_rhos, mix_cs)),
+                                    rhos,
+                                    cs,
+                                )
                             },
                             ell_d,
                         )?;
@@ -1738,6 +1767,8 @@ where
                     collect_val_lane_wits,
                     l,
                     mixers,
+                    None,
+                    None,
                 )?;
                 if collect_val_lane_wits {
                     val_lane_wits.extend(Z_split_val.drain(..));
@@ -1753,6 +1784,7 @@ where
         let zero_c = Cmt::zeros(mcs_inst.c.d, mcs_inst.c.kappa);
         let mut pending_materialized: Vec<PendingMaterializedLane> = Vec::new();
         let mut prepared_materialized: Vec<PreparedMaterializedLane> = Vec::new();
+        let mut stage8_prepared: Option<PreparedStage8Lane> = None;
         let wb_lane_start = (!mem_proof.wb_me_claims.is_empty()).then(time_now);
         let wp_lane_start = (!mem_proof.wp_me_claims.is_empty()).then(time_now);
 
@@ -1888,259 +1920,6 @@ where
                     rlc_rhos,
                     suffix_len: wp_open_cols.len(),
                 });
-            }
-        }
-
-        if !prepared_materialized.is_empty() {
-            let parent_mix_rhos: Vec<Vec<Mat<F>>> = prepared_materialized
-                .iter()
-                .map(|prepared| ccs::rot_rhos_to_mats(&prepared.rlc_rhos))
-                .collect();
-            let parent_mix_cs: Vec<Vec<Cmt>> = prepared_materialized
-                .iter()
-                .map(|prepared| vec![prepared.me.c.clone()])
-                .collect();
-            let parent_commitments = crate::shard::mix_many_rhos_commits_with_backend(
-                &backend_ctx,
-                |rhos, cs| (mixers.mix_rhos_commits)(rhos, cs),
-                &parent_mix_rhos,
-                &parent_mix_cs,
-            )?;
-            if parent_commitments.len() != prepared_materialized.len() {
-                return Err(PiCcsError::ProtocolError(format!(
-                    "WB/WP parent commitment batch returned {} commitments for {} claims",
-                    parent_commitments.len(),
-                    prepared_materialized.len()
-                )));
-            }
-
-            for (prepared, parent_commitment) in prepared_materialized
-                .into_iter()
-                .zip(parent_commitments.into_iter())
-            {
-                let fixed_commitment = parent_commitment.clone();
-                let rlc_parent = ccs::rlc_public_result(
-                    &prepared.s_lane,
-                    params,
-                    &prepared.rlc_rhos,
-                    core::slice::from_ref(&prepared.me),
-                    |_rhos, _cs| Ok(fixed_commitment.clone()),
-                    ell_d,
-                )?;
-                let rlc_rho_mats = ccs::rot_rhos_to_mats(&prepared.rlc_rhos);
-                let (_, z_mix) = neo_reductions::optimized_engine::rlc_reduction_optimized_with_commit_mix(
-                    &prepared.s_lane,
-                    params,
-                    &rlc_rho_mats,
-                    core::slice::from_ref(&prepared.me),
-                    &[&mcs_wit.Z],
-                    ell_d,
-                    |_rhos, _cs| fixed_commitment.clone(),
-                );
-                let k_dec_lane = core::cmp::max(k_dec, required_dec_digits_for_matrix(params, &z_mix)?);
-                let (mut dec_children, dec_wits, ok_y, ok_x, ok_c) = if !collect_val_lane_wits {
-                    match dec_stream_no_witness(
-                        params,
-                        &prepared.s_lane,
-                        &rlc_parent,
-                        &z_mix,
-                        ell_d,
-                        k_dec_lane,
-                        mixers.combine_b_pows,
-                        ccs_sparse_cache.as_deref(),
-                    ) {
-                        Ok((children, _child_cs, ok_y, ok_x, ok_c)) if ok_y && ok_x && ok_c => {
-                            (children, None::<Vec<Mat<F>>>, ok_y, ok_x, ok_c)
-                        }
-                        Ok(_) | Err(_) => {
-                            let (dec_wits, _digit_nonzero) =
-                                ccs::split_b_matrix_k_with_nonzero_flags(&z_mix, k_dec_lane, params.b)?;
-                            pending_materialized.push(PendingMaterializedLane {
-                                kind: prepared.kind,
-                                claim_idx: prepared.claim_idx,
-                                s_lane: prepared.s_lane,
-                                rlc_rhos: prepared.rlc_rhos,
-                                rlc_parent,
-                                dec_wits,
-                                suffix_len: prepared.suffix_len,
-                            });
-                            continue;
-                        }
-                    }
-                } else {
-                    let (dec_wits, _digit_nonzero) =
-                        ccs::split_b_matrix_k_with_nonzero_flags(&z_mix, k_dec_lane, params.b)?;
-                    pending_materialized.push(PendingMaterializedLane {
-                        kind: prepared.kind,
-                        claim_idx: prepared.claim_idx,
-                        s_lane: prepared.s_lane,
-                        rlc_rhos: prepared.rlc_rhos,
-                        rlc_parent,
-                        dec_wits,
-                        suffix_len: prepared.suffix_len,
-                    });
-                    continue;
-                };
-                let lane_label = match prepared.kind {
-                    PendingMaterializedLaneKind::Wb => "wb lane",
-                    PendingMaterializedLaneKind::Wp => "wp lane",
-                };
-                if !(ok_y && ok_x && ok_c) {
-                    return Err(PiCcsError::ProtocolError(format!(
-                        "DEC({lane_label}) public check failed at step {} claim_idx={} (y={}, X={}, c={}, me.r.len()={}, parent.r.len()={}, s_lane.n={})",
-                        step_idx,
-                        prepared.claim_idx,
-                        ok_y,
-                        ok_x,
-                        ok_c,
-                        prepared.me.r.len(),
-                        rlc_parent.r.len(),
-                        prepared.s_lane.n
-                    )));
-                }
-                if let Some(dec_wits) = dec_wits.as_ref() {
-                    if dec_children.len() != dec_wits.len() {
-                        return Err(PiCcsError::ProtocolError(format!(
-                            "step {}: {} requires materialized DEC witnesses (children={}, wits={})",
-                            step_idx,
-                            lane_label.to_ascii_uppercase(),
-                            dec_children.len(),
-                            dec_wits.len()
-                        )));
-                    }
-                }
-                if collect_val_lane_wits {
-                    let dec_wits = dec_wits.as_ref().ok_or_else(|| {
-                        PiCcsError::ProtocolError(format!(
-                            "step {}: {} expected materialized DEC witnesses for witness collection",
-                            step_idx,
-                            lane_label.to_ascii_uppercase()
-                        ))
-                    })?;
-                    val_lane_wits.extend(dec_wits.iter().cloned());
-                }
-                let suffix_label = match prepared.kind {
-                    PendingMaterializedLaneKind::Wb => "WB fold",
-                    PendingMaterializedLaneKind::Wp => "WP fold",
-                };
-                attach_parent_suffix_openings(
-                    params,
-                    step_idx,
-                    suffix_label,
-                    core_t,
-                    prepared.suffix_len,
-                    &rlc_parent,
-                    &mut dec_children,
-                )?;
-                let proof = RlcDecProof {
-                    rlc_rhos: prepared.rlc_rhos,
-                    rlc_parent,
-                    dec_children,
-                };
-                match prepared.kind {
-                    PendingMaterializedLaneKind::Wb => wb_fold.push(proof),
-                    PendingMaterializedLaneKind::Wp => wp_fold.push(proof),
-                }
-            }
-        }
-        if let Some(start) = wb_lane_start {
-            prove_metrics.lane_durations.wb_lane += Duration::from_secs_f64(elapsed_ms(start) / 1_000.0);
-        }
-        if let Some(start) = wp_lane_start {
-            prove_metrics.lane_durations.wp_lane += Duration::from_secs_f64(elapsed_ms(start) / 1_000.0);
-        }
-
-        if !pending_materialized.is_empty() {
-            let pending_wb_count = pending_materialized
-                .iter()
-                .filter(|pending| matches!(pending.kind, PendingMaterializedLaneKind::Wb))
-                .count();
-            let pending_wp_count = pending_materialized.len() - pending_wb_count;
-            let wb_materialized_children: usize = pending_materialized
-                .iter()
-                .filter(|pending| matches!(pending.kind, PendingMaterializedLaneKind::Wb))
-                .map(|pending| pending.dec_wits.len())
-                .sum();
-            let wp_materialized_children: usize = pending_materialized
-                .iter()
-                .filter(|pending| matches!(pending.kind, PendingMaterializedLaneKind::Wp))
-                .map(|pending| pending.dec_wits.len())
-                .sum();
-            prove_metrics.batch_opportunities.wb_materialized_batches += pending_wb_count;
-            prove_metrics.batch_opportunities.wb_materialized_children += wb_materialized_children;
-            prove_metrics.batch_opportunities.wp_materialized_batches += pending_wp_count;
-            prove_metrics.batch_opportunities.wp_materialized_children += wp_materialized_children;
-            prove_metrics.batch_opportunities.max_materialized_children = core::cmp::max(
-                prove_metrics.batch_opportunities.max_materialized_children,
-                pending_materialized
-                    .iter()
-                    .map(|pending| pending.dec_wits.len())
-                    .max()
-                    .unwrap_or(0),
-            );
-
-            let batched_wits: Vec<Vec<Mat<F>>> = pending_materialized
-                .iter()
-                .map(|pending| pending.dec_wits.clone())
-                .collect();
-            let child_cs_batches = commit_dec_wits_batched(&backend_ctx, l, &batched_wits, &zero_c)?;
-            let core_t = s.t();
-            for (pending, child_cs) in pending_materialized
-                .into_iter()
-                .zip(child_cs_batches.into_iter())
-            {
-                let (mut dec_children, ok_y, ok_x, ok_c) = ccs::dec_children_with_commit_cached_result(
-                    mode.clone(),
-                    &pending.s_lane,
-                    params,
-                    &pending.rlc_parent,
-                    &pending.dec_wits,
-                    ell_d,
-                    &child_cs,
-                    |cs, b| combine_b_pows_with_backend_result(&backend_ctx, mixers.combine_b_pows, cs, b),
-                    ccs_sparse_cache.as_deref(),
-                )?;
-                let lane_label = match pending.kind {
-                    PendingMaterializedLaneKind::Wb => "wb lane",
-                    PendingMaterializedLaneKind::Wp => "wp lane",
-                };
-                if !(ok_y && ok_x && ok_c) {
-                    return Err(PiCcsError::ProtocolError(format!(
-                        "DEC({lane_label}) public check failed at step {} claim_idx={} (y={}, X={}, c={}, parent.r.len()={}, s_lane.n={})",
-                        step_idx,
-                        pending.claim_idx,
-                        ok_y,
-                        ok_x,
-                        ok_c,
-                        pending.rlc_parent.r.len(),
-                        pending.s_lane.n
-                    )));
-                }
-                if collect_val_lane_wits {
-                    val_lane_wits.extend(pending.dec_wits.iter().cloned());
-                }
-                let suffix_label = match pending.kind {
-                    PendingMaterializedLaneKind::Wb => "WB fold",
-                    PendingMaterializedLaneKind::Wp => "WP fold",
-                };
-                attach_parent_suffix_openings(
-                    params,
-                    step_idx,
-                    suffix_label,
-                    core_t,
-                    pending.suffix_len,
-                    &pending.rlc_parent,
-                    &mut dec_children,
-                )?;
-                let proof = RlcDecProof {
-                    rlc_rhos: pending.rlc_rhos,
-                    rlc_parent: pending.rlc_parent,
-                    dec_children,
-                };
-                match pending.kind {
-                    PendingMaterializedLaneKind::Wb => wb_fold.push(proof),
-                    PendingMaterializedLaneKind::Wp => wp_fold.push(proof),
-                }
             }
         }
 
@@ -2620,6 +2399,229 @@ where
                         "time/opening: missing opening proofs for non-empty named openings".into(),
                     ));
                 }
+                if !prepared_materialized.is_empty() {
+                    let parent_mix_rhos: Vec<Vec<Mat<F>>> = prepared_materialized
+                        .iter()
+                        .map(|prepared| ccs::rot_rhos_to_mats(&prepared.rlc_rhos))
+                        .collect();
+                    let parent_mix_cs: Vec<Vec<Cmt>> = prepared_materialized
+                        .iter()
+                        .map(|prepared| vec![prepared.me.c.clone()])
+                        .collect();
+                    let parent_commitments = crate::shard::mix_many_rhos_commits_with_backend(
+                        &backend_ctx,
+                        |rhos, cs| (mixers.mix_rhos_commits)(rhos, cs),
+                        &parent_mix_rhos,
+                        &parent_mix_cs,
+                    )?;
+                    if parent_commitments.len() != prepared_materialized.len() {
+                        return Err(PiCcsError::ProtocolError(format!(
+                            "WB/WP parent commitment batch returned {} commitments for {} claims",
+                            parent_commitments.len(),
+                            prepared_materialized.len()
+                        )));
+                    }
+
+                    for (prepared, parent_commitment) in prepared_materialized
+                        .drain(..)
+                        .zip(parent_commitments.into_iter())
+                    {
+                        let fixed_commitment = parent_commitment.clone();
+                        let rlc_parent = ccs::rlc_public_result(
+                            &prepared.s_lane,
+                            params,
+                            &prepared.rlc_rhos,
+                            core::slice::from_ref(&prepared.me),
+                            |_rhos, _cs| Ok(fixed_commitment.clone()),
+                            ell_d,
+                        )?;
+                        let rlc_rho_mats = ccs::rot_rhos_to_mats(&prepared.rlc_rhos);
+                        let (_, z_mix) = neo_reductions::optimized_engine::rlc_reduction_optimized_with_commit_mix(
+                            &prepared.s_lane,
+                            params,
+                            &rlc_rho_mats,
+                            core::slice::from_ref(&prepared.me),
+                            &[&mcs_wit.Z],
+                            ell_d,
+                            |_rhos, _cs| fixed_commitment.clone(),
+                        );
+                        let k_dec_lane = core::cmp::max(k_dec, required_dec_digits_for_matrix(params, &z_mix)?);
+                        let (mut dec_children, dec_wits, ok_y, ok_x, ok_c) = if !collect_val_lane_wits {
+                            match dec_stream_no_witness(
+                                params,
+                                &prepared.s_lane,
+                                &rlc_parent,
+                                &z_mix,
+                                ell_d,
+                                k_dec_lane,
+                                mixers.combine_b_pows,
+                                ccs_sparse_cache.as_deref(),
+                            ) {
+                                Ok((children, _child_cs, ok_y, ok_x, ok_c)) if ok_y && ok_x && ok_c => {
+                                    (children, None::<Vec<Mat<F>>>, ok_y, ok_x, ok_c)
+                                }
+                                Ok(_) | Err(_) => {
+                                    let (dec_wits, _digit_nonzero) =
+                                        ccs::split_b_matrix_k_with_nonzero_flags(&z_mix, k_dec_lane, params.b)?;
+                                    pending_materialized.push(PendingMaterializedLane {
+                                        kind: prepared.kind,
+                                        claim_idx: prepared.claim_idx,
+                                        s_lane: prepared.s_lane,
+                                        rlc_rhos: prepared.rlc_rhos,
+                                        rlc_parent,
+                                        dec_wits,
+                                        suffix_len: prepared.suffix_len,
+                                    });
+                                    continue;
+                                }
+                            }
+                        } else {
+                            let (dec_wits, _digit_nonzero) =
+                                ccs::split_b_matrix_k_with_nonzero_flags(&z_mix, k_dec_lane, params.b)?;
+                            pending_materialized.push(PendingMaterializedLane {
+                                kind: prepared.kind,
+                                claim_idx: prepared.claim_idx,
+                                s_lane: prepared.s_lane,
+                                rlc_rhos: prepared.rlc_rhos,
+                                rlc_parent,
+                                dec_wits,
+                                suffix_len: prepared.suffix_len,
+                            });
+                            continue;
+                        };
+                        let lane_label = match prepared.kind {
+                            PendingMaterializedLaneKind::Wb => "wb lane",
+                            PendingMaterializedLaneKind::Wp => "wp lane",
+                        };
+                        if !(ok_y && ok_x && ok_c) {
+                            return Err(PiCcsError::ProtocolError(format!(
+                                "DEC({lane_label}) public check failed at step {} claim_idx={} (y={}, X={}, c={}, me.r.len()={}, parent.r.len()={}, s_lane.n={})",
+                                step_idx,
+                                prepared.claim_idx,
+                                ok_y,
+                                ok_x,
+                                ok_c,
+                                prepared.me.r.len(),
+                                rlc_parent.r.len(),
+                                prepared.s_lane.n
+                            )));
+                        }
+                        if let Some(dec_wits) = dec_wits.as_ref() {
+                            if dec_children.len() != dec_wits.len() {
+                                return Err(PiCcsError::ProtocolError(format!(
+                                    "step {}: {} requires materialized DEC witnesses (children={}, wits={})",
+                                    step_idx,
+                                    lane_label.to_ascii_uppercase(),
+                                    dec_children.len(),
+                                    dec_wits.len()
+                                )));
+                            }
+                        }
+                        if collect_val_lane_wits {
+                            let dec_wits = dec_wits.as_ref().ok_or_else(|| {
+                                PiCcsError::ProtocolError(format!(
+                                    "step {}: {} expected materialized DEC witnesses for witness collection",
+                                    step_idx,
+                                    lane_label.to_ascii_uppercase()
+                                ))
+                            })?;
+                            val_lane_wits.extend(dec_wits.iter().cloned());
+                        }
+                        let suffix_label = match prepared.kind {
+                            PendingMaterializedLaneKind::Wb => "WB fold",
+                            PendingMaterializedLaneKind::Wp => "WP fold",
+                        };
+                        attach_parent_suffix_openings(
+                            params,
+                            step_idx,
+                            suffix_label,
+                            core_t,
+                            prepared.suffix_len,
+                            &rlc_parent,
+                            &mut dec_children,
+                        )?;
+                        let proof = RlcDecProof {
+                            rlc_rhos: prepared.rlc_rhos,
+                            rlc_parent,
+                            dec_children,
+                        };
+                        match prepared.kind {
+                            PendingMaterializedLaneKind::Wb => wb_fold.push(proof),
+                            PendingMaterializedLaneKind::Wp => wp_fold.push(proof),
+                        }
+                    }
+                }
+                if !pending_materialized.is_empty() {
+                    let batched_wits: Vec<Vec<Mat<F>>> = pending_materialized
+                        .iter()
+                        .map(|pending| pending.dec_wits.clone())
+                        .collect();
+                    let child_cs_batches = commit_dec_wits_batched(&backend_ctx, l, &batched_wits, &zero_c)?;
+                    let core_t = s.t();
+                    for (pending, child_cs) in pending_materialized
+                        .drain(..)
+                        .zip(child_cs_batches.into_iter())
+                    {
+                        let (mut dec_children, ok_y, ok_x, ok_c) = ccs::dec_children_with_commit_cached_result(
+                            mode.clone(),
+                            &pending.s_lane,
+                            params,
+                            &pending.rlc_parent,
+                            &pending.dec_wits,
+                            ell_d,
+                            &child_cs,
+                            |cs, b| combine_b_pows_with_backend_result(&backend_ctx, mixers.combine_b_pows, cs, b),
+                            ccs_sparse_cache.as_deref(),
+                        )?;
+                        if !(ok_y && ok_x && ok_c) {
+                            let lane_label = match pending.kind {
+                                PendingMaterializedLaneKind::Wb => "wb lane",
+                                PendingMaterializedLaneKind::Wp => "wp lane",
+                            };
+                            return Err(PiCcsError::ProtocolError(format!(
+                                "DEC({lane_label}) public check failed at step {} claim_idx={} (y={}, X={}, c={}, parent.r.len()={}, s_lane.n={})",
+                                step_idx,
+                                pending.claim_idx,
+                                ok_y,
+                                ok_x,
+                                ok_c,
+                                pending.rlc_parent.r.len(),
+                                pending.s_lane.n
+                            )));
+                        }
+                        if collect_val_lane_wits {
+                            val_lane_wits.extend(pending.dec_wits.iter().cloned());
+                        }
+                        let suffix_label = match pending.kind {
+                            PendingMaterializedLaneKind::Wb => "WB fold",
+                            PendingMaterializedLaneKind::Wp => "WP fold",
+                        };
+                        attach_parent_suffix_openings(
+                            params,
+                            step_idx,
+                            suffix_label,
+                            core_t,
+                            pending.suffix_len,
+                            &pending.rlc_parent,
+                            &mut dec_children,
+                        )?;
+                        let proof = RlcDecProof {
+                            rlc_rhos: pending.rlc_rhos,
+                            rlc_parent: pending.rlc_parent,
+                            dec_children,
+                        };
+                        match pending.kind {
+                            PendingMaterializedLaneKind::Wb => wb_fold.push(proof),
+                            PendingMaterializedLaneKind::Wp => wp_fold.push(proof),
+                        }
+                    }
+                }
+                if let Some(start) = wb_lane_start {
+                    prove_metrics.lane_durations.wb_lane += Duration::from_secs_f64(elapsed_ms(start) / 1_000.0);
+                }
+                if let Some(start) = wp_lane_start {
+                    prove_metrics.lane_durations.wp_lane += Duration::from_secs_f64(elapsed_ms(start) / 1_000.0);
+                }
                 (
                     crate::shard_proof_types::OpeningClaimManifest::default(),
                     crate::shard_proof_types::OpeningReductionProof::default(),
@@ -2695,33 +2697,321 @@ where
                         })?;
                     tr.append_message(b"fold/stage8_lane_start", &(step_idx as u64).to_le_bytes());
                     tr.append_message(b"fold/stage8_lane_group_idx", &0u64.to_le_bytes());
-                    let wit_refs: Vec<&Mat<F>> = stage8_joint_wits.iter().collect();
-                    let (stage8_proof, _stage8_wits) = prove_rlc_dec_lane(
-                        &mode,
-                        RlcLane::Val,
-                        tr,
-                        &stage8_params,
-                        &plan.ccs,
-                        None,
-                        None,
-                        &ring,
-                        ell_d,
-                        k_dec,
-                        step_idx,
-                        &backend_ctx,
-                        true,
-                        None,
-                        plan.claims.as_slice(),
-                        wit_refs.as_slice(),
-                        false,
-                        &stage8_committer,
-                        mixers,
-                    )?;
-                    stage8_fold.push(stage8_proof);
+                    bind_rlc_inputs_with_context(tr, RlcLane::Val, step_idx, plan.claims.as_slice(), &backend_ctx)?;
+                    let k_rlc_min =
+                        neo_reductions::common::min_k_rho_for_rlc_count(&stage8_params, &ring, plan.claims.len())?
+                            as usize;
+                    let mut stage8_params_rlc = stage8_params;
+                    stage8_params_rlc.k_rho = core::cmp::max(k_dec, k_rlc_min) as u32;
+                    let stage8_rlc_rhos =
+                        ccs::sample_rot_rhos_n_typed(tr, &stage8_params_rlc, &ring, plan.claims.len())?;
+                    stage8_prepared = Some(PreparedStage8Lane {
+                        params: stage8_params_rlc,
+                        plan,
+                        committer: stage8_committer,
+                        rlc_rhos: stage8_rlc_rhos,
+                        joint_wits: stage8_joint_wits,
+                    });
                 } else if !stage8_joint_wits.is_empty() {
                     return Err(PiCcsError::ProtocolError(
                         "stage8 fold: missing lane plan for non-empty stage8 witnesses".into(),
                     ));
+                }
+
+                let total_parent_batches = prepared_materialized.len() + usize::from(stage8_prepared.is_some());
+                if total_parent_batches > 0 {
+                    let mut parent_mix_rhos: Vec<Vec<Mat<F>>> = prepared_materialized
+                        .iter()
+                        .map(|prepared| ccs::rot_rhos_to_mats(&prepared.rlc_rhos))
+                        .collect();
+                    let mut parent_mix_cs: Vec<Vec<Cmt>> = prepared_materialized
+                        .iter()
+                        .map(|prepared| vec![prepared.me.c.clone()])
+                        .collect();
+                    if let Some(prepared) = stage8_prepared.as_ref() {
+                        parent_mix_rhos.push(ccs::rot_rhos_to_mats(&prepared.rlc_rhos));
+                        parent_mix_cs.push(prepared.plan.claims.iter().map(|me| me.c.clone()).collect());
+                    }
+
+                    let parent_commitments = crate::shard::mix_many_rhos_commits_with_backend(
+                        &backend_ctx,
+                        |rhos, cs| (mixers.mix_rhos_commits)(rhos, cs),
+                        &parent_mix_rhos,
+                        &parent_mix_cs,
+                    )?;
+                    if parent_commitments.len() != total_parent_batches {
+                        return Err(PiCcsError::ProtocolError(format!(
+                            "step-global parent commitment batch returned {} commitments for {} batches",
+                            parent_commitments.len(),
+                            total_parent_batches
+                        )));
+                    }
+
+                    let mut parent_commitments = parent_commitments.into_iter();
+                    for prepared in prepared_materialized.drain(..) {
+                        let fixed_commitment = parent_commitments.next().ok_or_else(|| {
+                            PiCcsError::ProtocolError("WB/WP parent commitment batch missing entry".into())
+                        })?;
+                        let rlc_parent = ccs::rlc_public_result(
+                            &prepared.s_lane,
+                            params,
+                            &prepared.rlc_rhos,
+                            core::slice::from_ref(&prepared.me),
+                            |_rhos, _cs| Ok(fixed_commitment.clone()),
+                            ell_d,
+                        )?;
+                        let rlc_rho_mats = ccs::rot_rhos_to_mats(&prepared.rlc_rhos);
+                        let (_, z_mix) = neo_reductions::optimized_engine::rlc_reduction_optimized_with_commit_mix(
+                            &prepared.s_lane,
+                            params,
+                            &rlc_rho_mats,
+                            core::slice::from_ref(&prepared.me),
+                            &[&mcs_wit.Z],
+                            ell_d,
+                            |_rhos, _cs| fixed_commitment.clone(),
+                        );
+                        let k_dec_lane = core::cmp::max(k_dec, required_dec_digits_for_matrix(params, &z_mix)?);
+                        let (mut dec_children, dec_wits, ok_y, ok_x, ok_c) = if !collect_val_lane_wits {
+                            match dec_stream_no_witness(
+                                params,
+                                &prepared.s_lane,
+                                &rlc_parent,
+                                &z_mix,
+                                ell_d,
+                                k_dec_lane,
+                                mixers.combine_b_pows,
+                                ccs_sparse_cache.as_deref(),
+                            ) {
+                                Ok((children, _child_cs, ok_y, ok_x, ok_c)) if ok_y && ok_x && ok_c => {
+                                    (children, None::<Vec<Mat<F>>>, ok_y, ok_x, ok_c)
+                                }
+                                Ok(_) | Err(_) => {
+                                    let (dec_wits, _digit_nonzero) =
+                                        ccs::split_b_matrix_k_with_nonzero_flags(&z_mix, k_dec_lane, params.b)?;
+                                    pending_materialized.push(PendingMaterializedLane {
+                                        kind: prepared.kind,
+                                        claim_idx: prepared.claim_idx,
+                                        s_lane: prepared.s_lane,
+                                        rlc_rhos: prepared.rlc_rhos,
+                                        rlc_parent,
+                                        dec_wits,
+                                        suffix_len: prepared.suffix_len,
+                                    });
+                                    continue;
+                                }
+                            }
+                        } else {
+                            let (dec_wits, _digit_nonzero) =
+                                ccs::split_b_matrix_k_with_nonzero_flags(&z_mix, k_dec_lane, params.b)?;
+                            pending_materialized.push(PendingMaterializedLane {
+                                kind: prepared.kind,
+                                claim_idx: prepared.claim_idx,
+                                s_lane: prepared.s_lane,
+                                rlc_rhos: prepared.rlc_rhos,
+                                rlc_parent,
+                                dec_wits,
+                                suffix_len: prepared.suffix_len,
+                            });
+                            continue;
+                        };
+                        let lane_label = match prepared.kind {
+                            PendingMaterializedLaneKind::Wb => "wb lane",
+                            PendingMaterializedLaneKind::Wp => "wp lane",
+                        };
+                        if !(ok_y && ok_x && ok_c) {
+                            return Err(PiCcsError::ProtocolError(format!(
+                                "DEC({lane_label}) public check failed at step {} claim_idx={} (y={}, X={}, c={}, me.r.len()={}, parent.r.len()={}, s_lane.n={})",
+                                step_idx,
+                                prepared.claim_idx,
+                                ok_y,
+                                ok_x,
+                                ok_c,
+                                prepared.me.r.len(),
+                                rlc_parent.r.len(),
+                                prepared.s_lane.n
+                            )));
+                        }
+                        if let Some(dec_wits) = dec_wits.as_ref() {
+                            if dec_children.len() != dec_wits.len() {
+                                return Err(PiCcsError::ProtocolError(format!(
+                                    "step {}: {} requires materialized DEC witnesses (children={}, wits={})",
+                                    step_idx,
+                                    lane_label.to_ascii_uppercase(),
+                                    dec_children.len(),
+                                    dec_wits.len()
+                                )));
+                            }
+                        }
+                        if collect_val_lane_wits {
+                            let dec_wits = dec_wits.as_ref().ok_or_else(|| {
+                                PiCcsError::ProtocolError(format!(
+                                    "step {}: {} expected materialized DEC witnesses for witness collection",
+                                    step_idx,
+                                    lane_label.to_ascii_uppercase()
+                                ))
+                            })?;
+                            val_lane_wits.extend(dec_wits.iter().cloned());
+                        }
+                        let suffix_label = match prepared.kind {
+                            PendingMaterializedLaneKind::Wb => "WB fold",
+                            PendingMaterializedLaneKind::Wp => "WP fold",
+                        };
+                        attach_parent_suffix_openings(
+                            params,
+                            step_idx,
+                            suffix_label,
+                            core_t,
+                            prepared.suffix_len,
+                            &rlc_parent,
+                            &mut dec_children,
+                        )?;
+                        let proof = RlcDecProof {
+                            rlc_rhos: prepared.rlc_rhos,
+                            rlc_parent,
+                            dec_children,
+                        };
+                        match prepared.kind {
+                            PendingMaterializedLaneKind::Wb => wb_fold.push(proof),
+                            PendingMaterializedLaneKind::Wp => wp_fold.push(proof),
+                        }
+                    }
+
+                    if let Some(prepared) = stage8_prepared.take() {
+                        let parent_commitment = parent_commitments.next().ok_or_else(|| {
+                            PiCcsError::ProtocolError("stage8 parent commitment batch missing entry".into())
+                        })?;
+                        let wit_refs: Vec<&Mat<F>> = prepared.joint_wits.iter().collect();
+                        let (stage8_proof, _stage8_wits) = prove_rlc_dec_lane(
+                            &mode,
+                            RlcLane::Val,
+                            tr,
+                            &prepared.params,
+                            &prepared.plan.ccs,
+                            None,
+                            None,
+                            &ring,
+                            ell_d,
+                            k_dec,
+                            step_idx,
+                            &backend_ctx,
+                            true,
+                            None,
+                            prepared.plan.claims.as_slice(),
+                            wit_refs.as_slice(),
+                            false,
+                            &prepared.committer,
+                            mixers,
+                            Some(prepared.rlc_rhos.as_slice()),
+                            Some(&parent_commitment),
+                        )?;
+                        stage8_fold.push(stage8_proof);
+                    }
+                    if parent_commitments.next().is_some() {
+                        return Err(PiCcsError::ProtocolError(
+                            "step-global parent commitment batch returned extra entries".into(),
+                        ));
+                    }
+                }
+
+                if !pending_materialized.is_empty() {
+                    let pending_wb_count = pending_materialized
+                        .iter()
+                        .filter(|pending| matches!(pending.kind, PendingMaterializedLaneKind::Wb))
+                        .count();
+                    let pending_wp_count = pending_materialized.len() - pending_wb_count;
+                    let wb_materialized_children: usize = pending_materialized
+                        .iter()
+                        .filter(|pending| matches!(pending.kind, PendingMaterializedLaneKind::Wb))
+                        .map(|pending| pending.dec_wits.len())
+                        .sum();
+                    let wp_materialized_children: usize = pending_materialized
+                        .iter()
+                        .filter(|pending| matches!(pending.kind, PendingMaterializedLaneKind::Wp))
+                        .map(|pending| pending.dec_wits.len())
+                        .sum();
+                    prove_metrics.batch_opportunities.wb_materialized_batches += pending_wb_count;
+                    prove_metrics.batch_opportunities.wb_materialized_children += wb_materialized_children;
+                    prove_metrics.batch_opportunities.wp_materialized_batches += pending_wp_count;
+                    prove_metrics.batch_opportunities.wp_materialized_children += wp_materialized_children;
+                    prove_metrics.batch_opportunities.max_materialized_children = core::cmp::max(
+                        prove_metrics.batch_opportunities.max_materialized_children,
+                        pending_materialized
+                            .iter()
+                            .map(|pending| pending.dec_wits.len())
+                            .max()
+                            .unwrap_or(0),
+                    );
+
+                    let batched_wits: Vec<Vec<Mat<F>>> = pending_materialized
+                        .iter()
+                        .map(|pending| pending.dec_wits.clone())
+                        .collect();
+                    let child_cs_batches = commit_dec_wits_batched(&backend_ctx, l, &batched_wits, &zero_c)?;
+                    let core_t = s.t();
+                    for (pending, child_cs) in pending_materialized
+                        .drain(..)
+                        .zip(child_cs_batches.into_iter())
+                    {
+                        let (mut dec_children, ok_y, ok_x, ok_c) = ccs::dec_children_with_commit_cached_result(
+                            mode.clone(),
+                            &pending.s_lane,
+                            params,
+                            &pending.rlc_parent,
+                            &pending.dec_wits,
+                            ell_d,
+                            &child_cs,
+                            |cs, b| combine_b_pows_with_backend_result(&backend_ctx, mixers.combine_b_pows, cs, b),
+                            ccs_sparse_cache.as_deref(),
+                        )?;
+                        let lane_label = match pending.kind {
+                            PendingMaterializedLaneKind::Wb => "wb lane",
+                            PendingMaterializedLaneKind::Wp => "wp lane",
+                        };
+                        if !(ok_y && ok_x && ok_c) {
+                            return Err(PiCcsError::ProtocolError(format!(
+                                "DEC({lane_label}) public check failed at step {} claim_idx={} (y={}, X={}, c={}, parent.r.len()={}, s_lane.n={})",
+                                step_idx,
+                                pending.claim_idx,
+                                ok_y,
+                                ok_x,
+                                ok_c,
+                                pending.rlc_parent.r.len(),
+                                pending.s_lane.n
+                            )));
+                        }
+                        if collect_val_lane_wits {
+                            val_lane_wits.extend(pending.dec_wits.iter().cloned());
+                        }
+                        let suffix_label = match pending.kind {
+                            PendingMaterializedLaneKind::Wb => "WB fold",
+                            PendingMaterializedLaneKind::Wp => "WP fold",
+                        };
+                        attach_parent_suffix_openings(
+                            params,
+                            step_idx,
+                            suffix_label,
+                            core_t,
+                            pending.suffix_len,
+                            &pending.rlc_parent,
+                            &mut dec_children,
+                        )?;
+                        let proof = RlcDecProof {
+                            rlc_rhos: pending.rlc_rhos,
+                            rlc_parent: pending.rlc_parent,
+                            dec_children,
+                        };
+                        match pending.kind {
+                            PendingMaterializedLaneKind::Wb => wb_fold.push(proof),
+                            PendingMaterializedLaneKind::Wp => wp_fold.push(proof),
+                        }
+                    }
+                }
+
+                if let Some(start) = wb_lane_start {
+                    prove_metrics.lane_durations.wb_lane += Duration::from_secs_f64(elapsed_ms(start) / 1_000.0);
+                }
+                if let Some(start) = wp_lane_start {
+                    prove_metrics.lane_durations.wp_lane += Duration::from_secs_f64(elapsed_ms(start) / 1_000.0);
                 }
                 prove_metrics.stage8_subphases.rlc_dec +=
                     Duration::from_secs_f64(elapsed_ms(stage8_fold_start) / 1_000.0);

@@ -273,3 +273,24 @@ fn superneo_row_dot_blocks(
 ) -> Int32:
     superneo.superneo_row_dot_blocks_words(session, bar_blocks_words, num_blocks, z_words, z_len, out_words)
     return STATUS_OK
+
+
+fn superneo_row_dot_blocks_dual(
+    session: UInt64,
+    re_bar_blocks_words: UnsafePointer[UInt64],
+    im_bar_blocks_words: UnsafePointer[UInt64],
+    num_blocks: UInt64,
+    z_words: UnsafePointer[UInt64],
+    z_len: UInt64,
+    out_words: UnsafePointer[mut=True, UInt64],
+) -> Int32:
+    superneo.superneo_row_dot_blocks_dual_words(
+        session,
+        re_bar_blocks_words,
+        im_bar_blocks_words,
+        num_blocks,
+        z_words,
+        z_len,
+        out_words,
+    )
+    return STATUS_OK

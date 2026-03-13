@@ -71,18 +71,62 @@ fn reduce_mod_phi_81_words(tmp_words: UnsafePointer[mut=True, UInt64]):
                 tmp_words[idx_27 - 27] = field.fq_add(tmp_words[idx_27 - 27], t)
 
 
+fn rq_nonzero_count_words(words: UnsafePointer[UInt64]) -> Int:
+    var count = 0
+    for i in range(D_WIDTH):
+        if words[i] != 0:
+            count += 1
+    return count
+
+
+fn rq_scalar_coeff_words(words: UnsafePointer[UInt64]) -> UInt64:
+    var scalar = words[0]
+    for i in range(1, D_WIDTH):
+        if words[i] != 0:
+            return 0
+    return scalar
+
+
 fn rq_mul_words(
     lhs_words: UnsafePointer[UInt64],
     rhs_words: UnsafePointer[UInt64],
     out_words: UnsafePointer[mut=True, UInt64],
 ):
+    var lhs_scalar = rq_scalar_coeff_words(lhs_words)
+    if lhs_scalar != 0 or rq_nonzero_count_words(lhs_words) == 0:
+        for i in range(D_WIDTH):
+            out_words[i] = field.fq_mul(lhs_scalar, rhs_words[i])
+        return
+    var rhs_scalar = rq_scalar_coeff_words(rhs_words)
+    if rhs_scalar != 0 or rq_nonzero_count_words(rhs_words) == 0:
+        for i in range(D_WIDTH):
+            out_words[i] = field.fq_mul(lhs_words[i], rhs_scalar)
+        return
     var tmp_words = InlineArray[UInt64, TMP_WIDTH](fill=0)
-
-    for i in range(D_WIDTH):
-        var ai = lhs_words[i]
+    var lhs_nz = rq_nonzero_count_words(lhs_words)
+    var rhs_nz = rq_nonzero_count_words(rhs_words)
+    if lhs_nz <= rhs_nz:
+        for i in range(D_WIDTH):
+            var ai = lhs_words[i]
+            if ai == 0:
+                continue
+            for j in range(D_WIDTH):
+                var bj = rhs_words[j]
+                if bj == 0:
+                    continue
+                var term = field.fq_mul(ai, bj)
+                tmp_words[i + j] = field.fq_add(tmp_words[i + j], term)
+    else:
         for j in range(D_WIDTH):
-            var term = field.fq_mul(ai, rhs_words[j])
-            tmp_words[i + j] = field.fq_add(tmp_words[i + j], term)
+            var bj = rhs_words[j]
+            if bj == 0:
+                continue
+            for i in range(D_WIDTH):
+                var ai = lhs_words[i]
+                if ai == 0:
+                    continue
+                var term = field.fq_mul(ai, bj)
+                tmp_words[i + j] = field.fq_add(tmp_words[i + j], term)
 
     for i in range(TMP_WIDTH - 1, D_WIDTH - 1, -1):
         var t = tmp_words[i]
@@ -105,13 +149,41 @@ fn rq_mul_add_words(
     rhs_words: UnsafePointer[UInt64],
     out_words: UnsafePointer[mut=True, UInt64],
 ):
+    var lhs_scalar = rq_scalar_coeff_words(lhs_words)
+    if lhs_scalar != 0 or rq_nonzero_count_words(lhs_words) == 0:
+        for i in range(D_WIDTH):
+            out_words[i] = field.fq_add(out_words[i], field.fq_mul(lhs_scalar, rhs_words[i]))
+        return
+    var rhs_scalar = rq_scalar_coeff_words(rhs_words)
+    if rhs_scalar != 0 or rq_nonzero_count_words(rhs_words) == 0:
+        for i in range(D_WIDTH):
+            out_words[i] = field.fq_add(out_words[i], field.fq_mul(lhs_words[i], rhs_scalar))
+        return
     var tmp_words = InlineArray[UInt64, TMP_WIDTH](fill=0)
-
-    for i in range(D_WIDTH):
-        var ai = lhs_words[i]
+    var lhs_nz = rq_nonzero_count_words(lhs_words)
+    var rhs_nz = rq_nonzero_count_words(rhs_words)
+    if lhs_nz <= rhs_nz:
+        for i in range(D_WIDTH):
+            var ai = lhs_words[i]
+            if ai == 0:
+                continue
+            for j in range(D_WIDTH):
+                var bj = rhs_words[j]
+                if bj == 0:
+                    continue
+                var term = field.fq_mul(ai, bj)
+                tmp_words[i + j] = field.fq_add(tmp_words[i + j], term)
+    else:
         for j in range(D_WIDTH):
-            var term = field.fq_mul(ai, rhs_words[j])
-            tmp_words[i + j] = field.fq_add(tmp_words[i + j], term)
+            var bj = rhs_words[j]
+            if bj == 0:
+                continue
+            for i in range(D_WIDTH):
+                var ai = lhs_words[i]
+                if ai == 0:
+                    continue
+                var term = field.fq_mul(ai, bj)
+                tmp_words[i + j] = field.fq_add(tmp_words[i + j], term)
 
     for i in range(TMP_WIDTH - 1, D_WIDTH - 1, -1):
         var t = tmp_words[i]
@@ -153,13 +225,37 @@ fn rq_ct_words(words: UnsafePointer[UInt64]) -> UInt64:
 
 
 fn rq_mul_ct_words(lhs_words: UnsafePointer[UInt64], rhs_words: UnsafePointer[UInt64]) -> UInt64:
+    var lhs_scalar = rq_scalar_coeff_words(lhs_words)
+    if lhs_scalar != 0 or rq_nonzero_count_words(lhs_words) == 0:
+        return field.fq_mul(lhs_scalar, rhs_words[0])
+    var rhs_scalar = rq_scalar_coeff_words(rhs_words)
+    if rhs_scalar != 0 or rq_nonzero_count_words(rhs_words) == 0:
+        return field.fq_mul(lhs_words[0], rhs_scalar)
     var tmp_words = InlineArray[UInt64, TMP_WIDTH](fill=0)
-
-    for i in range(D_WIDTH):
-        var ai = lhs_words[i]
+    var lhs_nz = rq_nonzero_count_words(lhs_words)
+    var rhs_nz = rq_nonzero_count_words(rhs_words)
+    if lhs_nz <= rhs_nz:
+        for i in range(D_WIDTH):
+            var ai = lhs_words[i]
+            if ai == 0:
+                continue
+            for j in range(D_WIDTH):
+                var bj = rhs_words[j]
+                if bj == 0:
+                    continue
+                var term = field.fq_mul(ai, bj)
+                tmp_words[i + j] = field.fq_add(tmp_words[i + j], term)
+    else:
         for j in range(D_WIDTH):
-            var term = field.fq_mul(ai, rhs_words[j])
-            tmp_words[i + j] = field.fq_add(tmp_words[i + j], term)
+            var bj = rhs_words[j]
+            if bj == 0:
+                continue
+            for i in range(D_WIDTH):
+                var ai = lhs_words[i]
+                if ai == 0:
+                    continue
+                var term = field.fq_mul(ai, bj)
+                tmp_words[i + j] = field.fq_add(tmp_words[i + j], term)
 
     for i in range(TMP_WIDTH - 1, D_WIDTH - 1, -1):
         var t = tmp_words[i]

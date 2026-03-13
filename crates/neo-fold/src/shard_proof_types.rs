@@ -105,6 +105,11 @@ pub struct JointOpeningGroupProof {
     pub domain: OpeningDomain,
     pub claim_indices: Vec<usize>,
     pub group_digest: [u8; 32],
+    /// Digest of the ordered per-claim multiplicative update schedule for this group.
+    ///
+    /// This binds the exact opening-batch coefficient matrices (`eta`) used to combine the
+    /// claim's opened columns into the Stage-8 witness, independent of the group's point/domain.
+    pub update_class_digest: [u8; 32],
     /// Vector-partial joint claim (ME-native) at `point`.
     pub joint_claim_digits: Vec<K>,
     /// Scalar recomposition of `joint_claim_digits` under base `b`.
@@ -128,10 +133,13 @@ pub enum JointClaimKind {
 pub struct JointOpeningLaneProof {
     pub claim_kind: JointClaimKind,
     pub groups: Vec<JointOpeningGroupProof>,
-    /// Stage-8 fold inputs after clustering `groups` by identical `(point, domain)`.
+    /// Stage-8 fold inputs after clustering `groups` by shared update schedule.
     ///
-    /// Each cluster is either a direct reuse of a single group or a transcript-mixed
-    /// synthetic aggregate over multiple same-point/domain groups.
+    /// Each cluster is either:
+    /// - a direct reuse of a single group,
+    /// - a real same-point/domain aggregate, or
+    /// - a transcript-mixed synthetic aggregate over multiple groups that share the same
+    ///   multiplicative update schedule but not necessarily the same point/domain.
     pub stage8_clusters: Vec<Stage8ClusterProof>,
     /// Optional unified Stage-8 fold claim derived from `groups` under transcript-bound mixers.
     pub unified_fold: Option<JointOpeningGroupProof>,
