@@ -85,29 +85,10 @@ pub(crate) fn validate_step_time_opening_batches_with_transcript(
         ));
     }
     let reduction = crate::time_opening::reduction::build_opening_reduction(&manifest)?;
-    if reduction.groups.len() != fold.opening_reduction.groups.len() {
-        return Err(PiCcsError::ProtocolError(format!(
-            "verify/time-opening stage8: reduction group count mismatch (expected {}, got {})",
-            reduction.groups.len(),
-            fold.opening_reduction.groups.len()
-        )));
-    }
-    for (group_idx, (expected, actual)) in reduction
-        .groups
-        .iter()
-        .zip(fold.opening_reduction.groups.iter())
-        .enumerate()
-    {
-        if expected.point != actual.point
-            || expected.domain != actual.domain
-            || expected.claim_indices != actual.claim_indices
-            || expected.group_digest != actual.group_digest
-        {
-            return Err(PiCcsError::ProtocolError(format!(
-                "verify/time-opening stage8: reduction proof mismatch at group {}",
-                group_idx
-            )));
-        }
+    if reduction.groups != fold.opening_reduction.groups {
+        return Err(PiCcsError::ProtocolError(
+            "verify/time-opening stage8: reduction proof mismatch".into(),
+        ));
     }
     crate::time_opening::reduction::verify_opening_unification_sumcheck(
         tr,

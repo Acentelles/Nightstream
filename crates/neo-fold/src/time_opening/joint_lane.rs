@@ -252,17 +252,6 @@ pub struct JointOpeningLaneDurations {
     pub unified_fold_mix: Duration,
 }
 
-struct PendingStage8ClusterCommit {
-    cluster_idx: usize,
-    point: Vec<K>,
-    domain: OpeningDomain,
-    group_indices: Vec<usize>,
-    cluster_digest: [u8; 32],
-    update_class_digest: [u8; 32],
-    expected_commitment: Cmt,
-    expected_claim_digits: Vec<K>,
-}
-
 #[inline]
 fn can_use_unified_stage8_witness(groups: &[JointOpeningGroupProof]) -> bool {
     let Some(anchor) = groups.first() else {
@@ -288,10 +277,10 @@ fn unified_fold_digest(groups: &[JointOpeningGroupProof]) -> [u8; 32] {
 fn build_stage8_group_clusters(groups: &[JointOpeningGroupProof]) -> Vec<Vec<usize>> {
     let mut clusters: Vec<Vec<usize>> = Vec::new();
     for (group_idx, group) in groups.iter().enumerate() {
-        if let Some(cluster) = clusters
-            .iter_mut()
-            .find(|cluster| groups[cluster[0]].update_class_digest == group.update_class_digest)
-        {
+        if let Some(cluster) = clusters.iter_mut().find(|cluster| {
+            let anchor = &groups[cluster[0]];
+            anchor.point == group.point && anchor.domain == group.domain
+        }) {
             cluster.push(group_idx);
         } else {
             clusters.push(vec![group_idx]);
@@ -309,21 +298,6 @@ fn stage8_cluster_digest(groups: &[&JointOpeningGroupProof]) -> [u8; 32] {
         group_digests_flat.extend_from_slice(&group.group_digest);
     }
     tr.append_bytes_packed(b"stage8/cluster_fold_digest/group_digests_flat", &group_digests_flat);
-    tr.digest32()
-}
-
-fn stage8_update_class_digest(groups: &[&JointOpeningGroupProof]) -> [u8; 32] {
-    let mut tr = neo_transcript::Poseidon2Transcript::new(b"stage8/cluster_update_class_digest");
-    tr.append_message(b"stage8/cluster_update_class_digest/version", b"v1");
-    tr.append_u64s(b"stage8/cluster_update_class_digest/groups_len", &[groups.len() as u64]);
-    let mut update_digests_flat = Vec::with_capacity(groups.len() * 32);
-    for group in groups {
-        update_digests_flat.extend_from_slice(&group.update_class_digest);
-    }
-    tr.append_bytes_packed(
-        b"stage8/cluster_update_class_digest/group_update_digests_flat",
-        &update_digests_flat,
-    );
     tr.digest32()
 }
 
@@ -672,7 +646,7 @@ pub fn prove_joint_opening_lane_with_witnesses(
     time_col_ids: &[usize],
     opening_proofs: &[TimeOpeningProof],
     manifest_digest: &[u8; 32],
-    reduction: &mut OpeningReductionProof,
+    reduction: &OpeningReductionProof,
     opening_unification: &OpeningUnificationProof,
     claim_eta_coeffs: &[Vec<Mat<F>>],
 ) -> Result<(JointOpeningLaneProof, Vec<Mat<F>>), PiCcsError> {
@@ -707,7 +681,7 @@ pub fn prove_joint_opening_lane_with_witnesses_and_metrics(
     time_col_ids: &[usize],
     opening_proofs: &[TimeOpeningProof],
     manifest_digest: &[u8; 32],
-    reduction: &mut OpeningReductionProof,
+    reduction: &OpeningReductionProof,
     opening_unification: &OpeningUnificationProof,
     claim_eta_coeffs: &[Vec<Mat<F>>],
 ) -> Result<(JointOpeningLaneProof, Vec<Mat<F>>, JointOpeningLaneDurations), PiCcsError> {
@@ -738,20 +712,6 @@ pub fn prove_joint_opening_lane_with_witnesses_and_metrics(
         return Err(PiCcsError::ProtocolError(
             "time/opening joint/prove: sampled group rho count mismatch".into(),
         ));
-    }
-    for (group_idx, group) in reduction.groups.iter_mut().enumerate() {
-        let rhos = group_rhos.get(group_idx).ok_or_else(|| {
-            PiCcsError::ProtocolError(format!(
-                "time/opening joint/prove: missing update-schedule rhos for group {}",
-                group_idx
-            ))
-        })?;
-        group.update_class_digest = crate::time_opening::reduction::group_update_schedule_digest(
-            group,
-            opening_proofs,
-            claim_eta_coeffs,
-            rhos.as_slice(),
-        )?;
     }
 
     let committer = neo_ajtai::AjtaiSModule::from_global_for_dims(D, t).map_err(|e| {
@@ -970,7 +930,6 @@ pub fn prove_joint_opening_lane_with_witnesses_and_metrics(
             domain: group_work.domain,
             claim_indices: group_work.claim_indices,
             group_digest: group_work.group_digest,
-            update_class_digest: reduction.groups[group_idx].update_class_digest,
             joint_claim_digits: group_work.joint_claim_digits,
             joint_claim,
             joint_commitment,
@@ -990,10 +949,8 @@ pub fn prove_joint_opening_lane_with_witnesses_and_metrics(
             .ok_or_else(|| PiCcsError::ProtocolError("stage8 unified fold: empty groups".into()))?;
         let can_unify = can_use_unified_stage8_witness(&out_groups);
         if !can_unify {
-            let mut cluster_wits_by_idx: Vec<Option<Mat<F>>> = (0..cluster_layouts.len()).map(|_| None).collect();
-            let mut stage8_clusters_by_idx: Vec<Option<Stage8ClusterProof>> =
-                (0..cluster_layouts.len()).map(|_| None).collect();
-            let mut pending_cluster_commits: Vec<PendingStage8ClusterCommit> = Vec::new();
+            let mut cluster_wits = Vec::with_capacity(cluster_layouts.len());
+            stage8_clusters.reserve(cluster_layouts.len());
             for (cluster_idx, group_indices) in cluster_layouts.iter().enumerate() {
                 let member_groups: Vec<&JointOpeningGroupProof> =
                     group_indices.iter().map(|&idx| &out_groups[idx]).collect();
@@ -1001,17 +958,16 @@ pub fn prove_joint_opening_lane_with_witnesses_and_metrics(
                 if group_indices.len() == 1 {
                     let idx = group_indices[0];
                     let group = &out_groups[idx];
-                    stage8_clusters_by_idx[cluster_idx] = Some(Stage8ClusterProof {
+                    stage8_clusters.push(Stage8ClusterProof {
                         point: group.point.clone(),
                         domain: group.domain,
                         group_indices: vec![idx],
                         cluster_digest,
-                        update_class_digest: stage8_update_class_digest(&member_groups),
                         joint_claim_digits: group.joint_claim_digits.clone(),
                         joint_claim: group.joint_claim,
                         joint_commitment: group.joint_commitment.clone(),
                     });
-                    cluster_wits_by_idx[cluster_idx] = Some(out_wits[idx].clone());
+                    cluster_wits.push(out_wits[idx].clone());
                     continue;
                 }
 
@@ -1068,120 +1024,48 @@ pub fn prove_joint_opening_lane_with_witnesses_and_metrics(
                     .map(|&idx| out_wits[idx].clone())
                     .collect();
                 let cluster_wit = mix_group_witnesses(&cluster_group_wits, &mix_rhos, t)?;
-                let cluster_anchor = member_groups[0];
-                let cluster_is_synthetic = member_groups
-                    .iter()
-                    .any(|group| group.point != cluster_anchor.point || group.domain != cluster_anchor.domain);
-                let (cluster_point, cluster_domain, cluster_claim_digits) = if cluster_is_synthetic {
-                    (
-                        opening_unification.r_unify.clone(),
-                        OpeningDomain::Cpu,
-                        expected_claim_digits.clone(),
-                    )
+                let cluster_commitment = if allow_commit_accel {
+                    let commits = crate::shard::commit_many_with_backend(backend_ctx, &committer, &[&cluster_wit])?;
+                    commits
+                        .into_iter()
+                        .next()
+                        .ok_or_else(|| PiCcsError::ProtocolError("stage8 cluster fold: missing commitment".into()))?
                 } else {
-                    let cluster_claim_digits = eval_time_mat_digits_at_point(
-                        cluster_anchor.domain,
-                        cluster_anchor.point.as_slice(),
-                        step.mcs.0.m_in,
-                        cpu_bus,
-                        &cluster_wit,
-                    )?;
-                    if cluster_claim_digits != expected_claim_digits {
-                        return Err(PiCcsError::ProtocolError(
-                            "stage8 cluster fold: claim digits mismatch vs transcript-mixed group claims".into(),
-                        ));
-                    }
-                    (
-                        cluster_anchor.point.clone(),
-                        cluster_anchor.domain,
-                        cluster_claim_digits,
-                    )
+                    committer.commit(&cluster_wit)
                 };
-                cluster_wits_by_idx[cluster_idx] = Some(cluster_wit);
-                pending_cluster_commits.push(PendingStage8ClusterCommit {
-                    cluster_idx,
-                    point: cluster_point,
-                    domain: cluster_domain,
+                if cluster_commitment != expected_commitment {
+                    return Err(PiCcsError::ProtocolError(
+                        "stage8 cluster fold: commitment mismatch".into(),
+                    ));
+                }
+                let cluster_anchor = member_groups[0];
+                let cluster_claim_digits = eval_time_mat_digits_at_point(
+                    cluster_anchor.domain,
+                    cluster_anchor.point.as_slice(),
+                    step.mcs.0.m_in,
+                    cpu_bus,
+                    &cluster_wit,
+                )?;
+                if cluster_claim_digits != expected_claim_digits {
+                    return Err(PiCcsError::ProtocolError(
+                        "stage8 cluster fold: claim digits mismatch vs transcript-mixed group claims".into(),
+                    ));
+                }
+                stage8_clusters.push(Stage8ClusterProof {
+                    point: cluster_anchor.point.clone(),
+                    domain: cluster_anchor.domain,
                     group_indices: group_indices.clone(),
                     cluster_digest,
-                    update_class_digest: stage8_update_class_digest(member_groups.as_slice()),
-                    expected_commitment,
-                    expected_claim_digits: cluster_claim_digits,
+                    joint_claim: recompose_digits_to_scalar(
+                        cluster_claim_digits.as_slice(),
+                        crate::time_opening::STAGE8_TIME_DECOMP_BASE,
+                    ),
+                    joint_claim_digits: cluster_claim_digits,
+                    joint_commitment: cluster_commitment,
                 });
+                cluster_wits.push(cluster_wit);
             }
-            if !pending_cluster_commits.is_empty() {
-                let pending_wit_refs: Vec<&Mat<F>> = pending_cluster_commits
-                    .iter()
-                    .map(|pending| {
-                        cluster_wits_by_idx[pending.cluster_idx]
-                            .as_ref()
-                            .ok_or_else(|| {
-                                PiCcsError::ProtocolError(
-                                    "stage8 cluster fold: missing pending witness before batched commit".into(),
-                                )
-                            })
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                let pending_commitments = if allow_commit_accel {
-                    crate::shard::commit_many_with_backend(backend_ctx, &committer, &pending_wit_refs)?
-                } else {
-                    committer.commit_many(&pending_wit_refs)
-                };
-                if pending_commitments.len() != pending_cluster_commits.len() {
-                    return Err(PiCcsError::ProtocolError(format!(
-                        "stage8 cluster fold: batched commit returned {} commitments for {} clusters",
-                        pending_commitments.len(),
-                        pending_cluster_commits.len()
-                    )));
-                }
-                for (pending, cluster_commitment) in pending_cluster_commits
-                    .into_iter()
-                    .zip(pending_commitments.into_iter())
-                {
-                    if cluster_commitment != pending.expected_commitment {
-                        return Err(PiCcsError::ProtocolError(
-                            "stage8 cluster fold: commitment mismatch".into(),
-                        ));
-                    }
-                    stage8_clusters_by_idx[pending.cluster_idx] = Some(Stage8ClusterProof {
-                        point: pending.point,
-                        domain: pending.domain,
-                        group_indices: pending.group_indices,
-                        cluster_digest: pending.cluster_digest,
-                        update_class_digest: pending.update_class_digest,
-                        joint_claim: recompose_digits_to_scalar(
-                            pending.expected_claim_digits.as_slice(),
-                            crate::time_opening::STAGE8_TIME_DECOMP_BASE,
-                        ),
-                        joint_claim_digits: pending.expected_claim_digits,
-                        joint_commitment: cluster_commitment,
-                    });
-                }
-            }
-            stage8_clusters = stage8_clusters_by_idx
-                .into_iter()
-                .enumerate()
-                .map(|(cluster_idx, cluster)| {
-                    cluster.ok_or_else(|| {
-                        PiCcsError::ProtocolError(format!(
-                            "stage8 cluster fold: missing proof for cluster_idx={cluster_idx}"
-                        ))
-                    })
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            stage8_fold_wits = Some(
-                cluster_wits_by_idx
-                    .into_iter()
-                    .enumerate()
-                    .map(|(cluster_idx, wit)| {
-                        wit.ok_or_else(|| {
-                            PiCcsError::ProtocolError(format!(
-                                "stage8 cluster fold: missing witness for cluster_idx={cluster_idx}"
-                            ))
-                        })
-                    })
-                    .collect::<Result<Vec<_>, _>>()?,
-            );
+            stage8_fold_wits = Some(cluster_wits);
         }
         let mix_rhos = bind_and_sample_unified_fold_mixers(tr, params, step_idx, &out_groups, opening_unification)?;
         if mix_rhos.len() != out_groups.len() {
@@ -1273,19 +1157,17 @@ pub fn prove_joint_opening_lane_with_witnesses_and_metrics(
             domain: unified_domain,
             claim_indices: (0..out_groups.len()).collect(),
             group_digest: unified_fold_digest(&out_groups),
-            update_class_digest: stage8_update_class_digest(&out_groups.iter().collect::<Vec<_>>()),
             joint_claim_digits: unified_claim_digits,
             joint_claim: unified_claim,
             joint_commitment: unified_commitment,
             opening_ccs_proof: None,
         });
-        if can_unify && stage8_clusters.is_empty() {
+        if can_unify {
             stage8_clusters.push(Stage8ClusterProof {
                 point: anchor.point.clone(),
                 domain: anchor.domain,
                 group_indices: (0..out_groups.len()).collect(),
                 cluster_digest: stage8_cluster_digest(&out_groups.iter().collect::<Vec<_>>()),
-                update_class_digest: stage8_update_class_digest(&out_groups.iter().collect::<Vec<_>>()),
                 joint_claim_digits: unified_fold
                     .as_ref()
                     .expect("stage8 cluster unified fold")
@@ -1331,7 +1213,7 @@ pub fn prove_joint_opening_lane(
     time_col_ids: &[usize],
     opening_proofs: &[TimeOpeningProof],
     manifest_digest: &[u8; 32],
-    reduction: &mut OpeningReductionProof,
+    reduction: &OpeningReductionProof,
     opening_unification: &OpeningUnificationProof,
     claim_eta_coeffs: &[Vec<Mat<F>>],
 ) -> Result<JointOpeningLaneProof, PiCcsError> {
@@ -1406,27 +1288,20 @@ pub fn verify_joint_opening_lane(
 
     let cpu_cols_len = time_cpu_commitments.len();
     for (group_idx, (group, pf_group)) in reduction.groups.iter().zip(lane.groups.iter()).enumerate() {
-        let rhos = group_rhos.get(group_idx).ok_or_else(|| {
-            PiCcsError::ProtocolError("time/opening joint/verify: missing sampled group coefficients".into())
-        })?;
-        let expected_update_class_digest = crate::time_opening::reduction::group_update_schedule_digest(
-            group,
-            opening_proofs,
-            claim_eta_coeffs,
-            rhos.as_slice(),
-        )?;
         if group.point != pf_group.point
             || group.domain != pf_group.domain
             || group.claim_indices != pf_group.claim_indices
             || group.group_digest != pf_group.group_digest
-            || group.update_class_digest != expected_update_class_digest
-            || pf_group.update_class_digest != expected_update_class_digest
         {
             return Err(PiCcsError::ProtocolError(format!(
                 "time/opening joint/verify: group {} metadata mismatch between reduction and proof",
                 group_idx
             )));
         }
+
+        let rhos = group_rhos.get(group_idx).ok_or_else(|| {
+            PiCcsError::ProtocolError("time/opening joint/verify: missing sampled group coefficients".into())
+        })?;
         if rhos.len() != group.claim_indices.len() {
             return Err(PiCcsError::ProtocolError(format!(
                 "time/opening joint/verify: group {} rho len {} != claim_indices len {}",
@@ -1553,11 +1428,6 @@ pub fn verify_joint_opening_lane(
             "time/opening joint/verify: unified_fold digest mismatch".into(),
         ));
     }
-    if unified.update_class_digest != stage8_update_class_digest(&lane.groups.iter().collect::<Vec<_>>()) {
-        return Err(PiCcsError::ProtocolError(
-            "time/opening joint/verify: unified_fold update-class digest mismatch".into(),
-        ));
-    }
     if unified.joint_claim_digits.len() != D {
         return Err(PiCcsError::ProtocolError(format!(
             "time/opening joint/verify: unified_fold joint_claim_digits.len()={} != D={D}",
@@ -1581,26 +1451,13 @@ pub fn verify_joint_opening_lane(
     {
         let member_groups: Vec<&JointOpeningGroupProof> = group_indices.iter().map(|&idx| &lane.groups[idx]).collect();
         let anchor = member_groups[0];
-        let cluster_is_synthetic = member_groups
-            .iter()
-            .any(|group| group.point != anchor.point || group.domain != anchor.domain);
         if cluster.group_indices != *group_indices {
             return Err(PiCcsError::ProtocolError(format!(
                 "time/opening joint/verify: stage8 cluster {} group_indices mismatch",
                 cluster_idx
             )));
         }
-        let expected_point = if cluster_is_synthetic {
-            opening_unification.r_unify.clone()
-        } else {
-            anchor.point.clone()
-        };
-        let expected_domain = if cluster_is_synthetic {
-            OpeningDomain::Cpu
-        } else {
-            anchor.domain
-        };
-        if cluster.point != expected_point || cluster.domain != expected_domain {
+        if cluster.point != anchor.point || cluster.domain != anchor.domain {
             return Err(PiCcsError::ProtocolError(format!(
                 "time/opening joint/verify: stage8 cluster {} anchor mismatch",
                 cluster_idx
@@ -1609,12 +1466,6 @@ pub fn verify_joint_opening_lane(
         if cluster.cluster_digest != stage8_cluster_digest(&member_groups) {
             return Err(PiCcsError::ProtocolError(format!(
                 "time/opening joint/verify: stage8 cluster {} digest mismatch",
-                cluster_idx
-            )));
-        }
-        if cluster.update_class_digest != stage8_update_class_digest(&member_groups) {
-            return Err(PiCcsError::ProtocolError(format!(
-                "time/opening joint/verify: stage8 cluster {} update-class digest mismatch",
                 cluster_idx
             )));
         }
@@ -1634,6 +1485,17 @@ pub fn verify_joint_opening_lane(
                 "time/opening joint/verify: stage8 cluster {} scalar recomposition mismatch",
                 cluster_idx
             )));
+        }
+        if can_unify {
+            if cluster.joint_commitment != unified.joint_commitment
+                || cluster.joint_claim_digits != unified.joint_claim_digits
+                || cluster.joint_claim != unified.joint_claim
+            {
+                return Err(PiCcsError::ProtocolError(
+                    "time/opening joint/verify: unified stage8 cluster must mirror unified_fold".into(),
+                ));
+            }
+            continue;
         }
         if group_indices.len() == 1 {
             let group = member_groups[0];
