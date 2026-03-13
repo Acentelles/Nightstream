@@ -14,7 +14,7 @@
 | extension proofs | `MemorySidecar`, `TimeOpening` | Twist/Shout §4-§5 | Proves real Twist (RAM/register consistency), real Shout (ALU/opcode lookup membership), virtual decomposition (MUL/DIV), and time-opening/joint-opening obligations. Does not own routing/glue/decode/control/width constraints — those belong to the main-lane CCS. |
 | proof-data boundary | `ShardProofTypes` | Rust artifact/refinement layer | Exports the combined artifact with explicit separation between core, extension, and metadata fields |
 | orchestration | `Session` | architecture-level | Carries accumulators across shards and invokes lower layers |
-| frontends | `RV64TraceShard`, `RISCVTraceShard`, shared-bus APIs in `Session` | Jolt §3 | Turns machine/program traces into step bundles and sidecar inputs |
+| frontends | `RV64TraceShard`, shared-bus APIs in `Session` | Jolt §3 | Turns machine/program traces into step bundles and sidecar inputs |
 | Rust-only strengthenings | `OutputBinding`, step linking, `Finalize` | implementation-level | Strengthen or finalize acceptance without changing lower-layer proof meaning |
 
 ## Erasure and Refinement Rules

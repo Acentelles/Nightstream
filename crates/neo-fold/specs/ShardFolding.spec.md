@@ -146,7 +146,6 @@ Upstream dependencies:
 Primary consumers:
 - `neo-fold::session`
 - `rv64_trace_shard`
-- `riscv_trace_shard`
 - Rust artifact/session exporters
 - Lean refinement validators
 

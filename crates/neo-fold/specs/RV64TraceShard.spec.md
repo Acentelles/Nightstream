@@ -142,5 +142,4 @@ Primary consumers:
 
 ## Out of Scope
 
-- Legacy RV32/reference path
 - Generic shard/session theorem ownership

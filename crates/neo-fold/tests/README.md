@@ -36,7 +36,6 @@ Each file at this level is a thin entrypoint that mounts one suite module:
 
 - `common/fixtures.rs`
 - `common/fib_twist_shout_vm.rs`
-- `common/riscv_shout_event_table_packed.rs`
 - `common/setup.rs`
 
 ## Suggested run commands

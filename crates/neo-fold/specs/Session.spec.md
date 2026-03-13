@@ -199,7 +199,6 @@ Upstream dependencies:
 
 Primary consumers:
 - `rv64_trace_shard`
-- `riscv_trace_shard`
 - end-to-end session/integration tests
 - Rust artifact/session exporters
 
