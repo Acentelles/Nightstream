@@ -313,6 +313,19 @@ fn run_rv64_note_case(
 }
 
 #[test]
+fn test_rv64_note_deposit_from_elf_smoke() {
+    let elf = rv64_guest::build_note_deposit_rv64im_elf().expect("build RV64IM note deposit guest ELF");
+    let witness = note_deposit_fixture::build_note_deposit_witness();
+    run_rv64_note_case(
+        "rv64_note_deposit_elf_smoke",
+        &elf,
+        &witness.ram_pairs,
+        &witness.output_layout_words,
+        200_000,
+    );
+}
+
+#[test]
 #[ignore = "slow RV64IM note-spend ELF perf repro"]
 fn test_rv64_note_spend_from_elf_perf_repro() {
     let elf = rv64_guest::build_note_spend_rv64im_elf().expect("build RV64IM note guest ELF");
