@@ -1,12 +1,17 @@
 use neo_ajtai::Commitment as Cmt;
 use neo_math::{F, K};
 use neo_memory::riscv::lookups::{
-    RiscvOpcode, POSEIDON2_ABSORB_FUNCT7, POSEIDON2_CUSTOM_OPCODE, POSEIDON2_FINALIZE_FUNCT7, POSEIDON2_SQUEEZE_FUNCT7,
-    PROG_ID, RAM_ID, REG_ID,
+    POSEIDON2_ABSORB_FUNCT7, POSEIDON2_CUSTOM_OPCODE, POSEIDON2_FINALIZE_FUNCT7, POSEIDON2_SQUEEZE_FUNCT7, PROG_ID,
+    REG_ID,
 };
-use neo_memory::witness::{LutInstance, LutTableSpec, MemInstance, StepInstanceBundle, StepWitnessBundle};
+use neo_memory::witness::{LutInstance, MemInstance, StepInstanceBundle, StepWitnessBundle};
 use p3_field::PrimeField64;
 
+use crate::instruction_lookup::{
+    build_time_claim_plan as build_instruction_lookup_time_claim_plan,
+    time_claim_metas_for_instances as instruction_lookup_time_claim_metas_for_instances,
+    InstructionLookupTimeClaimPlan,
+};
 use crate::PiCcsError;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -103,44 +108,6 @@ pub fn poseidon_local_time_claim_metas() -> &'static [TimeClaimMeta] {
 }
 
 #[derive(Clone, Debug)]
-pub struct ShoutLaneTimeClaimIdx {
-    pub value: Option<usize>,
-    pub adapter: Option<usize>,
-    pub gamma_group: Option<usize>,
-}
-
-#[derive(Clone, Debug)]
-pub struct ShoutTimeClaimIdx {
-    pub lanes: Vec<ShoutLaneTimeClaimIdx>,
-    pub bitness: Option<usize>,
-    pub ell_addr: usize,
-}
-
-#[derive(Clone, Debug)]
-pub struct ShoutGammaGroupLaneRef {
-    pub flat_lane_idx: usize,
-    pub inst_idx: usize,
-    pub lane_idx: usize,
-}
-
-#[derive(Clone, Debug)]
-pub struct ShoutGammaGroupSpec {
-    pub key: u64,
-    pub ell_addr: usize,
-    pub lanes: Vec<ShoutGammaGroupLaneRef>,
-}
-
-#[derive(Clone, Debug)]
-pub struct ShoutGammaGroupTimeClaimIdx {
-    pub key: u64,
-    pub ell_addr: usize,
-    pub lanes: Vec<ShoutGammaGroupLaneRef>,
-    pub value: usize,
-    pub adapter: usize,
-    pub bitness: usize,
-}
-
-#[derive(Clone, Debug)]
 pub struct TwistTimeClaimIdx {
     pub read_check: usize,
     pub write_check: usize,
@@ -158,20 +125,10 @@ pub struct TwistTimeClaimIdx {
 pub struct RouteATimeClaimPlan {
     pub claim_idx_start: usize,
     pub claim_idx_end: usize,
-    pub shout: Vec<ShoutTimeClaimIdx>,
-    pub shout_gamma_groups: Vec<ShoutGammaGroupTimeClaimIdx>,
+    pub instruction_lookup: InstructionLookupTimeClaimPlan,
     pub twist: Vec<TwistTimeClaimIdx>,
     pub booleanity_claim: Option<usize>,
     pub trace_opening_quiescence: Option<usize>,
-    pub width_bitness: Option<usize>,
-    pub width_quiescence: Option<usize>,
-    pub width_selector_linkage: Option<usize>,
-    pub width_load_semantics: Option<usize>,
-    pub width_store_semantics: Option<usize>,
-    pub control_next_pc_linear: Option<usize>,
-    pub control_next_pc_control: Option<usize>,
-    pub control_branch_semantics: Option<usize>,
-    pub control_writeback: Option<usize>,
     pub poseidon_io_link: Option<usize>,
     pub poseidon_bitness: Option<usize>,
     pub poseidon_canonical_u64: Option<usize>,
@@ -239,65 +196,11 @@ impl RouteATimeClaimPlan {
         Self::poseidon_stage_required_for_mem_instances(step.mem_instances.iter().map(|(inst, _)| inst))
     }
 
-    pub fn derive_shout_gamma_groups_for_instances<'a, LI>(lut_insts: LI) -> Vec<ShoutGammaGroupSpec>
-    where
-        LI: IntoIterator<Item = &'a LutInstance<Cmt, F>>,
-    {
-        let lut_insts: Vec<&LutInstance<Cmt, F>> = lut_insts.into_iter().collect();
-
-        // Group all non-packed lookup families that share an address group.
-        // The addr_group is carried on each LutInstance (set by the bus config for trace mode,
-        // None when no lookup-family sharing is configured). This collapses per-column decode/width families into one
-        // gamma-batched claim pair while keeping packed specs on their existing per-lane
-        // schedule.
-        let mut grouped: std::collections::BTreeMap<u64, Vec<ShoutGammaGroupLaneRef>> =
-            std::collections::BTreeMap::new();
-        let mut grouped_ell: std::collections::BTreeMap<u64, usize> = std::collections::BTreeMap::new();
-
-        let mut flat_lane_idx = 0usize;
-        for (inst_idx, lut_inst) in lut_insts.iter().enumerate() {
-            let lanes = lut_inst.lanes.max(1);
-            let ell_addr = lut_inst.d * lut_inst.ell;
-            let is_packed = matches!(lut_inst.table_spec, Some(LutTableSpec::RiscvOpcodePacked { .. }));
-            let is_gamma_candidate = !is_packed && lut_inst.addr_group.is_some();
-            for lane_idx in 0..lanes {
-                if is_gamma_candidate {
-                    if let Some(addr_group) = lut_inst.addr_group {
-                        let key = (addr_group << 32) | lane_idx as u64;
-                        grouped
-                            .entry(key)
-                            .or_default()
-                            .push(ShoutGammaGroupLaneRef {
-                                flat_lane_idx,
-                                inst_idx,
-                                lane_idx,
-                            });
-                        grouped_ell.entry(key).or_insert(ell_addr);
-                    }
-                }
-                flat_lane_idx += 1;
-            }
-        }
-
-        let mut out = Vec::new();
-        for (key, lanes) in grouped.into_iter() {
-            if lanes.len() <= 1 {
-                continue;
-            }
-            if let Some(&ell_addr) = grouped_ell.get(&key) {
-                out.push(ShoutGammaGroupSpec { key, ell_addr, lanes });
-            }
-        }
-        out
-    }
-
     pub fn time_claim_metas_for_instances<'a, LI, MI>(
         lut_insts: LI,
         mem_insts: MI,
         booleanity_enabled: bool,
         trace_opening_enabled: bool,
-        width_stage_enabled: bool,
-        control_stage_enabled: bool,
         poseidon_cycle_enabled: bool,
         ob_reg_exact_linkage_degree_bound: Option<usize>,
         ob_inc_total_degree_bound: Option<usize>,
@@ -306,102 +209,9 @@ impl RouteATimeClaimPlan {
         LI: IntoIterator<Item = &'a LutInstance<Cmt, F>>,
         MI: IntoIterator<Item = &'a MemInstance<Cmt, F>>,
     {
-        let lut_insts: Vec<&LutInstance<Cmt, F>> = lut_insts.into_iter().collect();
         let mem_insts: Vec<&MemInstance<Cmt, F>> = mem_insts.into_iter().collect();
-        let shout_gamma_groups = Self::derive_shout_gamma_groups_for_instances(lut_insts.iter().copied());
-        let mut lane_gamma_map: std::collections::HashMap<(usize, usize), usize> = std::collections::HashMap::new();
-        for (g_idx, g) in shout_gamma_groups.iter().enumerate() {
-            for lane in g.lanes.iter() {
-                lane_gamma_map.insert((lane.inst_idx, lane.lane_idx), g_idx);
-            }
-        }
         let mut out = Vec::new();
-        let mut gamma_value_degree_bounds = vec![0usize; shout_gamma_groups.len()];
-        let mut gamma_adapter_degree_bounds = vec![0usize; shout_gamma_groups.len()];
-        let rv64_selector_linkage_enabled = width_stage_enabled
-            && mem_insts
-                .iter()
-                .any(|inst| inst.mem_id == RAM_ID.0 && inst.guest_addr_remap.is_some());
-
-        for (inst_idx, lut_inst) in lut_insts.iter().enumerate() {
-            let ell_addr = lut_inst.d * lut_inst.ell;
-            let lanes = lut_inst.lanes.max(1);
-            let (packed_opcode, _packed_base_ell_addr) = match &lut_inst.table_spec {
-                Some(LutTableSpec::RiscvOpcodePacked { opcode, xlen })
-                    if neo_memory::riscv::packed::rv_packed_supported_opcode(*opcode, *xlen) =>
-                {
-                    (Some(*opcode), ell_addr)
-                }
-                _ => (None, ell_addr),
-            };
-
-            let (value_degree_bound, adapter_degree_bound) = match packed_opcode {
-                Some(RiscvOpcode::And | RiscvOpcode::Andn | RiscvOpcode::Or | RiscvOpcode::Xor) => (8, 6),
-                Some(RiscvOpcode::Add | RiscvOpcode::Sub) => (3, 2),
-                Some(RiscvOpcode::Eq | RiscvOpcode::Neq) => (34, 3),
-                Some(RiscvOpcode::Mul | RiscvOpcode::VirtualMulWord) => (4, 2),
-                Some(RiscvOpcode::Mulh) => (4, 5),
-                Some(RiscvOpcode::Mulhu) => (4, 2),
-                Some(RiscvOpcode::Mulhsu) => (4, 4),
-                Some(RiscvOpcode::Slt) => (3, 3),
-                Some(
-                    RiscvOpcode::Divu | RiscvOpcode::VirtualDivuWord | RiscvOpcode::Remu | RiscvOpcode::VirtualRemuWord,
-                ) => (5, 4),
-                Some(
-                    RiscvOpcode::Div | RiscvOpcode::VirtualDivWord | RiscvOpcode::Rem | RiscvOpcode::VirtualRemWord,
-                ) => (7, 6),
-                Some(RiscvOpcode::Sll) => (8, 2),
-                Some(RiscvOpcode::Srl | RiscvOpcode::Sra | RiscvOpcode::VirtualMovsignWord) => (8, 8),
-                Some(RiscvOpcode::Sltu) => (3, 3),
-                _ => (3, 2 + ell_addr),
-            };
-
-            let mut has_ungrouped_lane = false;
-            for lane_idx in 0..lanes {
-                if let Some(&g_idx) = lane_gamma_map.get(&(inst_idx, lane_idx)) {
-                    gamma_value_degree_bounds[g_idx] = gamma_value_degree_bounds[g_idx].max(value_degree_bound);
-                    gamma_adapter_degree_bounds[g_idx] = gamma_adapter_degree_bounds[g_idx].max(adapter_degree_bound);
-                } else {
-                    has_ungrouped_lane = true;
-                    out.push(TimeClaimMeta {
-                        label: b"shout/value",
-                        degree_bound: value_degree_bound,
-                        is_dynamic: true,
-                    });
-                    out.push(TimeClaimMeta {
-                        label: b"shout/adapter",
-                        degree_bound: adapter_degree_bound,
-                        is_dynamic: true,
-                    });
-                }
-            }
-
-            if has_ungrouped_lane {
-                out.push(TimeClaimMeta {
-                    label: b"shout/bitness",
-                    degree_bound: 3,
-                    is_dynamic: false,
-                });
-            }
-        }
-
-        for (g_idx, _) in shout_gamma_groups.iter().enumerate() {
-            out.push(TimeClaimMeta {
-                label: b"shout/value",
-                degree_bound: gamma_value_degree_bounds[g_idx],
-                is_dynamic: true,
-            });
-            out.push(TimeClaimMeta {
-                label: b"shout/adapter",
-                degree_bound: gamma_adapter_degree_bounds[g_idx],
-                is_dynamic: true,
-            });
-            out.push(TimeClaimMeta {
-                label: b"shout/bitness",
-                degree_bound: 3,
-                is_dynamic: false,
-            });
-        }
+        out.extend(instruction_lookup_time_claim_metas_for_instances(lut_insts));
 
         for mem_inst in mem_insts {
             let ell_addr = mem_inst.d * mem_inst.ell;
@@ -422,7 +232,7 @@ impl RouteATimeClaimPlan {
                 degree_bound: 3,
                 is_dynamic: false,
             });
-            if control_stage_enabled && mem_inst.mem_id == REG_ID.0 {
+            if mem_inst.mem_id == REG_ID.0 {
                 out.push(TimeClaimMeta {
                     label: b"twist/virtual_write_domain",
                     degree_bound: 4,
@@ -448,59 +258,6 @@ impl RouteATimeClaimPlan {
             out.push(TimeClaimMeta {
                 label: b"trace_opening/quiescence",
                 degree_bound: 3,
-                is_dynamic: false,
-            });
-        }
-
-        if width_stage_enabled {
-            out.push(TimeClaimMeta {
-                label: b"width/bitness",
-                degree_bound: 3,
-                is_dynamic: false,
-            });
-            out.push(TimeClaimMeta {
-                label: b"width/quiescence",
-                degree_bound: 3,
-                is_dynamic: false,
-            });
-            if rv64_selector_linkage_enabled {
-                out.push(TimeClaimMeta {
-                    label: b"width/selector_linkage",
-                    degree_bound: 3,
-                    is_dynamic: false,
-                });
-            }
-            out.push(TimeClaimMeta {
-                label: b"width/load_semantics",
-                degree_bound: 5,
-                is_dynamic: false,
-            });
-            out.push(TimeClaimMeta {
-                label: b"width/store_semantics",
-                degree_bound: 4,
-                is_dynamic: false,
-            });
-        }
-
-        if control_stage_enabled {
-            out.push(TimeClaimMeta {
-                label: b"control/next_pc_linear",
-                degree_bound: 4,
-                is_dynamic: false,
-            });
-            out.push(TimeClaimMeta {
-                label: b"control/next_pc_control",
-                degree_bound: 5,
-                is_dynamic: false,
-            });
-            out.push(TimeClaimMeta {
-                label: b"control/branch_semantics",
-                degree_bound: 4,
-                is_dynamic: false,
-            });
-            out.push(TimeClaimMeta {
-                label: b"control/writeback",
-                degree_bound: 5,
                 is_dynamic: false,
             });
         }
@@ -537,8 +294,6 @@ impl RouteATimeClaimPlan {
         step: &StepInstanceBundle<Cmt, F, K>,
         booleanity_enabled: bool,
         trace_opening_enabled: bool,
-        width_stage_enabled: bool,
-        control_stage_enabled: bool,
         poseidon_cycle_enabled: bool,
         ob_reg_exact_linkage_degree_bound: Option<usize>,
         ob_inc_total_degree_bound: Option<usize>,
@@ -548,8 +303,6 @@ impl RouteATimeClaimPlan {
             step.mem_insts.iter(),
             booleanity_enabled,
             trace_opening_enabled,
-            width_stage_enabled,
-            control_stage_enabled,
             poseidon_cycle_enabled,
             ob_reg_exact_linkage_degree_bound,
             ob_inc_total_degree_bound,
@@ -561,76 +314,12 @@ impl RouteATimeClaimPlan {
         claim_idx_start: usize,
         booleanity_enabled: bool,
         trace_opening_enabled: bool,
-        width_stage_enabled: bool,
-        control_stage_enabled: bool,
         poseidon_cycle_enabled: bool,
     ) -> Result<RouteATimeClaimPlan, PiCcsError> {
         let mut idx = claim_idx_start;
-        let mut shout = Vec::with_capacity(step.lut_insts.len());
-        let shout_gamma_specs = Self::derive_shout_gamma_groups_for_instances(step.lut_insts.iter());
-        let mut lane_gamma_map: std::collections::HashMap<(usize, usize), usize> = std::collections::HashMap::new();
-        for (g_idx, g) in shout_gamma_specs.iter().enumerate() {
-            for lane in g.lanes.iter() {
-                lane_gamma_map.insert((lane.inst_idx, lane.lane_idx), g_idx);
-            }
-        }
+        let (instruction_lookup, next_idx) = build_instruction_lookup_time_claim_plan(step.lut_insts.iter(), idx);
+        idx = next_idx;
         let mut twist = Vec::with_capacity(step.mem_insts.len());
-
-        for (inst_idx, lut_inst) in step.lut_insts.iter().enumerate() {
-            let ell_addr = lut_inst.d * lut_inst.ell;
-            let lanes = lut_inst.lanes.max(1);
-            let mut lane_claims: Vec<ShoutLaneTimeClaimIdx> = Vec::with_capacity(lanes);
-            let mut has_ungrouped_lane = false;
-            for lane_idx in 0..lanes {
-                let gamma_group = lane_gamma_map.get(&(inst_idx, lane_idx)).copied();
-                let (value, adapter) = if gamma_group.is_some() {
-                    (None, None)
-                } else {
-                    has_ungrouped_lane = true;
-                    let value = idx;
-                    idx += 1;
-                    let adapter = idx;
-                    idx += 1;
-                    (Some(value), Some(adapter))
-                };
-                lane_claims.push(ShoutLaneTimeClaimIdx {
-                    value,
-                    adapter,
-                    gamma_group,
-                });
-            }
-            let bitness = if has_ungrouped_lane {
-                let out = idx;
-                idx += 1;
-                Some(out)
-            } else {
-                None
-            };
-
-            shout.push(ShoutTimeClaimIdx {
-                lanes: lane_claims,
-                bitness,
-                ell_addr,
-            });
-        }
-
-        let mut shout_gamma_groups = Vec::with_capacity(shout_gamma_specs.len());
-        for spec in shout_gamma_specs.into_iter() {
-            let value = idx;
-            idx += 1;
-            let adapter = idx;
-            idx += 1;
-            let bitness = idx;
-            idx += 1;
-            shout_gamma_groups.push(ShoutGammaGroupTimeClaimIdx {
-                key: spec.key,
-                ell_addr: spec.ell_addr,
-                lanes: spec.lanes,
-                value,
-                adapter,
-                bitness,
-            });
-        }
 
         for mem_inst in &step.mem_insts {
             let ell_addr = mem_inst.d * mem_inst.ell;
@@ -641,14 +330,14 @@ impl RouteATimeClaimPlan {
 
             let bitness = idx;
             idx += 1;
-            let virtual_write_domain = if control_stage_enabled && mem_inst.mem_id == REG_ID.0 {
+            let virtual_write_domain = if mem_inst.mem_id == REG_ID.0 {
                 let out = idx;
                 idx += 1;
                 Some(out)
             } else {
                 None
             };
-            let nonvirtual_arch_domain = if control_stage_enabled && mem_inst.mem_id == REG_ID.0 {
+            let nonvirtual_arch_domain = if mem_inst.mem_id == REG_ID.0 {
                 let out = idx;
                 idx += 1;
                 Some(out)
@@ -675,83 +364,6 @@ impl RouteATimeClaimPlan {
         };
 
         let trace_opening_quiescence = if trace_opening_enabled {
-            let out = idx;
-            idx += 1;
-            Some(out)
-        } else {
-            None
-        };
-
-        let width_bitness = if width_stage_enabled {
-            let out = idx;
-            idx += 1;
-            Some(out)
-        } else {
-            None
-        };
-
-        let width_quiescence = if width_stage_enabled {
-            let out = idx;
-            idx += 1;
-            Some(out)
-        } else {
-            None
-        };
-
-        let width_selector_linkage = if width_stage_enabled
-            && step
-                .mem_insts
-                .iter()
-                .any(|inst| inst.mem_id == RAM_ID.0 && inst.guest_addr_remap.is_some())
-        {
-            let out = idx;
-            idx += 1;
-            Some(out)
-        } else {
-            None
-        };
-
-        let width_load_semantics = if width_stage_enabled {
-            let out = idx;
-            idx += 1;
-            Some(out)
-        } else {
-            None
-        };
-
-        let width_store_semantics = if width_stage_enabled {
-            let out = idx;
-            idx += 1;
-            Some(out)
-        } else {
-            None
-        };
-
-        let control_next_pc_linear = if control_stage_enabled {
-            let out = idx;
-            idx += 1;
-            Some(out)
-        } else {
-            None
-        };
-
-        let control_next_pc_control = if control_stage_enabled {
-            let out = idx;
-            idx += 1;
-            Some(out)
-        } else {
-            None
-        };
-
-        let control_branch_semantics = if control_stage_enabled {
-            let out = idx;
-            idx += 1;
-            Some(out)
-        } else {
-            None
-        };
-
-        let control_writeback = if control_stage_enabled {
             let out = idx;
             idx += 1;
             Some(out)
@@ -830,20 +442,10 @@ impl RouteATimeClaimPlan {
         Ok(RouteATimeClaimPlan {
             claim_idx_start,
             claim_idx_end: idx,
-            shout,
-            shout_gamma_groups,
+            instruction_lookup,
             twist,
             booleanity_claim,
             trace_opening_quiescence,
-            width_bitness,
-            width_quiescence,
-            width_selector_linkage,
-            width_load_semantics,
-            width_store_semantics,
-            control_next_pc_linear,
-            control_next_pc_control,
-            control_branch_semantics,
-            control_writeback,
             poseidon_io_link,
             poseidon_bitness,
             poseidon_canonical_u64,

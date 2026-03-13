@@ -1,8 +1,8 @@
-//! Shard-level folding: CPU (Π_CCS) + memory sidecar (Twist/Shout) via Route A.
+//! Shard-level folding: CPU (Π_CCS) + memory sidecar (Twist/instruction lookup) via Route A.
 //!
 //! High-level flow (per step):
 //! 1. Bind CCS header + carried ME inputs.
-//! 2. Prove/verify a *batched* time/row sum-check that shares `r_time` across CCS + Twist/Shout time oracles.
+//! 2. Prove/verify a *batched* time/row sum-check that shares `r_time` across CCS + Twist/instruction-lookup time oracles.
 //! 3. Finish CCS Ajtai rounds using the CCS oracle state after the batched rounds.
 //! 4. Finalize the memory sidecar at the shared `r_time` (and optionally produce Twist `r_val` claims).
 //! 5. Fold all `r_time` ME claims (CCS outputs + memory claims) via Π_RLC → Π_DEC into `k_rho` children.
@@ -19,8 +19,9 @@ use crate::memory_sidecar::sumcheck_ds::{run_sumcheck_prover_ds, verify_sumcheck
 use crate::memory_sidecar::utils::RoundOraclePrefix;
 use crate::pi_ccs::{self as ccs, FoldingMode};
 pub use crate::shard_proof_types::{
-    BatchedTimeProof, FoldStep, MemOrLutProof, MemSidecarProof, RlcDecProof, ShardFoldOutputs, ShardFoldWitnesses,
-    ShardObligations, ShardProof, ShardSegmentKind, ShardSegmentMeta, ShoutProofK, StepProof, TwistProofK,
+    BatchedTimeProof, FoldStep, InstructionLookupProofK, MemOrInstructionLookupProof, MemSidecarProof, RlcDecProof,
+    ShardFoldOutputs, ShardFoldWitnesses, ShardObligations, ShardProof, ShardSegmentKind, ShardSegmentMeta, StepProof,
+    TwistProofK,
 };
 use crate::PiCcsError;
 #[cfg(target_arch = "wasm32")]

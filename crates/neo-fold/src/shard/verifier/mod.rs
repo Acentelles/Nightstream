@@ -420,16 +420,15 @@ where
         let r_cycle: Vec<K> =
             ts::sample_ext_point(tr, b"route_a/r_cycle", b"route_a/cycle/0", b"route_a/cycle/1", ell_t);
 
-        let shout_pre = crate::memory_sidecar::memory::verify_shout_addr_pre_time(tr, step, &step_proof.mem, step_idx)?;
+        let instruction_lookup_pre = crate::memory_sidecar::memory::verify_instruction_lookup_addr_pre_time(
+            tr,
+            step,
+            &step_proof.mem,
+            step_idx,
+        )?;
         let twist_pre = crate::memory_sidecar::memory::verify_twist_addr_pre_time(tr, step, &step_proof.mem)?;
         let booleanity_enabled = crate::memory_sidecar::memory::trace_opening_path_required_for_step_instance(step);
         let trace_opening_enabled = crate::memory_sidecar::memory::trace_opening_path_required_for_step_instance(step);
-        let width_stage_enabled = crate::memory_sidecar::memory::width_stage_required_for_step_instance(step)
-            || crate::memory_sidecar::memory::rv64_fullword_width_stage_required_from_proof(
-                step,
-                &step_proof.batched_time,
-            );
-        let control_stage_enabled = crate::memory_sidecar::memory::control_stage_required_for_step_instance(step);
         let crate::memory_sidecar::route_a_time::RouteABatchedTimeVerifyOutput {
             r_time: route_r_time,
             final_values,
@@ -442,8 +441,6 @@ where
             crate::memory_sidecar::route_a_time::RouteABatchedTimeVerifyConfig {
                 booleanity_enabled,
                 trace_opening_enabled,
-                width_stage_enabled,
-                control_stage_enabled,
                 poseidon_cycle_enabled,
                 output_binding: crate::memory_sidecar::route_a_time::OutputBindingTimeVerifyConfig {
                     reg_exact_linkage_degree_bound: ob_reg_exact_linkage_degree_bound,
@@ -499,7 +496,7 @@ where
             )));
         }
 
-        validate_time_sumcheck_metadata(step_idx, step_proof, &ccs_r_time, &route_r_time, control_stage_enabled)?;
+        validate_time_sumcheck_metadata(step_idx, step_proof, &ccs_r_time, &route_r_time)?;
 
         let expected_k = accumulator.len() + 1;
         if step_proof.fold.ccs_out.len() != expected_k {
@@ -794,15 +791,11 @@ where
             &r_cycle,
             &final_values,
             &step_proof.batched_time.claimed_sums,
-            crate::memory_sidecar::memory::rv64_fullword_width_stage_required_from_proof(
-                step,
-                &step_proof.batched_time,
-            ),
             0,
             &step_proof.mem,
             &step_proof.fold.openings,
             prev_step_openings,
-            &shout_pre,
+            &instruction_lookup_pre,
             &twist_pre,
             step_idx,
             poseidon_link_chals.as_ref(),

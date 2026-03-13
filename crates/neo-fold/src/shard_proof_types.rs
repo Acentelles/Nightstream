@@ -6,17 +6,10 @@ use neo_math::{F, K};
 use neo_memory::{output_check::OutputBindingProof, RiscvGuestMemoryLayout, RiscvProofProfileConfig};
 
 pub type TwistProofK = neo_memory::twist::TwistProof<K>;
-pub type ShoutProofK = neo_memory::shout::ShoutProof<K>;
+pub type InstructionLookupProofK = neo_memory::shout::ShoutProof<K>;
 
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct CpuTimeSumcheckProof {
-    pub claimed_sum: K,
-    pub round_polys: Vec<Vec<K>>,
-    pub r_time: Vec<K>,
-}
-
-#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
-pub struct ShiftTimeSumcheckProof {
     pub claimed_sum: K,
     pub round_polys: Vec<Vec<K>>,
     pub r_time: Vec<K>,
@@ -141,21 +134,21 @@ pub struct FoldingLanes {
     pub joint_opening_children: usize,
 }
 
-/// Route A Shout address pre-time proof metadata, grouped by `ell_addr`.
+/// Instruction-lookup addr-pre proof metadata, grouped by `ell_addr`.
 ///
-/// Shout addr-pre is an address-domain sumcheck, and the number of rounds equals
+/// Addr-pre is an address-domain sumcheck, and the number of rounds equals
 /// `ell_addr = d * ell` (the number of address-bit columns per lane under bit-addressing).
 ///
-/// For performance, we batch multiple Shout lanes together using shared challenges
+/// For performance, we batch multiple instruction-lookup lanes together using shared challenges
 /// (batched sumcheck). The batched sumcheck requires *all claims in the batch to have the same
 /// number of rounds*, so we group lanes by `ell_addr` and run one batched sumcheck per group.
 ///
-/// Within each group, when a Shout lane is provably inactive for a step (no lookups), we can
+/// Within each group, when a lookup lane is provably inactive for a step (no lookups), we can
 /// skip its address-domain sumcheck entirely. We still bind all `claimed_sums` to the transcript,
 /// but we include sumcheck rounds only for the active subset.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct ShoutAddrPreProof<KK> {
-    /// Claimed sums per Shout lane.
+pub struct InstructionLookupAddrPreProof<KK> {
+    /// Claimed sums per instruction-lookup lane.
     ///
     /// Lanes are flattened in `(lut_idx, lane_idx)` order, where `lut_idx` is the
     /// index in `step.lut_instances`, and `lane_idx` ranges over `inst.lanes.max(1)`.
@@ -163,11 +156,11 @@ pub struct ShoutAddrPreProof<KK> {
     /// Per-`ell_addr` batched sumcheck proofs.
     ///
     /// Groups must be sorted by `ell_addr` and contain at most one entry per `ell_addr`.
-    pub groups: Vec<ShoutAddrPreGroupProof<KK>>,
+    pub groups: Vec<InstructionLookupAddrPreGroupProof<KK>>,
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct ShoutAddrPreGroupProof<KK> {
+pub struct InstructionLookupAddrPreGroupProof<KK> {
     /// Address-bit width (sumcheck round count) for this group.
     pub ell_addr: u32,
     /// Indices of active lanes (into `claimed_sums`) that include address sumcheck rounds.
@@ -182,7 +175,7 @@ pub struct ShoutAddrPreGroupProof<KK> {
     pub r_addr: Vec<KK>,
 }
 
-impl<KK> Default for ShoutAddrPreProof<KK> {
+impl<KK> Default for InstructionLookupAddrPreProof<KK> {
     fn default() -> Self {
         Self {
             claimed_sums: Vec::new(),
@@ -206,8 +199,6 @@ pub struct TimeFoldStep {
     pub dec_children: Vec<CeClaim<Cmt, F, K>>,
     /// Time-domain CPU outer sumcheck metadata (new path).
     pub cpu_sumcheck: CpuTimeSumcheckProof,
-    /// Time-domain shift/linkage sumcheck metadata (new path).
-    pub shift_sumcheck: ShiftTimeSumcheckProof,
     /// Ajtai commitments to canonical per-step CPU time columns (`cols[col][j]` over time).
     pub time_cpu_commitments: Vec<Cmt>,
     /// Ajtai commitments to canonical per-step MEM/bus time columns (`cols[col][j]` over time).
@@ -304,9 +295,9 @@ pub struct ShardFoldWitnesses<FF> {
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub enum MemOrLutProof {
+pub enum MemOrInstructionLookupProof {
     Twist(TwistProofK),
-    Shout(ShoutProofK),
+    InstructionLookup(InstructionLookupProofK),
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -327,14 +318,14 @@ pub struct MemSidecarProof<C, FF, KK> {
     pub poseidon_cycle_me_claims: Vec<CeClaim<C, FF, KK>>,
     /// Poseidon local-lane ME openings used to bind local round/transition terminals.
     pub poseidon_local_me_claims: Vec<CeClaim<C, FF, KK>>,
-    /// Route A Shout address pre-time proofs batched across all Shout instances in the step.
-    pub shout_addr_pre: ShoutAddrPreProof<KK>,
-    pub proofs: Vec<MemOrLutProof>,
+    /// Route A instruction-lookup address pre-time proofs batched across all lookup instances in the step.
+    pub instruction_lookup_addr_pre: InstructionLookupAddrPreProof<KK>,
+    pub proofs: Vec<MemOrInstructionLookupProof>,
 }
 
 /// Proof for the Route A shared-challenge batched sum-check (time/row rounds).
 ///
-/// This batches CCS (row/time rounds) with Twist/Shout time-domain oracles so all
+/// This batches CCS (row/time rounds) with memory-side and instruction-lookup time-domain oracles so all
 /// protocols share the same transcript-derived `r` (enabling Π_RLC folding).
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct BatchedTimeProof {
@@ -496,7 +487,7 @@ mod tests {
         let proof = BatchedTimeProof {
             claimed_sums: vec![K::ONE, K::ZERO],
             degree_bounds: vec![3, 5],
-            labels: vec![b"shout/value".to_vec(), b"control/next_pc_linear".to_vec()],
+            labels: vec![b"instruction_lookup/value".to_vec(), b"control/next_pc_linear".to_vec()],
             round_polys: vec![vec![vec![K::ONE]], vec![vec![K::ZERO, K::ONE]]],
         };
 

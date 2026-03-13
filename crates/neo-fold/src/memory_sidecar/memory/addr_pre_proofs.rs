@@ -1,6 +1,6 @@
 use super::*;
 
-pub(crate) fn prove_shout_addr_pre_time(
+pub(crate) fn prove_instruction_lookup_addr_pre_time(
     tr: &mut Poseidon2Transcript,
     params: &NeoParams,
     step: &StepWitnessBundle<Cmt, F, K>,
@@ -8,10 +8,10 @@ pub(crate) fn prove_shout_addr_pre_time(
     ell_n: usize,
     r_cycle: &[K],
     step_idx: usize,
-) -> Result<ShoutAddrPreBatchProverData, PiCcsError> {
+) -> Result<InstructionLookupAddrPreBatchProverData, PiCcsError> {
     if step.lut_instances.is_empty() {
-        return Ok(ShoutAddrPreBatchProverData {
-            addr_pre: ShoutAddrPreProof::default(),
+        return Ok(InstructionLookupAddrPreBatchProverData {
+            addr_pre: InstructionLookupAddrPreProof::default(),
             decoded: Vec::new(),
         });
     }
@@ -24,7 +24,7 @@ pub(crate) fn prove_shout_addr_pre_time(
         .map(|(inst, _)| inst.lanes.max(1))
         .sum();
 
-    let mut decoded_cols: Vec<ShoutDecodedColsSparse> = Vec::with_capacity(n_lut);
+    let mut decoded_cols: Vec<InstructionLookupDecodedColsSparse> = Vec::with_capacity(n_lut);
     let mut claimed_sums: Vec<K> = vec![K::ZERO; total_lanes];
 
     struct AddrPreGroupBuilder {
@@ -33,7 +33,7 @@ pub(crate) fn prove_shout_addr_pre_time(
         addr_oracles: Vec<Box<dyn RoundOracle + Send>>,
     }
 
-    // Group Shout addr-pre claims by `ell_addr` so we can run one batched sumcheck per group.
+    // Group instruction-lookup addr-pre claims by `ell_addr` so we can run one batched sumcheck per group.
     let mut groups: std::collections::BTreeMap<u32, AddrPreGroupBuilder> = std::collections::BTreeMap::new();
 
     let mut flat_lane_idx: usize = 0;
@@ -93,7 +93,7 @@ pub(crate) fn prove_shout_addr_pre_time(
         neo_memory::addr::validate_shout_bit_addressing(lut_inst)?;
         if lut_inst.steps > pow2_cycle {
             return Err(PiCcsError::InvalidInput(format!(
-                "Shout(Route A): steps={} exceeds 2^ell_cycle={pow2_cycle}",
+                "instruction_lookup(Route A): steps={} exceeds 2^ell_cycle={pow2_cycle}",
                 lut_inst.steps
             )));
         }
@@ -102,7 +102,7 @@ pub(crate) fn prove_shout_addr_pre_time(
         let inst_ell_addr = lut_inst.d * lut_inst.ell;
         let is_packed_spec = matches!(lut_inst.table_spec, Some(LutTableSpec::RiscvOpcodePacked { .. }));
         let inst_ell_addr_u32 = u32::try_from(inst_ell_addr)
-            .map_err(|_| PiCcsError::InvalidInput("Shout(Route A): ell_addr overflows u32".into()))?;
+            .map_err(|_| PiCcsError::InvalidInput("instruction_lookup(Route A): ell_addr overflows u32".into()))?;
         groups
             .entry(inst_ell_addr_u32)
             .or_insert_with(|| AddrPreGroupBuilder {
@@ -124,7 +124,7 @@ pub(crate) fn prove_shout_addr_pre_time(
             )));
         }
 
-        let mut lanes: Vec<ShoutLaneSparseCols> = Vec::with_capacity(expected_lanes);
+        let mut lanes: Vec<InstructionLookupLaneSparseCols> = Vec::with_capacity(expected_lanes);
 
         for (lane_idx, shout_cols) in inst_cols.lanes.iter().enumerate() {
             if shout_cols.addr_bits.end - shout_cols.addr_bits.start != inst_ell_addr {
@@ -151,12 +151,12 @@ pub(crate) fn prove_shout_addr_pre_time(
                         }
                         let j = t.checked_sub(m_in).ok_or_else(|| {
                             PiCcsError::InvalidInput(format!(
-                                "Shout(Route A): has_lookup time index underflow: t={t} < m_in={m_in}"
+                                "instruction_lookup(Route A): has_lookup time index underflow: t={t} < m_in={m_in}"
                             ))
                         })?;
                         if j >= lut_inst.steps {
                             return Err(PiCcsError::ProtocolError(format!(
-                                "Shout(Route A): has_lookup time index out of range: j={j} >= steps={}",
+                                "instruction_lookup(Route A): has_lookup time index out of range: j={j} >= steps={}",
                                 lut_inst.steps
                             )));
                         }
@@ -171,7 +171,9 @@ pub(crate) fn prove_shout_addr_pre_time(
             let (has_lookup, active_js, has_any_lookup) = has_lookup_cache
                 .get(&cache_key)
                 .map(|(cached_has, cached_js, cached_any)| (cached_has.clone(), cached_js.as_slice(), *cached_any))
-                .ok_or_else(|| PiCcsError::ProtocolError("Shout(Route A): missing has_lookup cache entry".into()))?;
+                .ok_or_else(|| {
+                    PiCcsError::ProtocolError("instruction_lookup(Route A): missing has_lookup cache entry".into())
+                })?;
 
             let addr_bits: Vec<SparseIdxVec<K>> = if shared_addr_group {
                 let mut out = Vec::with_capacity(inst_ell_addr);
@@ -264,16 +266,16 @@ pub(crate) fn prove_shout_addr_pre_time(
 
                 claimed_sums[flat_lane_idx] = lane_sum;
                 let lane_idx_u32 = u32::try_from(flat_lane_idx)
-                    .map_err(|_| PiCcsError::InvalidInput("Shout(Route A): lane index overflow".into()))?;
-                let group = groups
-                    .get_mut(&inst_ell_addr_u32)
-                    .ok_or_else(|| PiCcsError::ProtocolError("Shout(Route A): missing ell_addr group".into()))?;
+                    .map_err(|_| PiCcsError::InvalidInput("instruction_lookup(Route A): lane index overflow".into()))?;
+                let group = groups.get_mut(&inst_ell_addr_u32).ok_or_else(|| {
+                    PiCcsError::ProtocolError("instruction_lookup(Route A): missing ell_addr group".into())
+                })?;
                 group.active_lanes.push(lane_idx_u32);
                 group.active_claimed_sums.push(lane_sum);
                 group.addr_oracles.push(addr_oracle);
             }
 
-            lanes.push(ShoutLaneSparseCols {
+            lanes.push(InstructionLookupLaneSparseCols {
                 addr_bits,
                 has_lookup,
                 val,
@@ -281,44 +283,62 @@ pub(crate) fn prove_shout_addr_pre_time(
             flat_lane_idx += 1;
         }
 
-        let decoded = ShoutDecodedColsSparse { lanes };
+        let decoded = InstructionLookupDecodedColsSparse { lanes };
 
         decoded_cols.push(decoded);
     }
     if flat_lane_idx != total_lanes {
         return Err(PiCcsError::ProtocolError(format!(
-            "Shout(Route A): flat lane indexing drift (got {flat_lane_idx}, expected {total_lanes})"
+            "instruction_lookup(Route A): flat lane indexing drift (got {flat_lane_idx}, expected {total_lanes})"
         )));
     }
 
-    let labels_all: Vec<&'static [u8]> = vec![b"shout/addr_pre".as_slice(); total_lanes];
-    tr.append_message(b"shout/addr_pre_time/step_idx", &(step_idx as u64).to_le_bytes());
-    bind_batched_claim_sums(tr, b"shout/addr_pre_time/claimed_sums", &claimed_sums, &labels_all);
+    let labels_all: Vec<&'static [u8]> = vec![b"instruction_lookup/addr_pre".as_slice(); total_lanes];
+    tr.append_message(
+        b"instruction_lookup/addr_pre_time/step_idx",
+        &(step_idx as u64).to_le_bytes(),
+    );
+    bind_batched_claim_sums(
+        tr,
+        b"instruction_lookup/addr_pre_time/claimed_sums",
+        &claimed_sums,
+        &labels_all,
+    );
 
-    let mut group_proofs: Vec<ShoutAddrPreGroupProof<K>> = Vec::with_capacity(groups.len());
+    let mut group_proofs: Vec<InstructionLookupAddrPreGroupProof<K>> = Vec::with_capacity(groups.len());
     for (group_idx, (ell_addr, mut group)) in groups.into_iter().enumerate() {
-        tr.append_message(b"shout/addr_pre_time/group_idx", &(group_idx as u64).to_le_bytes());
-        tr.append_message(b"shout/addr_pre_time/group_ell_addr", &(ell_addr as u64).to_le_bytes());
+        tr.append_message(
+            b"instruction_lookup/addr_pre_time/group_idx",
+            &(group_idx as u64).to_le_bytes(),
+        );
+        tr.append_message(
+            b"instruction_lookup/addr_pre_time/group_ell_addr",
+            &(ell_addr as u64).to_le_bytes(),
+        );
 
         let (r_addr, round_polys) = if group.active_lanes.is_empty() {
             // No active lanes in this `ell_addr` group; sample an arbitrary `r_addr` without running sumcheck.
-            tr.append_message(b"shout/addr_pre_time/no_sumcheck", &(step_idx as u64).to_le_bytes());
             tr.append_message(
-                b"shout/addr_pre_time/no_sumcheck/ell_addr",
+                b"instruction_lookup/addr_pre_time/no_sumcheck",
+                &(step_idx as u64).to_le_bytes(),
+            );
+            tr.append_message(
+                b"instruction_lookup/addr_pre_time/no_sumcheck/ell_addr",
                 &(ell_addr as u64).to_le_bytes(),
             );
             (
                 ts::sample_ext_point(
                     tr,
-                    b"shout/addr_pre_time/no_sumcheck/r_addr",
-                    b"shout/addr_pre_time/no_sumcheck/r_addr/0",
-                    b"shout/addr_pre_time/no_sumcheck/r_addr/1",
+                    b"instruction_lookup/addr_pre_time/no_sumcheck/r_addr",
+                    b"instruction_lookup/addr_pre_time/no_sumcheck/r_addr/0",
+                    b"instruction_lookup/addr_pre_time/no_sumcheck/r_addr/1",
                     ell_addr as usize,
                 ),
                 Vec::new(),
             )
         } else {
-            let labels_active: Vec<&'static [u8]> = vec![b"shout/addr_pre".as_slice(); group.addr_oracles.len()];
+            let labels_active: Vec<&'static [u8]> =
+                vec![b"instruction_lookup/addr_pre".as_slice(); group.addr_oracles.len()];
             let mut claims: Vec<BatchedClaim<'_>> = group
                 .addr_oracles
                 .iter_mut()
@@ -331,8 +351,12 @@ pub(crate) fn prove_shout_addr_pre_time(
                 })
                 .collect();
 
-            let (r_addr, per_claim_results) =
-                run_batched_sumcheck_prover_ds(tr, b"shout/addr_pre_time", step_idx, claims.as_mut_slice())?;
+            let (r_addr, per_claim_results) = run_batched_sumcheck_prover_ds(
+                tr,
+                b"instruction_lookup/addr_pre_time",
+                step_idx,
+                claims.as_mut_slice(),
+            )?;
             let round_polys = per_claim_results
                 .into_iter()
                 .map(|r| r.round_polys)
@@ -340,7 +364,7 @@ pub(crate) fn prove_shout_addr_pre_time(
             (r_addr, round_polys)
         };
 
-        group_proofs.push(ShoutAddrPreGroupProof {
+        group_proofs.push(InstructionLookupAddrPreGroupProof {
             ell_addr,
             active_lanes: group.active_lanes,
             round_polys,
@@ -348,8 +372,8 @@ pub(crate) fn prove_shout_addr_pre_time(
         });
     }
 
-    Ok(ShoutAddrPreBatchProverData {
-        addr_pre: ShoutAddrPreProof {
+    Ok(InstructionLookupAddrPreBatchProverData {
+        addr_pre: InstructionLookupAddrPreProof {
             claimed_sums,
             groups: group_proofs,
         },
@@ -357,18 +381,18 @@ pub(crate) fn prove_shout_addr_pre_time(
     })
 }
 
-pub fn verify_shout_addr_pre_time(
+pub fn verify_instruction_lookup_addr_pre_time(
     tr: &mut Poseidon2Transcript,
     step: &StepInstanceBundle<Cmt, F, K>,
     mem_proof: &MemSidecarProof<Cmt, F, K>,
     step_idx: usize,
-) -> Result<Vec<ShoutAddrPreVerifyData>, PiCcsError> {
-    let proof = &mem_proof.shout_addr_pre;
+) -> Result<Vec<InstructionLookupAddrPreVerifyData>, PiCcsError> {
+    let proof = &mem_proof.instruction_lookup_addr_pre;
 
     if step.lut_insts.is_empty() {
         if !proof.claimed_sums.is_empty() || !proof.groups.is_empty() {
             return Err(PiCcsError::InvalidInput(
-                "shout_addr_pre must be empty when there are no Shout instances".into(),
+                "instruction_lookup_addr_pre must be empty when there are no lookup instances".into(),
             ));
         }
         return Ok(Vec::new());
@@ -377,7 +401,7 @@ pub fn verify_shout_addr_pre_time(
     let total_lanes: usize = step.lut_insts.iter().map(|inst| inst.lanes.max(1)).sum();
     if proof.claimed_sums.len() != total_lanes {
         return Err(PiCcsError::InvalidInput(format!(
-            "shout_addr_pre claimed_sums.len()={}, expected total_lanes={}",
+            "instruction_lookup_addr_pre claimed_sums.len()={}, expected total_lanes={}",
             proof.claimed_sums.len(),
             total_lanes
         )));
@@ -391,7 +415,7 @@ pub fn verify_shout_addr_pre_time(
         neo_memory::addr::validate_shout_bit_addressing(lut_inst)?;
         let inst_ell_addr = lut_inst.d * lut_inst.ell;
         let inst_ell_addr_u32 = u32::try_from(inst_ell_addr)
-            .map_err(|_| PiCcsError::InvalidInput("Shout: ell_addr overflows u32".into()))?;
+            .map_err(|_| PiCcsError::InvalidInput("instruction_lookup: ell_addr overflows u32".into()))?;
         required_ell_addrs.insert(inst_ell_addr_u32);
         for _lane_idx in 0..lut_inst.lanes.max(1) {
             lane_ell_addr.push(inst_ell_addr_u32);
@@ -399,14 +423,14 @@ pub fn verify_shout_addr_pre_time(
     }
     if lane_ell_addr.len() != total_lanes {
         return Err(PiCcsError::ProtocolError(
-            "shout addr-pre lane indexing drift (lane_ell_addr)".into(),
+            "instruction_lookup addr-pre lane indexing drift (lane_ell_addr)".into(),
         ));
     }
 
     // Groups must match the step's required `ell_addr` set and be sorted/unique.
     if proof.groups.len() != required_ell_addrs.len() {
         return Err(PiCcsError::InvalidInput(format!(
-            "shout_addr_pre groups.len()={}, expected {} (distinct ell_addr values in step)",
+            "instruction_lookup_addr_pre groups.len()={}, expected {} (distinct ell_addr values in step)",
             proof.groups.len(),
             required_ell_addrs.len()
         )));
@@ -416,13 +440,13 @@ pub fn verify_shout_addr_pre_time(
         let expected_ell_addr = required_list[idx];
         if group.ell_addr != expected_ell_addr {
             return Err(PiCcsError::InvalidInput(format!(
-                "shout_addr_pre groups not sorted or mismatched: groups[{idx}].ell_addr={} but expected {expected_ell_addr}",
+                "instruction_lookup_addr_pre groups not sorted or mismatched: groups[{idx}].ell_addr={} but expected {expected_ell_addr}",
                 group.ell_addr
             )));
         }
         if group.r_addr.len() != group.ell_addr as usize {
             return Err(PiCcsError::InvalidInput(format!(
-                "shout_addr_pre group ell_addr={} has r_addr.len()={}, expected {}",
+                "instruction_lookup_addr_pre group ell_addr={} has r_addr.len()={}, expected {}",
                 group.ell_addr,
                 group.r_addr.len(),
                 group.ell_addr
@@ -430,7 +454,7 @@ pub fn verify_shout_addr_pre_time(
         }
         if group.round_polys.len() != group.active_lanes.len() {
             return Err(PiCcsError::InvalidInput(format!(
-                "shout_addr_pre group ell_addr={} round_polys.len()={}, expected active_lanes.len()={}",
+                "instruction_lookup_addr_pre group ell_addr={} round_polys.len()={}, expected active_lanes.len()={}",
                 group.ell_addr,
                 group.round_polys.len(),
                 group.active_lanes.len()
@@ -441,25 +465,25 @@ pub fn verify_shout_addr_pre_time(
             let lane_idx_usize = lane_idx as usize;
             if lane_idx_usize >= total_lanes {
                 return Err(PiCcsError::InvalidInput(
-                    "shout_addr_pre active_lanes has index out of range".into(),
+                    "instruction_lookup_addr_pre active_lanes has index out of range".into(),
                 ));
             }
             if lane_ell_addr[lane_idx_usize] != group.ell_addr {
                 return Err(PiCcsError::InvalidInput(format!(
-                    "shout_addr_pre active_lanes contains lane_idx={} with ell_addr={}, but group ell_addr={}",
+                    "instruction_lookup_addr_pre active_lanes contains lane_idx={} with ell_addr={}, but group ell_addr={}",
                     lane_idx, lane_ell_addr[lane_idx_usize], group.ell_addr
                 )));
             }
             if pos > 0 && group.active_lanes[pos - 1] >= lane_idx {
                 return Err(PiCcsError::InvalidInput(
-                    "shout_addr_pre active_lanes must be strictly increasing".into(),
+                    "instruction_lookup_addr_pre active_lanes must be strictly increasing".into(),
                 ));
             }
         }
         for (pos, rounds) in group.round_polys.iter().enumerate() {
             if rounds.len() != group.ell_addr as usize {
                 return Err(PiCcsError::InvalidInput(format!(
-                    "shout_addr_pre group ell_addr={} round_polys[{pos}].len()={}, expected {}",
+                    "instruction_lookup_addr_pre group ell_addr={} round_polys[{pos}].len()={}, expected {}",
                     group.ell_addr,
                     rounds.len(),
                     group.ell_addr
@@ -469,11 +493,14 @@ pub fn verify_shout_addr_pre_time(
     }
 
     // Bind all claimed sums (all lanes) once.
-    let labels_all: Vec<&'static [u8]> = vec![b"shout/addr_pre".as_slice(); total_lanes];
-    tr.append_message(b"shout/addr_pre_time/step_idx", &(step_idx as u64).to_le_bytes());
+    let labels_all: Vec<&'static [u8]> = vec![b"instruction_lookup/addr_pre".as_slice(); total_lanes];
+    tr.append_message(
+        b"instruction_lookup/addr_pre_time/step_idx",
+        &(step_idx as u64).to_le_bytes(),
+    );
     bind_batched_claim_sums(
         tr,
-        b"shout/addr_pre_time/claimed_sums",
+        b"instruction_lookup/addr_pre_time/claimed_sums",
         &proof.claimed_sums,
         &labels_all,
     );
@@ -486,29 +513,35 @@ pub fn verify_shout_addr_pre_time(
     let mut seen_active: std::collections::HashSet<u32> = std::collections::HashSet::new();
 
     for (group_idx, group) in proof.groups.iter().enumerate() {
-        tr.append_message(b"shout/addr_pre_time/group_idx", &(group_idx as u64).to_le_bytes());
         tr.append_message(
-            b"shout/addr_pre_time/group_ell_addr",
+            b"instruction_lookup/addr_pre_time/group_idx",
+            &(group_idx as u64).to_le_bytes(),
+        );
+        tr.append_message(
+            b"instruction_lookup/addr_pre_time/group_ell_addr",
             &(group.ell_addr as u64).to_le_bytes(),
         );
 
         if group.active_lanes.is_empty() {
             // No active lanes in this group: match prover's deterministic fallback sampling.
-            tr.append_message(b"shout/addr_pre_time/no_sumcheck", &(step_idx as u64).to_le_bytes());
             tr.append_message(
-                b"shout/addr_pre_time/no_sumcheck/ell_addr",
+                b"instruction_lookup/addr_pre_time/no_sumcheck",
+                &(step_idx as u64).to_le_bytes(),
+            );
+            tr.append_message(
+                b"instruction_lookup/addr_pre_time/no_sumcheck/ell_addr",
                 &(group.ell_addr as u64).to_le_bytes(),
             );
             let r_addr = ts::sample_ext_point(
                 tr,
-                b"shout/addr_pre_time/no_sumcheck/r_addr",
-                b"shout/addr_pre_time/no_sumcheck/r_addr/0",
-                b"shout/addr_pre_time/no_sumcheck/r_addr/1",
+                b"instruction_lookup/addr_pre_time/no_sumcheck/r_addr",
+                b"instruction_lookup/addr_pre_time/no_sumcheck/r_addr/0",
+                b"instruction_lookup/addr_pre_time/no_sumcheck/r_addr/1",
                 group.ell_addr as usize,
             );
             if r_addr != group.r_addr {
                 return Err(PiCcsError::ProtocolError(
-                    "shout_addr_pre r_addr mismatch: transcript-derived vs proof".into(),
+                    "instruction_lookup_addr_pre r_addr mismatch: transcript-derived vs proof".into(),
                 ));
             }
             r_addr_by_ell.insert(group.ell_addr, r_addr);
@@ -520,21 +553,18 @@ pub fn verify_shout_addr_pre_time(
         for &lane_idx in group.active_lanes.iter() {
             if !seen_active.insert(lane_idx) {
                 return Err(PiCcsError::InvalidInput(
-                    "shout_addr_pre active_lanes contains duplicates across groups".into(),
+                    "instruction_lookup_addr_pre active_lanes contains duplicates across groups".into(),
                 ));
             }
-            active_claimed_sums.push(
-                *proof
-                    .claimed_sums
-                    .get(lane_idx as usize)
-                    .ok_or_else(|| PiCcsError::ProtocolError("shout addr-pre active lane idx drift".into()))?,
-            );
+            active_claimed_sums.push(*proof.claimed_sums.get(lane_idx as usize).ok_or_else(|| {
+                PiCcsError::ProtocolError("instruction_lookup addr-pre active lane idx drift".into())
+            })?);
         }
-        let labels_active: Vec<&'static [u8]> = vec![b"shout/addr_pre".as_slice(); active_count];
+        let labels_active: Vec<&'static [u8]> = vec![b"instruction_lookup/addr_pre".as_slice(); active_count];
         let degree_bounds = vec![2usize; active_count];
         let (r_addr, finals, ok) = verify_batched_sumcheck_rounds_ds(
             tr,
-            b"shout/addr_pre_time",
+            b"instruction_lookup/addr_pre_time",
             step_idx,
             &group.round_polys,
             &active_claimed_sums,
@@ -543,17 +573,17 @@ pub fn verify_shout_addr_pre_time(
         );
         if !ok {
             return Err(PiCcsError::SumcheckError(
-                "shout addr-pre batched sumcheck invalid".into(),
+                "instruction_lookup addr-pre batched sumcheck invalid".into(),
             ));
         }
         if r_addr != group.r_addr {
             return Err(PiCcsError::ProtocolError(
-                "shout_addr_pre r_addr mismatch: transcript-derived vs proof".into(),
+                "instruction_lookup_addr_pre r_addr mismatch: transcript-derived vs proof".into(),
             ));
         }
         if finals.len() != active_count {
             return Err(PiCcsError::ProtocolError(format!(
-                "shout addr-pre finals.len()={}, expected active_count={active_count}",
+                "instruction_lookup addr-pre finals.len()={}, expected active_count={active_count}",
                 finals.len()
             )));
         }
@@ -571,30 +601,30 @@ pub fn verify_shout_addr_pre_time(
     for (lut_inst, inst_ell_addr) in step.lut_insts.iter().map(|inst| (inst, inst.d * inst.ell)) {
         let expected_lanes = lut_inst.lanes.max(1);
         let inst_ell_addr_u32 = u32::try_from(inst_ell_addr)
-            .map_err(|_| PiCcsError::InvalidInput("Shout: ell_addr overflows u32".into()))?;
+            .map_err(|_| PiCcsError::InvalidInput("instruction_lookup: ell_addr overflows u32".into()))?;
         let r_addr = r_addr_by_ell
             .get(&inst_ell_addr_u32)
-            .ok_or_else(|| PiCcsError::ProtocolError("missing shout addr-pre group r_addr".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("missing instruction_lookup addr-pre group r_addr".into()))?;
 
         for _lane_idx in 0..expected_lanes {
             let flat_lane_idx = out.len();
             let addr_claim_sum = *proof
                 .claimed_sums
                 .get(flat_lane_idx)
-                .ok_or_else(|| PiCcsError::ProtocolError("shout addr-pre lane index drift".into()))?;
+                .ok_or_else(|| PiCcsError::ProtocolError("instruction_lookup addr-pre lane index drift".into()))?;
             let is_active = *lane_is_active
                 .get(flat_lane_idx)
-                .ok_or_else(|| PiCcsError::ProtocolError("shout addr-pre lane idx drift".into()))?;
+                .ok_or_else(|| PiCcsError::ProtocolError("instruction_lookup addr-pre lane idx drift".into()))?;
             let addr_final = *lane_addr_final
                 .get(flat_lane_idx)
-                .ok_or_else(|| PiCcsError::ProtocolError("shout addr-pre lane idx drift".into()))?;
+                .ok_or_else(|| PiCcsError::ProtocolError("instruction_lookup addr-pre lane idx drift".into()))?;
 
             let table_eval_at_r_addr = if is_active {
                 match &lut_inst.table_spec {
                     None => {
-                        let pow2 = 1usize
-                            .checked_shl(r_addr.len() as u32)
-                            .ok_or_else(|| PiCcsError::InvalidInput("Shout: 2^ell_addr overflow".into()))?;
+                        let pow2 = 1usize.checked_shl(r_addr.len() as u32).ok_or_else(|| {
+                            PiCcsError::InvalidInput("instruction_lookup: 2^ell_addr overflow".into())
+                        })?;
                         let mut acc = K::ZERO;
                         for (i, &v) in lut_inst.table.iter().enumerate().take(pow2) {
                             let w = neo_memory::mle::chi_at_index(r_addr, i);
@@ -608,7 +638,7 @@ pub fn verify_shout_addr_pre_time(
                 K::ZERO
             };
 
-            out.push(ShoutAddrPreVerifyData {
+            out.push(InstructionLookupAddrPreVerifyData {
                 is_active,
                 addr_claim_sum,
                 addr_final: if is_active { addr_final } else { K::ZERO },
@@ -618,7 +648,9 @@ pub fn verify_shout_addr_pre_time(
         }
     }
     if out.len() != total_lanes {
-        return Err(PiCcsError::ProtocolError("shout addr-pre lane count mismatch".into()));
+        return Err(PiCcsError::ProtocolError(
+            "instruction_lookup addr-pre lane count mismatch".into(),
+        ));
     }
 
     Ok(out)
@@ -634,7 +666,7 @@ pub fn verify_twist_addr_pre_time(
 
     for (idx, mem_inst) in step.mem_insts.iter().enumerate() {
         let proof = match mem_proof.proofs.get(proof_offset + idx) {
-            Some(MemOrLutProof::Twist(p)) => p,
+            Some(MemOrInstructionLookupProof::Twist(p)) => p,
             _ => return Err(PiCcsError::InvalidInput("expected Twist proof".into())),
         };
 

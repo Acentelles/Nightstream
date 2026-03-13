@@ -41,46 +41,6 @@ pub(super) fn cpu_sumcheck_from_ccs(
     }
 }
 
-pub(super) fn shift_sumcheck_from_batched_time(
-    batched_time: &crate::shard_proof_types::BatchedTimeProof,
-    r_time: &[K],
-    control_required: bool,
-) -> Result<crate::shard_proof_types::ShiftTimeSumcheckProof, PiCcsError> {
-    let control_idx = batched_time
-        .labels
-        .iter()
-        .position(|label| label.as_slice() == b"control/next_pc_linear");
-    let idx = match (control_required, control_idx) {
-        (true, Some(i)) | (false, Some(i)) => i,
-        (true, None) => {
-            return Err(PiCcsError::ProtocolError(
-                "missing batched-time control/next_pc_linear label".into(),
-            ))
-        }
-        (false, None) => {
-            return Ok(crate::shard_proof_types::ShiftTimeSumcheckProof {
-                claimed_sum: K::ZERO,
-                round_polys: Vec::new(),
-                r_time: r_time.to_vec(),
-            })
-        }
-    };
-    let claimed_sum = *batched_time
-        .claimed_sums
-        .get(idx)
-        .ok_or_else(|| PiCcsError::ProtocolError(format!("missing batched-time claimed_sum at index {idx}")))?;
-    let round_polys = batched_time
-        .round_polys
-        .get(idx)
-        .cloned()
-        .ok_or_else(|| PiCcsError::ProtocolError(format!("missing batched-time rounds at index {idx}")))?;
-    Ok(crate::shard_proof_types::ShiftTimeSumcheckProof {
-        claimed_sum,
-        round_polys,
-        r_time: r_time.to_vec(),
-    })
-}
-
 #[inline]
 pub(super) fn commit_poseidon_lane_wits_batched(
     params: &NeoParams,

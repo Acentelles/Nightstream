@@ -7,7 +7,8 @@ pub(crate) use crate::memory_sidecar::transcript::{
 };
 pub(crate) use crate::memory_sidecar::utils::{bitness_weights, RoundOraclePrefix};
 pub(crate) use crate::shard_proof_types::{
-    MemOrLutProof, MemSidecarProof, ShoutAddrPreGroupProof, ShoutAddrPreProof, ShoutProofK, TwistProofK,
+    InstructionLookupAddrPreGroupProof, InstructionLookupAddrPreProof, InstructionLookupProofK,
+    MemOrInstructionLookupProof, MemSidecarProof, TwistProofK,
 };
 pub(crate) use crate::PiCcsError;
 pub(crate) use neo_ajtai::Commitment as Cmt;
@@ -57,7 +58,7 @@ mod sparse_time_oracles;
 mod step_memory_binding;
 
 pub(crate) use crate::memory_sidecar::route_a::verify_route_a_memory_step;
-pub use addr_pre_proofs::{verify_shout_addr_pre_time, verify_twist_addr_pre_time};
+pub use addr_pre_proofs::{verify_instruction_lookup_addr_pre_time, verify_twist_addr_pre_time};
 pub use sparse_time_oracles::{TwistTimeLaneOpenings, TwistTimeLaneOpeningsLane};
 pub use step_memory_binding::absorb_step_memory;
 

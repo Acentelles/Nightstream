@@ -40,12 +40,11 @@ pub fn verify_route_a_memory_step(
     r_cycle: &[K],
     batched_final_values: &[K],
     batched_claimed_sums: &[K],
-    rv64_fullword_width_stage_from_proof: bool,
     claim_idx_start: usize,
     mem_proof: &MemSidecarProof<Cmt, F, K>,
     step_time_openings: &[crate::shard_proof_types::TimePointOpening],
     prev_step_time_openings: Option<&[crate::shard_proof_types::TimePointOpening]>,
-    shout_pre: &[ShoutAddrPreVerifyData],
+    instruction_lookup_pre: &[InstructionLookupAddrPreVerifyData],
     twist_pre: &[TwistAddrPreVerifyData],
     step_idx: usize,
     poseidon_link_chals: Option<&PoseidonLinkChallenges>,
@@ -180,16 +179,12 @@ pub fn verify_route_a_memory_step(
     };
     let booleanity_enabled = trace_opening_path_required_for_step_instance(step);
     let trace_opening_enabled = trace_opening_path_required_for_step_instance(step);
-    let width_stage_enabled = width_stage_required_for_step_instance(step) || rv64_fullword_width_stage_from_proof;
-    let control_enabled = control_stage_required_for_step_instance(step);
     let poseidon_cycle_enabled = RouteATimeClaimPlan::poseidon_stage_required_for_step_instance(step)?;
     let claim_plan = RouteATimeClaimPlan::build(
         step,
         claim_idx_start,
         booleanity_enabled,
         trace_opening_enabled,
-        width_stage_enabled,
-        control_enabled,
         poseidon_cycle_enabled,
     )?;
     if claim_plan.claim_idx_end > batched_final_values.len() {
@@ -261,11 +256,11 @@ pub fn verify_route_a_memory_step(
         )));
     }
     let total_shout_lanes: usize = step.lut_insts.iter().map(|inst| inst.lanes.max(1)).sum();
-    if shout_pre.len() != total_shout_lanes {
+    if instruction_lookup_pre.len() != total_shout_lanes {
         return Err(PiCcsError::InvalidInput(format!(
-            "shout pre-time count mismatch (expected total_lanes={}, got {})",
+            "instruction-lookup pre-time count mismatch (expected total_lanes={}, got {})",
             total_shout_lanes,
-            shout_pre.len()
+            instruction_lookup_pre.len()
         )));
     }
     if twist_pre.len() != step.mem_insts.len() {
@@ -286,7 +281,7 @@ pub fn verify_route_a_memory_step(
         has_lookup: K,
         val: K,
         addr_bits: Vec<K>,
-        pre: ShoutAddrPreVerifyData,
+        pre: InstructionLookupAddrPreVerifyData,
     }
     let mut shout_addr_range_counts_interleaved = std::collections::HashMap::<(usize, usize), usize>::new();
     let mut shout_addr_range_counts_combined = std::collections::HashMap::<(usize, usize), usize>::new();
@@ -294,7 +289,7 @@ pub fn verify_route_a_memory_step(
         for (inst, inst_cols) in step.lut_insts.iter().zip(cpu_bus.shout_cols.iter()) {
             let table_id = trace_link_opcode_table_id_from_spec(&inst.table_spec)?;
             let is_combined_lane = table_id
-                .map(neo_memory::riscv::trace::rv32_trace_uses_combined_operand_key_table_id)
+                .map(neo_memory::riscv::trace::riscv_trace_uses_combined_operand_key_table_id)
                 .unwrap_or(false);
             for lane_cols in inst_cols.lanes.iter() {
                 let key = (lane_cols.addr_bits.start, lane_cols.addr_bits.end);
@@ -311,8 +306,8 @@ pub fn verify_route_a_memory_step(
     let mut shout_gamma_lane_data: Vec<Option<ShoutGammaLaneVerifyData>> = vec![None; total_shout_lanes];
     for (proof_idx, inst) in step.lut_insts.iter().enumerate() {
         match &proofs_mem[proof_idx] {
-            MemOrLutProof::Shout(_proof) => {}
-            _ => return Err(PiCcsError::InvalidInput("expected Shout proof".into())),
+            MemOrInstructionLookupProof::InstructionLookup(_proof) => {}
+            _ => return Err(PiCcsError::InvalidInput("expected instruction-lookup proof".into())),
         }
         let packed_layout = packed_opcode_layout(&inst.table_spec)?;
         let packed_xlen = packed_layout.map(|(_op, xlen)| xlen).unwrap_or(0);
@@ -391,7 +386,8 @@ pub fn verify_route_a_memory_step(
         }
 
         let shout_claims = claim_plan
-            .shout
+            .instruction_lookup
+            .instances
             .get(proof_idx)
             .ok_or_else(|| PiCcsError::ProtocolError(format!("missing Shout claim schedule at index {}", proof_idx)))?;
         if shout_claims.lanes.len() != expected_lanes {
@@ -403,7 +399,7 @@ pub fn verify_route_a_memory_step(
         if shout_lane_base
             .checked_add(expected_lanes)
             .ok_or_else(|| PiCcsError::ProtocolError("shout lane index overflow".into()))?
-            > shout_pre.len()
+            > instruction_lookup_pre.len()
         {
             return Err(PiCcsError::ProtocolError("Shout pre-time lane indexing drift".into()));
         }
@@ -467,7 +463,7 @@ pub fn verify_route_a_memory_step(
             let expected = chi_cycle_at_r_time * acc;
             if expected != batched_final_values[bitness_idx] {
                 return Err(PiCcsError::ProtocolError(
-                    "shout/bitness terminal value mismatch".into(),
+                    "instruction_lookup/bitness terminal value mismatch".into(),
                 ));
             }
         } else {
@@ -488,7 +484,7 @@ pub fn verify_route_a_memory_step(
                 shout_trace_sums.val += lane.val;
                 shout_trace_sums.table_id += lane.has_lookup * lane_table_id;
                 let is_combined_lane = lane_table_id_u32
-                    .map(neo_memory::riscv::trace::rv32_trace_uses_combined_operand_key_table_id)
+                    .map(neo_memory::riscv::trace::riscv_trace_uses_combined_operand_key_table_id)
                     .unwrap_or(false);
                 if is_combined_lane {
                     let bits_to_scalar = |bits: &[K]| {
@@ -533,12 +529,14 @@ pub fn verify_route_a_memory_step(
                 }
             }
 
-            let pre = shout_pre.get(shout_lane_base + lane_idx).ok_or_else(|| {
-                PiCcsError::InvalidInput(format!(
-                    "missing pre-time Shout lane data at index {}",
-                    shout_lane_base + lane_idx
-                ))
-            })?;
+            let pre = instruction_lookup_pre
+                .get(shout_lane_base + lane_idx)
+                .ok_or_else(|| {
+                    PiCcsError::InvalidInput(format!(
+                        "missing pre-time instruction-lookup lane data at index {}",
+                        shout_lane_base + lane_idx
+                    ))
+                })?;
             let lane_claims = shout_claims
                 .lanes
                 .get(lane_idx)
@@ -605,37 +603,39 @@ pub fn verify_route_a_memory_step(
                 let expected_adapter_final = chi_cycle_at_r_time * lane.has_lookup * eq_addr;
                 if expected_adapter_final != adapter_final {
                     return Err(PiCcsError::ProtocolError(
-                        "shout adapter terminal value mismatch".into(),
+                        "instruction_lookup adapter terminal value mismatch".into(),
                     ));
                 }
 
                 if value_claim != pre.addr_claim_sum {
                     return Err(PiCcsError::ProtocolError(
-                        "shout value claimed sum != addr claimed sum".into(),
+                        "instruction_lookup value claimed sum != addr claimed sum".into(),
                     ));
                 }
 
                 if pre.is_active {
                     let expected_addr_final = pre.table_eval_at_r_addr * adapter_claim;
                     if expected_addr_final != pre.addr_final {
-                        return Err(PiCcsError::ProtocolError("shout addr terminal value mismatch".into()));
+                        return Err(PiCcsError::ProtocolError(
+                            "instruction_lookup addr terminal value mismatch".into(),
+                        ));
                     }
                 } else {
                     // If we skipped the addr-pre sumcheck, the only sound case is "no lookups".
                     // Enforce this by requiring the addr claim + adapter claim to be zero.
                     if pre.addr_claim_sum != K::ZERO {
                         return Err(PiCcsError::ProtocolError(
-                            "shout addr-pre skipped but addr claim is nonzero".into(),
+                            "instruction_lookup addr-pre skipped but addr claim is nonzero".into(),
                         ));
                     }
                     if adapter_claim != K::ZERO {
                         return Err(PiCcsError::ProtocolError(
-                            "shout addr-pre skipped but adapter claim is nonzero".into(),
+                            "instruction_lookup addr-pre skipped but adapter claim is nonzero".into(),
                         ));
                     }
                     if pre.addr_final != K::ZERO {
                         return Err(PiCcsError::ProtocolError(
-                            "shout addr-pre skipped but addr_final is nonzero".into(),
+                            "instruction_lookup addr-pre skipped but addr_final is nonzero".into(),
                         ));
                     }
                 }
@@ -644,9 +644,9 @@ pub fn verify_route_a_memory_step(
 
         shout_lane_base += expected_lanes;
     }
-    if shout_lane_base != shout_pre.len() {
+    if shout_lane_base != instruction_lookup_pre.len() {
         return Err(PiCcsError::ProtocolError(
-            "shout pre-time lanes not fully consumed".into(),
+            "instruction-lookup pre-time lanes not fully consumed".into(),
         ));
     }
     if !step.lut_insts.is_empty() && enforce_trace_shout_linkage {
@@ -657,7 +657,7 @@ pub fn verify_route_a_memory_step(
         verify_non_event_trace_shout_linkage(cpu, shout_trace_sums, expected_table_id)?;
     }
 
-    for group in claim_plan.shout_gamma_groups.iter() {
+    for group in claim_plan.instruction_lookup.gamma_groups.iter() {
         let weights = bitness_weights(r_cycle, group.lanes.len(), 0x5348_5F47_414D_4Du64 ^ group.key);
         let value_claim = batched_claimed_sums[group.value];
         let value_final = batched_final_values[group.value];
@@ -723,7 +723,7 @@ pub fn verify_route_a_memory_step(
     // --------------------------------------------------------------------
     for (i_mem, inst) in step.mem_insts.iter().enumerate() {
         let twist_proof = match &proofs_mem[proof_mem_offset + i_mem] {
-            MemOrLutProof::Twist(proof) => proof,
+            MemOrInstructionLookupProof::Twist(proof) => proof,
             _ => return Err(PiCcsError::InvalidInput("expected Twist proof".into())),
         };
         let layout = inst.twist_layout();
@@ -949,7 +949,7 @@ pub fn verify_route_a_memory_step(
 
         for (i_mem, _inst) in step.mem_insts.iter().enumerate() {
             let twist_proof = match &proofs_mem[proof_mem_offset + i_mem] {
-                MemOrLutProof::Twist(proof) => proof,
+                MemOrInstructionLookupProof::Twist(proof) => proof,
                 _ => return Err(PiCcsError::InvalidInput("expected Twist proof".into())),
             };
             let val = twist_proof
@@ -1195,7 +1195,7 @@ pub fn verify_route_a_memory_step(
 
     for (i_mem, inst) in step.mem_insts.iter().enumerate() {
         let twist_proof = match &proofs_mem[proof_mem_offset + i_mem] {
-            MemOrLutProof::Twist(proof) => proof,
+            MemOrInstructionLookupProof::Twist(proof) => proof,
             _ => return Err(PiCcsError::InvalidInput("expected Twist proof".into())),
         };
         let val_eval = twist_proof
@@ -1309,27 +1309,6 @@ pub fn verify_route_a_memory_step(
     }
 
     verify_route_a_trace_opening_terminals(
-        step,
-        r_time,
-        r_cycle,
-        batched_final_values,
-        &claim_plan,
-        mem_proof,
-        step_time_openings,
-    )?;
-    verify_route_a_width_terminals(
-        cpu_bus,
-        step,
-        r_time,
-        r_cycle,
-        batched_final_values,
-        &claim_plan,
-        mem_proof,
-        step_time_openings,
-        rv64_fullword_width_stage_from_proof,
-    )?;
-    verify_route_a_control_terminals(
-        cpu_bus,
         step,
         r_time,
         r_cycle,

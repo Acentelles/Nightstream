@@ -12,7 +12,7 @@ pub(crate) fn build_route_a_memory_oracles(
     step: &StepWitnessBundle<Cmt, F, K>,
     ell_n: usize,
     r_cycle: &[K],
-    shout_pre: &ShoutAddrPreBatchProverData,
+    instruction_lookup_pre: &InstructionLookupAddrPreBatchProverData,
     twist_pre: &[TwistAddrPreProverData],
 ) -> Result<RouteAMemoryOracles, PiCcsError> {
     if ell_n != r_cycle.len() {
@@ -21,11 +21,11 @@ pub(crate) fn build_route_a_memory_oracles(
             r_cycle.len()
         )));
     }
-    if shout_pre.decoded.len() != step.lut_instances.len() {
+    if instruction_lookup_pre.decoded.len() != step.lut_instances.len() {
         return Err(PiCcsError::InvalidInput(format!(
-            "shout pre-time count mismatch (expected {}, got {})",
+            "instruction-lookup pre-time count mismatch (expected {}, got {})",
             step.lut_instances.len(),
-            shout_pre.decoded.len()
+            instruction_lookup_pre.decoded.len()
         )));
     }
     if twist_pre.len() != step.mem_instances.len() {
@@ -35,7 +35,11 @@ pub(crate) fn build_route_a_memory_oracles(
             twist_pre.len()
         )));
     }
-    let trace_is_virtual_sparse = if control_stage_required_for_step_witness(step) {
+    let trace_is_virtual_sparse = if step
+        .mem_instances
+        .iter()
+        .any(|(mem_inst, _)| mem_inst.mem_id == neo_memory::riscv::lookups::REG_ID.0)
+    {
         let trace = neo_memory::riscv::trace::Rv64TraceLayout::new();
         let t_len = step.time_columns.t;
         let decoded = decode_trace_col_values_batch(params, step, t_len, &[trace.is_virtual])?;
@@ -47,34 +51,35 @@ pub(crate) fn build_route_a_memory_oracles(
         None
     };
 
-    let mut shout_oracles = Vec::with_capacity(step.lut_instances.len());
-    let shout_gamma_specs =
-        RouteATimeClaimPlan::derive_shout_gamma_groups_for_instances(step.lut_instances.iter().map(|(inst, _)| inst));
-    let mut shout_lane_to_gamma: std::collections::HashMap<(usize, usize), usize> = std::collections::HashMap::new();
-    for (g_idx, g) in shout_gamma_specs.iter().enumerate() {
+    let mut instruction_lookup_oracles = Vec::with_capacity(step.lut_instances.len());
+    let instruction_lookup_gamma_specs =
+        crate::instruction_lookup::derive_gamma_groups_for_instances(step.lut_instances.iter().map(|(inst, _)| inst));
+    let mut instruction_lookup_lane_to_gamma: std::collections::HashMap<(usize, usize), usize> =
+        std::collections::HashMap::new();
+    for (g_idx, g) in instruction_lookup_gamma_specs.iter().enumerate() {
         for lane in g.lanes.iter() {
-            shout_lane_to_gamma.insert((lane.inst_idx, lane.lane_idx), g_idx);
+            instruction_lookup_lane_to_gamma.insert((lane.inst_idx, lane.lane_idx), g_idx);
         }
     }
     let mut r_addr_by_ell: std::collections::BTreeMap<u32, &[K]> = std::collections::BTreeMap::new();
-    for g in shout_pre.addr_pre.groups.iter() {
+    for g in instruction_lookup_pre.addr_pre.groups.iter() {
         r_addr_by_ell.insert(g.ell_addr, g.r_addr.as_slice());
     }
     for (lut_idx, ((lut_inst, _lut_wit), decoded)) in step
         .lut_instances
         .iter()
-        .zip(shout_pre.decoded.iter())
+        .zip(instruction_lookup_pre.decoded.iter())
         .enumerate()
     {
         let ell_addr = lut_inst.d * lut_inst.ell;
         let ell_addr_u32 = u32::try_from(ell_addr)
-            .map_err(|_| PiCcsError::InvalidInput("Shout(Route A): ell_addr overflows u32".into()))?;
+            .map_err(|_| PiCcsError::InvalidInput("instruction_lookup(Route A): ell_addr overflows u32".into()))?;
         let r_addr = *r_addr_by_ell
             .get(&ell_addr_u32)
-            .ok_or_else(|| PiCcsError::ProtocolError("missing shout addr-pre group r_addr".into()))?;
+            .ok_or_else(|| PiCcsError::ProtocolError("missing instruction_lookup addr-pre group r_addr".into()))?;
         if r_addr.len() != ell_addr {
             return Err(PiCcsError::InvalidInput(format!(
-                "Shout(Route A): r_addr.len()={} != ell_addr={}",
+                "instruction_lookup(Route A): r_addr.len()={} != ell_addr={}",
                 r_addr.len(),
                 ell_addr
             )));
@@ -82,12 +87,12 @@ pub(crate) fn build_route_a_memory_oracles(
 
         if decoded.lanes.is_empty() {
             return Err(PiCcsError::InvalidInput(format!(
-                "Shout(Route A): decoded lanes empty at lut_idx={lut_idx}"
+                "instruction_lookup(Route A): decoded lanes empty at lut_idx={lut_idx}"
             )));
         }
 
         let lane_count = decoded.lanes.len();
-        let mut lanes: Vec<RouteAShoutTimeLaneOracles> = Vec::with_capacity(lane_count);
+        let mut lanes: Vec<InstructionLookupTimeLaneOracles> = Vec::with_capacity(lane_count);
 
         let packed_layout = packed_opcode_layout(&lut_inst.table_spec)?;
         let packed_op = packed_layout.map(|(op, _xlen)| op);
@@ -95,7 +100,9 @@ pub(crate) fn build_route_a_memory_oracles(
         let is_packed = packed_op.is_some();
 
         for (lane_idx, lane) in decoded.lanes.iter().enumerate() {
-            let gamma_group = shout_lane_to_gamma.get(&(lut_idx, lane_idx)).copied();
+            let gamma_group = instruction_lookup_lane_to_gamma
+                .get(&(lut_idx, lane_idx))
+                .copied();
             if let Some(op) = packed_op {
                 let packed_cols: &[SparseIdxVec<K>] = &lane.addr_bits;
                 let lhs = packed_cols
@@ -1066,7 +1073,7 @@ pub(crate) fn build_route_a_memory_oracles(
                     }
                 };
 
-                lanes.push(RouteAShoutTimeLaneOracles {
+                lanes.push(InstructionLookupTimeLaneOracles {
                     value: value_oracle,
                     // Enforce correctness: claim must be 0.
                     value_claim: K::ZERO,
@@ -1085,7 +1092,7 @@ pub(crate) fn build_route_a_memory_oracles(
                     r_addr,
                 );
 
-                lanes.push(RouteAShoutTimeLaneOracles {
+                lanes.push(InstructionLookupTimeLaneOracles {
                     value: Box::new(value_oracle),
                     value_claim,
                     adapter: Box::new(adapter_oracle),
@@ -1424,7 +1431,7 @@ pub(crate) fn build_route_a_memory_oracles(
             for (lane_idx, lane) in decoded.lanes.iter().enumerate() {
                 // Gamma-grouped lanes emit bitness through grouped claims, so the
                 // per-instance bitness claim only covers ungrouped lanes.
-                if shout_lane_to_gamma.contains_key(&(lut_idx, lane_idx)) {
+                if instruction_lookup_lane_to_gamma.contains_key(&(lut_idx, lane_idx)) {
                     continue;
                 }
                 bit_cols.extend(lane.addr_bits.iter().cloned());
@@ -1439,11 +1446,11 @@ pub(crate) fn build_route_a_memory_oracles(
             }
         };
 
-        shout_oracles.push(RouteAShoutTimeOracles { lanes, bitness });
+        instruction_lookup_oracles.push(InstructionLookupTimeOracles { lanes, bitness });
     }
 
-    let mut shout_gamma_groups = Vec::with_capacity(shout_gamma_specs.len());
-    for (g_idx, g) in shout_gamma_specs.iter().enumerate() {
+    let mut instruction_lookup_gamma_groups = Vec::with_capacity(instruction_lookup_gamma_specs.len());
+    for (g_idx, g) in instruction_lookup_gamma_specs.iter().enumerate() {
         let mut value_has_cols: Vec<SparseIdxVec<K>> = Vec::with_capacity(g.lanes.len());
         let mut value_val_cols: Vec<SparseIdxVec<K>> = Vec::with_capacity(g.lanes.len());
         let weights = bitness_weights(r_cycle, g.lanes.len(), 0x5348_5F47_414D_4Du64 ^ g.key);
@@ -1461,7 +1468,7 @@ pub(crate) fn build_route_a_memory_oracles(
                 .lut_instances
                 .get(lane_ref.inst_idx)
                 .ok_or_else(|| PiCcsError::ProtocolError("shout gamma group inst idx drift".into()))?;
-            let decoded = shout_pre
+            let decoded = instruction_lookup_pre
                 .decoded
                 .get(lane_ref.inst_idx)
                 .ok_or_else(|| PiCcsError::ProtocolError("shout gamma decoded inst idx drift".into()))?;
@@ -1469,7 +1476,7 @@ pub(crate) fn build_route_a_memory_oracles(
                 .lanes
                 .get(lane_ref.lane_idx)
                 .ok_or_else(|| PiCcsError::ProtocolError("shout gamma decoded lane idx drift".into()))?;
-            let lane_oracles = shout_oracles
+            let lane_oracles = instruction_lookup_oracles
                 .get(lane_ref.inst_idx)
                 .and_then(|o| o.lanes.get(lane_ref.lane_idx))
                 .ok_or_else(|| PiCcsError::ProtocolError("shout gamma lane oracle idx drift".into()))?;
@@ -1636,7 +1643,7 @@ pub(crate) fn build_route_a_memory_oracles(
         let bitness_oracle =
             LazyWeightedBitnessOracleSparseTime::new_with_cycle(r_cycle, bitness_cols, bitness_weights_expanded);
 
-        shout_gamma_groups.push(RouteAShoutGammaGroupOracles {
+        instruction_lookup_gamma_groups.push(InstructionLookupGammaGroupOracles {
             value: value_oracle,
             value_claim,
             adapter: adapter_oracle,
@@ -1763,8 +1770,8 @@ pub(crate) fn build_route_a_memory_oracles(
     }
 
     Ok(RouteAMemoryOracles {
-        shout: shout_oracles,
-        shout_gamma_groups,
+        instruction_lookup: instruction_lookup_oracles,
+        instruction_lookup_gamma_groups,
         twist: twist_oracles,
     })
 }

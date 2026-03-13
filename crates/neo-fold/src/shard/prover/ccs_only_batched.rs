@@ -50,7 +50,7 @@ fn empty_mem_sidecar_proof() -> MemSidecarProof<Cmt, F, K> {
         trace_opening_me_claims: Vec::new(),
         poseidon_cycle_me_claims: Vec::new(),
         poseidon_local_me_claims: Vec::new(),
-        shout_addr_pre: Default::default(),
+        instruction_lookup_addr_pre: Default::default(),
         proofs: Vec::new(),
     }
 }
@@ -70,8 +70,12 @@ fn ensure_empty_sidecars_in_step_proof(step_idx: usize, step_proof: &StepProof) 
         || !step_proof.mem.trace_opening_me_claims.is_empty()
         || !step_proof.mem.poseidon_cycle_me_claims.is_empty()
         || !step_proof.mem.poseidon_local_me_claims.is_empty()
-        || !step_proof.mem.shout_addr_pre.claimed_sums.is_empty()
-        || !step_proof.mem.shout_addr_pre.groups.is_empty()
+        || !step_proof
+            .mem
+            .instruction_lookup_addr_pre
+            .claimed_sums
+            .is_empty()
+        || !step_proof.mem.instruction_lookup_addr_pre.groups.is_empty()
         || !step_proof.mem.proofs.is_empty()
     {
         return Err(PiCcsError::ProtocolError(format!(
@@ -310,7 +314,6 @@ where
                 rlc_parent,
                 dec_children,
                 cpu_sumcheck: crate::shard_proof_types::CpuTimeSumcheckProof::default(),
-                shift_sumcheck: crate::shard_proof_types::ShiftTimeSumcheckProof::default(),
                 time_cpu_commitments: Vec::new(),
                 time_mem_commitments: Vec::new(),
                 time_t: 0,

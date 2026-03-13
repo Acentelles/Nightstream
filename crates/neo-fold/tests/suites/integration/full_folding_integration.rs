@@ -850,7 +850,7 @@ fn tamper_shout_addr_pre_round_poly_fails() {
     let mem0 = first_materialized_step_mut(&mut proof);
     let group0 = mem0
         .mem
-        .shout_addr_pre
+        .instruction_lookup_addr_pre
         .groups
         .iter_mut()
         .find(|g| !g.round_polys.is_empty())
@@ -872,7 +872,7 @@ fn tamper_shout_addr_pre_round_poly_fails() {
 
     assert!(
         result.is_err(),
-        "tampered Shout addr-pre round poly must fail verification"
+        "tampered instruction-lookup addr-pre round poly must fail verification"
     );
 }
 
@@ -918,10 +918,10 @@ fn tamper_batched_time_label_order_fails() {
 }
 
 #[test]
-fn tamper_shift_sumcheck_metadata_fails() {
+fn tamper_cpu_sumcheck_metadata_fails() {
     let (params, ccs, step_bundle, acc_init, acc_wit_init, l, mixers, _out_val) = build_single_chunk_inputs();
 
-    let mut tr_prove = Poseidon2Transcript::new(b"full-fold-tamper-shift-sumcheck");
+    let mut tr_prove = Poseidon2Transcript::new(b"full-fold-tamper-cpu-sumcheck");
     let mut proof = fold_shard_prove(
         FoldingMode::Optimized,
         &mut tr_prove,
@@ -935,9 +935,9 @@ fn tamper_shift_sumcheck_metadata_fails() {
     )
     .expect("prove should succeed");
 
-    proof.steps[0].fold.shift_sumcheck.claimed_sum += K::ONE;
+    proof.steps[0].fold.cpu_sumcheck.claimed_sum += K::ONE;
 
-    let mut tr_verify = Poseidon2Transcript::new(b"full-fold-tamper-shift-sumcheck");
+    let mut tr_verify = Poseidon2Transcript::new(b"full-fold-tamper-cpu-sumcheck");
     let steps_public = [StepInstanceBundle::from(&step_bundle)];
     let result = fold_shard_verify(
         FoldingMode::Optimized,
@@ -950,10 +950,7 @@ fn tamper_shift_sumcheck_metadata_fails() {
         mixers,
     );
 
-    assert!(
-        result.is_err(),
-        "tampered shift_sumcheck metadata must fail verification"
-    );
+    assert!(result.is_err(), "tampered cpu_sumcheck metadata must fail verification");
 }
 
 #[test]
@@ -994,7 +991,7 @@ fn tamper_time_declared_len_fails() {
 
 #[test]
 fn tamper_twist_val_eval_round_poly_fails() {
-    use neo_fold::shard::MemOrLutProof;
+    use neo_fold::shard::MemOrInstructionLookupProof;
 
     let (params, ccs, step_bundle, acc_init, acc_wit_init, l, mixers, _out_val) = build_single_chunk_inputs();
 
@@ -1015,7 +1012,7 @@ fn tamper_twist_val_eval_round_poly_fails() {
     let mem0 = first_materialized_step_mut(&mut proof);
     let twist0 = mem0.mem.proofs.get_mut(1).expect("one Twist proof");
     let twist_proof = match twist0 {
-        MemOrLutProof::Twist(p) => p,
+        MemOrInstructionLookupProof::Twist(p) => p,
         _ => panic!("expected Twist proof"),
     };
     let val_eval = twist_proof.val_eval.as_mut().expect("val_eval present");

@@ -344,15 +344,6 @@ pub(crate) fn validate_step_time_openings_consistency(
             &neo_memory::riscv::trace::Rv64TraceLayout::new(),
         );
         trace_opening_cols.extend(crate::memory_sidecar::memory::rv64_trace_exact_word_opening_columns());
-        let control_required = crate::memory_sidecar::memory::control_stage_required_for_step_instance(step);
-        if control_required {
-            trace_opening_cols.extend(crate::memory_sidecar::memory::rv64_trace_control_extra_opening_columns(
-                &neo_memory::riscv::trace::Rv64TraceLayout::new(),
-            ));
-            trace_opening_cols.extend(crate::memory_sidecar::memory::rv64_control_trace_metadata_columns(
-                &neo_memory::riscv::trace::Rv64TraceLayout::new(),
-            ));
-        }
         let mut seen_trace_opening_cols = std::collections::BTreeSet::new();
         trace_opening_cols.retain(|col_id| seen_trace_opening_cols.insert(*col_id));
         let (opening_entry, _opening_map) = crate::memory_sidecar::memory::require_time_openings_covering_point(
@@ -376,13 +367,8 @@ pub(crate) fn validate_time_sumcheck_metadata(
     step_idx: usize,
     step_proof: &StepProof,
     ccs_r_time: &[K],
-    route_r_time: &[K],
-    control_required: bool,
+    _route_r_time: &[K],
 ) -> Result<(), PiCcsError> {
-    let labels = &step_proof.batched_time.labels;
-    let claimed_sums = &step_proof.batched_time.claimed_sums;
-    let round_polys = &step_proof.batched_time.round_polys;
-
     let ccs_ell_n = ccs_r_time.len();
     if step_proof.fold.ccs_proof.sumcheck_rounds.len() < ccs_ell_n {
         return Err(PiCcsError::ProtocolError(format!(
@@ -411,64 +397,6 @@ pub(crate) fn validate_time_sumcheck_metadata(
     if step_proof.fold.cpu_sumcheck.r_time.as_slice() != ccs_r_time {
         return Err(PiCcsError::ProtocolError(format!(
             "step {}: cpu_sumcheck r_time mismatch",
-            step_idx
-        )));
-    }
-
-    let control_idx = labels
-        .iter()
-        .position(|label| label.as_slice() == b"control/next_pc_linear");
-    match control_idx {
-        Some(expected_shift_idx) => {
-            let expected_shift_sum = *claimed_sums.get(expected_shift_idx).ok_or_else(|| {
-                PiCcsError::ProtocolError(format!(
-                    "step {}: missing batched_time claimed_sum for shift index {}",
-                    step_idx, expected_shift_idx
-                ))
-            })?;
-            let expected_shift_rounds = round_polys.get(expected_shift_idx).ok_or_else(|| {
-                PiCcsError::ProtocolError(format!(
-                    "step {}: missing batched_time rounds for shift index {}",
-                    step_idx, expected_shift_idx
-                ))
-            })?;
-            if step_proof.fold.shift_sumcheck.claimed_sum != expected_shift_sum {
-                return Err(PiCcsError::ProtocolError(format!(
-                    "step {}: shift_sumcheck claimed_sum mismatch",
-                    step_idx
-                )));
-            }
-            if step_proof.fold.shift_sumcheck.round_polys != *expected_shift_rounds {
-                return Err(PiCcsError::ProtocolError(format!(
-                    "step {}: shift_sumcheck round_polys mismatch",
-                    step_idx
-                )));
-            }
-        }
-        None => {
-            if control_required {
-                return Err(PiCcsError::ProtocolError(format!(
-                    "step {}: missing batched_time label control/next_pc_linear",
-                    step_idx
-                )));
-            }
-            if step_proof.fold.shift_sumcheck.claimed_sum != K::ZERO {
-                return Err(PiCcsError::ProtocolError(format!(
-                    "step {}: shift_sumcheck must be zero-valued when control stage is disabled",
-                    step_idx
-                )));
-            }
-            if !step_proof.fold.shift_sumcheck.round_polys.is_empty() {
-                return Err(PiCcsError::ProtocolError(format!(
-                    "step {}: shift_sumcheck rounds must be empty when control stage is disabled",
-                    step_idx
-                )));
-            }
-        }
-    }
-    if step_proof.fold.shift_sumcheck.r_time.as_slice() != route_r_time {
-        return Err(PiCcsError::ProtocolError(format!(
-            "step {}: shift_sumcheck r_time mismatch",
             step_idx
         )));
     }

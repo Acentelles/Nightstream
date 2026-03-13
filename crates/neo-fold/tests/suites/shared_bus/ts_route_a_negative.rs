@@ -54,8 +54,8 @@ fn run_shout_route_a(table: &[K], addr_bits: &[Vec<K>], has_lookup: &[K], val: &
     let addr_bits_sparse = cols_to_sparse(addr_bits);
     let has_lookup_sparse = dense_to_sparse(has_lookup);
 
-    let mut tr_p = Poseidon2Transcript::new(b"shout/route_a_negative");
-    let mut tr_v = Poseidon2Transcript::new(b"shout/route_a_negative");
+    let mut tr_p = Poseidon2Transcript::new(b"instruction_lookup/route_a_negative");
+    let mut tr_v = Poseidon2Transcript::new(b"instruction_lookup/route_a_negative");
 
     let (r_addr, addr_claim_sum, addr_final) = {
         let (mut addr_oracle, addr_claim_sum) =
@@ -63,7 +63,7 @@ fn run_shout_route_a(table: &[K], addr_bits: &[Vec<K>], has_lookup: &[K], val: &
 
         let (addr_rounds, r_addr) = run_sumcheck_prover_ds(
             &mut tr_p,
-            b"shout/addr_pre_time",
+            b"instruction_lookup/addr_pre_time",
             inst_idx,
             &mut addr_oracle,
             addr_claim_sum,
@@ -72,7 +72,7 @@ fn run_shout_route_a(table: &[K], addr_bits: &[Vec<K>], has_lookup: &[K], val: &
 
         let (r_addr_v, addr_final, ok) = verify_sumcheck_rounds_ds(
             &mut tr_v,
-            b"shout/addr_pre_time",
+            b"instruction_lookup/addr_pre_time",
             inst_idx,
             2,
             addr_claim_sum,
@@ -108,41 +108,45 @@ fn run_shout_route_a(table: &[K], addr_bits: &[Vec<K>], has_lookup: &[K], val: &
 
     claimed_sums.push(value_claim);
     degree_bounds.push(value_oracle.degree_bound());
-    labels.push(b"shout/value");
+    labels.push(b"instruction_lookup/value");
     claims.push(BatchedClaim {
         oracle: &mut value_oracle,
         claimed_sum: value_claim,
-        label: b"shout/value",
+        label: b"instruction_lookup/value",
     });
 
     claimed_sums.push(adapter_claim);
     degree_bounds.push(adapter_oracle.degree_bound());
-    labels.push(b"shout/adapter");
+    labels.push(b"instruction_lookup/adapter");
     claims.push(BatchedClaim {
         oracle: &mut adapter_oracle,
         claimed_sum: adapter_claim,
-        label: b"shout/adapter",
+        label: b"instruction_lookup/adapter",
     });
 
     claimed_sums.push(K::ZERO);
     degree_bounds.push(bitness_oracle.degree_bound());
-    labels.push(b"shout/bitness");
+    labels.push(b"instruction_lookup/bitness");
     claims.push(BatchedClaim {
         oracle: &mut bitness_oracle,
         claimed_sum: K::ZERO,
-        label: b"shout/bitness",
+        label: b"instruction_lookup/bitness",
     });
 
-    let (_r_time, per_claim_results) =
-        run_batched_sumcheck_prover_ds(&mut tr_p, b"shout/time_batch", inst_idx, claims.as_mut_slice())
-            .expect("prover time batch should succeed");
+    let (_r_time, per_claim_results) = run_batched_sumcheck_prover_ds(
+        &mut tr_p,
+        b"instruction_lookup/time_batch",
+        inst_idx,
+        claims.as_mut_slice(),
+    )
+    .expect("prover time batch should succeed");
     for res in per_claim_results.iter() {
         round_polys.push(res.round_polys.clone());
     }
 
     let (_r_time_v, _finals, ok) = verify_batched_sumcheck_rounds_ds(
         &mut tr_v,
-        b"shout/time_batch",
+        b"instruction_lookup/time_batch",
         inst_idx,
         &round_polys,
         &claimed_sums,
@@ -369,34 +373,34 @@ fn route_a_proof_tamper_round_poly_fails() {
 
     let claimed_sums = vec![value_claim, adapter_claim];
     let degree_bounds = vec![value_oracle.degree_bound(), adapter_oracle.degree_bound()];
-    let labels: Vec<&[u8]> = vec![b"shout/value", b"shout/adapter"];
+    let labels: Vec<&[u8]> = vec![b"instruction_lookup/value", b"instruction_lookup/adapter"];
 
     let mut claims = vec![
         BatchedClaim {
             oracle: &mut value_oracle,
             claimed_sum: value_claim,
-            label: b"shout/value",
+            label: b"instruction_lookup/value",
         },
         BatchedClaim {
             oracle: &mut adapter_oracle,
             claimed_sum: adapter_claim,
-            label: b"shout/adapter",
+            label: b"instruction_lookup/adapter",
         },
     ];
 
-    let mut tr_p = Poseidon2Transcript::new(b"shout/route_a_tamper");
+    let mut tr_p = Poseidon2Transcript::new(b"instruction_lookup/route_a_tamper");
     let (_r_time, per_claim_results) =
-        run_batched_sumcheck_prover_ds(&mut tr_p, b"shout/time_batch", 0, claims.as_mut_slice())
+        run_batched_sumcheck_prover_ds(&mut tr_p, b"instruction_lookup/time_batch", 0, claims.as_mut_slice())
             .expect("prover should succeed");
     let mut round_polys: Vec<Vec<Vec<K>>> = per_claim_results
         .into_iter()
         .map(|r| r.round_polys)
         .collect();
 
-    let mut tr_v = Poseidon2Transcript::new(b"shout/route_a_tamper");
+    let mut tr_v = Poseidon2Transcript::new(b"instruction_lookup/route_a_tamper");
     let (_r_time_v, _finals, ok) = verify_batched_sumcheck_rounds_ds(
         &mut tr_v,
-        b"shout/time_batch",
+        b"instruction_lookup/time_batch",
         0,
         &round_polys,
         &claimed_sums,
@@ -407,10 +411,10 @@ fn route_a_proof_tamper_round_poly_fails() {
 
     // Tamper with one coefficient and verification must fail.
     round_polys[0][0][0] += K::ONE;
-    let mut tr_v_bad = Poseidon2Transcript::new(b"shout/route_a_tamper");
+    let mut tr_v_bad = Poseidon2Transcript::new(b"instruction_lookup/route_a_tamper");
     let (_r_time_v2, _finals2, ok2) = verify_batched_sumcheck_rounds_ds(
         &mut tr_v_bad,
-        b"shout/time_batch",
+        b"instruction_lookup/time_batch",
         0,
         &round_polys,
         &claimed_sums,

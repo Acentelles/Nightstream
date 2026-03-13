@@ -270,9 +270,8 @@ where
     };
 
     let PreparedRouteATimePhase {
-        control_required,
         mut mem_oracles,
-        shout_pre,
+        instruction_lookup_pre,
         twist_pre,
         r_time,
         batched_time,
@@ -653,7 +652,7 @@ where
         prev_step,
         run_state.prev_twist_decoded.as_deref(),
         &mut mem_oracles,
-        &shout_pre.addr_pre,
+        &instruction_lookup_pre.addr_pre,
         &twist_pre,
         &r_time,
         mcs_inst.m_in,
@@ -788,14 +787,6 @@ where
             &neo_memory::riscv::trace::Rv64TraceLayout::new(),
         );
         trace_opening_cols.extend(crate::memory_sidecar::memory::rv64_trace_exact_word_opening_columns());
-        if control_required {
-            trace_opening_cols.extend(crate::memory_sidecar::memory::rv64_trace_control_extra_opening_columns(
-                &neo_memory::riscv::trace::Rv64TraceLayout::new(),
-            ));
-            trace_opening_cols.extend(crate::memory_sidecar::memory::rv64_control_trace_metadata_columns(
-                &neo_memory::riscv::trace::Rv64TraceLayout::new(),
-            ));
-        }
 
         let trace_opening_lane = prove_aux_cpu_me_lane(
             AuxCpuLaneConfig {
@@ -865,7 +856,6 @@ where
             time_mem_commitments: time_mem_commitments.as_slice(),
             has_committed_time_cpu,
             has_committed_time_mem,
-            control_required,
             exact_reg_output_binding_active,
             mixers,
         },
@@ -874,8 +864,6 @@ where
     )?;
 
     let cpu_sumcheck = cpu_sumcheck_from_ccs(ccs_initial_sum, ccs_time_rounds_meta, &ccs_time_chals_meta);
-    let shift_sumcheck = shift_sumcheck_from_batched_time(&batched_time, &r_time, control_required)?;
-
     run_state.step_proofs.push(StepProof {
         fold: FoldStep {
             ccs_out,
@@ -884,7 +872,6 @@ where
             rlc_parent: parent_pub,
             dec_children: children,
             cpu_sumcheck,
-            shift_sumcheck,
             time_cpu_commitments,
             time_mem_commitments,
             time_t: step.time_columns.t,

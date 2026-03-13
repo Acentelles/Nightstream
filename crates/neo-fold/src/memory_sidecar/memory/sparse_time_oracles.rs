@@ -5,11 +5,11 @@
 
 use super::*;
 
-pub(crate) struct ShoutDecodedColsSparse {
-    pub lanes: Vec<ShoutLaneSparseCols>,
+pub(crate) struct InstructionLookupDecodedColsSparse {
+    pub lanes: Vec<InstructionLookupLaneSparseCols>,
 }
 
-pub(crate) struct ShoutLaneSparseCols {
+pub(crate) struct InstructionLookupLaneSparseCols {
     pub addr_bits: Vec<SparseIdxVec<K>>,
     pub has_lookup: SparseIdxVec<K>,
     pub val: SparseIdxVec<K>,
@@ -139,12 +139,12 @@ pub(crate) fn build_twist_inc_terms_at_r_addr(lanes: &[TwistLaneSparseCols], r_a
     out
 }
 
-pub struct RouteAShoutTimeOracles {
-    pub lanes: Vec<RouteAShoutTimeLaneOracles>,
+pub struct InstructionLookupTimeOracles {
+    pub lanes: Vec<InstructionLookupTimeLaneOracles>,
     pub bitness: Vec<Box<dyn RoundOracle + Send>>,
 }
 
-pub struct RouteAShoutTimeLaneOracles {
+pub struct InstructionLookupTimeLaneOracles {
     pub value: Box<dyn RoundOracle + Send>,
     pub value_claim: K,
     pub adapter: Box<dyn RoundOracle + Send>,
@@ -152,7 +152,7 @@ pub struct RouteAShoutTimeLaneOracles {
     pub gamma_group: Option<usize>,
 }
 
-pub struct RouteAShoutGammaGroupOracles {
+pub struct InstructionLookupGammaGroupOracles {
     pub value: Box<dyn RoundOracle + Send>,
     pub value_claim: K,
     pub adapter: Box<dyn RoundOracle + Send>,
@@ -169,8 +169,8 @@ pub struct RouteATwistTimeOracles {
 }
 
 pub struct RouteAMemoryOracles {
-    pub shout: Vec<RouteAShoutTimeOracles>,
-    pub shout_gamma_groups: Vec<RouteAShoutGammaGroupOracles>,
+    pub instruction_lookup: Vec<InstructionLookupTimeOracles>,
+    pub instruction_lookup_gamma_groups: Vec<InstructionLookupGammaGroupOracles>,
     pub twist: Vec<RouteATwistTimeOracles>,
 }
 
@@ -186,13 +186,13 @@ pub trait TimeBatchedClaims {
     ) -> Result<(), PiCcsError>;
 }
 
-pub(crate) struct ShoutAddrPreBatchProverData {
-    pub addr_pre: ShoutAddrPreProof<K>,
-    pub decoded: Vec<ShoutDecodedColsSparse>,
+pub(crate) struct InstructionLookupAddrPreBatchProverData {
+    pub addr_pre: InstructionLookupAddrPreProof<K>,
+    pub decoded: Vec<InstructionLookupDecodedColsSparse>,
 }
 
 #[derive(Clone, Debug)]
-pub struct ShoutAddrPreVerifyData {
+pub struct InstructionLookupAddrPreVerifyData {
     pub is_active: bool,
     pub addr_claim_sum: K,
     pub addr_final: K,

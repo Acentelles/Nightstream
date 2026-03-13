@@ -9,7 +9,7 @@ pub(crate) fn finalize_route_a_memory_prover(
     prev_step: Option<&StepWitnessBundle<Cmt, F, K>>,
     prev_twist_decoded: Option<&[TwistDecodedColsSparse]>,
     oracles: &mut RouteAMemoryOracles,
-    shout_addr_pre: &ShoutAddrPreProof<K>,
+    instruction_lookup_addr_pre: &InstructionLookupAddrPreProof<K>,
     twist_pre: &[TwistAddrPreProverData],
     r_time: &[K],
     m_in: usize,
@@ -28,11 +28,11 @@ pub(crate) fn finalize_route_a_memory_prover(
         .iter()
         .map(|(inst, _)| inst.lanes.max(1))
         .sum();
-    if shout_addr_pre.claimed_sums.len() != total_lanes {
+    if instruction_lookup_addr_pre.claimed_sums.len() != total_lanes {
         return Err(PiCcsError::InvalidInput(format!(
-            "shout addr-pre proof count mismatch (expected claimed_sums.len()=total_lanes={}, got {})",
+            "instruction_lookup addr-pre proof count mismatch (expected claimed_sums.len()=total_lanes={}, got {})",
             total_lanes,
-            shout_addr_pre.claimed_sums.len(),
+            instruction_lookup_addr_pre.claimed_sums.len(),
         )));
     }
     {
@@ -41,7 +41,7 @@ pub(crate) fn finalize_route_a_memory_prover(
         for (lut_inst, _lut_wit) in step.lut_instances.iter().map(|(inst, wit)| (inst, wit)) {
             let inst_ell_addr = lut_inst.d * lut_inst.ell;
             let inst_ell_addr_u32 = u32::try_from(inst_ell_addr)
-                .map_err(|_| PiCcsError::InvalidInput("Shout: ell_addr overflows u32".into()))?;
+                .map_err(|_| PiCcsError::InvalidInput("instruction_lookup: ell_addr overflows u32".into()))?;
             required_ell_addrs.insert(inst_ell_addr_u32);
             for _lane_idx in 0..lut_inst.lanes.max(1) {
                 lane_ell_addr.push(inst_ell_addr_u32);
@@ -49,30 +49,30 @@ pub(crate) fn finalize_route_a_memory_prover(
         }
         if lane_ell_addr.len() != total_lanes {
             return Err(PiCcsError::ProtocolError(
-                "shout addr-pre lane indexing drift (lane_ell_addr)".into(),
+                "instruction_lookup addr-pre lane indexing drift (lane_ell_addr)".into(),
             ));
         }
 
-        if shout_addr_pre.groups.len() != required_ell_addrs.len() {
+        if instruction_lookup_addr_pre.groups.len() != required_ell_addrs.len() {
             return Err(PiCcsError::InvalidInput(format!(
-                "shout addr-pre group count mismatch (expected {}, got {})",
+                "instruction_lookup addr-pre group count mismatch (expected {}, got {})",
                 required_ell_addrs.len(),
-                shout_addr_pre.groups.len()
+                instruction_lookup_addr_pre.groups.len()
             )));
         }
         let required_list: Vec<u32> = required_ell_addrs.into_iter().collect();
         let mut seen_active: std::collections::HashSet<u32> = std::collections::HashSet::new();
-        for (idx, group) in shout_addr_pre.groups.iter().enumerate() {
+        for (idx, group) in instruction_lookup_addr_pre.groups.iter().enumerate() {
             let expected_ell_addr = required_list[idx];
             if group.ell_addr != expected_ell_addr {
                 return Err(PiCcsError::InvalidInput(format!(
-                    "shout addr-pre groups not sorted or mismatched: groups[{idx}].ell_addr={} but expected {expected_ell_addr}",
+                    "instruction_lookup addr-pre groups not sorted or mismatched: groups[{idx}].ell_addr={} but expected {expected_ell_addr}",
                     group.ell_addr
                 )));
             }
             if group.r_addr.len() != group.ell_addr as usize {
                 return Err(PiCcsError::InvalidInput(format!(
-                    "shout addr-pre group ell_addr={} has r_addr.len()={}, expected {}",
+                    "instruction_lookup addr-pre group ell_addr={} has r_addr.len()={}, expected {}",
                     group.ell_addr,
                     group.r_addr.len(),
                     group.ell_addr
@@ -80,7 +80,7 @@ pub(crate) fn finalize_route_a_memory_prover(
             }
             if group.round_polys.len() != group.active_lanes.len() {
                 return Err(PiCcsError::InvalidInput(format!(
-                    "shout addr-pre group ell_addr={} round_polys.len()={}, expected active_lanes.len()={}",
+                    "instruction_lookup addr-pre group ell_addr={} round_polys.len()={}, expected active_lanes.len()={}",
                     group.ell_addr,
                     group.round_polys.len(),
                     group.active_lanes.len()
@@ -90,30 +90,30 @@ pub(crate) fn finalize_route_a_memory_prover(
                 let lane_idx_usize = lane_idx as usize;
                 if lane_idx_usize >= total_lanes {
                     return Err(PiCcsError::InvalidInput(
-                        "shout addr-pre active_lanes has index out of range".into(),
+                        "instruction_lookup addr-pre active_lanes has index out of range".into(),
                     ));
                 }
                 if lane_ell_addr[lane_idx_usize] != group.ell_addr {
                     return Err(PiCcsError::InvalidInput(format!(
-                        "shout addr-pre active_lanes contains lane_idx={} with ell_addr={}, but group ell_addr={}",
+                        "instruction_lookup addr-pre active_lanes contains lane_idx={} with ell_addr={}, but group ell_addr={}",
                         lane_idx, lane_ell_addr[lane_idx_usize], group.ell_addr
                     )));
                 }
                 if pos > 0 && group.active_lanes[pos - 1] >= lane_idx {
                     return Err(PiCcsError::InvalidInput(
-                        "shout addr-pre active_lanes must be strictly increasing".into(),
+                        "instruction_lookup addr-pre active_lanes must be strictly increasing".into(),
                     ));
                 }
                 if !seen_active.insert(lane_idx) {
                     return Err(PiCcsError::InvalidInput(
-                        "shout addr-pre active_lanes contains duplicates across groups".into(),
+                        "instruction_lookup addr-pre active_lanes contains duplicates across groups".into(),
                     ));
                 }
             }
             for (pos, rounds) in group.round_polys.iter().enumerate() {
                 if rounds.len() != group.ell_addr as usize {
                     return Err(PiCcsError::InvalidInput(format!(
-                        "shout addr-pre group ell_addr={} round_polys[{pos}].len()={}, expected {}",
+                        "instruction_lookup addr-pre group ell_addr={} round_polys[{pos}].len()={}, expected {}",
                         group.ell_addr,
                         rounds.len(),
                         group.ell_addr
@@ -171,7 +171,7 @@ pub(crate) fn finalize_route_a_memory_prover(
     let mut val_me_claims: Vec<CeClaim<Cmt, F, K>> = Vec::new();
     let mut booleanity_me_claims: Vec<CeClaim<Cmt, F, K>> = Vec::new();
     let mut trace_opening_me_claims: Vec<CeClaim<Cmt, F, K>> = Vec::new();
-    let mut proofs: Vec<MemOrLutProof> = Vec::new();
+    let mut proofs: Vec<MemOrInstructionLookupProof> = Vec::new();
 
     // --------------------------------------------------------------------
     // Phase 2: Twist val-eval sum-check (batched across mem instances).
@@ -362,15 +362,17 @@ pub(crate) fn finalize_route_a_memory_prover(
     }
 
     if step.lut_instances.is_empty() {
-        if !shout_addr_pre.claimed_sums.is_empty() || !shout_addr_pre.groups.is_empty() {
+        if !instruction_lookup_addr_pre.claimed_sums.is_empty() || !instruction_lookup_addr_pre.groups.is_empty() {
             return Err(PiCcsError::ProtocolError(
-                "shout_addr_pre must be empty when there are no Shout instances".into(),
+                "instruction_lookup_addr_pre must be empty when there are no lookup instances".into(),
             ));
         }
     }
 
     for _ in 0..step.lut_instances.len() {
-        proofs.push(MemOrLutProof::Shout(ShoutProofK::default()));
+        proofs.push(MemOrInstructionLookupProof::InstructionLookup(
+            InstructionLookupProofK::default(),
+        ));
     }
 
     for idx in 0..step.mem_instances.len() {
@@ -382,7 +384,7 @@ pub(crate) fn finalize_route_a_memory_prover(
             .clone();
         proof.val_eval = twist_val_eval_proofs.get(idx).cloned();
 
-        proofs.push(MemOrLutProof::Twist(proof));
+        proofs.push(MemOrInstructionLookupProof::Twist(proof));
     }
 
     if !step.mem_instances.is_empty() {
@@ -508,7 +510,7 @@ pub(crate) fn finalize_route_a_memory_prover(
         trace_opening_me_claims,
         poseidon_cycle_me_claims: Vec::new(),
         poseidon_local_me_claims: Vec::new(),
-        shout_addr_pre: shout_addr_pre.clone(),
+        instruction_lookup_addr_pre: instruction_lookup_addr_pre.clone(),
         proofs,
     })
 }

@@ -244,7 +244,7 @@ fn mixed_shout_tables_16_and_256_entries_same_step() {
     .expect("prove should succeed with mixed ell_addr tables");
 
     // Addr-pre should be split into two `ell_addr` groups: 4 bits for table_16, 8 bits for table_256.
-    let pre = &proof.steps[0].mem.shout_addr_pre;
+    let pre = &proof.steps[0].mem.instruction_lookup_addr_pre;
     assert_eq!(pre.groups.len(), 2);
     assert_eq!(pre.groups[0].ell_addr, 4);
     assert_eq!(pre.groups[1].ell_addr, 8);

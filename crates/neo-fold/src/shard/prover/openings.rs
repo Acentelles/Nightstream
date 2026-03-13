@@ -20,7 +20,6 @@ where
     pub time_mem_commitments: &'a [Cmt],
     pub has_committed_time_cpu: bool,
     pub has_committed_time_mem: bool,
-    pub control_required: bool,
     pub exact_reg_output_binding_active: bool,
     pub mixers: CommitMixers<MR, MB>,
 }
@@ -60,7 +59,6 @@ where
         time_mem_commitments,
         has_committed_time_cpu,
         has_committed_time_mem,
-        control_required,
         exact_reg_output_binding_active,
         mixers,
     } = ctx;
@@ -238,14 +236,6 @@ where
                 &neo_memory::riscv::trace::Rv64TraceLayout::new(),
             );
             trace_opening_cols.extend(crate::memory_sidecar::memory::rv64_trace_exact_word_opening_columns());
-            if control_required {
-                trace_opening_cols.extend(crate::memory_sidecar::memory::rv64_trace_control_extra_opening_columns(
-                    &neo_memory::riscv::trace::Rv64TraceLayout::new(),
-                ));
-                trace_opening_cols.extend(crate::memory_sidecar::memory::rv64_control_trace_metadata_columns(
-                    &neo_memory::riscv::trace::Rv64TraceLayout::new(),
-                ));
-            }
             let mut seen_trace_opening_cols = std::collections::BTreeSet::new();
             trace_opening_cols.retain(|col_id| seen_trace_opening_cols.insert(*col_id));
             let can_use_time_cpu_cols = step.time_columns.t > 0

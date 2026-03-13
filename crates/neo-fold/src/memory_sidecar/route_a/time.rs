@@ -1,9 +1,9 @@
 //! Route-A batched time-claim proving and verification.
 //!
 //! This module owns the grouped stage claim/config surface for the shared
-//! Twist/Shout batched time sumcheck. It intentionally models claims by
-//! semantic stage instead of passing a long positional list of optional
-//! claims/config flags.
+//! instruction-lookup / memory-side batched time sumcheck. It intentionally
+//! models claims by semantic stage instead of passing a long positional list
+//! of optional claims/config flags.
 
 use neo_ajtai::Commitment as Cmt;
 use neo_math::{F, K};
@@ -13,8 +13,9 @@ use neo_reductions::sumcheck::{BatchedClaim, RoundOracle};
 use neo_transcript::Poseidon2Transcript;
 use p3_field::PrimeCharacteristicRing;
 
+use crate::instruction_lookup::InstructionLookupTimeProtocol;
 use crate::memory_sidecar::claim_plan::{poseidon_local_time_claim_metas, RouteATimeClaimPlan};
-use crate::memory_sidecar::memory::{RouteAMemoryOracles, ShoutRouteAProtocol, TimeBatchedClaims, TwistRouteAProtocol};
+use crate::memory_sidecar::memory::{RouteAMemoryOracles, TimeBatchedClaims, TwistRouteAProtocol};
 use crate::memory_sidecar::route_a_compiler::shadow_assert_compiled_schedule_matches_metas;
 use crate::memory_sidecar::sumcheck_ds::{run_batched_sumcheck_prover_ds, verify_batched_sumcheck_rounds_ds};
 use crate::memory_sidecar::transcript::bind_batched_dynamic_claims;
@@ -30,23 +31,6 @@ pub struct ExtraBatchedTimeClaim {
     pub oracle: Box<dyn RoundOracle + Send>,
     pub claimed_sum: K,
     pub label: &'static [u8],
-}
-
-#[derive(Default)]
-pub struct LegacyWidthStageTimeClaims {
-    pub bitness: Option<ExtraBatchedTimeClaim>,
-    pub quiescence: Option<ExtraBatchedTimeClaim>,
-    pub selector_linkage: Option<ExtraBatchedTimeClaim>,
-    pub load_semantics: Option<ExtraBatchedTimeClaim>,
-    pub store_semantics: Option<ExtraBatchedTimeClaim>,
-}
-
-#[derive(Default)]
-pub struct Rv64ControlStageTimeClaims {
-    pub next_pc_linear: Option<ExtraBatchedTimeClaim>,
-    pub next_pc_control: Option<ExtraBatchedTimeClaim>,
-    pub branch_semantics: Option<ExtraBatchedTimeClaim>,
-    pub control_writeback: Option<ExtraBatchedTimeClaim>,
 }
 
 #[derive(Default)]
@@ -72,28 +56,11 @@ pub struct OutputBindingTimeClaims {
 pub struct RouteABatchedTimeClaims {
     pub booleanity: Option<ExtraBatchedTimeClaim>,
     pub trace_opening: Option<ExtraBatchedTimeClaim>,
-    pub width: LegacyWidthStageTimeClaims,
-    pub control: Rv64ControlStageTimeClaims,
     pub poseidon: PoseidonCycleTimeClaims,
     pub output_binding: OutputBindingTimeClaims,
 }
 
 impl RouteABatchedTimeClaims {
-    fn width_stage_enabled(&self) -> bool {
-        self.width.bitness.is_some()
-            || self.width.quiescence.is_some()
-            || self.width.selector_linkage.is_some()
-            || self.width.load_semantics.is_some()
-            || self.width.store_semantics.is_some()
-    }
-
-    fn control_stage_enabled(&self) -> bool {
-        self.control.next_pc_linear.is_some()
-            || self.control.next_pc_control.is_some()
-            || self.control.branch_semantics.is_some()
-            || self.control.control_writeback.is_some()
-    }
-
     fn poseidon_cycle_enabled(&self) -> bool {
         self.poseidon.io_link.is_some()
             || self.poseidon.bitness.is_some()
@@ -115,8 +82,6 @@ pub struct OutputBindingTimeVerifyConfig {
 pub struct RouteABatchedTimeVerifyConfig {
     pub booleanity_enabled: bool,
     pub trace_opening_enabled: bool,
-    pub width_stage_enabled: bool,
-    pub control_stage_enabled: bool,
     pub poseidon_cycle_enabled: bool,
     pub output_binding: OutputBindingTimeVerifyConfig,
 }
@@ -172,14 +137,10 @@ pub fn prove_route_a_batched_time(
 ) -> Result<RouteABatchedTimeProverOutput, PiCcsError> {
     let booleanity_enabled = claims.booleanity.is_some();
     let trace_opening_enabled = claims.trace_opening.is_some();
-    let width_stage_enabled = claims.width_stage_enabled();
-    let control_stage_enabled = claims.control_stage_enabled();
     let poseidon_cycle_enabled = claims.poseidon_cycle_enabled();
     let RouteABatchedTimeClaims {
         booleanity,
         trace_opening,
-        width,
-        control,
         poseidon,
         output_binding,
     } = claims;
@@ -189,9 +150,12 @@ pub fn prove_route_a_batched_time(
     let mut claim_is_dynamic: Vec<bool> = Vec::new();
     let mut claims: Vec<BatchedClaim<'_>> = Vec::new();
 
-    let mut shout_protocol =
-        ShoutRouteAProtocol::new(&mut mem_oracles.shout, &mut mem_oracles.shout_gamma_groups, ell_t);
-    shout_protocol.append_time_claims(
+    let mut instruction_lookup_protocol = InstructionLookupTimeProtocol::new(
+        &mut mem_oracles.instruction_lookup,
+        &mut mem_oracles.instruction_lookup_gamma_groups,
+        ell_t,
+    );
+    instruction_lookup_protocol.append_time_claims(
         ell_t,
         &mut claimed_sums,
         &mut degree_bounds,
@@ -267,78 +231,6 @@ pub fn prove_route_a_batched_time(
         trace_opening_time_label,
         "missing trace_opening_time label",
         "missing trace_opening_time claimed_sum"
-    );
-    append_zero_optional_claim!(
-        width.bitness,
-        _width_bitness_degree_bound,
-        width_bitness_oracle,
-        width_bitness_label,
-        "missing width_bitness label",
-        "missing width_bitness claimed_sum"
-    );
-    append_zero_optional_claim!(
-        width.quiescence,
-        _width_quiescence_degree_bound,
-        width_quiescence_oracle,
-        width_quiescence_label,
-        "missing width_quiescence label",
-        "missing width_quiescence claimed_sum"
-    );
-    append_zero_optional_claim!(
-        width.selector_linkage,
-        _width_selector_linkage_degree_bound,
-        width_selector_linkage_oracle,
-        width_selector_linkage_label,
-        "missing width_selector_linkage label",
-        "missing width_selector_linkage claimed_sum"
-    );
-    append_zero_optional_claim!(
-        width.load_semantics,
-        _width_load_semantics_degree_bound,
-        width_load_semantics_oracle,
-        width_load_semantics_label,
-        "missing width_load_semantics label",
-        "missing width_load_semantics claimed_sum"
-    );
-    append_zero_optional_claim!(
-        width.store_semantics,
-        _width_store_semantics_degree_bound,
-        width_store_semantics_oracle,
-        width_store_semantics_label,
-        "missing width_store_semantics label",
-        "missing width_store_semantics claimed_sum"
-    );
-    append_zero_optional_claim!(
-        control.next_pc_linear,
-        _control_next_pc_linear_degree_bound,
-        control_next_pc_linear_oracle,
-        control_next_pc_linear_label,
-        "missing control_next_pc_linear label",
-        "missing control_next_pc_linear claimed_sum"
-    );
-    append_zero_optional_claim!(
-        control.next_pc_control,
-        _control_next_pc_control_degree_bound,
-        control_next_pc_control_oracle,
-        control_next_pc_control_label,
-        "missing control_next_pc_control label",
-        "missing control_next_pc_control claimed_sum"
-    );
-    append_zero_optional_claim!(
-        control.branch_semantics,
-        _control_branch_semantics_degree_bound,
-        control_branch_semantics_oracle,
-        control_branch_semantics_label,
-        "missing control_branch_semantics label",
-        "missing control_branch_semantics claimed_sum"
-    );
-    append_zero_optional_claim!(
-        control.control_writeback,
-        _control_control_writeback_degree_bound,
-        control_control_writeback_oracle,
-        control_control_writeback_label,
-        "missing control_writeback label",
-        "missing control_writeback claimed_sum"
     );
     append_zero_optional_claim!(
         poseidon.io_link,
@@ -436,8 +328,6 @@ pub fn prove_route_a_batched_time(
         step.mem_instances.iter().map(|(inst, _)| inst),
         booleanity_enabled,
         trace_opening_enabled,
-        width_stage_enabled,
-        control_stage_enabled,
         poseidon_cycle_enabled,
         ob_reg_exact_linkage_degree_bound,
         ob_inc_total_degree_bound,
@@ -522,8 +412,6 @@ pub fn verify_route_a_batched_time(
         step,
         config.booleanity_enabled,
         config.trace_opening_enabled,
-        config.width_stage_enabled,
-        config.control_stage_enabled,
         config.poseidon_cycle_enabled,
         config.output_binding.reg_exact_linkage_degree_bound,
         config.output_binding.inc_total_degree_bound,

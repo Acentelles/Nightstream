@@ -15,6 +15,7 @@ pub use neo_reductions::{
 pub mod session;
 
 // Memory sidecar helpers (Route A integration plumbing)
+pub mod instruction_lookup;
 pub mod memory_sidecar;
 
 // Finalization hooks for shard obligations

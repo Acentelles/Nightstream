@@ -16,9 +16,8 @@ pub(super) struct PreparedRouteAStepMetadata {
 }
 
 pub(super) struct PreparedRouteATimePhase {
-    pub control_required: bool,
     pub mem_oracles: crate::memory_sidecar::memory::RouteAMemoryOracles,
-    pub shout_pre: crate::memory_sidecar::memory::ShoutAddrPreBatchProverData,
+    pub instruction_lookup_pre: crate::memory_sidecar::memory::InstructionLookupAddrPreBatchProverData,
     pub twist_pre: Vec<crate::memory_sidecar::memory::TwistAddrPreProverData>,
     pub r_time: Vec<K>,
     pub batched_time: crate::shard_proof_types::BatchedTimeProof,
@@ -195,8 +194,9 @@ pub(super) fn prove_route_a_time_phase(
 ) -> Result<PreparedRouteATimePhase, PiCcsError> {
     let r_cycle: Vec<K> = ts::sample_ext_point(tr, b"route_a/r_cycle", b"route_a/cycle/0", b"route_a/cycle/1", ell_t);
 
-    let shout_pre =
-        crate::memory_sidecar::memory::prove_shout_addr_pre_time(tr, params, step, cpu_bus, ell_t, &r_cycle, step_idx)?;
+    let instruction_lookup_pre = crate::memory_sidecar::memory::prove_instruction_lookup_addr_pre_time(
+        tr, params, step, cpu_bus, ell_t, &r_cycle, step_idx,
+    )?;
 
     let twist_pre =
         crate::memory_sidecar::memory::prove_twist_addr_pre_time(tr, params, step, cpu_bus, ell_t, &r_cycle)
@@ -204,7 +204,12 @@ pub(super) fn prove_route_a_time_phase(
     let twist_read_claims: Vec<K> = twist_pre.iter().map(|p| p.read_check_claim_sum).collect();
     let twist_write_claims: Vec<K> = twist_pre.iter().map(|p| p.write_check_claim_sum).collect();
     let mut mem_oracles = crate::memory_sidecar::memory::build_route_a_memory_oracles(
-        params, step, ell_t, &r_cycle, &shout_pre, &twist_pre,
+        params,
+        step,
+        ell_t,
+        &r_cycle,
+        &instruction_lookup_pre,
+        &twist_pre,
     )?;
 
     let (booleanity_time_claim_built, trace_opening_time_claim_built) =
@@ -214,7 +219,7 @@ pub(super) fn prove_route_a_time_phase(
         && (booleanity_time_claim_built.is_none() || trace_opening_time_claim_built.is_none())
     {
         return Err(PiCcsError::ProtocolError(
-            "booleanity/trace-opening claims are required in RV32 trace mode but were not built".into(),
+            "booleanity/trace-opening claims are required in canonical trace mode but were not built".into(),
         ));
     }
     let booleanity_time_claim =
@@ -231,115 +236,6 @@ pub(super) fn prove_route_a_time_phase(
                 oracle,
                 claimed_sum: K::ZERO,
                 label: b"trace_opening/quiescence",
-            },
-        );
-
-    let (
-        width_bitness_built,
-        width_quiescence_built,
-        width_selector_linkage_built,
-        width_load_semantics_built,
-        width_store_semantics_built,
-    ) = crate::memory_sidecar::memory::build_route_a_width_time_claims(params, step, &r_cycle)?;
-    let width_required = crate::memory_sidecar::memory::width_stage_required_for_step_witness(step);
-    if width_required
-        && (width_bitness_built.is_none()
-            || width_quiescence_built.is_none()
-            || width_load_semantics_built.is_none()
-            || width_store_semantics_built.is_none())
-    {
-        return Err(PiCcsError::ProtocolError(
-            "width stage claims are required in RV32 trace mode but were not built".into(),
-        ));
-    }
-    let width_bitness_claim =
-        width_bitness_built.map(
-            |(oracle, _)| crate::memory_sidecar::route_a_time::ExtraBatchedTimeClaim {
-                oracle,
-                claimed_sum: K::ZERO,
-                label: b"width/bitness",
-            },
-        );
-    let width_quiescence_claim =
-        width_quiescence_built.map(
-            |(oracle, _)| crate::memory_sidecar::route_a_time::ExtraBatchedTimeClaim {
-                oracle,
-                claimed_sum: K::ZERO,
-                label: b"width/quiescence",
-            },
-        );
-    let width_selector_linkage_claim =
-        width_selector_linkage_built.map(
-            |(oracle, _)| crate::memory_sidecar::route_a_time::ExtraBatchedTimeClaim {
-                oracle,
-                claimed_sum: K::ZERO,
-                label: b"width/selector_linkage",
-            },
-        );
-    let width_load_semantics_claim =
-        width_load_semantics_built.map(
-            |(oracle, _)| crate::memory_sidecar::route_a_time::ExtraBatchedTimeClaim {
-                oracle,
-                claimed_sum: K::ZERO,
-                label: b"width/load_semantics",
-            },
-        );
-    let width_store_semantics_claim =
-        width_store_semantics_built.map(
-            |(oracle, _)| crate::memory_sidecar::route_a_time::ExtraBatchedTimeClaim {
-                oracle,
-                claimed_sum: K::ZERO,
-                label: b"width/store_semantics",
-            },
-        );
-
-    let (
-        control_next_pc_linear_built,
-        control_next_pc_control_built,
-        control_branch_semantics_built,
-        control_control_writeback_built,
-    ) = crate::memory_sidecar::memory::build_route_a_control_time_claims(params, step, &r_cycle)?;
-    let control_required = crate::memory_sidecar::memory::control_stage_required_for_step_witness(step);
-    if control_required
-        && (control_next_pc_linear_built.is_none()
-            || control_next_pc_control_built.is_none()
-            || control_branch_semantics_built.is_none()
-            || control_control_writeback_built.is_none())
-    {
-        return Err(PiCcsError::ProtocolError(
-            "control stage claims are required in RV32 trace mode but were not built".into(),
-        ));
-    }
-    let control_next_pc_linear_claim =
-        control_next_pc_linear_built.map(
-            |(oracle, _)| crate::memory_sidecar::route_a_time::ExtraBatchedTimeClaim {
-                oracle,
-                claimed_sum: K::ZERO,
-                label: b"control/next_pc_linear",
-            },
-        );
-    let control_next_pc_control_claim =
-        control_next_pc_control_built.map(
-            |(oracle, _)| crate::memory_sidecar::route_a_time::ExtraBatchedTimeClaim {
-                oracle,
-                claimed_sum: K::ZERO,
-                label: b"control/next_pc_control",
-            },
-        );
-    let control_branch_semantics_claim =
-        control_branch_semantics_built.map(
-            |(oracle, _)| crate::memory_sidecar::route_a_time::ExtraBatchedTimeClaim {
-                oracle,
-                claimed_sum: K::ZERO,
-                label: b"control/branch_semantics",
-            },
-        );
-    let control_writeback_claim =
-        control_control_writeback_built.map(
-            |(oracle, _)| crate::memory_sidecar::route_a_time::ExtraBatchedTimeClaim {
-                oracle,
-                claimed_sum: K::ZERO,
-                label: b"control/writeback",
             },
         );
 
@@ -457,19 +353,6 @@ pub(super) fn prove_route_a_time_phase(
         crate::memory_sidecar::route_a_time::RouteABatchedTimeClaims {
             booleanity: booleanity_time_claim,
             trace_opening: trace_opening_time_claim,
-            width: crate::memory_sidecar::route_a_time::LegacyWidthStageTimeClaims {
-                bitness: width_bitness_claim,
-                quiescence: width_quiescence_claim,
-                selector_linkage: width_selector_linkage_claim,
-                load_semantics: width_load_semantics_claim,
-                store_semantics: width_store_semantics_claim,
-            },
-            control: crate::memory_sidecar::route_a_time::Rv64ControlStageTimeClaims {
-                next_pc_linear: control_next_pc_linear_claim,
-                next_pc_control: control_next_pc_control_claim,
-                branch_semantics: control_branch_semantics_claim,
-                control_writeback: control_writeback_claim,
-            },
             poseidon: crate::memory_sidecar::route_a_time::PoseidonCycleTimeClaims {
                 io_link: poseidon_cycle_claims.io_link,
                 bitness: poseidon_cycle_claims.bitness,
@@ -489,9 +372,8 @@ pub(super) fn prove_route_a_time_phase(
     )?;
 
     Ok(PreparedRouteATimePhase {
-        control_required,
         mem_oracles,
-        shout_pre,
+        instruction_lookup_pre,
         twist_pre,
         r_time,
         batched_time,

@@ -292,7 +292,7 @@ fn infer_bus_layout_for_steps<Cmt, S: BusStepView<Cmt>>(
         )));
     }
 
-    // If there are no bus columns (no Twist/Shout instances), Route A doesn't use the bus time rows.
+    // If there are no bus columns (no Twist/generic-lookup instances), Route A doesn't use the bus time rows.
     // Allow small CCS instances (including m_in == n) in this case.
     if layout.bus_cols == 0 {
         return Ok(layout);
@@ -1779,7 +1779,7 @@ fn ensure_ccs_references_bus_cols(
 
     Err(PiCcsError::InvalidInput(format!(
         "shared_cpu_bus=true but CPU CCS does not reference required bus columns in any active constraint matrix.\n\
-         This makes the bus a dead witness: CPU semantics can fork from Twist/Shout semantics.\n\
+         This makes the bus a dead witness: CPU semantics can fork from memory-side / lookup semantics.\n\
          Fix: make CPU semantics use the bus coordinates directly, or add equality constraints tying any shadow columns to the bus.\n\
          Missing examples: {}",
         examples.join(", ")
@@ -2357,7 +2357,7 @@ fn ensure_ccs_has_bus_padding_constraints(
 
     Err(PiCcsError::InvalidInput(format!(
         "shared_cpu_bus=true but CPU CCS is missing required padding constraints that force inactive bus fields to zero.\n\
-         This is a common footgun: Twist/Shout gate checks by has_* flags, so unconstrained bus fields become arbitrary degrees of freedom.\n\
+         This is a common footgun: memory-side / lookup gate checks by has_* flags, so unconstrained bus fields become arbitrary degrees of freedom.\n\
          Fix: inject the canonical shared-bus constraints (binding + padding) using `neo_memory::cpu::constraints::extend_ccs_with_shared_cpu_bus_constraints`, \
          or add constraints of the form (1 - has_*) * field = 0 for each gated bus field (recommended: use `neo_memory::cpu::constraints::CpuConstraintBuilder`).\n\
          Missing examples: {}",

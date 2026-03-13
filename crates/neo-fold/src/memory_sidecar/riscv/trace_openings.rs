@@ -76,26 +76,6 @@ pub(crate) fn build_bus_layout_for_step_witness(
     Ok(layout)
 }
 
-#[inline]
-pub(crate) fn width_stage_required_for_step_instance(_step: &StepInstanceBundle<Cmt, F, K>) -> bool {
-    false
-}
-
-#[inline]
-pub(crate) fn width_stage_required_for_step_witness(_step: &StepWitnessBundle<Cmt, F, K>) -> bool {
-    false
-}
-
-#[inline]
-pub(crate) fn control_stage_required_for_step_instance(step: &StepInstanceBundle<Cmt, F, K>) -> bool {
-    trace_opening_path_required_for_step_instance(step)
-}
-
-#[inline]
-pub(crate) fn control_stage_required_for_step_witness(step: &StepWitnessBundle<Cmt, F, K>) -> bool {
-    trace_opening_path_required_for_step_witness(step)
-}
-
 pub(crate) fn build_route_a_trace_opening_time_claims(
     params: &NeoParams,
     step: &StepWitnessBundle<Cmt, F, K>,
@@ -227,10 +207,6 @@ pub(crate) fn emit_route_a_trace_opening_me_claims(
 
     let mut trace_opening_cols = rv64_trace_opening_columns(&trace);
     trace_opening_cols.extend(rv64_trace_exact_word_opening_columns());
-    if control_stage_required_for_step_witness(step) {
-        trace_opening_cols.extend(rv64_trace_control_extra_opening_columns(&trace));
-        trace_opening_cols.extend(rv64_control_trace_metadata_columns(&trace));
-    }
     let trace_opening_use_time_cols = step.time_columns.t == t_len
         && !step.time_columns.cpu_cols.is_empty()
         && !step.time_columns.mem_cols.is_empty();

@@ -19,8 +19,7 @@ mod route_a_segment;
 mod step;
 
 use context::{
-    commit_poseidon_lane_wits_batched, cpu_sumcheck_from_ccs, prepare_shard_prove_context,
-    shift_sumcheck_from_batched_time, PreparedShardProveContext,
+    commit_poseidon_lane_wits_batched, cpu_sumcheck_from_ccs, prepare_shard_prove_context, PreparedShardProveContext,
 };
 use lanes::{prove_aux_cpu_me_lane, prove_val_lane, AuxCpuLaneConfig};
 use openings::{prove_openings_phase, OpeningsPhaseContext};
