@@ -2,15 +2,15 @@
 
 ## Purpose
 
-- **What it is**: The shard-level integration point that (a) realizes the SuperNeo Section 7 folding core over CPU CCS claims and (b) composes in optional Route-A and time-opening extension obligations.
+- **What it is**: The shard-level integration point that (a) realizes the SuperNeo Section 7 folding core over CPU CCS claims and (b) composes in optional memory-side, instruction-lookup, and time-opening extension obligations.
 - **What it owns**: Per-step proving and verification, carried accumulator updates, step-linking checks, output-binding strengthening, and the proof-data boundary exported to sessions and Rust→Lean refinement tooling.
-- **What it must not do**: Redefine CCS/CE semantics, redefine Twist/Shout sidecar semantics, or let convenience wrapper APIs become the effective protocol spec.
+- **What it must not do**: Redefine CCS/CE semantics, redefine memory-side or instruction-lookup extension semantics, or let convenience wrapper APIs become the effective protocol spec.
 
 ## Architectural Position
 
 - **Layer**: paper-core folding integration point
-- **Direct paper theorem owner?** Yes, for the Section 7 folding core. Route-A/time-opening integration and Rust-only strengthenings are additional layers composed here.
-- **Consumes lower-layer semantics from**: [MemorySidecar.spec.md](crates/neo-fold/specs/MemorySidecar.spec.md), [TimeOpening.spec.md](crates/neo-fold/specs/TimeOpening.spec.md), lower CCS/CE semantics from `neo-ccs`
+- **Direct paper theorem owner?** Yes, for the Section 7 folding core. Memory-side, instruction-lookup, and time-opening integration plus Rust-only strengthenings are additional layers composed here.
+- **Consumes lower-layer semantics from**: [MemorySidecar.spec.md](crates/neo-fold/specs/MemorySidecar.spec.md), [InstructionLookup.spec.md](crates/neo-fold/specs/InstructionLookup.spec.md), [TimeOpening.spec.md](crates/neo-fold/specs/TimeOpening.spec.md), lower CCS/CE semantics from `neo-ccs`
 - **Exports semantics to**: [Session.spec.md](crates/neo-fold/specs/Session.spec.md), [Finalize.spec.md](crates/neo-fold/specs/Finalize.spec.md), Rust refinement/export tooling
 - **Erasure rule**: erasing step linking, output binding, and other Rust-only strengthening metadata must leave the same lower accepted shard artifact and the same projected Section 7 obligation surface.
 
@@ -127,7 +127,8 @@ This spec depends on [ShardProofTypes.spec.md](crates/neo-fold/specs/ShardProofT
 | Assumption | Source | Why this layer relies on it |
 |---|---|---|
 | CCS/CE semantics are correct | `neo-ccs` specs + Lean formalization | This layer composes them; it does not redefine them |
-| Route-A sidecar semantics are correct | `MemorySidecar.spec.md` | This layer integrates sidecars into shard proving |
+| Memory-side sidecar semantics are correct | `MemorySidecar.spec.md` | This layer integrates memory-side sidecars into shard proving |
+| Dedicated instruction-lookup semantics are correct | `InstructionLookup.spec.md` | This layer integrates maintained opcode lookup proofs into shard proving |
 | Time-opening/joint-opening semantics are correct | `TimeOpening.spec.md` | This layer consumes joint-opening/opening proof objects |
 | Transcript/arithmetic primitives are correct | lower crates | Required for prover/verifier agreement |
 

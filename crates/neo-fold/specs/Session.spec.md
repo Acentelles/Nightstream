@@ -10,7 +10,7 @@
 
 - **Layer**: orchestration
 - **Direct paper theorem owner?** No. This module is a façade over lower theorem-owning layers.
-- **Consumes lower-layer semantics from**: [ShardFolding.spec.md](crates/neo-fold/specs/ShardFolding.spec.md), [MemorySidecar.spec.md](crates/neo-fold/specs/MemorySidecar.spec.md), [TimeOpening.spec.md](crates/neo-fold/specs/TimeOpening.spec.md)
+- **Consumes lower-layer semantics from**: [ShardFolding.spec.md](crates/neo-fold/specs/ShardFolding.spec.md), [InstructionLookup.spec.md](crates/neo-fold/specs/InstructionLookup.spec.md), [MemorySidecar.spec.md](crates/neo-fold/specs/MemorySidecar.spec.md), [TimeOpening.spec.md](crates/neo-fold/specs/TimeOpening.spec.md)
 - **Exports semantics to**: trace frontends, integration/session tests, Rust artifact and session exporters
 - **Erasure rule**: removing step-linking/output-binding strengthenings and frontend convenience structure must leave the same lower shard obligations and the same projected paper-core session glue.
 
@@ -22,9 +22,9 @@
 | folding session over step claims | SuperNeo §7 | `FoldingSession<L>` | Main session coordinator over shard proving and verification |
 | step witness / public input pair | SuperNeo Defs 12-14 | `ProveInput<'a>`, `StepSpec`, `StepArtifacts` | Ergonomic Rust-side step description |
 | step transition relation | Jolt execution + SuperNeo §7.1 | `NeoStep` | User-implemented step producer interface |
-| shared-bus circuit frontend | Jolt memory checking + Twist/Shout sidecars | `NeoCircuit`, `SharedBusR1csPreprocessing<C>`, `SharedBusR1csProver<L, C>` | Typed route from R1CS/witness layout into session proving |
-| witness column allocation | implementation support | `WitnessLayout`, `WitnessLayoutAllocator`, `Lane<N>`, `ShoutPort<N>`, `TwistPort<N>`, `TwistPortWithInc<N>` | One owner for witness-layout DSL |
-| shared Twist/Shout resources | Twist/Shout overview | `SharedBusResources`, `TwistResource<'a>`, `ShoutResource<'a>` | Session-owned resource declaration |
+| shared-bus circuit frontend | Jolt memory checking + dedicated instruction lookup + memory-side extensions | `NeoCircuit`, `SharedBusR1csPreprocessing<C>`, `SharedBusR1csProver<L, C>` | Typed route from R1CS/witness layout into session proving |
+| witness column allocation | implementation support | `WitnessLayout`, `WitnessLayoutAllocator`, `Lane<N>`, `LookupPort<N>`, `TwistPort<N>`, `TwistPortWithInc<N>` | One owner for witness-layout DSL |
+| shared Twist/lookup resources | shared CPU-bus resource declaration plus dedicated instruction-lookup owner | `SharedBusResources`, `TwistResource<'a>`, `LookupResource<'a>` | Session-owned generic resource declaration; maintained hot opcode lookup ownership may be discharged by `InstructionLookup` rather than generic `LookupResource` |
 | R1CS -> CCS circuit builder | implementation support | `R1csRow<F>`, `CcsBuilder<F>` | Ergonomic circuit-construction helper |
 
 ## Direct Paper Anchors
@@ -73,7 +73,7 @@ This module is not a direct paper-theorem owner. It orchestrates lower theorem-o
 | `params()` | Inspector | Returns session parameters |
 | `initial_accumulator()` | Inspector | Returns initial accumulator if present |
 | `committer()` | Inspector | Returns commitment operator |
-| `set_shared_bus_resources(resources)` | Config | Installs shared Twist/Shout resource declarations |
+| `set_shared_bus_resources(resources)` | Config | Installs shared Twist/generic-lookup resource declarations |
 | `shared_bus_resources_mut()` | Config | Mutable access to resource declarations |
 | `set_step_linking(cfg)` | Config | Installs explicit linking policy |
 | `enable_step_linking_from_step_spec(spec)` | Config | Derives linking policy from a step spec |
@@ -121,7 +121,7 @@ This module is not a direct paper-theorem owner. It orchestrates lower theorem-o
 | `WitnessLayoutPublic` | trait | Core | Public-field extension |
 | `WitnessLayoutAllocator` | struct | Core | Owner of witness column allocation |
 | `Lane<N>` | struct | Core | CPU lane column allocation |
-| `ShoutPort<N>` | struct | Core | Shout/lookup CPU-port binding |
+| `LookupPort<N>` | struct | Core | Generic lookup CPU-port binding; not by itself the maintained opcode proving owner |
 | `TwistPort<N>` | struct | Core | Twist memory CPU-port binding |
 | `TwistPortWithInc<N>` | struct | Core | Twist binding plus increment column |
 
@@ -134,10 +134,10 @@ Representative public DSL helpers:
 | `WitnessLayoutAllocator::used_cols` | Inspector | Returns consumed columns |
 | `WitnessLayoutAllocator::scalar` / `public_scalar` | Builder | Allocate one scalar/public scalar |
 | `WitnessLayoutAllocator::lane` / `public_lane` | Builder | Allocate one CPU lane/public lane |
-| `WitnessLayoutAllocator::shout_port` | Builder | Allocate one shout port |
+| `WitnessLayoutAllocator::lookup_port` | Builder | Allocate one generic lookup port |
 | `WitnessLayoutAllocator::twist_port` / `twist_port_with_inc` | Builder | Allocate one twist port |
 | `Lane::new`, `base`, `at`, `iter`, `set`, `set_from_iter` | Core | CPU lane field access and filling |
-| `ShoutPort::cpu_binding`, `fill_from_trace` | Core | Shout-port CPU binding and fill semantics |
+| `LookupPort::cpu_binding`, `fill_from_trace` | Core | Generic lookup port CPU binding and fill semantics |
 | `TwistPort::cpu_binding`, `fill_lanes_from_trace` | Core | Twist-port CPU binding and fill semantics |
 | `TwistPortWithInc::cpu_binding`, `fill_lanes_from_trace` | Core | Twist+increment binding and fill semantics |
 
@@ -145,9 +145,9 @@ Representative public DSL helpers:
 
 | Rust symbol | Kind | Role | Contract |
 |---|---|---|---|
-| `SharedBusResources` | struct | Core | One owner for Twist/Shout resource declarations |
+| `SharedBusResources` | struct | Core | One owner for generic Twist/lookup resource declarations at the session boundary |
 | `TwistResource<'a>` | struct | Core | Builder for one Twist resource |
-| `ShoutResource<'a>` | struct | Core | Builder for one Shout resource |
+| `LookupResource<'a>` | struct | Core | Builder for one generic lookup resource |
 | `R1csRow<F>` | struct | Core | One R1CS row specification |
 | `CcsBuilder<F>` | struct | Core | Ergonomic R1CS -> CCS builder |
 
@@ -156,11 +156,11 @@ Representative public helpers:
 | Rust symbol | Role | Contract |
 |---|---|---|
 | `SharedBusResources::new` | Constructor | Creates an empty resource set |
-| `SharedBusResources::twist` / `shout` | Builder | Declares one Twist/Shout resource |
-| `SharedBusResources::set_binary_table` / `set_padded_binary_table` | Config | Installs binary lookup tables |
+| `SharedBusResources::twist` / `shout` | Builder | Declares one Twist or generic lookup resource |
+| `SharedBusResources::set_binary_lookup_table` / `set_padded_binary_lookup_table` | Config | Installs generic binary lookup tables; this does not by itself define the maintained hot opcode lookup path |
 | `SharedBusResources::set_binary_mem_layout` | Config | Sets binary memory layout |
 | `TwistResource::layout`, `init`, `init_cell`, `clear_init` | Config | Twist initialization semantics |
-| `ShoutResource::lanes`, `table`, `binary_table`, `padded_binary_table`, `spec` | Config | Shout resource semantics |
+| `LookupResource::lanes`, `table`, `binary_table`, `padded_binary_table`, `spec` | Config | Generic lookup resource semantics |
 | `CcsBuilder::new`, `m_in`, `const_one_col`, `rows_len` | Inspector/constructor | Builder setup |
 | `CcsBuilder::r1cs_terms`, `r1cs_cols`, `eq`, `lane_continuity`, `build_rect` | Core | R1CS -> CCS construction primitives |
 

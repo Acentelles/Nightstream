@@ -9,18 +9,18 @@
 ## Architectural Position
 
 - **Layer**: extension
-- **Direct paper theorem owner?** Yes, for the Twist/Shout-derived time-opening and joint-opening extension semantics. It is not itself a Section 7 theorem owner.
-- **Consumes lower-layer semantics from**: [MemorySidecar.spec.md](crates/neo-fold/specs/MemorySidecar.spec.md), lower transcript/math layers
+- **Direct paper theorem owner?** Yes, for the extension time-opening and joint-opening reduction semantics over memory-side and instruction-lookup claims. It is not itself a Section 7 theorem owner.
+- **Consumes lower-layer semantics from**: [MemorySidecar.spec.md](crates/neo-fold/specs/MemorySidecar.spec.md), [InstructionLookup.spec.md](crates/neo-fold/specs/InstructionLookup.spec.md), lower transcript/math layers
 - **Exports semantics to**: [ShardFolding.spec.md](crates/neo-fold/specs/ShardFolding.spec.md), [ShardProofTypes.spec.md](crates/neo-fold/specs/ShardProofTypes.spec.md), Rust artifact/refinement tooling
 - **Erasure rule**: erasing Rust-only exporter metadata must preserve the same opening manifests, grouped reductions, and joint-lane obligations.
 
-In repo terminology, the "Nightstream extension layer" is the combination of Route-A sidecars plus time-opening/joint-opening obligations. This is an architectural umbrella term, not a paper theorem label.
+In repo terminology, the "Nightstream extension layer" is the combination of dedicated instruction lookup, memory-side Route-A sidecars, and time-opening/joint-opening obligations. This is an architectural umbrella term, not a paper theorem label.
 
 ## Target Formulas (Paper -> Rust)
 
 | Paper notion | Paper anchor | Rust surface | Meaning in this crate |
 |---|---|---|---|
-| batched time-claim reduction into final opening obligations | Twist/Shout `Shout` and `Twist` PIOP descriptions, especially the time-evaluation and batched sumcheck flow | `build_opening_claim_manifest`, `build_opening_reduction`, `OpeningClaimManifest`, `OpeningReductionProof` | Canonical reduction from many time/opening claims to grouped opening checks |
+| batched extension time-claim reduction into final opening obligations | extension time-evaluation and batched reduction flow | `build_opening_claim_manifest`, `build_opening_reduction`, `OpeningClaimManifest`, `OpeningReductionProof` | Canonical reduction from memory-side and instruction-lookup time/opening claims to grouped opening checks |
 | transcript binding and sampled coefficients for grouped opening reductions | same | `bind_opening_claim_manifest`, `bind_opening_reduction_and_sample_group_coeffs` | Transcript discipline for the reduction surface |
 | final opening unification check | same | `prove_opening_unification_sumcheck`, `verify_opening_unification_sumcheck`, `OpeningUnificationProof` | Final proof that grouped opening claims are jointly satisfied |
 | joint-opening fold-lane proof | implementation support for the SuperNeo route | `JointOpeningFoldLanePlan`, `build_joint_opening_fold_lane_plan`, `prove_joint_opening_lane*`, `verify_joint_opening_lane` | One owner for the joint-opening lane |
@@ -30,9 +30,11 @@ In repo terminology, the "Nightstream extension layer" is the combination of Rou
 ## Direct Paper Anchors
 
 - `docs/twist-and-shout-paper/4_the_shout_piop.md`
-  - use this as the anchor for `Shout` time claims, one-hot checks, and batched-time obligations
+  - use this only for residual generic-lookup-derived `Shout` time claims, one-hot checks, and batched-time obligations
 - `docs/twist-and-shout-paper/5_the_twist_piop.md`
   - use this as the anchor for `Twist` time claims, `Val`-evaluation obligations, and the final sidecar opening path
+- `docs/jolt-paper/05-4_Analyzing_MLE-structure_and_Decomposability.md`
+  - use this as the context anchor for instruction-lookup-derived opening claims when the maintained hot path uses chunked/decomposable lookup proving
 
 ## Context Anchors
 
@@ -104,7 +106,7 @@ In repo terminology, the "Nightstream extension layer" is the combination of Rou
 | `TO-1` | Opening manifests enumerate exactly the claims the verifier later checks | Rust verifier + artifact validators | Prevents hidden or omitted opening obligations |
 | `TO-2` | Reduction groups and sampled coefficients preserve the same opening obligations, not weaker surrogates | Artifact validation over exported opening artifacts | Prevents joint-opening weakening |
 | `TO-3` | Joint-lane planning preserves lane/domain separation and required openings | `NeoFoldRelationValidation` item `3`; `paperArtifactRelationChecks`; `paperArtifactRelationChecks_implies_paperArtifactStepRelationsAccepts` | Prevents lane-crossing bugs in the projected joint-opening relation |
-| `TO-4` | Route-A batched-time transcript and lane-summary validation stay prover/verifier consistent | `NeoFoldArtifactValidation` items `4`, `6`, and `10` | Connects the time-opening path to the real exported artifact checks |
+| `TO-4` | Extension batched-time transcript and lane-summary validation stay prover/verifier consistent | `NeoFoldArtifactValidation` items `4`, `6`, and `10` | Connects the time-opening path to the real exported artifact checks |
 | `TO-5` | The `ME`/digit adapter preserves evaluations, rotations, and commitment transport semantics | Rust adapter/integration tests | Prevents wrong opening values even when proof objects look structurally valid |
 | `TO-6` | `JOINT_OPENING_TIME_DECOMP_BASE` remains the agreed decomposition base | Rust constant tests + artifact validation | Prevents prover/verifier mismatch on the joint-opening path |
 | `TO-7` | The two-lane architecture is preserved: main-lane and val-lane obligations are not accidentally merged or dropped | artifact validators and integration tests | Prevents weakening of the sidecar soundness story |
@@ -113,7 +115,7 @@ In repo terminology, the "Nightstream extension layer" is the combination of Rou
 
 | Assumption | Source | Why this layer relies on it |
 |---|---|---|
-| Time-column commitments/openings are constructed correctly upstream | shard and memory-sidecar layers | This layer reduces and verifies them; it does not define them |
+| Time-column commitments/openings are constructed correctly upstream | shard, instruction-lookup, and memory-sidecar layers | This layer reduces and verifies them; it does not define them |
 | Transcript arithmetic and challenge sampling are correct | `neo-transcript` and lower crates | Required for manifest binding, reduction binding, and unification |
 | The shard layer feeds this module the correct main-lane/val-lane obligation partition | shard proving path | Joint-lane planning assumes the partition is already meaningful |
 

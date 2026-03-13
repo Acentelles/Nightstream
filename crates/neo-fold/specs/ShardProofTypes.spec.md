@@ -3,14 +3,14 @@
 ## Purpose
 
 - **What it is**: The proof-data schema exported by shard proving and consumed by session orchestration, finalization, Rust exporters, and Lean refinement.
-- **What it owns**: Typed representation of time-fold steps, Route-A sidecar proofs, RLC/DEC proofs, opening manifests/reductions, per-step proof objects, and shard-level obligation summaries.
+- **What it owns**: Typed representation of time-fold steps, memory-side and instruction-lookup extension proofs, RLC/DEC proofs, opening manifests/reductions, per-step proof objects, and shard-level obligation summaries.
 - **What it must not do**: Invent weaker semantic surrogates than the verifier actually checks, or let compatibility/convenience fields redefine the proof boundary.
 
 ## Architectural Position
 
 - **Layer**: proof-data boundary
 - **Direct paper theorem owner?** No. This module carries the data boundary between lower theorem surfaces and Rust/session/export consumers.
-- **Consumes lower-layer semantics from**: [ShardFolding.spec.md](crates/neo-fold/specs/ShardFolding.spec.md), [MemorySidecar.spec.md](crates/neo-fold/specs/MemorySidecar.spec.md), [TimeOpening.spec.md](crates/neo-fold/specs/TimeOpening.spec.md)
+- **Consumes lower-layer semantics from**: [ShardFolding.spec.md](crates/neo-fold/specs/ShardFolding.spec.md), [InstructionLookup.spec.md](crates/neo-fold/specs/InstructionLookup.spec.md), [MemorySidecar.spec.md](crates/neo-fold/specs/MemorySidecar.spec.md), [TimeOpening.spec.md](crates/neo-fold/specs/TimeOpening.spec.md)
 - **Exports semantics to**: [Session.spec.md](crates/neo-fold/specs/Session.spec.md), [Finalize.spec.md](crates/neo-fold/specs/Finalize.spec.md), Rust artifact/session exporters, Lean refinement validators
 - **Erasure rule**: erasing Rust-only metadata and strengthening fields must preserve the paper-core and extension proof meaning carried by the lower semantic subfields.
 
@@ -54,7 +54,7 @@ This module is not a direct paper-theorem owner. It is the Rust proof-data bound
 | Tier | Meaning | Representative surfaces |
 |---|---|---|
 | paper-core folded data | Section 7 folded claims and outgoing obligations | `RlcDecProof`, main-lane reductions, `ShardObligations`, final folded children |
-| extension proof data | Route-A and time-opening/joint-opening proof objects consumed by shard verification | `MemSidecarProof`, `BatchedTimeProof`, `OpeningClaimManifest`, `OpeningReductionProof`, `OpeningUnificationProof`, `JointOpening*` |
+| extension proof data | Memory-side, instruction-lookup, and time-opening/joint-opening proof objects consumed by shard verification | `MemOrLutProof`, `MemSidecarProof`, `BatchedTimeProof`, `OpeningClaimManifest`, `OpeningReductionProof`, `OpeningUnificationProof`, `JointOpening*` |
 | Rust-only metadata / strengthening | Exporter metadata, audits, optional strengthenings, compatibility fields | audit structs, segment metadata, output-binding-related fields, sidecar-only refinement metadata |
 
 Mixed containers:
@@ -65,7 +65,7 @@ Mixed containers:
 
 | Rust symbol | Kind | Role | Contract |
 |---|---|---|---|
-| `TwistProofK`, `ShoutProofK` | type aliases | Core | Canonical proof scalar types for Twist/Shout sidecars |
+| `TwistProofK`, `ShoutProofK` | type aliases | Core | Canonical proof scalar types for Twist and residual-generic-lookup sidecars |
 | `CpuTimeSumcheckProof`, `ShiftTimeSumcheckProof` | structs | Core | Time-claim sumcheck proof wrappers |
 | `TimeOpeningSource` | enum | Core | Source of a time opening value |
 | `TimePointOpening`, `TimeOpeningProof` | structs | Core | Point-evaluation opening proof data |
@@ -82,8 +82,8 @@ Mixed containers:
 | `ShardObligations<C,FF,KK>` | struct | Core | Aggregated main and auxiliary outgoing obligations |
 | `ShardFoldOutputs<C,FF,KK>` | struct | Core | Fold outputs produced by one shard |
 | `ShardFoldWitnesses<FF>` | struct | Core | Witness material paired with fold outputs |
-| `MemOrLutProof` | enum | Core | Sidecar proof variant |
-| `MemSidecarProof<C,FF,KK>` | struct | Core | Route-A sidecar proof bundle |
+| `MemOrLutProof` | enum | Core | Extension proof variant for memory-side or instruction-lookup proof material |
+| `MemSidecarProof<C,FF,KK>` | struct | Core | Aggregated extension proof bundle carrying memory-side and lookup-side proof material as verifier-relevant variants |
 | `BatchedTimeProof` | struct | Core | Batched time-claim proof bundle |
 | `RlcDecProof` | struct | Core | `Π_RLC`/`Π_DEC` proof data for one lane |
 | `StepProof` | struct | Core | One full folded step proof |
@@ -119,6 +119,7 @@ Mixed containers:
 | Assumption | Source | Why this layer relies on it |
 |---|---|---|
 | Shard proving/verifying constructs and consumes these objects consistently | `ShardFolding.spec.md` | These types are the data boundary for shard folding |
+| Dedicated instruction-lookup proof material is kept semantically explicit even when transport containers aggregate multiple extension families | `InstructionLookup.spec.md` | Prevents memory-side and lookup-side proof meaning from collapsing into an untyped blob |
 | Time-opening layer is correct | `TimeOpening.spec.md` | Opening proof objects are only meaningful relative to that layer |
 
 ## Dependency and Consumer Map

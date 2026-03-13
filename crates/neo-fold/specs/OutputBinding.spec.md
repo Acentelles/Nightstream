@@ -9,7 +9,7 @@
 ## Architectural Position
 
 - **Layer**: Rust-only strengthening
-- **Direct paper theorem owner?** No. This module is outside the SuperNeo and Twist/Shout theorem surfaces.
+- **Direct paper theorem owner?** No. This module is outside the SuperNeo, Twist, and dedicated instruction-lookup theorem surfaces.
 - **Consumes lower-layer semantics from**: [Session.spec.md](crates/neo-fold/specs/Session.spec.md), [ShardFolding.spec.md](crates/neo-fold/specs/ShardFolding.spec.md), frontend terminal-state data
 - **Exports semantics to**: shard/session verification and Rust refinement validators
 - **Erasure rule**: erasing output-binding metadata must leave the same lower accepted shard or session artifact.
@@ -85,7 +85,7 @@ Upstream dependencies:
 Primary consumers:
 - `neo-fold::shard`
 - `neo-fold::session`
-- RV32/RV64 trace frontends
+- RV64 trace frontend
 - Rust artifact/session exporters
 
 ## Lean Oracle and Refinement Conformance
