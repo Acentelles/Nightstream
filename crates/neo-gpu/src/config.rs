@@ -26,7 +26,6 @@ pub enum DeviceApi {
     Cpu = 0,
     Metal = 1,
     Cuda = 2,
-    Hip = 3,
 }
 
 impl DeviceApi {
@@ -42,7 +41,6 @@ impl DeviceApi {
             DeviceApi::Cpu => BackendActivationThresholds::new(0, 0, 0),
             DeviceApi::Metal => BackendActivationThresholds::new(512, 256, 256),
             DeviceApi::Cuda => BackendActivationThresholds::new(32, 256, 256),
-            DeviceApi::Hip => BackendActivationThresholds::new(32, 256, 256),
         }
     }
 
@@ -51,18 +49,16 @@ impl DeviceApi {
         const CPU_ONLY: &[DeviceApi] = &[DeviceApi::Cpu];
         const METAL_ONLY: &[DeviceApi] = &[DeviceApi::Metal];
         const CUDA_ONLY: &[DeviceApi] = &[DeviceApi::Cuda];
-        const HIP_ONLY: &[DeviceApi] = &[DeviceApi::Hip];
         #[cfg(target_os = "macos")]
         const AUTO_ORDER: &[DeviceApi] = &[DeviceApi::Metal, DeviceApi::Cpu];
         #[cfg(not(target_os = "macos"))]
-        const AUTO_ORDER: &[DeviceApi] = &[DeviceApi::Cuda, DeviceApi::Hip, DeviceApi::Cpu];
+        const AUTO_ORDER: &[DeviceApi] = &[DeviceApi::Cuda, DeviceApi::Cpu];
 
         match self {
             DeviceApi::Auto => AUTO_ORDER,
             DeviceApi::Cpu => CPU_ONLY,
             DeviceApi::Metal => METAL_ONLY,
             DeviceApi::Cuda => CUDA_ONLY,
-            DeviceApi::Hip => HIP_ONLY,
         }
     }
 }

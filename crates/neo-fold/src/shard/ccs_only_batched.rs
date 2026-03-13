@@ -312,6 +312,7 @@ where
             k_dec,
             step_idx,
             backend_ctx,
+            false,
             None,
             &ccs_out,
             &outs_Z,

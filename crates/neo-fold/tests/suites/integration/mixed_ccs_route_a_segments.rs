@@ -193,9 +193,13 @@ fn mixed_ccs_only_and_route_a_segments_mojo_backend_matches_cpu() {
         *lib.get::<ResetFn>(b"nightstream_gpu_test_reset_counters\0")
             .expect("load counter reset symbol")
     };
-    let poseidon2_batch_calls = unsafe {
-        *lib.get::<CounterFn>(b"nightstream_gpu_test_poseidon2_batch_calls\0")
-            .expect("load poseidon2 batch counter symbol")
+    let rq_mul_calls = unsafe {
+        *lib.get::<CounterFn>(b"nightstream_gpu_test_rq_mul_calls\0")
+            .expect("load rq_mul counter symbol")
+    };
+    let superneo_calls = unsafe {
+        *lib.get::<CounterFn>(b"nightstream_gpu_test_superneo_calls\0")
+            .expect("load superneo counter symbol")
     };
     let session_open_calls = unsafe {
         *lib.get::<CounterFn>(b"nightstream_gpu_test_session_open_calls\0")
@@ -240,8 +244,12 @@ fn mixed_ccs_only_and_route_a_segments_mojo_backend_matches_cpu() {
 
     assert_eq!(mojo_outputs.obligations.main.len(), fx.params.k_rho as usize);
     assert!(
-        unsafe { poseidon2_batch_calls() } > 0,
-        "mock mojo backend should use batched Poseidon2 in mixed shard flow"
+        unsafe { rq_mul_calls() } > 0,
+        "mock mojo backend should exercise rq_mul acceleration in mixed shard flow"
+    );
+    assert!(
+        unsafe { superneo_calls() } > 0,
+        "mock mojo backend should exercise SuperNeo helpers in mixed shard flow"
     );
     assert_eq!(unsafe { session_open_calls() }, 2);
 }

@@ -7,9 +7,12 @@
 use core::cmp::min;
 
 use neo_ccs::{CcsMatrix, CcsStructure};
+use neo_gpu::{FlatK, FlatRq, MojoSession};
 use neo_math::KExtensions;
-use neo_math::{ct, superneo_bar_block, Rq, D, F, K};
-use p3_field::{Field, PrimeCharacteristicRing};
+use neo_math::{ct, from_complex, superneo_bar_block, Rq, D, F, K};
+use p3_field::{Field, PrimeCharacteristicRing, PrimeField64};
+
+use crate::PiCcsError;
 
 #[inline]
 fn matrix_entry<Ff>(mat: &CcsMatrix<Ff>, row: usize, col: usize) -> Ff
@@ -193,6 +196,185 @@ pub struct SuperneoZBlocks {
     re: Vec<Rq>,
     im: Vec<Rq>,
     imag_all_zero: bool,
+}
+
+#[derive(Clone, Debug)]
+struct WeightedSuperneoBlocks {
+    re: Vec<Rq>,
+    im: Vec<Rq>,
+}
+
+impl WeightedSuperneoBlocks {
+    #[inline]
+    fn new(block_count: usize) -> Self {
+        Self {
+            re: vec![Rq([F::ZERO; D]); block_count],
+            im: vec![Rq([F::ZERO; D]); block_count],
+        }
+    }
+}
+
+#[inline]
+fn rq_is_zero(value: &Rq) -> bool {
+    value.0.iter().all(|coeff| *coeff == F::ZERO)
+}
+
+#[inline]
+fn flat_rq_from_rq(value: &Rq) -> FlatRq {
+    FlatRq {
+        coeffs: value.0.map(|coeff| coeff.as_canonical_u64()),
+    }
+}
+
+#[inline]
+fn flat_k_vec_from_blocks(z_blocks: &SuperneoZBlocks) -> Vec<FlatK> {
+    let mut out = Vec::with_capacity(z_blocks.re.len() * D);
+    for blk in 0..z_blocks.re.len() {
+        for i in 0..D {
+            out.push(FlatK {
+                re: z_blocks.re[blk].0[i].as_canonical_u64(),
+                im: z_blocks.im[blk].0[i].as_canonical_u64(),
+            });
+        }
+    }
+    out
+}
+
+#[inline]
+fn k_from_flat(value: FlatK) -> K {
+    from_complex(F::from_u64(value.re), F::from_u64(value.im))
+}
+
+fn build_weighted_blocks(mat: &SuperneoMatrixCache, chi_r: &[K], n_eff: usize) -> WeightedSuperneoBlocks {
+    let block_count = mat.cols.div_ceil(D);
+    let mut weighted = WeightedSuperneoBlocks::new(block_count);
+    let row_cap = min(min(mat.rows, n_eff), chi_r.len());
+    for (row, &w) in chi_r.iter().take(row_cap).enumerate() {
+        if w == K::ZERO {
+            continue;
+        }
+        let [w_re, w_im] = w.as_coeffs();
+        for rb in &mat.row_blocks[row] {
+            for i in 0..D {
+                weighted.re[rb.blk].0[i] += w_re * rb.bar.0[i];
+                weighted.im[rb.blk].0[i] += w_im * rb.bar.0[i];
+            }
+        }
+    }
+    weighted
+}
+
+fn accumulate_weighted_blocks(
+    session: &MojoSession,
+    weighted_blocks: &[WeightedSuperneoBlocks],
+    z_blocks: &[Rq],
+    use_im_weight: bool,
+) -> Result<Vec<FlatRq>, PiCcsError> {
+    let mut lhs = Vec::<FlatRq>::new();
+    let mut rhs = Vec::<FlatRq>::new();
+    let mut slot_offsets = Vec::with_capacity(weighted_blocks.len() + 1);
+    slot_offsets.push(0u64);
+    for weighted in weighted_blocks {
+        let blocks = if use_im_weight { &weighted.im } else { &weighted.re };
+        for (blk_idx, lhs_block) in blocks.iter().enumerate() {
+            let rhs_block = &z_blocks[blk_idx];
+            if rq_is_zero(lhs_block) || rq_is_zero(rhs_block) {
+                continue;
+            }
+            lhs.push(flat_rq_from_rq(lhs_block));
+            rhs.push(flat_rq_from_rq(rhs_block));
+        }
+        slot_offsets.push(lhs.len() as u64);
+    }
+    session
+        .rq_accumulate_batch_u64x54(&lhs, &rhs, &slot_offsets)
+        .map_err(|err| PiCcsError::ProtocolError(format!("SuperNeo weighted rq_accumulate failed: {err}")))
+}
+
+pub fn try_eval_all_mats_precompute_with_backend(
+    cache: &SuperneoEvalCache,
+    z_blocks: &SuperneoZBlocks,
+    chi_r: &[K],
+    n_eff: usize,
+    backend_ctx: &crate::accelerator::BackendContext,
+) -> Result<Option<(Vec<K>, Vec<[K; D]>)>, PiCcsError> {
+    let Some(session) = backend_ctx.aux_session()? else {
+        return Ok(None);
+    };
+    if !session.supports_superneo_api() || !session.supports_rq_mul_api() {
+        return Ok(None);
+    }
+
+    let weighted_blocks = cache
+        .mats
+        .iter()
+        .map(|mat| build_weighted_blocks(mat, chi_r, n_eff))
+        .collect::<Vec<_>>();
+    let flat_z = flat_k_vec_from_blocks(z_blocks);
+    let delta = F::from_u64(7);
+
+    let scalar_values = {
+        let mut out = Vec::with_capacity(weighted_blocks.len());
+        for weighted in &weighted_blocks {
+            let re_blocks = weighted
+                .re
+                .iter()
+                .map(flat_rq_from_rq)
+                .map(|flat| flat.coeffs)
+                .collect::<Vec<_>>();
+            let im_blocks = weighted
+                .im
+                .iter()
+                .map(flat_rq_from_rq)
+                .map(|flat| flat.coeffs)
+                .collect::<Vec<_>>();
+            let weighted_re = session
+                .superneo_row_dot_blocks(&re_blocks, &flat_z)
+                .map_err(|err| PiCcsError::ProtocolError(format!("SuperNeo row_dot(re) failed: {err}")))?;
+            let weighted_im = session
+                .superneo_row_dot_blocks(&im_blocks, &flat_z)
+                .map_err(|err| PiCcsError::ProtocolError(format!("SuperNeo row_dot(im) failed: {err}")))?;
+            let weighted_re = k_from_flat(weighted_re);
+            let weighted_im = k_from_flat(weighted_im);
+            let [a_re, a_im] = weighted_re.as_coeffs();
+            let [b_re, b_im] = weighted_im.as_coeffs();
+            out.push(K::from_coeffs([a_re + delta * b_im, a_im + b_re]));
+        }
+        out
+    };
+
+    let ring_values = if z_blocks.imag_all_zero {
+        let out_re = accumulate_weighted_blocks(session, &weighted_blocks, &z_blocks.re, false)?;
+        let out_im = accumulate_weighted_blocks(session, &weighted_blocks, &z_blocks.re, true)?;
+        out_re
+            .into_iter()
+            .zip(out_im)
+            .map(|(re, im)| {
+                std::array::from_fn(|idx| K::from_coeffs([F::from_u64(re.coeffs[idx]), F::from_u64(im.coeffs[idx])]))
+            })
+            .collect()
+    } else {
+        let out_re_re = accumulate_weighted_blocks(session, &weighted_blocks, &z_blocks.re, false)?;
+        let out_re_im = accumulate_weighted_blocks(session, &weighted_blocks, &z_blocks.im, false)?;
+        let out_im_re = accumulate_weighted_blocks(session, &weighted_blocks, &z_blocks.re, true)?;
+        let out_im_im = accumulate_weighted_blocks(session, &weighted_blocks, &z_blocks.im, true)?;
+        out_re_re
+            .into_iter()
+            .zip(out_re_im)
+            .zip(out_im_re)
+            .zip(out_im_im)
+            .map(|(((re_re, re_im), im_re), im_im)| {
+                std::array::from_fn(|idx| {
+                    K::from_coeffs([
+                        F::from_u64(re_re.coeffs[idx]) + delta * F::from_u64(im_im.coeffs[idx]),
+                        F::from_u64(re_im.coeffs[idx]) + F::from_u64(im_re.coeffs[idx]),
+                    ])
+                })
+            })
+            .collect()
+    };
+
+    Ok(Some((scalar_values, ring_values)))
 }
 
 impl SuperneoZBlocks {

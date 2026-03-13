@@ -128,8 +128,25 @@ pub enum JointClaimKind {
 pub struct JointOpeningLaneProof {
     pub claim_kind: JointClaimKind,
     pub groups: Vec<JointOpeningGroupProof>,
+    /// Stage-8 fold inputs after clustering `groups` by identical `(point, domain)`.
+    ///
+    /// Each cluster is either a direct reuse of a single group or a transcript-mixed
+    /// synthetic aggregate over multiple same-point/domain groups.
+    pub stage8_clusters: Vec<Stage8ClusterProof>,
     /// Optional unified Stage-8 fold claim derived from `groups` under transcript-bound mixers.
     pub unified_fold: Option<JointOpeningGroupProof>,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct Stage8ClusterProof {
+    pub point: Vec<K>,
+    pub domain: OpeningDomain,
+    /// Indices into `JointOpeningLaneProof.groups`.
+    pub group_indices: Vec<usize>,
+    pub cluster_digest: [u8; 32],
+    pub joint_claim_digits: Vec<K>,
+    pub joint_claim: K,
+    pub joint_commitment: Cmt,
 }
 
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]

@@ -426,6 +426,14 @@ fn mock_backend() -> ProverComputeBackend {
     mock_backend_for(DeviceApi::Cuda)
 }
 
+fn mock_backend_with_cpu_fallback() -> ProverComputeBackend {
+    ProverComputeBackend::Mojo(
+        MojoBackendConfig::new(DeviceApi::Cuda)
+            .with_library_path(build_mock_library())
+            .allow_cpu_fallback(),
+    )
+}
+
 fn reset_mock_counters(lib: &Library) {
     type ResetFn = unsafe extern "C" fn();
     let reset = unsafe {
@@ -439,6 +447,15 @@ fn counter(lib: &Library, symbol: &[u8]) -> usize {
     type CounterFn = unsafe extern "C" fn() -> usize;
     let counter = unsafe { *lib.get::<CounterFn>(symbol).expect("load counter symbol") };
     unsafe { counter() }
+}
+
+fn trigger_mock_once(lib: &Library, symbol: &[u8]) {
+    type TriggerFn = unsafe extern "C" fn();
+    let trigger = unsafe {
+        *lib.get::<TriggerFn>(symbol)
+            .expect("load mock trigger symbol")
+    };
+    unsafe { trigger() };
 }
 
 fn assert_same_proof(lhs: &PiCcsProof, rhs: &PiCcsProof) {
@@ -581,6 +598,151 @@ fn split_nc_fe_row_cuda_backend_skips_small_task_batches() {
 }
 
 #[test]
+fn split_nc_fe_row_recovers_gpu_after_atomic_fold_failure() {
+    let _guard = lock_mock_backend();
+    let fixture = build_oracle_fixture();
+    let backend_ctx = BackendContext::new(&mock_backend_with_cpu_fallback()).expect("backend context");
+
+    let lib = unsafe { Library::new(build_mock_library()) }.expect("load mock mojo gpu library");
+    reset_mock_counters(&lib);
+
+    let mut cpu = OptimizedOracle::new_with_sparse(
+        &fixture.s,
+        &fixture.params,
+        &fixture.mcs_witnesses,
+        &fixture.me_witnesses,
+        fixture.ch.clone(),
+        fixture.ell_d,
+        fixture.ell_n,
+        fixture.d_sc,
+        Some(&fixture.r_inputs),
+        fixture.sparse.clone(),
+    );
+    let mut mojo = SplitNcOptimizedOracle::new_with_sparse(
+        &fixture.s,
+        &fixture.params,
+        &fixture.mcs_witnesses,
+        &fixture.me_witnesses,
+        fixture.ch.clone(),
+        fixture.ell_d,
+        fixture.ell_n,
+        fixture.d_sc,
+        Some(&fixture.r_inputs),
+        fixture.sparse.clone(),
+        &backend_ctx,
+    )
+    .expect("split-nc mojo oracle");
+
+    let xs0 = k_probe_points(0, 8, 50, 60);
+    assert_eq!(cpu.evals_at(&xs0), mojo.evals_at(&xs0), "pre-failure parity");
+    assert_eq!(counter(&lib, b"nightstream_gpu_test_fe_evals_at_calls\0"), 1);
+
+    trigger_mock_once(&lib, b"nightstream_gpu_test_fail_fe_fold_once\0");
+    let r0 = k(90, 100);
+    cpu.fold(r0);
+    mojo.fold(r0);
+
+    let xs1 = k_probe_points(1, 512, 70, 80);
+    assert_eq!(cpu.evals_at(&xs1), mojo.evals_at(&xs1), "post-failure parity");
+    assert_eq!(
+        counter(&lib, b"nightstream_gpu_test_fe_evals_at_calls\0"),
+        2,
+        "FE row-phase should rebuild the evaluator from the CPU snapshot after a fold failure"
+    );
+    assert_eq!(
+        backend_ctx.split_nc_execution_status(1024),
+        BackendExecutionStatus::MojoAccelerator(DeviceApi::Cuda),
+        "fold failures should not trip the shared Split-NC session breaker"
+    );
+}
+
+#[test]
+fn split_nc_session_breaker_disables_gpu_across_oracles_after_fe_failure() {
+    let _guard = lock_mock_backend();
+    let fixture = build_oracle_fixture();
+    let backend_ctx = BackendContext::new(&mock_backend_with_cpu_fallback()).expect("backend context");
+
+    let lib = unsafe { Library::new(build_mock_library()) }.expect("load mock mojo gpu library");
+    reset_mock_counters(&lib);
+
+    let mut fe_cpu = OptimizedOracle::new_with_sparse(
+        &fixture.s,
+        &fixture.params,
+        &fixture.mcs_witnesses,
+        &fixture.me_witnesses,
+        fixture.ch.clone(),
+        fixture.ell_d,
+        fixture.ell_n,
+        fixture.d_sc,
+        Some(&fixture.r_inputs),
+        fixture.sparse.clone(),
+    );
+    let mut fe_mojo = SplitNcOptimizedOracle::new_with_sparse(
+        &fixture.s,
+        &fixture.params,
+        &fixture.mcs_witnesses,
+        &fixture.me_witnesses,
+        fixture.ch.clone(),
+        fixture.ell_d,
+        fixture.ell_n,
+        fixture.d_sc,
+        Some(&fixture.r_inputs),
+        fixture.sparse.clone(),
+        &backend_ctx,
+    )
+    .expect("split-nc mojo oracle");
+
+    let fe_xs = k_probe_points(0, 8, 50, 60);
+    trigger_mock_once(&lib, b"nightstream_gpu_test_fail_fe_evals_at_once\0");
+    assert_eq!(fe_cpu.evals_at(&fe_xs), fe_mojo.evals_at(&fe_xs), "FE fallback parity");
+    assert_eq!(
+        backend_ctx.split_nc_execution_status(1024),
+        BackendExecutionStatus::RustCpu,
+        "shared backend context should disable Split-NC after the first GPU failure"
+    );
+
+    let mut nc_cpu = NcOracle::new(
+        &fixture.s,
+        &fixture.params,
+        &fixture.mcs_witnesses,
+        &fixture.me_witnesses,
+        fixture.ch.clone(),
+        fixture.ell_d,
+        fixture.ell_m,
+        fixture.d_sc,
+    );
+    let mut nc_mojo = SplitNcNcOracle::new(
+        &fixture.s,
+        &fixture.params,
+        &fixture.mcs_witnesses,
+        &fixture.me_witnesses,
+        fixture.ch.clone(),
+        fixture.ell_d,
+        fixture.ell_m,
+        fixture.d_sc,
+        &backend_ctx,
+    )
+    .expect("split-nc mojo nc oracle");
+
+    let nc_xs = k_probe_points(1, 8, 150, 160);
+    assert_eq!(
+        nc_cpu.evals_at(&nc_xs),
+        nc_mojo.evals_at(&nc_xs),
+        "NC CPU fallback parity"
+    );
+    assert_eq!(
+        counter(&lib, b"nightstream_gpu_test_nc_evals_at_calls\0"),
+        0,
+        "session breaker should stop subsequent oracles from retrying Split-NC on GPU"
+    );
+    assert_eq!(
+        counter(&lib, b"nightstream_gpu_test_session_open_calls\0"),
+        1,
+        "shared backend context should reuse the original session state instead of reopening after failure"
+    );
+}
+
+#[test]
 fn split_nc_nc_col_mojo_backend_matches_cpu_across_rounds() {
     let _guard = lock_mock_backend();
     let fixture = build_oracle_fixture();
@@ -678,6 +840,61 @@ fn split_nc_nc_col_cuda_backend_skips_small_task_batches() {
 }
 
 #[test]
+fn split_nc_nc_col_recovers_gpu_after_atomic_fold_failure() {
+    let _guard = lock_mock_backend();
+    let fixture = build_oracle_fixture();
+    let backend_ctx = BackendContext::new(&mock_backend_with_cpu_fallback()).expect("backend context");
+
+    let lib = unsafe { Library::new(build_mock_library()) }.expect("load mock mojo gpu library");
+    reset_mock_counters(&lib);
+
+    let mut cpu = NcOracle::new(
+        &fixture.s,
+        &fixture.params,
+        &fixture.mcs_witnesses,
+        &fixture.me_witnesses,
+        fixture.ch.clone(),
+        fixture.ell_d,
+        fixture.ell_m,
+        fixture.d_sc,
+    );
+    let mut mojo = SplitNcNcOracle::new(
+        &fixture.s,
+        &fixture.params,
+        &fixture.mcs_witnesses,
+        &fixture.me_witnesses,
+        fixture.ch.clone(),
+        fixture.ell_d,
+        fixture.ell_m,
+        fixture.d_sc,
+        &backend_ctx,
+    )
+    .expect("split-nc mojo nc oracle");
+
+    let xs0 = k_probe_points(0, 8, 50, 60);
+    assert_eq!(cpu.evals_at(&xs0), mojo.evals_at(&xs0), "pre-failure parity");
+    assert_eq!(counter(&lib, b"nightstream_gpu_test_nc_evals_at_calls\0"), 1);
+
+    trigger_mock_once(&lib, b"nightstream_gpu_test_fail_nc_fold_once\0");
+    let r0 = k(90, 100);
+    cpu.fold(r0);
+    mojo.fold(r0);
+
+    let xs1 = k_probe_points(1, 512, 70, 80);
+    assert_eq!(cpu.evals_at(&xs1), mojo.evals_at(&xs1), "post-failure parity");
+    assert_eq!(
+        counter(&lib, b"nightstream_gpu_test_nc_evals_at_calls\0"),
+        2,
+        "NC col-phase should rebuild the evaluator from the CPU snapshot after a fold failure"
+    );
+    assert_eq!(
+        backend_ctx.split_nc_execution_status(1024),
+        BackendExecutionStatus::MojoAccelerator(DeviceApi::Cuda),
+        "fold failures should not trip the shared Split-NC session breaker"
+    );
+}
+
+#[test]
 fn split_nc_optimized_prove_mojo_backend_matches_cpu_and_verifies() {
     let _guard = lock_mock_backend();
     let (params, s, l, claims, witnesses, mut cpu_tr) = build_prove_fixture(b"split_nc_gpu_parity/prove_cpu");
@@ -747,6 +964,10 @@ fn split_nc_optimized_prove_mojo_backend_matches_cpu_and_verifies() {
     )
     .expect("mojo verify");
     assert!(ok_mojo);
+    assert!(
+        counter(&lib, b"nightstream_gpu_test_superneo_calls\0") > 0,
+        "optimized prove should exercise SuperNeo GPU helpers in Ajtai precompute"
+    );
 }
 
 #[test]
@@ -841,6 +1062,43 @@ fn split_nc_optimized_prove_falls_back_to_mojo_cpu_when_accelerator_is_unavailab
 
     assert_eq!(cpu_out, fallback_out);
     assert_same_proof(&cpu_proof, &fallback_proof);
+}
+
+#[test]
+fn split_nc_strict_backend_captures_fe_gpu_failure_without_panicking() {
+    let _guard = lock_mock_backend();
+    let fixture = build_oracle_fixture();
+
+    let mock_library = build_mock_library();
+    let lib = unsafe { Library::new(mock_library) }.expect("load mock mojo gpu library");
+    reset_mock_counters(&lib);
+    trigger_mock_once(&lib, b"nightstream_gpu_test_fail_fe_evals_at_once\0");
+
+    let backend_ctx = BackendContext::new(&mock_backend()).expect("backend context");
+    let mut mojo = SplitNcOptimizedOracle::new_with_sparse(
+        &fixture.s,
+        &fixture.params,
+        &fixture.mcs_witnesses,
+        &fixture.me_witnesses,
+        fixture.ch,
+        fixture.ell_d,
+        fixture.ell_n,
+        fixture.d_sc,
+        Some(&fixture.r_inputs),
+        fixture.sparse,
+        &backend_ctx,
+    )
+    .expect("strict split-nc mojo oracle");
+
+    let _ = mojo.evals_at(&k_probe_points(0, 8, 50, 60));
+    let err = mojo
+        .take_error()
+        .expect("strict backend should capture FE GPU failure");
+
+    assert!(
+        matches!(err, neo_reductions::PiCcsError::ProtocolError(ref msg) if msg.contains("Mojo FE evals_at failed")),
+        "unexpected strict-backend error: {err:?}"
+    );
 }
 
 #[test]

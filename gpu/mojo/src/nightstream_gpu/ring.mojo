@@ -10,7 +10,10 @@ comptime GPU_BLOCK_SIZE = 64
 comptime RQ_MUL_METAL_GPU_MIN_PAIRS = 1024
 comptime RQ_MUL_CUDA_GPU_MIN_PAIRS = 64
 comptime RQ_MUL_HIP_GPU_MIN_PAIRS = 64
-comptime RQ_ACCUMULATE_GPU_MIN_SLOTS = 32
+comptime RQ_ACCUMULATE_METAL_GPU_MIN_PAIRS = 256
+comptime RQ_ACCUMULATE_CUDA_GPU_MIN_PAIRS = 64
+comptime RQ_ACCUMULATE_HIP_GPU_MIN_PAIRS = 64
+comptime RQ_ACCUMULATE_GPU_MIN_SLOTS = 1
 comptime DEVICE_API_CPU = 0
 comptime DEVICE_API_METAL = 1
 comptime DEVICE_API_CUDA = 2
@@ -358,7 +361,10 @@ fn rq_accumulate_batch_words(
         for slot_idx in range(slot_count_int):
             rq_zero_words(out_words + slot_idx * D_WIDTH)
         return
-    if not session_prefers_gpu(session) or pair_count_int < rq_mul_gpu_min_pairs_for_api(runtime.session_api(session)):
+    if (
+        not session_prefers_gpu(session)
+        or pair_count_int < rq_accumulate_gpu_min_pairs_for_api(runtime.session_api(session))
+    ):
         rq_accumulate_batch_cpu_words(lhs_words, rhs_words, slot_offsets_words, slot_count_int, out_words)
         return
     try:
@@ -494,12 +500,20 @@ fn rq_mul_gpu_min_pairs_for_api(api: UInt32) -> Int:
     return 1 << 30
 
 
+fn rq_accumulate_gpu_min_pairs_for_api(api: UInt32) -> Int:
+    if api == UInt32(DEVICE_API_METAL):
+        return RQ_ACCUMULATE_METAL_GPU_MIN_PAIRS
+    if api == UInt32(DEVICE_API_CUDA):
+        return RQ_ACCUMULATE_CUDA_GPU_MIN_PAIRS
+    if api == UInt32(DEVICE_API_HIP):
+        return RQ_ACCUMULATE_HIP_GPU_MIN_PAIRS
+    return 1 << 30
+
+
 fn session_prefers_gpu(session: UInt64) -> Bool:
     var api = runtime.session_api(session)
     if api == UInt32(DEVICE_API_CPU):
         return False
     return runtime.session_prefers_gpu(session) and (
-        api == UInt32(DEVICE_API_METAL)
-        or api == UInt32(DEVICE_API_CUDA)
-        or api == UInt32(DEVICE_API_HIP)
+        api == UInt32(DEVICE_API_METAL) or api == UInt32(DEVICE_API_CUDA)
     )

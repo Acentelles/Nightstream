@@ -694,9 +694,302 @@ where
     }
 }
 
+pub fn dec_children_with_commit_cached_result<Comb>(
+    mode: FoldingMode,
+    s: &CcsStructure<F>,
+    params: &NeoParams,
+    parent: &CeClaim<Cmt, F, K>,
+    Z_split: &[Mat<F>],
+    ell_d: usize,
+    child_commitments: &[Cmt],
+    combine_b_pows: Comb,
+    sparse: Option<&crate::engines::optimized_engine::oracle::SparseCache<F>>,
+) -> Result<(Vec<CeClaim<Cmt, F, K>>, bool, bool, bool), PiCcsError>
+where
+    Comb: Fn(&[Cmt], u32) -> Result<Cmt, PiCcsError>,
+{
+    if let Err(e) = validate_dec_boundary_inputs(s, params, parent, Z_split, child_commitments, ell_d) {
+        return Err(PiCcsError::InvalidInput(format!(
+            "dec_children_with_commit_cached_result input validation failed: {e}"
+        )));
+    }
+
+    let (mut children, ok_y, ok_X) = match mode {
+        FoldingMode::Optimized => match sparse {
+            Some(cache) => crate::engines::optimized_engine::dec_reduction_paper_exact_with_sparse_cache::<F>(
+                s, params, parent, Z_split, ell_d, cache,
+            ),
+            None => crate::engines::optimized_engine::dec_reduction_paper_exact::<F>(s, params, parent, Z_split, ell_d),
+        },
+        #[cfg(feature = "paper-exact")]
+        FoldingMode::PaperExact => {
+            crate::engines::optimized_engine::dec_reduction_paper_exact::<F>(s, params, parent, Z_split, ell_d)
+        }
+        #[cfg(feature = "paper-exact")]
+        FoldingMode::OptimizedWithCrosscheck(_) => match sparse {
+            Some(cache) => crate::engines::optimized_engine::dec_reduction_paper_exact_with_sparse_cache::<F>(
+                s, params, parent, Z_split, ell_d, cache,
+            ),
+            None => crate::engines::optimized_engine::dec_reduction_paper_exact::<F>(s, params, parent, Z_split, ell_d),
+        },
+    };
+    for (ch, c) in children.iter_mut().zip(child_commitments.iter()) {
+        ch.c = c.clone();
+    }
+    let ok_c = combine_b_pows(child_commitments, params.b)? == parent.c;
+    Ok((children, ok_y, ok_X, ok_c))
+}
+
 // ---------------------------------------------------------------------------
 // RLC/DEC Public Verification API
 // ---------------------------------------------------------------------------
+
+/// RLC (public): Recompute parent = Σ ρ_i · instance_i (X, y; commitment via mixer).
+///
+/// This is the witness-free version used by verifiers to check the prover's claimed parent.
+pub fn rlc_public_result<MR>(
+    s: &CcsStructure<F>,
+    params: &NeoParams,
+    rhos: &[RotRho],
+    inputs: &[CeClaim<Cmt, F, K>],
+    mix_rhos_commits: MR,
+    ell_d: usize,
+) -> Result<CeClaim<Cmt, F, K>, PiCcsError>
+where
+    MR: Fn(&[Mat<F>], &[Cmt]) -> Result<Cmt, PiCcsError>,
+{
+    use crate::common::left_mul_acc;
+
+    ensure_superneo_width(s)?;
+    if inputs.is_empty() {
+        return Err(PiCcsError::InvalidInput("rlc_public: empty inputs".into()));
+    }
+    if rhos.len() != inputs.len() {
+        return Err(PiCcsError::InvalidInput(format!(
+            "rlc_public: |rhos| mismatch (expected {}, got {})",
+            inputs.len(),
+            rhos.len()
+        )));
+    }
+    let rho_mats = crate::common::rot_rhos_to_mats(rhos);
+    for (idx, inst) in inputs.iter().enumerate() {
+        if inst.m_in > s.m {
+            return Err(PiCcsError::InvalidInput(format!(
+                "rlc_public: inputs[{idx}].m_in={} exceeds CCS width m={}",
+                inst.m_in, s.m
+            )));
+        }
+    }
+    crate::engines::utils::validate_ct_constant_term(s, params, inputs)?;
+    let _ = crate::engines::utils::shared_me_input_r(inputs, inputs[0].r.len())?;
+    let d = D;
+    let m_in = inputs[0].m_in;
+    let d_pad = 1usize
+        .checked_shl(ell_d as u32)
+        .ok_or_else(|| PiCcsError::InvalidInput("rlc_public: 2^ell_d overflow".into()))?;
+    let t = inputs[0].y_ring.len();
+    let aux_len = inputs[0].aux_openings.len();
+    if t < s.t() {
+        return Err(PiCcsError::InvalidInput(format!(
+            "rlc_public: ME input y.len() must be >= s.t() (got {}, s.t()={})",
+            t,
+            s.t()
+        )));
+    }
+    for (idx, inst) in inputs.iter().enumerate() {
+        if inst.m_in != m_in {
+            return Err(PiCcsError::InvalidInput(format!(
+                "rlc_public: m_in mismatch at input {idx} (expected {m_in}, got {})",
+                inst.m_in
+            )));
+        }
+        if inst.X.rows() != D || inst.X.cols() != m_in {
+            return Err(PiCcsError::InvalidInput(format!(
+                "rlc_public: X shape mismatch at input {idx} (got {}x{}, expected {}x{})",
+                inst.X.rows(),
+                inst.X.cols(),
+                D,
+                m_in
+            )));
+        }
+        if inst.y_ring.len() != t {
+            return Err(PiCcsError::InvalidInput(format!(
+                "rlc_public: y.len mismatch at input {idx} (expected {t}, got {})",
+                inst.y_ring.len()
+            )));
+        }
+        if inst.aux_openings.len() != aux_len {
+            return Err(PiCcsError::InvalidInput(format!(
+                "rlc_public: aux_openings.len mismatch at input {idx} (expected {aux_len}, got {})",
+                inst.aux_openings.len()
+            )));
+        }
+        for (j, row) in inst.y_ring.iter().enumerate() {
+            if row.len() < D || row.len() > d_pad {
+                return Err(PiCcsError::InvalidInput(format!(
+                    "rlc_public: y[{j}].len()={} at input {idx}, expected in [{}, {}]",
+                    row.len(),
+                    D,
+                    d_pad
+                )));
+            }
+        }
+    }
+
+    let mut X = Mat::zero(d, m_in, F::ZERO);
+    for (rho, inst) in rho_mats.iter().zip(inputs.iter()) {
+        left_mul_acc(&mut X, rho, &inst.X);
+    }
+
+    let rho_k_mats: Vec<Vec<K>> = rho_mats
+        .iter()
+        .map(|rho| {
+            let mut flat = Vec::with_capacity(d * d);
+            for k in 0..d {
+                for r in 0..d {
+                    flat.push(K::from(rho[(r, k)]));
+                }
+            }
+            flat
+        })
+        .collect();
+
+    let mut y_ring = vec![vec![K::ZERO; d_pad]; t];
+    #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-threads"))]
+    let allow_parallel = rayon::current_num_threads() > 1 && rayon::current_thread_index().is_none() && t >= 128;
+    #[cfg(all(target_arch = "wasm32", not(feature = "wasm-threads")))]
+    let _allow_parallel = false;
+
+    #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-threads"))]
+    if allow_parallel {
+        y_ring.par_iter_mut().enumerate().for_each(|(j, acc)| {
+            for (rho_k, inst) in rho_k_mats.iter().zip(inputs.iter()) {
+                let src = &inst.y_ring[j];
+                for k in 0..d {
+                    let yk = src[k];
+                    if yk == K::ZERO {
+                        continue;
+                    }
+                    let col_off = k * d;
+                    let col = &rho_k[col_off..col_off + d];
+                    for r in 0..d {
+                        acc[r] += col[r] * yk;
+                    }
+                }
+            }
+        });
+    } else {
+        for (rho_k, inst) in rho_k_mats.iter().zip(inputs.iter()) {
+            for (j, acc) in y_ring.iter_mut().enumerate() {
+                let src = &inst.y_ring[j];
+                for k in 0..d {
+                    let yk = src[k];
+                    if yk == K::ZERO {
+                        continue;
+                    }
+                    let col_off = k * d;
+                    let col = &rho_k[col_off..col_off + d];
+                    for r in 0..d {
+                        acc[r] += col[r] * yk;
+                    }
+                }
+            }
+        }
+    }
+    #[cfg(all(target_arch = "wasm32", not(feature = "wasm-threads")))]
+    {
+        for (rho_k, inst) in rho_k_mats.iter().zip(inputs.iter()) {
+            for (j, acc) in y_ring.iter_mut().enumerate() {
+                let src = &inst.y_ring[j];
+                for k in 0..d {
+                    let yk = src[k];
+                    if yk == K::ZERO {
+                        continue;
+                    }
+                    let col_off = k * d;
+                    let col = &rho_k[col_off..col_off + d];
+                    for r in 0..d {
+                        acc[r] += col[r] * yk;
+                    }
+                }
+            }
+        }
+    }
+
+    let wants_nc_channel = inputs
+        .iter()
+        .any(|m| !(m.s_col.is_empty() && m.y_zcol.is_empty()));
+    let y_zcol = if wants_nc_channel {
+        if inputs[0].s_col.is_empty() || inputs[0].y_zcol.is_empty() {
+            return Err(PiCcsError::InvalidInput(
+                "rlc_public: incomplete NC channel on input 0 (expected both s_col and y_zcol)".into(),
+            ));
+        }
+        for (idx, inst) in inputs.iter().enumerate() {
+            if inst.s_col.is_empty() || inst.y_zcol.is_empty() {
+                return Err(PiCcsError::InvalidInput(format!(
+                    "rlc_public: incomplete NC channel at input {idx} (expected both s_col and y_zcol)"
+                )));
+            }
+            if inst.s_col != inputs[0].s_col {
+                return Err(PiCcsError::InvalidInput(format!(
+                    "rlc_public: s_col mismatch at input {idx}"
+                )));
+            }
+            if inst.y_zcol.len() != d_pad {
+                return Err(PiCcsError::InvalidInput(format!(
+                    "rlc_public: y_zcol len mismatch at input {idx} (expected {d_pad}, got {})",
+                    inst.y_zcol.len()
+                )));
+            }
+        }
+
+        let mut acc = vec![K::ZERO; d_pad];
+        for (rho_k, inst) in rho_k_mats.iter().zip(inputs.iter()) {
+            for k in 0..d {
+                let yk = inst.y_zcol[k];
+                if yk == K::ZERO {
+                    continue;
+                }
+                let col_off = k * d;
+                let col = &rho_k[col_off..col_off + d];
+                for r in 0..d {
+                    acc[r] += col[r] * yk;
+                }
+            }
+        }
+        acc
+    } else {
+        Vec::new()
+    };
+
+    let ct = crate::common::ct_from_y_ring_for_ccs_m(&y_ring, params, s.m);
+    let c = mix_rhos_commits(&rho_mats, &inputs.iter().map(|m| m.c.clone()).collect::<Vec<_>>())?;
+
+    let mut aux_openings = vec![K::ZERO; aux_len];
+    for (rho, inst) in rho_mats.iter().zip(inputs.iter()) {
+        let w = K::from(rho[(0, 0)]);
+        for (dst, src) in aux_openings.iter_mut().zip(inst.aux_openings.iter()) {
+            *dst += w * *src;
+        }
+    }
+
+    Ok(CeClaim {
+        c_step_coords: vec![],
+        u_offset: 0,
+        u_len: 0,
+        c,
+        X,
+        r: inputs[0].r.clone(),
+        s_col: inputs[0].s_col.clone(),
+        y_ring,
+        ct,
+        aux_openings,
+        y_zcol,
+        m_in,
+        fold_digest: inputs[0].fold_digest,
+    })
+}
 
 /// RLC (public): Recompute parent = Σ ρ_i · instance_i (X, y; commitment via mixer).
 ///

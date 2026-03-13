@@ -10,8 +10,8 @@ use p3_field::{PrimeCharacteristicRing, PrimeField64};
 
 type RqMulFn = unsafe extern "C" fn(u64, *mut u64, *mut u64, *mut u64) -> i32;
 type RqCtFn = unsafe extern "C" fn(*mut u64, *mut u64) -> i32;
-type SuperneoBarBlockFn = unsafe extern "C" fn(*mut u64, *mut u64, *mut u64) -> i32;
-type SuperneoRowDotBlocksFn = unsafe extern "C" fn(*mut u64, u64, *mut u64, u64, *mut u64) -> i32;
+type SuperneoBarBlockFn = unsafe extern "C" fn(u64, *mut u64, *mut u64, *mut u64) -> i32;
+type SuperneoRowDotBlocksFn = unsafe extern "C" fn(u64, *mut u64, u64, *mut u64, u64, *mut u64) -> i32;
 
 fn real_mojo_library_name() -> &'static str {
     #[cfg(target_os = "macos")]
@@ -198,7 +198,14 @@ fn real_mojo_superneo_bar_block_matches_cpu_reference() {
         let mut matrix_mut = matrix_words;
         let mut block_mut = block;
         let mut out_words = [0u64; D];
-        let status = unsafe { bar_block(matrix_mut.as_mut_ptr(), block_mut.as_mut_ptr(), out_words.as_mut_ptr()) };
+        let status = unsafe {
+            bar_block(
+                1,
+                matrix_mut.as_mut_ptr(),
+                block_mut.as_mut_ptr(),
+                out_words.as_mut_ptr(),
+            )
+        };
         assert_eq!(status, 0, "superneo bar block status");
         assert_eq!(out_words, cpu, "superneo bar block parity seed={seed}");
     }
@@ -234,6 +241,7 @@ fn real_mojo_superneo_row_dot_blocks_matches_cpu_reference() {
     let mut out_words = [0u64; 2];
     let status = unsafe {
         row_dot(
+            1,
             bar_words.as_mut_ptr(),
             transformed_blocks.len() as u64,
             z_words.as_mut_ptr(),
@@ -269,7 +277,8 @@ fn real_mojo_session_ring_and_superneo_match_cpu_reference() {
         .expect("rq accumulate batch");
     let prod0 = rq_mul_cpu(lhs, rhs);
     let prod1 = rq_mul_cpu(rhs, lhs);
-    let expected_acc = std::array::from_fn(|idx| (Fq::from_u64(prod0[idx]) + Fq::from_u64(prod1[idx])).as_canonical_u64());
+    let expected_acc =
+        std::array::from_fn(|idx| (Fq::from_u64(prod0[idx]) + Fq::from_u64(prod1[idx])).as_canonical_u64());
     assert_eq!(accumulated[0].coeffs, expected_acc);
 
     let matrix = superneo_bar_matrix();

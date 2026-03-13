@@ -1,4 +1,4 @@
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use neo_ajtai::Commitment as Cmt;
 use neo_ccs::crypto::poseidon2_goldilocks as p2;
@@ -16,6 +16,60 @@ use crate::engines::optimized_engine::oracle::{NcOracle, OptimizedOracle, Sparse
 use crate::sumcheck::RoundOracle;
 use crate::PiCcsError;
 
+const SPLIT_NC_MAX_FAILURES_PER_ORACLE: usize = 1;
+const BACKEND_MAX_FAILURES_PER_SESSION: usize = 1;
+
+#[derive(Clone, Copy, Debug)]
+enum BackendOperation {
+    Poseidon2,
+    SplitNc,
+    Aux,
+}
+
+impl BackendOperation {
+    #[inline]
+    fn label(self) -> &'static str {
+        match self {
+            Self::Poseidon2 => "Poseidon2",
+            Self::SplitNc => "Split-NC",
+            Self::Aux => "auxiliary",
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct BackendFailureState {
+    poseidon_failures: usize,
+    split_nc_failures: usize,
+    aux_failures: usize,
+    poseidon_disabled: bool,
+    split_nc_disabled: bool,
+    aux_disabled: bool,
+}
+
+impl BackendFailureState {
+    #[inline]
+    fn is_disabled(&self, op: BackendOperation) -> bool {
+        match op {
+            BackendOperation::Poseidon2 => self.poseidon_disabled,
+            BackendOperation::SplitNc => self.split_nc_disabled,
+            BackendOperation::Aux => self.aux_disabled,
+        }
+    }
+
+    fn record_failure(&mut self, op: BackendOperation) {
+        let (failures, disabled) = match op {
+            BackendOperation::Poseidon2 => (&mut self.poseidon_failures, &mut self.poseidon_disabled),
+            BackendOperation::SplitNc => (&mut self.split_nc_failures, &mut self.split_nc_disabled),
+            BackendOperation::Aux => (&mut self.aux_failures, &mut self.aux_disabled),
+        };
+        *failures = failures.saturating_add(1);
+        if *failures >= BACKEND_MAX_FAILURES_PER_SESSION {
+            *disabled = true;
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BackendExecutionStatus {
     RustCpu,
@@ -28,6 +82,7 @@ pub struct BackendContext {
     requested_mojo: bool,
     allow_cpu_fallback: bool,
     connection: OnceLock<Result<Option<BackendConnection>, String>>,
+    failures: Mutex<BackendFailureState>,
 }
 
 struct BackendConnection {
@@ -44,14 +99,75 @@ impl BackendContext {
                 requested_mojo: false,
                 allow_cpu_fallback: false,
                 connection: OnceLock::new(),
+                failures: Mutex::new(BackendFailureState::default()),
             }),
             ProverComputeBackend::Mojo(cfg) => Ok(Self {
                 mojo_cfg: Some(cfg.clone()),
                 requested_mojo: true,
                 allow_cpu_fallback: cfg.fallback_to_cpu,
                 connection: OnceLock::new(),
+                failures: Mutex::new(BackendFailureState::default()),
             }),
         }
+    }
+
+    fn failures(&self) -> std::sync::MutexGuard<'_, BackendFailureState> {
+        self.failures
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+    }
+
+    fn ensure_backend_enabled(&self, op: BackendOperation) -> Result<bool, PiCcsError> {
+        if !self.failures().is_disabled(op) {
+            return Ok(true);
+        }
+        if self.mojo_required() {
+            return Err(PiCcsError::ProtocolError(format!(
+                "Mojo {} backend disabled after a prior failure",
+                op.label()
+            )));
+        }
+        eprintln!("[neo-reductions][mojo] skipping disabled backend op={}", op.label());
+        Ok(false)
+    }
+
+    fn record_backend_failure(
+        &self,
+        op: BackendOperation,
+        context: &str,
+        err: impl std::fmt::Display,
+    ) -> Result<(), PiCcsError> {
+        if self.mojo_required() {
+            return Err(PiCcsError::ProtocolError(format!("{context}: {err}")));
+        }
+        eprintln!(
+            "[neo-reductions][mojo] failure op={} context=\"{}\" err={}",
+            op.label(),
+            context,
+            err
+        );
+        self.failures().record_failure(op);
+        Ok(())
+    }
+
+    pub fn record_poseidon_backend_failure(
+        &self,
+        context: &str,
+        err: impl std::fmt::Display,
+    ) -> Result<(), PiCcsError> {
+        self.record_backend_failure(BackendOperation::Poseidon2, context, err)
+    }
+
+    pub fn record_split_nc_backend_failure(
+        &self,
+        context: &str,
+        err: impl std::fmt::Display,
+    ) -> Result<(), PiCcsError> {
+        self.record_backend_failure(BackendOperation::SplitNc, context, err)
+    }
+
+    pub fn record_aux_backend_failure(&self, context: &str, err: impl std::fmt::Display) -> Result<(), PiCcsError> {
+        self.record_backend_failure(BackendOperation::Aux, context, err)
     }
 
     fn preferred_device_api_hint(&self) -> Option<DeviceApi> {
@@ -100,6 +216,9 @@ impl BackendContext {
     }
 
     fn poseidon_session(&self) -> Result<Option<&MojoSession>, PiCcsError> {
+        if !self.ensure_backend_enabled(BackendOperation::Poseidon2)? {
+            return Ok(None);
+        }
         match self.initialize_connection()? {
             Some(conn) if conn.supports_poseidon2 => Ok(Some(&conn.session)),
             Some(_) if self.requested_mojo && !self.allow_cpu_fallback => Err(PiCcsError::ProtocolError(
@@ -110,6 +229,9 @@ impl BackendContext {
     }
 
     pub fn split_nc_session(&self) -> Result<Option<&MojoSession>, PiCcsError> {
+        if !self.ensure_backend_enabled(BackendOperation::SplitNc)? {
+            return Ok(None);
+        }
         match self.initialize_connection()? {
             Some(conn) if conn.supports_split_nc => Ok(Some(&conn.session)),
             Some(_) if self.requested_mojo && !self.allow_cpu_fallback => Err(PiCcsError::ProtocolError(
@@ -120,11 +242,19 @@ impl BackendContext {
     }
 
     pub fn aux_session(&self) -> Result<Option<&MojoSession>, PiCcsError> {
+        if !self.ensure_backend_enabled(BackendOperation::Aux)? {
+            return Ok(None);
+        }
         Ok(self.initialize_connection()?.map(|conn| &conn.session))
     }
 
     #[inline]
     pub fn split_nc_required(&self) -> bool {
+        self.requested_mojo && !self.allow_cpu_fallback
+    }
+
+    #[inline]
+    pub fn mojo_required(&self) -> bool {
         self.requested_mojo && !self.allow_cpu_fallback
     }
 
@@ -305,9 +435,12 @@ pub fn poseidon2_digest32_many_with_context(
         }
 
         match session.poseidon2_batch_execution_mode(batch.len()) {
-            ExecutionMode::Cpu | ExecutionMode::Accelerator => session
-                .permute_poseidon2_batch_u64x8(&mut batch)
-                .map_err(|err| PiCcsError::ProtocolError(format!("batched Poseidon2 permutation failed: {err}")))?,
+            ExecutionMode::Cpu | ExecutionMode::Accelerator => {
+                if let Err(err) = session.permute_poseidon2_batch_u64x8(&mut batch) {
+                    backend_ctx.record_poseidon_backend_failure("batched Poseidon2 permutation failed", &err)?;
+                    return Ok(None);
+                }
+            }
             ExecutionMode::HostFallback => {
                 for state in &mut batch {
                     poseidon2_permute_state_cpu_u64x8(state);
@@ -327,9 +460,12 @@ pub fn poseidon2_digest32_many_with_context(
     }
 
     match session.poseidon2_batch_execution_mode(batch.len()) {
-        ExecutionMode::Cpu | ExecutionMode::Accelerator => session
-            .permute_poseidon2_batch_u64x8(&mut batch)
-            .map_err(|err| PiCcsError::ProtocolError(format!("final batched Poseidon2 permutation failed: {err}")))?,
+        ExecutionMode::Cpu | ExecutionMode::Accelerator => {
+            if let Err(err) = session.permute_poseidon2_batch_u64x8(&mut batch) {
+                backend_ctx.record_poseidon_backend_failure("final batched Poseidon2 permutation failed", &err)?;
+                return Ok(None);
+            }
+        }
         ExecutionMode::HostFallback => {
             for state in &mut batch {
                 poseidon2_permute_state_cpu_u64x8(state);
@@ -358,6 +494,9 @@ where
     fe_evaluator: Option<MojoSplitNcEvaluator<'ctx>>,
     split_nc_device_api: Option<DeviceApi>,
     split_nc_required: bool,
+    split_nc_disabled: bool,
+    split_nc_failures: usize,
+    pending_error: Option<PiCcsError>,
 }
 
 impl<'a, 'ctx, Ff> SplitNcOptimizedOracle<'a, 'ctx, Ff>
@@ -399,6 +538,9 @@ where
             fe_evaluator: None,
             split_nc_device_api,
             split_nc_required,
+            split_nc_disabled: false,
+            split_nc_failures: 0,
+            pending_error: None,
         })
     }
 
@@ -425,6 +567,9 @@ where
 {
     #[inline]
     fn should_use_backend(&self, point_count: usize) -> bool {
+        if self.split_nc_disabled || self.pending_error.is_some() {
+            return false;
+        }
         let Some(api) = self.split_nc_device_api else {
             return false;
         };
@@ -437,30 +582,73 @@ where
         )
     }
 
+    fn new_fe_evaluator(&mut self) -> Result<Option<MojoSplitNcEvaluator<'ctx>>, PiCcsError> {
+        if self.split_nc_disabled {
+            return Ok(None);
+        }
+        let session = match self.backend_ctx.split_nc_session() {
+            Ok(Some(session)) => session,
+            Ok(None) => return Ok(None),
+            Err(err) => {
+                self.record_fe_backend_failure("failed to initialize Mojo FE session", &err, true);
+                return Ok(None);
+            }
+        };
+        match session.create_fe_evaluator(&self.inner.fe_row_snapshot_bytes()) {
+            Ok(evaluator) => Ok(Some(evaluator)),
+            Err(err) => {
+                self.record_fe_backend_failure("failed to initialize Mojo FE evaluator", &err, true);
+                Ok(None)
+            }
+        }
+    }
+
     fn ensure_fe_evaluator(&mut self) -> bool {
         if self.fe_evaluator.is_some() {
             return true;
         }
-        let Ok(Some(session)) = self.backend_ctx.split_nc_session() else {
-            return false;
-        };
-        match session.create_fe_evaluator(&self.inner.fe_row_snapshot_bytes()) {
-            Ok(evaluator) => {
+        match self.new_fe_evaluator() {
+            Ok(Some(evaluator)) => {
                 self.fe_evaluator = Some(evaluator);
                 true
             }
-            Err(err) if self.split_nc_required => {
-                panic!("failed to initialize Mojo FE evaluator: {err}");
+            Ok(None) => false,
+            Err(err) => {
+                self.pending_error = Some(err);
+                false
             }
-            Err(_) => false,
         }
     }
 
-    fn drop_fe_evaluator(&mut self, context: &str, err: impl std::fmt::Display) {
+    fn record_fe_backend_failure(&mut self, context: &str, err: impl std::fmt::Display, count_towards_breaker: bool) {
         if self.split_nc_required {
-            panic!("{context}: {err}");
+            self.pending_error = Some(PiCcsError::ProtocolError(format!("{context}: {err}")));
+            self.fe_evaluator = None;
+            self.split_nc_disabled = true;
+            return;
+        }
+        if count_towards_breaker {
+            let _ = self
+                .backend_ctx
+                .record_split_nc_backend_failure(context, &err);
+        } else {
+            eprintln!(
+                "[neo-reductions][mojo] fe fold failure context=\"{}\" err={} action=drop_evaluator_retry_from_cpu_snapshot",
+                context,
+                err
+            );
         }
         self.fe_evaluator = None;
+        if count_towards_breaker {
+            self.split_nc_failures = self.split_nc_failures.saturating_add(1);
+            if self.split_nc_failures >= SPLIT_NC_MAX_FAILURES_PER_ORACLE {
+                self.split_nc_disabled = true;
+                eprintln!(
+                    "[neo-reductions][mojo] disabling fe oracle backend after {} failures",
+                    self.split_nc_failures
+                );
+            }
+        }
     }
 }
 
@@ -476,19 +664,19 @@ where
                 .copied()
                 .map(flat_k_from_ext)
                 .collect::<Vec<_>>();
-            let gpu_out = {
-                let evaluator = self
-                    .fe_evaluator
-                    .as_ref()
-                    .expect("checked by should_use_gpu");
-                evaluator.evals_at(&flat_points)
+            let Some(evaluator) = self.fe_evaluator.as_ref() else {
+                return self
+                    .inner
+                    .evals_at_with_backend(points, Some(self.backend_ctx));
             };
+            let gpu_out = evaluator.evals_at(&flat_points);
             match gpu_out {
                 Ok(out) => return out.into_iter().map(ext_k_from_flat).collect(),
-                Err(err) => self.drop_fe_evaluator("Mojo FE evals_at failed", err),
+                Err(err) => self.record_fe_backend_failure("Mojo FE evals_at failed", err, true),
             }
         }
-        self.inner.evals_at(points)
+        self.inner
+            .evals_at_with_backend(points, Some(self.backend_ctx))
     }
 
     fn num_rounds(&self) -> usize {
@@ -502,18 +690,32 @@ where
     fn fold(&mut self, r: K) {
         if self.fe_evaluator.is_some() && self.inner.round_idx < self.inner.ell_n {
             let challenge = flat_k_from_ext(r);
-            let gpu_result = {
-                let evaluator = self.fe_evaluator.as_mut().expect("checked by round bounds");
-                evaluator.fold(challenge)
-            };
-            if let Err(err) = gpu_result {
-                self.drop_fe_evaluator("Mojo FE fold failed", err);
+            match self.new_fe_evaluator() {
+                Ok(Some(mut shadow)) => match shadow.fold(challenge) {
+                    Ok(()) => self.fe_evaluator = Some(shadow),
+                    Err(err) => {
+                        // Folding against a fresh evaluator keeps GPU state atomic; on failure we
+                        // drop the shadow and continue from the canonical CPU state.
+                        self.record_fe_backend_failure("Mojo FE fold failed", err, false);
+                    }
+                },
+                Ok(None) => {
+                    self.fe_evaluator = None;
+                }
+                Err(err) => {
+                    self.pending_error = Some(err);
+                    self.fe_evaluator = None;
+                }
             }
         }
         self.inner.fold(r);
         if self.inner.round_idx >= self.inner.ell_n {
             self.fe_evaluator = None;
         }
+    }
+
+    fn take_error(&mut self) -> Option<PiCcsError> {
+        self.pending_error.take()
     }
 }
 
@@ -527,6 +729,9 @@ where
     nc_evaluator: Option<MojoSplitNcEvaluator<'ctx>>,
     split_nc_device_api: Option<DeviceApi>,
     split_nc_required: bool,
+    split_nc_disabled: bool,
+    split_nc_failures: usize,
+    pending_error: Option<PiCcsError>,
 }
 
 impl<'a, 'ctx, Ff> SplitNcNcOracle<'a, 'ctx, Ff>
@@ -555,6 +760,9 @@ where
             nc_evaluator: None,
             split_nc_device_api,
             split_nc_required,
+            split_nc_disabled: false,
+            split_nc_failures: 0,
+            pending_error: None,
         })
     }
 }
@@ -566,6 +774,9 @@ where
 {
     #[inline]
     fn should_use_backend(&self, point_count: usize) -> bool {
+        if self.split_nc_disabled || self.pending_error.is_some() {
+            return false;
+        }
         let Some(api) = self.split_nc_device_api else {
             return false;
         };
@@ -578,30 +789,73 @@ where
         )
     }
 
+    fn new_nc_evaluator(&mut self) -> Result<Option<MojoSplitNcEvaluator<'ctx>>, PiCcsError> {
+        if self.split_nc_disabled {
+            return Ok(None);
+        }
+        let session = match self.backend_ctx.split_nc_session() {
+            Ok(Some(session)) => session,
+            Ok(None) => return Ok(None),
+            Err(err) => {
+                self.record_nc_backend_failure("failed to initialize Mojo NC session", &err, true);
+                return Ok(None);
+            }
+        };
+        match session.create_nc_evaluator(&self.inner.nc_col_snapshot_bytes()) {
+            Ok(evaluator) => Ok(Some(evaluator)),
+            Err(err) => {
+                self.record_nc_backend_failure("failed to initialize Mojo NC evaluator", &err, true);
+                Ok(None)
+            }
+        }
+    }
+
     fn ensure_nc_evaluator(&mut self) -> bool {
         if self.nc_evaluator.is_some() {
             return true;
         }
-        let Ok(Some(session)) = self.backend_ctx.split_nc_session() else {
-            return false;
-        };
-        match session.create_nc_evaluator(&self.inner.nc_col_snapshot_bytes()) {
-            Ok(evaluator) => {
+        match self.new_nc_evaluator() {
+            Ok(Some(evaluator)) => {
                 self.nc_evaluator = Some(evaluator);
                 true
             }
-            Err(err) if self.split_nc_required => {
-                panic!("failed to initialize Mojo NC evaluator: {err}");
+            Ok(None) => false,
+            Err(err) => {
+                self.pending_error = Some(err);
+                false
             }
-            Err(_) => false,
         }
     }
 
-    fn drop_nc_evaluator(&mut self, context: &str, err: impl std::fmt::Display) {
+    fn record_nc_backend_failure(&mut self, context: &str, err: impl std::fmt::Display, count_towards_breaker: bool) {
         if self.split_nc_required {
-            panic!("{context}: {err}");
+            self.pending_error = Some(PiCcsError::ProtocolError(format!("{context}: {err}")));
+            self.nc_evaluator = None;
+            self.split_nc_disabled = true;
+            return;
+        }
+        if count_towards_breaker {
+            let _ = self
+                .backend_ctx
+                .record_split_nc_backend_failure(context, &err);
+        } else {
+            eprintln!(
+                "[neo-reductions][mojo] nc fold failure context=\"{}\" err={} action=drop_evaluator_retry_from_cpu_snapshot",
+                context,
+                err
+            );
         }
         self.nc_evaluator = None;
+        if count_towards_breaker {
+            self.split_nc_failures = self.split_nc_failures.saturating_add(1);
+            if self.split_nc_failures >= SPLIT_NC_MAX_FAILURES_PER_ORACLE {
+                self.split_nc_disabled = true;
+                eprintln!(
+                    "[neo-reductions][mojo] disabling nc oracle backend after {} failures",
+                    self.split_nc_failures
+                );
+            }
+        }
     }
 }
 
@@ -617,16 +871,13 @@ where
                 .copied()
                 .map(flat_k_from_ext)
                 .collect::<Vec<_>>();
-            let gpu_out = {
-                let evaluator = self
-                    .nc_evaluator
-                    .as_ref()
-                    .expect("checked by should_use_gpu");
-                evaluator.evals_at(&flat_points)
+            let Some(evaluator) = self.nc_evaluator.as_ref() else {
+                return self.inner.evals_at(points);
             };
+            let gpu_out = evaluator.evals_at(&flat_points);
             match gpu_out {
                 Ok(out) => return out.into_iter().map(ext_k_from_flat).collect(),
-                Err(err) => self.drop_nc_evaluator("Mojo NC evals_at failed", err),
+                Err(err) => self.record_nc_backend_failure("Mojo NC evals_at failed", err, true),
             }
         }
         self.inner.evals_at(points)
@@ -643,12 +894,20 @@ where
     fn fold(&mut self, r: K) {
         if self.nc_evaluator.is_some() && self.inner.round_idx < self.inner.ell_m {
             let challenge = flat_k_from_ext(r);
-            let gpu_result = {
-                let evaluator = self.nc_evaluator.as_mut().expect("checked by round bounds");
-                evaluator.fold(challenge)
-            };
-            if let Err(err) = gpu_result {
-                self.drop_nc_evaluator("Mojo NC fold failed", err);
+            match self.new_nc_evaluator() {
+                Ok(Some(mut shadow)) => match shadow.fold(challenge) {
+                    Ok(()) => self.nc_evaluator = Some(shadow),
+                    Err(err) => {
+                        self.record_nc_backend_failure("Mojo NC fold failed", err, false);
+                    }
+                },
+                Ok(None) => {
+                    self.nc_evaluator = None;
+                }
+                Err(err) => {
+                    self.pending_error = Some(err);
+                    self.nc_evaluator = None;
+                }
             }
         }
         self.inner.fold(r);
@@ -656,13 +915,17 @@ where
             self.nc_evaluator = None;
         }
     }
+
+    fn take_error(&mut self) -> Option<PiCcsError> {
+        self.pending_error.take()
+    }
 }
 
 #[inline]
 fn split_nc_execution_mode_for(api: DeviceApi, total_tasks: usize, min_tasks: usize) -> ExecutionMode {
     match api {
         DeviceApi::Cpu => ExecutionMode::Cpu,
-        DeviceApi::Cuda | DeviceApi::Metal | DeviceApi::Hip if total_tasks >= min_tasks => ExecutionMode::Accelerator,
-        DeviceApi::Cuda | DeviceApi::Metal | DeviceApi::Hip | DeviceApi::Auto => ExecutionMode::HostFallback,
+        DeviceApi::Cuda | DeviceApi::Metal if total_tasks >= min_tasks => ExecutionMode::Accelerator,
+        DeviceApi::Cuda | DeviceApi::Metal | DeviceApi::Auto => ExecutionMode::HostFallback,
     }
 }

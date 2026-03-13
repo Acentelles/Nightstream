@@ -6,7 +6,7 @@
 
 use neo_fold::pi_ccs::FoldingMode;
 use neo_fold::rv64_trace_shard::{Rv64TraceWiring, Rv64TraceWiringRun};
-use neo_fold::{MojoBackendConfig, ProverComputeBackend};
+use neo_fold::{DeviceApi, MojoBackendConfig, ProverComputeBackend};
 use neo_math::F;
 use neo_memory::riscv::exec_table::RiscvExecTable;
 use neo_vm_trace::TwistOpKind;
@@ -74,6 +74,27 @@ fn build_real_mojo_library() -> PathBuf {
     output
         .canonicalize()
         .expect("canonical real mojo gpu library path")
+}
+
+fn required_accelerator_api() -> DeviceApi {
+    #[cfg(target_os = "macos")]
+    {
+        DeviceApi::Metal
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        DeviceApi::Cuda
+    }
+}
+
+fn strict_requested_accelerator(backend: &ProverComputeBackend) -> Option<DeviceApi> {
+    match backend {
+        ProverComputeBackend::Mojo(cfg) if !cfg.fallback_to_cpu => match cfg.device_api {
+            DeviceApi::Cpu | DeviceApi::Auto => None,
+            api => Some(api),
+        },
+        _ => None,
+    }
 }
 
 fn simulate_exec_with_witness_rv64(
@@ -200,6 +221,11 @@ struct NoteCaseRunMetrics {
     fold_and_prove: Duration,
 }
 
+struct NoteCaseProveResult {
+    run: Rv64TraceWiringRun,
+    metrics: NoteCaseRunMetrics,
+}
+
 fn median_duration(samples: &mut [Duration]) -> Duration {
     samples.sort_unstable();
     samples[samples.len() / 2]
@@ -285,14 +311,14 @@ fn prove_with_poseidon_retry_rv64(
     }
 }
 
-fn run_rv64_note_case(
+fn prove_rv64_note_case(
     label: &str,
     elf: &[u8],
     witness_ram_pairs: &[(u64, u32)],
     output_layout_words: &[(u64, u32)],
     max_steps: usize,
     compute_backend: &ProverComputeBackend,
-) -> NoteCaseRunMetrics {
+) -> NoteCaseProveResult {
     let metrics = NoteCaseMetrics {
         witness_ram_words: witness_ram_pairs.len(),
         simulated_steps: 0,
@@ -336,7 +362,7 @@ fn run_rv64_note_case(
     )
     .unwrap_or_else(|e| panic!("{label}: prove failed: {e}"));
     let prove_wall = prove_start.elapsed();
-    let mut run = prove_result.run;
+    let run = prove_result.run;
     let layout = run.layout().clone();
     let phases = run.prove_phase_durations();
 
@@ -398,6 +424,20 @@ fn run_rv64_note_case(
             metrics.stage8_subphases.rlc_dec.as_secs_f64() * 1000.0,
         );
         println!(
+            "{label}: batchable_claims val={} wb={} wp={} poseidon_cycle={} poseidon_local={} stage8={} wb_materialized_batches={} wb_materialized_children={} wp_materialized_batches={} wp_materialized_children={} max_materialized_children={}",
+            metrics.batch_opportunities.val_claims,
+            metrics.batch_opportunities.wb_claims,
+            metrics.batch_opportunities.wp_claims,
+            metrics.batch_opportunities.poseidon_cycle_claims,
+            metrics.batch_opportunities.poseidon_local_claims,
+            metrics.batch_opportunities.stage8_claims,
+            metrics.batch_opportunities.wb_materialized_batches,
+            metrics.batch_opportunities.wb_materialized_children,
+            metrics.batch_opportunities.wp_materialized_batches,
+            metrics.batch_opportunities.wp_materialized_children,
+            metrics.batch_opportunities.max_materialized_children,
+        );
+        println!(
             "{label}: mojo poseidon cpu={} host_fb={} accel={} states={} max_states={} fe create={} eval={} fold={} destroy={} fe_accel={} fe_tasks={} nc create={} eval={} fold={} destroy={} nc_accel={} nc_tasks={} rq_mul cpu={} host_fb={} accel={} items={} max_items={} superneo cpu={} host_fb={} accel={} items={}",
             metrics.mojo_delta.poseidon2_batch.cpu_calls,
             metrics.mojo_delta.poseidon2_batch.host_fallback_calls,
@@ -426,19 +466,53 @@ fn run_rv64_note_case(
             metrics.mojo_delta.superneo.accelerator_calls,
             metrics.mojo_delta.superneo.total_items,
         );
+        if let Some(expected_api) = strict_requested_accelerator(compute_backend) {
+            let accelerator_calls = metrics.mojo_delta.poseidon2_batch.accelerator_calls
+                + metrics.mojo_delta.fe.accelerator_calls
+                + metrics.mojo_delta.nc.accelerator_calls
+                + metrics.mojo_delta.rq_mul.accelerator_calls
+                + metrics.mojo_delta.superneo.accelerator_calls;
+            assert!(
+                accelerator_calls > 0,
+                "{label}: strict Mojo backend requested {expected_api:?}, but shard prove metrics reported no accelerator execution",
+            );
+        }
     }
+    NoteCaseProveResult {
+        run,
+        metrics: NoteCaseRunMetrics {
+            prove_wall,
+            verify_wall: Duration::ZERO,
+            setup: phases.setup,
+            chunk_build_commit: phases.chunk_build_commit,
+            fold_and_prove: phases.fold_and_prove,
+        },
+    }
+}
+
+fn run_rv64_note_case(
+    label: &str,
+    elf: &[u8],
+    witness_ram_pairs: &[(u64, u32)],
+    output_layout_words: &[(u64, u32)],
+    max_steps: usize,
+    compute_backend: &ProverComputeBackend,
+) -> NoteCaseRunMetrics {
+    let NoteCaseProveResult { mut run, mut metrics } = prove_rv64_note_case(
+        label,
+        elf,
+        witness_ram_pairs,
+        output_layout_words,
+        max_steps,
+        compute_backend,
+    );
     let verify_start = Instant::now();
     run.verify()
         .unwrap_or_else(|e| panic!("{label}: verify failed: {e}"));
     let verify_wall = verify_start.elapsed();
     println!("{label}: verify_wall_ms={:.1}", verify_wall.as_secs_f64() * 1000.0);
-    NoteCaseRunMetrics {
-        prove_wall,
-        verify_wall,
-        setup: phases.setup,
-        chunk_build_commit: phases.chunk_build_commit,
-        fold_and_prove: phases.fold_and_prove,
-    }
+    metrics.verify_wall = verify_wall;
+    metrics
 }
 
 #[test]
@@ -582,7 +656,8 @@ fn test_rv64_note_spend_from_elf_real_mojo_backend_perf_repro() {
     let elf = rv64_guest::build_note_spend_rv64im_elf().expect("build RV64IM note guest ELF");
     let witness = note_spend_fixture::build_note_spend_fixture_witness();
     let library = build_real_mojo_library();
-    let mojo_backend = ProverComputeBackend::Mojo(MojoBackendConfig::auto().with_library_path(library));
+    let mojo_backend =
+        ProverComputeBackend::Mojo(MojoBackendConfig::new(required_accelerator_api()).with_library_path(library));
 
     run_rv64_note_case(
         "rv64_note_spend_elf_real_mojo",
@@ -592,4 +667,52 @@ fn test_rv64_note_spend_from_elf_real_mojo_backend_perf_repro() {
         400_000,
         &mojo_backend,
     );
+}
+
+#[test]
+#[ignore = "slow RV64IM note-spend ELF CPU vs strict Mojo parity repro"]
+fn test_rv64_note_spend_from_elf_real_mojo_backend_matches_cpu() {
+    let elf = rv64_guest::build_note_spend_rv64im_elf().expect("build RV64IM note guest ELF");
+    let witness = note_spend_fixture::build_note_spend_fixture_witness();
+    let library = build_real_mojo_library();
+    let mojo_backend =
+        ProverComputeBackend::Mojo(MojoBackendConfig::new(required_accelerator_api()).with_library_path(library));
+
+    let mut cpu = prove_rv64_note_case(
+        "rv64_note_spend_elf_cpu_parity",
+        &elf,
+        &witness.ram_pairs,
+        &witness.output_layout_words,
+        400_000,
+        &ProverComputeBackend::Cpu,
+    );
+    let cpu_proof = serde_json::to_vec(cpu.run.proof()).expect("serialize CPU note-spend proof");
+    cpu.run
+        .verify()
+        .unwrap_or_else(|e| panic!("rv64_note_spend_elf_cpu_parity: verify failed: {e}"));
+
+    let mut mojo = prove_rv64_note_case(
+        "rv64_note_spend_elf_real_mojo_parity",
+        &elf,
+        &witness.ram_pairs,
+        &witness.output_layout_words,
+        400_000,
+        &mojo_backend,
+    );
+    let mojo_proof = serde_json::to_vec(mojo.run.proof()).expect("serialize strict Mojo note-spend proof");
+    mojo.run
+        .verify()
+        .unwrap_or_else(|e| panic!("rv64_note_spend_elf_real_mojo_parity: verify failed: {e}"));
+
+    assert_eq!(
+        cpu.run.trace_len(),
+        mojo.run.trace_len(),
+        "note-spend trace length parity"
+    );
+    assert_eq!(
+        cpu.run.fold_count(),
+        mojo.run.fold_count(),
+        "note-spend fold count parity"
+    );
+    assert_eq!(cpu_proof, mojo_proof, "note-spend CPU/strict-Mojo proof parity");
 }

@@ -45,15 +45,17 @@ fn try_commit_many_seeded_with_mojo(
         .saturating_mul(kappa)
         .saturating_mul(m)
         .saturating_mul(D);
+    let session = backend_ctx.aux_session()?;
+    if session.is_none() {
+        return Ok(None);
+    }
     if matches!(
         backend_ctx.commit_many_execution_status(total_tasks),
         neo_reductions::accelerator::BackendExecutionStatus::RustCpu
     ) {
         return Ok(None);
     }
-    let Some(session) = backend_ctx.aux_session()? else {
-        return Ok(None);
-    };
+    let session = session.expect("checked is_some above");
 
     let (chunk_size, chunk_seeds_by_row) = seeded_pp_chunk_seeds(seed, kappa, m);
     let mut out: Vec<Cmt> = (0..zs.len()).map(|_| Cmt::zeros(d, kappa)).collect();
@@ -88,10 +90,19 @@ fn try_commit_many_seeded_with_mojo(
                 continue;
             }
 
-            let products = match crate::shard::rq_accumulate_with_backend(session, &lhs_batch, &rhs_batch, &slot_offsets) {
-                Ok(values) => values,
-                Err(_) => return Ok(None),
-            };
+            let products =
+                match crate::shard::rq_accumulate_with_backend(session, &lhs_batch, &rhs_batch, &slot_offsets) {
+                    Ok(values) => values,
+                    Err(err) if backend_ctx.mojo_required() => {
+                        return Err(PiCcsError::ProtocolError(format!(
+                            "strict Mojo commit_many failed during rq_accumulate: {err}"
+                        )))
+                    }
+                    Err(err) => {
+                        backend_ctx.record_aux_backend_failure("Mojo commit_many rq_accumulate failed", &err)?;
+                        return Ok(None);
+                    }
+                };
             for (target_idx, product) in products.into_iter().enumerate() {
                 for (dst, src) in out[target_idx]
                     .col_mut(row_idx)
@@ -118,7 +129,8 @@ where
     if let Some(ajtai) = (committer as &dyn Any).downcast_ref::<AjtaiSModule>() {
         match try_commit_many_seeded_with_mojo(backend_ctx, ajtai, zs) {
             Ok(Some(commitments)) => return Ok(commitments),
-            Ok(None) | Err(_) => {}
+            Ok(None) => {}
+            Err(err) => return Err(err),
         }
     }
     Ok(committer.commit_many(zs))

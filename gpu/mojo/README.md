@@ -140,7 +140,8 @@ Current verified status:
 
 - Note-spend lane batching is still incomplete
   - sibling lanes are not yet collapsed into a few large resident GPU jobs
-- Stage-8 `prove_rlc_dec_lane` is still the main remaining hot path for note-spend
+- Stage-8 `prove_rlc_dec_lane` now routes through the backend-aware commitment path, but it is still
+  the main remaining hot path for note-spend
 - The current ring / commitment-side GPU path is only mildly beneficial on CUDA and still too slow
   on Metal
 - End-to-end note-spend GPU wins are still small on CUDA and negative on Metal
@@ -163,7 +164,7 @@ Current backend matrix:
 | Poseidon2 single/batch via Rust bridge | Yes | Yes | Yes | Rust bridge is the supported production entrypoint. |
 | Poseidon2 accelerator execution | No | Yes | Yes | Metal uses the bridge-thread fix on macOS. |
 | Split-NC FE/NC via shared library | Yes | Yes | Yes | Metal and CUDA both use the shared-library evaluator path. |
-| Split-NC accelerator execution | No | Yes | Yes | Metal now follows the same FE/NC evaluator promotion model as CUDA/HIP. |
+| Split-NC accelerator execution | No | Yes | Yes | Metal now follows the same FE/NC evaluator promotion model as CUDA. |
 | Rust CPU fallback when Mojo unavailable | Yes | Yes | Yes | Auto mode falls back to Rust CPU only if no Mojo session can be opened. |
 | Mojo CPU/direct fallback when requested accelerator is unavailable | Yes | Yes | Yes | Explicit Mojo backend configs prefer a Mojo CPU session before dropping to Rust CPU. |
 
@@ -196,8 +197,8 @@ Assumptions:
 
 ### Milestone 1: Shared-Library Runtime Hardening
 
-- [ ] replace deprecated `enqueue_function` launches with `enqueue_function_checked` in Poseidon and
-  sumcheck kernels,
+- [x] keep kernel launches on the current checked Mojo API surface; in the pinned Mojo `0.26.1`
+  toolchain `enqueue_function_checked` was renamed to `enqueue_function`,
 - [x] keep the Rust `neo-gpu` loader as the only supported production entrypoint for Mojo GPU work,
 - [x] keep Metal Poseidon shared-lib enabled through the Rust bridge fix,
 - [x] stabilize Metal Split-NC through the shared-library evaluator path,
@@ -271,6 +272,44 @@ Assumptions:
   numbers,
 - [x] revisit Metal Split-NC after CUDA was stable and the shared-lib Metal runtime issue was
   isolated.
+
+## Review Status (2026-03-13, updated)
+
+Post-review audit of the `feature/gpu-acceleration` branch against the issues raised in
+`GPU_CODE_REVIEW.md`. Items are grouped by current status.
+
+### Resolved
+
+| Issue | Original Severity | Resolution |
+|-------|-------------------|------------|
+| Snapshot bounds validation | P1 HIGH | `validate_fe_snapshot_layout()` / `validate_nc_snapshot_layout()` with overflow-safe `checked_mul_words` / `checked_add_words` helpers; called on every create, evals_at, and fold entry. |
+| Extension field canonicalization | LOW | `k_add`, `k_sub`, `k_mul` now canonicalize both inputs. `k_store` and `k_load` also canonicalize. |
+| Snapshot schema versioning | P2 | Magic, version, and per-kind tags (`FE_ROW_V1`, `NC_COL_V1`) checked at every snapshot entry point. |
+| `enqueue_function` deprecation | P3 | Non-issue: Mojo 0.26.1 renamed `enqueue_function_checked` to `enqueue_function`. Current calls are the checked API. |
+| Poseidon2 batch race condition | MEDIUM | `batch` array is a temporary rebuilt per chunk; `states[input_idx]` only written after successful permutation. Failure returns `Ok(None)` or `Err`. |
+| Non-constant-time field ops | MEDIUM | `field.mojo` now documents: "These helpers are only used for public/hash-side arithmetic today. They are not written as constant-time primitives for secret witness handling." |
+| SuperNeo was CPU-only | P2 | Real GPU kernel (`superneo_bar_block_gpu_kernel`) with per-thread row parallelism. `superneo_row_dot_blocks_gpu_words` batches ring multiplies through the GPU path. Rust-side `SuperneoMatrixCache` / `SuperneoLinearForm` / `SuperneoZBlocks` now cache transformed blocks for repeated evaluations. |
+| Note-spend e2e GPU test missing | P0 | `test_rv64_note_from_elf.rs` has: strict-Mojo prove + verify, byte-exact CPU-vs-Mojo proof parity, multi-iteration median benchmarks, and `accelerator_calls > 0` assertions. `split_nc_gpu_parity.rs` adds 211 lines of new FE/NC/SuperNeo parity tests. All `#[ignore]` (slow perf repros). |
+| Ring host-reduce inefficiency | P2 | Stage-8/commit-side Rust routing now prefers fused `rq_accumulate` for accelerator sessions, and `RQ_ACCUMULATE_GPU_MIN_SLOTS = 1` keeps the dedicated accumulate kernel on the fast path. Host-reduce fallback only used when `slot_count < 1` (effectively never). |
+| Stage-8 `prove_rlc_dec_lane` was CPU-only | P1 | `prove_rlc_dec_lane` now accepts `force_backend_commit_accel` and routes `mix_rhos_commits` / `combine_b_pows` through the Mojo `rq_accumulate` path. `mojo_commit_mix.rs` expanded with batched multi-group ring mix (`mix_many_rhos_commits_with_mojo`) and `combine_b_pows_with_mojo`. FE oracle's Ajtai-phase evals now thread through `evals_at_with_backend` for backend-aware SuperNeo evaluation. |
+| HIP was half-exposed in Rust config | P3 | Rust now only exposes `Cpu` / `Metal` / `Cuda` / `Auto`. The branch no longer advertises `DeviceApi::Hip` as a selectable backend while HIP remains unsupported in the real Mojo runtime. |
+
+### Mitigated (acceptable but not fully closed)
+
+| Issue | Original Severity | Current State | Remaining Gap |
+|-------|-------------------|---------------|---------------|
+| GPU fold failure causes state misalignment | P0 HIGH | FE/NC fold is now atomic at the wrapper level: a fresh shadow evaluator folds first, the live GPU evaluator is only swapped in on success, and failures fall back to the canonical CPU snapshot. No divergent GPU state is kept after an error, and later rounds may recreate the evaluator from CPU state. | There is still no proof-level retry/abort transaction. A failed accelerator fold wastes that attempt's GPU work and the proof continues from CPU-owned state. |
+| Inconsistent error handling | P1 HIGH | Split-NC oracle wrappers now capture strict-mode FE/NC create/eval/fold failures as deferred `PiCcsError`s and surface them through the prover instead of panicking. Optional paths still downgrade to CPU fallback through the backend breaker. | Some strict commit-mix helper paths still use `panic!()` in no-fallback mode because the surrounding ring-mix APIs are still `Cmt`-returning rather than `Result`-returning. |
+| Circuit breaker for GPU failures | P2 | Two-level breaker: per-oracle (`SPLIT_NC_MAX_FAILURES_PER_ORACLE = 1`) and per-session (`BACKEND_MAX_FAILURES_PER_SESSION = 1`). After one create/eval failure the backend is disabled for the remainder of the oracle/session, and breaker activations are emitted to stderr. Atomic fold failures now drop only the evaluator and retry from CPU snapshot on the next round. | No exponential backoff, no cooldown period, and breaker logging is visible but still ad hoc rather than a structured telemetry stream. |
+
+### Open (requires further work)
+
+| Priority | Issue | Location | Detail |
+|----------|-------|----------|--------|
+| **P1** | Stage-8 `prove_rlc_dec_lane` is still the dominant bottleneck | `crates/neo-fold` | Stage-8 now uses the backend-aware commit path and reuses the joint-opening `unified_fold` as a single Stage-8 claim when sibling groups share point/domain, but heterogeneous Stage-8 groups still fall back to per-group folding and note-spend end-to-end wins remain modest on CUDA and negative on Metal. |
+| **P2** | Metal `Rq` batch slower than CPU | `ring.mojo` | Parity-correct but too slow for hot lanes. Stage-8 joint-opening and `RlcLane::Val` acceleration are gated off on Metal. |
+| **P2** | Note-spend lane batching incomplete | `crates/neo-fold` | Collapsible Stage-8 sibling groups now reduce to one fold claim, but WB/WP / heterogeneous Stage-8 groups are still not collapsed into a few large resident GPU jobs. |
+| **P3** | No automated accelerator CI gate | CI | GitHub Actions now runs a real Mojo CPU parity lane and a manual self-hosted Metal/CUDA parity workflow, but accelerator coverage is still not a required merge gate. GPU-breaking changes can still merge unless someone runs the manual GPU workflow. |
 
 ## Current Optimization Priorities
 

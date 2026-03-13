@@ -191,6 +191,9 @@ pub fn optimized_prove_with_context<L: neo_ccs::traits::SModuleHomomorphism<F, C
         let deg = oracle.degree_bound();
         let xs: Vec<K> = (0..=deg).map(|t| K::from(F::from_u64(t as u64))).collect();
         let ys = oracle.evals_at(&xs);
+        if let Some(err) = oracle.take_error() {
+            return Err(err);
+        }
 
         #[cfg(feature = "debug-logs")]
         if round_idx == 0 {
@@ -240,6 +243,9 @@ pub fn optimized_prove_with_context<L: neo_ccs::traits::SModuleHomomorphism<F, C
         running_sum = crate::sumcheck::poly_eval_k(&coeffs, r_i);
 
         oracle.fold(r_i);
+        if let Some(err) = oracle.take_error() {
+            return Err(err);
+        }
         sumcheck_rounds.push(coeffs);
     }
 
@@ -270,6 +276,9 @@ pub fn optimized_prove_with_context<L: neo_ccs::traits::SModuleHomomorphism<F, C
         let deg = oracle_nc.degree_bound();
         let xs: Vec<K> = (0..=deg).map(|t| K::from(F::from_u64(t as u64))).collect();
         let ys = oracle_nc.evals_at(&xs);
+        if let Some(err) = oracle_nc.take_error() {
+            return Err(err);
+        }
 
         if ys[0] + ys[1] != running_sum_nc {
             return Err(PiCcsError::SumcheckError(
@@ -291,6 +300,9 @@ pub fn optimized_prove_with_context<L: neo_ccs::traits::SModuleHomomorphism<F, C
 
         running_sum_nc = crate::sumcheck::poly_eval_k(&coeffs, r_i);
         oracle_nc.fold(r_i);
+        if let Some(err) = oracle_nc.take_error() {
+            return Err(err);
+        }
         sumcheck_rounds_nc.push(coeffs);
     }
 

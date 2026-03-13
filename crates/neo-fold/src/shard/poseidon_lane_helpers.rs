@@ -1529,6 +1529,7 @@ where
         k_dec,
         step_idx,
         backend_ctx,
+        false,
         None,
         me_claims,
         wit_refs.as_slice(),

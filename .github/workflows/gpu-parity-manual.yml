@@ -1,0 +1,77 @@
+name: Manual GPU Parity
+
+on:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_BUILD_JOBS: 1
+
+jobs:
+  cuda-parity:
+    name: CUDA Parity
+    runs-on: [self-hosted, Linux]
+    timeout-minutes: 120
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache cargo
+      uses: Swatinem/rust-cache@v2
+
+    - name: Install pixi
+      run: curl -fsSL https://pixi.sh/install.sh | bash
+
+    - name: Add pixi to PATH
+      run: echo "$HOME/.pixi/bin" >> "$GITHUB_PATH"
+
+    - name: Warm Mojo toolchain
+      working-directory: gpu/mojo
+      run: pixi install
+
+    - name: Run CUDA parity suite
+      run: |
+        set -euxo pipefail
+        cargo test -p neo-gpu --release --test loader real_mojo_cuda_session_batch_matches_cpu_reference -- --ignored --exact
+        cargo test -p neo-gpu --release --test loader real_mojo_cuda_split_nc_smoke_matches_cpu_reference -- --ignored --exact
+        cargo test -p neo-gpu --release --test ring_superneo real_mojo_cuda_session_ring_and_superneo_match_cpu_reference -- --ignored --exact
+        cargo test -p neo-reductions --release --test split_nc_gpu_parity real_mojo_cuda_split_nc_optimized_prove_matches_cpu_and_verifies -- --ignored --exact
+        cargo test -p neo-fold --release --test integration suite::ccs_only_mcs_batched::ccs_only_mcs_batched_real_mojo_cuda_matches_cpu -- --ignored --exact
+        cargo test -p neo-fold --release --test test_rv64_note_from_elf --features poseidon-precompile test_rv64_note_spend_from_elf_real_mojo_backend_matches_cpu -- --ignored --exact
+
+  metal-parity:
+    name: Metal Parity
+    runs-on: [self-hosted, macOS]
+    timeout-minutes: 120
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache cargo
+      uses: Swatinem/rust-cache@v2
+
+    - name: Install pixi
+      run: curl -fsSL https://pixi.sh/install.sh | bash
+
+    - name: Add pixi to PATH
+      run: echo "$HOME/.pixi/bin" >> "$GITHUB_PATH"
+
+    - name: Warm Mojo toolchain
+      working-directory: gpu/mojo
+      run: pixi install
+
+    - name: Run Metal parity suite
+      run: |
+        set -euxo pipefail
+        cargo test -p neo-gpu --release --test loader real_mojo_metal_session_batch_matches_cpu_reference -- --ignored --exact
+        cargo test -p neo-gpu --release --test loader real_mojo_metal_split_nc_smoke_matches_cpu_reference -- --ignored --exact
+        cargo test -p neo-gpu --release --test ring_superneo real_mojo_metal_session_ring_and_superneo_match_cpu_reference -- --ignored --exact
+        cargo test -p neo-reductions --release --test split_nc_gpu_parity real_mojo_metal_split_nc_optimized_prove_matches_cpu_and_verifies -- --ignored --exact
+        cargo test -p neo-fold --release --test integration suite::ccs_only_mcs_batched::ccs_only_mcs_batched_real_mojo_metal_matches_cpu -- --ignored --exact
+        cargo test -p neo-fold --release --test test_rv64_note_from_elf --features poseidon-precompile test_rv64_note_spend_from_elf_real_mojo_backend_matches_cpu -- --ignored --exact

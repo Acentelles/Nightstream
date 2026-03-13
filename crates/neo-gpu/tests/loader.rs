@@ -214,7 +214,7 @@ fn minimal_fe_snapshot() -> Vec<u8> {
     push_u64_le(&mut out, 0);
     push_u64_le(&mut out, 0);
     push_u64_le(&mut out, 0);
-    push_u64_le(&mut out, 0);
+    push_u64_le(&mut out, 2);
     push_u64_le(&mut out, 0);
     push_flat_k_le(&mut out, FlatK::default());
     push_flat_k_le(&mut out, FlatK { re: 1, im: 0 });
@@ -255,7 +255,7 @@ fn minimal_nc_snapshot() -> Vec<u8> {
     push_u64_le(&mut out, 2);
     push_u64_le(&mut out, 2);
     push_u64_le(&mut out, 0);
-    push_u64_le(&mut out, 0);
+    push_u64_le(&mut out, 2);
     push_u64_le(&mut out, 0);
     push_u64_le(&mut out, 0);
     push_u64_le(&mut out, 0);
@@ -661,12 +661,6 @@ fn poseidon2_execution_mode_reports_cpu_host_fallback_and_accelerator() {
     assert_eq!(cuda.poseidon2_batch_execution_mode(16), ExecutionMode::HostFallback);
     assert_eq!(cuda.poseidon2_batch_execution_mode(32), ExecutionMode::Accelerator);
     assert_eq!(cuda.poseidon2_batch_execution_mode(256), ExecutionMode::Accelerator);
-
-    let hip = connect(&MojoBackendConfig::new(DeviceApi::Hip).with_library_path(build_mock_library()))
-        .expect("connect hip mock mojo session");
-    assert_eq!(hip.poseidon2_batch_execution_mode(16), ExecutionMode::HostFallback);
-    assert_eq!(hip.poseidon2_batch_execution_mode(32), ExecutionMode::Accelerator);
-    assert_eq!(hip.poseidon2_batch_execution_mode(256), ExecutionMode::Accelerator);
 }
 
 #[test]
@@ -684,11 +678,24 @@ fn split_nc_execution_mode_reports_cpu_host_fallback_and_accelerator() {
         .expect("connect cuda mock mojo session");
     assert_eq!(cuda.split_nc_execution_mode(64), ExecutionMode::HostFallback);
     assert_eq!(cuda.split_nc_execution_mode(1024), ExecutionMode::Accelerator);
+}
 
-    let hip = connect(&MojoBackendConfig::new(DeviceApi::Hip).with_library_path(build_mock_library()))
-        .expect("connect hip mock mojo session");
-    assert_eq!(hip.split_nc_execution_mode(64), ExecutionMode::HostFallback);
-    assert_eq!(hip.split_nc_execution_mode(1024), ExecutionMode::Accelerator);
+#[test]
+fn superneo_execution_mode_reports_cpu_and_accelerator() {
+    let cpu = connect(&MojoBackendConfig::new(DeviceApi::Cpu).with_library_path(build_mock_library()))
+        .expect("connect cpu mock mojo session");
+    assert_eq!(cpu.superneo_bar_block_execution_mode(), ExecutionMode::Cpu);
+    assert_eq!(cpu.superneo_row_dot_execution_mode(2), ExecutionMode::Cpu);
+
+    let metal = connect(&MojoBackendConfig::new(DeviceApi::Metal).with_library_path(build_mock_library()))
+        .expect("connect metal mock mojo session");
+    assert_eq!(metal.superneo_bar_block_execution_mode(), ExecutionMode::Accelerator);
+    assert_eq!(metal.superneo_row_dot_execution_mode(2), ExecutionMode::Accelerator);
+
+    let cuda = connect(&MojoBackendConfig::new(DeviceApi::Cuda).with_library_path(build_mock_library()))
+        .expect("connect cuda mock mojo session");
+    assert_eq!(cuda.superneo_bar_block_execution_mode(), ExecutionMode::Accelerator);
+    assert_eq!(cuda.superneo_row_dot_execution_mode(2), ExecutionMode::Accelerator);
 }
 
 #[test]

@@ -44,13 +44,7 @@ fn build_guest_rv64im_elf(guest_name: &str, binary_name: &str) -> Result<Vec<u8>
     let mut build_target = target_json.clone();
     let mut use_json_target_flag = false;
     let output = loop {
-        let output = run_guest_build(
-            &manifest,
-            &build_target,
-            &target_dir,
-            &rustflags,
-            use_json_target_flag,
-        )?;
+        let output = run_guest_build(&manifest, &build_target, &target_dir, &rustflags, use_json_target_flag)?;
         if output.status.success() {
             break output;
         }
@@ -74,11 +68,33 @@ fn build_guest_rv64im_elf(guest_name: &str, binary_name: &str) -> Result<Vec<u8>
         ));
     }
 
-    let elf_path = target_dir
+    let elf_path = resolve_guest_elf_path(&target_dir, binary_name)?;
+    fs::read(&elf_path).map_err(|e| format!("failed to read {}: {e}", elf_path.display()))
+}
+
+fn resolve_guest_elf_path(target_dir: &Path, binary_name: &str) -> Result<PathBuf, String> {
+    let canonical = target_dir
         .join("riscv64im-unknown-none-elf")
         .join("release")
         .join(binary_name);
-    fs::read(&elf_path).map_err(|e| format!("failed to read {}: {e}", elf_path.display()))
+    if canonical.is_file() {
+        return Ok(canonical);
+    }
+
+    let numeric_pointer_width = target_dir
+        .join("riscv64im-unknown-none-elf.u16")
+        .join("release")
+        .join(binary_name);
+    if numeric_pointer_width.is_file() {
+        return Ok(numeric_pointer_width);
+    }
+
+    Err(format!(
+        "failed to locate built RV64 guest ELF {}; checked {} and {}",
+        binary_name,
+        canonical.display(),
+        numeric_pointer_width.display()
+    ))
 }
 
 fn run_guest_build(
@@ -118,21 +134,15 @@ fn guest_build_output_needs_json_target_flag(output: &Output) -> bool {
 
 fn guest_build_output_needs_numeric_pointer_width(output: &Output) -> bool {
     let stderr = String::from_utf8_lossy(&output.stderr);
-    stderr.contains("target-pointer-width: invalid type: string")
-        && stderr.contains("expected u16")
+    stderr.contains("target-pointer-width: invalid type: string") && stderr.contains("expected u16")
 }
 
-fn write_numeric_pointer_width_target_json(
-    target_json: &Path,
-    target_dir: &Path,
-) -> Result<PathBuf, String> {
+fn write_numeric_pointer_width_target_json(target_json: &Path, target_dir: &Path) -> Result<PathBuf, String> {
     let spec = fs::read_to_string(target_json)
         .map_err(|e| format!("failed to read target spec {}: {e}", target_json.display()))?;
-    let numeric_spec =
-        spec.replace("\"target-pointer-width\": \"64\"", "\"target-pointer-width\": 64");
+    let numeric_spec = spec.replace("\"target-pointer-width\": \"64\"", "\"target-pointer-width\": 64");
     let numeric_path = target_dir.join("riscv64im-unknown-none-elf.u16.json");
-    fs::create_dir_all(target_dir)
-        .map_err(|e| format!("failed to create target dir {}: {e}", target_dir.display()))?;
+    fs::create_dir_all(target_dir).map_err(|e| format!("failed to create target dir {}: {e}", target_dir.display()))?;
     fs::write(&numeric_path, numeric_spec)
         .map_err(|e| format!("failed to write target spec {}: {e}", numeric_path.display()))?;
     Ok(numeric_path)

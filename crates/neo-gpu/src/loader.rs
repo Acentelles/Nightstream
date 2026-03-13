@@ -39,8 +39,8 @@ type RqMulFn = unsafe extern "C" fn(u64, *mut u64, *mut u64, *mut u64) -> i32;
 type RqMulBatchFn = unsafe extern "C" fn(u64, *mut u64, *mut u64, u64, *mut u64) -> i32;
 type RqAccumulateBatchFn = unsafe extern "C" fn(u64, *mut u64, *mut u64, *mut u64, u64, *mut u64) -> i32;
 type RqCtFn = unsafe extern "C" fn(*mut u64, *mut u64) -> i32;
-type SuperneoBarBlockFn = unsafe extern "C" fn(*mut u64, *mut u64, *mut u64) -> i32;
-type SuperneoRowDotBlocksFn = unsafe extern "C" fn(*mut u64, u64, *mut u64, u64, *mut u64) -> i32;
+type SuperneoBarBlockFn = unsafe extern "C" fn(u64, *mut u64, *mut u64, *mut u64) -> i32;
+type SuperneoRowDotBlocksFn = unsafe extern "C" fn(u64, *mut u64, u64, *mut u64, u64, *mut u64) -> i32;
 
 #[cfg(all(not(target_arch = "wasm32"), any(unix, windows)))]
 type PlatformLibrary = Library;
@@ -637,7 +637,7 @@ fn push_flat_k_le(out: &mut Vec<u8>, value: FlatK) {
 }
 
 fn minimal_fe_snapshot() -> Vec<u8> {
-    let mut out = Vec::with_capacity(15 * 8 + 4 * 8);
+    let mut out = Vec::with_capacity(20 * 8);
     push_u64_le(&mut out, SPLIT_NC_SNAPSHOT_MAGIC);
     push_u64_le(&mut out, SPLIT_NC_SNAPSHOT_VERSION);
     push_u64_le(&mut out, SPLIT_NC_FE_ROW_V1);
@@ -650,7 +650,7 @@ fn minimal_fe_snapshot() -> Vec<u8> {
     push_u64_le(&mut out, 0); // f_terms len
     push_u64_le(&mut out, 0); // num_mcs
     push_u64_le(&mut out, 0); // num_vars
-    push_u64_le(&mut out, 0); // table_len
+    push_u64_le(&mut out, 2); // table_len
     push_u64_le(&mut out, 0); // eval_tbl len
     push_flat_k_le(&mut out, FlatK::default()); // gamma_to_k
     push_flat_k_le(&mut out, FlatK { re: 1, im: 0 });
@@ -659,7 +659,7 @@ fn minimal_fe_snapshot() -> Vec<u8> {
 }
 
 fn minimal_nc_snapshot() -> Vec<u8> {
-    let mut out = Vec::with_capacity(13 * 8 + 2 * 8);
+    let mut out = Vec::with_capacity(17 * 8);
     push_u64_le(&mut out, SPLIT_NC_SNAPSHOT_MAGIC);
     push_u64_le(&mut out, SPLIT_NC_SNAPSHOT_VERSION);
     push_u64_le(&mut out, SPLIT_NC_NC_COL_V1);
@@ -668,7 +668,7 @@ fn minimal_nc_snapshot() -> Vec<u8> {
     push_u64_le(&mut out, 2); // cur_len
     push_u64_le(&mut out, 2); // eq_beta_m_tbl len
     push_u64_le(&mut out, 0); // num_tables
-    push_u64_le(&mut out, 0); // table_len
+    push_u64_le(&mut out, 2); // table_len
     push_u64_le(&mut out, 0); // d_width
     push_u64_le(&mut out, 0); // weights_tables
     push_u64_le(&mut out, 0); // weights_width
@@ -773,12 +773,10 @@ impl MojoSession {
         let thresholds = self.activation_thresholds();
         match self.device_api {
             DeviceApi::Cpu => ExecutionMode::Cpu,
-            DeviceApi::Cuda | DeviceApi::Metal | DeviceApi::Hip
-                if num_states >= thresholds.poseidon2_batch_min_states =>
-            {
+            DeviceApi::Cuda | DeviceApi::Metal if num_states >= thresholds.poseidon2_batch_min_states => {
                 ExecutionMode::Accelerator
             }
-            DeviceApi::Cuda | DeviceApi::Metal | DeviceApi::Hip | DeviceApi::Auto => ExecutionMode::HostFallback,
+            DeviceApi::Cuda | DeviceApi::Metal | DeviceApi::Auto => ExecutionMode::HostFallback,
         }
     }
 
@@ -787,10 +785,10 @@ impl MojoSession {
         let thresholds = self.activation_thresholds();
         match self.device_api {
             DeviceApi::Cpu => ExecutionMode::Cpu,
-            DeviceApi::Cuda | DeviceApi::Metal | DeviceApi::Hip if total_tasks >= thresholds.fe_row_min_tasks => {
+            DeviceApi::Cuda | DeviceApi::Metal if total_tasks >= thresholds.fe_row_min_tasks => {
                 ExecutionMode::Accelerator
             }
-            DeviceApi::Cuda | DeviceApi::Metal | DeviceApi::Hip | DeviceApi::Auto => ExecutionMode::HostFallback,
+            DeviceApi::Cuda | DeviceApi::Metal | DeviceApi::Auto => ExecutionMode::HostFallback,
         }
     }
 
@@ -799,10 +797,10 @@ impl MojoSession {
         let thresholds = self.activation_thresholds();
         match self.device_api {
             DeviceApi::Cpu => ExecutionMode::Cpu,
-            DeviceApi::Cuda | DeviceApi::Metal | DeviceApi::Hip if total_tasks >= thresholds.nc_col_min_tasks => {
+            DeviceApi::Cuda | DeviceApi::Metal if total_tasks >= thresholds.nc_col_min_tasks => {
                 ExecutionMode::Accelerator
             }
-            DeviceApi::Cuda | DeviceApi::Metal | DeviceApi::Hip | DeviceApi::Auto => ExecutionMode::HostFallback,
+            DeviceApi::Cuda | DeviceApi::Metal | DeviceApi::Auto => ExecutionMode::HostFallback,
         }
     }
 
@@ -889,7 +887,7 @@ impl MojoSession {
         }
         let mode = match self.device_api {
             DeviceApi::Cpu => ExecutionMode::Cpu,
-            DeviceApi::Cuda | DeviceApi::Metal | DeviceApi::Hip => ExecutionMode::Accelerator,
+            DeviceApi::Cuda | DeviceApi::Metal => ExecutionMode::Accelerator,
             DeviceApi::Auto => ExecutionMode::HostFallback,
         };
         let mut diagnostics = self
@@ -1000,7 +998,7 @@ impl MojoSession {
         let min_tasks = match self.device_api {
             DeviceApi::Cpu => 0,
             DeviceApi::Metal => 54 * 1024,
-            DeviceApi::Cuda | DeviceApi::Hip => 54 * 64,
+            DeviceApi::Cuda => 54 * 64,
             DeviceApi::Auto => usize::MAX,
         };
         if self.device_api != DeviceApi::Cpu && total_tasks < min_tasks {
@@ -1008,7 +1006,28 @@ impl MojoSession {
         }
         match self.device_api {
             DeviceApi::Cpu => ExecutionMode::Cpu,
-            DeviceApi::Cuda | DeviceApi::Metal | DeviceApi::Hip => ExecutionMode::Accelerator,
+            DeviceApi::Cuda | DeviceApi::Metal => ExecutionMode::Accelerator,
+            DeviceApi::Auto => ExecutionMode::HostFallback,
+        }
+    }
+
+    #[inline]
+    pub fn superneo_bar_block_execution_mode(&self) -> ExecutionMode {
+        match self.device_api {
+            DeviceApi::Cpu => ExecutionMode::Cpu,
+            DeviceApi::Cuda | DeviceApi::Metal => ExecutionMode::Accelerator,
+            DeviceApi::Auto => ExecutionMode::HostFallback,
+        }
+    }
+
+    #[inline]
+    pub fn superneo_row_dot_execution_mode(&self, num_blocks: usize) -> ExecutionMode {
+        if self.device_api != DeviceApi::Cpu && num_blocks == 0 {
+            return ExecutionMode::HostFallback;
+        }
+        match self.device_api {
+            DeviceApi::Cpu => ExecutionMode::Cpu,
+            DeviceApi::Cuda | DeviceApi::Metal => ExecutionMode::Accelerator,
             DeviceApi::Auto => ExecutionMode::HostFallback,
         }
     }
@@ -1256,8 +1275,14 @@ impl MojoSession {
         let matrix_ptr = matrix_flat.as_mut_ptr() as usize;
         let block_ptr = block.as_mut_ptr() as usize;
         let out_ptr = out.as_mut_ptr() as usize;
+        let session_handle = self.handle;
         let status = call_for_device_api(device_api, move || unsafe {
-            bar_block(matrix_ptr as *mut u64, block_ptr as *mut u64, out_ptr as *mut u64)
+            bar_block(
+                session_handle as u64,
+                matrix_ptr as *mut u64,
+                block_ptr as *mut u64,
+                out_ptr as *mut u64,
+            )
         });
         if status != 0 {
             return Err(NeoGpuError::OperationFailed {
@@ -1272,7 +1297,7 @@ impl MojoSession {
         diagnostics
             .snapshot
             .superneo
-            .record_mode(self.rq_mul_execution_mode(54), 1);
+            .record_mode(self.superneo_bar_block_execution_mode(), 1);
         Ok(out)
     }
 
@@ -1304,8 +1329,10 @@ impl MojoSession {
         let out_ptr = out_words.as_mut_ptr() as usize;
         let num_blocks = bar_blocks.len() as u64;
         let z_len = z.len() as u64;
+        let session_handle = self.handle;
         let status = call_for_device_api(device_api, move || unsafe {
             row_dot(
+                session_handle as u64,
                 bar_ptr as *mut u64,
                 num_blocks,
                 z_ptr as *mut u64,
@@ -1323,10 +1350,10 @@ impl MojoSession {
             .diagnostics
             .lock()
             .expect("mojo session diagnostics lock");
-        diagnostics.snapshot.superneo.record_mode(
-            self.rq_mul_execution_mode(bar_blocks.len().saturating_mul(54)),
-            bar_blocks.len(),
-        );
+        diagnostics
+            .snapshot
+            .superneo
+            .record_mode(self.superneo_row_dot_execution_mode(bar_blocks.len()), bar_blocks.len());
         Ok(FlatK {
             re: out_words[0],
             im: out_words[1],

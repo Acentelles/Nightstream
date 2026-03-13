@@ -4,9 +4,14 @@ use super::*;
 fn allow_commit_acceleration_for_lane(
     backend_ctx: &neo_reductions::accelerator::BackendContext,
     lane: RlcLane,
+    force_backend: bool,
 ) -> bool {
     let _ = lane;
-    matches!(backend_ctx.selected_device_api(), Some(neo_gpu::DeviceApi::Cpu))
+    force_backend
+        || !matches!(
+            backend_ctx.selected_device_api(),
+            None | Some(neo_gpu::DeviceApi::Metal)
+        )
 }
 
 pub(crate) fn prove_rlc_dec_lane<L, MR, MB>(
@@ -22,6 +27,7 @@ pub(crate) fn prove_rlc_dec_lane<L, MR, MB>(
     k_dec: usize,
     step_idx: usize,
     backend_ctx: &neo_reductions::accelerator::BackendContext,
+    force_backend_commit_accel: bool,
     trace_linkage_t_len: Option<usize>,
     me_inputs: &[CeClaim<Cmt, F, K>],
     wit_inputs: &[&Mat<F>],
@@ -34,22 +40,7 @@ where
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {
-    let allow_commit_accel = allow_commit_acceleration_for_lane(backend_ctx, lane);
-    let mix_rhos_commits = |rhos: &[Mat<F>], cs: &[Cmt]| {
-        if allow_commit_accel {
-            mix_rhos_commits_with_backend(backend_ctx, mixers.mix_rhos_commits, rhos, cs)
-        } else {
-            (mixers.mix_rhos_commits)(rhos, cs)
-        }
-    };
-    let combine_b_pows = |cs: &[Cmt], b: u32| {
-        if allow_commit_accel {
-            combine_b_pows_with_backend(backend_ctx, mixers.combine_b_pows, cs, b)
-        } else {
-            (mixers.combine_b_pows)(cs, b)
-        }
-    };
-
+    let allow_commit_accel = allow_commit_acceleration_for_lane(backend_ctx, lane, force_backend_commit_accel);
     if me_inputs.is_empty() {
         let prefix = match lane {
             RlcLane::Main => "",
@@ -95,8 +86,38 @@ where
     params_rlc.k_rho = k_rho_eff as u32;
     let rlc_rhos = ccs::sample_rot_rhos_n_typed(tr, &params_rlc, ring, me_inputs.len())?;
     let rlc_rho_mats = ccs::rot_rhos_to_mats(&rlc_rhos);
+    let input_commitments: Vec<Cmt> = me_inputs.iter().map(|me| me.c.clone()).collect();
+    let parent_commitment = if allow_commit_accel {
+        Some(mix_rhos_commits_with_backend_result(
+            backend_ctx,
+            mixers.mix_rhos_commits,
+            &rlc_rho_mats,
+            &input_commitments,
+        )?)
+    } else {
+        None
+    };
+    let mix_rhos_commits = |rhos: &[Mat<F>], cs: &[Cmt]| {
+        parent_commitment
+            .clone()
+            .unwrap_or_else(|| (mixers.mix_rhos_commits)(rhos, cs))
+    };
+    let mix_rhos_commits_result = |rhos: &[Mat<F>], cs: &[Cmt]| {
+        if let Some(commitment) = parent_commitment.as_ref() {
+            Ok(commitment.clone())
+        } else {
+            Ok((mixers.mix_rhos_commits)(rhos, cs))
+        }
+    };
+    let combine_b_pows_result = |cs: &[Cmt], b: u32| {
+        if allow_commit_accel {
+            combine_b_pows_with_backend_result(backend_ctx, mixers.combine_b_pows, cs, b)
+        } else {
+            Ok((mixers.combine_b_pows)(cs, b))
+        }
+    };
     let (mut rlc_parent, Z_mix) = if inputs_have_extra_y {
-        let parent_pub = ccs::rlc_public(s, params, &rlc_rhos, me_inputs, mix_rhos_commits, ell_d)?;
+        let parent_pub = ccs::rlc_public_result(s, params, &rlc_rhos, me_inputs, mix_rhos_commits_result, ell_d)?;
         let (_, z_mix_tmp) = neo_reductions::optimized_engine::rlc_reduction_optimized_with_commit_mix(
             s,
             params,
@@ -193,7 +214,7 @@ where
                 child_cs[idx] = commits[pos].clone();
             }
         }
-        let (dec_children, ok_y, ok_X, ok_c) = ccs::dec_children_with_commit_cached(
+        let (dec_children, ok_y, ok_X, ok_c) = ccs::dec_children_with_commit_cached_result(
             mode.clone(),
             s,
             params,
@@ -201,9 +222,9 @@ where
             &Z_split,
             ell_d,
             &child_cs,
-            combine_b_pows,
+            combine_b_pows_result,
             ccs_sparse_cache,
-        );
+        )?;
         Ok((dec_children, ok_y, ok_X, ok_c, Z_split))
     };
 
@@ -218,7 +239,7 @@ where
             Z_mix,
             ell_d,
             k_dec_eff,
-            combine_b_pows,
+            mixers.combine_b_pows,
             ccs_sparse_cache,
         ) {
             Ok((children, _child_cs, ok_y, ok_X, ok_c)) if ok_y && ok_X && ok_c => {
@@ -545,23 +566,21 @@ where
         }
     }
 
-    let allow_commit_accel = allow_commit_acceleration_for_lane(backend_ctx, lane);
-    let mix_rhos_commits = |rhos: &[Mat<F>], cs: &[Cmt]| {
-        if allow_commit_accel {
-            mix_rhos_commits_with_backend(backend_ctx, mixers.mix_rhos_commits, rhos, cs)
-        } else {
-            (mixers.mix_rhos_commits)(rhos, cs)
-        }
-    };
-    let combine_b_pows = |cs: &[Cmt], b: u32| {
-        if allow_commit_accel {
-            combine_b_pows_with_backend(backend_ctx, mixers.combine_b_pows, cs, b)
-        } else {
-            (mixers.combine_b_pows)(cs, b)
-        }
-    };
-
-    let parent_pub = ccs::rlc_public(s, params, rlc_rhos, rlc_inputs, mix_rhos_commits, ell_d)?;
+    let allow_commit_accel = allow_commit_acceleration_for_lane(backend_ctx, lane, false);
+    let parent_pub = ccs::rlc_public_result(
+        s,
+        params,
+        rlc_rhos,
+        rlc_inputs,
+        |rhos, cs| {
+            if allow_commit_accel {
+                mix_rhos_commits_with_backend_result(backend_ctx, mixers.mix_rhos_commits, rhos, cs)
+            } else {
+                Ok((mixers.mix_rhos_commits)(rhos, cs))
+            }
+        },
+        ell_d,
+    )?;
 
     let prefix = match lane {
         RlcLane::Main => "",
@@ -689,7 +708,7 @@ where
         }
     }
 
-    if !ccs::verify_dec_public(s, params, rlc_parent, dec_children, combine_b_pows, ell_d) {
+    if !ccs::verify_dec_public(s, params, rlc_parent, dec_children, mixers.combine_b_pows, ell_d) {
         return Err(PiCcsError::ProtocolError(match lane {
             RlcLane::Main => format!("step {}: DEC public check failed", step_idx),
             RlcLane::Val => format!("step {}: val-lane DEC public check failed", step_idx),

@@ -14,13 +14,14 @@ fn device_api_name(api: UInt32) -> String:
         return "metal"
     if api == UInt32(DEVICE_API_CUDA):
         return "cuda"
-    if api == UInt32(DEVICE_API_HIP):
-        return "hip"
     return "cpu"
 
 
 fn accelerator_ready_for_api(api: UInt32, _device_id: UInt32) -> Bool:
     if api == UInt32(DEVICE_API_CPU):
+        return False
+    # Keep HIP out of the promoted production surface until it has real parity/perf coverage.
+    if api == UInt32(DEVICE_API_HIP):
         return False
     if not has_accelerator():
         return False
@@ -58,6 +59,16 @@ struct SessionState(Movable):
     var ring_meta_dev: Optional[DeviceBuffer[DType.uint64]]
     var ring_meta_capacity_words: Int
     var ring_kernel_cache_addr: UInt64
+    var superneo_a_host: Optional[HostBuffer[DType.uint64]]
+    var superneo_a_dev: Optional[DeviceBuffer[DType.uint64]]
+    var superneo_a_capacity_words: Int
+    var superneo_b_host: Optional[HostBuffer[DType.uint64]]
+    var superneo_b_dev: Optional[DeviceBuffer[DType.uint64]]
+    var superneo_b_capacity_words: Int
+    var superneo_out_host: Optional[HostBuffer[DType.uint64]]
+    var superneo_out_dev: Optional[DeviceBuffer[DType.uint64]]
+    var superneo_out_capacity_words: Int
+    var superneo_kernel_cache_addr: UInt64
 
     fn __init__(out self, api: UInt32, device_id: UInt32):
         self.api = api
@@ -85,6 +96,16 @@ struct SessionState(Movable):
         self.ring_meta_dev = Optional[DeviceBuffer[DType.uint64]]()
         self.ring_meta_capacity_words = 0
         self.ring_kernel_cache_addr = 0
+        self.superneo_a_host = Optional[HostBuffer[DType.uint64]]()
+        self.superneo_a_dev = Optional[DeviceBuffer[DType.uint64]]()
+        self.superneo_a_capacity_words = 0
+        self.superneo_b_host = Optional[HostBuffer[DType.uint64]]()
+        self.superneo_b_dev = Optional[DeviceBuffer[DType.uint64]]()
+        self.superneo_b_capacity_words = 0
+        self.superneo_out_host = Optional[HostBuffer[DType.uint64]]()
+        self.superneo_out_dev = Optional[DeviceBuffer[DType.uint64]]()
+        self.superneo_out_capacity_words = 0
+        self.superneo_kernel_cache_addr = 0
 
         if api == UInt32(DEVICE_API_CPU) or not has_accelerator():
             return
@@ -212,6 +233,53 @@ struct SessionState(Movable):
             )
             self.ring_meta_capacity_words = meta_word_count
         ctx.synchronize()
+
+    fn ensure_superneo_buffers(mut self, a_word_count: Int, b_word_count: Int, out_word_count: Int) raises:
+        if not self.accelerator_ctx:
+            raise Error("superneo accelerator context unavailable")
+        var ctx = self.accelerator_ctx.value()
+        var grew = False
+        if (
+            self.superneo_a_capacity_words < a_word_count
+            or not self.superneo_a_host
+            or not self.superneo_a_dev
+        ):
+            self.superneo_a_host = Optional[HostBuffer[DType.uint64]](
+                ctx.enqueue_create_host_buffer[DType.uint64](a_word_count)
+            )
+            self.superneo_a_dev = Optional[DeviceBuffer[DType.uint64]](
+                ctx.enqueue_create_buffer[DType.uint64](a_word_count)
+            )
+            self.superneo_a_capacity_words = a_word_count
+            grew = True
+        if (
+            self.superneo_b_capacity_words < b_word_count
+            or not self.superneo_b_host
+            or not self.superneo_b_dev
+        ):
+            self.superneo_b_host = Optional[HostBuffer[DType.uint64]](
+                ctx.enqueue_create_host_buffer[DType.uint64](b_word_count)
+            )
+            self.superneo_b_dev = Optional[DeviceBuffer[DType.uint64]](
+                ctx.enqueue_create_buffer[DType.uint64](b_word_count)
+            )
+            self.superneo_b_capacity_words = b_word_count
+            grew = True
+        if (
+            self.superneo_out_capacity_words < out_word_count
+            or not self.superneo_out_host
+            or not self.superneo_out_dev
+        ):
+            self.superneo_out_host = Optional[HostBuffer[DType.uint64]](
+                ctx.enqueue_create_host_buffer[DType.uint64](out_word_count)
+            )
+            self.superneo_out_dev = Optional[DeviceBuffer[DType.uint64]](
+                ctx.enqueue_create_buffer[DType.uint64](out_word_count)
+            )
+            self.superneo_out_capacity_words = out_word_count
+            grew = True
+        if grew:
+            ctx.synchronize()
 
 
 fn session_api(session: UInt64) -> UInt32:

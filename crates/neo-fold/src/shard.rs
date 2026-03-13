@@ -142,9 +142,25 @@ pub struct Stage8SubphaseDurations {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct BatchOpportunityMetrics {
+    pub val_claims: usize,
+    pub wb_claims: usize,
+    pub wp_claims: usize,
+    pub poseidon_cycle_claims: usize,
+    pub poseidon_local_claims: usize,
+    pub stage8_claims: usize,
+    pub wb_materialized_batches: usize,
+    pub wb_materialized_children: usize,
+    pub wp_materialized_batches: usize,
+    pub wp_materialized_children: usize,
+    pub max_materialized_children: usize,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ShardProveMetrics {
     pub lane_durations: ShardProveLaneDurations,
     pub stage8_subphases: Stage8SubphaseDurations,
+    pub batch_opportunities: BatchOpportunityMetrics,
     pub mojo_before: neo_gpu::MojoSessionDiagnostics,
     pub mojo_after: neo_gpu::MojoSessionDiagnostics,
     pub mojo_delta: neo_gpu::MojoSessionDiagnostics,

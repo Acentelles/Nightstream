@@ -54,6 +54,41 @@ jobs:
     - name: Run tests
       run: NEO_PI_CCS_PREFLIGHT=1 NEO_SELF_VERIFY=1 NEO_STRICT_IO_PARITY=1 cargo test --release --workspace --features "testing,debug-log,fs-guard"
 
+  mojo-cpu-parity:
+    name: Real Mojo CPU Parity
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache cargo
+      uses: Swatinem/rust-cache@v2
+
+    - name: Install pixi
+      run: curl -fsSL https://pixi.sh/install.sh | bash
+
+    - name: Add pixi to PATH
+      run: echo "$HOME/.pixi/bin" >> "$GITHUB_PATH"
+
+    - name: Warm Mojo toolchain
+      working-directory: gpu/mojo
+      run: pixi install
+
+    - name: Run real Mojo CPU parity tests
+      env:
+        CARGO_BUILD_JOBS: 1
+      run: |
+        set -euxo pipefail
+        cargo test -p neo-gpu --release --test loader real_mojo_cpu_session_ignores_nonzero_device_id -- --ignored --exact
+        cargo test -p neo-gpu --release --test loader real_mojo_poseidon2_matches_cpu_reference -- --ignored --exact
+        cargo test -p neo-gpu --release --test loader real_mojo_split_nc_probe_and_minimal_eval_work -- --ignored --exact
+        cargo test -p neo-reductions --release --test split_nc_gpu_parity real_mojo_split_nc_high_batch_nc_oracle_matches_cpu_across_rounds -- --ignored --exact
+        cargo test -p neo-reductions --release --test split_nc_gpu_parity real_mojo_split_nc_optimized_prove_matches_cpu_and_verifies -- --ignored --exact
+        cargo test -p neo-fold --release --test integration suite::ccs_only_mcs_batched::ccs_only_mcs_batched_seeded_real_mojo_cpu_matches_cpu -- --ignored --exact
+
   # ============================================================================
   # WASM Build Checks (with Spartan)
   # Ensures web-wasm, ios-wasm, and android-wasm builds don't break

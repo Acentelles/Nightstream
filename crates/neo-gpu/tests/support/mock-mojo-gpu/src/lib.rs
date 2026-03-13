@@ -65,7 +65,12 @@ static FE_EVALS_AT_CALLS: AtomicUsize = AtomicUsize::new(0);
 static NC_EVALS_AT_CALLS: AtomicUsize = AtomicUsize::new(0);
 static POSEIDON2_BATCH_CALLS: AtomicUsize = AtomicUsize::new(0);
 static RQ_MUL_CALLS: AtomicUsize = AtomicUsize::new(0);
+static SUPERNEO_CALLS: AtomicUsize = AtomicUsize::new(0);
 static SESSION_OPEN_CALLS: AtomicUsize = AtomicUsize::new(0);
+static FAIL_FE_EVALS_AT_CALLS: AtomicUsize = AtomicUsize::new(0);
+static FAIL_FE_FOLD_CALLS: AtomicUsize = AtomicUsize::new(0);
+static FAIL_NC_EVALS_AT_CALLS: AtomicUsize = AtomicUsize::new(0);
+static FAIL_NC_FOLD_CALLS: AtomicUsize = AtomicUsize::new(0);
 static EVALUATORS: OnceLock<Mutex<HashMap<usize, EvaluatorState>>> = OnceLock::new();
 
 #[derive(Clone)]
@@ -248,7 +253,10 @@ fn parse_fe_snapshot(bytes: &[u8]) -> Result<Option<FeSnapshotState>, i32> {
         let vars_len = reader.read_usize()?;
         let mut vars = Vec::with_capacity(vars_len);
         for _ in 0..vars_len {
-            vars.push((reader.read_usize()?, u32::try_from(reader.read_u64()?).map_err(|_| -15)?));
+            vars.push((
+                reader.read_usize()?,
+                u32::try_from(reader.read_u64()?).map_err(|_| -15)?,
+            ));
         }
         f_terms.push(FeSnapshotTerm { coeff, vars });
     }
@@ -355,11 +363,7 @@ fn parse_nc_snapshot(bytes: &[u8]) -> Result<Option<NcSnapshotState>, i32> {
 
 fn fe_evals_generic(state: &FeSnapshotState, points: &[FlatK], out: &mut [FlatK]) {
     let tail_len = state.cur_len / 2;
-    let f_arity = state
-        .f_var_tables_by_mcs
-        .first()
-        .map(Vec::len)
-        .unwrap_or(0);
+    let f_arity = state.f_var_tables_by_mcs.first().map(Vec::len).unwrap_or(0);
 
     for (idx, point) in points.iter().copied().enumerate() {
         let x = flat_to_k(point);
@@ -443,7 +447,10 @@ fn nc_evals_generic(state: &NcSnapshotState, points: &[FlatK], out: &mut [FlatK]
 
 fn create_handle(state: EvaluatorState) -> usize {
     let handle = NEXT_EVALUATOR_HANDLE.fetch_add(1, Ordering::Relaxed);
-    evaluators().lock().expect("mock evaluator registry").insert(handle, state);
+    evaluators()
+        .lock()
+        .expect("mock evaluator registry")
+        .insert(handle, state);
     handle
 }
 
@@ -527,7 +534,10 @@ pub extern "C" fn nightstream_gpu_fe_create(
 
 #[no_mangle]
 pub extern "C" fn nightstream_gpu_fe_destroy(_session: usize, evaluator: usize) -> i32 {
-    evaluators().lock().expect("mock evaluator registry").remove(&evaluator);
+    evaluators()
+        .lock()
+        .expect("mock evaluator registry")
+        .remove(&evaluator);
     0
 }
 
@@ -543,6 +553,14 @@ pub extern "C" fn nightstream_gpu_fe_evals_at(
     out_len: usize,
 ) -> i32 {
     FE_EVALS_AT_CALLS.fetch_add(1, Ordering::Relaxed);
+    if FAIL_FE_EVALS_AT_CALLS
+        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |remaining| {
+            remaining.checked_sub(1)
+        })
+        .is_ok()
+    {
+        return -31;
+    }
     unsafe {
         let n = (points_len as usize).min(out_len);
         if n == 0 {
@@ -570,6 +588,14 @@ pub extern "C" fn nightstream_gpu_fe_fold(
     challenge_re: u64,
     challenge_im: u64,
 ) -> i32 {
+    if FAIL_FE_FOLD_CALLS
+        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |remaining| {
+            remaining.checked_sub(1)
+        })
+        .is_ok()
+    {
+        return -32;
+    }
     let mut evaluators = evaluators().lock().expect("mock evaluator registry");
     let Some(state) = evaluators.get_mut(&evaluator) else {
         return -3;
@@ -624,7 +650,10 @@ pub extern "C" fn nightstream_gpu_nc_create(
 
 #[no_mangle]
 pub extern "C" fn nightstream_gpu_nc_destroy(_session: usize, evaluator: usize) -> i32 {
-    evaluators().lock().expect("mock evaluator registry").remove(&evaluator);
+    evaluators()
+        .lock()
+        .expect("mock evaluator registry")
+        .remove(&evaluator);
     0
 }
 
@@ -640,6 +669,14 @@ pub extern "C" fn nightstream_gpu_nc_evals_at(
     out_len: usize,
 ) -> i32 {
     NC_EVALS_AT_CALLS.fetch_add(1, Ordering::Relaxed);
+    if FAIL_NC_EVALS_AT_CALLS
+        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |remaining| {
+            remaining.checked_sub(1)
+        })
+        .is_ok()
+    {
+        return -41;
+    }
     unsafe {
         let n = (points_len as usize).min(out_len);
         if n == 0 {
@@ -667,6 +704,14 @@ pub extern "C" fn nightstream_gpu_nc_fold(
     challenge_re: u64,
     challenge_im: u64,
 ) -> i32 {
+    if FAIL_NC_FOLD_CALLS
+        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |remaining| {
+            remaining.checked_sub(1)
+        })
+        .is_ok()
+    {
+        return -42;
+    }
     let mut evaluators = evaluators().lock().expect("mock evaluator registry");
     let Some(state) = evaluators.get_mut(&evaluator) else {
         return -3;
@@ -718,11 +763,7 @@ pub extern "C" fn nightstream_gpu_debug_snapshot_head(
 }
 
 #[no_mangle]
-pub extern "C" fn nightstream_gpu_poseidon2_permute_u64x8(
-    _session: usize,
-    state_ptr: *mut FlatFq,
-    width: u32,
-) -> i32 {
+pub extern "C" fn nightstream_gpu_poseidon2_permute_u64x8(_session: usize, state_ptr: *mut FlatFq, width: u32) -> i32 {
     unsafe {
         if width != 8 {
             return -2;
@@ -892,10 +933,12 @@ pub extern "C" fn nightstream_gpu_rq_ct_u64x54(words_ptr: *mut u64, out_ptr: *mu
 
 #[no_mangle]
 pub extern "C" fn nightstream_gpu_superneo_bar_block_u64x54(
+    _session: u64,
     matrix_ptr: *mut u64,
     block_ptr: *mut u64,
     out_ptr: *mut u64,
 ) -> i32 {
+    SUPERNEO_CALLS.fetch_add(1, Ordering::Relaxed);
     unsafe {
         if matrix_ptr.is_null() || block_ptr.is_null() || out_ptr.is_null() {
             return -3;
@@ -912,12 +955,14 @@ pub extern "C" fn nightstream_gpu_superneo_bar_block_u64x54(
 
 #[no_mangle]
 pub extern "C" fn nightstream_gpu_superneo_row_dot_blocks(
+    _session: u64,
     bar_blocks_ptr: *mut u64,
     num_blocks: u64,
     z_ptr: *mut u64,
     z_len: u64,
     out_ptr: *mut u64,
 ) -> i32 {
+    SUPERNEO_CALLS.fetch_add(1, Ordering::Relaxed);
     unsafe {
         if bar_blocks_ptr.is_null() || z_ptr.is_null() || out_ptr.is_null() {
             return -3;
@@ -960,8 +1005,36 @@ pub extern "C" fn nightstream_gpu_test_reset_counters() {
     NC_EVALS_AT_CALLS.store(0, Ordering::Relaxed);
     POSEIDON2_BATCH_CALLS.store(0, Ordering::Relaxed);
     RQ_MUL_CALLS.store(0, Ordering::Relaxed);
+    SUPERNEO_CALLS.store(0, Ordering::Relaxed);
     SESSION_OPEN_CALLS.store(0, Ordering::Relaxed);
-    evaluators().lock().expect("mock evaluator registry").clear();
+    FAIL_FE_EVALS_AT_CALLS.store(0, Ordering::Relaxed);
+    FAIL_FE_FOLD_CALLS.store(0, Ordering::Relaxed);
+    FAIL_NC_EVALS_AT_CALLS.store(0, Ordering::Relaxed);
+    FAIL_NC_FOLD_CALLS.store(0, Ordering::Relaxed);
+    evaluators()
+        .lock()
+        .expect("mock evaluator registry")
+        .clear();
+}
+
+#[no_mangle]
+pub extern "C" fn nightstream_gpu_test_fail_fe_evals_at_once() {
+    FAIL_FE_EVALS_AT_CALLS.store(1, Ordering::Relaxed);
+}
+
+#[no_mangle]
+pub extern "C" fn nightstream_gpu_test_fail_fe_fold_once() {
+    FAIL_FE_FOLD_CALLS.store(1, Ordering::Relaxed);
+}
+
+#[no_mangle]
+pub extern "C" fn nightstream_gpu_test_fail_nc_evals_at_once() {
+    FAIL_NC_EVALS_AT_CALLS.store(1, Ordering::Relaxed);
+}
+
+#[no_mangle]
+pub extern "C" fn nightstream_gpu_test_fail_nc_fold_once() {
+    FAIL_NC_FOLD_CALLS.store(1, Ordering::Relaxed);
 }
 
 #[no_mangle]
@@ -987,4 +1060,9 @@ pub extern "C" fn nightstream_gpu_test_session_open_calls() -> usize {
 #[no_mangle]
 pub extern "C" fn nightstream_gpu_test_rq_mul_calls() -> usize {
     RQ_MUL_CALLS.load(Ordering::Relaxed)
+}
+
+#[no_mangle]
+pub extern "C" fn nightstream_gpu_test_superneo_calls() -> usize {
+    SUPERNEO_CALLS.load(Ordering::Relaxed)
 }

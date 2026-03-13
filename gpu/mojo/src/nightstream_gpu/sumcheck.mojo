@@ -13,15 +13,16 @@ comptime NC_HEADER_WORDS = 13
 comptime D_WIDTH = 54
 comptime SUMCHECK_GPU_BLOCK_SIZE = 64
 comptime SUMCHECK_GPU_MIN_TASKS = 256
+comptime SUMCHECK_PAIR_GROUP = 128
 comptime DEVICE_API_CPU = 0
 comptime DEVICE_API_METAL = 1
 comptime DEVICE_API_CUDA = 2
 comptime DEVICE_API_HIP = 3
 comptime FePartialKernelT = type_of(
-    DeviceContext().compile_function[fe_partial_gpu_kernel, fe_partial_gpu_kernel_sig]()
+    DeviceContext().compile_function[fe_partial_group_gpu_kernel, fe_partial_group_gpu_kernel_sig]()
 )
 comptime NcPartialKernelT = type_of(
-    DeviceContext().compile_function[nc_partial_gpu_kernel, nc_partial_gpu_kernel_sig]()
+    DeviceContext().compile_function[nc_partial_group_gpu_kernel, nc_partial_group_gpu_kernel_sig]()
 )
 
 
@@ -54,19 +55,29 @@ fn k_is_zero(x: KVal) -> Bool:
     return x.re == 0 and x.im == 0
 
 
+fn k_canonicalize(x: KVal) -> KVal:
+    return KVal(field.fq_canonicalize(x.re), field.fq_canonicalize(x.im))
+
+
 fn k_add(a: KVal, b: KVal) -> KVal:
-    return KVal(field.fq_add(a.re, b.re), field.fq_add(a.im, b.im))
+    var lhs = k_canonicalize(a)
+    var rhs = k_canonicalize(b)
+    return KVal(field.fq_add(lhs.re, rhs.re), field.fq_add(lhs.im, rhs.im))
 
 
 fn k_sub(a: KVal, b: KVal) -> KVal:
-    return KVal(field.fq_sub(a.re, b.re), field.fq_sub(a.im, b.im))
+    var lhs = k_canonicalize(a)
+    var rhs = k_canonicalize(b)
+    return KVal(field.fq_sub(lhs.re, rhs.re), field.fq_sub(lhs.im, rhs.im))
 
 
 fn k_mul(a: KVal, b: KVal) -> KVal:
-    var ac = field.fq_mul(a.re, b.re)
-    var bd = field.fq_mul(a.im, b.im)
-    var ad = field.fq_mul(a.re, b.im)
-    var bc = field.fq_mul(a.im, b.re)
+    var lhs = k_canonicalize(a)
+    var rhs = k_canonicalize(b)
+    var ac = field.fq_mul(lhs.re, rhs.re)
+    var bd = field.fq_mul(lhs.im, rhs.im)
+    var ad = field.fq_mul(lhs.re, rhs.im)
+    var bc = field.fq_mul(lhs.im, rhs.re)
     var delta_bd = field.fq_mul(UInt64(7), bd)
     return KVal(field.fq_add(ac, delta_bd), field.fq_add(ad, bc))
 
@@ -81,28 +92,24 @@ fn k_pow_small(x: KVal, exp: UInt64) -> KVal:
 
 
 fn k_interp(lo: KVal, hi: KVal, x: KVal, one_minus: KVal) -> KVal:
-    return k_add(k_mul(one_minus, lo), k_mul(x, hi))
+    return k_add(k_mul(k_canonicalize(one_minus), k_canonicalize(lo)), k_mul(k_canonicalize(x), k_canonicalize(hi)))
 
 
 fn k_store(words: UnsafePointer[mut=True, UInt64], word_idx: Int, value: KVal):
-    words[word_idx] = value.re
-    words[word_idx + 1] = value.im
+    var canonical = k_canonicalize(value)
+    words[word_idx] = canonical.re
+    words[word_idx + 1] = canonical.im
 
 
 fn k_load(words: UnsafePointer[UInt64], word_idx: Int) -> KVal:
-    return KVal(words[word_idx], words[word_idx + 1])
+    return k_canonicalize(KVal(words[word_idx], words[word_idx + 1]))
 
 
 fn session_prefers_gpu(session: UInt64) -> Bool:
     if not runtime.session_prefers_gpu(session):
         return False
     var api = runtime.session_api(session)
-    return (
-        api == UInt32(DEVICE_API_METAL)
-        or
-        api == UInt32(DEVICE_API_CUDA)
-        or api == UInt32(DEVICE_API_HIP)
-    )
+    return api == UInt32(DEVICE_API_METAL) or api == UInt32(DEVICE_API_CUDA)
 
 
 fn grid_dim_for(num_tasks: Int) -> Int:
@@ -114,14 +121,14 @@ fn read_snapshot_word(snapshot_ptr: UnsafePointer[UInt64], word_idx: Int) -> UIn
 
 
 fn read_snapshot_k(snapshot_ptr: UnsafePointer[UInt64], word_idx: Int) -> KVal:
-    return KVal(
+    return k_canonicalize(KVal(
         read_snapshot_word(snapshot_ptr, word_idx),
         read_snapshot_word(snapshot_ptr, word_idx + 1),
-    )
+    ))
 
 
 fn load_point(points_ptr: UnsafePointer[UInt64], point_idx: Int) -> KVal:
-    return KVal(points_ptr[point_idx * 2], points_ptr[point_idx * 2 + 1])
+    return k_canonicalize(KVal(points_ptr[point_idx * 2], points_ptr[point_idx * 2 + 1]))
 
 
 fn store_out(out_ptr: UnsafePointer[mut=True, UInt64], point_idx: Int, value: KVal):
@@ -154,6 +161,11 @@ fn snapshot_status(snapshot_ptr: UnsafePointer[UInt64], snapshot_len: Int, expec
         return -12
     if read_snapshot_word(snapshot_ptr, 2) != expected_kind:
         return -13
+    var snapshot_word_count = normalized_len // 8
+    if expected_kind == SPLIT_NC_FE_ROW_V1:
+        return validate_fe_snapshot_layout(snapshot_ptr, snapshot_word_count)
+    if expected_kind == SPLIT_NC_NC_COL_V1:
+        return validate_nc_snapshot_layout(snapshot_ptr, snapshot_word_count)
     return 0
 
 
@@ -166,6 +178,172 @@ fn normalized_snapshot_len_bytes(snapshot_len: Int) -> Int:
 
 fn normalized_snapshot_word_count(snapshot_len: Int) -> Int:
     return normalized_snapshot_len_bytes(snapshot_len) // 8
+
+
+fn checked_mul_words(lhs: Int, rhs: Int, limit: Int) -> Int:
+    if lhs < 0 or rhs < 0:
+        return -1
+    if lhs == 0 or rhs == 0:
+        return 0
+    if lhs > limit // rhs:
+        return -1
+    return lhs * rhs
+
+
+fn checked_add_words(offset: Int, count: Int, limit: Int) -> Int:
+    if offset < 0 or count < 0:
+        return -1
+    if offset > limit:
+        return -1
+    if count > limit - offset:
+        return -1
+    return offset + count
+
+
+fn validate_fe_snapshot_layout(snapshot_ptr: UnsafePointer[UInt64], snapshot_word_count: Int) -> Int32:
+    if snapshot_word_count < FE_HEADER_WORDS:
+        return -10
+
+    var cur_len = Int(read_snapshot_word(snapshot_ptr, 5))
+    var eq_beta_len = Int(read_snapshot_word(snapshot_ptr, 6))
+    var eq_r_inputs_len = Int(read_snapshot_word(snapshot_ptr, 7))
+    var gamma_pow_len = Int(read_snapshot_word(snapshot_ptr, 8))
+    var term_count = Int(read_snapshot_word(snapshot_ptr, 9))
+    var num_mcs = Int(read_snapshot_word(snapshot_ptr, 10))
+    var num_vars = Int(read_snapshot_word(snapshot_ptr, 11))
+    var table_len = Int(read_snapshot_word(snapshot_ptr, 12))
+    var eval_len = Int(read_snapshot_word(snapshot_ptr, 13))
+
+    if cur_len < 0 or cur_len % 2 != 0:
+        return -14
+    if eq_beta_len < cur_len:
+        return -14
+    if eq_r_inputs_len > 0 and eq_r_inputs_len < cur_len:
+        return -14
+    if table_len < cur_len:
+        return -14
+    if eval_len > 0 and eval_len < cur_len:
+        return -14
+
+    var eq_beta_words = checked_mul_words(eq_beta_len, 2, snapshot_word_count)
+    if eq_beta_words < 0:
+        return -14
+    var eq_beta_end = checked_add_words(FE_HEADER_WORDS, eq_beta_words, snapshot_word_count)
+    if eq_beta_end < 0:
+        return -14
+
+    var eq_r_inputs_words = checked_mul_words(eq_r_inputs_len, 2, snapshot_word_count)
+    if eq_r_inputs_words < 0:
+        return -14
+    var eq_r_inputs_end = checked_add_words(eq_beta_end, eq_r_inputs_words, snapshot_word_count)
+    if eq_r_inputs_end < 0:
+        return -14
+
+    var gamma_pow_words = checked_mul_words(gamma_pow_len, 2, snapshot_word_count)
+    if gamma_pow_words < 0:
+        return -14
+    var terms_off = checked_add_words(eq_r_inputs_end, gamma_pow_words, snapshot_word_count)
+    if terms_off < 0:
+        return -14
+
+    for _ in range(term_count):
+        if checked_add_words(terms_off, 3, snapshot_word_count) < 0:
+            return -14
+        var vars_len = Int(read_snapshot_word(snapshot_ptr, terms_off + 2))
+        if vars_len < 0:
+            return -14
+        var entry_words = checked_mul_words(vars_len, 2, snapshot_word_count)
+        if entry_words < 0:
+            return -14
+        var entry_off = terms_off + 3
+        var next_terms_off = checked_add_words(entry_off, entry_words, snapshot_word_count)
+        if next_terms_off < 0:
+            return -14
+        for var_idx in range(vars_len):
+            var var_pos = Int(read_snapshot_word(snapshot_ptr, entry_off + var_idx * 2))
+            if var_pos < 0 or var_pos >= num_vars:
+                return -14
+        terms_off = next_terms_off
+
+    var table_count = checked_mul_words(num_mcs, num_vars, snapshot_word_count)
+    if table_count < 0:
+        return -14
+    var table_entries = checked_mul_words(table_count, table_len, snapshot_word_count)
+    if table_entries < 0:
+        return -14
+    var table_words = checked_mul_words(table_entries, 2, snapshot_word_count)
+    if table_words < 0:
+        return -14
+    var tables_end = checked_add_words(terms_off, table_words, snapshot_word_count)
+    if tables_end < 0:
+        return -14
+
+    var eval_words = checked_mul_words(eval_len, 2, snapshot_word_count)
+    if eval_words < 0:
+        return -14
+    if checked_add_words(tables_end, eval_words, snapshot_word_count) < 0:
+        return -14
+
+    return 0
+
+
+fn validate_nc_snapshot_layout(snapshot_ptr: UnsafePointer[UInt64], snapshot_word_count: Int) -> Int32:
+    if snapshot_word_count < NC_HEADER_WORDS:
+        return -10
+
+    var cur_len = Int(read_snapshot_word(snapshot_ptr, 5))
+    var eq_beta_len = Int(read_snapshot_word(snapshot_ptr, 6))
+    var num_tables = Int(read_snapshot_word(snapshot_ptr, 7))
+    var table_len = Int(read_snapshot_word(snapshot_ptr, 8))
+    var d_width = Int(read_snapshot_word(snapshot_ptr, 9))
+    var weights_tables = Int(read_snapshot_word(snapshot_ptr, 10))
+    var weights_width = Int(read_snapshot_word(snapshot_ptr, 11))
+    var range_len = Int(read_snapshot_word(snapshot_ptr, 12))
+
+    if cur_len < 0 or cur_len % 2 != 0:
+        return -14
+    if eq_beta_len < cur_len or table_len < cur_len:
+        return -14
+    if weights_tables < num_tables or weights_width < d_width:
+        return -14
+
+    var eq_beta_words = checked_mul_words(eq_beta_len, 2, snapshot_word_count)
+    if eq_beta_words < 0:
+        return -14
+    var digits_off = checked_add_words(NC_HEADER_WORDS, eq_beta_words, snapshot_word_count)
+    if digits_off < 0:
+        return -14
+
+    var digit_tables = checked_mul_words(num_tables, table_len, snapshot_word_count)
+    if digit_tables < 0:
+        return -14
+    var digit_rows = checked_mul_words(digit_tables, d_width, snapshot_word_count)
+    if digit_rows < 0:
+        return -14
+    var digit_words = checked_mul_words(digit_rows, 2, snapshot_word_count)
+    if digit_words < 0:
+        return -14
+    var weights_off = checked_add_words(digits_off, digit_words, snapshot_word_count)
+    if weights_off < 0:
+        return -14
+
+    var weights_entries = checked_mul_words(weights_tables, weights_width, snapshot_word_count)
+    if weights_entries < 0:
+        return -14
+    var weights_words = checked_mul_words(weights_entries, 2, snapshot_word_count)
+    if weights_words < 0:
+        return -14
+    var range_off = checked_add_words(weights_off, weights_words, snapshot_word_count)
+    if range_off < 0:
+        return -14
+
+    var range_words = checked_mul_words(range_len, 2, snapshot_word_count)
+    if range_words < 0:
+        return -14
+    if checked_add_words(range_off, range_words, snapshot_word_count) < 0:
+        return -14
+
+    return 0
 
 
 fn write_snapshot_word(
@@ -208,14 +386,9 @@ fn apply_fe_snapshot_fold_in_place(
     snapshot_word_count: Int,
     challenge: KVal,
 ) -> Int32:
-    if snapshot_word_count < FE_HEADER_WORDS:
-        return 0
-    if read_snapshot_word(snapshot_ptr, 0) != SPLIT_NC_SNAPSHOT_MAGIC:
-        return 0
-    if read_snapshot_word(snapshot_ptr, 1) != SPLIT_NC_SNAPSHOT_VERSION:
-        return 0
-    if read_snapshot_word(snapshot_ptr, 2) != SPLIT_NC_FE_ROW_V1:
-        return 0
+    var status = validate_fe_snapshot_layout(snapshot_ptr, snapshot_word_count)
+    if status != 0:
+        return status
 
     var cur_len = Int(read_snapshot_word(snapshot_ptr, 5))
     if cur_len < 2:
@@ -260,14 +433,9 @@ fn apply_nc_snapshot_fold_in_place(
     snapshot_word_count: Int,
     challenge: KVal,
 ) -> Int32:
-    if snapshot_word_count < NC_HEADER_WORDS:
-        return 0
-    if read_snapshot_word(snapshot_ptr, 0) != SPLIT_NC_SNAPSHOT_MAGIC:
-        return 0
-    if read_snapshot_word(snapshot_ptr, 1) != SPLIT_NC_SNAPSHOT_VERSION:
-        return 0
-    if read_snapshot_word(snapshot_ptr, 2) != SPLIT_NC_NC_COL_V1:
-        return 0
+    var status = validate_nc_snapshot_layout(snapshot_ptr, snapshot_word_count)
+    if status != 0:
+        return status
 
     var cur_len = Int(read_snapshot_word(snapshot_ptr, 5))
     if cur_len < 2:
@@ -468,7 +636,7 @@ fn nc_eval_pair(snapshot_ptr: UnsafePointer[UInt64], x: KVal, t: Int) -> KVal:
     return k_mul(eq_beta, nc_sum)
 
 
-fn fe_partial_gpu_kernel(
+fn fe_partial_group_gpu_kernel(
     snapshot_words: UnsafePointer[mut=True, UInt64],
     points_words: UnsafePointer[mut=True, UInt64],
     partial_words: UnsafePointer[mut=True, UInt64],
@@ -476,16 +644,25 @@ fn fe_partial_gpu_kernel(
 ):
     var cur_len = Int(read_snapshot_word(snapshot_words, 5))
     var tail_len = cur_len // 2
+    var groups_per_point = (tail_len + SUMCHECK_PAIR_GROUP - 1) // SUMCHECK_PAIR_GROUP
     var task_idx = Int(block_idx.x * block_dim.x + thread_idx.x)
-    var total_tasks = points_len * tail_len
+    var total_tasks = points_len * groups_per_point
     if task_idx >= total_tasks:
         return
-    var point_idx = task_idx // tail_len
-    var pair_idx = task_idx % tail_len
-    k_store(partial_words, task_idx * 2, fe_eval_pair(snapshot_words, load_point(points_words, point_idx), pair_idx))
+    var point_idx = task_idx // groups_per_point
+    var group_idx = task_idx % groups_per_point
+    var pair_start = group_idx * SUMCHECK_PAIR_GROUP
+    var pair_end = pair_start + SUMCHECK_PAIR_GROUP
+    if pair_end > tail_len:
+        pair_end = tail_len
+    var point = load_point(points_words, point_idx)
+    var acc = k_zero()
+    for pair_idx in range(pair_start, pair_end):
+        acc = k_add(acc, fe_eval_pair(snapshot_words, point, pair_idx))
+    k_store(partial_words, task_idx * 2, acc)
 
 
-fn nc_partial_gpu_kernel(
+fn nc_partial_group_gpu_kernel(
     snapshot_words: UnsafePointer[mut=True, UInt64],
     points_words: UnsafePointer[mut=True, UInt64],
     partial_words: UnsafePointer[mut=True, UInt64],
@@ -493,16 +670,25 @@ fn nc_partial_gpu_kernel(
 ):
     var cur_len = Int(read_snapshot_word(snapshot_words, 5))
     var tail_len = cur_len // 2
+    var groups_per_point = (tail_len + SUMCHECK_PAIR_GROUP - 1) // SUMCHECK_PAIR_GROUP
     var task_idx = Int(block_idx.x * block_dim.x + thread_idx.x)
-    var total_tasks = points_len * tail_len
+    var total_tasks = points_len * groups_per_point
     if task_idx >= total_tasks:
         return
-    var point_idx = task_idx // tail_len
-    var pair_idx = task_idx % tail_len
-    k_store(partial_words, task_idx * 2, nc_eval_pair(snapshot_words, load_point(points_words, point_idx), pair_idx))
+    var point_idx = task_idx // groups_per_point
+    var group_idx = task_idx % groups_per_point
+    var pair_start = group_idx * SUMCHECK_PAIR_GROUP
+    var pair_end = pair_start + SUMCHECK_PAIR_GROUP
+    if pair_end > tail_len:
+        pair_end = tail_len
+    var point = load_point(points_words, point_idx)
+    var acc = k_zero()
+    for pair_idx in range(pair_start, pair_end):
+        acc = k_add(acc, nc_eval_pair(snapshot_words, point, pair_idx))
+    k_store(partial_words, task_idx * 2, acc)
 
 
-fn fe_partial_gpu_kernel_sig(
+fn fe_partial_group_gpu_kernel_sig(
     snapshot_words: UnsafePointer[UInt64, MutAnyOrigin],
     points_words: UnsafePointer[UInt64, MutAnyOrigin],
     partial_words: UnsafePointer[UInt64, MutAnyOrigin],
@@ -511,7 +697,7 @@ fn fe_partial_gpu_kernel_sig(
     pass
 
 
-fn nc_partial_gpu_kernel_sig(
+fn nc_partial_group_gpu_kernel_sig(
     snapshot_words: UnsafePointer[UInt64, MutAnyOrigin],
     points_words: UnsafePointer[UInt64, MutAnyOrigin],
     partial_words: UnsafePointer[UInt64, MutAnyOrigin],
@@ -526,10 +712,10 @@ struct SumcheckGpuCache(Movable):
 
     fn __init__(out self, ctx: DeviceContext) raises:
         self.fe_kernel = ctx.compile_function[
-            fe_partial_gpu_kernel, fe_partial_gpu_kernel_sig
+            fe_partial_group_gpu_kernel, fe_partial_group_gpu_kernel_sig
         ]()
         self.nc_kernel = ctx.compile_function[
-            nc_partial_gpu_kernel, nc_partial_gpu_kernel_sig
+            nc_partial_group_gpu_kernel, nc_partial_group_gpu_kernel_sig
         ]()
 
 
@@ -624,13 +810,13 @@ fn nc_evaluator_ptr(handle: UInt64) -> UnsafePointer[NcEvaluatorState, MutAnyOri
 fn reduce_partials_host(
     partial_words: UnsafePointer[mut=True, UInt64],
     points_len: Int,
-    tail_len: Int,
+    groups_per_point: Int,
     out_ptr: UnsafePointer[mut=True, UInt64],
 ):
     for point_idx in range(points_len):
         var acc = k_zero()
-        for pair_idx in range(tail_len):
-            acc = k_add(acc, k_load(partial_words, (point_idx * tail_len + pair_idx) * 2))
+        for group_idx in range(groups_per_point):
+            acc = k_add(acc, k_load(partial_words, (point_idx * groups_per_point + group_idx) * 2))
         store_out(out_ptr, point_idx, acc)
 
 
@@ -697,7 +883,8 @@ fn fe_evals_at_gpu(
 ) raises:
     var point_count = Int(UInt(points_len))
     var tail_len = Int(read_snapshot_word(evaluator[].snapshot_words, 5)) // 2
-    var partial_word_count = point_count * tail_len * 2
+    var groups_per_point = (tail_len + SUMCHECK_PAIR_GROUP - 1) // SUMCHECK_PAIR_GROUP
+    var partial_word_count = point_count * groups_per_point * 2
     var session_ptr = runtime.session_state_ptr(session)
     ref session_state = session_ptr[]
     session_state.ensure_sumcheck_buffers(point_count * 2, partial_word_count)
@@ -721,12 +908,12 @@ fn fe_evals_at_gpu(
         dev_points.unsafe_ptr(),
         dev_partials.unsafe_ptr(),
         point_count,
-        grid_dim=grid_dim_for(point_count * tail_len),
+        grid_dim=grid_dim_for(point_count * groups_per_point),
         block_dim=SUMCHECK_GPU_BLOCK_SIZE,
     )
     ctx.enqueue_copy(src_buf=dev_partials, dst_buf=host_partials)
     ctx.synchronize()
-    reduce_partials_host(host_partials.unsafe_ptr(), point_count, tail_len, out_ptr)
+    reduce_partials_host(host_partials.unsafe_ptr(), point_count, groups_per_point, out_ptr)
 
 
 fn nc_evals_at_gpu(
@@ -738,7 +925,8 @@ fn nc_evals_at_gpu(
 ) raises:
     var point_count = Int(UInt(points_len))
     var tail_len = Int(read_snapshot_word(evaluator[].snapshot_words, 5)) // 2
-    var partial_word_count = point_count * tail_len * 2
+    var groups_per_point = (tail_len + SUMCHECK_PAIR_GROUP - 1) // SUMCHECK_PAIR_GROUP
+    var partial_word_count = point_count * groups_per_point * 2
     var session_ptr = runtime.session_state_ptr(session)
     ref session_state = session_ptr[]
     session_state.ensure_sumcheck_buffers(point_count * 2, partial_word_count)
@@ -762,12 +950,12 @@ fn nc_evals_at_gpu(
         dev_points.unsafe_ptr(),
         dev_partials.unsafe_ptr(),
         point_count,
-        grid_dim=grid_dim_for(point_count * tail_len),
+        grid_dim=grid_dim_for(point_count * groups_per_point),
         block_dim=SUMCHECK_GPU_BLOCK_SIZE,
     )
     ctx.enqueue_copy(src_buf=dev_partials, dst_buf=host_partials)
     ctx.synchronize()
-    reduce_partials_host(host_partials.unsafe_ptr(), point_count, tail_len, out_ptr)
+    reduce_partials_host(host_partials.unsafe_ptr(), point_count, groups_per_point, out_ptr)
 
 
 fn fe_create(

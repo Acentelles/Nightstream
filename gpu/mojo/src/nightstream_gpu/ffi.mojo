@@ -108,6 +108,7 @@ fn session_open(
 fn session_close(session: UInt) -> Int32:
     poseidon.destroy_session_cache(UInt64(session))
     ring.destroy_session_cache(UInt64(session))
+    superneo.destroy_session_cache(UInt64(session))
     sumcheck.destroy_session_cache(UInt64(session))
     runtime.free_session(UInt64(session))
     return STATUS_OK
@@ -253,20 +254,22 @@ fn rq_ct_u64x54(
 
 
 fn superneo_bar_block_u64x54(
+    session: UInt64,
     matrix_words: UnsafePointer[UInt64],
     block_words: UnsafePointer[UInt64],
     out_words: UnsafePointer[mut=True, UInt64],
 ) -> Int32:
-    superneo.superneo_bar_block_from_matrix_words(matrix_words, block_words, out_words)
+    superneo.superneo_bar_block_from_matrix_words(session, matrix_words, block_words, out_words)
     return STATUS_OK
 
 
 fn superneo_row_dot_blocks(
+    session: UInt64,
     bar_blocks_words: UnsafePointer[UInt64],
     num_blocks: UInt64,
     z_words: UnsafePointer[UInt64],
     z_len: UInt64,
     out_words: UnsafePointer[mut=True, UInt64],
 ) -> Int32:
-    superneo.superneo_row_dot_blocks_words(bar_blocks_words, num_blocks, z_words, z_len, out_words)
+    superneo.superneo_row_dot_blocks_words(session, bar_blocks_words, num_blocks, z_words, z_len, out_words)
     return STATUS_OK

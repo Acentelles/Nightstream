@@ -2220,7 +2220,11 @@ where
 
     /// Precompute all data that depends only on r' (not on α') for row phase optimization.
     /// This eliminates redundant v_j recomputation across all boolean α' assignments.
-    fn precompute_for_r(&self, r_prime: &[K]) -> RPrecomp {
+    fn precompute_for_r_with_backend(
+        &self,
+        r_prime: &[K],
+        backend_ctx: Option<&crate::accelerator::BackendContext>,
+    ) -> RPrecomp {
         let t = self.s.t();
 
         // Build χ_r table over the Boolean row domain.
@@ -2261,33 +2265,81 @@ where
             );
         }
 
+        let all_coeffs: Vec<Vec<K>> = all_witnesses
+            .iter()
+            .enumerate()
+            .map(|(idx, Zi)| {
+                crate::common::decode_superneo_coeffs_from_witness_mat(Zi, self.s.m).unwrap_or_else(|e| {
+                    panic!(
+                        "OptimizedOracle::precompute_for_r: invalid packed witness[{idx}] for m={}: {e}",
+                        self.s.m
+                    )
+                })
+            })
+            .collect();
+
+        let gpu_eval = backend_ctx.and_then(|ctx| {
+            let evals = all_coeffs
+                .iter()
+                .map(|z_coeffs| {
+                    let z_blocks = crate::superneo_eval::SuperneoZBlocks::from_z(z_coeffs);
+                    crate::superneo_eval::try_eval_all_mats_precompute_with_backend(
+                        superneo_cache,
+                        &z_blocks,
+                        &chi_r,
+                        n_eff,
+                        ctx,
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>();
+            match evals {
+                Ok(values) if values.iter().all(|value| value.is_some()) => Some(
+                    values
+                        .into_iter()
+                        .map(|value| value.expect("checked is_some above"))
+                        .collect::<Vec<_>>(),
+                ),
+                Ok(_) => None,
+                Err(err) => {
+                    let _ = ctx.record_aux_backend_failure("SuperNeo precompute backend failed", &err);
+                    None
+                }
+            }
+        });
+
         // Compute F' = Σ_{i=1..k_mcs} γ^{i-1} · f(Ẽ(M_j z_i)(r')).
         let mut f_prime = K::ZERO;
-        for (mcs_idx, z_i) in self.row_stream.z_mcs.iter().enumerate() {
-            let m_vals: Vec<K> = linear_forms.iter().map(|lf| lf.eval_vec_k(z_i)).collect();
-            let g_i = self
-                .row_stream
-                .gamma_pow_mcs
-                .get(mcs_idx)
-                .copied()
-                .unwrap_or(K::ONE);
-            f_prime += g_i * self.s.f.eval_in_ext::<K>(&m_vals);
+        if let Some(gpu_eval) = gpu_eval.as_ref() {
+            for (mcs_idx, (m_vals, _)) in gpu_eval
+                .iter()
+                .take(self.row_stream.z_mcs.len())
+                .enumerate()
+            {
+                let g_i = self
+                    .row_stream
+                    .gamma_pow_mcs
+                    .get(mcs_idx)
+                    .copied()
+                    .unwrap_or(K::ONE);
+                f_prime += g_i * self.s.f.eval_in_ext::<K>(m_vals);
+            }
+        } else {
+            for (mcs_idx, z_i) in self.row_stream.z_mcs.iter().enumerate() {
+                let m_vals: Vec<K> = linear_forms.iter().map(|lf| lf.eval_vec_k(z_i)).collect();
+                let g_i = self
+                    .row_stream
+                    .gamma_pow_mcs
+                    .get(mcs_idx)
+                    .copied()
+                    .unwrap_or(K::ONE);
+                f_prime += g_i * self.s.f.eval_in_ext::<K>(&m_vals);
+            }
         }
 
         // Precompute Y_eval[i][j][ρ] as ring coefficients from cached SuperNeo rows.
-        let y_eval = {
-            let all_coeffs: Vec<Vec<K>> = all_witnesses
-                .iter()
-                .enumerate()
-                .map(|(idx, Zi)| {
-                    crate::common::decode_superneo_coeffs_from_witness_mat(Zi, self.s.m).unwrap_or_else(|e| {
-                        panic!(
-                            "OptimizedOracle::precompute_for_r: invalid packed witness[{idx}] for m={}: {e}",
-                            self.s.m
-                        )
-                    })
-                })
-                .collect();
+        let y_eval = if let Some(gpu_eval) = gpu_eval {
+            gpu_eval.into_iter().map(|(_, ring)| ring).collect()
+        } else {
             #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-threads"))]
             {
                 all_coeffs
@@ -2360,7 +2412,11 @@ where
 
     /// Compute the univariate round polynomial for an Ajtai-bit round.
     /// DP version: removes the 2^{free_a}·D work per x and keeps outputs bit-identical.
-    fn evals_ajtai_phase(&mut self, xs: &[K]) -> Vec<K> {
+    fn evals_ajtai_phase_with_backend(
+        &mut self,
+        xs: &[K],
+        backend_ctx: Option<&crate::accelerator::BackendContext>,
+    ) -> Vec<K> {
         let j = self.round_idx - self.ell_n;
         debug_assert!(j < self.ell_d, "ajtai phase after all Ajtai bits");
 
@@ -2369,7 +2425,7 @@ where
 
         // r'-only precomp reused across all Ajtai rounds (r' is fixed after row phase).
         if self.ajtai_precomp.is_none() {
-            self.ajtai_precomp = Some(self.precompute_for_r(r_vec));
+            self.ajtai_precomp = Some(self.precompute_for_r_with_backend(r_vec, backend_ctx));
         }
         let pre = self
             .ajtai_precomp
@@ -2464,6 +2520,22 @@ where
 
         // `xs` is typically very small (sumcheck evaluation points), so Rayon overhead dominates here.
         xs.iter().map(|&x| eval_at(x)).collect()
+    }
+
+    fn evals_ajtai_phase(&mut self, xs: &[K]) -> Vec<K> {
+        self.evals_ajtai_phase_with_backend(xs, None)
+    }
+
+    pub fn evals_at_with_backend(
+        &mut self,
+        xs: &[K],
+        backend_ctx: Option<&crate::accelerator::BackendContext>,
+    ) -> Vec<K> {
+        if self.round_idx < self.ell_n {
+            self.evals_row_phase(xs)
+        } else {
+            self.evals_ajtai_phase_with_backend(xs, backend_ctx)
+        }
     }
 
     /// Build Π_CCS ME outputs at the finalized row point `r'` using the oracle's cached

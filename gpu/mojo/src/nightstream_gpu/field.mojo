@@ -7,6 +7,8 @@ fn scaffold_ready() -> Bool:
     return True
 
 
+# These helpers are only used for public/hash-side arithmetic today.
+# They are not written as constant-time primitives for secret witness handling.
 fn fq_canonicalize(x: UInt64) -> UInt64:
     var y = x
     if y >= GOLDILOCKS_MODULUS:

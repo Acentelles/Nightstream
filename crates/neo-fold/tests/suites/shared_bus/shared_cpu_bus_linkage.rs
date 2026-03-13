@@ -1,15 +1,20 @@
 #![allow(non_snake_case)]
 
 use std::marker::PhantomData;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::sync::{Mutex, OnceLock};
 
+use libloading::Library;
 use neo_ajtai::{AjtaiSModule, Commitment as Cmt};
 use neo_ccs::poly::SparsePoly;
 use neo_ccs::relations::{CcsClaim, CcsStructure, CcsWitness};
 use neo_ccs::traits::SModuleHomomorphism;
 use neo_ccs::Mat;
 use neo_fold::pi_ccs::FoldingMode;
-use neo_fold::shard::{fold_shard_prove, fold_shard_verify, CommitMixers, StepProof};
+use neo_fold::shard::{fold_shard_prove, fold_shard_prove_with_backend, fold_shard_verify, CommitMixers, StepProof};
 use neo_fold::PiCcsError;
+use neo_fold::{DeviceApi, MojoBackendConfig, ProverComputeBackend};
 use neo_math::{F, K};
 use neo_memory::plain::{LutTable, PlainLutTrace, PlainMemLayout, PlainMemTrace};
 use neo_memory::witness::{StepInstanceBundle, StepWitnessBundle};
@@ -19,6 +24,61 @@ use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::PrimeCharacteristicRing;
 
 use crate::suite::{default_mixers, setup_ajtai_committer};
+
+fn mock_manifest_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("neo-gpu")
+        .join("tests")
+        .join("support")
+        .join("mock-mojo-gpu")
+        .join("Cargo.toml")
+}
+
+fn mock_library_name() -> &'static str {
+    #[cfg(target_os = "macos")]
+    {
+        "libmock_mojo_gpu.dylib"
+    }
+    #[cfg(target_os = "linux")]
+    {
+        "libmock_mojo_gpu.so"
+    }
+    #[cfg(target_os = "windows")]
+    {
+        "mock_mojo_gpu.dll"
+    }
+}
+
+fn build_mock_library() -> &'static Path {
+    static LIB_PATH: OnceLock<PathBuf> = OnceLock::new();
+    LIB_PATH.get_or_init(|| {
+        let manifest = mock_manifest_path();
+        let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
+        let status = Command::new(cargo)
+            .arg("build")
+            .arg("--release")
+            .arg("--manifest-path")
+            .arg(&manifest)
+            .status()
+            .expect("spawn cargo build for mock mojo gpu");
+        assert!(status.success(), "mock mojo gpu build failed");
+
+        manifest
+            .parent()
+            .expect("mock manifest parent")
+            .join("target")
+            .join("release")
+            .join(mock_library_name())
+            .canonicalize()
+            .expect("canonical mock mojo gpu library path")
+    })
+}
+
+fn lock_mock_backend_counters() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: Mutex<()> = Mutex::new(());
+    LOCK.lock().unwrap_or_else(|poison| poison.into_inner())
+}
 
 fn create_identity_ccs(n: usize) -> CcsStructure<F> {
     let mat = Mat::identity(n);
@@ -353,6 +413,66 @@ fn shared_cpu_bus_happy_path_one_step() {
 }
 
 #[test]
+fn shared_cpu_bus_mojo_backend_uses_rq_mul_for_stage8_and_val_lanes() {
+    type ResetFn = unsafe extern "C" fn();
+    type CountFn = unsafe extern "C" fn() -> usize;
+
+    let _counter_guard = lock_mock_backend_counters();
+    let fx = build_one_step_fixture(12);
+
+    let mut tr_cpu = Poseidon2Transcript::new(b"shared-cpu-bus/mojo-route-a");
+    let cpu_proof = fold_shard_prove(
+        FoldingMode::Optimized,
+        &mut tr_cpu,
+        &fx.params,
+        &fx.ccs,
+        &fx.steps_witness,
+        &[],
+        &[],
+        &fx.l,
+        fx.mixers,
+    )
+    .expect("cpu prove");
+
+    let mock_library = build_mock_library();
+    let lib = unsafe { Library::new(mock_library) }.expect("load mock mojo gpu library");
+    let reset = unsafe {
+        *lib.get::<ResetFn>(b"nightstream_gpu_test_reset_counters\0")
+            .expect("load counter reset symbol")
+    };
+    let rq_mul_calls = unsafe {
+        *lib.get::<CountFn>(b"nightstream_gpu_test_rq_mul_calls\0")
+            .expect("load rq_mul counter symbol")
+    };
+    unsafe { reset() };
+
+    let backend = ProverComputeBackend::Mojo(MojoBackendConfig::new(DeviceApi::Cuda).with_library_path(mock_library));
+    let mut tr_mojo = Poseidon2Transcript::new(b"shared-cpu-bus/mojo-route-a");
+    let mojo_proof = fold_shard_prove_with_backend(
+        FoldingMode::Optimized,
+        &mut tr_mojo,
+        &fx.params,
+        &fx.ccs,
+        &fx.steps_witness,
+        &[],
+        &[],
+        &fx.l,
+        fx.mixers,
+        &backend,
+    )
+    .expect("mojo prove");
+
+    assert_eq!(
+        serde_json::to_vec(&cpu_proof).expect("serialize cpu proof"),
+        serde_json::to_vec(&mojo_proof).expect("serialize mojo proof"),
+    );
+    assert!(
+        unsafe { rq_mul_calls() } > 0,
+        "shared-bus Mojo path should exercise rq_mul via Stage-8 and val-lane commitment mixing"
+    );
+}
+
+#[test]
 fn shared_cpu_bus_tamper_bus_opening_fails() {
     let fx = build_one_step_fixture(8);
 
@@ -570,6 +690,44 @@ fn shared_cpu_bus_stage8_tamper_matrix_fails() {
         expected_stage8_fold_len,
         "Stage-8 fold proof count must match canonical lane plan"
     );
+    let stage8_plan = neo_fold::time_opening::joint_lane::build_stage8_fold_lane_plan(
+        &proof.steps[0].fold.joint_opening_lane,
+        &proof.steps[0].fold.opening_unification,
+        proof.steps[0].fold.time_t,
+    )
+    .expect("build Stage-8 plan")
+    .expect("non-empty Stage-8 plan");
+    let groups = &proof.steps[0].fold.joint_opening_lane.groups;
+    let mut expected_stage8_claims = 0usize;
+    let mut seen_clusters = Vec::new();
+    for group in groups {
+        if !seen_clusters
+            .iter()
+            .any(|(point, domain)| *point == group.point && *domain == group.domain)
+        {
+            seen_clusters.push((group.point.clone(), group.domain));
+            expected_stage8_claims += 1;
+        }
+    }
+    assert_eq!(
+        stage8_plan.claims.len(),
+        expected_stage8_claims,
+        "Stage-8 fold plan should collapse sibling groups by point/domain cluster"
+    );
+    if expected_stage8_claims == 1 {
+        let unified_commitment = proof.steps[0]
+            .fold
+            .joint_opening_lane
+            .unified_fold
+            .as_ref()
+            .expect("unified fold present")
+            .joint_commitment
+            .clone();
+        assert_eq!(
+            stage8_plan.claims[0].c, unified_commitment,
+            "Stage-8 fold plan should reuse the already-verified unified commitment"
+        );
+    }
 
     // 1) Manifest digest tamper must fail.
     let mut tampered_manifest = proof.clone();

@@ -6,15 +6,13 @@ use crate::PiCcsError;
 
 fn fused_rq_accumulate_min_slots(api: DeviceApi) -> usize {
     match api {
-        DeviceApi::Cuda | DeviceApi::Hip => 32,
-        DeviceApi::Metal => 64,
+        DeviceApi::Cuda | DeviceApi::Metal => 1,
         DeviceApi::Cpu | DeviceApi::Auto => usize::MAX,
     }
 }
 
 fn should_use_fused_rq_accumulate(session: &MojoSession, slot_count: usize, pair_count: usize) -> bool {
-    pair_count >= slot_count.saturating_mul(4)
-        && slot_count >= fused_rq_accumulate_min_slots(session.device_api())
+    pair_count >= slot_count && slot_count >= fused_rq_accumulate_min_slots(session.device_api())
 }
 
 fn accumulate_products_into_slots(products: &[FlatRq], slot_offsets: &[u64]) -> Vec<FlatRq> {

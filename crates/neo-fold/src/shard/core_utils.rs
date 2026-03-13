@@ -39,6 +39,14 @@ impl<'a, 'ctx> RoundOracle for CcsOracleDispatch<'a, 'ctx> {
             Self::PaperExact(oracle) => oracle.fold(r),
         }
     }
+
+    fn take_error(&mut self) -> Option<neo_reductions::PiCcsError> {
+        match self {
+            Self::Optimized(oracle) => oracle.take_error(),
+            #[cfg(feature = "paper-exact")]
+            Self::PaperExact(oracle) => oracle.take_error(),
+        }
+    }
 }
 
 // ============================================================================

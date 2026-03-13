@@ -5,6 +5,8 @@ use neo_transcript::Transcript;
 use p3_field::PrimeCharacteristicRing;
 use thiserror::Error;
 
+use crate::PiCcsError;
+
 /// Format K value compactly for logging
 #[cfg(feature = "debug-logs")]
 fn format_k(k: &K) -> String {
@@ -26,6 +28,11 @@ pub trait RoundOracle {
 
     /// Fold the oracle with the given challenge
     fn fold(&mut self, r: K);
+
+    /// Return and clear any deferred runtime error captured by the oracle.
+    fn take_error(&mut self) -> Option<PiCcsError> {
+        None
+    }
 
     /// Alias for fold - bind to a specific value and advance to the next round
     fn bind(&mut self, r: K) {
@@ -52,6 +59,8 @@ pub enum SumcheckError {
         expected: K,
         actual: K,
     },
+    #[error("oracle runtime error: {0}")]
+    Runtime(String),
 }
 
 /// Evaluate a polynomial (given as coefficients) at a point
@@ -245,6 +254,9 @@ pub fn run_sumcheck_prover<O: RoundOracle, Tr: Transcript>(
             .entry(deg)
             .or_insert_with(|| interpolation_plan_for_degree_cached(deg));
         let ys = oracle.evals_at(plan.xs.as_slice());
+        if let Some(err) = oracle.take_error() {
+            return Err(SumcheckError::Runtime(err.to_string()));
+        }
 
         #[cfg(feature = "debug-logs")]
         if round_idx < 3 {
@@ -305,6 +317,9 @@ pub fn run_sumcheck_prover<O: RoundOracle, Tr: Transcript>(
         // Advance state
         running_sum = poly_eval_k(&coeffs, challenge);
         oracle.fold(challenge);
+        if let Some(err) = oracle.take_error() {
+            return Err(SumcheckError::Runtime(err.to_string()));
+        }
         rounds.push(coeffs);
     }
 
@@ -550,6 +565,9 @@ pub fn run_batched_sumcheck_prover<Tr: Transcript>(
                     let deg = claim.oracle.degree_bound();
                     let plan = interpolation_plan_for_degree_cached(deg);
                     let ys = claim.oracle.evals_at(plan.xs.as_slice());
+                    if let Some(err) = claim.oracle.take_error() {
+                        return Err(SumcheckError::Runtime(err.to_string()));
+                    }
 
                     // Check invariant: p(0) + p(1) = running_sum
                     let sum_at_01 = ys[0] + ys[1];
@@ -580,6 +598,9 @@ pub fn run_batched_sumcheck_prover<Tr: Transcript>(
                     .entry(deg)
                     .or_insert_with(|| interpolation_plan_for_degree_cached(deg));
                 let ys = claim.oracle.evals_at(plan.xs.as_slice());
+                if let Some(err) = claim.oracle.take_error() {
+                    return Err(SumcheckError::Runtime(err.to_string()));
+                }
 
                 // Check invariant: p(0) + p(1) = running_sum
                 let sum_at_01 = ys[0] + ys[1];
@@ -607,6 +628,9 @@ pub fn run_batched_sumcheck_prover<Tr: Transcript>(
                     .entry(deg)
                     .or_insert_with(|| interpolation_plan_for_degree_cached(deg));
                 let ys = claim.oracle.evals_at(plan.xs.as_slice());
+                if let Some(err) = claim.oracle.take_error() {
+                    return Err(SumcheckError::Runtime(err.to_string()));
+                }
 
                 // Check invariant: p(0) + p(1) = running_sum
                 let sum_at_01 = ys[0] + ys[1];
@@ -652,6 +676,9 @@ pub fn run_batched_sumcheck_prover<Tr: Transcript>(
                 .expect("batched sumcheck: missing round polynomial");
             running_sums[claim_idx] = poly_eval_k(coeffs, shared_challenge);
             claim.oracle.fold(shared_challenge);
+            if let Some(err) = claim.oracle.take_error() {
+                return Err(SumcheckError::Runtime(err.to_string()));
+            }
         }
     }
 
