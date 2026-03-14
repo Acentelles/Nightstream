@@ -6,12 +6,19 @@ fn allow_commit_acceleration_for_lane(
     lane: RlcLane,
     force_backend: bool,
 ) -> bool {
-    let _ = lane;
-    force_backend
-        || !matches!(
+    if force_backend {
+        return true;
+    }
+    match lane {
+        RlcLane::Main => !matches!(
             backend_ctx.selected_device_api(),
             None | Some(neo_gpu::DeviceApi::Metal)
-        )
+        ),
+        // Papers and current benchmarks agree that fragmented per-lane RLC/DEC work should not
+        // be auto-promoted. Val-style lanes only use commit-side acceleration when the caller has
+        // already coalesced enough work to make that a deliberate choice.
+        RlcLane::Val => false,
+    }
 }
 
 pub(crate) fn prove_rlc_dec_lane<L, MR, MB>(

@@ -141,6 +141,20 @@ fn commit_poseidon_lane_wits_dual_batched(
 }
 
 #[inline]
+fn should_backend_commit_materialized_dec_batch(
+    backend_ctx: &neo_reductions::accelerator::BackendContext,
+    child_count: usize,
+) -> bool {
+    match backend_ctx.selected_device_api() {
+        // Fragmented DEC child batches are not good GPU jobs; only promote genuinely
+        // coalesced batches so note-spend avoids paying accelerator overhead here.
+        Some(neo_gpu::DeviceApi::Cuda) => child_count >= 32,
+        Some(neo_gpu::DeviceApi::Metal) => child_count >= 64,
+        _ => false,
+    }
+}
+
+#[inline]
 fn commit_dec_wits_batched<L>(
     backend_ctx: &neo_reductions::accelerator::BackendContext,
     committer: &L,
@@ -177,12 +191,21 @@ where
     }
     for (cols, grouped) in by_cols.into_iter() {
         let refs: Vec<&Mat<F>> = grouped.iter().map(|(_, _, mat)| *mat).collect();
+        let use_backend = should_backend_commit_materialized_dec_batch(backend_ctx, refs.len());
         let commits = if primary_ajtai_dims == Some((D, cols)) {
-            commit_many_with_backend(backend_ctx, committer, &refs)?
+            if use_backend {
+                commit_many_with_backend(backend_ctx, committer, &refs)?
+            } else {
+                committer.commit_many(&refs)
+            }
         } else if let Ok(global_committer) = neo_ajtai::AjtaiSModule::from_global_for_dims(D, cols) {
-            commit_many_with_backend(backend_ctx, &global_committer, &refs)?
+            if use_backend {
+                commit_many_with_backend(backend_ctx, &global_committer, &refs)?
+            } else {
+                global_committer.commit_many(&refs)
+            }
         } else {
-            commit_many_with_backend(backend_ctx, committer, &refs)?
+            committer.commit_many(&refs)
         };
         if commits.len() != refs.len() {
             return Err(PiCcsError::ProtocolError(format!(
@@ -229,6 +252,29 @@ struct PreparedStage8Lane {
     committer: neo_ajtai::AjtaiSModule,
     rlc_rhos: Vec<ccs::RotRho>,
     joint_wits: Vec<Mat<F>>,
+}
+
+fn should_force_stage8_backend_commit_accel(
+    backend_ctx: &neo_reductions::accelerator::BackendContext,
+    claim_count: usize,
+) -> bool {
+    match backend_ctx.selected_device_api() {
+        Some(neo_gpu::DeviceApi::Cuda) => claim_count >= 4,
+        Some(neo_gpu::DeviceApi::Metal) => false,
+        _ => false,
+    }
+}
+
+fn should_use_backend_for_step_parent_mix(
+    backend_ctx: &neo_reductions::accelerator::BackendContext,
+    cs_groups: &[Vec<Cmt>],
+) -> bool {
+    let total_claims: usize = cs_groups.iter().map(|group| group.len()).sum();
+    match backend_ctx.selected_device_api() {
+        Some(neo_gpu::DeviceApi::Metal) => total_claims >= 8,
+        Some(neo_gpu::DeviceApi::Cuda) => total_claims >= 8,
+        _ => false,
+    }
 }
 
 fn attach_parent_suffix_openings(
@@ -2408,12 +2454,20 @@ where
                         .iter()
                         .map(|prepared| vec![prepared.me.c.clone()])
                         .collect();
-                    let parent_commitments = crate::shard::mix_many_rhos_commits_with_backend(
-                        &backend_ctx,
-                        |rhos, cs| (mixers.mix_rhos_commits)(rhos, cs),
-                        &parent_mix_rhos,
-                        &parent_mix_cs,
-                    )?;
+                    let parent_commitments = if should_use_backend_for_step_parent_mix(&backend_ctx, &parent_mix_cs) {
+                        crate::shard::mix_many_rhos_commits_with_backend(
+                            &backend_ctx,
+                            |rhos, cs| (mixers.mix_rhos_commits)(rhos, cs),
+                            &parent_mix_rhos,
+                            &parent_mix_cs,
+                        )?
+                    } else {
+                        parent_mix_rhos
+                            .iter()
+                            .zip(parent_mix_cs.iter())
+                            .map(|(rhos, cs)| (mixers.mix_rhos_commits)(rhos, cs))
+                            .collect()
+                    };
                     if parent_commitments.len() != prepared_materialized.len() {
                         return Err(PiCcsError::ProtocolError(format!(
                             "WB/WP parent commitment batch returned {} commitments for {} claims",
@@ -2557,7 +2611,6 @@ where
                         .map(|pending| pending.dec_wits.clone())
                         .collect();
                     let child_cs_batches = commit_dec_wits_batched(&backend_ctx, l, &batched_wits, &zero_c)?;
-                    let core_t = s.t();
                     for (pending, child_cs) in pending_materialized
                         .drain(..)
                         .zip(child_cs_batches.into_iter())
@@ -2733,12 +2786,20 @@ where
                         parent_mix_cs.push(prepared.plan.claims.iter().map(|me| me.c.clone()).collect());
                     }
 
-                    let parent_commitments = crate::shard::mix_many_rhos_commits_with_backend(
-                        &backend_ctx,
-                        |rhos, cs| (mixers.mix_rhos_commits)(rhos, cs),
-                        &parent_mix_rhos,
-                        &parent_mix_cs,
-                    )?;
+                    let parent_commitments = if should_use_backend_for_step_parent_mix(&backend_ctx, &parent_mix_cs) {
+                        crate::shard::mix_many_rhos_commits_with_backend(
+                            &backend_ctx,
+                            |rhos, cs| (mixers.mix_rhos_commits)(rhos, cs),
+                            &parent_mix_rhos,
+                            &parent_mix_cs,
+                        )?
+                    } else {
+                        parent_mix_rhos
+                            .iter()
+                            .zip(parent_mix_cs.iter())
+                            .map(|(rhos, cs)| (mixers.mix_rhos_commits)(rhos, cs))
+                            .collect()
+                    };
                     if parent_commitments.len() != total_parent_batches {
                         return Err(PiCcsError::ProtocolError(format!(
                             "step-global parent commitment batch returned {} commitments for {} batches",
@@ -2894,7 +2955,7 @@ where
                             k_dec,
                             step_idx,
                             &backend_ctx,
-                            true,
+                            should_force_stage8_backend_commit_accel(&backend_ctx, prepared.plan.claims.len()),
                             None,
                             prepared.plan.claims.as_slice(),
                             wit_refs.as_slice(),
@@ -2947,7 +3008,6 @@ where
                         .map(|pending| pending.dec_wits.clone())
                         .collect();
                     let child_cs_batches = commit_dec_wits_batched(&backend_ctx, l, &batched_wits, &zero_c)?;
-                    let core_t = s.t();
                     for (pending, child_cs) in pending_materialized
                         .drain(..)
                         .zip(child_cs_batches.into_iter())
@@ -2986,11 +3046,12 @@ where
                             PendingMaterializedLaneKind::Wb => "WB fold",
                             PendingMaterializedLaneKind::Wp => "WP fold",
                         };
+                        let pending_core_t = pending.s_lane.t();
                         attach_parent_suffix_openings(
                             params,
                             step_idx,
                             suffix_label,
-                            core_t,
+                            pending_core_t,
                             pending.suffix_len,
                             &pending.rlc_parent,
                             &mut dec_children,
