@@ -65,26 +65,24 @@ fn try_mix_rhos_commits_with_mojo(
     if d != D || cs.iter().any(|c| c.d != d || c.kappa != kappa) {
         return Ok(None);
     }
+    let Some(rho_words) = rhos.iter().map(flat_rq_from_rot_matrix).collect::<Option<Vec<_>>>() else {
+        return Ok(None);
+    };
 
-    let mut lhs_batch = Vec::with_capacity(rhos.len() * kappa);
-    let mut rhs_batch = Vec::with_capacity(rhos.len() * kappa);
-    let mut slot_offsets = Vec::with_capacity(kappa + 1);
-    slot_offsets.push(0u64);
+    let mut schedule = crate::shard::RqAccumulateSchedule::new(kappa);
     for col in 0..kappa {
-        for (rho, c) in rhos.iter().zip(cs.iter()) {
-            let Some(rho_words) = flat_rq_from_rot_matrix(rho) else {
-                return Ok(None);
-            };
+        let mut pairs = Vec::with_capacity(rhos.len());
+        for (rho_words, c) in rho_words.iter().copied().zip(cs.iter()) {
             let Some(col_words) = flat_rq_from_commitment_col(c, col) else {
                 return Ok(None);
             };
-            lhs_batch.push(rho_words);
-            rhs_batch.push(col_words);
+            pairs.push((rho_words, col_words));
         }
-        slot_offsets.push(lhs_batch.len() as u64);
+        schedule.push_slot_pairs(col, pairs);
     }
+    let schedule = schedule.finish();
 
-    let products = match crate::shard::rq_accumulate_with_backend(session, &lhs_batch, &rhs_batch, &slot_offsets) {
+    let products = match crate::shard::rq_accumulate_schedule_with_backend(session, &schedule) {
         Ok(values) => values,
         Err(err) if backend_ctx.mojo_required() => {
             return Err(PiCcsError::ProtocolError(format!(
@@ -132,12 +130,10 @@ fn try_combine_b_pows_with_mojo(
         return Ok(None);
     }
 
-    let mut lhs_batch = Vec::with_capacity((cs.len().saturating_sub(1)) * kappa);
-    let mut rhs_batch = Vec::with_capacity((cs.len().saturating_sub(1)) * kappa);
-    let mut slot_offsets = Vec::with_capacity(kappa + 1);
-    slot_offsets.push(0u64);
+    let mut schedule = crate::shard::RqAccumulateSchedule::new(kappa);
     for col in 0..kappa {
         let mut pow = F::from_u64(b as u64);
+        let mut pairs = Vec::with_capacity(cs.len().saturating_sub(1));
         for c in cs.iter().skip(1) {
             let rho_words = FlatRq {
                 coeffs: std::array::from_fn(|idx| if idx == 0 { pow.as_canonical_u64() } else { 0 }),
@@ -145,14 +141,14 @@ fn try_combine_b_pows_with_mojo(
             let Some(col_words) = flat_rq_from_commitment_col(c, col) else {
                 return Ok(None);
             };
-            lhs_batch.push(rho_words);
-            rhs_batch.push(col_words);
+            pairs.push((rho_words, col_words));
             pow *= F::from_u64(b as u64);
         }
-        slot_offsets.push(lhs_batch.len() as u64);
+        schedule.push_slot_pairs(col, pairs);
     }
+    let schedule = schedule.finish();
 
-    let products = match crate::shard::rq_accumulate_with_backend(session, &lhs_batch, &rhs_batch, &slot_offsets) {
+    let products = match crate::shard::rq_accumulate_schedule_with_backend(session, &schedule) {
         Ok(values) => values,
         Err(err) if backend_ctx.mojo_required() => {
             return Err(PiCcsError::ProtocolError(format!(
@@ -233,28 +229,31 @@ fn try_mix_many_rhos_commits_with_mojo(
     {
         return Ok(None);
     }
+    let Some(rho_words_groups) = rhos_groups
+        .iter()
+        .map(|group| group.iter().map(flat_rq_from_rot_matrix).collect::<Option<Vec<_>>>())
+        .collect::<Option<Vec<_>>>()
+    else {
+        return Ok(None);
+    };
 
-    let mut lhs_batch = Vec::new();
-    let mut rhs_batch = Vec::new();
-    let mut slot_offsets = Vec::with_capacity(rhos_groups.len() * kappa + 1);
-    slot_offsets.push(0u64);
-    for (rhos, cs) in rhos_groups.iter().zip(cs_groups.iter()) {
+    let mut schedule = crate::shard::RqAccumulateSchedule::new(rhos_groups.len().saturating_mul(kappa));
+    for (rho_words, cs) in rho_words_groups.iter().zip(cs_groups.iter()) {
         for col in 0..kappa {
-            for (rho, c) in rhos.iter().zip(cs.iter()) {
-                let Some(rho_words) = flat_rq_from_rot_matrix(rho) else {
-                    return Ok(None);
-                };
+            let slot_idx = schedule.slot_offsets().len().saturating_sub(1);
+            let mut pairs = Vec::with_capacity(rho_words.len());
+            for (rho_words, c) in rho_words.iter().copied().zip(cs.iter()) {
                 let Some(col_words) = flat_rq_from_commitment_col(c, col) else {
                     return Ok(None);
                 };
-                lhs_batch.push(rho_words);
-                rhs_batch.push(col_words);
+                pairs.push((rho_words, col_words));
             }
-            slot_offsets.push(lhs_batch.len() as u64);
+            schedule.push_slot_pairs(slot_idx, pairs);
         }
     }
+    let schedule = schedule.finish();
 
-    let products = match crate::shard::rq_accumulate_with_backend(session, &lhs_batch, &rhs_batch, &slot_offsets) {
+    let products = match crate::shard::rq_accumulate_schedule_with_backend(session, &schedule) {
         Ok(values) => values,
         Err(err) if backend_ctx.mojo_required() => {
             return Err(PiCcsError::ProtocolError(format!(

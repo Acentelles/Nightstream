@@ -415,7 +415,9 @@ fn loads_mock_library_and_probes_split_nc_support() {
     assert!(lib.supports_poseidon2_api());
     assert!(lib.supports_poseidon2_batch_api());
     assert!(lib.supports_rq_mul_api());
+    assert!(lib.supports_rq_prepared_api());
     assert!(lib.supports_superneo_api());
+    assert!(lib.supports_superneo_prepared_api());
 }
 
 #[test]
@@ -431,7 +433,9 @@ fn connects_to_mock_library_session() {
     assert!(session.supports_poseidon2_api());
     assert!(session.supports_poseidon2_batch_api());
     assert!(session.supports_rq_mul_api());
+    assert!(session.supports_rq_prepared_api());
     assert!(session.supports_superneo_api());
+    assert!(session.supports_superneo_prepared_api());
 }
 
 #[test]
@@ -536,6 +540,126 @@ fn mock_mojo_session_rq_accumulate_batch_matches_cpu_reference() {
     let expected1 = rq_mul_cpu(lhs[2].coeffs, rhs[2].coeffs);
     assert_eq!(actual[0].coeffs, expected0);
     assert_eq!(actual[1].coeffs, expected1);
+}
+
+#[test]
+fn mock_prepared_rq_batches_match_compatibility_and_track_resident_diagnostics() {
+    let cfg = MojoBackendConfig::new(DeviceApi::Cuda).with_library_path(build_mock_library());
+    let session = connect(&cfg).expect("connect to mock mojo gpu");
+
+    let lhs = vec![
+        FlatRq {
+            coeffs: sample_rq_words(7),
+        },
+        FlatRq {
+            coeffs: sample_rq_words(11),
+        },
+        FlatRq {
+            coeffs: sample_rq_words(13),
+        },
+        FlatRq {
+            coeffs: sample_rq_words(17),
+        },
+    ];
+    let rhs = vec![
+        FlatRq {
+            coeffs: sample_rq_words(101),
+        },
+        FlatRq {
+            coeffs: sample_rq_words(103),
+        },
+        FlatRq {
+            coeffs: sample_rq_words(107),
+        },
+        FlatRq {
+            coeffs: sample_rq_words(109),
+        },
+    ];
+    let slot_offsets = [0u64, 2, 4];
+
+    let compat_mul = session
+        .rq_mul_batch_u64x54(&lhs, &rhs)
+        .expect("compat rq mul batch");
+    session.reset_diagnostics();
+    let prepared_mul = session
+        .prepare_rq_mul_batch_u64x54(&lhs, &rhs)
+        .expect("prepare rq mul batch");
+    prepared_mul.execute().expect("execute prepared rq mul");
+    let resident_mul = prepared_mul.read().expect("read prepared rq mul");
+    let mul_diag = session.diagnostics_snapshot();
+    assert_eq!(resident_mul, compat_mul);
+    assert_eq!(mul_diag.rq_mul.resident_prepare_calls, 1);
+    assert_eq!(mul_diag.rq_mul.resident_execute_calls, 1);
+    assert_eq!(mul_diag.rq_mul.resident_read_calls, 1);
+    assert!(mul_diag.rq_mul.host_to_device_bytes > 0);
+    assert!(mul_diag.rq_mul.device_to_host_bytes > 0);
+
+    let compat_acc = session
+        .rq_accumulate_batch_u64x54(&lhs, &rhs, &slot_offsets)
+        .expect("compat rq accumulate batch");
+    session.reset_diagnostics();
+    let prepared_acc = session
+        .prepare_rq_accumulate_batch_u64x54(&lhs, &rhs, &slot_offsets)
+        .expect("prepare rq accumulate batch");
+    prepared_acc.execute().expect("execute prepared rq accumulate");
+    let resident_acc = prepared_acc.read().expect("read prepared rq accumulate");
+    let acc_diag = session.diagnostics_snapshot();
+    assert_eq!(resident_acc, compat_acc);
+    assert_eq!(acc_diag.rq_mul.resident_prepare_calls, 1);
+    assert_eq!(acc_diag.rq_mul.resident_execute_calls, 1);
+    assert_eq!(acc_diag.rq_mul.resident_read_calls, 1);
+}
+
+#[test]
+fn mock_prepared_superneo_batches_match_compatibility_and_track_resident_diagnostics() {
+    let cfg = MojoBackendConfig::new(DeviceApi::Cuda).with_library_path(build_mock_library());
+    let session = connect(&cfg).expect("connect to mock mojo gpu");
+
+    let bar_blocks = vec![
+        std::array::from_fn(|idx| 17 + idx as u64 * 3),
+        std::array::from_fn(|idx| 101 + idx as u64 * 5),
+    ];
+    let im_bar_blocks = vec![
+        std::array::from_fn(|idx| 211 + idx as u64 * 7),
+        std::array::from_fn(|idx| 307 + idx as u64 * 11),
+    ];
+    let z = vec![
+        FlatK { re: 7, im: 11 },
+        FlatK { re: 13, im: 17 },
+        FlatK { re: 19, im: 23 },
+        FlatK { re: 29, im: 31 },
+        FlatK { re: 37, im: 41 },
+    ];
+
+    let compat_single = session
+        .superneo_row_dot_blocks(&bar_blocks, &z)
+        .expect("compat superneo row dot");
+    session.reset_diagnostics();
+    let prepared_single = session
+        .prepare_superneo_row_dot_blocks(&bar_blocks, &z)
+        .expect("prepare superneo row dot");
+    prepared_single.execute().expect("execute prepared superneo row dot");
+    let resident_single = prepared_single.read_single().expect("read prepared superneo row dot");
+    let single_diag = session.diagnostics_snapshot();
+    assert_eq!(resident_single, compat_single);
+    assert_eq!(single_diag.superneo.resident_prepare_calls, 1);
+    assert_eq!(single_diag.superneo.resident_execute_calls, 1);
+    assert_eq!(single_diag.superneo.resident_read_calls, 1);
+
+    let compat_dual = session
+        .superneo_row_dot_blocks_dual(&bar_blocks, &im_bar_blocks, &z)
+        .expect("compat superneo row dot dual");
+    session.reset_diagnostics();
+    let prepared_dual = session
+        .prepare_superneo_row_dot_blocks_dual(&bar_blocks, &im_bar_blocks, &z)
+        .expect("prepare superneo row dot dual");
+    prepared_dual.execute().expect("execute prepared superneo row dot dual");
+    let resident_dual = prepared_dual.read_dual().expect("read prepared superneo row dot dual");
+    let dual_diag = session.diagnostics_snapshot();
+    assert_eq!(resident_dual, compat_dual);
+    assert_eq!(dual_diag.superneo.resident_prepare_calls, 1);
+    assert_eq!(dual_diag.superneo.resident_execute_calls, 1);
+    assert_eq!(dual_diag.superneo.resident_read_calls, 1);
 }
 
 #[test]

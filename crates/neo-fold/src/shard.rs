@@ -135,8 +135,10 @@ pub struct ShardProveLaneDurations {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Stage8SubphaseDurations {
+    pub joint_prepare: Duration,
     pub group_build: Duration,
     pub joint_commit_many: Duration,
+    pub expected_commitments: Duration,
     pub unified_fold_mix: Duration,
     pub rlc_dec: Duration,
 }
@@ -157,9 +159,34 @@ pub struct BatchOpportunityMetrics {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct MaterializedLaneDurations {
+    pub digit_split: Duration,
+    pub child_commit: Duration,
+    pub child_build: Duration,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct WbWpSubphaseDurations {
+    pub parent_mix: Duration,
+    pub rlc_parent: Duration,
+    pub z_mix: Duration,
+    pub dec_stream: Duration,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RouteASharedDurations {
+    pub fold_openings: Duration,
+    pub opening_proofs: Duration,
+    pub opening_manifest: Duration,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ShardProveMetrics {
     pub lane_durations: ShardProveLaneDurations,
     pub stage8_subphases: Stage8SubphaseDurations,
+    pub wbwp_subphases: WbWpSubphaseDurations,
+    pub route_a_shared: RouteASharedDurations,
+    pub materialized_subphases: MaterializedLaneDurations,
     pub batch_opportunities: BatchOpportunityMetrics,
     pub mojo_before: neo_gpu::MojoSessionDiagnostics,
     pub mojo_after: neo_gpu::MojoSessionDiagnostics,

@@ -343,6 +343,129 @@ fn real_mojo_session_ring_and_superneo_match_cpu_reference() {
 }
 
 #[test]
+#[ignore = "requires local Mojo toolchain"]
+fn real_mojo_prepared_batches_match_compatibility_paths() {
+    let library_path = build_real_mojo_library();
+    let cpu_session = connect(&MojoBackendConfig::new(DeviceApi::Cpu).with_library_path(library_path))
+        .expect("open real mojo cpu session");
+
+    let lhs = [
+        FlatRq {
+            coeffs: sample_block(17),
+        },
+        FlatRq {
+            coeffs: sample_block(29),
+        },
+        FlatRq {
+            coeffs: sample_block(41),
+        },
+        FlatRq {
+            coeffs: sample_block(53),
+        },
+    ];
+    let rhs = [
+        FlatRq {
+            coeffs: sample_block(101),
+        },
+        FlatRq {
+            coeffs: sample_block(131),
+        },
+        FlatRq {
+            coeffs: sample_block(151),
+        },
+        FlatRq {
+            coeffs: sample_block(181),
+        },
+    ];
+    let slot_offsets = [0u64, 2, 4];
+    let matrix_words = superneo_bar_matrix().map(|row| row.map(|x| x.as_canonical_u64()));
+    let bar_blocks = vec![
+        cpu_session
+            .superneo_bar_block_u64x54(&matrix_words, &sample_block(17))
+            .expect("cpu bar block 0"),
+        cpu_session
+            .superneo_bar_block_u64x54(&matrix_words, &sample_block(29))
+            .expect("cpu bar block 1"),
+    ];
+    let im_bar_blocks = vec![
+        cpu_session
+            .superneo_bar_block_u64x54(&matrix_words, &sample_block(31))
+            .expect("cpu im bar block 0"),
+        cpu_session
+            .superneo_bar_block_u64x54(&matrix_words, &sample_block(37))
+            .expect("cpu im bar block 1"),
+    ];
+    let z = sample_z(D + 9, 91);
+
+    for session in [
+        Some(cpu_session),
+        connect(
+            &MojoBackendConfig::new({
+                #[cfg(target_os = "macos")]
+                {
+                    DeviceApi::Metal
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    DeviceApi::Cuda
+                }
+            })
+            .with_library_path(library_path),
+        )
+        .ok(),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if session.supports_rq_prepared_api() {
+            let compat_mul = session
+                .rq_mul_batch_u64x54(&lhs, &rhs)
+                .expect("compat rq mul batch");
+            let prepared_mul = session
+                .prepare_rq_mul_batch_u64x54(&lhs, &rhs)
+                .expect("prepare rq mul batch");
+            prepared_mul.execute().expect("execute prepared rq mul");
+            assert_eq!(prepared_mul.read().expect("read prepared rq mul"), compat_mul);
+
+            let compat_acc = session
+                .rq_accumulate_batch_u64x54(&lhs, &rhs, &slot_offsets)
+                .expect("compat rq accumulate batch");
+            let prepared_acc = session
+                .prepare_rq_accumulate_batch_u64x54(&lhs, &rhs, &slot_offsets)
+                .expect("prepare rq accumulate batch");
+            prepared_acc.execute().expect("execute prepared rq accumulate");
+            assert_eq!(prepared_acc.read().expect("read prepared rq accumulate"), compat_acc);
+        }
+
+        if session.supports_superneo_prepared_api() {
+            let compat_single = session
+                .superneo_row_dot_blocks(&bar_blocks, &z)
+                .expect("compat superneo row dot");
+            let prepared_single = session
+                .prepare_superneo_row_dot_blocks(&bar_blocks, &z)
+                .expect("prepare superneo row dot");
+            prepared_single.execute().expect("execute prepared superneo row dot");
+            assert_eq!(
+                prepared_single.read_single().expect("read prepared superneo row dot"),
+                compat_single
+            );
+
+            let compat_dual = session
+                .superneo_row_dot_blocks_dual(&bar_blocks, &im_bar_blocks, &z)
+                .expect("compat superneo row dot dual");
+            let prepared_dual = session
+                .prepare_superneo_row_dot_blocks_dual(&bar_blocks, &im_bar_blocks, &z)
+                .expect("prepare superneo row dot dual");
+            prepared_dual.execute().expect("execute prepared superneo row dot dual");
+            assert_eq!(
+                prepared_dual.read_dual().expect("read prepared superneo row dot dual"),
+                compat_dual
+            );
+        }
+    }
+}
+
+#[test]
 #[ignore = "requires Metal-capable Mojo runtime"]
 fn real_mojo_metal_session_ring_and_superneo_match_cpu_reference() {
     let Ok(session) = connect(&MojoBackendConfig::new(DeviceApi::Metal).with_library_path(build_real_mojo_library()))

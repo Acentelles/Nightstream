@@ -252,13 +252,11 @@ struct SharedBusFixture {
 }
 
 fn build_one_step_fixture(seed: u64) -> SharedBusFixture {
-    let n = 32usize;
-    let ccs = create_identity_ccs(n);
-    let mut params = NeoParams::goldilocks_auto_r1cs_ccs(n).expect("params");
-    params.k_rho = 16;
-    let l = setup_ajtai_committer(&params, ccs.m);
-    let mixers = default_mixers();
+    build_shared_bus_fixture(seed, 32, 1)
+}
 
+fn build_shared_bus_fixture(seed: u64, n: usize, chunk_size: usize) -> SharedBusFixture {
+    assert!(chunk_size > 0, "chunk_size must be positive");
     let m_in = 5usize;
 
     // Geometry: k=2, d=1, n_side=2 (minimal).
@@ -270,16 +268,23 @@ fn build_one_step_fixture(seed: u64) -> SharedBusFixture {
     };
     let mem_init = MemInit::Zero;
 
-    let write0 = F::from_u64(seed.wrapping_add(10));
     let mem_trace = PlainMemTrace {
-        steps: 1,
-        has_read: vec![F::ZERO],
-        has_write: vec![F::ONE],
-        read_addr: vec![0],
-        write_addr: vec![0],
-        read_val: vec![F::ZERO],
-        write_val: vec![write0],
-        inc_at_write_addr: vec![write0],
+        steps: chunk_size,
+        has_read: (0..chunk_size)
+            .map(|step_idx| if step_idx % 2 == 0 { F::ZERO } else { F::ONE })
+            .collect(),
+        has_write: vec![F::ONE; chunk_size],
+        read_addr: (0..chunk_size).map(|step_idx| (step_idx % 2) as u64).collect(),
+        write_addr: (0..chunk_size).map(|step_idx| (step_idx % 2) as u64).collect(),
+        read_val: (0..chunk_size)
+            .map(|step_idx| F::from_u64(seed.wrapping_add(step_idx as u64) & 0x1F))
+            .collect(),
+        write_val: (0..chunk_size)
+            .map(|step_idx| F::from_u64(seed.wrapping_add(10 + step_idx as u64)))
+            .collect(),
+        inc_at_write_addr: (0..chunk_size)
+            .map(|step_idx| F::from_u64(seed.wrapping_add(10 + step_idx as u64)))
+            .collect(),
     };
 
     // Shout table: k=2, d=1, n_side=2 (minimal).
@@ -291,9 +296,13 @@ fn build_one_step_fixture(seed: u64) -> SharedBusFixture {
         content: vec![F::from_u64(11), F::from_u64(22)],
     };
     let lut_trace = PlainLutTrace {
-        has_lookup: vec![F::ONE],
-        addr: vec![1],
-        val: vec![lut_table.content[1]],
+        has_lookup: vec![F::ONE; chunk_size],
+        addr: (0..chunk_size)
+            .map(|step_idx| (step_idx as u64) % (lut_table.n_side as u64))
+            .collect(),
+        val: (0..chunk_size)
+            .map(|step_idx| lut_table.content[step_idx % lut_table.content.len()])
+            .collect(),
     };
 
     let mem_ell = mem_layout.n_side.trailing_zeros() as usize;
@@ -332,11 +341,46 @@ fn build_one_step_fixture(seed: u64) -> SharedBusFixture {
     let lut_wit = neo_memory::witness::LutWitness { mats: Vec::new() };
 
     let bus_cols_total = bus_cols_shout(lut_inst.d, lut_inst.ell) + bus_cols_twist(mem_inst.d, mem_inst.ell);
-    let chunk_size = 1usize;
+    let min_width = n.max(m_in + bus_cols_total * chunk_size + chunk_size);
+    let align_rem = (min_width - m_in) % chunk_size;
+    let aligned_n = if align_rem == 0 {
+        min_width
+    } else {
+        min_width + (chunk_size - align_rem)
+    };
+    let ccs = create_identity_ccs(aligned_n);
+    let mut params = NeoParams::goldilocks_auto_r1cs_ccs(aligned_n).expect("params");
+    params.k_rho = 16;
+    let l = setup_ajtai_committer(&params, ccs.m);
+    let mixers = default_mixers();
     let bus_base = ccs.m - bus_cols_total * chunk_size;
-    let z = build_cpu_witness_with_bus(
-        ccs.m, bus_base, chunk_size, 0, &lut_inst, &lut_trace, &mem_inst, &mem_trace, seed,
+    assert!(
+        bus_base >= m_in,
+        "fixture width too small for chunk_size={} (n={}, bus_cols_total={})",
+        chunk_size,
+        n,
+        bus_cols_total
     );
+    let mut z = vec![F::ZERO; ccs.m];
+    for step_in_chunk in 0..chunk_size {
+        let slot_seed = seed.wrapping_add((step_in_chunk as u64) * 17);
+        let slot_z = build_cpu_witness_with_bus(
+            ccs.m,
+            bus_base,
+            chunk_size,
+            step_in_chunk,
+            &lut_inst,
+            &lut_trace,
+            &mem_inst,
+            &mem_trace,
+            slot_seed,
+        );
+        for (dst, src) in z.iter_mut().zip(slot_z.into_iter()) {
+            if *dst == F::ZERO {
+                *dst = src;
+            }
+        }
+    }
     let time_columns = build_time_columns_from_flattened_test_witness(&z, m_in, bus_base, bus_cols_total, chunk_size);
     let Z = neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z);
     let c = l.commit(&Z);
@@ -471,6 +515,7 @@ fn shared_cpu_bus_mojo_backend_uses_rq_mul_for_stage8_and_val_lanes() {
         "shared-bus Mojo path should exercise rq_mul via Stage-8 and val-lane commitment mixing"
     );
 }
+
 
 #[test]
 fn shared_cpu_bus_tamper_bus_opening_fails() {

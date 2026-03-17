@@ -1,7 +1,9 @@
 pub mod joint_lane;
+pub(crate) mod joint_lane_accel;
 pub mod manifest;
 pub mod me_adapter;
 pub mod reduction;
+pub(crate) mod stage8_cache;
 
 /// Decomposition base for Stage-8 time-column commitments/openings.
 ///

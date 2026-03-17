@@ -155,6 +155,51 @@ fn nightstream_gpu_rq_accumulate_batch_u64x54(
     )
 
 
+@export("nightstream_gpu_rq_mul_batch_prepare_u64x54", ABI="C")
+fn nightstream_gpu_rq_mul_batch_prepare_u64x54(
+    session: UInt64,
+    lhs_words: UnsafePointer[UInt64, MutAnyOrigin],
+    rhs_words: UnsafePointer[UInt64, MutAnyOrigin],
+    pair_count: UInt64,
+    out_handle: UnsafePointer[UInt64, MutAnyOrigin],
+) -> Int32:
+    return ffi.rq_mul_batch_prepare_u64x54(session, lhs_words, rhs_words, pair_count, out_handle)
+
+
+@export("nightstream_gpu_rq_accumulate_batch_prepare_u64x54", ABI="C")
+fn nightstream_gpu_rq_accumulate_batch_prepare_u64x54(
+    session: UInt64,
+    lhs_words: UnsafePointer[UInt64, MutAnyOrigin],
+    rhs_words: UnsafePointer[UInt64, MutAnyOrigin],
+    slot_offsets_words: UnsafePointer[UInt64, MutAnyOrigin],
+    slot_count: UInt64,
+    out_handle: UnsafePointer[UInt64, MutAnyOrigin],
+) -> Int32:
+    return ffi.rq_accumulate_batch_prepare_u64x54(
+        session, lhs_words, rhs_words, slot_offsets_words, slot_count, out_handle
+    )
+
+
+@export("nightstream_gpu_rq_prepared_execute", ABI="C")
+fn nightstream_gpu_rq_prepared_execute(session: UInt64, handle: UInt64) -> Int32:
+    return ffi.rq_prepared_execute(session, handle)
+
+
+@export("nightstream_gpu_rq_prepared_read_u64x54", ABI="C")
+fn nightstream_gpu_rq_prepared_read_u64x54(
+    session: UInt64,
+    handle: UInt64,
+    out_words: UnsafePointer[UInt64, MutAnyOrigin],
+    out_len: UInt64,
+) -> Int32:
+    return ffi.rq_prepared_read_u64x54(session, handle, out_words, out_len)
+
+
+@export("nightstream_gpu_rq_prepared_destroy", ABI="C")
+fn nightstream_gpu_rq_prepared_destroy(session: UInt64, handle: UInt64) -> Int32:
+    return ffi.rq_prepared_destroy(session, handle)
+
+
 @export("nightstream_gpu_rq_ct_u64x54", ABI="C")
 fn nightstream_gpu_rq_ct_u64x54(
     words: UnsafePointer[UInt64, MutAnyOrigin],
@@ -204,3 +249,56 @@ fn nightstream_gpu_superneo_row_dot_blocks_dual(
         z_len,
         out_words,
     )
+
+
+@export("nightstream_gpu_superneo_row_dot_prepare", ABI="C")
+fn nightstream_gpu_superneo_row_dot_prepare(
+    session: UInt64,
+    bar_blocks_words: UnsafePointer[UInt64, MutAnyOrigin],
+    num_blocks: UInt64,
+    z_words: UnsafePointer[UInt64, MutAnyOrigin],
+    z_len: UInt64,
+    out_handle: UnsafePointer[UInt64, MutAnyOrigin],
+) -> Int32:
+    return ffi.superneo_row_dot_prepare(session, bar_blocks_words, num_blocks, z_words, z_len, out_handle)
+
+
+@export("nightstream_gpu_superneo_row_dot_dual_prepare", ABI="C")
+fn nightstream_gpu_superneo_row_dot_dual_prepare(
+    session: UInt64,
+    re_bar_blocks_words: UnsafePointer[UInt64, MutAnyOrigin],
+    im_bar_blocks_words: UnsafePointer[UInt64, MutAnyOrigin],
+    num_blocks: UInt64,
+    z_words: UnsafePointer[UInt64, MutAnyOrigin],
+    z_len: UInt64,
+    out_handle: UnsafePointer[UInt64, MutAnyOrigin],
+) -> Int32:
+    return ffi.superneo_row_dot_dual_prepare(
+        session,
+        re_bar_blocks_words,
+        im_bar_blocks_words,
+        num_blocks,
+        z_words,
+        z_len,
+        out_handle,
+    )
+
+
+@export("nightstream_gpu_superneo_prepared_execute", ABI="C")
+fn nightstream_gpu_superneo_prepared_execute(session: UInt64, handle: UInt64) -> Int32:
+    return ffi.superneo_prepared_execute(session, handle)
+
+
+@export("nightstream_gpu_superneo_prepared_read", ABI="C")
+fn nightstream_gpu_superneo_prepared_read(
+    session: UInt64,
+    handle: UInt64,
+    out_words: UnsafePointer[UInt64, MutAnyOrigin],
+    out_len: UInt64,
+) -> Int32:
+    return ffi.superneo_prepared_read(session, handle, out_words, out_len)
+
+
+@export("nightstream_gpu_superneo_prepared_destroy", ABI="C")
+fn nightstream_gpu_superneo_prepared_destroy(session: UInt64, handle: UInt64) -> Int32:
+    return ffi.superneo_prepared_destroy(session, handle)

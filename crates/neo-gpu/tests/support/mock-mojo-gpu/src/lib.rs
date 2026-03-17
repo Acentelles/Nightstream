@@ -107,6 +107,20 @@ enum EvaluatorState {
     Passthrough,
 }
 
+struct PreparedRqBatch {
+    lhs: Vec<u64>,
+    rhs: Vec<u64>,
+    slot_offsets: Option<Vec<u64>>,
+    out: Vec<u64>,
+}
+
+struct PreparedSuperneoBatch {
+    bar_words: Vec<u64>,
+    z_words: Vec<u64>,
+    dual_bar_words: Option<Vec<u64>>,
+    out: Vec<u64>,
+}
+
 struct WordReader {
     words: Vec<u64>,
     idx: usize,
@@ -918,6 +932,128 @@ pub extern "C" fn nightstream_gpu_rq_accumulate_batch_u64x54(
 }
 
 #[no_mangle]
+pub extern "C" fn nightstream_gpu_rq_mul_batch_prepare_u64x54(
+    _session: usize,
+    lhs_ptr: *mut u64,
+    rhs_ptr: *mut u64,
+    pair_count: u64,
+    out_handle: *mut u64,
+) -> i32 {
+    unsafe {
+        if lhs_ptr.is_null() || rhs_ptr.is_null() || out_handle.is_null() || pair_count == 0 {
+            return -3;
+        }
+        let word_count = pair_count as usize * D;
+        let batch = Box::new(PreparedRqBatch {
+            lhs: std::slice::from_raw_parts(lhs_ptr, word_count).to_vec(),
+            rhs: std::slice::from_raw_parts(rhs_ptr, word_count).to_vec(),
+            slot_offsets: None,
+            out: vec![0; word_count],
+        });
+        *out_handle = Box::into_raw(batch) as usize as u64;
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn nightstream_gpu_rq_accumulate_batch_prepare_u64x54(
+    _session: usize,
+    lhs_ptr: *mut u64,
+    rhs_ptr: *mut u64,
+    slot_offsets_ptr: *mut u64,
+    slot_count: u64,
+    out_handle: *mut u64,
+) -> i32 {
+    unsafe {
+        if lhs_ptr.is_null() || rhs_ptr.is_null() || slot_offsets_ptr.is_null() || out_handle.is_null() || slot_count == 0
+        {
+            return -3;
+        }
+        let slot_offsets = std::slice::from_raw_parts(slot_offsets_ptr, slot_count as usize + 1).to_vec();
+        let pair_count = *slot_offsets.last().expect("slot offsets end") as usize;
+        let batch = Box::new(PreparedRqBatch {
+            lhs: std::slice::from_raw_parts(lhs_ptr, pair_count * D).to_vec(),
+            rhs: std::slice::from_raw_parts(rhs_ptr, pair_count * D).to_vec(),
+            slot_offsets: Some(slot_offsets.clone()),
+            out: vec![0; slot_count as usize * D],
+        });
+        *out_handle = Box::into_raw(batch) as usize as u64;
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn nightstream_gpu_rq_prepared_execute(_session: usize, handle: u64) -> i32 {
+    unsafe {
+        if handle == 0 {
+            return -3;
+        }
+        let batch = &mut *(handle as usize as *mut PreparedRqBatch);
+        if let Some(slot_offsets) = &batch.slot_offsets {
+            let pair_count = *slot_offsets.last().expect("slot offsets end") as usize;
+            RQ_MUL_CALLS.fetch_add(pair_count, Ordering::Relaxed);
+            for slot_idx in 0..slot_offsets.len() - 1 {
+                let out_base = slot_idx * D;
+                batch.out[out_base..out_base + D].fill(0);
+                for pair_idx in slot_offsets[slot_idx] as usize..slot_offsets[slot_idx + 1] as usize {
+                    let base = pair_idx * D;
+                    let lhs_ring = Rq(std::array::from_fn(|idx| Fq::from_u64(batch.lhs[base + idx])));
+                    let rhs_ring = Rq(std::array::from_fn(|idx| Fq::from_u64(batch.rhs[base + idx])));
+                    let prod = lhs_ring.mul(&rhs_ring);
+                    for (dst, src) in batch.out[out_base..out_base + D].iter_mut().zip(prod.0.iter()) {
+                        *dst = (Fq::from_u64(*dst) + *src).as_canonical_u64();
+                    }
+                }
+            }
+        } else {
+            let pair_count = batch.lhs.len() / D;
+            RQ_MUL_CALLS.fetch_add(pair_count, Ordering::Relaxed);
+            for pair_idx in 0..pair_count {
+                let base = pair_idx * D;
+                let lhs_ring = Rq(std::array::from_fn(|idx| Fq::from_u64(batch.lhs[base + idx])));
+                let rhs_ring = Rq(std::array::from_fn(|idx| Fq::from_u64(batch.rhs[base + idx])));
+                let prod = lhs_ring.mul(&rhs_ring);
+                for (dst, src) in batch.out[base..base + D].iter_mut().zip(prod.0.iter()) {
+                    *dst = src.as_canonical_u64();
+                }
+            }
+        }
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn nightstream_gpu_rq_prepared_read_u64x54(
+    _session: usize,
+    handle: u64,
+    out_ptr: *mut u64,
+    out_len: u64,
+) -> i32 {
+    unsafe {
+        if handle == 0 || out_ptr.is_null() {
+            return -3;
+        }
+        let batch = &*(handle as usize as *mut PreparedRqBatch);
+        if batch.out.len() > out_len as usize {
+            return -4;
+        }
+        std::slice::from_raw_parts_mut(out_ptr, batch.out.len()).copy_from_slice(batch.out.as_slice());
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn nightstream_gpu_rq_prepared_destroy(_session: usize, handle: u64) -> i32 {
+    unsafe {
+        if handle == 0 {
+            return -3;
+        }
+        drop(Box::from_raw(handle as usize as *mut PreparedRqBatch));
+    }
+    0
+}
+
+#[no_mangle]
 pub extern "C" fn nightstream_gpu_rq_ct_u64x54(words_ptr: *mut u64, out_ptr: *mut u64) -> i32 {
     unsafe {
         if words_ptr.is_null() || out_ptr.is_null() {
@@ -1034,6 +1170,133 @@ pub extern "C" fn nightstream_gpu_superneo_row_dot_blocks_dual(
             out_ptr.add(2),
         )
     }
+}
+
+#[no_mangle]
+pub extern "C" fn nightstream_gpu_superneo_row_dot_prepare(
+    _session: u64,
+    bar_blocks_ptr: *mut u64,
+    num_blocks: u64,
+    z_ptr: *mut u64,
+    z_len: u64,
+    out_handle: *mut u64,
+) -> i32 {
+    unsafe {
+        if bar_blocks_ptr.is_null() || z_ptr.is_null() || out_handle.is_null() || num_blocks == 0 {
+            return -3;
+        }
+        let batch = Box::new(PreparedSuperneoBatch {
+            bar_words: std::slice::from_raw_parts(bar_blocks_ptr, num_blocks as usize * D).to_vec(),
+            z_words: std::slice::from_raw_parts(z_ptr, z_len as usize * 2).to_vec(),
+            dual_bar_words: None,
+            out: vec![0; 2],
+        });
+        *out_handle = Box::into_raw(batch) as usize as u64;
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn nightstream_gpu_superneo_row_dot_dual_prepare(
+    _session: u64,
+    re_bar_blocks_ptr: *mut u64,
+    im_bar_blocks_ptr: *mut u64,
+    num_blocks: u64,
+    z_ptr: *mut u64,
+    z_len: u64,
+    out_handle: *mut u64,
+) -> i32 {
+    unsafe {
+        if re_bar_blocks_ptr.is_null()
+            || im_bar_blocks_ptr.is_null()
+            || z_ptr.is_null()
+            || out_handle.is_null()
+            || num_blocks == 0
+        {
+            return -3;
+        }
+        let batch = Box::new(PreparedSuperneoBatch {
+            bar_words: std::slice::from_raw_parts(re_bar_blocks_ptr, num_blocks as usize * D).to_vec(),
+            z_words: std::slice::from_raw_parts(z_ptr, z_len as usize * 2).to_vec(),
+            dual_bar_words: Some(std::slice::from_raw_parts(im_bar_blocks_ptr, num_blocks as usize * D).to_vec()),
+            out: vec![0; 4],
+        });
+        *out_handle = Box::into_raw(batch) as usize as u64;
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn nightstream_gpu_superneo_prepared_execute(_session: u64, handle: u64) -> i32 {
+    unsafe {
+        if handle == 0 {
+            return -3;
+        }
+        SUPERNEO_CALLS.fetch_add(1, Ordering::Relaxed);
+        let batch = &mut *(handle as usize as *mut PreparedSuperneoBatch);
+        let num_blocks = batch.bar_words.len() / D;
+        let mut run = |bar_words: &[u64], out: &mut [u64]| {
+            let mut acc = K::ZERO;
+            for blk_idx in 0..num_blocks {
+                let block = std::array::from_fn(|idx| Fq::from_u64(bar_words[blk_idx * D + idx]));
+                let base = blk_idx * D;
+                let z_re = std::array::from_fn(|idx| {
+                    if base + idx < batch.z_words.len() / 2 {
+                        Fq::from_u64(batch.z_words[(base + idx) * 2])
+                    } else {
+                        Fq::ZERO
+                    }
+                });
+                let z_im = std::array::from_fn(|idx| {
+                    if base + idx < batch.z_words.len() / 2 {
+                        Fq::from_u64(batch.z_words[(base + idx) * 2 + 1])
+                    } else {
+                        Fq::ZERO
+                    }
+                });
+                acc += from_complex(ct(&Rq(block).mul(&Rq(z_re))), ct(&Rq(block).mul(&Rq(z_im))));
+            }
+            let flat = k_to_flat(acc);
+            out[0] = flat.re;
+            out[1] = flat.im;
+        };
+        run(batch.bar_words.as_slice(), &mut batch.out[0..2]);
+        if let Some(im_words) = &batch.dual_bar_words {
+            run(im_words.as_slice(), &mut batch.out[2..4]);
+        }
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn nightstream_gpu_superneo_prepared_read(
+    _session: u64,
+    handle: u64,
+    out_ptr: *mut u64,
+    out_len: u64,
+) -> i32 {
+    unsafe {
+        if handle == 0 || out_ptr.is_null() {
+            return -3;
+        }
+        let batch = &*(handle as usize as *mut PreparedSuperneoBatch);
+        if batch.out.len() > out_len as usize {
+            return -4;
+        }
+        std::slice::from_raw_parts_mut(out_ptr, batch.out.len()).copy_from_slice(batch.out.as_slice());
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn nightstream_gpu_superneo_prepared_destroy(_session: u64, handle: u64) -> i32 {
+    unsafe {
+        if handle == 0 {
+            return -3;
+        }
+        drop(Box::from_raw(handle as usize as *mut PreparedSuperneoBatch));
+    }
+    0
 }
 
 #[no_mangle]

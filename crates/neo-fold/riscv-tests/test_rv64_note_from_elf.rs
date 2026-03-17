@@ -417,11 +417,32 @@ fn prove_rv64_note_case(
             metrics.lane_durations.route_a_finalize.as_secs_f64() * 1000.0,
         );
         println!(
-            "{label}: stage8_ms group_build={:.1} joint_commit_many={:.1} unified_fold_mix={:.1} rlc_dec={:.1}",
+            "{label}: stage8_ms joint_prepare={:.1} group_build={:.1} joint_commit_many={:.1} expected_commitments={:.1} unified_fold_mix={:.1} rlc_dec={:.1}",
+            metrics.stage8_subphases.joint_prepare.as_secs_f64() * 1000.0,
             metrics.stage8_subphases.group_build.as_secs_f64() * 1000.0,
             metrics.stage8_subphases.joint_commit_many.as_secs_f64() * 1000.0,
+            metrics.stage8_subphases.expected_commitments.as_secs_f64() * 1000.0,
             metrics.stage8_subphases.unified_fold_mix.as_secs_f64() * 1000.0,
             metrics.stage8_subphases.rlc_dec.as_secs_f64() * 1000.0,
+        );
+        println!(
+            "{label}: wbwp_ms parent_mix={:.1} rlc_parent={:.1} z_mix={:.1} dec_stream={:.1}",
+            metrics.wbwp_subphases.parent_mix.as_secs_f64() * 1000.0,
+            metrics.wbwp_subphases.rlc_parent.as_secs_f64() * 1000.0,
+            metrics.wbwp_subphases.z_mix.as_secs_f64() * 1000.0,
+            metrics.wbwp_subphases.dec_stream.as_secs_f64() * 1000.0,
+        );
+        println!(
+            "{label}: route_a_ms fold_openings={:.1} opening_proofs={:.1} opening_manifest={:.1}",
+            metrics.route_a_shared.fold_openings.as_secs_f64() * 1000.0,
+            metrics.route_a_shared.opening_proofs.as_secs_f64() * 1000.0,
+            metrics.route_a_shared.opening_manifest.as_secs_f64() * 1000.0,
+        );
+        println!(
+            "{label}: materialized_ms digit_split={:.1} child_commit={:.1} child_build={:.1}",
+            metrics.materialized_subphases.digit_split.as_secs_f64() * 1000.0,
+            metrics.materialized_subphases.child_commit.as_secs_f64() * 1000.0,
+            metrics.materialized_subphases.child_build.as_secs_f64() * 1000.0,
         );
         println!(
             "{label}: batchable_claims val={} wb={} wp={} poseidon_cycle={} poseidon_local={} stage8={} wb_materialized_batches={} wb_materialized_children={} wp_materialized_batches={} wp_materialized_children={} max_materialized_children={}",
@@ -562,6 +583,23 @@ fn test_rv64_note_spend_from_elf_auto_backend_perf_repro() {
     );
     run_rv64_note_case(
         "rv64_note_spend_elf_auto",
+        &elf,
+        &witness.ram_pairs,
+        &witness.output_layout_words,
+        400_000,
+        &ProverComputeBackend::auto(),
+    );
+}
+
+#[test]
+#[ignore = "slow RV64IM note-spend ELF auto-only perf repro"]
+fn test_rv64_note_spend_from_elf_auto_only_perf_repro() {
+    let elf = rv64_guest::build_note_spend_rv64im_elf().expect("build RV64IM note guest ELF");
+    let witness = note_spend_fixture::build_note_spend_fixture_witness();
+    let _ = build_real_mojo_library();
+
+    run_rv64_note_case(
+        "rv64_note_spend_elf_auto_only",
         &elf,
         &witness.ram_pairs,
         &witness.output_layout_words,

@@ -3,6 +3,7 @@ from gpu import block_dim, block_idx, thread_idx
 from memory import UnsafePointer, alloc
 from nightstream_gpu import field, ring, runtime
 from sys import has_accelerator
+from std.gpu.primitives import block
 
 
 comptime D_WIDTH = 54
@@ -13,6 +14,64 @@ comptime DEVICE_API_CPU = 0
 comptime DEVICE_API_METAL = 1
 comptime DEVICE_API_CUDA = 2
 comptime DEVICE_API_HIP = 3
+comptime STATUS_OK = 0
+comptime STATUS_INVALID_INPUT = -2
+comptime STATUS_INVALID_HANDLE = -3
+comptime STATUS_STALE_HANDLE = -4
+comptime STATUS_OUT_LEN = -5
+comptime PREPARED_SUPERNEO_KIND_NONE = UInt32(0)
+comptime PREPARED_SUPERNEO_KIND_SINGLE = UInt32(1)
+comptime PREPARED_SUPERNEO_KIND_DUAL = UInt32(2)
+
+
+struct PreparedSuperneoBatchState(Movable):
+    var session: UInt64
+    var generation: UInt64
+    var kind: UInt32
+    var num_blocks: Int
+    var z_len: Int
+    var a_words: UnsafePointer[UInt64, MutAnyOrigin]
+    var b_words: UnsafePointer[UInt64, MutAnyOrigin]
+    var out_words: UnsafePointer[UInt64, MutAnyOrigin]
+
+    fn __init__(
+        out self,
+        session: UInt64,
+        generation: UInt64,
+        kind: UInt32,
+        num_blocks: Int,
+        z_len: Int,
+    ):
+        self.session = session
+        self.generation = generation
+        self.kind = kind
+        self.num_blocks = num_blocks
+        self.z_len = z_len
+        var a_word_count = num_blocks * BLOCK_WORDS
+        if kind == PREPARED_SUPERNEO_KIND_DUAL:
+            a_word_count *= 2
+        self.a_words = alloc[UInt64](a_word_count)
+        self.b_words = alloc[UInt64](z_len * 2)
+        var out_word_count = 2
+        if kind == PREPARED_SUPERNEO_KIND_DUAL:
+            out_word_count = 4
+        self.out_words = alloc[UInt64](out_word_count)
+
+    fn __del__(deinit self):
+        self.a_words.free()
+        self.b_words.free()
+        self.out_words.free()
+
+
+fn prepared_superneo_batch_ptr(handle: UInt64) -> UnsafePointer[PreparedSuperneoBatchState, MutAnyOrigin]:
+    return UnsafePointer[PreparedSuperneoBatchState, MutAnyOrigin](unsafe_from_address=Int(handle))
+
+
+fn next_prepared_generation(current: UInt64) -> UInt64:
+    var generation = current + 1
+    if generation == 0:
+        generation = 1
+    return generation
 
 
 fn scaffold_ready() -> Bool:
@@ -221,22 +280,46 @@ fn superneo_row_dot_blocks_reduce_gpu_kernel(
     out_words: UnsafePointer[mut=True, UInt64],
     num_blocks: Int,
 ):
-    if Int(block_idx.x * block_dim.x + thread_idx.x) != 0:
+    var tid = Int(block_idx.x * block_dim.x + thread_idx.x)
+    if tid >= GPU_BLOCK_SIZE:
         return
-
     var acc_re = UInt64(0)
     var acc_im = UInt64(0)
-    for blk in range(num_blocks):
+    for blk in range(tid, num_blocks, GPU_BLOCK_SIZE):
         acc_re = field.fq_add(acc_re, partial_words[blk * 2])
         acc_im = field.fq_add(acc_im, partial_words[blk * 2 + 1])
-    out_words[0] = acc_re
-    out_words[1] = acc_im
+    out_words[tid * 2] = acc_re
+    out_words[tid * 2 + 1] = acc_im
 
 
 fn superneo_row_dot_blocks_reduce_gpu_kernel_sig(
     partial_words: UnsafePointer[UInt64, MutAnyOrigin],
     out_words: UnsafePointer[UInt64, MutAnyOrigin],
     num_blocks: Int,
+):
+    pass
+
+
+fn superneo_row_dot_blocks_reduce_final_gpu_kernel(
+    partial_words: UnsafePointer[mut=True, UInt64],
+    out_words: UnsafePointer[mut=True, UInt64],
+):
+    var tid = Int(thread_idx.x)
+    if tid >= GPU_BLOCK_SIZE:
+        return
+    var acc_re = partial_words[tid * 2]
+    var acc_im = partial_words[tid * 2 + 1]
+    acc_re = block.sum[block_size=GPU_BLOCK_SIZE](acc_re)
+    acc_im = block.sum[block_size=GPU_BLOCK_SIZE](acc_im)
+    if tid != 0:
+        return
+    out_words[0] = acc_re
+    out_words[1] = acc_im
+
+
+fn superneo_row_dot_blocks_reduce_final_gpu_kernel_sig(
+    partial_words: UnsafePointer[UInt64, MutAnyOrigin],
+    out_words: UnsafePointer[UInt64, MutAnyOrigin],
 ):
     pass
 
@@ -281,29 +364,57 @@ fn superneo_row_dot_blocks_dual_reduce_gpu_kernel(
     out_words: UnsafePointer[mut=True, UInt64],
     num_blocks: Int,
 ):
-    if Int(block_idx.x * block_dim.x + thread_idx.x) != 0:
+    var tid = Int(block_idx.x * block_dim.x + thread_idx.x)
+    if tid >= GPU_BLOCK_SIZE:
         return
-
     var acc_re_re = UInt64(0)
     var acc_re_im = UInt64(0)
     var acc_im_re = UInt64(0)
     var acc_im_im = UInt64(0)
-    for blk in range(num_blocks):
+    for blk in range(tid, num_blocks, GPU_BLOCK_SIZE):
         var off = blk * 4
         acc_re_re = field.fq_add(acc_re_re, partial_words[off])
         acc_re_im = field.fq_add(acc_re_im, partial_words[off + 1])
         acc_im_re = field.fq_add(acc_im_re, partial_words[off + 2])
         acc_im_im = field.fq_add(acc_im_im, partial_words[off + 3])
-    out_words[0] = acc_re_re
-    out_words[1] = acc_re_im
-    out_words[2] = acc_im_re
-    out_words[3] = acc_im_im
+    var out_off = tid * 4
+    out_words[out_off] = acc_re_re
+    out_words[out_off + 1] = acc_re_im
+    out_words[out_off + 2] = acc_im_re
+    out_words[out_off + 3] = acc_im_im
 
 
 fn superneo_row_dot_blocks_dual_reduce_gpu_kernel_sig(
     partial_words: UnsafePointer[UInt64, MutAnyOrigin],
     out_words: UnsafePointer[UInt64, MutAnyOrigin],
     num_blocks: Int,
+):
+    pass
+
+
+fn superneo_row_dot_blocks_dual_reduce_final_gpu_kernel(
+    partial_words: UnsafePointer[mut=True, UInt64],
+    out_words: UnsafePointer[mut=True, UInt64],
+):
+    var tid = Int(thread_idx.x)
+    if tid >= GPU_BLOCK_SIZE:
+        return
+    var off = tid * 4
+    var acc_re_re = block.sum[block_size=GPU_BLOCK_SIZE](partial_words[off])
+    var acc_re_im = block.sum[block_size=GPU_BLOCK_SIZE](partial_words[off + 1])
+    var acc_im_re = block.sum[block_size=GPU_BLOCK_SIZE](partial_words[off + 2])
+    var acc_im_im = block.sum[block_size=GPU_BLOCK_SIZE](partial_words[off + 3])
+    if tid != 0:
+        return
+    out_words[0] = acc_re_re
+    out_words[1] = acc_re_im
+    out_words[2] = acc_im_re
+    out_words[3] = acc_im_im
+
+
+fn superneo_row_dot_blocks_dual_reduce_final_gpu_kernel_sig(
+    partial_words: UnsafePointer[UInt64, MutAnyOrigin],
+    out_words: UnsafePointer[UInt64, MutAnyOrigin],
 ):
     pass
 
@@ -370,10 +481,11 @@ fn superneo_row_dot_blocks_gpu_words(
     else:
         var bar_word_count = num_blocks * BLOCK_WORDS
         var z_word_count = z_len * 2
-        var out_word_count = 2
         var partial_word_count = num_blocks * 2
-        if partial_word_count > out_word_count:
-            out_word_count = partial_word_count
+        var reduce_word_count = GPU_BLOCK_SIZE * 2
+        var out_word_count = partial_word_count + reduce_word_count
+        if out_word_count < 2:
+            out_word_count = 2
         var session_ptr = runtime.session_state_ptr(session)
         ref session_state = session_ptr[]
         session_state.ensure_superneo_buffers(bar_word_count, z_word_count, out_word_count)
@@ -407,10 +519,18 @@ fn superneo_row_dot_blocks_gpu_words(
             superneo_row_dot_blocks_reduce_gpu_kernel, superneo_row_dot_blocks_reduce_gpu_kernel_sig
         ](
             out_dev.unsafe_ptr(),
-            out_dev.unsafe_ptr(),
+            out_dev.unsafe_ptr() + partial_word_count,
             num_blocks,
             grid_dim=1,
-            block_dim=1,
+            block_dim=GPU_BLOCK_SIZE,
+        )
+        ctx.enqueue_function[
+            superneo_row_dot_blocks_reduce_final_gpu_kernel, superneo_row_dot_blocks_reduce_final_gpu_kernel_sig
+        ](
+            out_dev.unsafe_ptr() + partial_word_count,
+            out_dev.unsafe_ptr(),
+            grid_dim=1,
+            block_dim=GPU_BLOCK_SIZE,
         )
         ctx.enqueue_copy(src_buf=out_dev, dst_buf=out_host)
         ctx.synchronize()
@@ -467,7 +587,9 @@ fn superneo_row_dot_blocks_dual_gpu_words(
         var bar_word_count = num_blocks * BLOCK_WORDS
         var packed_bar_word_count = bar_word_count * 2
         var z_word_count = z_len * 2
-        var out_word_count = num_blocks * 4
+        var partial_word_count = num_blocks * 4
+        var reduce_word_count = GPU_BLOCK_SIZE * 4
+        var out_word_count = partial_word_count + reduce_word_count
         if out_word_count < 4:
             out_word_count = 4
         var session_ptr = runtime.session_state_ptr(session)
@@ -504,10 +626,18 @@ fn superneo_row_dot_blocks_dual_gpu_words(
             superneo_row_dot_blocks_dual_reduce_gpu_kernel, superneo_row_dot_blocks_dual_reduce_gpu_kernel_sig
         ](
             out_dev.unsafe_ptr(),
-            out_dev.unsafe_ptr(),
+            out_dev.unsafe_ptr() + partial_word_count,
             num_blocks,
             grid_dim=1,
-            block_dim=1,
+            block_dim=GPU_BLOCK_SIZE,
+        )
+        ctx.enqueue_function[
+            superneo_row_dot_blocks_dual_reduce_final_gpu_kernel, superneo_row_dot_blocks_dual_reduce_final_gpu_kernel_sig
+        ](
+            out_dev.unsafe_ptr() + partial_word_count,
+            out_dev.unsafe_ptr(),
+            grid_dim=1,
+            block_dim=GPU_BLOCK_SIZE,
         )
         ctx.enqueue_copy(src_buf=out_dev, dst_buf=out_host)
         ctx.synchronize()
@@ -522,3 +652,287 @@ fn session_prefers_gpu(session: UInt64) -> Bool:
     return runtime.session_prefers_gpu(session) and (
         api == UInt32(DEVICE_API_METAL) or api == UInt32(DEVICE_API_CUDA)
     )
+
+
+fn upload_prepared_superneo_batch(
+    session_state: UnsafePointer[runtime.SessionState, MutAnyOrigin],
+    batch: UnsafePointer[PreparedSuperneoBatchState, MutAnyOrigin],
+) raises:
+    ref state = session_state[]
+    ref prepared = batch[]
+    var a_word_count = prepared.num_blocks * BLOCK_WORDS
+    if prepared.kind == PREPARED_SUPERNEO_KIND_DUAL:
+        a_word_count *= 2
+    var z_word_count = prepared.z_len * 2
+    var out_word_count = 2
+    if prepared.kind == PREPARED_SUPERNEO_KIND_SINGLE:
+        out_word_count = prepared.num_blocks * 2 + GPU_BLOCK_SIZE * 2
+        if out_word_count < 2:
+            out_word_count = 2
+    else:
+        out_word_count = prepared.num_blocks * 4 + GPU_BLOCK_SIZE * 4
+        if out_word_count < 4:
+            out_word_count = 4
+    state.ensure_prepared_superneo_buffers(a_word_count, z_word_count, out_word_count)
+    var ctx = state.accelerator_ctx.value()
+    var a_host = state.prepared_superneo_a_host.value()
+    var a_dev = state.prepared_superneo_a_dev.value()
+    var b_host = state.prepared_superneo_b_host.value()
+    var b_dev = state.prepared_superneo_b_dev.value()
+    for idx in range(a_word_count):
+        a_host[idx] = prepared.a_words[idx]
+    for idx in range(z_word_count):
+        b_host[idx] = prepared.b_words[idx]
+    ctx.enqueue_copy(src_buf=a_host, dst_buf=a_dev)
+    ctx.enqueue_copy(src_buf=b_host, dst_buf=b_dev)
+    ctx.synchronize()
+    state.prepared_superneo_kind = prepared.kind
+    state.prepared_superneo_generation = prepared.generation
+
+
+fn superneo_row_dot_prepare_words(
+    session: UInt64,
+    bar_blocks_words: UnsafePointer[UInt64],
+    num_blocks: UInt64,
+    z_words: UnsafePointer[UInt64],
+    z_len: UInt64,
+    out_handle: UnsafePointer[mut=True, UInt64],
+) -> Int32:
+    if num_blocks == 0:
+        return STATUS_INVALID_INPUT
+    var num_blocks_int = Int(num_blocks)
+    var z_len_int = Int(z_len)
+    var session_ptr = runtime.session_state_ptr(session)
+    ref session_state = session_ptr[]
+    var generation = next_prepared_generation(session_state.prepared_superneo_generation)
+    var ptr = alloc[PreparedSuperneoBatchState](1)
+    ptr.init_pointee_move(
+        PreparedSuperneoBatchState(
+            session,
+            generation,
+            PREPARED_SUPERNEO_KIND_SINGLE,
+            num_blocks_int,
+            z_len_int,
+        )
+    )
+    for idx in range(num_blocks_int * BLOCK_WORDS):
+        ptr[].a_words[idx] = bar_blocks_words[idx]
+    for idx in range(z_len_int * 2):
+        ptr[].b_words[idx] = z_words[idx]
+    if session_prefers_gpu(session):
+        try:
+            upload_prepared_superneo_batch(session_ptr, ptr)
+        except:
+            ptr.destroy_pointee()
+            ptr.free()
+            return STATUS_INVALID_INPUT
+    else:
+        session_state.prepared_superneo_kind = PREPARED_SUPERNEO_KIND_SINGLE
+        session_state.prepared_superneo_generation = generation
+    out_handle[0] = UInt64(Int(ptr))
+    return STATUS_OK
+
+
+fn superneo_row_dot_dual_prepare_words(
+    session: UInt64,
+    re_bar_blocks_words: UnsafePointer[UInt64],
+    im_bar_blocks_words: UnsafePointer[UInt64],
+    num_blocks: UInt64,
+    z_words: UnsafePointer[UInt64],
+    z_len: UInt64,
+    out_handle: UnsafePointer[mut=True, UInt64],
+) -> Int32:
+    if num_blocks == 0:
+        return STATUS_INVALID_INPUT
+    var num_blocks_int = Int(num_blocks)
+    var z_len_int = Int(z_len)
+    var session_ptr = runtime.session_state_ptr(session)
+    ref session_state = session_ptr[]
+    var generation = next_prepared_generation(session_state.prepared_superneo_generation)
+    var ptr = alloc[PreparedSuperneoBatchState](1)
+    ptr.init_pointee_move(
+        PreparedSuperneoBatchState(
+            session,
+            generation,
+            PREPARED_SUPERNEO_KIND_DUAL,
+            num_blocks_int,
+            z_len_int,
+        )
+    )
+    var bar_word_count = num_blocks_int * BLOCK_WORDS
+    for idx in range(bar_word_count):
+        ptr[].a_words[idx] = re_bar_blocks_words[idx]
+        ptr[].a_words[bar_word_count + idx] = im_bar_blocks_words[idx]
+    for idx in range(z_len_int * 2):
+        ptr[].b_words[idx] = z_words[idx]
+    if session_prefers_gpu(session):
+        try:
+            upload_prepared_superneo_batch(session_ptr, ptr)
+        except:
+            ptr.destroy_pointee()
+            ptr.free()
+            return STATUS_INVALID_INPUT
+    else:
+        session_state.prepared_superneo_kind = PREPARED_SUPERNEO_KIND_DUAL
+        session_state.prepared_superneo_generation = generation
+    out_handle[0] = UInt64(Int(ptr))
+    return STATUS_OK
+
+
+fn superneo_prepared_execute_words(session: UInt64, handle: UInt64) -> Int32:
+    if handle == 0:
+        return STATUS_INVALID_HANDLE
+    var batch_ptr = prepared_superneo_batch_ptr(handle)
+    ref batch = batch_ptr[]
+    if batch.session != session:
+        return STATUS_INVALID_HANDLE
+    if not session_prefers_gpu(session):
+        if batch.kind == PREPARED_SUPERNEO_KIND_SINGLE:
+            superneo_row_dot_blocks_cpu_words(
+                batch.a_words,
+                UInt64(batch.num_blocks),
+                batch.b_words,
+                UInt64(batch.z_len),
+                batch.out_words,
+            )
+        elif batch.kind == PREPARED_SUPERNEO_KIND_DUAL:
+            superneo_row_dot_blocks_words(
+                session,
+                batch.a_words,
+                UInt64(batch.num_blocks),
+                batch.b_words,
+                UInt64(batch.z_len),
+                batch.out_words,
+            )
+            superneo_row_dot_blocks_words(
+                session,
+                batch.a_words + batch.num_blocks * BLOCK_WORDS,
+                UInt64(batch.num_blocks),
+                batch.b_words,
+                UInt64(batch.z_len),
+                batch.out_words + 2,
+            )
+        else:
+            return STATUS_INVALID_HANDLE
+        return STATUS_OK
+    var session_ptr = runtime.session_state_ptr(session)
+    ref session_state = session_ptr[]
+    if session_state.prepared_superneo_generation != batch.generation or session_state.prepared_superneo_kind != batch.kind:
+        return STATUS_STALE_HANDLE
+    try:
+        var ctx = session_state.accelerator_ctx.value()
+        var a_dev = session_state.prepared_superneo_a_dev.value()
+        var b_dev = session_state.prepared_superneo_b_dev.value()
+        var out_dev = session_state.prepared_superneo_out_dev.value()
+        if batch.kind == PREPARED_SUPERNEO_KIND_SINGLE:
+            var partial_word_count = batch.num_blocks * 2
+            ctx.enqueue_function[
+                superneo_row_dot_blocks_gpu_kernel, superneo_row_dot_blocks_gpu_kernel_sig
+            ](
+                a_dev.unsafe_ptr(),
+                b_dev.unsafe_ptr(),
+                batch.z_len,
+                out_dev.unsafe_ptr(),
+                batch.num_blocks,
+                grid_dim=(batch.num_blocks + GPU_BLOCK_SIZE - 1) // GPU_BLOCK_SIZE,
+                block_dim=GPU_BLOCK_SIZE,
+            )
+            ctx.enqueue_function[
+                superneo_row_dot_blocks_reduce_gpu_kernel, superneo_row_dot_blocks_reduce_gpu_kernel_sig
+            ](
+                out_dev.unsafe_ptr(),
+                out_dev.unsafe_ptr() + partial_word_count,
+                batch.num_blocks,
+                grid_dim=1,
+                block_dim=GPU_BLOCK_SIZE,
+            )
+            ctx.enqueue_function[
+                superneo_row_dot_blocks_reduce_final_gpu_kernel, superneo_row_dot_blocks_reduce_final_gpu_kernel_sig
+            ](
+                out_dev.unsafe_ptr() + partial_word_count,
+                out_dev.unsafe_ptr(),
+                grid_dim=1,
+                block_dim=GPU_BLOCK_SIZE,
+            )
+        elif batch.kind == PREPARED_SUPERNEO_KIND_DUAL:
+            var partial_word_count = batch.num_blocks * 4
+            ctx.enqueue_function[
+                superneo_row_dot_blocks_dual_gpu_kernel, superneo_row_dot_blocks_dual_gpu_kernel_sig
+            ](
+                a_dev.unsafe_ptr(),
+                b_dev.unsafe_ptr(),
+                batch.z_len,
+                out_dev.unsafe_ptr(),
+                batch.num_blocks,
+                grid_dim=(batch.num_blocks + GPU_BLOCK_SIZE - 1) // GPU_BLOCK_SIZE,
+                block_dim=GPU_BLOCK_SIZE,
+            )
+            ctx.enqueue_function[
+                superneo_row_dot_blocks_dual_reduce_gpu_kernel, superneo_row_dot_blocks_dual_reduce_gpu_kernel_sig
+            ](
+                out_dev.unsafe_ptr(),
+                out_dev.unsafe_ptr() + partial_word_count,
+                batch.num_blocks,
+                grid_dim=1,
+                block_dim=GPU_BLOCK_SIZE,
+            )
+            ctx.enqueue_function[
+                superneo_row_dot_blocks_dual_reduce_final_gpu_kernel, superneo_row_dot_blocks_dual_reduce_final_gpu_kernel_sig
+            ](
+                out_dev.unsafe_ptr() + partial_word_count,
+                out_dev.unsafe_ptr(),
+                grid_dim=1,
+                block_dim=GPU_BLOCK_SIZE,
+            )
+        else:
+            return STATUS_INVALID_HANDLE
+    except:
+        return STATUS_INVALID_INPUT
+    return STATUS_OK
+
+
+fn superneo_prepared_read_words(
+    session: UInt64,
+    handle: UInt64,
+    out_words: UnsafePointer[mut=True, UInt64],
+    out_len: UInt64,
+) -> Int32:
+    if handle == 0:
+        return STATUS_INVALID_HANDLE
+    var batch_ptr = prepared_superneo_batch_ptr(handle)
+    ref batch = batch_ptr[]
+    if batch.session != session:
+        return STATUS_INVALID_HANDLE
+    var expected_words = 2
+    if batch.kind == PREPARED_SUPERNEO_KIND_DUAL:
+        expected_words = 4
+    if Int(out_len) < expected_words:
+        return STATUS_OUT_LEN
+    if not session_prefers_gpu(session):
+        for idx in range(expected_words):
+            out_words[idx] = batch.out_words[idx]
+        return STATUS_OK
+    var session_ptr = runtime.session_state_ptr(session)
+    ref session_state = session_ptr[]
+    if session_state.prepared_superneo_generation != batch.generation or session_state.prepared_superneo_kind != batch.kind:
+        return STATUS_STALE_HANDLE
+    try:
+        var ctx = session_state.accelerator_ctx.value()
+        var out_host = session_state.prepared_superneo_out_host.value()
+        var out_dev = session_state.prepared_superneo_out_dev.value()
+        ctx.enqueue_copy(src_buf=out_dev, dst_buf=out_host)
+        ctx.synchronize()
+        for idx in range(expected_words):
+            out_words[idx] = out_host[idx]
+    except:
+        return STATUS_INVALID_INPUT
+    return STATUS_OK
+
+
+fn superneo_prepared_destroy_words(_session: UInt64, handle: UInt64) -> Int32:
+    if handle == 0:
+        return STATUS_INVALID_HANDLE
+    var ptr = prepared_superneo_batch_ptr(handle)
+    ptr.destroy_pointee()
+    ptr.free()
+    return STATUS_OK

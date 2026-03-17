@@ -1,5 +1,12 @@
 use super::*;
 
+pub(crate) fn verification_compute_backend(compute_backend: &ProverComputeBackend) -> ProverComputeBackend {
+    match compute_backend {
+        ProverComputeBackend::Mojo(cfg) if cfg.fallback_to_cpu => ProverComputeBackend::Cpu,
+        _ => compute_backend.clone(),
+    }
+}
+
 pub fn fold_shard_prove<L, MR, MB>(
     mode: FoldingMode,
     tr: &mut Poseidon2Transcript,
@@ -402,7 +409,8 @@ where
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {
-    let backend_ctx = neo_reductions::accelerator::BackendContext::new(compute_backend)?;
+    let verify_backend = verification_compute_backend(compute_backend);
+    let backend_ctx = neo_reductions::accelerator::BackendContext::new(&verify_backend)?;
     fold_shard_verify_impl_with_backend_ctx(
         mode,
         tr,
@@ -415,7 +423,7 @@ where
         mixers,
         ob_cfg,
         prover_ctx,
-        compute_backend,
+        &verify_backend,
         &backend_ctx,
         initial_prev_step,
     )

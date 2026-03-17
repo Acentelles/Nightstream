@@ -245,6 +245,46 @@ fn rq_accumulate_batch_u64x54(
     return STATUS_OK
 
 
+fn rq_mul_batch_prepare_u64x54(
+    session: UInt64,
+    lhs_words: UnsafePointer[UInt64],
+    rhs_words: UnsafePointer[UInt64],
+    pair_count: UInt64,
+    out_handle: UnsafePointer[mut=True, UInt64],
+) -> Int32:
+    return ring.rq_mul_batch_prepare_words(session, lhs_words, rhs_words, pair_count, out_handle)
+
+
+fn rq_accumulate_batch_prepare_u64x54(
+    session: UInt64,
+    lhs_words: UnsafePointer[UInt64],
+    rhs_words: UnsafePointer[UInt64],
+    slot_offsets_words: UnsafePointer[UInt64],
+    slot_count: UInt64,
+    out_handle: UnsafePointer[mut=True, UInt64],
+) -> Int32:
+    return ring.rq_accumulate_batch_prepare_words(
+        session, lhs_words, rhs_words, slot_offsets_words, slot_count, out_handle
+    )
+
+
+fn rq_prepared_execute(session: UInt64, handle: UInt64) -> Int32:
+    return ring.rq_prepared_execute_words(session, handle)
+
+
+fn rq_prepared_read_u64x54(
+    session: UInt64,
+    handle: UInt64,
+    out_words: UnsafePointer[mut=True, UInt64],
+    out_len: UInt64,
+) -> Int32:
+    return ring.rq_prepared_read_words(session, handle, out_words, out_len)
+
+
+fn rq_prepared_destroy(session: UInt64, handle: UInt64) -> Int32:
+    return ring.rq_prepared_destroy_words(session, handle)
+
+
 fn rq_ct_u64x54(
     words: UnsafePointer[UInt64],
     out_words: UnsafePointer[mut=True, UInt64],
@@ -294,3 +334,51 @@ fn superneo_row_dot_blocks_dual(
         out_words,
     )
     return STATUS_OK
+
+
+fn superneo_row_dot_prepare(
+    session: UInt64,
+    bar_blocks_words: UnsafePointer[UInt64],
+    num_blocks: UInt64,
+    z_words: UnsafePointer[UInt64],
+    z_len: UInt64,
+    out_handle: UnsafePointer[mut=True, UInt64],
+) -> Int32:
+    return superneo.superneo_row_dot_prepare_words(session, bar_blocks_words, num_blocks, z_words, z_len, out_handle)
+
+
+fn superneo_row_dot_dual_prepare(
+    session: UInt64,
+    re_bar_blocks_words: UnsafePointer[UInt64],
+    im_bar_blocks_words: UnsafePointer[UInt64],
+    num_blocks: UInt64,
+    z_words: UnsafePointer[UInt64],
+    z_len: UInt64,
+    out_handle: UnsafePointer[mut=True, UInt64],
+) -> Int32:
+    return superneo.superneo_row_dot_dual_prepare_words(
+        session,
+        re_bar_blocks_words,
+        im_bar_blocks_words,
+        num_blocks,
+        z_words,
+        z_len,
+        out_handle,
+    )
+
+
+fn superneo_prepared_execute(session: UInt64, handle: UInt64) -> Int32:
+    return superneo.superneo_prepared_execute_words(session, handle)
+
+
+fn superneo_prepared_read(
+    session: UInt64,
+    handle: UInt64,
+    out_words: UnsafePointer[mut=True, UInt64],
+    out_len: UInt64,
+) -> Int32:
+    return superneo.superneo_prepared_read_words(session, handle, out_words, out_len)
+
+
+fn superneo_prepared_destroy(session: UInt64, handle: UInt64) -> Int32:
+    return superneo.superneo_prepared_destroy_words(session, handle)

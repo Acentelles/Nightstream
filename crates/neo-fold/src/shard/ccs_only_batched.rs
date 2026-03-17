@@ -431,7 +431,8 @@ where
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {
-    let backend_ctx = neo_reductions::accelerator::BackendContext::new(compute_backend)?;
+    let verify_backend = super::verifier_and_api::verification_compute_backend(compute_backend);
+    let backend_ctx = neo_reductions::accelerator::BackendContext::new(&verify_backend)?;
     fold_shard_verify_ccs_only_batched_with_offset_and_context(
         mode,
         tr,

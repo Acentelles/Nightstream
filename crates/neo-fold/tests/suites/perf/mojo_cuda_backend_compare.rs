@@ -9,11 +9,13 @@ use neo_ajtai::{setup as ajtai_setup, AjtaiSModule, Commitment as Cmt};
 use neo_ccs::traits::SModuleHomomorphism;
 use neo_ccs::{CcsClaim, CcsStructure, CcsWitness, Mat, SparsePoly};
 use neo_fold::pi_ccs::FoldingMode;
+use neo_fold::riscv_trace_shard::{Rv32TraceProvePhaseDurations, Rv32TraceWiring};
 use neo_fold::shard::{fold_shard_prove_ccs_only_batched, CommitMixers};
 use neo_fold::{DeviceApi, MojoBackendConfig, ProverComputeBackend};
 use neo_math::ring::Rq as RqEl;
 use neo_math::{D, F, K};
 use neo_memory::ajtai::{commit_cols_for_ccs_m, encode_vector_for_ccs_m};
+use neo_memory::riscv::lookups::{encode_program, RiscvInstruction, RiscvMemOp, RiscvOpcode};
 use neo_memory::witness::StepWitnessBundle;
 use neo_params::NeoParams;
 use neo_transcript::{Poseidon2Transcript, Transcript};
@@ -233,6 +235,67 @@ fn prove_ccs_only_batch(
     (serde_json::to_vec(&proof).expect("serialize proof"), elapsed)
 }
 
+fn shared_bus_trace_program(repeats: usize) -> Vec<RiscvInstruction> {
+    let mut program = Vec::with_capacity(repeats * 5 + 1);
+    for _ in 0..repeats {
+        program.extend([
+            RiscvInstruction::IAlu {
+                op: RiscvOpcode::Add,
+                rd: 1,
+                rs1: 0,
+                imm: 3,
+            },
+            RiscvInstruction::IAlu {
+                op: RiscvOpcode::Add,
+                rd: 2,
+                rs1: 0,
+                imm: 4,
+            },
+            RiscvInstruction::RAlu {
+                op: RiscvOpcode::Mul,
+                rd: 3,
+                rs1: 1,
+                rs2: 2,
+            },
+            RiscvInstruction::Store {
+                op: RiscvMemOp::Sw,
+                rs1: 0,
+                rs2: 3,
+                imm: 0,
+            },
+            RiscvInstruction::Load {
+                op: RiscvMemOp::Lw,
+                rd: 4,
+                rs1: 0,
+                imm: 0,
+            },
+        ]);
+    }
+    program.push(RiscvInstruction::Halt);
+    program
+}
+
+fn prove_trace_shared_bus(
+    backend: &ProverComputeBackend,
+    program_bytes: &[u8],
+    max_steps: usize,
+) -> (Vec<u8>, Duration, Rv32TraceProvePhaseDurations) {
+    let run = Rv32TraceWiring::from_rom(/*program_base=*/ 0, program_bytes)
+        .xlen(32)
+        .min_trace_len(max_steps)
+        .chunk_rows(max_steps)
+        .max_steps(max_steps)
+        .shout_auto_minimal()
+        .compute_backend(backend.clone())
+        .prove()
+        .expect("trace shared-bus prove");
+    (
+        serde_json::to_vec(run.proof()).expect("serialize trace proof"),
+        run.prove_duration(),
+        run.prove_phase_durations(),
+    )
+}
+
 #[test]
 #[ignore = "perf-style test: run on CUDA with `cargo test -p neo-fold --release --test perf -- --ignored --nocapture report_mojo_cuda_backend_compare_multi_step`"]
 fn report_mojo_cuda_backend_compare_multi_step() {
@@ -315,4 +378,75 @@ fn report_mojo_cuda_backend_compare_multi_step() {
         fmt_duration(mojo_median)
     );
     println!("[mojo-backend-compare] end_to_end_speedup={speedup:.3}x");
+}
+
+#[test]
+#[ignore = "perf-style test: run on CUDA with `cargo test -p neo-fold --release --test perf -- --ignored --nocapture report_mojo_cuda_trace_backend_compare_shared_bus`"]
+fn report_mojo_cuda_trace_backend_compare_shared_bus() {
+    let repeats = std::env::var("NS_GPU_TRACE_REPEATS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(128);
+    let warmups = std::env::var("NS_GPU_TRACE_WARMUPS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(1);
+    let prove_iters = std::env::var("NS_GPU_TRACE_ITERS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(3);
+
+    let program = shared_bus_trace_program(repeats);
+    let program_bytes = encode_program(&program);
+    let max_steps = program.len();
+    let library_path = build_real_mojo_library();
+    let cpu_backend = ProverComputeBackend::Cpu;
+    let mojo_backend =
+        ProverComputeBackend::Mojo(MojoBackendConfig::new(DeviceApi::Cuda).with_library_path(library_path));
+
+    let mut cpu_samples = Vec::with_capacity(prove_iters);
+    let mut mojo_samples = Vec::with_capacity(prove_iters);
+    let mut cpu_fold_samples = Vec::with_capacity(prove_iters);
+    let mut mojo_fold_samples = Vec::with_capacity(prove_iters);
+
+    for _ in 0..warmups {
+        let _ = prove_trace_shared_bus(&cpu_backend, &program_bytes, max_steps);
+        let _ = prove_trace_shared_bus(&mojo_backend, &program_bytes, max_steps);
+    }
+
+    for iter in 0..prove_iters {
+        let (cpu_proof, cpu_time, cpu_phases) = prove_trace_shared_bus(&cpu_backend, &program_bytes, max_steps);
+        let (mojo_proof, mojo_time, mojo_phases) = prove_trace_shared_bus(&mojo_backend, &program_bytes, max_steps);
+        assert!(cpu_proof == mojo_proof, "cpu/mojo trace proof parity iter={iter}");
+        cpu_samples.push(cpu_time);
+        mojo_samples.push(mojo_time);
+        cpu_fold_samples.push(cpu_phases.fold_and_prove);
+        mojo_fold_samples.push(mojo_phases.fold_and_prove);
+    }
+
+    let cpu_median = median_duration(cpu_samples);
+    let mojo_median = median_duration(mojo_samples);
+    let cpu_fold_median = median_duration(cpu_fold_samples);
+    let mojo_fold_median = median_duration(mojo_fold_samples);
+    let speedup = cpu_median.as_secs_f64() / mojo_median.as_secs_f64();
+    let fold_speedup = cpu_fold_median.as_secs_f64() / mojo_fold_median.as_secs_f64();
+
+    println!(
+        "[mojo-trace-compare] shared-bus trace repeats={repeats} max_steps={max_steps} warmups={warmups} prove_iters={prove_iters}"
+    );
+    println!("[mojo-trace-compare] cpu_prove_median={}", fmt_duration(cpu_median));
+    println!(
+        "[mojo-trace-compare] mojo_cuda_prove_median={}",
+        fmt_duration(mojo_median)
+    );
+    println!(
+        "[mojo-trace-compare] cpu_fold_and_prove_median={}",
+        fmt_duration(cpu_fold_median)
+    );
+    println!(
+        "[mojo-trace-compare] mojo_cuda_fold_and_prove_median={}",
+        fmt_duration(mojo_fold_median)
+    );
+    println!("[mojo-trace-compare] end_to_end_speedup={speedup:.3}x");
+    println!("[mojo-trace-compare] fold_and_prove_speedup={fold_speedup:.3}x");
 }

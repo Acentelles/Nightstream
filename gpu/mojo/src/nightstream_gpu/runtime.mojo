@@ -55,10 +55,26 @@ struct SessionState(Movable):
     var ring_out_host: Optional[HostBuffer[DType.uint64]]
     var ring_out_dev: Optional[DeviceBuffer[DType.uint64]]
     var ring_capacity_words: Int
+    var ring_out_capacity_words: Int
     var ring_meta_host: Optional[HostBuffer[DType.uint64]]
     var ring_meta_dev: Optional[DeviceBuffer[DType.uint64]]
     var ring_meta_capacity_words: Int
     var ring_kernel_cache_addr: UInt64
+    var prepared_ring_lhs_host: Optional[HostBuffer[DType.uint64]]
+    var prepared_ring_lhs_dev: Optional[DeviceBuffer[DType.uint64]]
+    var prepared_ring_rhs_host: Optional[HostBuffer[DType.uint64]]
+    var prepared_ring_rhs_dev: Optional[DeviceBuffer[DType.uint64]]
+    var prepared_ring_out_host: Optional[HostBuffer[DType.uint64]]
+    var prepared_ring_out_dev: Optional[DeviceBuffer[DType.uint64]]
+    var prepared_ring_capacity_words: Int
+    var prepared_ring_out_capacity_words: Int
+    var prepared_ring_meta_host: Optional[HostBuffer[DType.uint64]]
+    var prepared_ring_meta_dev: Optional[DeviceBuffer[DType.uint64]]
+    var prepared_ring_meta_capacity_words: Int
+    var prepared_ring_kind: UInt32
+    var prepared_ring_pair_count: Int
+    var prepared_ring_slot_count: Int
+    var prepared_ring_generation: UInt64
     var superneo_a_host: Optional[HostBuffer[DType.uint64]]
     var superneo_a_dev: Optional[DeviceBuffer[DType.uint64]]
     var superneo_a_capacity_words: Int
@@ -69,6 +85,17 @@ struct SessionState(Movable):
     var superneo_out_dev: Optional[DeviceBuffer[DType.uint64]]
     var superneo_out_capacity_words: Int
     var superneo_kernel_cache_addr: UInt64
+    var prepared_superneo_a_host: Optional[HostBuffer[DType.uint64]]
+    var prepared_superneo_a_dev: Optional[DeviceBuffer[DType.uint64]]
+    var prepared_superneo_a_capacity_words: Int
+    var prepared_superneo_b_host: Optional[HostBuffer[DType.uint64]]
+    var prepared_superneo_b_dev: Optional[DeviceBuffer[DType.uint64]]
+    var prepared_superneo_b_capacity_words: Int
+    var prepared_superneo_out_host: Optional[HostBuffer[DType.uint64]]
+    var prepared_superneo_out_dev: Optional[DeviceBuffer[DType.uint64]]
+    var prepared_superneo_out_capacity_words: Int
+    var prepared_superneo_kind: UInt32
+    var prepared_superneo_generation: UInt64
 
     fn __init__(out self, api: UInt32, device_id: UInt32):
         self.api = api
@@ -92,10 +119,26 @@ struct SessionState(Movable):
         self.ring_out_host = Optional[HostBuffer[DType.uint64]]()
         self.ring_out_dev = Optional[DeviceBuffer[DType.uint64]]()
         self.ring_capacity_words = 0
+        self.ring_out_capacity_words = 0
         self.ring_meta_host = Optional[HostBuffer[DType.uint64]]()
         self.ring_meta_dev = Optional[DeviceBuffer[DType.uint64]]()
         self.ring_meta_capacity_words = 0
         self.ring_kernel_cache_addr = 0
+        self.prepared_ring_lhs_host = Optional[HostBuffer[DType.uint64]]()
+        self.prepared_ring_lhs_dev = Optional[DeviceBuffer[DType.uint64]]()
+        self.prepared_ring_rhs_host = Optional[HostBuffer[DType.uint64]]()
+        self.prepared_ring_rhs_dev = Optional[DeviceBuffer[DType.uint64]]()
+        self.prepared_ring_out_host = Optional[HostBuffer[DType.uint64]]()
+        self.prepared_ring_out_dev = Optional[DeviceBuffer[DType.uint64]]()
+        self.prepared_ring_capacity_words = 0
+        self.prepared_ring_out_capacity_words = 0
+        self.prepared_ring_meta_host = Optional[HostBuffer[DType.uint64]]()
+        self.prepared_ring_meta_dev = Optional[DeviceBuffer[DType.uint64]]()
+        self.prepared_ring_meta_capacity_words = 0
+        self.prepared_ring_kind = 0
+        self.prepared_ring_pair_count = 0
+        self.prepared_ring_slot_count = 0
+        self.prepared_ring_generation = 0
         self.superneo_a_host = Optional[HostBuffer[DType.uint64]]()
         self.superneo_a_dev = Optional[DeviceBuffer[DType.uint64]]()
         self.superneo_a_capacity_words = 0
@@ -106,6 +149,17 @@ struct SessionState(Movable):
         self.superneo_out_dev = Optional[DeviceBuffer[DType.uint64]]()
         self.superneo_out_capacity_words = 0
         self.superneo_kernel_cache_addr = 0
+        self.prepared_superneo_a_host = Optional[HostBuffer[DType.uint64]]()
+        self.prepared_superneo_a_dev = Optional[DeviceBuffer[DType.uint64]]()
+        self.prepared_superneo_a_capacity_words = 0
+        self.prepared_superneo_b_host = Optional[HostBuffer[DType.uint64]]()
+        self.prepared_superneo_b_dev = Optional[DeviceBuffer[DType.uint64]]()
+        self.prepared_superneo_b_capacity_words = 0
+        self.prepared_superneo_out_host = Optional[HostBuffer[DType.uint64]]()
+        self.prepared_superneo_out_dev = Optional[DeviceBuffer[DType.uint64]]()
+        self.prepared_superneo_out_capacity_words = 0
+        self.prepared_superneo_kind = 0
+        self.prepared_superneo_generation = 0
 
         if api == UInt32(DEVICE_API_CPU) or not has_accelerator():
             return
@@ -181,15 +235,21 @@ struct SessionState(Movable):
         if grew:
             ctx.synchronize()
 
-    fn ensure_ring_buffers(mut self, word_count: Int, meta_word_count: Int = 0) raises:
+    fn ensure_ring_buffers(mut self, word_count: Int, meta_word_count: Int = 0, out_word_count: Int = 0) raises:
         if not self.accelerator_ctx:
             raise Error("ring accelerator context unavailable")
+        var requested_out_word_count = out_word_count
+        if requested_out_word_count <= 0:
+            requested_out_word_count = word_count
         var have_main = (
             self.ring_capacity_words >= word_count
             and self.ring_lhs_host
             and self.ring_lhs_dev
             and self.ring_rhs_host
             and self.ring_rhs_dev
+        )
+        var have_out = (
+            self.ring_out_capacity_words >= requested_out_word_count
             and self.ring_out_host
             and self.ring_out_dev
         )
@@ -201,7 +261,7 @@ struct SessionState(Movable):
                 and self.ring_meta_dev
             )
         )
-        if have_main and have_meta:
+        if have_main and have_out and have_meta:
             return
         var ctx = self.accelerator_ctx.value()
         if not have_main:
@@ -217,13 +277,15 @@ struct SessionState(Movable):
             self.ring_rhs_dev = Optional[DeviceBuffer[DType.uint64]](
                 ctx.enqueue_create_buffer[DType.uint64](word_count)
             )
+            self.ring_capacity_words = word_count
+        if not have_out:
             self.ring_out_host = Optional[HostBuffer[DType.uint64]](
-                ctx.enqueue_create_host_buffer[DType.uint64](word_count)
+                ctx.enqueue_create_host_buffer[DType.uint64](requested_out_word_count)
             )
             self.ring_out_dev = Optional[DeviceBuffer[DType.uint64]](
-                ctx.enqueue_create_buffer[DType.uint64](word_count)
+                ctx.enqueue_create_buffer[DType.uint64](requested_out_word_count)
             )
-            self.ring_capacity_words = word_count
+            self.ring_out_capacity_words = requested_out_word_count
         if meta_word_count > 0 and not have_meta:
             self.ring_meta_host = Optional[HostBuffer[DType.uint64]](
                 ctx.enqueue_create_host_buffer[DType.uint64](meta_word_count)
@@ -233,6 +295,61 @@ struct SessionState(Movable):
             )
             self.ring_meta_capacity_words = meta_word_count
         ctx.synchronize()
+
+    fn ensure_prepared_ring_buffers(mut self, word_count: Int, meta_word_count: Int, out_word_count: Int) raises:
+        if not self.accelerator_ctx:
+            raise Error("ring accelerator context unavailable")
+        var ctx = self.accelerator_ctx.value()
+        var grew = False
+        if (
+            self.prepared_ring_capacity_words < word_count
+            or not self.prepared_ring_lhs_host
+            or not self.prepared_ring_lhs_dev
+            or not self.prepared_ring_rhs_host
+            or not self.prepared_ring_rhs_dev
+        ):
+            self.prepared_ring_lhs_host = Optional[HostBuffer[DType.uint64]](
+                ctx.enqueue_create_host_buffer[DType.uint64](word_count)
+            )
+            self.prepared_ring_lhs_dev = Optional[DeviceBuffer[DType.uint64]](
+                ctx.enqueue_create_buffer[DType.uint64](word_count)
+            )
+            self.prepared_ring_rhs_host = Optional[HostBuffer[DType.uint64]](
+                ctx.enqueue_create_host_buffer[DType.uint64](word_count)
+            )
+            self.prepared_ring_rhs_dev = Optional[DeviceBuffer[DType.uint64]](
+                ctx.enqueue_create_buffer[DType.uint64](word_count)
+            )
+            self.prepared_ring_capacity_words = word_count
+            grew = True
+        if (
+            self.prepared_ring_out_capacity_words < out_word_count
+            or not self.prepared_ring_out_host
+            or not self.prepared_ring_out_dev
+        ):
+            self.prepared_ring_out_host = Optional[HostBuffer[DType.uint64]](
+                ctx.enqueue_create_host_buffer[DType.uint64](out_word_count)
+            )
+            self.prepared_ring_out_dev = Optional[DeviceBuffer[DType.uint64]](
+                ctx.enqueue_create_buffer[DType.uint64](out_word_count)
+            )
+            self.prepared_ring_out_capacity_words = out_word_count
+            grew = True
+        if meta_word_count > 0 and (
+            self.prepared_ring_meta_capacity_words < meta_word_count
+            or not self.prepared_ring_meta_host
+            or not self.prepared_ring_meta_dev
+        ):
+            self.prepared_ring_meta_host = Optional[HostBuffer[DType.uint64]](
+                ctx.enqueue_create_host_buffer[DType.uint64](meta_word_count)
+            )
+            self.prepared_ring_meta_dev = Optional[DeviceBuffer[DType.uint64]](
+                ctx.enqueue_create_buffer[DType.uint64](meta_word_count)
+            )
+            self.prepared_ring_meta_capacity_words = meta_word_count
+            grew = True
+        if grew:
+            ctx.synchronize()
 
     fn ensure_superneo_buffers(mut self, a_word_count: Int, b_word_count: Int, out_word_count: Int) raises:
         if not self.accelerator_ctx:
@@ -277,6 +394,53 @@ struct SessionState(Movable):
                 ctx.enqueue_create_buffer[DType.uint64](out_word_count)
             )
             self.superneo_out_capacity_words = out_word_count
+            grew = True
+        if grew:
+            ctx.synchronize()
+
+    fn ensure_prepared_superneo_buffers(mut self, a_word_count: Int, b_word_count: Int, out_word_count: Int) raises:
+        if not self.accelerator_ctx:
+            raise Error("superneo accelerator context unavailable")
+        var ctx = self.accelerator_ctx.value()
+        var grew = False
+        if (
+            self.prepared_superneo_a_capacity_words < a_word_count
+            or not self.prepared_superneo_a_host
+            or not self.prepared_superneo_a_dev
+        ):
+            self.prepared_superneo_a_host = Optional[HostBuffer[DType.uint64]](
+                ctx.enqueue_create_host_buffer[DType.uint64](a_word_count)
+            )
+            self.prepared_superneo_a_dev = Optional[DeviceBuffer[DType.uint64]](
+                ctx.enqueue_create_buffer[DType.uint64](a_word_count)
+            )
+            self.prepared_superneo_a_capacity_words = a_word_count
+            grew = True
+        if (
+            self.prepared_superneo_b_capacity_words < b_word_count
+            or not self.prepared_superneo_b_host
+            or not self.prepared_superneo_b_dev
+        ):
+            self.prepared_superneo_b_host = Optional[HostBuffer[DType.uint64]](
+                ctx.enqueue_create_host_buffer[DType.uint64](b_word_count)
+            )
+            self.prepared_superneo_b_dev = Optional[DeviceBuffer[DType.uint64]](
+                ctx.enqueue_create_buffer[DType.uint64](b_word_count)
+            )
+            self.prepared_superneo_b_capacity_words = b_word_count
+            grew = True
+        if (
+            self.prepared_superneo_out_capacity_words < out_word_count
+            or not self.prepared_superneo_out_host
+            or not self.prepared_superneo_out_dev
+        ):
+            self.prepared_superneo_out_host = Optional[HostBuffer[DType.uint64]](
+                ctx.enqueue_create_host_buffer[DType.uint64](out_word_count)
+            )
+            self.prepared_superneo_out_dev = Optional[DeviceBuffer[DType.uint64]](
+                ctx.enqueue_create_buffer[DType.uint64](out_word_count)
+            )
+            self.prepared_superneo_out_capacity_words = out_word_count
             grew = True
         if grew:
             ctx.synchronize()

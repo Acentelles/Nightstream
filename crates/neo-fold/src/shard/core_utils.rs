@@ -341,12 +341,17 @@ pub(crate) fn validate_time_active_mask_and_count(
     Ok(active_count)
 }
 
-pub(crate) fn bind_time_opening_batches_and_sample_coeffs(
+pub(crate) struct TimeOpeningBatchCoefficients {
+    pub mats: Vec<Vec<Mat<F>>>,
+    pub flat_rq: Vec<Vec<neo_gpu::FlatRq>>,
+}
+
+pub(crate) fn bind_time_opening_batches_and_sample_coeffs_with_rq(
     tr: &mut Poseidon2Transcript,
     params: &NeoParams,
     step_idx: usize,
     opening_proofs: &[crate::shard_proof_types::TimeOpeningProof],
-) -> Result<Vec<Vec<Mat<F>>>, PiCcsError> {
+) -> Result<TimeOpeningBatchCoefficients, PiCcsError> {
     #[inline]
     fn f_from_i64(x: i64) -> F {
         if x >= 0 {
@@ -396,6 +401,7 @@ pub(crate) fn bind_time_opening_batches_and_sample_coeffs(
     tr.append_u64s(b"time_openings/batch_bind/proof_count", &[opening_proofs.len() as u64]);
 
     let mut all_coeffs = Vec::with_capacity(opening_proofs.len());
+    let mut all_flat_rq = Vec::with_capacity(opening_proofs.len());
     let ring = ccs::RotRing::goldilocks();
     let mut neg_phi_coeffs = [F::ZERO; D];
     for (i, &c) in ring.phi_coeffs.iter().enumerate() {
@@ -529,15 +535,32 @@ pub(crate) fn bind_time_opening_batches_and_sample_coeffs(
     for (pf, base) in opening_proofs.iter().zip(bases.into_iter()) {
         let base_rq = rot_matrix_to_rq(&base)?;
         let mut coeffs = Vec::with_capacity(pf.col_ids.len());
+        let mut flat_rq = Vec::with_capacity(pf.col_ids.len());
         let mut cur_rq = neo_math::ring::Rq::one();
         for _ in 0..pf.col_ids.len() {
+            flat_rq.push(neo_gpu::FlatRq {
+                coeffs: cur_rq.0.map(|coeff| coeff.as_canonical_u64()),
+            });
             coeffs.push(rot_from_coeffs(&cur_rq.0, &neg_phi_coeffs));
             cur_rq = cur_rq.mul(&base_rq);
         }
         all_coeffs.push(coeffs);
+        all_flat_rq.push(flat_rq);
     }
 
-    Ok(all_coeffs)
+    Ok(TimeOpeningBatchCoefficients {
+        mats: all_coeffs,
+        flat_rq: all_flat_rq,
+    })
+}
+
+pub(crate) fn bind_time_opening_batches_and_sample_coeffs(
+    tr: &mut Poseidon2Transcript,
+    params: &NeoParams,
+    step_idx: usize,
+    opening_proofs: &[crate::shard_proof_types::TimeOpeningProof],
+) -> Result<Vec<Vec<Mat<F>>>, PiCcsError> {
+    Ok(bind_time_opening_batches_and_sample_coeffs_with_rq(tr, params, step_idx, opening_proofs)?.mats)
 }
 
 // ============================================================================

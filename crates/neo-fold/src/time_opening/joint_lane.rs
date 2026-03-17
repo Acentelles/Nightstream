@@ -2,11 +2,16 @@ use crate::shard_proof_types::{
     JointClaimKind, JointOpeningGroupProof, JointOpeningLaneProof, OpeningDomain, OpeningReductionProof,
     OpeningUnificationProof, Stage8ClusterProof, TimeOpeningProof,
 };
+use crate::time_opening::joint_lane_accel as accel;
 use crate::time_opening::me_adapter::{
     add_rot_scaled_commitment, apply_rot_to_digits, build_logical_col_pos, claim_commitment_and_eval,
     recompose_digits_to_scalar,
 };
 use crate::time_opening::reduction::bind_opening_reduction_and_sample_group_coeffs;
+use crate::time_opening::stage8_cache::{
+    build_claim_witness_from_cache, collect_opening_proof_col_ids, precompute_stage8_encoded_columns_for_col_ids,
+    validate_encoded_stage8_column_domain, EncodedStage8ColumnCache,
+};
 use crate::PiCcsError;
 use neo_ajtai::Commitment as Cmt;
 use neo_ccs::{CcsMatrix, CcsStructure, CeClaim, CscMat, Mat, SModuleHomomorphism, SparsePoly, Term};
@@ -72,96 +77,18 @@ fn allow_stage8_commit_acceleration_for_group_count(
     }
 }
 
-#[derive(Clone)]
-struct EncodedStage8Column {
-    abs_pos: usize,
-    row_major: Vec<F>,
-}
-
-fn precompute_stage8_encoded_columns(
-    params: &NeoParams,
-    step: &StepWitnessBundle<Cmt, F, K>,
-    logical_col_pos: &std::collections::BTreeMap<usize, usize>,
-    cpu_cols_len: usize,
-    opening_proofs: &[TimeOpeningProof],
-) -> Result<std::collections::BTreeMap<usize, EncodedStage8Column>, PiCcsError> {
-    let mut unique_col_ids = std::collections::BTreeSet::new();
-    for proof in opening_proofs {
-        unique_col_ids.extend(proof.col_ids.iter().copied());
-    }
-    let mut out = std::collections::BTreeMap::new();
-    for col_id in unique_col_ids {
-        let abs_pos = logical_col_pos.get(&col_id).copied().ok_or_else(|| {
-            PiCcsError::ProtocolError(format!("time/opening joint/prove: logical col_id={} missing", col_id))
-        })?;
-        let col = if abs_pos < cpu_cols_len {
-            step.time_columns.cpu_cols.get(abs_pos).ok_or_else(|| {
-                PiCcsError::ProtocolError(format!(
-                    "time/opening joint/prove: CPU column index {} out of range",
-                    abs_pos
-                ))
-            })?
-        } else {
-            let mem_idx = abs_pos - cpu_cols_len;
-            step.time_columns.mem_cols.get(mem_idx).ok_or_else(|| {
-                PiCcsError::ProtocolError(format!(
-                    "time/opening joint/prove: MEM column index {} out of range",
-                    mem_idx
-                ))
-            })?
-        };
-        let mut row_major = Vec::new();
-        neo_memory::ajtai::encode_vector_balanced_to_row_major_with_base_into(
-            params,
-            col,
-            crate::time_opening::STAGE8_TIME_DECOMP_BASE,
-            &mut row_major,
-        );
-        out.insert(col_id, EncodedStage8Column { abs_pos, row_major });
-    }
-    Ok(out)
-}
-
-fn build_claim_witness_from_cache(
-    t: usize,
-    open_pf: &TimeOpeningProof,
-    coeffs: &[Mat<F>],
-    encoded_stage8_cols: &std::collections::BTreeMap<usize, EncodedStage8Column>,
-    cpu_cols_len: usize,
-    domain: OpeningDomain,
-) -> Result<Mat<F>, PiCcsError> {
-    let mut out = Mat::zero(D, t, F::ZERO);
-    for (coeff, &col_id) in coeffs.iter().zip(open_pf.col_ids.iter()) {
-        let encoded_col = encoded_stage8_cols.get(&col_id).ok_or_else(|| {
-            PiCcsError::ProtocolError(format!(
-                "time/opening joint/prove: missing cached column encoding for col_id={col_id}"
-            ))
-        })?;
-        match domain {
-            OpeningDomain::Cpu if encoded_col.abs_pos >= cpu_cols_len => {
-                return Err(PiCcsError::ProtocolError(
-                    "time/opening joint/prove: expected CPU claim but found MEM column id".into(),
-                ));
-            }
-            OpeningDomain::Mem if encoded_col.abs_pos < cpu_cols_len => {
-                return Err(PiCcsError::ProtocolError(
-                    "time/opening joint/prove: expected MEM claim but found CPU column id".into(),
-                ));
-            }
-            _ => {}
-        }
-        left_mul_add_row_major_into(&mut out, coeff, encoded_col.row_major.as_slice(), t)?;
-    }
-    Ok(out)
-}
-
 #[inline]
 fn left_mul_add_into(dst: &mut Mat<F>, rho: &Mat<F>, src: &Mat<F>) -> Result<(), PiCcsError> {
     left_mul_add_row_major_into(dst, rho, src.as_slice(), src.cols())
 }
 
 #[inline]
-fn left_mul_add_row_major_into(dst: &mut Mat<F>, rho: &Mat<F>, src_data: &[F], m: usize) -> Result<(), PiCcsError> {
+pub(crate) fn left_mul_add_row_major_into(
+    dst: &mut Mat<F>,
+    rho: &Mat<F>,
+    src_data: &[F],
+    m: usize,
+) -> Result<(), PiCcsError> {
     if rho.rows() != D || rho.cols() != D {
         return Err(PiCcsError::InvalidInput(format!(
             "time/opening joint: rho must be {D}x{D} (got {}x{})",
@@ -288,8 +215,10 @@ pub struct Stage8FoldLanePlan {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct JointOpeningLaneDurations {
+    pub prepare: Duration,
     pub group_build: Duration,
     pub joint_commit_many: Duration,
+    pub expected_commitments: Duration,
     pub unified_fold_mix: Duration,
 }
 
@@ -493,7 +422,12 @@ fn bind_and_sample_unified_fold_mixers(
     ccs::sample_rot_rhos_n(tr, params, &ring, groups.len())
 }
 
-fn mix_group_witnesses(group_wits: &[Mat<F>], mix_rhos: &[Mat<F>], time_t: usize) -> Result<Mat<F>, PiCcsError> {
+fn mix_group_witnesses(
+    backend_ctx: &neo_reductions::accelerator::BackendContext,
+    group_wits: &[Mat<F>],
+    mix_rhos: &[Mat<F>],
+    time_t: usize,
+) -> Result<Mat<F>, PiCcsError> {
     if group_wits.len() != mix_rhos.len() {
         return Err(PiCcsError::ProtocolError(format!(
             "stage8 unified fold: witness/mixer length mismatch (wits={}, mixers={})",
@@ -524,6 +458,12 @@ fn mix_group_witnesses(group_wits: &[Mat<F>], mix_rhos: &[Mat<F>], time_t: usize
     let mut out = Mat::zero(D, time_t, F::ZERO);
     if group_wits.is_empty() || time_t == 0 {
         return Ok(out);
+    }
+    let wit_refs = group_wits.iter().collect::<Vec<_>>();
+    if let Some(accel_out) =
+        accel::try_mix_witness_refs_with_backend(backend_ctx, wit_refs.as_slice(), mix_rhos, time_t)?
+    {
+        return Ok(accel_out);
     }
 
     const BLOCK_COLS: usize = 1024;
@@ -737,6 +677,53 @@ pub fn prove_joint_opening_lane_with_witnesses_and_metrics(
     opening_unification: &OpeningUnificationProof,
     claim_eta_coeffs: &[Vec<Mat<F>>],
 ) -> Result<(JointOpeningLaneProof, Vec<Mat<F>>, JointOpeningLaneDurations), PiCcsError> {
+    let prepare_start = time_now();
+    let logical_col_pos = build_logical_col_pos(time_col_ids)?;
+    let encoded_stage8_cols = precompute_stage8_encoded_columns_for_col_ids(
+        params,
+        step,
+        &logical_col_pos,
+        time_cpu_commitments.len(),
+        collect_opening_proof_col_ids(opening_proofs),
+    )?;
+    let mut out = prove_joint_opening_lane_with_precomputed_columns_and_metrics(
+        tr,
+        params,
+        step_idx,
+        step,
+        backend_ctx,
+        time_cpu_commitments,
+        time_mem_commitments,
+        opening_proofs,
+        manifest_digest,
+        reduction,
+        opening_unification,
+        claim_eta_coeffs,
+        None,
+        &logical_col_pos,
+        &encoded_stage8_cols,
+    )?;
+    out.2.prepare += elapsed_duration(prepare_start);
+    Ok(out)
+}
+
+pub(crate) fn prove_joint_opening_lane_with_precomputed_columns_and_metrics(
+    tr: &mut Poseidon2Transcript,
+    params: &NeoParams,
+    step_idx: usize,
+    step: &StepWitnessBundle<Cmt, F, K>,
+    backend_ctx: &neo_reductions::accelerator::BackendContext,
+    time_cpu_commitments: &[Cmt],
+    time_mem_commitments: &[Cmt],
+    opening_proofs: &[TimeOpeningProof],
+    manifest_digest: &[u8; 32],
+    reduction: &OpeningReductionProof,
+    opening_unification: &OpeningUnificationProof,
+    claim_eta_coeffs: &[Vec<Mat<F>>],
+    claim_eta_flat_rq_coeffs: Option<&[Vec<neo_gpu::FlatRq>]>,
+    logical_col_pos: &std::collections::BTreeMap<usize, usize>,
+    encoded_stage8_cols: &EncodedStage8ColumnCache,
+) -> Result<(JointOpeningLaneProof, Vec<Mat<F>>, JointOpeningLaneDurations), PiCcsError> {
     let mut metrics = JointOpeningLaneDurations::default();
     if opening_proofs.len() != claim_eta_coeffs.len() {
         return Err(PiCcsError::ProtocolError(
@@ -750,10 +737,8 @@ pub fn prove_joint_opening_lane_with_witnesses_and_metrics(
         ));
     }
 
-    let logical_col_pos = build_logical_col_pos(time_col_ids)?;
+    let prepare_start = time_now();
     let cpu_cols_len = time_cpu_commitments.len();
-    let encoded_stage8_cols =
-        precompute_stage8_encoded_columns(params, step, &logical_col_pos, cpu_cols_len, opening_proofs)?;
     let group_rhos = bind_opening_reduction_and_sample_group_coeffs(
         tr,
         params,
@@ -773,6 +758,7 @@ pub fn prove_joint_opening_lane_with_witnesses_and_metrics(
             "time/opening joint/prove: missing Ajtai committer for (D,t)=({D},{t}): {e}"
         ))
     })?;
+    metrics.prepare += elapsed_duration(prepare_start);
 
     struct GroupWork {
         point: Vec<K>,
@@ -800,9 +786,10 @@ pub fn prove_joint_opening_lane_with_witnesses_and_metrics(
                 )));
             }
 
-            let mut joint_z = Mat::zero(D, t, F::ZERO);
             let mut claim_commitments: Vec<Cmt> = Vec::with_capacity(group.claim_indices.len());
+            let mut claim_domains = Vec::with_capacity(group.claim_indices.len());
             let mut expected_claim_digits = vec![K::ZERO; D];
+            let mut joint_terms = Vec::new();
             let update_class_digest =
                 crate::time_opening::reduction::update_class_digest(group.claim_indices.as_slice(), claim_eta_coeffs)?;
 
@@ -823,7 +810,7 @@ pub fn prove_joint_opening_lane_with_witnesses_and_metrics(
                 let claim = claim_commitment_and_eval(
                     open_pf,
                     eta,
-                    &logical_col_pos,
+                    logical_col_pos,
                     cpu_cols_len,
                     time_cpu_commitments,
                     time_mem_commitments,
@@ -831,16 +818,91 @@ pub fn prove_joint_opening_lane_with_witnesses_and_metrics(
                 )?;
 
                 let rho = &rhos[local_idx];
+                let rho_rq = accel::rq_from_rot_matrix(rho)?;
                 claim_commitments.push(claim.commitment.clone());
+                claim_domains.push(claim.domain);
                 let rotated_digits = apply_rot_to_digits(rho, claim.eval_digits.as_slice())?;
                 for i in 0..D {
                     expected_claim_digits[i] += rotated_digits[i];
                 }
-
-                let claim_z =
-                    build_claim_witness_from_cache(t, open_pf, eta, &encoded_stage8_cols, cpu_cols_len, claim.domain)?;
-                left_mul_add_into(&mut joint_z, rho, &claim_z)?;
+                if backend_ctx.selected_device_api().is_some() {
+                    let eta_rq = claim_eta_flat_rq_coeffs.and_then(|all| all.get(claim_idx));
+                    for (term_idx, (coeff, &col_id)) in eta.iter().zip(open_pf.col_ids.iter()).enumerate() {
+                        let encoded_col = encoded_stage8_cols.get(&col_id).ok_or_else(|| {
+                            PiCcsError::ProtocolError(format!(
+                                "time/opening joint/prove: missing cached column encoding for col_id={col_id}"
+                            ))
+                        })?;
+                        validate_encoded_stage8_column_domain(encoded_col, cpu_cols_len, claim.domain)?;
+                        let coeff_rq = eta_rq
+                            .and_then(|coeffs| coeffs.get(term_idx))
+                            .map(accel::rq_from_flat_rq)
+                            .unwrap_or(accel::rq_from_rot_matrix(coeff)?);
+                        let combined = rho_rq.mul(&coeff_rq);
+                        joint_terms.push(accel::SparseRqColumnTerm {
+                            lhs: accel::flat_rq_from_rq(&combined),
+                            rhs_nonzero_cols: encoded_col.rq_nonzero_cols.as_slice(),
+                        });
+                    }
+                }
             }
+            let joint_z = if backend_ctx.selected_device_api().is_some() {
+                if let Some(joint_z) = accel::try_accumulate_sparse_rq_terms_with_backend(backend_ctx, t, joint_terms)? {
+                    joint_z
+                } else {
+                    let mut joint_z = Mat::zero(D, t, F::ZERO);
+                    for (local_idx, &claim_idx) in group.claim_indices.iter().enumerate() {
+                        let open_pf = opening_proofs.get(claim_idx).ok_or_else(|| {
+                            PiCcsError::ProtocolError(format!(
+                                "time/opening joint/prove: claim index {} out of range",
+                                claim_idx
+                            ))
+                        })?;
+                        let eta = claim_eta_coeffs.get(claim_idx).ok_or_else(|| {
+                            PiCcsError::ProtocolError(format!(
+                                "time/opening joint/prove: missing eta coeffs for claim {}",
+                                claim_idx
+                            ))
+                        })?;
+                        let claim_z = build_claim_witness_from_cache(
+                            t,
+                            open_pf,
+                            eta,
+                            encoded_stage8_cols,
+                            cpu_cols_len,
+                            claim_domains[local_idx],
+                        )?;
+                        left_mul_add_into(&mut joint_z, &rhos[local_idx], &claim_z)?;
+                    }
+                    joint_z
+                }
+            } else {
+                let mut joint_z = Mat::zero(D, t, F::ZERO);
+                for (local_idx, &claim_idx) in group.claim_indices.iter().enumerate() {
+                    let open_pf = opening_proofs.get(claim_idx).ok_or_else(|| {
+                        PiCcsError::ProtocolError(format!(
+                            "time/opening joint/prove: claim index {} out of range",
+                            claim_idx
+                        ))
+                    })?;
+                    let eta = claim_eta_coeffs.get(claim_idx).ok_or_else(|| {
+                        PiCcsError::ProtocolError(format!(
+                            "time/opening joint/prove: missing eta coeffs for claim {}",
+                            claim_idx
+                        ))
+                    })?;
+                    let claim_z = build_claim_witness_from_cache(
+                        t,
+                        open_pf,
+                        eta,
+                        encoded_stage8_cols,
+                        cpu_cols_len,
+                        claim_domains[local_idx],
+                    )?;
+                    left_mul_add_into(&mut joint_z, &rhos[local_idx], &claim_z)?;
+                }
+                joint_z
+            };
 
             Ok(GroupWork {
                 point: group.point.clone(),
@@ -874,22 +936,7 @@ pub fn prove_joint_opening_lane_with_witnesses_and_metrics(
     let group_results = group_results?;
     metrics.group_build += elapsed_duration(group_results_start);
     let allow_commit_accel = allow_stage8_commit_acceleration_for_group_count(backend_ctx, group_results.len());
-    let joint_refs: Vec<&Mat<F>> = group_results.iter().map(|g| &g.joint_z).collect();
-    let joint_commit_start = time_now();
-    let joint_commitments = if allow_commit_accel {
-        crate::shard::commit_many_with_backend(backend_ctx, &committer, &joint_refs)?
-    } else {
-        committer.commit_many(&joint_refs)
-    };
-    metrics.joint_commit_many += elapsed_duration(joint_commit_start);
-    if joint_commitments.len() != group_results.len() {
-        return Err(PiCcsError::ProtocolError(format!(
-            "time/opening joint/prove: joint commitment count mismatch (got {}, expected {})",
-            joint_commitments.len(),
-            group_results.len()
-        )));
-    }
-
+    let expected_commitments_start = time_now();
     let expected_commitments = if allow_commit_accel {
         crate::shard::mix_many_rhos_commits_with_backend_result(
             backend_ctx,
@@ -918,6 +965,7 @@ pub fn prove_joint_opening_lane_with_witnesses_and_metrics(
             })
             .collect::<Result<Vec<_>, _>>()?
     };
+    metrics.expected_commitments += elapsed_duration(expected_commitments_start);
     if expected_commitments.len() != group_results.len() {
         return Err(PiCcsError::ProtocolError(format!(
             "time/opening joint/prove: expected commitment count mismatch (got {}, expected {})",
@@ -928,6 +976,9 @@ pub fn prove_joint_opening_lane_with_witnesses_and_metrics(
 
     let mut out_groups = Vec::with_capacity(group_results.len());
     let mut out_wits = Vec::with_capacity(group_results.len());
+    let joint_commit_start = time_now();
+    let joint_commitments = expected_commitments.clone();
+    metrics.joint_commit_many += elapsed_duration(joint_commit_start);
     for (group_idx, ((group_work, joint_commitment), expected_commitment)) in group_results
         .into_iter()
         .zip(joint_commitments.into_iter())
@@ -1043,7 +1094,7 @@ pub fn prove_joint_opening_lane_with_witnesses_and_metrics(
                     .iter()
                     .map(|&idx| out_wits[idx].clone())
                     .collect();
-                let cluster_wit = mix_group_witnesses(&cluster_group_wits, &mix_rhos, t)?;
+                let cluster_wit = mix_group_witnesses(backend_ctx, &cluster_group_wits, &mix_rhos, t)?;
                 let cluster_commitment = if allow_commit_accel {
                     let commits = crate::shard::commit_many_with_backend(backend_ctx, &committer, &[&cluster_wit])?;
                     commits
@@ -1121,7 +1172,7 @@ pub fn prove_joint_opening_lane_with_witnesses_and_metrics(
             }
         }
         let (unified_point, unified_domain, unified_commitment, unified_claim_digits) = if can_unify {
-            let unified_z = mix_group_witnesses(&out_wits, &mix_rhos, t)?;
+            let unified_z = mix_group_witnesses(backend_ctx, &out_wits, &mix_rhos, t)?;
             let unified_commitment = if allow_commit_accel {
                 let commits = crate::shard::commit_many_with_backend(backend_ctx, &committer, &[&unified_z])?;
                 commits

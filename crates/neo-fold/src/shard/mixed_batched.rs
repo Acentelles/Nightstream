@@ -65,6 +65,7 @@ where
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {
     let (proof, _final_main_wits, _val_lane_wits) = fold_shard_prove_mixed_ccs_batched_with_witnesses_internal(
+        false,
         mode,
         tr,
         params,
@@ -103,6 +104,7 @@ where
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {
     let (proof, _final_main_wits, _val_lane_wits) = fold_shard_prove_mixed_ccs_batched_with_witnesses_internal(
+        false,
         mode,
         tr,
         params,
@@ -140,6 +142,7 @@ where
     MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
 {
     fold_shard_prove_mixed_ccs_batched_with_witnesses_internal(
+        true,
         mode,
         tr,
         params,
@@ -157,6 +160,7 @@ where
 }
 
 fn fold_shard_prove_mixed_ccs_batched_with_witnesses_internal<L, MR, MB>(
+    collect_lane_wits: bool,
     mode: FoldingMode,
     tr: &mut Poseidon2Transcript,
     params: &NeoParams,
@@ -249,7 +253,7 @@ where
             continue;
         }
 
-        let (mut segment_proof, next_main_wits, segment_val_lane_wits) =
+        let (mut segment_proof, next_main_wits, segment_val_lane_wits) = if collect_lane_wits {
             fold_shard_prove_route_a_segment_with_witnesses(
                 mode.clone(),
                 tr,
@@ -265,7 +269,25 @@ where
                 prover_ctx,
                 compute_backend,
                 Some(&backend_ctx),
-            )?;
+            )?
+        } else {
+            fold_shard_prove_route_a_segment(
+                mode.clone(),
+                tr,
+                params,
+                s_me,
+                segment,
+                segment_step_idx_offset,
+                &accumulator,
+                &accumulator_wit,
+                l,
+                mixers,
+                segment_ob,
+                prover_ctx,
+                compute_backend,
+                Some(&backend_ctx),
+            )?
+        };
         let route_meta_entries = segment_proof.segment_meta.clone().ok_or_else(|| {
             PiCcsError::ProtocolError(
                 "route-a segment proof missing segment_meta (legacy unsegmented route-a proofs are not supported)"
@@ -303,7 +325,9 @@ where
         let segment_outputs = segment_proof.compute_fold_outputs(&accumulator);
         accumulator = segment_outputs.obligations.main;
         accumulator_wit = next_main_wits;
-        val_lane_wits.extend(segment_val_lane_wits);
+        if collect_lane_wits {
+            val_lane_wits.extend(segment_val_lane_wits);
+        }
         segment_meta.extend(route_meta_entries);
         merged_steps.extend(segment_proof.steps);
         cursor = end;
@@ -504,7 +528,8 @@ where
     let mut step_cursor = 0usize;
     let mut proof_cursor = 0usize;
     let mut prev_route_a_step_ctx: Option<&StepInstanceBundle<Cmt, F, K>> = None;
-    let backend_ctx = neo_reductions::accelerator::BackendContext::new(compute_backend)?;
+    let verify_backend = super::verifier_and_api::verification_compute_backend(compute_backend);
+    let backend_ctx = neo_reductions::accelerator::BackendContext::new(&verify_backend)?;
     for (meta_idx, meta_entry) in segment_meta.iter().enumerate() {
         if meta_entry.public_steps == 0 || meta_entry.proof_steps == 0 {
             return Err(PiCcsError::InvalidInput(format!(
@@ -620,7 +645,7 @@ where
                 mixers,
                 segment_ob_cfg,
                 prover_ctx,
-                compute_backend,
+                &verify_backend,
                 Some(&backend_ctx),
                 prev_route_a_step_ctx,
             )?

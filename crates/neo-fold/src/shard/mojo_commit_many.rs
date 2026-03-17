@@ -61,56 +61,56 @@ fn try_commit_many_seeded_with_mojo(
     let mut out: Vec<Cmt> = (0..zs.len()).map(|_| Cmt::zeros(d, kappa)).collect();
 
     for (row_idx, chunk_seeds) in chunk_seeds_by_row.iter().enumerate() {
+        let mut slot_pairs = vec![Vec::new(); zs.len()];
         for (chunk_idx, chunk_seed) in chunk_seeds.iter().copied().enumerate() {
             let start = chunk_idx * chunk_size;
             let end = core::cmp::min(m, start + chunk_size);
             let mut rng = ChaCha8Rng::from_seed(chunk_seed);
-            let mut lhs_batch = Vec::new();
-            let mut rhs_batch = Vec::new();
             let mut lhs_by_col = Vec::with_capacity(end.saturating_sub(start));
             for _col_idx in start..end {
                 lhs_by_col.push(FlatRq {
                     coeffs: sample_uniform_rq(&mut rng).0.map(|x| x.as_canonical_u64()),
                 });
             }
-            let mut slot_offsets = Vec::with_capacity(zs.len() + 1);
-            slot_offsets.push(0u64);
-            for z in zs.iter() {
+            for (slot_idx, z) in zs.iter().enumerate() {
+                let pairs = &mut slot_pairs[slot_idx];
                 for (local_col_idx, col_idx) in (start..end).enumerate() {
                     let Some(rhs) = flat_rq_from_mat_col_if_nonzero(z, col_idx) else {
                         continue;
                     };
-                    lhs_batch.push(lhs_by_col[local_col_idx]);
-                    rhs_batch.push(rhs);
+                    pairs.push((lhs_by_col[local_col_idx], rhs));
                 }
-                slot_offsets.push(lhs_batch.len() as u64);
             }
+        }
 
-            if lhs_batch.is_empty() {
-                continue;
+        let mut schedule = crate::shard::RqAccumulateSchedule::new(zs.len());
+        for (slot_idx, pairs) in slot_pairs.into_iter().enumerate() {
+            schedule.push_slot_pairs(slot_idx, pairs);
+        }
+        let schedule = schedule.finish();
+        if schedule.is_empty() {
+            continue;
+        }
+
+        let products = match crate::shard::rq_accumulate_schedule_with_backend(session, &schedule) {
+            Ok(values) => values,
+            Err(err) if backend_ctx.mojo_required() => {
+                return Err(PiCcsError::ProtocolError(format!(
+                    "strict Mojo commit_many failed during rq_accumulate: {err}"
+                )))
             }
-
-            let products =
-                match crate::shard::rq_accumulate_with_backend(session, &lhs_batch, &rhs_batch, &slot_offsets) {
-                    Ok(values) => values,
-                    Err(err) if backend_ctx.mojo_required() => {
-                        return Err(PiCcsError::ProtocolError(format!(
-                            "strict Mojo commit_many failed during rq_accumulate: {err}"
-                        )))
-                    }
-                    Err(err) => {
-                        backend_ctx.record_aux_backend_failure("Mojo commit_many rq_accumulate failed", &err)?;
-                        return Ok(None);
-                    }
-                };
-            for (target_idx, product) in products.into_iter().enumerate() {
-                for (dst, src) in out[target_idx]
-                    .col_mut(row_idx)
-                    .iter_mut()
-                    .zip(product.coeffs.into_iter())
-                {
-                    *dst += F::from_u64(src);
-                }
+            Err(err) => {
+                backend_ctx.record_aux_backend_failure("Mojo commit_many rq_accumulate failed", &err)?;
+                return Ok(None);
+            }
+        };
+        for (target_idx, product) in products.into_iter().enumerate() {
+            for (dst, src) in out[target_idx]
+                .col_mut(row_idx)
+                .iter_mut()
+                .zip(product.coeffs.into_iter())
+            {
+                *dst += F::from_u64(src);
             }
         }
     }

@@ -125,7 +125,8 @@ fn expand_route_a_chunk_steps(
     Ok(out)
 }
 
-pub(crate) fn fold_shard_prove_route_a_segment_with_witnesses<L, MR, MB>(
+fn fold_shard_prove_route_a_segment_internal<L, MR, MB>(
+    collect_val_lane_wits: bool,
     mode: FoldingMode,
     tr: &mut Poseidon2Transcript,
     params: &NeoParams,
@@ -187,6 +188,7 @@ where
         let (chunk_proof, next_main_wits, mut chunk_val_lane_wits, next_prev_twist_decoded, next_poseidon_carry) =
             if let Some(backend_ctx) = backend_ctx {
                 fold_shard_prove_impl_with_backend_ctx(
+                    collect_val_lane_wits,
                     true,
                     mode.clone(),
                     tr,
@@ -208,6 +210,7 @@ where
                 )?
             } else {
                 fold_shard_prove_impl(
+                    collect_val_lane_wits,
                     true,
                     mode.clone(),
                     tr,
@@ -304,6 +307,86 @@ where
         )));
     }
     Ok((proof, accumulator_wit, merged_val_lane_wits))
+}
+
+pub(crate) fn fold_shard_prove_route_a_segment_with_witnesses<L, MR, MB>(
+    mode: FoldingMode,
+    tr: &mut Poseidon2Transcript,
+    params: &NeoParams,
+    s_me: &CcsStructure<F>,
+    steps: &[StepWitnessBundle<Cmt, F, K>],
+    step_idx_offset: usize,
+    acc_init: &[CeClaim<Cmt, F, K>],
+    acc_wit_init: &[Mat<F>],
+    l: &L,
+    mixers: CommitMixers<MR, MB>,
+    ob: Option<(&crate::output_binding::OutputBindingConfig, &[F])>,
+    prover_ctx: Option<&ShardProverContext>,
+    compute_backend: &ProverComputeBackend,
+    backend_ctx: Option<&neo_reductions::accelerator::BackendContext>,
+) -> Result<(ShardProof, Vec<Mat<F>>, Vec<Mat<F>>), PiCcsError>
+where
+    L: SModuleHomomorphism<F, Cmt> + Sync + 'static,
+    MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
+    MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
+{
+    fold_shard_prove_route_a_segment_internal(
+        true,
+        mode,
+        tr,
+        params,
+        s_me,
+        steps,
+        step_idx_offset,
+        acc_init,
+        acc_wit_init,
+        l,
+        mixers,
+        ob,
+        prover_ctx,
+        compute_backend,
+        backend_ctx,
+    )
+}
+
+pub(crate) fn fold_shard_prove_route_a_segment<L, MR, MB>(
+    mode: FoldingMode,
+    tr: &mut Poseidon2Transcript,
+    params: &NeoParams,
+    s_me: &CcsStructure<F>,
+    steps: &[StepWitnessBundle<Cmt, F, K>],
+    step_idx_offset: usize,
+    acc_init: &[CeClaim<Cmt, F, K>],
+    acc_wit_init: &[Mat<F>],
+    l: &L,
+    mixers: CommitMixers<MR, MB>,
+    ob: Option<(&crate::output_binding::OutputBindingConfig, &[F])>,
+    prover_ctx: Option<&ShardProverContext>,
+    compute_backend: &ProverComputeBackend,
+    backend_ctx: Option<&neo_reductions::accelerator::BackendContext>,
+) -> Result<(ShardProof, Vec<Mat<F>>, Vec<Mat<F>>), PiCcsError>
+where
+    L: SModuleHomomorphism<F, Cmt> + Sync + 'static,
+    MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt + Clone + Copy,
+    MB: Fn(&[Cmt], u32) -> Cmt + Clone + Copy,
+{
+    fold_shard_prove_route_a_segment_internal(
+        false,
+        mode,
+        tr,
+        params,
+        s_me,
+        steps,
+        step_idx_offset,
+        acc_init,
+        acc_wit_init,
+        l,
+        mixers,
+        ob,
+        prover_ctx,
+        compute_backend,
+        backend_ctx,
+    )
 }
 
 pub(crate) fn fold_shard_verify_route_a_segment<MR, MB>(
