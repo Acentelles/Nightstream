@@ -65,7 +65,11 @@ fn try_mix_rhos_commits_with_mojo(
     if d != D || cs.iter().any(|c| c.d != d || c.kappa != kappa) {
         return Ok(None);
     }
-    let Some(rho_words) = rhos.iter().map(flat_rq_from_rot_matrix).collect::<Option<Vec<_>>>() else {
+    let Some(rho_words) = rhos
+        .iter()
+        .map(flat_rq_from_rot_matrix)
+        .collect::<Option<Vec<_>>>()
+    else {
         return Ok(None);
     };
 
@@ -231,7 +235,12 @@ fn try_mix_many_rhos_commits_with_mojo(
     }
     let Some(rho_words_groups) = rhos_groups
         .iter()
-        .map(|group| group.iter().map(flat_rq_from_rot_matrix).collect::<Option<Vec<_>>>())
+        .map(|group| {
+            group
+                .iter()
+                .map(flat_rq_from_rot_matrix)
+                .collect::<Option<Vec<_>>>()
+        })
         .collect::<Option<Vec<_>>>()
     else {
         return Ok(None);

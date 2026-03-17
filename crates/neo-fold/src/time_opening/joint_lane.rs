@@ -772,110 +772,84 @@ pub(crate) fn prove_joint_opening_lane_with_precomputed_columns_and_metrics(
         joint_z: Mat<F>,
     }
 
-    let build_group =
-        |group_idx: usize, group: &crate::shard_proof_types::OpeningReductionGroup| -> Result<GroupWork, PiCcsError> {
-            let rhos = group_rhos.get(group_idx).ok_or_else(|| {
-                PiCcsError::ProtocolError("time/opening joint/prove: missing group coefficients".into())
+    let build_group = |group_idx: usize,
+                       group: &crate::shard_proof_types::OpeningReductionGroup|
+     -> Result<GroupWork, PiCcsError> {
+        let rhos = group_rhos
+            .get(group_idx)
+            .ok_or_else(|| PiCcsError::ProtocolError("time/opening joint/prove: missing group coefficients".into()))?;
+        if rhos.len() != group.claim_indices.len() {
+            return Err(PiCcsError::ProtocolError(format!(
+                "time/opening joint/prove: group {} rho len {} != claim_indices len {}",
+                group_idx,
+                rhos.len(),
+                group.claim_indices.len()
+            )));
+        }
+
+        let mut claim_commitments: Vec<Cmt> = Vec::with_capacity(group.claim_indices.len());
+        let mut claim_domains = Vec::with_capacity(group.claim_indices.len());
+        let mut expected_claim_digits = vec![K::ZERO; D];
+        let mut joint_terms = Vec::new();
+        let update_class_digest =
+            crate::time_opening::reduction::update_class_digest(group.claim_indices.as_slice(), claim_eta_coeffs)?;
+
+        for (local_idx, &claim_idx) in group.claim_indices.iter().enumerate() {
+            let open_pf = opening_proofs.get(claim_idx).ok_or_else(|| {
+                PiCcsError::ProtocolError(format!(
+                    "time/opening joint/prove: claim index {} out of range",
+                    claim_idx
+                ))
             })?;
-            if rhos.len() != group.claim_indices.len() {
-                return Err(PiCcsError::ProtocolError(format!(
-                    "time/opening joint/prove: group {} rho len {} != claim_indices len {}",
-                    group_idx,
-                    rhos.len(),
-                    group.claim_indices.len()
-                )));
+            let eta = claim_eta_coeffs.get(claim_idx).ok_or_else(|| {
+                PiCcsError::ProtocolError(format!(
+                    "time/opening joint/prove: missing eta coeffs for claim {}",
+                    claim_idx
+                ))
+            })?;
+
+            let claim = claim_commitment_and_eval(
+                open_pf,
+                eta,
+                logical_col_pos,
+                cpu_cols_len,
+                time_cpu_commitments,
+                time_mem_commitments,
+                crate::time_opening::STAGE8_TIME_DECOMP_BASE,
+            )?;
+
+            let rho = &rhos[local_idx];
+            let rho_rq = accel::rq_from_rot_matrix(rho)?;
+            claim_commitments.push(claim.commitment.clone());
+            claim_domains.push(claim.domain);
+            let rotated_digits = apply_rot_to_digits(rho, claim.eval_digits.as_slice())?;
+            for i in 0..D {
+                expected_claim_digits[i] += rotated_digits[i];
             }
-
-            let mut claim_commitments: Vec<Cmt> = Vec::with_capacity(group.claim_indices.len());
-            let mut claim_domains = Vec::with_capacity(group.claim_indices.len());
-            let mut expected_claim_digits = vec![K::ZERO; D];
-            let mut joint_terms = Vec::new();
-            let update_class_digest =
-                crate::time_opening::reduction::update_class_digest(group.claim_indices.as_slice(), claim_eta_coeffs)?;
-
-            for (local_idx, &claim_idx) in group.claim_indices.iter().enumerate() {
-                let open_pf = opening_proofs.get(claim_idx).ok_or_else(|| {
-                    PiCcsError::ProtocolError(format!(
-                        "time/opening joint/prove: claim index {} out of range",
-                        claim_idx
-                    ))
-                })?;
-                let eta = claim_eta_coeffs.get(claim_idx).ok_or_else(|| {
-                    PiCcsError::ProtocolError(format!(
-                        "time/opening joint/prove: missing eta coeffs for claim {}",
-                        claim_idx
-                    ))
-                })?;
-
-                let claim = claim_commitment_and_eval(
-                    open_pf,
-                    eta,
-                    logical_col_pos,
-                    cpu_cols_len,
-                    time_cpu_commitments,
-                    time_mem_commitments,
-                    crate::time_opening::STAGE8_TIME_DECOMP_BASE,
-                )?;
-
-                let rho = &rhos[local_idx];
-                let rho_rq = accel::rq_from_rot_matrix(rho)?;
-                claim_commitments.push(claim.commitment.clone());
-                claim_domains.push(claim.domain);
-                let rotated_digits = apply_rot_to_digits(rho, claim.eval_digits.as_slice())?;
-                for i in 0..D {
-                    expected_claim_digits[i] += rotated_digits[i];
-                }
-                if backend_ctx.selected_device_api().is_some() {
-                    let eta_rq = claim_eta_flat_rq_coeffs.and_then(|all| all.get(claim_idx));
-                    for (term_idx, (coeff, &col_id)) in eta.iter().zip(open_pf.col_ids.iter()).enumerate() {
-                        let encoded_col = encoded_stage8_cols.get(&col_id).ok_or_else(|| {
-                            PiCcsError::ProtocolError(format!(
-                                "time/opening joint/prove: missing cached column encoding for col_id={col_id}"
-                            ))
-                        })?;
-                        validate_encoded_stage8_column_domain(encoded_col, cpu_cols_len, claim.domain)?;
-                        let coeff_rq = eta_rq
-                            .and_then(|coeffs| coeffs.get(term_idx))
-                            .map(accel::rq_from_flat_rq)
-                            .unwrap_or(accel::rq_from_rot_matrix(coeff)?);
-                        let combined = rho_rq.mul(&coeff_rq);
-                        joint_terms.push(accel::SparseRqColumnTerm {
-                            lhs: accel::flat_rq_from_rq(&combined),
-                            rhs_nonzero_cols: encoded_col.rq_nonzero_cols.as_slice(),
-                        });
-                    }
+            if backend_ctx.selected_device_api().is_some() {
+                let eta_rq = claim_eta_flat_rq_coeffs.and_then(|all| all.get(claim_idx));
+                for (term_idx, (coeff, &col_id)) in eta.iter().zip(open_pf.col_ids.iter()).enumerate() {
+                    let encoded_col = encoded_stage8_cols.get(&col_id).ok_or_else(|| {
+                        PiCcsError::ProtocolError(format!(
+                            "time/opening joint/prove: missing cached column encoding for col_id={col_id}"
+                        ))
+                    })?;
+                    validate_encoded_stage8_column_domain(encoded_col, cpu_cols_len, claim.domain)?;
+                    let coeff_rq = eta_rq
+                        .and_then(|coeffs| coeffs.get(term_idx))
+                        .map(accel::rq_from_flat_rq)
+                        .unwrap_or(accel::rq_from_rot_matrix(coeff)?);
+                    let combined = rho_rq.mul(&coeff_rq);
+                    joint_terms.push(accel::SparseRqColumnTerm {
+                        lhs: accel::flat_rq_from_rq(&combined),
+                        rhs_nonzero_cols: encoded_col.rq_nonzero_cols.as_slice(),
+                    });
                 }
             }
-            let joint_z = if backend_ctx.selected_device_api().is_some() {
-                if let Some(joint_z) = accel::try_accumulate_sparse_rq_terms_with_backend(backend_ctx, t, joint_terms)? {
-                    joint_z
-                } else {
-                    let mut joint_z = Mat::zero(D, t, F::ZERO);
-                    for (local_idx, &claim_idx) in group.claim_indices.iter().enumerate() {
-                        let open_pf = opening_proofs.get(claim_idx).ok_or_else(|| {
-                            PiCcsError::ProtocolError(format!(
-                                "time/opening joint/prove: claim index {} out of range",
-                                claim_idx
-                            ))
-                        })?;
-                        let eta = claim_eta_coeffs.get(claim_idx).ok_or_else(|| {
-                            PiCcsError::ProtocolError(format!(
-                                "time/opening joint/prove: missing eta coeffs for claim {}",
-                                claim_idx
-                            ))
-                        })?;
-                        let claim_z = build_claim_witness_from_cache(
-                            t,
-                            open_pf,
-                            eta,
-                            encoded_stage8_cols,
-                            cpu_cols_len,
-                            claim_domains[local_idx],
-                        )?;
-                        left_mul_add_into(&mut joint_z, &rhos[local_idx], &claim_z)?;
-                    }
-                    joint_z
-                }
+        }
+        let joint_z = if backend_ctx.selected_device_api().is_some() {
+            if let Some(joint_z) = accel::try_accumulate_sparse_rq_terms_with_backend(backend_ctx, t, joint_terms)? {
+                joint_z
             } else {
                 let mut joint_z = Mat::zero(D, t, F::ZERO);
                 for (local_idx, &claim_idx) in group.claim_indices.iter().enumerate() {
@@ -902,20 +876,47 @@ pub(crate) fn prove_joint_opening_lane_with_precomputed_columns_and_metrics(
                     left_mul_add_into(&mut joint_z, &rhos[local_idx], &claim_z)?;
                 }
                 joint_z
-            };
-
-            Ok(GroupWork {
-                point: group.point.clone(),
-                domain: group.domain,
-                claim_indices: group.claim_indices.clone(),
-                group_digest: group.group_digest,
-                update_class_digest,
-                mix_rhos: rhos.clone(),
-                claim_commitments,
-                joint_claim_digits: expected_claim_digits,
-                joint_z,
-            })
+            }
+        } else {
+            let mut joint_z = Mat::zero(D, t, F::ZERO);
+            for (local_idx, &claim_idx) in group.claim_indices.iter().enumerate() {
+                let open_pf = opening_proofs.get(claim_idx).ok_or_else(|| {
+                    PiCcsError::ProtocolError(format!(
+                        "time/opening joint/prove: claim index {} out of range",
+                        claim_idx
+                    ))
+                })?;
+                let eta = claim_eta_coeffs.get(claim_idx).ok_or_else(|| {
+                    PiCcsError::ProtocolError(format!(
+                        "time/opening joint/prove: missing eta coeffs for claim {}",
+                        claim_idx
+                    ))
+                })?;
+                let claim_z = build_claim_witness_from_cache(
+                    t,
+                    open_pf,
+                    eta,
+                    encoded_stage8_cols,
+                    cpu_cols_len,
+                    claim_domains[local_idx],
+                )?;
+                left_mul_add_into(&mut joint_z, &rhos[local_idx], &claim_z)?;
+            }
+            joint_z
         };
+
+        Ok(GroupWork {
+            point: group.point.clone(),
+            domain: group.domain,
+            claim_indices: group.claim_indices.clone(),
+            group_digest: group.group_digest,
+            update_class_digest,
+            mix_rhos: rhos.clone(),
+            claim_commitments,
+            joint_claim_digits: expected_claim_digits,
+            joint_z,
+        })
+    };
 
     let group_results_start = time_now();
     #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-threads"))]

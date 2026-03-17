@@ -75,9 +75,7 @@ pub(crate) fn precompute_stage8_encoded_columns_for_col_ids(
         let mut rq_nonzero_cols = std::collections::BTreeMap::<usize, [u64; D]>::new();
         for (row, entries) in row_nz.iter().enumerate() {
             for &(col, value) in entries {
-                rq_nonzero_cols
-                    .entry(col)
-                    .or_insert([0u64; D])[row] = value.as_canonical_u64();
+                rq_nonzero_cols.entry(col).or_insert([0u64; D])[row] = value.as_canonical_u64();
             }
         }
         let rq_nonzero_cols = rq_nonzero_cols

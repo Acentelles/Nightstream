@@ -487,6 +487,32 @@ fn prove_rv64_note_case(
             metrics.mojo_delta.superneo.accelerator_calls,
             metrics.mojo_delta.superneo.total_items,
         );
+        println!(
+            "{label}: mojo_io_timing poseidon h2d={} d2h={} wall_ms={:.1} fe h2d={} d2h={} wall_ms={:.1} nc h2d={} d2h={} wall_ms={:.1} rq h2d={} d2h={} wall_ms={:.1} superneo h2d={} d2h={} wall_ms={:.1}",
+            metrics.mojo_delta.poseidon2_batch.host_to_device_bytes,
+            metrics.mojo_delta.poseidon2_batch.device_to_host_bytes,
+            metrics.mojo_delta.poseidon2_batch.total_wall_nanos as f64 / 1_000_000.0,
+            metrics.mojo_delta.fe.host_to_device_bytes,
+            metrics.mojo_delta.fe.device_to_host_bytes,
+            metrics.mojo_delta.fe.total_wall_nanos as f64 / 1_000_000.0,
+            metrics.mojo_delta.nc.host_to_device_bytes,
+            metrics.mojo_delta.nc.device_to_host_bytes,
+            metrics.mojo_delta.nc.total_wall_nanos as f64 / 1_000_000.0,
+            metrics.mojo_delta.rq_mul.host_to_device_bytes,
+            metrics.mojo_delta.rq_mul.device_to_host_bytes,
+            metrics.mojo_delta.rq_mul.total_wall_nanos as f64 / 1_000_000.0,
+            metrics.mojo_delta.superneo.host_to_device_bytes,
+            metrics.mojo_delta.superneo.device_to_host_bytes,
+            metrics.mojo_delta.superneo.total_wall_nanos as f64 / 1_000_000.0,
+        );
+        println!(
+            "{label}: mojo_max_call_ms poseidon={:.3} fe={:.3} nc={:.3} rq={:.3} superneo={:.3}",
+            metrics.mojo_delta.poseidon2_batch.max_wall_nanos as f64 / 1_000_000.0,
+            metrics.mojo_delta.fe.max_wall_nanos as f64 / 1_000_000.0,
+            metrics.mojo_delta.nc.max_wall_nanos as f64 / 1_000_000.0,
+            metrics.mojo_delta.rq_mul.max_wall_nanos as f64 / 1_000_000.0,
+            metrics.mojo_delta.superneo.max_wall_nanos as f64 / 1_000_000.0,
+        );
         if let Some(expected_api) = strict_requested_accelerator(compute_backend) {
             let accelerator_calls = metrics.mojo_delta.poseidon2_batch.accelerator_calls
                 + metrics.mojo_delta.fe.accelerator_calls

@@ -118,7 +118,8 @@ fn test_session_mojo_backend_matches_cpu_single_step() {
         serde_json::to_vec(&cpu_run).expect("serialize cpu run"),
         serde_json::to_vec(&mojo_run).expect("serialize mojo run"),
     );
-    assert_eq!(unsafe { session_open_calls() }, 2);
+    // Auto Mojo opens once for proving; verification now prefers CPU when fallback is allowed.
+    assert_eq!(unsafe { session_open_calls() }, 1);
 }
 
 #[test]
@@ -167,5 +168,6 @@ fn test_session_mojo_backend_verify_opens_backend_once() {
     assert!(mojo_session
         .verify_collected(&ccs, &cpu_run)
         .expect("mojo verify"));
-    assert_eq!(unsafe { session_open_calls() }, 1);
+    // Verification should not open Mojo at all when the backend allows CPU fallback.
+    assert_eq!(unsafe { session_open_calls() }, 0);
 }

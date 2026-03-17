@@ -274,8 +274,12 @@ fn build_shared_bus_fixture(seed: u64, n: usize, chunk_size: usize) -> SharedBus
             .map(|step_idx| if step_idx % 2 == 0 { F::ZERO } else { F::ONE })
             .collect(),
         has_write: vec![F::ONE; chunk_size],
-        read_addr: (0..chunk_size).map(|step_idx| (step_idx % 2) as u64).collect(),
-        write_addr: (0..chunk_size).map(|step_idx| (step_idx % 2) as u64).collect(),
+        read_addr: (0..chunk_size)
+            .map(|step_idx| (step_idx % 2) as u64)
+            .collect(),
+        write_addr: (0..chunk_size)
+            .map(|step_idx| (step_idx % 2) as u64)
+            .collect(),
         read_val: (0..chunk_size)
             .map(|step_idx| F::from_u64(seed.wrapping_add(step_idx as u64) & 0x1F))
             .collect(),
@@ -515,7 +519,6 @@ fn shared_cpu_bus_mojo_backend_uses_rq_mul_for_stage8_and_val_lanes() {
         "shared-bus Mojo path should exercise rq_mul via Stage-8 and val-lane commitment mixing"
     );
 }
-
 
 #[test]
 fn shared_cpu_bus_tamper_bus_opening_fails() {

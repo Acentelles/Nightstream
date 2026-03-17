@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 #[cfg(target_os = "macos")]
 use std::sync::{mpsc, OnceLock};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 #[cfg(all(not(target_arch = "wasm32"), any(unix, windows)))]
 use libloading::Library;
@@ -21,9 +22,9 @@ use crate::abi::{
     POSEIDON2_PERMUTE_BATCH_SYMBOL, POSEIDON2_PERMUTE_SYMBOL, RQ_ACCUMULATE_BATCH_PREPARE_SYMBOL,
     RQ_ACCUMULATE_BATCH_SYMBOL, RQ_CT_SYMBOL, RQ_MUL_BATCH_PREPARE_SYMBOL, RQ_MUL_BATCH_SYMBOL, RQ_MUL_SYMBOL,
     RQ_PREPARED_DESTROY_SYMBOL, RQ_PREPARED_EXECUTE_SYMBOL, RQ_PREPARED_READ_SYMBOL, SESSION_CLOSE_SYMBOL,
-    SESSION_OPEN_SYMBOL, SUPERNEO_BAR_BLOCK_SYMBOL, SUPERNEO_PREPARED_DESTROY_SYMBOL,
-    SUPERNEO_PREPARED_EXECUTE_SYMBOL, SUPERNEO_PREPARED_READ_SYMBOL, SUPERNEO_ROW_DOT_BLOCKS_DUAL_SYMBOL,
-    SUPERNEO_ROW_DOT_BLOCKS_SYMBOL, SUPERNEO_ROW_DOT_DUAL_PREPARE_SYMBOL, SUPERNEO_ROW_DOT_PREPARE_SYMBOL,
+    SESSION_OPEN_SYMBOL, SUPERNEO_BAR_BLOCK_SYMBOL, SUPERNEO_PREPARED_DESTROY_SYMBOL, SUPERNEO_PREPARED_EXECUTE_SYMBOL,
+    SUPERNEO_PREPARED_READ_SYMBOL, SUPERNEO_ROW_DOT_BLOCKS_DUAL_SYMBOL, SUPERNEO_ROW_DOT_BLOCKS_SYMBOL,
+    SUPERNEO_ROW_DOT_DUAL_PREPARE_SYMBOL, SUPERNEO_ROW_DOT_PREPARE_SYMBOL,
 };
 use crate::{BackendActivationThresholds, DeviceApi, FlatRq, MojoBackendConfig, NeoGpuError};
 
@@ -42,8 +43,7 @@ type RqMulFn = unsafe extern "C" fn(u64, *mut u64, *mut u64, *mut u64) -> i32;
 type RqMulBatchFn = unsafe extern "C" fn(u64, *mut u64, *mut u64, u64, *mut u64) -> i32;
 type RqAccumulateBatchFn = unsafe extern "C" fn(u64, *mut u64, *mut u64, *mut u64, u64, *mut u64) -> i32;
 type PrepareRqMulBatchFn = unsafe extern "C" fn(u64, *mut u64, *mut u64, u64, *mut u64) -> i32;
-type PrepareRqAccumulateBatchFn =
-    unsafe extern "C" fn(u64, *mut u64, *mut u64, *mut u64, u64, *mut u64) -> i32;
+type PrepareRqAccumulateBatchFn = unsafe extern "C" fn(u64, *mut u64, *mut u64, *mut u64, u64, *mut u64) -> i32;
 type ExecutePreparedRqBatchFn = unsafe extern "C" fn(u64, u64) -> i32;
 type ReadPreparedRqBatchFn = unsafe extern "C" fn(u64, u64, *mut u64, u64) -> i32;
 type DestroyPreparedRqBatchFn = unsafe extern "C" fn(u64, u64) -> i32;
@@ -52,8 +52,7 @@ type SuperneoBarBlockFn = unsafe extern "C" fn(u64, *mut u64, *mut u64, *mut u64
 type SuperneoRowDotBlocksFn = unsafe extern "C" fn(u64, *mut u64, u64, *mut u64, u64, *mut u64) -> i32;
 type SuperneoRowDotBlocksDualFn = unsafe extern "C" fn(u64, *mut u64, *mut u64, u64, *mut u64, u64, *mut u64) -> i32;
 type PrepareSuperneoRowDotFn = unsafe extern "C" fn(u64, *mut u64, u64, *mut u64, u64, *mut u64) -> i32;
-type PrepareSuperneoRowDotDualFn =
-    unsafe extern "C" fn(u64, *mut u64, *mut u64, u64, *mut u64, u64, *mut u64) -> i32;
+type PrepareSuperneoRowDotDualFn = unsafe extern "C" fn(u64, *mut u64, *mut u64, u64, *mut u64, u64, *mut u64) -> i32;
 type ExecutePreparedSuperneoFn = unsafe extern "C" fn(u64, u64) -> i32;
 type ReadPreparedSuperneoFn = unsafe extern "C" fn(u64, u64, *mut u64, u64) -> i32;
 type DestroyPreparedSuperneoFn = unsafe extern "C" fn(u64, u64) -> i32;
@@ -90,6 +89,8 @@ pub struct MojoOperationCounters {
     pub resident_read_calls: u64,
     pub host_to_device_bytes: u64,
     pub device_to_host_bytes: u64,
+    pub total_wall_nanos: u64,
+    pub max_wall_nanos: u64,
 }
 
 impl MojoOperationCounters {
@@ -106,6 +107,12 @@ impl MojoOperationCounters {
     fn record_transfer(&mut self, host_to_device_bytes: usize, device_to_host_bytes: usize) {
         self.host_to_device_bytes += host_to_device_bytes as u64;
         self.device_to_host_bytes += device_to_host_bytes as u64;
+    }
+
+    fn record_wall(&mut self, elapsed: std::time::Duration) {
+        let nanos = elapsed.as_nanos().min(u64::MAX as u128) as u64;
+        self.total_wall_nanos = self.total_wall_nanos.saturating_add(nanos);
+        self.max_wall_nanos = self.max_wall_nanos.max(nanos);
     }
 }
 
@@ -148,8 +155,18 @@ impl std::ops::Sub for MojoSessionDiagnostics {
                 resident_read_calls: lhs
                     .resident_read_calls
                     .saturating_sub(rhs.resident_read_calls),
-                host_to_device_bytes: lhs.host_to_device_bytes.saturating_sub(rhs.host_to_device_bytes),
-                device_to_host_bytes: lhs.device_to_host_bytes.saturating_sub(rhs.device_to_host_bytes),
+                host_to_device_bytes: lhs
+                    .host_to_device_bytes
+                    .saturating_sub(rhs.host_to_device_bytes),
+                device_to_host_bytes: lhs
+                    .device_to_host_bytes
+                    .saturating_sub(rhs.device_to_host_bytes),
+                total_wall_nanos: lhs.total_wall_nanos.saturating_sub(rhs.total_wall_nanos),
+                max_wall_nanos: if lhs.max_wall_nanos > rhs.max_wall_nanos {
+                    lhs.max_wall_nanos
+                } else {
+                    0
+                },
             }
         }
 
@@ -955,6 +972,7 @@ impl MojoSession {
         let pair_count = lhs.len() as u64;
         let session_handle = self.handle;
         let device_api = self.device_api;
+        let start = Instant::now();
         let status = call_for_device_api(device_api, move || unsafe {
             prepare(
                 session_handle as u64,
@@ -964,6 +982,7 @@ impl MojoSession {
                 handle_ptr as *mut u64,
             )
         });
+        let elapsed = start.elapsed();
         if status != 0 || handle_word == 0 {
             return Err(NeoGpuError::OperationFailed {
                 op: "rq_mul_batch_prepare_u64x54",
@@ -979,6 +998,7 @@ impl MojoSession {
             .snapshot
             .rq_mul
             .record_transfer(lhs_words.len() * 8 + rhs_words.len() * 8, 0);
+        diagnostics.snapshot.rq_mul.record_wall(elapsed);
         Ok(MojoPreparedRqBatch {
             session: self,
             handle: handle_word as usize,
@@ -998,7 +1018,9 @@ impl MojoSession {
                 status: -1,
             });
         }
-        if slot_offsets.len() < 2 || *slot_offsets.first().unwrap_or(&1) != 0 || *slot_offsets.last().unwrap_or(&0) != lhs.len() as u64
+        if slot_offsets.len() < 2
+            || *slot_offsets.first().unwrap_or(&1) != 0
+            || *slot_offsets.last().unwrap_or(&0) != lhs.len() as u64
         {
             return Err(NeoGpuError::OperationFailed {
                 op: "rq_accumulate_batch_prepare_u64x54",
@@ -1034,6 +1056,7 @@ impl MojoSession {
         let slot_count = slot_offsets.len().saturating_sub(1) as u64;
         let session_handle = self.handle;
         let device_api = self.device_api;
+        let start = Instant::now();
         let status = call_for_device_api(device_api, move || unsafe {
             prepare(
                 session_handle as u64,
@@ -1044,6 +1067,7 @@ impl MojoSession {
                 handle_ptr as *mut u64,
             )
         });
+        let elapsed = start.elapsed();
         if status != 0 || handle_word == 0 {
             return Err(NeoGpuError::OperationFailed {
                 op: "rq_accumulate_batch_prepare_u64x54",
@@ -1059,6 +1083,7 @@ impl MojoSession {
             lhs_words.len() * 8 + rhs_words.len() * 8 + slot_offsets_words.len() * 8,
             0,
         );
+        diagnostics.snapshot.rq_mul.record_wall(elapsed);
         Ok(MojoPreparedRqBatch {
             session: self,
             handle: handle_word as usize,
@@ -1127,18 +1152,20 @@ impl MojoSession {
         let handle_ptr = (&mut handle_word as *mut u64) as usize;
         let num_blocks = re_bar_blocks.len() as u64;
         let z_len = z.len() as u64;
-        let (status, host_to_device_bytes, kind) = if let Some(im_bar_blocks) = im_bar_blocks {
-            let prepare = library
-                .evaluators
-                .superneo_row_dot_dual_prepare
-                .ok_or(NeoGpuError::UnsupportedOperation {
-                    op: "superneo_row_dot_dual_prepare",
-                })?;
+        let (status, elapsed, host_to_device_bytes, kind) = if let Some(im_bar_blocks) = im_bar_blocks {
+            let prepare =
+                library
+                    .evaluators
+                    .superneo_row_dot_dual_prepare
+                    .ok_or(NeoGpuError::UnsupportedOperation {
+                        op: "superneo_row_dot_dual_prepare",
+                    })?;
             let mut im_words = im_bar_blocks
                 .iter()
                 .flat_map(|block| block.iter().copied())
                 .collect::<Vec<_>>();
             let im_ptr = im_words.as_mut_ptr() as usize;
+            let start = Instant::now();
             let status = call_for_device_api(device_api, move || unsafe {
                 prepare(
                     session_handle as u64,
@@ -1150,7 +1177,12 @@ impl MojoSession {
                     handle_ptr as *mut u64,
                 )
             });
-            (status, (re_words.len() + im_words.len() + z_words.len()) * 8, PreparedSuperneoBatchKind::Dual)
+            (
+                status,
+                start.elapsed(),
+                (re_words.len() + im_words.len() + z_words.len()) * 8,
+                PreparedSuperneoBatchKind::Dual,
+            )
         } else {
             let prepare = library
                 .evaluators
@@ -1158,6 +1190,7 @@ impl MojoSession {
                 .ok_or(NeoGpuError::UnsupportedOperation {
                     op: "superneo_row_dot_prepare",
                 })?;
+            let start = Instant::now();
             let status = call_for_device_api(device_api, move || unsafe {
                 prepare(
                     session_handle as u64,
@@ -1168,7 +1201,12 @@ impl MojoSession {
                     handle_ptr as *mut u64,
                 )
             });
-            (status, (re_words.len() + z_words.len()) * 8, PreparedSuperneoBatchKind::Single)
+            (
+                status,
+                start.elapsed(),
+                (re_words.len() + z_words.len()) * 8,
+                PreparedSuperneoBatchKind::Single,
+            )
         };
         if status != 0 || handle_word == 0 {
             return Err(NeoGpuError::OperationFailed {
@@ -1185,6 +1223,7 @@ impl MojoSession {
             .snapshot
             .superneo
             .record_transfer(host_to_device_bytes, 0);
+        diagnostics.snapshot.superneo.record_wall(elapsed);
         Ok(MojoPreparedSuperneoBatch {
             session: self,
             handle: handle_word as usize,
@@ -1285,6 +1324,7 @@ impl MojoSession {
         let handle_ptr = (&mut handle as *mut usize) as usize;
         let snapshot_ptr = snapshot_words.as_ptr() as usize;
         let snapshot_len = snapshot.len() as u64;
+        let start = Instant::now();
         let status = call_for_device_api(device_api, move || unsafe {
             create(
                 session_handle,
@@ -1293,6 +1333,7 @@ impl MojoSession {
                 handle_ptr as *mut usize,
             )
         });
+        let elapsed = start.elapsed();
         if status != 0 || handle == 0 {
             if status == 0 && handle == 0 {
                 handle = match kind {
@@ -1324,6 +1365,7 @@ impl MojoSession {
         };
         counters.create_calls += 1;
         counters.record_mode(mode, snapshot.len());
+        counters.record_wall(elapsed);
         Ok(MojoSplitNcEvaluator {
             session: self,
             handle,
@@ -1387,6 +1429,7 @@ impl MojoSession {
             let device_api = self.device_api;
             let state_ptr = states.as_mut_ptr().cast::<FlatFq>() as usize;
             let num_states = states.len() as u32;
+            let start = Instant::now();
             let status = call_for_device_api(device_api, move || unsafe {
                 permute_batch(
                     session_handle,
@@ -1395,6 +1438,7 @@ impl MojoSession {
                     POSEIDON2_STATE_WIDTH as u32,
                 )
             });
+            let elapsed = start.elapsed();
             if status != 0 {
                 return Err(NeoGpuError::OperationFailed {
                     op: "poseidon2_permute_batch_u64x8",
@@ -1409,10 +1453,11 @@ impl MojoSession {
                 .snapshot
                 .poseidon2_batch
                 .record_mode(mode, states.len());
-            diagnostics
-                .snapshot
-                .poseidon2_batch
-                .record_transfer(states.len() * POSEIDON2_STATE_WIDTH * 8, states.len() * POSEIDON2_STATE_WIDTH * 8);
+            diagnostics.snapshot.poseidon2_batch.record_transfer(
+                states.len() * POSEIDON2_STATE_WIDTH * 8,
+                states.len() * POSEIDON2_STATE_WIDTH * 8,
+            );
+            diagnostics.snapshot.poseidon2_batch.record_wall(elapsed);
             return Ok(());
         }
 
@@ -1477,6 +1522,7 @@ impl MojoSession {
         let rhs_ptr = rhs_words.as_mut_ptr() as usize;
         let out_ptr = out_words.as_mut_ptr() as usize;
         let session_handle = self.handle;
+        let start = Instant::now();
         let status = call_for_device_api(device_api, move || unsafe {
             rq_mul(
                 session_handle as u64,
@@ -1485,6 +1531,7 @@ impl MojoSession {
                 out_ptr as *mut u64,
             )
         });
+        let elapsed = start.elapsed();
         if status != 0 {
             return Err(NeoGpuError::OperationFailed {
                 op: "rq_mul_u64x54",
@@ -1497,7 +1544,11 @@ impl MojoSession {
             .lock()
             .expect("mojo session diagnostics lock");
         diagnostics.snapshot.rq_mul.record_mode(mode, 1);
-        diagnostics.snapshot.rq_mul.record_transfer(54 * 8 * 2, 54 * 8);
+        diagnostics
+            .snapshot
+            .rq_mul
+            .record_transfer(54 * 8 * 2, 54 * 8);
+        diagnostics.snapshot.rq_mul.record_wall(elapsed);
         Ok(FlatRq { coeffs: out_words })
     }
 
@@ -1534,6 +1585,7 @@ impl MojoSession {
             let out_ptr = out_words.as_mut_ptr() as usize;
             let pair_count = lhs.len() as u64;
             let session_handle = self.handle;
+            let start = Instant::now();
             let status = call_for_device_api(device_api, move || unsafe {
                 rq_mul_batch(
                     session_handle as u64,
@@ -1543,6 +1595,7 @@ impl MojoSession {
                     out_ptr as *mut u64,
                 )
             });
+            let elapsed = start.elapsed();
             if status != 0 {
                 return Err(NeoGpuError::OperationFailed {
                     op: "rq_mul_batch_u64x54",
@@ -1559,6 +1612,7 @@ impl MojoSession {
                 .snapshot
                 .rq_mul
                 .record_transfer(lhs_words.len() * 8 + rhs_words.len() * 8, out_words.len() * 8);
+            diagnostics.snapshot.rq_mul.record_wall(elapsed);
             return Ok(out_words
                 .chunks_exact(54)
                 .map(|chunk| FlatRq {
@@ -1623,6 +1677,7 @@ impl MojoSession {
         let out_ptr = out_words.as_mut_ptr() as usize;
         let slot_count = slot_offsets.len().saturating_sub(1) as u64;
         let session_handle = self.handle;
+        let start = Instant::now();
         let status = call_for_device_api(device_api, move || unsafe {
             rq_accumulate_batch(
                 session_handle as u64,
@@ -1633,6 +1688,7 @@ impl MojoSession {
                 out_ptr as *mut u64,
             )
         });
+        let elapsed = start.elapsed();
         if status != 0 {
             return Err(NeoGpuError::OperationFailed {
                 op: "rq_accumulate_batch_u64x54",
@@ -1649,6 +1705,7 @@ impl MojoSession {
             lhs_words.len() * 8 + rhs_words.len() * 8 + slot_offsets_words.len() * 8,
             out_words.len() * 8,
         );
+        diagnostics.snapshot.rq_mul.record_wall(elapsed);
         Ok(out_words
             .chunks_exact(54)
             .map(|chunk| FlatRq {
@@ -1713,6 +1770,7 @@ impl MojoSession {
         let block_ptr = block.as_mut_ptr() as usize;
         let out_ptr = out.as_mut_ptr() as usize;
         let session_handle = self.handle;
+        let start = Instant::now();
         let status = call_for_device_api(device_api, move || unsafe {
             bar_block(
                 session_handle as u64,
@@ -1721,6 +1779,7 @@ impl MojoSession {
                 out_ptr as *mut u64,
             )
         });
+        let elapsed = start.elapsed();
         if status != 0 {
             return Err(NeoGpuError::OperationFailed {
                 op: "superneo_bar_block_u64x54",
@@ -1739,6 +1798,7 @@ impl MojoSession {
             .snapshot
             .superneo
             .record_transfer(matrix_flat.len() * 8 + block.len() * 8, out.len() * 8);
+        diagnostics.snapshot.superneo.record_wall(elapsed);
         Ok(out)
     }
 
@@ -1771,6 +1831,7 @@ impl MojoSession {
         let num_blocks = bar_blocks.len() as u64;
         let z_len = z.len() as u64;
         let session_handle = self.handle;
+        let start = Instant::now();
         let status = call_for_device_api(device_api, move || unsafe {
             row_dot(
                 session_handle as u64,
@@ -1781,6 +1842,7 @@ impl MojoSession {
                 out_ptr as *mut u64,
             )
         });
+        let elapsed = start.elapsed();
         if status != 0 {
             return Err(NeoGpuError::OperationFailed {
                 op: "superneo_row_dot_blocks",
@@ -1799,6 +1861,7 @@ impl MojoSession {
             .snapshot
             .superneo
             .record_transfer(bar_words.len() * 8 + z_words.len() * 8, out_words.len() * 8);
+        diagnostics.snapshot.superneo.record_wall(elapsed);
         Ok(FlatK {
             re: out_words[0],
             im: out_words[1],
@@ -1850,6 +1913,7 @@ impl MojoSession {
         let num_blocks = re_bar_blocks.len() as u64;
         let z_len = z.len() as u64;
         let session_handle = self.handle;
+        let start = Instant::now();
         let status = call_for_device_api(device_api, move || unsafe {
             row_dot(
                 session_handle as u64,
@@ -1861,6 +1925,7 @@ impl MojoSession {
                 out_ptr as *mut u64,
             )
         });
+        let elapsed = start.elapsed();
         if status != 0 {
             return Err(NeoGpuError::OperationFailed {
                 op: "superneo_row_dot_blocks_dual",
@@ -1879,6 +1944,7 @@ impl MojoSession {
             (re_words.len() + im_words.len() + z_words.len()) * 8,
             out_words.len() * 8,
         );
+        diagnostics.snapshot.superneo.record_wall(elapsed);
         Ok((
             FlatK {
                 re: out_words[0],
@@ -1910,9 +1976,11 @@ impl MojoPreparedRqBatch<'_> {
         let session_handle = self.session.handle;
         let batch_handle = self.handle;
         let device_api = self.session.device_api;
+        let start = Instant::now();
         let status = call_for_device_api(device_api, move || unsafe {
             execute(session_handle as u64, batch_handle as u64)
         });
+        let elapsed = start.elapsed();
         if status != 0 {
             return Err(NeoGpuError::OperationFailed {
                 op: "rq_prepared_execute",
@@ -1933,6 +2001,7 @@ impl MojoPreparedRqBatch<'_> {
             .snapshot
             .rq_mul
             .record_mode(self.session.rq_mul_execution_mode(items.saturating_mul(54)), items);
+        diagnostics.snapshot.rq_mul.record_wall(elapsed);
         Ok(())
     }
 
@@ -1960,6 +2029,7 @@ impl MojoPreparedRqBatch<'_> {
         let session_handle = self.session.handle;
         let batch_handle = self.handle;
         let device_api = self.session.device_api;
+        let start = Instant::now();
         let status = call_for_device_api(device_api, move || unsafe {
             read(
                 session_handle as u64,
@@ -1968,6 +2038,7 @@ impl MojoPreparedRqBatch<'_> {
                 out_word_len as u64,
             )
         });
+        let elapsed = start.elapsed();
         if status != 0 {
             return Err(NeoGpuError::OperationFailed {
                 op: "rq_prepared_read_u64x54",
@@ -1984,6 +2055,7 @@ impl MojoPreparedRqBatch<'_> {
             .snapshot
             .rq_mul
             .record_transfer(0, out_word_len * 8);
+        diagnostics.snapshot.rq_mul.record_wall(elapsed);
         Ok(out_words
             .chunks_exact(54)
             .map(|chunk| FlatRq {
@@ -2028,9 +2100,11 @@ impl MojoPreparedSuperneoBatch<'_> {
         let session_handle = self.session.handle;
         let batch_handle = self.handle;
         let device_api = self.session.device_api;
+        let start = Instant::now();
         let status = call_for_device_api(device_api, move || unsafe {
             execute(session_handle as u64, batch_handle as u64)
         });
+        let elapsed = start.elapsed();
         if status != 0 {
             return Err(NeoGpuError::OperationFailed {
                 op: "superneo_prepared_execute",
@@ -2049,6 +2123,7 @@ impl MojoPreparedSuperneoBatch<'_> {
             DeviceApi::Auto => ExecutionMode::HostFallback,
         };
         diagnostics.snapshot.superneo.record_mode(mode, 1);
+        diagnostics.snapshot.superneo.record_wall(elapsed);
         Ok(())
     }
 
@@ -2111,6 +2186,7 @@ impl MojoPreparedSuperneoBatch<'_> {
         let session_handle = self.session.handle;
         let batch_handle = self.handle;
         let device_api = self.session.device_api;
+        let start = Instant::now();
         let status = call_for_device_api(device_api, move || unsafe {
             read(
                 session_handle as u64,
@@ -2119,6 +2195,7 @@ impl MojoPreparedSuperneoBatch<'_> {
                 word_count as u64,
             )
         });
+        let elapsed = start.elapsed();
         if status != 0 {
             return Err(NeoGpuError::OperationFailed {
                 op: "superneo_prepared_read",
@@ -2135,6 +2212,7 @@ impl MojoPreparedSuperneoBatch<'_> {
             .snapshot
             .superneo
             .record_transfer(0, out_words.len() * 8);
+        diagnostics.snapshot.superneo.record_wall(elapsed);
         Ok(out_words)
     }
 }
@@ -2223,6 +2301,7 @@ impl MojoSplitNcEvaluator<'_> {
             SplitNcEvaluatorKind::Fe => self.session.fe_row_execution_mode(total_tasks),
             SplitNcEvaluatorKind::Nc => self.session.nc_col_execution_mode(total_tasks),
         };
+        let start = Instant::now();
         let status = call_for_device_api(device_api, move || unsafe {
             evals_at(
                 session_handle,
@@ -2235,6 +2314,7 @@ impl MojoSplitNcEvaluator<'_> {
                 out_len,
             )
         });
+        let elapsed = start.elapsed();
         if status != 0 {
             return Err(NeoGpuError::OperationFailed {
                 op: match self.kind {
@@ -2255,6 +2335,7 @@ impl MojoSplitNcEvaluator<'_> {
         };
         counters.eval_calls += 1;
         counters.record_mode(mode, total_tasks);
+        counters.record_wall(elapsed);
         Ok(out)
     }
 
@@ -2278,9 +2359,11 @@ impl MojoSplitNcEvaluator<'_> {
         let session_handle = self.session.handle;
         let evaluator_handle = self.handle;
         let device_api = self.session.device_api;
+        let start = Instant::now();
         let status = call_for_device_api(device_api, move || unsafe {
             fold(session_handle, evaluator_handle, challenge.re, challenge.im)
         });
+        let elapsed = start.elapsed();
         if status != 0 {
             return Err(NeoGpuError::OperationFailed {
                 op: match self.kind {
@@ -2300,6 +2383,7 @@ impl MojoSplitNcEvaluator<'_> {
             SplitNcEvaluatorKind::Nc => &mut diagnostics.snapshot.nc,
         };
         counters.fold_calls += 1;
+        counters.record_wall(elapsed);
         Ok(())
     }
 }
@@ -2320,7 +2404,9 @@ impl Drop for MojoSplitNcEvaluator<'_> {
         let evaluator_handle = self.handle;
         let device_api = self.session.device_api;
         let kind = self.kind;
+        let start = Instant::now();
         let status = call_for_device_api(device_api, move || unsafe { destroy(session_handle, evaluator_handle) });
+        let elapsed = start.elapsed();
         if status != 0 {
             let _ = Err::<(), _>(NeoGpuError::OperationFailed {
                 op: match kind {
@@ -2340,6 +2426,7 @@ impl Drop for MojoSplitNcEvaluator<'_> {
             SplitNcEvaluatorKind::Nc => &mut diagnostics.snapshot.nc,
         };
         counters.destroy_calls += 1;
+        counters.record_wall(elapsed);
     }
 }
 

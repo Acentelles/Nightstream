@@ -3176,8 +3176,8 @@ where
                             PiCcsError::ProtocolError("stage8 parent commitment batch missing entry".into())
                         })?;
                         let wit_refs: Vec<&Mat<F>> = prepared.joint_wits.iter().collect();
-                        let stage8_sparse_cache = mode_uses_sparse_cache(&mode)
-                            .then(|| Arc::new(SparseCache::build(&prepared.plan.ccs)));
+                        let stage8_sparse_cache =
+                            mode_uses_sparse_cache(&mode).then(|| Arc::new(SparseCache::build(&prepared.plan.ccs)));
                         let (stage8_proof, _stage8_wits) = prove_rlc_dec_lane(
                             &mode,
                             RlcLane::Val,

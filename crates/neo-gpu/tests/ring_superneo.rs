@@ -433,7 +433,9 @@ fn real_mojo_prepared_batches_match_compatibility_paths() {
             let prepared_acc = session
                 .prepare_rq_accumulate_batch_u64x54(&lhs, &rhs, &slot_offsets)
                 .expect("prepare rq accumulate batch");
-            prepared_acc.execute().expect("execute prepared rq accumulate");
+            prepared_acc
+                .execute()
+                .expect("execute prepared rq accumulate");
             assert_eq!(prepared_acc.read().expect("read prepared rq accumulate"), compat_acc);
         }
 
@@ -444,9 +446,13 @@ fn real_mojo_prepared_batches_match_compatibility_paths() {
             let prepared_single = session
                 .prepare_superneo_row_dot_blocks(&bar_blocks, &z)
                 .expect("prepare superneo row dot");
-            prepared_single.execute().expect("execute prepared superneo row dot");
+            prepared_single
+                .execute()
+                .expect("execute prepared superneo row dot");
             assert_eq!(
-                prepared_single.read_single().expect("read prepared superneo row dot"),
+                prepared_single
+                    .read_single()
+                    .expect("read prepared superneo row dot"),
                 compat_single
             );
 
@@ -456,9 +462,13 @@ fn real_mojo_prepared_batches_match_compatibility_paths() {
             let prepared_dual = session
                 .prepare_superneo_row_dot_blocks_dual(&bar_blocks, &im_bar_blocks, &z)
                 .expect("prepare superneo row dot dual");
-            prepared_dual.execute().expect("execute prepared superneo row dot dual");
+            prepared_dual
+                .execute()
+                .expect("execute prepared superneo row dot dual");
             assert_eq!(
-                prepared_dual.read_dual().expect("read prepared superneo row dot dual"),
+                prepared_dual
+                    .read_dual()
+                    .expect("read prepared superneo row dot dual"),
                 compat_dual
             );
         }

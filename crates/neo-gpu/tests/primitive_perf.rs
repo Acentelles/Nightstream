@@ -6,8 +6,7 @@ use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use neo_gpu::{
-    connect, DeviceApi, FlatK, FlatRq, MojoBackendConfig, MojoOperationCounters, MojoSession,
-    POSEIDON2_STATE_WIDTH,
+    connect, DeviceApi, FlatK, FlatRq, MojoBackendConfig, MojoOperationCounters, MojoSession, POSEIDON2_STATE_WIDTH,
 };
 
 const BENCH_REPEATS: usize = 5;
@@ -280,9 +279,13 @@ fn bench_prepared_superneo_row_dot(
         .expect("prepare superneo row dot");
     bench_median(|| {
         for _ in 0..iters {
-            prepared.execute().expect("execute prepared superneo row dot");
+            prepared
+                .execute()
+                .expect("execute prepared superneo row dot");
         }
-        let out = prepared.read_single().expect("read prepared superneo row dot");
+        let out = prepared
+            .read_single()
+            .expect("read prepared superneo row dot");
         black_box(out);
     })
 }
@@ -292,14 +295,7 @@ fn print_header(api: DeviceApi) {
     println!("==== mojo_primitive_perf ({api:?}) ====");
     println!(
         "{:<28} {:>14} {:>8} {:>12} {:>12} {:>12} {:>12} {:>10}",
-        "primitive",
-        "workload",
-        "iters",
-        "cpu",
-        "gpu",
-        "cpu ns/item",
-        "gpu ns/item",
-        "speedup",
+        "primitive", "workload", "iters", "cpu", "gpu", "cpu ns/item", "gpu ns/item", "speedup",
     );
     println!("{:-<122}", "");
 }
@@ -328,7 +324,7 @@ fn print_row(
 
 fn print_diag(label: &str, counters: &MojoOperationCounters) {
     println!(
-        "  {:<25} accel={} cpu={} fallback={} resident(p/e/r)={}/{}/{} h2d={}B d2h={}B",
+        "  {:<25} accel={} cpu={} fallback={} resident(p/e/r)={}/{}/{} h2d={}B d2h={}B wall_ms={:.3} max_call_ms={:.3}",
         label,
         counters.accelerator_calls,
         counters.cpu_calls,
@@ -338,6 +334,8 @@ fn print_diag(label: &str, counters: &MojoOperationCounters) {
         counters.resident_read_calls,
         counters.host_to_device_bytes,
         counters.device_to_host_bytes,
+        counters.total_wall_nanos as f64 / 1_000_000.0,
+        counters.max_wall_nanos as f64 / 1_000_000.0,
     );
 }
 
@@ -347,9 +345,8 @@ fn report_real_mojo_primitive_perf() {
     let library_path = build_real_mojo_library();
     let cpu_session = connect(&MojoBackendConfig::new(DeviceApi::Cpu).with_library_path(library_path))
         .expect("open real Mojo CPU session");
-    let Ok(gpu_session) = connect(
-        &MojoBackendConfig::new(required_accelerator_api()).with_library_path(library_path),
-    ) else {
+    let Ok(gpu_session) = connect(&MojoBackendConfig::new(required_accelerator_api()).with_library_path(library_path))
+    else {
         eprintln!(
             "skipping: real Mojo {:?} session unavailable",
             required_accelerator_api()
@@ -379,7 +376,10 @@ fn report_real_mojo_primitive_perf() {
         let gpu_elapsed = bench_poseidon_batch(&gpu_session, seed_states.as_slice(), iters);
         let gpu_diag = gpu_session.diagnostics_snapshot();
 
-        assert!(cpu_diag.poseidon2_batch.cpu_calls > 0, "cpu poseidon benchmark should stay on CPU");
+        assert!(
+            cpu_diag.poseidon2_batch.cpu_calls > 0,
+            "cpu poseidon benchmark should stay on CPU"
+        );
         assert!(
             gpu_diag.poseidon2_batch.accelerator_calls > 0,
             "gpu poseidon benchmark should exercise the accelerator"
@@ -441,16 +441,20 @@ fn report_real_mojo_primitive_perf() {
                 .expect("gpu prepare rq mul parity");
             gpu_prepared.execute().expect("gpu execute prepared rq mul");
             let gpu_resident_check = gpu_prepared.read().expect("gpu read prepared rq mul");
-            assert_eq!(cpu_resident_check, cpu_check, "cpu resident rq mul parity pairs={pair_count}");
-            assert_eq!(gpu_resident_check, cpu_check, "gpu resident rq mul parity pairs={pair_count}");
+            assert_eq!(
+                cpu_resident_check, cpu_check,
+                "cpu resident rq mul parity pairs={pair_count}"
+            );
+            assert_eq!(
+                gpu_resident_check, cpu_check,
+                "gpu resident rq mul parity pairs={pair_count}"
+            );
 
             cpu_session.reset_diagnostics();
-            let cpu_resident_elapsed =
-                bench_prepared_rq_mul_batch(&cpu_session, lhs.as_slice(), rhs.as_slice(), iters);
+            let cpu_resident_elapsed = bench_prepared_rq_mul_batch(&cpu_session, lhs.as_slice(), rhs.as_slice(), iters);
             let cpu_resident_diag = cpu_session.diagnostics_snapshot();
             gpu_session.reset_diagnostics();
-            let gpu_resident_elapsed =
-                bench_prepared_rq_mul_batch(&gpu_session, lhs.as_slice(), rhs.as_slice(), iters);
+            let gpu_resident_elapsed = bench_prepared_rq_mul_batch(&gpu_session, lhs.as_slice(), rhs.as_slice(), iters);
             let gpu_resident_diag = gpu_session.diagnostics_snapshot();
 
             print_row(
@@ -517,13 +521,21 @@ fn report_real_mojo_primitive_perf() {
             let cpu_prepared = cpu_session
                 .prepare_rq_accumulate_batch_u64x54(lhs.as_slice(), rhs.as_slice(), slot_offsets.as_slice())
                 .expect("cpu prepare rq accumulate parity");
-            cpu_prepared.execute().expect("cpu execute prepared rq accumulate");
-            let cpu_resident_check = cpu_prepared.read().expect("cpu read prepared rq accumulate");
+            cpu_prepared
+                .execute()
+                .expect("cpu execute prepared rq accumulate");
+            let cpu_resident_check = cpu_prepared
+                .read()
+                .expect("cpu read prepared rq accumulate");
             let gpu_prepared = gpu_session
                 .prepare_rq_accumulate_batch_u64x54(lhs.as_slice(), rhs.as_slice(), slot_offsets.as_slice())
                 .expect("gpu prepare rq accumulate parity");
-            gpu_prepared.execute().expect("gpu execute prepared rq accumulate");
-            let gpu_resident_check = gpu_prepared.read().expect("gpu read prepared rq accumulate");
+            gpu_prepared
+                .execute()
+                .expect("gpu execute prepared rq accumulate");
+            let gpu_resident_check = gpu_prepared
+                .read()
+                .expect("gpu read prepared rq accumulate");
             assert_eq!(
                 cpu_resident_check, cpu_acc,
                 "cpu resident rq accumulate parity pairs={pair_count}"
@@ -607,15 +619,29 @@ fn report_real_mojo_primitive_perf() {
             let cpu_prepared = cpu_session
                 .prepare_superneo_row_dot_blocks(bar_blocks.as_slice(), z.as_slice())
                 .expect("cpu prepare superneo parity");
-            cpu_prepared.execute().expect("cpu execute prepared superneo");
-            let cpu_resident_check = cpu_prepared.read_single().expect("cpu read prepared superneo");
+            cpu_prepared
+                .execute()
+                .expect("cpu execute prepared superneo");
+            let cpu_resident_check = cpu_prepared
+                .read_single()
+                .expect("cpu read prepared superneo");
             let gpu_prepared = gpu_session
                 .prepare_superneo_row_dot_blocks(bar_blocks.as_slice(), z.as_slice())
                 .expect("gpu prepare superneo parity");
-            gpu_prepared.execute().expect("gpu execute prepared superneo");
-            let gpu_resident_check = gpu_prepared.read_single().expect("gpu read prepared superneo");
-            assert_eq!(cpu_resident_check, cpu_check, "cpu resident superneo parity blocks={num_blocks}");
-            assert_eq!(gpu_resident_check, cpu_check, "gpu resident superneo parity blocks={num_blocks}");
+            gpu_prepared
+                .execute()
+                .expect("gpu execute prepared superneo");
+            let gpu_resident_check = gpu_prepared
+                .read_single()
+                .expect("gpu read prepared superneo");
+            assert_eq!(
+                cpu_resident_check, cpu_check,
+                "cpu resident superneo parity blocks={num_blocks}"
+            );
+            assert_eq!(
+                gpu_resident_check, cpu_check,
+                "gpu resident superneo parity blocks={num_blocks}"
+            );
 
             cpu_session.reset_diagnostics();
             let cpu_resident_elapsed =

@@ -251,7 +251,8 @@ fn mixed_ccs_only_and_route_a_segments_mojo_backend_matches_cpu() {
         unsafe { superneo_calls() } > 0,
         "mock mojo backend should exercise SuperNeo helpers in mixed shard flow"
     );
-    assert_eq!(unsafe { session_open_calls() }, 2);
+    // Auto Mojo opens once for proving; verification now prefers CPU when fallback is allowed.
+    assert_eq!(unsafe { session_open_calls() }, 1);
 }
 
 #[test]

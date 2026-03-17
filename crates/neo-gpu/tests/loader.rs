@@ -601,7 +601,9 @@ fn mock_prepared_rq_batches_match_compatibility_and_track_resident_diagnostics()
     let prepared_acc = session
         .prepare_rq_accumulate_batch_u64x54(&lhs, &rhs, &slot_offsets)
         .expect("prepare rq accumulate batch");
-    prepared_acc.execute().expect("execute prepared rq accumulate");
+    prepared_acc
+        .execute()
+        .expect("execute prepared rq accumulate");
     let resident_acc = prepared_acc.read().expect("read prepared rq accumulate");
     let acc_diag = session.diagnostics_snapshot();
     assert_eq!(resident_acc, compat_acc);
@@ -638,8 +640,12 @@ fn mock_prepared_superneo_batches_match_compatibility_and_track_resident_diagnos
     let prepared_single = session
         .prepare_superneo_row_dot_blocks(&bar_blocks, &z)
         .expect("prepare superneo row dot");
-    prepared_single.execute().expect("execute prepared superneo row dot");
-    let resident_single = prepared_single.read_single().expect("read prepared superneo row dot");
+    prepared_single
+        .execute()
+        .expect("execute prepared superneo row dot");
+    let resident_single = prepared_single
+        .read_single()
+        .expect("read prepared superneo row dot");
     let single_diag = session.diagnostics_snapshot();
     assert_eq!(resident_single, compat_single);
     assert_eq!(single_diag.superneo.resident_prepare_calls, 1);
@@ -653,8 +659,12 @@ fn mock_prepared_superneo_batches_match_compatibility_and_track_resident_diagnos
     let prepared_dual = session
         .prepare_superneo_row_dot_blocks_dual(&bar_blocks, &im_bar_blocks, &z)
         .expect("prepare superneo row dot dual");
-    prepared_dual.execute().expect("execute prepared superneo row dot dual");
-    let resident_dual = prepared_dual.read_dual().expect("read prepared superneo row dot dual");
+    prepared_dual
+        .execute()
+        .expect("execute prepared superneo row dot dual");
+    let resident_dual = prepared_dual
+        .read_dual()
+        .expect("read prepared superneo row dot dual");
     let dual_diag = session.diagnostics_snapshot();
     assert_eq!(resident_dual, compat_dual);
     assert_eq!(dual_diag.superneo.resident_prepare_calls, 1);
