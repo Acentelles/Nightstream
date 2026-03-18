@@ -373,23 +373,36 @@ impl W2ResidualSink for WeightedResidualSink<'_> {
 const W2_STAGE_GATE_TABLE_CAP: usize = 21; // supports max_remaining up to 19 (plus sentinel)
 
 #[inline]
-fn w2_build_stage_gate_table(remaining: K, max_remaining: usize, gates: &mut [K; W2_STAGE_GATE_TABLE_CAP]) -> K {
+fn w2_stage_offsets_k() -> &'static [K; W2_STAGE_GATE_TABLE_CAP] {
+    static OFFSETS: OnceLock<[K; W2_STAGE_GATE_TABLE_CAP]> = OnceLock::new();
+    OFFSETS.get_or_init(|| std::array::from_fn(|i| k_u64(i as u64)))
+}
+
+#[inline]
+fn w2_build_stage_prefix_table(remaining: K, max_remaining: usize, prefix: &mut [K; W2_STAGE_GATE_TABLE_CAP]) {
     debug_assert!(max_remaining + 1 < W2_STAGE_GATE_TABLE_CAP);
-
-    let mut prefix = [K::ONE; W2_STAGE_GATE_TABLE_CAP];
-    let mut suffix = [K::ONE; W2_STAGE_GATE_TABLE_CAP];
-
+    let offsets = w2_stage_offsets_k();
+    prefix[0] = K::ONE;
     for r in 1..=max_remaining {
-        prefix[r] = prefix[r - 1] * (remaining - K::from(F::from_u64(r as u64)));
+        prefix[r] = prefix[r - 1] * (remaining - offsets[r]);
     }
-    suffix[max_remaining + 1] = K::ONE;
+}
+
+#[inline]
+fn w2_fill_stage_gate_table_from_prefix(
+    remaining: K,
+    prefix: &[K; W2_STAGE_GATE_TABLE_CAP],
+    max_remaining: usize,
+    gates: &mut [K; W2_STAGE_GATE_TABLE_CAP],
+) -> K {
+    debug_assert!(max_remaining + 1 < W2_STAGE_GATE_TABLE_CAP);
+    let offsets = w2_stage_offsets_k();
+
+    let mut suffix = K::ONE;
     for r in (1..=max_remaining).rev() {
-        suffix[r] = suffix[r + 1] * (remaining - K::from(F::from_u64(r as u64)));
+        gates[r] = prefix[r - 1] * suffix;
+        suffix *= remaining - offsets[r];
     }
-    for r in 1..=max_remaining {
-        gates[r] = prefix[r - 1] * suffix[r + 1];
-    }
-
     prefix[max_remaining]
 }
 
@@ -989,20 +1002,21 @@ fn w2_alu_branch_lookup_residuals_sink<S: W2ResidualSink>(
     let virtual_remu = is_virtual * op_remu * op_alu_reg_base_only;
     residuals.push(is_virtual * (K::ONE - op_virtual_decomp));
 
-    let mut stage_gate_2 = [K::ZERO; W2_STAGE_GATE_TABLE_CAP];
+    let mut stage_prefix = [K::ZERO; W2_STAGE_GATE_TABLE_CAP];
+    w2_build_stage_prefix_table(rem, 19, &mut stage_prefix);
+
     let mut stage_gate_3 = [K::ZERO; W2_STAGE_GATE_TABLE_CAP];
     let mut stage_gate_7 = [K::ZERO; W2_STAGE_GATE_TABLE_CAP];
     let mut stage_gate_8 = [K::ZERO; W2_STAGE_GATE_TABLE_CAP];
     let mut stage_gate_11 = [K::ZERO; W2_STAGE_GATE_TABLE_CAP];
     let mut stage_gate_18 = [K::ZERO; W2_STAGE_GATE_TABLE_CAP];
     let mut stage_gate_19 = [K::ZERO; W2_STAGE_GATE_TABLE_CAP];
-    let _ = w2_build_stage_gate_table(rem, 2, &mut stage_gate_2);
-    let rem_poly_3 = w2_build_stage_gate_table(rem, 3, &mut stage_gate_3);
-    let rem_poly_7 = w2_build_stage_gate_table(rem, 7, &mut stage_gate_7);
-    let rem_poly_8 = w2_build_stage_gate_table(rem, 8, &mut stage_gate_8);
-    let rem_poly_11 = w2_build_stage_gate_table(rem, 11, &mut stage_gate_11);
-    let rem_poly_18 = w2_build_stage_gate_table(rem, 18, &mut stage_gate_18);
-    let rem_poly_19 = w2_build_stage_gate_table(rem, 19, &mut stage_gate_19);
+    let rem_poly_3 = w2_fill_stage_gate_table_from_prefix(rem, &stage_prefix, 3, &mut stage_gate_3);
+    let rem_poly_7 = w2_fill_stage_gate_table_from_prefix(rem, &stage_prefix, 7, &mut stage_gate_7);
+    let rem_poly_8 = w2_fill_stage_gate_table_from_prefix(rem, &stage_prefix, 8, &mut stage_gate_8);
+    let rem_poly_11 = w2_fill_stage_gate_table_from_prefix(rem, &stage_prefix, 11, &mut stage_gate_11);
+    let rem_poly_18 = w2_fill_stage_gate_table_from_prefix(rem, &stage_prefix, 18, &mut stage_gate_18);
+    let rem_poly_19 = w2_fill_stage_gate_table_from_prefix(rem, &stage_prefix, 19, &mut stage_gate_19);
 
     residuals.push(virtual_mulw * rem_poly_3);
     residuals.push(virtual_divw * rem_poly_3);
