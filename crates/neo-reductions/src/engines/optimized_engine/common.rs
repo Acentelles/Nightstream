@@ -43,7 +43,9 @@ pub fn eq_points(p: &[K], q: &[K]) -> K {
     let mut acc = K::ONE;
     for i in 0..p.len() {
         let (pi, qi) = (p[i], q[i]);
-        acc *= (K::ONE - pi) * (K::ONE - qi) + pi * qi;
+        // eq(a,b) = 2*a*b - a - b + 1 — one K-mul instead of two.
+        let pq = pi * qi;
+        acc *= pq + pq - pi - qi + K::ONE;
     }
     acc
 }

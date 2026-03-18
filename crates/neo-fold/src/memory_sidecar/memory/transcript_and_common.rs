@@ -927,7 +927,10 @@ pub(crate) fn verify_non_event_trace_shout_linkage(
 
 #[inline]
 pub(crate) fn eq_single_k(a: K, b: K) -> K {
-    a * b + (K::ONE - a) * (K::ONE - b)
+    // eq(a, b) = a*b + (1-a)(1-b) = 2*a*b - a - b + 1
+    // Uses 1 K-field multiplication instead of 2.
+    let ab = a * b;
+    ab + ab - a - b + K::ONE
 }
 
 pub(crate) fn chi_cycle_children(r_cycle: &[K], bit_idx: usize, prefix_eq: K, pair_idx: usize) -> (K, K) {

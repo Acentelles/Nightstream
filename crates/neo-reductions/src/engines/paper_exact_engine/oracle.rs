@@ -97,7 +97,8 @@ where
         let mut acc = K::ONE;
         for i in 0..p.len() {
             let (pi, qi) = (p[i], q[i]);
-            acc *= (K::ONE - pi) * (K::ONE - qi) + pi * qi;
+            let pq = pi * qi;
+            acc *= pq + pq - pi - qi + K::ONE;
         }
         acc
     }

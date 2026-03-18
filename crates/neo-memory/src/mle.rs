@@ -62,7 +62,10 @@ pub fn mle_eval<F: Field, Kf: Field + From<F>>(v: &[F], r: &[Kf]) -> Kf {
 
 #[inline]
 pub(crate) fn eq_single<Kf: Field>(a: Kf, b: Kf) -> Kf {
-    (Kf::ONE - a) * (Kf::ONE - b) + a * b
+    // eq(a, b) = a*b + (1-a)(1-b) = 2*a*b - a - b + 1
+    // Uses 1 field multiplication instead of 2.
+    let ab = a * b;
+    ab + ab - a - b + Kf::ONE
 }
 
 /// Re-export the eq polynomial for convenience.

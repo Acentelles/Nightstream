@@ -1716,7 +1716,9 @@ fn range_product_cached(y: K, range_t_sq: &[K]) -> K {
 
 #[inline]
 fn eq_lin(a: K, b: K) -> K {
-    (K::ONE - a) * (K::ONE - b) + a * b
+    // eq(a,b) = (1-a)(1-b) + a*b = 2*a*b - a - b + 1 — saves one K-field mul.
+    let ab = a * b;
+    ab + ab - a - b + K::ONE
 }
 
 /// Fold one Ajtai bit into-place for a digits table (size D).
@@ -1962,7 +1964,8 @@ where
         let mut acc = K::ONE;
         for i in 0..p.len() {
             let (pi, qi) = (p[i], q[i]);
-            acc *= (K::ONE - pi) * (K::ONE - qi) + pi * qi;
+            let pq = pi * qi;
+            acc *= pq + pq - pi - qi + K::ONE;
         }
         acc
     }

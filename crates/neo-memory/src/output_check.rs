@@ -210,7 +210,8 @@ fn chi_at_point(r: &[K], k: u64, num_bits: usize) -> K {
 /// eq(a, b) = Π_i (a_i·b_i + (1-a_i)(1-b_i))
 fn eq_points(a: &[K], b: &[K]) -> K {
     a.iter().zip(b).fold(K::ONE, |acc, (ai, bi)| {
-        acc * (*ai * *bi + (K::ONE - *ai) * (K::ONE - *bi))
+        let ab = *ai * *bi;
+        acc * (ab + ab - *ai - *bi + K::ONE)
     })
 }
 

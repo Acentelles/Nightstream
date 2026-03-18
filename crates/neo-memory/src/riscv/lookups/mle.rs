@@ -76,7 +76,10 @@ pub fn evaluate_eq_mle<F: Field>(r: &[F]) -> F {
         let x_i = r[2 * i];
         let y_i = r[2 * i + 1];
         // eq(x_i, y_i) = x_i y_i + (1-x_i)(1-y_i)
-        result *= x_i * y_i + (F::ONE - x_i) * (F::ONE - y_i);
+        result *= {
+            let xy = x_i * y_i;
+            xy + xy - x_i - y_i + F::ONE
+        };
     }
     result
 }
@@ -101,7 +104,10 @@ pub fn evaluate_sltu_mle<F: Field>(r: &[F]) -> F {
         let x_i = r[2 * bit];
         let y_i = r[2 * bit + 1];
         lt += (F::ONE - x_i) * y_i * eq_prefix;
-        eq_prefix *= x_i * y_i + (F::ONE - x_i) * (F::ONE - y_i);
+        eq_prefix *= {
+            let xy = x_i * y_i;
+            xy + xy - x_i - y_i + F::ONE
+        };
     }
     lt
 }
@@ -125,7 +131,10 @@ pub fn evaluate_slt_mle<F: Field>(r: &[F]) -> F {
         let x_i = r[2 * bit];
         let y_i = r[2 * bit + 1];
         lt += (F::ONE - x_i) * y_i * eq_prefix;
-        eq_prefix *= x_i * y_i + (F::ONE - x_i) * (F::ONE - y_i);
+        eq_prefix *= {
+            let xy = x_i * y_i;
+            xy + xy - x_i - y_i + F::ONE
+        };
     }
 
     x_sign - y_sign + lt
