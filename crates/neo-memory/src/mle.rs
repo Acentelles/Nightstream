@@ -29,26 +29,19 @@ pub fn lt_eval<Kf: Field>(j_prime: &[Kf], j: &[Kf]) -> Kf {
 pub fn build_chi_table<Kf: Field>(r: &[Kf]) -> Vec<Kf> {
     let ell = r.len();
     let n = 1usize << ell;
-    let mut out = vec![Kf::ONE; n];
+    let mut out = vec![Kf::ZERO; n];
+    out[0] = Kf::ONE;
+    let mut active = 1usize;
 
-    // Gray-code style expansion: at step i, split every block into low/high halves.
-    for (i, &ri) in r.iter().enumerate() {
-        let stride = 1usize << i;
-        let block = 1usize << (ell - i - 1);
+    // Doubling construction: expand the first `active` entries into low/high halves.
+    for &ri in r.iter() {
         let one_minus = Kf::ONE - ri;
-
-        let mut idx = 0usize;
-        for _ in 0..block {
-            for j in 0..stride {
-                let a = out[idx + j];
-                out[idx + j] = a * one_minus;
-            }
-            for j in 0..stride {
-                let a = out[idx + stride + j];
-                out[idx + stride + j] = a * ri;
-            }
-            idx += 2 * stride;
+        for j in 0..active {
+            let a = out[j];
+            out[j] = a * one_minus;
+            out[active + j] = a * ri;
         }
+        active <<= 1;
     }
 
     out
