@@ -16,6 +16,7 @@ use neo_params::NeoParams;
 use neo_transcript::Poseidon2Transcript;
 use neo_transcript::Transcript;
 use p3_field::PrimeCharacteristicRing;
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::engines::utils;
@@ -132,11 +133,14 @@ pub fn optimized_prove<L: neo_ccs::traits::SModuleHomomorphism<F, Cmt>>(
     let mut running_sum = initial_sum;
     let mut sumcheck_rounds: Vec<Vec<K>> = Vec::with_capacity(oracle.num_rounds());
     let mut sumcheck_chals: Vec<K> = Vec::with_capacity(oracle.num_rounds());
+    let mut interp_cache = BTreeMap::<usize, Arc<crate::sumcheck::InterpolationPlan>>::new();
 
     for round_idx in 0..oracle.num_rounds() {
         let deg = oracle.degree_bound();
-        let xs: Vec<K> = (0..=deg).map(|t| K::from(F::from_u64(t as u64))).collect();
-        let ys = oracle.evals_at(&xs);
+        let plan = interp_cache
+            .entry(deg)
+            .or_insert_with(|| crate::sumcheck::interpolation_plan_for_degree_cached(deg));
+        let ys = oracle.evals_at(crate::sumcheck::interpolation_points(plan.as_ref()));
 
         #[cfg(feature = "debug-logs")]
         if round_idx == 0 {
@@ -169,7 +173,7 @@ pub fn optimized_prove<L: neo_ccs::traits::SModuleHomomorphism<F, Cmt>>(
         // Sumcheck requires coefficients in low→high order (c0, c1, ..., cn) so that
         // poly_eval_k(coeffs, ·) reproduces ys at x=0,1 and the verifier invariant
         // p(0)+p(1) == running_sum holds.
-        let coeffs = crate::sumcheck::interpolate_from_evals(&xs, &ys);
+        let coeffs = crate::sumcheck::interpolate_from_evals_with_plan(plan.as_ref(), &ys);
 
         debug_assert_eq!(crate::sumcheck::poly_eval_k(&coeffs, K::ZERO), ys[0]);
         debug_assert_eq!(crate::sumcheck::poly_eval_k(&coeffs, K::ONE), ys[1]);
@@ -210,11 +214,14 @@ pub fn optimized_prove<L: neo_ccs::traits::SModuleHomomorphism<F, Cmt>>(
     let mut running_sum_nc = initial_sum_nc;
     let mut sumcheck_rounds_nc: Vec<Vec<K>> = Vec::with_capacity(oracle_nc.num_rounds());
     let mut sumcheck_chals_nc: Vec<K> = Vec::with_capacity(oracle_nc.num_rounds());
+    let mut interp_cache_nc = BTreeMap::<usize, Arc<crate::sumcheck::InterpolationPlan>>::new();
 
     for _round_idx in 0..oracle_nc.num_rounds() {
         let deg = oracle_nc.degree_bound();
-        let xs: Vec<K> = (0..=deg).map(|t| K::from(F::from_u64(t as u64))).collect();
-        let ys = oracle_nc.evals_at(&xs);
+        let plan = interp_cache_nc
+            .entry(deg)
+            .or_insert_with(|| crate::sumcheck::interpolation_plan_for_degree_cached(deg));
+        let ys = oracle_nc.evals_at(crate::sumcheck::interpolation_points(plan.as_ref()));
 
         if ys[0] + ys[1] != running_sum_nc {
             return Err(PiCcsError::SumcheckError(
@@ -222,7 +229,7 @@ pub fn optimized_prove<L: neo_ccs::traits::SModuleHomomorphism<F, Cmt>>(
             ));
         }
 
-        let coeffs = crate::sumcheck::interpolate_from_evals(&xs, &ys);
+        let coeffs = crate::sumcheck::interpolate_from_evals_with_plan(plan.as_ref(), &ys);
         debug_assert_eq!(crate::sumcheck::poly_eval_k(&coeffs, K::ZERO), ys[0]);
         debug_assert_eq!(crate::sumcheck::poly_eval_k(&coeffs, K::ONE), ys[1]);
 

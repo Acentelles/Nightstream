@@ -128,13 +128,13 @@ pub fn interpolate_from_evals(xs: &[K], ys: &[K]) -> Vec<K> {
 }
 
 #[derive(Clone)]
-struct InterpolationPlan {
+pub(crate) struct InterpolationPlan {
     xs: Vec<K>,
     // basis[i][d] is coefficient d of Lagrange basis polynomial \ell_i(x).
     basis: Vec<Vec<K>>,
 }
 
-fn interpolation_plan_for_degree_cached(deg: usize) -> std::sync::Arc<InterpolationPlan> {
+pub(crate) fn interpolation_plan_for_degree_cached(deg: usize) -> std::sync::Arc<InterpolationPlan> {
     static CACHE: std::sync::OnceLock<
         std::sync::RwLock<std::collections::BTreeMap<usize, std::sync::Arc<InterpolationPlan>>>,
     > = std::sync::OnceLock::new();
@@ -151,6 +151,11 @@ fn interpolation_plan_for_degree_cached(deg: usize) -> std::sync::Arc<Interpolat
     let built = std::sync::Arc::new(build_interpolation_plan_for_degree(deg));
     let mut w = cache.write().expect("sumcheck interp cache poisoned");
     w.entry(deg).or_insert_with(|| built.clone()).clone()
+}
+
+#[inline]
+pub(crate) fn interpolation_points(plan: &InterpolationPlan) -> &[K] {
+    plan.xs.as_slice()
 }
 
 #[inline]
@@ -195,7 +200,7 @@ fn build_interpolation_plan_for_degree(deg: usize) -> InterpolationPlan {
 }
 
 #[inline]
-fn interpolate_from_evals_with_plan(plan: &InterpolationPlan, ys: &[K]) -> Vec<K> {
+pub(crate) fn interpolate_from_evals_with_plan(plan: &InterpolationPlan, ys: &[K]) -> Vec<K> {
     let n = plan.xs.len();
     debug_assert_eq!(plan.basis.len(), n);
     debug_assert_eq!(ys.len(), n);
