@@ -1,0 +1,24 @@
+[package]
+name = "neo-fold-next"
+edition = { workspace = true }
+version = { workspace = true }
+authors = { workspace = true }
+license = "Apache-2.0"
+
+[lints]
+workspace = true
+
+[dependencies]
+neo-ajtai = { path = "../neo-ajtai" }
+neo-ccs = { path = "../neo-ccs" }
+neo-math = { path = "../neo-math" }
+neo-memory = { path = "../neo-memory" }
+neo-params = { path = "../neo-params" }
+neo-reductions = { path = "../neo-reductions" }
+neo-transcript = { path = "../neo-transcript" }
+p3-field = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]
+bincode = { workspace = true }
+rand_chacha = { workspace = true }
