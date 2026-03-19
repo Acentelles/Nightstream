@@ -50,6 +50,35 @@ impl Rq {
         Self(out)
     }
 
+    /// Fused multiply-and-constant-term: computes `ct(self * rhs mod Φ_81)` without
+    /// materializing the full product polynomial.
+    ///
+    /// Only 80 field multiplications instead of D² = 2916 for full `mul`.
+    ///
+    /// Derivation: after reduction mod Φ_81 = X^54 + X^27 + 1,
+    ///   coeff[0] = tmp[0] - tmp[54] + tmp[81]
+    /// where tmp[k] = Σ_{i+j=k} a[i]*b[j].
+    #[inline]
+    pub fn mul_ct(&self, rhs: &Self) -> Fq {
+        let a = &self.0;
+        let b = &rhs.0;
+
+        // tmp[0]: only pair is (0,0)
+        let mut result = a[0] * b[0];
+
+        // -tmp[54]: pairs (i, 54-i) for i=1..53
+        for i in 1..D {
+            result -= a[i] * b[D - i];
+        }
+
+        // +tmp[81]: pairs (i, 81-i) for i=28..53
+        for i in 28..D {
+            result += a[i] * b[81 - i];
+        }
+
+        result
+    }
+
     /// MUST: constant-time schoolbook mul with reduction mod Phi_{81}(X) = X^54 + X^27 + 1.
     /// No branches on secret data; loops run fixed D and 2D-1 iterations.
     pub fn mul(&self, rhs: &Self) -> Self {

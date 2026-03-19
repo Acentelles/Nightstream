@@ -269,3 +269,64 @@ fn rotation_step_vs_ring_multiply() {
 
     println!("✅ Rotation step agrees with ring multiply by X");
 }
+
+/// Test that fused mul_ct matches ct(a*b) for random inputs.
+#[test]
+fn mul_ct_matches_ct_of_mul() {
+    use neo_math::ring::ct;
+    let mut rng = ChaCha20Rng::seed_from_u64(0xdead_beef);
+
+    for _ in 0..100 {
+        let a = Rq::random_uniform(&mut rng);
+        let b = Rq::random_uniform(&mut rng);
+
+        let expected = ct(&a.mul(&b));
+        let fast = a.mul_ct(&b);
+
+        assert_eq!(fast, expected, "mul_ct disagrees with ct(a*b)");
+    }
+}
+
+/// Test mul_ct edge cases: identity, zero, monomials.
+#[test]
+fn mul_ct_edge_cases() {
+    use neo_math::ring::ct;
+
+    // 1 * 1 = 1 → ct = 1
+    assert_eq!(Rq::one().mul_ct(&Rq::one()), Fq::ONE);
+
+    // 0 * anything = 0
+    let mut rng = ChaCha20Rng::seed_from_u64(42);
+    let a = Rq::random_uniform(&mut rng);
+    assert_eq!(Rq::zero().mul_ct(&a), Fq::ZERO);
+
+    // X * X^53: X^54 ≡ -X^27 - 1, ct = -1
+    let x1 = {
+        let mut c = [Fq::ZERO; D];
+        c[1] = Fq::ONE;
+        Rq(c)
+    };
+    let x53 = {
+        let mut c = [Fq::ZERO; D];
+        c[53] = Fq::ONE;
+        Rq(c)
+    };
+    assert_eq!(x1.mul_ct(&x53), -Fq::ONE);
+
+    // X^27 * X^27: X^54 ≡ -X^27 - 1, ct = -1
+    let x27 = {
+        let mut c = [Fq::ZERO; D];
+        c[27] = Fq::ONE;
+        Rq(c)
+    };
+    assert_eq!(x27.mul_ct(&x27), -Fq::ONE);
+
+    // X^28 * X^53: X^81 ≡ 1 (since X^81 = X^54 * X^27 = (-X^27-1)*X^27 = -X^54-X^27
+    //                        = -(-X^27-1)-X^27 = X^27+1-X^27 = 1), ct = 1
+    let x28 = {
+        let mut c = [Fq::ZERO; D];
+        c[28] = Fq::ONE;
+        Rq(c)
+    };
+    assert_eq!(x28.mul_ct(&x53), ct(&x28.mul(&x53)));
+}

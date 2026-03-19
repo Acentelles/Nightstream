@@ -763,6 +763,14 @@ struct RowStreamState {
     all_base: bool,
     /// Whether row-phase tables were built through SuperNeo cached rows.
     use_superneo_rows: bool,
+
+    /// Cached maximum polynomial degree for the row-phase evaluation.
+    /// Computed once at build time; used in every row-phase round.
+    deg_max: usize,
+
+    /// Cached SuperNeo Z-blocks for MCS witnesses (pre-split real/imaginary).
+    /// Avoids re-decoding witnesses in `precompute_for_r`.
+    z_mcs_blocks: Vec<crate::superneo_eval::SuperneoZBlocks>,
 }
 
 impl RowStreamState {
@@ -990,6 +998,25 @@ impl RowStreamState {
             None
         };
 
+        // Pre-compute deg_max once (used every row-phase round).
+        let f_max_term_deg: usize = f_terms
+            .iter()
+            .map(|term| {
+                term.vars
+                    .iter()
+                    .map(|&(_, exp)| exp as usize)
+                    .sum::<usize>()
+            })
+            .max()
+            .unwrap_or(0);
+        let deg_max = core::cmp::max(2, f_max_term_deg + 1);
+
+        // Cache SuperNeo Z-blocks for MCS witnesses (avoids re-decoding in precompute_for_r).
+        let z_mcs_blocks: Vec<crate::superneo_eval::SuperneoZBlocks> = z_mcs
+            .iter()
+            .map(|z_i| crate::superneo_eval::SuperneoZBlocks::from_z(z_i))
+            .collect();
+
         Self {
             cur_len: n_pad,
             eq_beta_r_tbl,
@@ -1004,6 +1031,8 @@ impl RowStreamState {
             b,
             all_base,
             use_superneo_rows,
+            deg_max,
+            z_mcs_blocks,
         }
     }
 
@@ -1161,20 +1190,7 @@ impl RowStreamState {
 
     fn evals_row_phase_b2_base(&self, tail_len: usize, xs: &[K]) -> Vec<K> {
         let xs_base: Vec<Fq> = xs.iter().map(|&x| x.real()).collect();
-
-        let f_max_term_deg: usize = self
-            .f_terms
-            .iter()
-            .map(|term| {
-                term.vars
-                    .iter()
-                    .map(|&(_, exp)| exp as usize)
-                    .sum::<usize>()
-            })
-            .max()
-            .unwrap_or(0);
-        // eq_beta_r(X) adds one degree; Eval block is quadratic.
-        let deg_max = core::cmp::max(2, f_max_term_deg + 1);
+        let deg_max = self.deg_max;
 
         const PAR_THRESHOLD: usize = 1 << 14;
         let coeffs_seq = |tail_len: usize| -> Vec<Fq> {
@@ -1283,19 +1299,7 @@ impl RowStreamState {
     fn evals_row_phase_b3_base(&self, tail_len: usize, xs: &[K]) -> Vec<K> {
         let xs_base: Vec<Fq> = xs.iter().map(|&x| x.real()).collect();
 
-        let f_max_term_deg: usize = self
-            .f_terms
-            .iter()
-            .map(|term| {
-                term.vars
-                    .iter()
-                    .map(|&(_, exp)| exp as usize)
-                    .sum::<usize>()
-            })
-            .max()
-            .unwrap_or(0);
-        // eq_beta_r(X) adds one degree; Eval block is quadratic.
-        let deg_max = core::cmp::max(2, f_max_term_deg + 1);
+        let deg_max = self.deg_max;
 
         const PAR_THRESHOLD: usize = 1 << 14;
         let coeffs_seq = |tail_len: usize| -> Vec<Fq> {
@@ -1431,54 +1435,100 @@ impl RowStreamState {
                 return self.evals_row_phase_b2_base(tail_len, xs);
             }
 
-            let f_max_term_deg: usize = self
-                .f_terms
-                .iter()
-                .map(|term| {
-                    term.vars
-                        .iter()
-                        .map(|&(_, exp)| exp as usize)
-                        .sum::<usize>()
-                })
-                .max()
-                .unwrap_or(0);
-            // eq_beta_r(X) adds one degree; Eval block is quadratic.
-            let deg_max = core::cmp::max(2, f_max_term_deg + 1);
+            let deg_max = self.deg_max;
 
-            let mut coeffs = vec![K::ZERO; deg_max + 1];
-            let mut inner = vec![K::ZERO; deg_max + 1];
-            let mut term_poly = vec![K::ZERO; deg_max + 1];
+            let coeffs = {
+                #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-threads"))]
+                {
+                    (0..tail_len)
+                        .into_par_iter()
+                        .fold(
+                            || {
+                                (
+                                    vec![K::ZERO; deg_max + 1],
+                                    vec![K::ZERO; deg_max + 1],
+                                    vec![K::ZERO; deg_max + 1],
+                                )
+                            },
+                            |(mut coeffs, mut inner, mut term_poly), t| {
+                                let e0 = self.eq_beta_r_tbl[2 * t];
+                                let e1 = self.eq_beta_r_tbl[2 * t + 1] - e0;
 
-            for t in 0..tail_len {
-                // eq_beta_r(X) = e0 + e1·X
-                let e0 = self.eq_beta_r_tbl[2 * t];
-                let e1 = self.eq_beta_r_tbl[2 * t + 1] - e0;
+                                self.accumulate_weighted_f_poly(2 * t, deg_max, &mut inner, &mut term_poly);
 
-                self.accumulate_weighted_f_poly(2 * t, deg_max, &mut inner, &mut term_poly);
+                                coeffs[0] += e0 * inner[0];
+                                for d in 1..=deg_max {
+                                    coeffs[d] += (e0 * inner[d]) + (e1 * inner[d - 1]);
+                                }
 
-                // coeffs += eq_beta_r(X) * inner(X)
-                coeffs[0] += e0 * inner[0];
-                for d in 1..=deg_max {
-                    coeffs[d] += (e0 * inner[d]) + (e1 * inner[d - 1]);
+                                if let (Some(eq_tbl), Some(eval_tbl)) =
+                                    (self.eq_r_inputs_tbl.as_ref(), self.eval_tbl.as_ref())
+                                {
+                                    let r0 = eq_tbl[2 * t];
+                                    let r1 = eq_tbl[2 * t + 1] - r0;
+                                    let v0 = eval_tbl[2 * t];
+                                    let v1 = eval_tbl[2 * t + 1] - v0;
+
+                                    let g = self.gamma_to_k;
+                                    coeffs[0] += g * (r0 * v0);
+                                    if deg_max >= 1 {
+                                        coeffs[1] += g * (r0 * v1 + r1 * v0);
+                                    }
+                                    if deg_max >= 2 {
+                                        coeffs[2] += g * (r1 * v1);
+                                    }
+                                }
+                                (coeffs, inner, term_poly)
+                            },
+                        )
+                        .map(|(coeffs, _, _)| coeffs)
+                        .reduce(
+                            || vec![K::ZERO; deg_max + 1],
+                            |mut a, b| {
+                                for (ai, bi) in a.iter_mut().zip(b.iter()) {
+                                    *ai += *bi;
+                                }
+                                a
+                            },
+                        )
                 }
+                #[cfg(all(target_arch = "wasm32", not(feature = "wasm-threads")))]
+                {
+                    let mut coeffs = vec![K::ZERO; deg_max + 1];
+                    let mut inner = vec![K::ZERO; deg_max + 1];
+                    let mut term_poly = vec![K::ZERO; deg_max + 1];
 
-                // Eval: eq_r_inputs(X) * gamma_to_k * eval_tbl(X) (quadratic).
-                if let (Some(eq_tbl), Some(eval_tbl)) = (self.eq_r_inputs_tbl.as_ref(), self.eval_tbl.as_ref()) {
-                    let r0 = eq_tbl[2 * t];
-                    let r1 = eq_tbl[2 * t + 1] - r0;
-                    let v0 = eval_tbl[2 * t];
-                    let v1 = eval_tbl[2 * t + 1] - v0;
+                    for t in 0..tail_len {
+                        let e0 = self.eq_beta_r_tbl[2 * t];
+                        let e1 = self.eq_beta_r_tbl[2 * t + 1] - e0;
 
-                    let g = self.gamma_to_k;
-                    coeffs[0] += g * (r0 * v0);
-                    if deg_max >= 1 {
-                        coeffs[1] += g * (r0 * v1 + r1 * v0);
+                        self.accumulate_weighted_f_poly(2 * t, deg_max, &mut inner, &mut term_poly);
+
+                        coeffs[0] += e0 * inner[0];
+                        for d in 1..=deg_max {
+                            coeffs[d] += (e0 * inner[d]) + (e1 * inner[d - 1]);
+                        }
+
+                        if let (Some(eq_tbl), Some(eval_tbl)) = (self.eq_r_inputs_tbl.as_ref(), self.eval_tbl.as_ref())
+                        {
+                            let r0 = eq_tbl[2 * t];
+                            let r1 = eq_tbl[2 * t + 1] - r0;
+                            let v0 = eval_tbl[2 * t];
+                            let v1 = eval_tbl[2 * t + 1] - v0;
+
+                            let g = self.gamma_to_k;
+                            coeffs[0] += g * (r0 * v0);
+                            if deg_max >= 1 {
+                                coeffs[1] += g * (r0 * v1 + r1 * v0);
+                            }
+                            if deg_max >= 2 {
+                                coeffs[2] += g * (r1 * v1);
+                            }
+                        }
                     }
-                    if deg_max >= 2 {
-                        coeffs[2] += g * (r1 * v1);
-                    }
+                    coeffs
                 }
-            }
+            };
 
             return if xs_are_base {
                 xs.iter()
@@ -1499,19 +1549,7 @@ impl RowStreamState {
                 return self.evals_row_phase_b3_base(tail_len, xs);
             }
 
-            let f_max_term_deg: usize = self
-                .f_terms
-                .iter()
-                .map(|term| {
-                    term.vars
-                        .iter()
-                        .map(|&(_, exp)| exp as usize)
-                        .sum::<usize>()
-                })
-                .max()
-                .unwrap_or(0);
-            // eq_beta_r(X) adds one degree; Eval block is quadratic.
-            let deg_max = core::cmp::max(2, f_max_term_deg + 1);
+            let deg_max = self.deg_max;
 
             let coeffs = {
                 #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-threads"))]
@@ -1858,6 +1896,10 @@ where
 
     // Cached row-only precomputation for Ajtai rounds (r' fixed after row phase).
     ajtai_precomp: Option<RPrecomp>,
+    // Cached gamma power tables (invariant across Ajtai rounds).
+    gamma_pow_all: Vec<K>, // gamma_pow_all[i] = γ^i for i in 0..k_total
+    gamma_to_k: K,         // γ^{k_total}
+    gamma_k_pow_j: Vec<K>, // (γ^k)^j for j in 0..t
 }
 
 impl<'a, F> OptimizedOracle<'a, F>
@@ -1897,6 +1939,22 @@ where
             superneo_cache.as_ref(),
         );
 
+        // Pre-compute gamma power tables (invariant across all rounds).
+        let k_total = mcs_witnesses.len() + me_witnesses.len();
+        let t_mats = s.t();
+        let mut gamma_pow_all = vec![K::ONE; k_total];
+        for i in 1..k_total {
+            gamma_pow_all[i] = gamma_pow_all[i - 1] * ch.gamma;
+        }
+        let mut gamma_to_k = K::ONE;
+        for _ in 0..k_total {
+            gamma_to_k *= ch.gamma;
+        }
+        let mut gamma_k_pow_j = vec![K::ONE; t_mats];
+        for jj in 1..t_mats {
+            gamma_k_pow_j[jj] = gamma_k_pow_j[jj - 1] * gamma_to_k;
+        }
+
         Self {
             s,
             params,
@@ -1914,6 +1972,9 @@ where
             superneo_cache,
             row_stream,
             ajtai_precomp: None,
+            gamma_pow_all,
+            gamma_to_k,
+            gamma_k_pow_j,
         }
     }
 
@@ -2027,28 +2088,37 @@ where
         }
 
         // Precompute Y_eval[i][j][ρ] as ring coefficients from cached SuperNeo rows.
+        // For MCS witnesses, reuse cached z_mcs_blocks; for ME witnesses, decode fresh.
+        let k_mcs = self.row_stream.z_mcs_blocks.len();
         let y_eval = {
-            let all_coeffs: Vec<Vec<K>> = all_witnesses
+            // Decode only the ME witnesses (MCS blocks are already cached).
+            let me_blocks: Vec<crate::superneo_eval::SuperneoZBlocks> = all_witnesses[k_mcs..]
                 .iter()
                 .enumerate()
                 .map(|(idx, Zi)| {
-                    crate::common::decode_superneo_coeffs_from_witness_mat(Zi, self.s.m).unwrap_or_else(|e| {
-                        panic!(
-                            "OptimizedOracle::precompute_for_r: invalid packed witness[{idx}] for m={}: {e}",
-                            self.s.m
-                        )
-                    })
+                    let z_coeffs =
+                        crate::common::decode_superneo_coeffs_from_witness_mat(Zi, self.s.m).unwrap_or_else(|e| {
+                            panic!(
+                                "OptimizedOracle::precompute_for_r: invalid packed ME witness[{idx}] for m={}: {e}",
+                                self.s.m
+                            )
+                        });
+                    crate::superneo_eval::SuperneoZBlocks::from_z(&z_coeffs)
                 })
                 .collect();
+
+            // Build a unified iterator: cached MCS blocks first, then freshly-decoded ME blocks.
+            let all_blocks_iter = self.row_stream.z_mcs_blocks.iter().chain(me_blocks.iter());
+
             #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-threads"))]
             {
-                all_coeffs
+                let all_blocks: Vec<&crate::superneo_eval::SuperneoZBlocks> = all_blocks_iter.collect();
+                all_blocks
                     .par_iter()
-                    .map(|z_coeffs| {
-                        let z_blocks = crate::superneo_eval::SuperneoZBlocks::from_z(z_coeffs);
+                    .map(|z_blocks| {
                         crate::superneo_eval::eval_all_mats_ring_cached_with_blocks(
                             superneo_cache,
-                            &z_blocks,
+                            z_blocks,
                             &chi_r,
                             n_eff,
                         )
@@ -2057,13 +2127,11 @@ where
             }
             #[cfg(all(target_arch = "wasm32", not(feature = "wasm-threads")))]
             {
-                all_coeffs
-                    .iter()
-                    .map(|z_coeffs| {
-                        let z_blocks = crate::superneo_eval::SuperneoZBlocks::from_z(z_coeffs);
+                all_blocks_iter
+                    .map(|z_blocks| {
                         crate::superneo_eval::eval_all_mats_ring_cached_with_blocks(
                             superneo_cache,
-                            &z_blocks,
+                            z_blocks,
                             &chi_r,
                             n_eff,
                         )
@@ -2148,21 +2216,9 @@ where
             eq_alpha_pref *= eq_lin(self.ajtai_chals[i], self.ch.alpha[i]);
         }
 
-        // Gamma powers (independent of x)
-        let mut gamma_pow_i = vec![K::ONE; k_total];
-        for i in 1..k_total {
-            gamma_pow_i[i] = gamma_pow_i[i - 1] * self.ch.gamma;
-        }
-
-        let mut gamma_to_k = K::ONE;
-        for _ in 0..k_total {
-            gamma_to_k *= self.ch.gamma;
-        }
-
-        let mut gamma_k_pow_j = vec![K::ONE; t_mats];
-        for jj in 1..t_mats {
-            gamma_k_pow_j[jj] = gamma_k_pow_j[jj - 1] * gamma_to_k;
-        }
+        let gamma_pow_i = &self.gamma_pow_all;
+        let gamma_to_k = self.gamma_to_k;
+        let gamma_k_pow_j = &self.gamma_k_pow_j;
 
         let prefix = &self.ajtai_chals[..j];
         let beta_j = self.ch.beta_a[j];

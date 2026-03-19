@@ -8,7 +8,7 @@ use core::cmp::min;
 
 use neo_ccs::{CcsMatrix, CcsStructure};
 use neo_math::KExtensions;
-use neo_math::{ct, superneo_bar_block, Rq, D, F, K};
+use neo_math::{superneo_bar_block, Rq, D, F, K};
 use p3_field::{Field, PrimeCharacteristicRing};
 
 #[inline]
@@ -71,8 +71,8 @@ pub fn superneo_row_dot_transformed_matrix(mat_bar: &CcsMatrix<F>, row: usize, z
         }
 
         let a_ring = Rq(a_bar);
-        acc_re += ct(&a_ring.mul(&Rq(z_re)));
-        acc_im += ct(&a_ring.mul(&Rq(z_im)));
+        acc_re += a_ring.mul_ct(&Rq(z_re));
+        acc_im += a_ring.mul_ct(&Rq(z_im));
     }
 
     K::from_coeffs([acc_re, acc_im])
@@ -342,9 +342,9 @@ impl SuperneoMatrixCache {
         let mut acc_im = F::ZERO;
 
         for rb in &self.row_blocks[row] {
-            acc_re += ct(&rb.bar.mul(&z_blocks.re[rb.blk]));
+            acc_re += rb.bar.mul_ct(&z_blocks.re[rb.blk]);
             if !z_blocks.imag_all_zero {
-                acc_im += ct(&rb.bar.mul(&z_blocks.im[rb.blk]));
+                acc_im += rb.bar.mul_ct(&z_blocks.im[rb.blk]);
             }
         }
         if z_blocks.imag_all_zero {
@@ -734,8 +734,8 @@ where
 
         let a_bar = superneo_bar_block(a);
         let a_ring = Rq(a_bar);
-        acc_re += ct(&a_ring.mul(&Rq(z_re)));
-        acc_im += ct(&a_ring.mul(&Rq(z_im)));
+        acc_re += a_ring.mul_ct(&Rq(z_re));
+        acc_im += a_ring.mul_ct(&Rq(z_im));
     }
 
     K::from_coeffs([acc_re, acc_im])
