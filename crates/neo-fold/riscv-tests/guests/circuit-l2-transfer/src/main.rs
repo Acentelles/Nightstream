@@ -4,6 +4,7 @@
 type GlDigest = [u64; 4];
 
 const GL_ZERO: u64 = 0;
+const GL_ONE: u64 = 1;
 const ZERO_DIGEST: GlDigest = [0, 0, 0, 0];
 
 #[inline]
@@ -12,41 +13,23 @@ fn gl_add(a: u64, b: u64) -> u64 {
 }
 
 #[inline]
+fn gl_sub(a: u64, b: u64) -> u64 {
+    a.wrapping_sub(b)
+}
+
+#[inline]
+fn gl_mul(a: u64, b: u64) -> u64 {
+    a.wrapping_mul(b)
+}
+
+#[inline]
 fn digest_eq(a: &GlDigest, b: &GlDigest) -> bool {
     a[0] == b[0] && a[1] == b[1] && a[2] == b[2] && a[3] == b[3]
 }
 
 #[inline]
-fn poseidon2_squeeze_digest() -> GlDigest {
-    [
-        (nightstream_sdk::poseidon2::poseidon2_squeeze_word(0) as u64)
-            | ((nightstream_sdk::poseidon2::poseidon2_squeeze_word(1) as u64) << 32),
-        (nightstream_sdk::poseidon2::poseidon2_squeeze_word(2) as u64)
-            | ((nightstream_sdk::poseidon2::poseidon2_squeeze_word(3) as u64) << 32),
-        (nightstream_sdk::poseidon2::poseidon2_squeeze_word(4) as u64)
-            | ((nightstream_sdk::poseidon2::poseidon2_squeeze_word(5) as u64) << 32),
-        (nightstream_sdk::poseidon2::poseidon2_squeeze_word(6) as u64)
-            | ((nightstream_sdk::poseidon2::poseidon2_squeeze_word(7) as u64) << 32),
-    ]
-}
-
-#[inline]
-fn poseidon2_finalize_to_digest() -> GlDigest {
-    nightstream_sdk::poseidon2::poseidon2_finalize();
-    poseidon2_squeeze_digest()
-}
-
-#[inline]
-fn poseidon2_absorb_digest(d: &GlDigest) {
-    nightstream_sdk::poseidon2::poseidon2_absorb_elem(d[0]);
-    nightstream_sdk::poseidon2::poseidon2_absorb_elem(d[1]);
-    nightstream_sdk::poseidon2::poseidon2_absorb_elem(d[2]);
-    nightstream_sdk::poseidon2::poseidon2_absorb_elem(d[3]);
-}
-
-#[inline]
-fn poseidon2_absorb_tag(tag: u64) {
-    nightstream_sdk::poseidon2::poseidon2_absorb_elem(tag);
+fn poseidon2_hash(input: &[u64]) -> GlDigest {
+    nightstream_sdk::poseidon2::poseidon2_hash(input)
 }
 
 const MAX_INS: usize = 4;
@@ -77,27 +60,20 @@ impl RamReader {
         Self { addr }
     }
 
-    #[inline]
     fn read_u32(&mut self) -> u32 {
         let val = unsafe { core::ptr::read_volatile(self.addr as *const u32) };
         self.addr += 4;
         val
     }
 
-    #[inline]
     fn read_u64(&mut self) -> u64 {
         let lo = self.read_u32() as u64;
         let hi = self.read_u32() as u64;
         lo | (hi << 32)
     }
 
-    #[inline]
     fn read_digest(&mut self) -> GlDigest {
-        let a0 = self.read_u64();
-        let a1 = self.read_u64();
-        let a2 = self.read_u64();
-        let a3 = self.read_u64();
-        [a0, a1, a2, a3]
+        [self.read_u64(), self.read_u64(), self.read_u64(), self.read_u64()]
     }
 }
 
@@ -110,46 +86,45 @@ impl RamWriter {
         Self { addr }
     }
 
-    #[inline]
     fn write_u32(&mut self, val: u32) {
         unsafe { core::ptr::write_volatile(self.addr as *mut u32, val) };
         self.addr += 4;
     }
 
-    #[inline]
     fn write_u64(&mut self, val: u64) {
         self.write_u32(val as u32);
         self.write_u32((val >> 32) as u32);
     }
 
-    #[inline]
     fn write_digest(&mut self, d: &GlDigest) {
-        self.write_u64(d[0]);
-        self.write_u64(d[1]);
-        self.write_u64(d[2]);
-        self.write_u64(d[3]);
+        for &elem in d {
+            self.write_u64(elem);
+        }
     }
 }
 
 fn derive_pk_spend(spend_sk: &GlDigest) -> GlDigest {
-    poseidon2_absorb_tag(TAG_PK);
-    poseidon2_absorb_digest(spend_sk);
-    poseidon2_finalize_to_digest()
+    let mut input = [0u64; 5];
+    input[0] = TAG_PK;
+    input[1..5].copy_from_slice(spend_sk);
+    poseidon2_hash(&input)
 }
 
 fn derive_nf_key(domain: &GlDigest, spend_sk: &GlDigest) -> GlDigest {
-    poseidon2_absorb_tag(TAG_NFKEY);
-    poseidon2_absorb_digest(domain);
-    poseidon2_absorb_digest(spend_sk);
-    poseidon2_finalize_to_digest()
+    let mut input = [0u64; 9];
+    input[0] = TAG_NFKEY;
+    input[1..5].copy_from_slice(domain);
+    input[5..9].copy_from_slice(spend_sk);
+    poseidon2_hash(&input)
 }
 
 fn derive_address(domain: &GlDigest, pk_spend: &GlDigest, pk_ivk: &GlDigest) -> GlDigest {
-    poseidon2_absorb_tag(TAG_ADDR);
-    poseidon2_absorb_digest(domain);
-    poseidon2_absorb_digest(pk_spend);
-    poseidon2_absorb_digest(pk_ivk);
-    poseidon2_finalize_to_digest()
+    let mut input = [0u64; 13];
+    input[0] = TAG_ADDR;
+    input[1..5].copy_from_slice(domain);
+    input[5..9].copy_from_slice(pk_spend);
+    input[9..13].copy_from_slice(pk_ivk);
+    poseidon2_hash(&input)
 }
 
 fn note_commitment(
@@ -159,32 +134,36 @@ fn note_commitment(
     recipient: &GlDigest,
     sender_id: &GlDigest,
 ) -> GlDigest {
-    poseidon2_absorb_tag(TAG_NOTE);
-    poseidon2_absorb_digest(domain);
-    nightstream_sdk::poseidon2::poseidon2_absorb_elem(value);
-    nightstream_sdk::poseidon2::poseidon2_absorb_elem(GL_ZERO);
-    poseidon2_absorb_digest(rho);
-    poseidon2_absorb_digest(recipient);
-    poseidon2_absorb_digest(sender_id);
-    poseidon2_finalize_to_digest()
+    let mut input = [0u64; 18];
+    input[0] = TAG_NOTE;
+    input[1..5].copy_from_slice(domain);
+    input[5] = value;
+    input[6..10].copy_from_slice(rho);
+    input[10..14].copy_from_slice(recipient);
+    input[14..18].copy_from_slice(sender_id);
+    poseidon2_hash(&input)
 }
 
 fn derive_nullifier(domain: &GlDigest, nf_key: &GlDigest, rho: &GlDigest) -> GlDigest {
-    poseidon2_absorb_tag(TAG_PRF_NF);
-    poseidon2_absorb_digest(domain);
-    poseidon2_absorb_digest(nf_key);
-    poseidon2_absorb_digest(rho);
-    poseidon2_finalize_to_digest()
+    let mut input = [0u64; 13];
+    input[0] = TAG_PRF_NF;
+    input[1..5].copy_from_slice(domain);
+    input[5..9].copy_from_slice(nf_key);
+    input[9..13].copy_from_slice(rho);
+    poseidon2_hash(&input)
 }
 
+#[inline(always)]
 fn mt_node(level: u64, left: &GlDigest, right: &GlDigest) -> GlDigest {
-    poseidon2_absorb_tag(TAG_MT_NODE);
-    nightstream_sdk::poseidon2::poseidon2_absorb_elem(level);
-    poseidon2_absorb_digest(left);
-    poseidon2_absorb_digest(right);
-    poseidon2_finalize_to_digest()
+    let mut input = [0u64; 10];
+    input[0] = TAG_MT_NODE;
+    input[1] = level;
+    input[2..6].copy_from_slice(left);
+    input[6..10].copy_from_slice(right);
+    poseidon2_hash(&input)
 }
 
+#[inline(always)]
 fn merkle_root(leaf: &GlDigest, pos: u32, reader: &mut RamReader, depth: u32) -> GlDigest {
     let mut cur = *leaf;
     let mut p = pos;
@@ -204,21 +183,27 @@ fn merkle_root(leaf: &GlDigest, pos: u32, reader: &mut RamReader, depth: u32) ->
     cur
 }
 
-fn assert_digest_limbs_all_diff(a: &GlDigest, b: &GlDigest) {
-    assert!(a[0] != b[0]);
-    assert!(a[1] != b[1]);
-    assert!(a[2] != b[2]);
-    assert!(a[3] != b[3]);
-}
-
-fn bl_bucket_leaf(entries: &[GlDigest; BL_BUCKET_SIZE]) -> GlDigest {
-    poseidon2_absorb_tag(TAG_BL_BUCKET);
+#[inline(always)]
+fn enforce_prod_digest_diff(acc: u64, a: &GlDigest, b: &GlDigest) -> u64 {
+    let mut result = acc;
     let mut i = 0usize;
-    while i < BL_BUCKET_SIZE {
-        poseidon2_absorb_digest(&entries[i]);
+    while i < 4 {
+        let diff = gl_sub(a[i], b[i]);
+        result = gl_mul(result, diff);
         i += 1;
     }
-    poseidon2_finalize_to_digest()
+    result
+}
+
+#[inline(always)]
+fn bl_bucket_leaf(entries: &[GlDigest; BL_BUCKET_SIZE]) -> GlDigest {
+    let mut input = [0u64; 1 + BL_BUCKET_SIZE * 4];
+    input[0] = TAG_BL_BUCKET;
+    for (i, entry) in entries.iter().enumerate() {
+        let off = 1 + i * 4;
+        input[off..off + 4].copy_from_slice(entry);
+    }
+    poseidon2_hash(&input)
 }
 
 fn bl_bucket_pos(id: &GlDigest) -> u32 {
@@ -230,10 +215,12 @@ fn assert_not_blacklisted(id: &GlDigest, blacklist_root: &GlDigest, reader: &mut
     for e in entries.iter_mut() {
         *e = reader.read_digest();
     }
-    let _bucket_inv = reader.read_u64();
+    let bucket_inv = reader.read_u64();
+    let mut prod: u64 = GL_ONE;
     for entry in &entries {
-        assert_digest_limbs_all_diff(id, entry);
+        prod = enforce_prod_digest_diff(prod, id, entry);
     }
+    assert!(gl_mul(prod, bucket_inv) == GL_ONE);
 
     let leaf = bl_bucket_leaf(&entries);
     let pos = bl_bucket_pos(id);
@@ -242,7 +229,6 @@ fn assert_not_blacklisted(id: &GlDigest, blacklist_root: &GlDigest, reader: &mut
 }
 
 const NOTE_PLAIN_LEN: usize = 272;
-const NOTE_PLAIN_WORDS: usize = NOTE_PLAIN_LEN / 8;
 
 const TAG_FVK_COMMIT: u64 = 100;
 const TAG_VIEW_KDF: u64 = 101;
@@ -250,62 +236,105 @@ const TAG_VIEW_STREAM: u64 = 102;
 const TAG_CT_HASH: u64 = 103;
 const TAG_VIEW_MAC: u64 = 104;
 
+fn digest_to_bytes(d: &GlDigest) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    let mut i = 0usize;
+    while i < 4 {
+        let b = d[i].to_le_bytes();
+        out[i * 8..(i + 1) * 8].copy_from_slice(&b);
+        i += 1;
+    }
+    out
+}
+
+fn u64_to_le_bytes(v: u64) -> [u8; 8] {
+    v.to_le_bytes()
+}
+
+fn pack_bytes_to_felts(bytes: &[u8], len: usize, out: &mut [u64]) -> usize {
+    let n_elems = (len + 7) / 8;
+    let mut i = 0;
+    while i < n_elems {
+        let off = i * 8;
+        let mut buf = [0u8; 8];
+        let take = if off + 8 <= len { 8 } else { len - off };
+        let mut j = 0;
+        while j < take {
+            buf[j] = bytes[off + j];
+            j += 1;
+        }
+        out[i] = u64::from_le_bytes(buf);
+        i += 1;
+    }
+    n_elems
+}
+
 /// FVK commitment: H(TAG_FVK_COMMIT, fvk[0..4])
 fn view_fvk_commitment(fvk: &GlDigest) -> GlDigest {
-    poseidon2_absorb_tag(TAG_FVK_COMMIT);
-    poseidon2_absorb_digest(fvk);
-    poseidon2_finalize_to_digest()
+    let mut input = [0u64; 5];
+    input[0] = TAG_FVK_COMMIT;
+    input[1..5].copy_from_slice(fvk);
+    poseidon2_hash(&input)
 }
 
 /// View KDF: H(TAG_VIEW_KDF, fvk[0..4], cm[0..4])
 fn view_kdf(fvk: &GlDigest, cm: &GlDigest) -> GlDigest {
-    poseidon2_absorb_tag(TAG_VIEW_KDF);
-    poseidon2_absorb_digest(fvk);
-    poseidon2_absorb_digest(cm);
-    poseidon2_finalize_to_digest()
+    let mut input = [0u64; 9];
+    input[0] = TAG_VIEW_KDF;
+    input[1..5].copy_from_slice(fvk);
+    input[5..9].copy_from_slice(cm);
+    poseidon2_hash(&input)
 }
 
 /// Stream block: H(TAG_VIEW_STREAM, k[0..4], ctr)
 fn view_stream_block(k: &GlDigest, ctr: u32) -> GlDigest {
-    poseidon2_absorb_tag(TAG_VIEW_STREAM);
-    poseidon2_absorb_digest(k);
-    nightstream_sdk::poseidon2::poseidon2_absorb_elem(ctr as u64);
-    poseidon2_finalize_to_digest()
+    let mut input = [0u64; 6];
+    input[0] = TAG_VIEW_STREAM;
+    input[1..5].copy_from_slice(k);
+    input[5] = ctr as u64;
+    poseidon2_hash(&input)
 }
 
 /// Ciphertext hash: H(TAG_CT_HASH, packed_ct_bytes..., byte_len)
-fn view_ct_hash_from_plain(k: &GlDigest, pt: &[u64; NOTE_PLAIN_WORDS]) -> GlDigest {
-    poseidon2_absorb_tag(TAG_CT_HASH);
-    let mut ctr: u32 = 0;
-    let mut off: usize = 0;
-    while off < NOTE_PLAIN_WORDS {
-        let ks = view_stream_block(k, ctr);
-        ctr += 1;
-        let take = if off + 4 <= NOTE_PLAIN_WORDS {
-            4
-        } else {
-            NOTE_PLAIN_WORDS - off
-        };
-        let mut j = 0usize;
-        while j < take {
-            let ct_word = pt[off + j] ^ ks[j];
-            nightstream_sdk::poseidon2::poseidon2_absorb_elem(ct_word);
-            j += 1;
-        }
-        off += take;
-    }
-
-    nightstream_sdk::poseidon2::poseidon2_absorb_elem(NOTE_PLAIN_LEN as u64);
-    poseidon2_finalize_to_digest()
+fn view_ct_hash(ct: &[u8; NOTE_PLAIN_LEN]) -> GlDigest {
+    let mut felts = [0u64; 1 + 34 + 1]; // tag + ceil(272/8) + length
+    felts[0] = TAG_CT_HASH;
+    let n = pack_bytes_to_felts(ct, NOTE_PLAIN_LEN, &mut felts[1..]);
+    felts[1 + n] = NOTE_PLAIN_LEN as u64;
+    poseidon2_hash(&felts[..1 + n + 1])
 }
 
 /// View MAC: H(TAG_VIEW_MAC, k[0..4], cm[0..4], ct_h[0..4])
 fn view_mac(k: &GlDigest, cm: &GlDigest, ct_h: &GlDigest) -> GlDigest {
-    poseidon2_absorb_tag(TAG_VIEW_MAC);
-    poseidon2_absorb_digest(k);
-    poseidon2_absorb_digest(cm);
-    poseidon2_absorb_digest(ct_h);
-    poseidon2_finalize_to_digest()
+    let mut input = [0u64; 13];
+    input[0] = TAG_VIEW_MAC;
+    input[1..5].copy_from_slice(k);
+    input[5..9].copy_from_slice(cm);
+    input[9..13].copy_from_slice(ct_h);
+    poseidon2_hash(&input)
+}
+
+fn view_stream_xor_encrypt(k: &GlDigest, pt: &[u8; NOTE_PLAIN_LEN]) -> [u8; NOTE_PLAIN_LEN] {
+    let mut ct = [0u8; NOTE_PLAIN_LEN];
+    let mut ctr: u32 = 0;
+    let mut off: usize = 0;
+    while off < NOTE_PLAIN_LEN {
+        let ks = view_stream_block(k, ctr);
+        let ks_bytes = digest_to_bytes(&ks);
+        ctr += 1;
+        let take = if off + 32 <= NOTE_PLAIN_LEN {
+            32
+        } else {
+            NOTE_PLAIN_LEN - off
+        };
+        let mut j = 0usize;
+        while j < take {
+            ct[off + j] = pt[off + j] ^ ks_bytes[j];
+            j += 1;
+        }
+        off += take;
+    }
+    ct
 }
 
 fn encode_note_plain(
@@ -316,18 +345,19 @@ fn encode_note_plain(
     sender_id: &GlDigest,
     cm_ins: &[GlDigest; MAX_INS],
     n_in: u32,
-) -> [u64; NOTE_PLAIN_WORDS] {
-    let mut pt = [0u64; NOTE_PLAIN_WORDS];
-    pt[..4].copy_from_slice(domain);
-    pt[4] = value;
-    pt[6..10].copy_from_slice(rho);
-    pt[10..14].copy_from_slice(recipient);
-    pt[14..18].copy_from_slice(sender_id);
+) -> [u8; NOTE_PLAIN_LEN] {
+    let mut pt = [0u8; NOTE_PLAIN_LEN];
+    let dom = digest_to_bytes(domain);
+    pt[..32].copy_from_slice(&dom);
+    pt[32..40].copy_from_slice(&u64_to_le_bytes(value));
+    pt[48..80].copy_from_slice(&digest_to_bytes(rho));
+    pt[80..112].copy_from_slice(&digest_to_bytes(recipient));
+    pt[112..144].copy_from_slice(&digest_to_bytes(sender_id));
     let mut i = 0usize;
     while i < MAX_INS {
-        let off = 18 + i * 4;
+        let off = 144 + i * 32;
         if (i as u32) < n_in {
-            pt[off..off + 4].copy_from_slice(&cm_ins[i]);
+            pt[off..off + 32].copy_from_slice(&digest_to_bytes(&cm_ins[i]));
         }
         i += 1;
     }
@@ -354,6 +384,7 @@ fn note_spend() -> ! {
     let sender_id = recipient_owner;
 
     let mut sum_in: u64 = GL_ZERO;
+    let mut enforce_prod: u64 = GL_ONE;
     let mut input_rhos: [GlDigest; MAX_INS] = [ZERO_DIGEST; MAX_INS];
     let mut input_cms: [GlDigest; MAX_INS] = [ZERO_DIGEST; MAX_INS];
 
@@ -364,7 +395,7 @@ fn note_spend() -> ! {
         let pos = r.read_u32();
 
         sum_in = gl_add(sum_in, value_in);
-        assert!(value_in != GL_ZERO);
+        enforce_prod = gl_mul(enforce_prod, value_in);
 
         let cm = note_commitment(&domain, value_in, &rho_in, &recipient_owner, &sender_id_in);
         input_cms[i] = cm;
@@ -416,7 +447,7 @@ fn note_spend() -> ! {
         let pk_ivk_out = r.read_digest();
 
         out_sum = gl_add(out_sum, value_out);
-        assert!(value_out != GL_ZERO);
+        enforce_prod = gl_mul(enforce_prod, value_out);
 
         let rcp = derive_address(&domain, &pk_spend_out, &pk_ivk_out);
         let cm = note_commitment(&domain, value_out, &rho_out, &rcp, &sender_id);
@@ -445,14 +476,16 @@ fn note_spend() -> ! {
 
     for j in 0..n_out as usize {
         for i in 0..n_in as usize {
-            assert_digest_limbs_all_diff(&output_rhos[j], &input_rhos[i]);
+            enforce_prod = enforce_prod_digest_diff(enforce_prod, &output_rhos[j], &input_rhos[i]);
         }
     }
     if n_out == 2 {
-        assert_digest_limbs_all_diff(&output_rhos[0], &output_rhos[1]);
+        enforce_prod = enforce_prod_digest_diff(enforce_prod, &output_rhos[0], &output_rhos[1]);
     }
 
-    let _inv_enforce = r.read_u64();
+    let inv_enforce = r.read_u64();
+    let check = gl_mul(enforce_prod, inv_enforce);
+    assert!(check == GL_ONE);
 
     let blacklist_root = r.read_digest();
     assert_not_blacklisted(&sender_id, &blacklist_root, &mut r);
@@ -461,20 +494,6 @@ fn note_spend() -> ! {
         assert_not_blacklisted(&output_rcps[0], &blacklist_root, &mut r);
     }
 
-    let mut output_pts: [[u64; NOTE_PLAIN_WORDS]; MAX_OUTS] = [[0u64; NOTE_PLAIN_WORDS]; MAX_OUTS];
-    let mut j = 0usize;
-    while j < n_out as usize {
-        output_pts[j] = encode_note_plain(
-            &domain,
-            output_values[j],
-            &output_rhos[j],
-            &output_rcps[j],
-            &sender_id,
-            &input_cms,
-            n_in,
-        );
-        j += 1;
-    }
     let n_viewers = r.read_u32();
 
     w.write_digest(&anchor);
@@ -504,7 +523,18 @@ fn note_spend() -> ! {
             let mac_pub = r.read_digest();
 
             let k = view_kdf(&fvk, &output_cms[j]);
-            let ct_h = view_ct_hash_from_plain(&k, &output_pts[j]);
+            let pt = encode_note_plain(
+                &domain,
+                output_values[j],
+                &output_rhos[j],
+                &output_rcps[j],
+                &sender_id,
+                &input_cms,
+                n_in,
+            );
+
+            let ct = view_stream_xor_encrypt(&k, &pt);
+            let ct_h = view_ct_hash(&ct);
             assert!(digest_eq(&ct_h, &ct_hash_pub));
 
             let mac = view_mac(&k, &output_cms[j], &ct_h);
@@ -516,5 +546,6 @@ fn note_spend() -> ! {
             w.write_digest(&mac_pub);
         }
     }
+
     nightstream_sdk::halt();
 }
