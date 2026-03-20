@@ -68,7 +68,9 @@ $$
 $$
 
 to mean the exact row-projection summary and bridge-binding summary exported for
-the authenticated frame list.
+the authenticated frame list. The bridge-binding summary must quantify over the
+actual prepared-step artifact paired with each exported row, not a locally
+recomputed stand-in.
 
 $$
 \mathrm{KernelManifestSurface}(kernelManifest, rootManifest)

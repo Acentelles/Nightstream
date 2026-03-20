@@ -147,10 +147,13 @@ def BridgeBindingSummaryEntry
       readCheckExpression rwReadCheckExpression writeCheckExpression
       valEvaluationExpression readOnlyMemoryRelation readWriteMemoryRelation
       incrementRelation rom σ init) : Prop :=
-  ∃ rowClaim,
-    BridgeBindingWitness rootEncode ajtaiCommit frame.stepIdx frame.frame.row
-      rowClaim
-      (ContinuityBridge.mkPreparedStep rootEncode ajtaiCommit frame.frame.row)
+  ∃ preparedStep,
+    ∃ Γ₁ : List (Claim Nat AuxIndex EvalPoint AddressPoint CyclePoint F),
+      Nonempty (
+        BridgeBindingBundle (AuxIndex := AuxIndex) (EvalPoint := EvalPoint)
+          (AddressPoint := AddressPoint) (CyclePoint := CyclePoint) pcs evalBase
+          B Γ₁ frame.stepIdx frame.frame.pre frame.frame.post frame.frame.dec
+          frame.frame.row rootEncode ajtaiCommit preparedStep)
 
 theorem rowProjectionSummary_of_frames
   {pcs : EvidenceCoverage.PCSContext AuxIndex EvalPoint}
@@ -229,9 +232,18 @@ theorem bridgeBindingSummary_of_frames
       (B := B) rootEncode ajtaiCommit) frames := by
   rw [List.forall_iff_forall_mem]
   intro frame _hMem
-  exact exists_bridgeBindingWitness_of_exactEvidence
-    (rootEncode := rootEncode) (ajtaiCommit := ajtaiCommit)
-    frame.exactEvidence
+  let preparedStep :=
+    ContinuityBridge.mkPreparedStep rootEncode ajtaiCommit frame.frame.row
+  have hPrepared :
+      ContinuityBridge.PreparedStepBound rootEncode ajtaiCommit frame.frame.row
+        preparedStep := by
+    simp [ContinuityBridge.PreparedStepBound, ContinuityBridge.mkPreparedStep,
+      preparedStep]
+  rcases exists_bridgeBindingBundle_of_exactEvidence
+      (rootEncode := rootEncode) (ajtaiCommit := ajtaiCommit)
+      (preparedStep := preparedStep) frame.exactEvidence hPrepared with
+    ⟨Γ₁, bundle⟩
+  exact ⟨preparedStep, Γ₁, bundle⟩
 
 structure KernelAuditSurface
   {pcs : EvidenceCoverage.PCSContext AuxIndex EvalPoint}

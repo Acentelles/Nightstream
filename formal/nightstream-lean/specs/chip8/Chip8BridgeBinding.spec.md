@@ -35,19 +35,37 @@ This is a provenance object. It is not a new semantic theorem.
 Define:
 
 $$
-\mathrm{BridgeBindingWitness}(stepIdx, z, rowClaim, ref, preparedStep)
+\mathrm{BridgeBindingWitness}(stepIdx, z, rowClaim, preparedStep)
 $$
 
 to mean the conjunction of:
 
 - `rowClaim.rowIndex = stepIdx`
 - `RowBound(rowClaim, z)`
-- `ref` is the verified opening refinement for `rowClaim`
 - `PreparedStepBound(z, preparedStep)`
 
 This owner packages exactly the explicit per-row audit object connecting the
-authenticated row-binding claim and its verified refinement path to the
-exported prepared step.
+authenticated row-binding claim to the exact prepared-step artifact supplied by
+the caller. When downstream digest or audit owners already carry an exported
+prepared-step object, bridge binding must target that exact artifact rather
+than a locally recomputed placeholder.
+
+Define the stronger theorem-facing bridge bundle:
+
+$$
+\mathrm{BridgeBindingBundle}(\Gamma_1, stepIdx, pre, post, dec, z, preparedStep)
+$$
+
+to package:
+
+- one explicit authenticated row projection carrying the direct-opening
+  refinements for that row
+- one `RowConsistent(row, z, dec, pre, post, stepIdx)` proof tying that row
+  projection to the semantic row `z`
+- one `BridgeBindingWitness(stepIdx, z, rowClaim, preparedStep)`
+
+This is the row-local object that proves the prepared-step artifact is bound to
+the same authenticated row-opening/refinement path used by semantic extraction.
 
 ### Existence from authenticated evidence
 
@@ -56,11 +74,26 @@ The main theorem target is:
 $$
 \mathrm{SemanticEvidenceCovered}(\dots)
 \Longrightarrow
-\exists rowClaim,\ ref,\
-\mathrm{BridgeBindingWitness}(stepIdx, z, rowClaim, ref, \mathrm{mkPreparedStep}(z)).
+\forall preparedStep,\
+\mathrm{PreparedStepBound}(z, preparedStep)
+\Longrightarrow
+\exists rowClaim,\
+\mathrm{BridgeBindingWitness}(stepIdx, z, rowClaim, preparedStep).
 $$
 
 and likewise for `ExactSemanticEvidenceCovered`.
+
+The stronger audit-facing existence theorem is:
+
+$$
+\mathrm{SemanticEvidenceCovered}(\dots)
+\Longrightarrow
+\forall preparedStep,\
+\mathrm{PreparedStepBound}(z, preparedStep)
+\Longrightarrow
+\exists \Gamma_1,\ bundle,\
+\mathrm{BridgeBindingBundle}(\Gamma_1, stepIdx, pre, post, dec, z, preparedStep).
+$$
 
 ### Projection theorems
 
@@ -103,13 +136,18 @@ $$
 
 | Group | Lean surface | Kind | Role | Guarantee |
 |---|---|---|---|---|
-| Witness | `BridgeBindingWitness` | structure | Definitional | Packages the exact row-claim, verified refinement, and prepared-step audit object |
+| Witness | `BridgeBindingWitness` | structure | Definitional | Packages the exact row-claim and prepared-step audit object for one exported row |
+| Witness | `BridgeBindingBundle` | structure | Definitional | Packages the bridge witness together with the authenticated row-projection/refinement path |
 | Theorem | `rowBound_of_bridgeBinding` | theorem | Theorem-Target | Recovers the authenticated row-binding theorem |
 | Theorem | `preparedStepBound_of_bridgeBinding` | theorem | Theorem-Target | Recovers the exported prepared-step theorem |
+| Theorem | `rowBound_of_bridgeBindingBundle` | theorem | Theorem-Target | Recovers the authenticated row-binding theorem from the stronger bridge bundle |
+| Theorem | `preparedStepBound_of_bridgeBindingBundle` | theorem | Theorem-Target | Recovers the exported prepared-step theorem from the stronger bridge bundle |
 | Theorem | `exists_rowProjection_of_semanticEvidence` | theorem | Theorem-Target | Authenticated semantic evidence exports the row-projection witness |
 | Theorem | `exists_rowProjection_of_exactEvidence` | theorem | Theorem-Target | Exact authenticated evidence exports the row-projection witness |
 | Theorem | `exists_bridgeBindingWitness_of_semanticEvidence` | theorem | Theorem-Target | Authenticated semantic evidence exports the bridge-binding witness |
 | Theorem | `exists_bridgeBindingWitness_of_exactEvidence` | theorem | Theorem-Target | Exact authenticated evidence exports the bridge-binding witness |
+| Theorem | `exists_bridgeBindingBundle_of_semanticEvidence` | theorem | Theorem-Target | Authenticated semantic evidence exports the stronger row-projection-linked bridge bundle |
+| Theorem | `exists_bridgeBindingBundle_of_exactEvidence` | theorem | Theorem-Target | Exact authenticated evidence exports the stronger row-projection-linked bridge bundle |
 
 ## Proof Obligations
 
@@ -117,9 +155,12 @@ $$
   objects in the kernel spec.
 - Do not smuggle new semantic closure into this owner.
 - The witness must tie directly to the authenticated `RowBound` and the
-  exported `PreparedStepBound`.
-- The witness must also carry the verified refinement path for the row-binding
-  claim, not only the direct claim digest.
+  caller-supplied `PreparedStepBound`.
+- The existence theorems must be parametric in the actual prepared-step
+  artifact supplied by downstream digest or audit owners; they must not force
+  `mkPreparedStep(z)` as the theorem target.
+- The stronger bridge bundle must include the same authenticated row-projection
+  path used by semantic extraction, not merely an existentially recomputed row.
 - This owner must remain row-local; it must not silently upgrade one witness
   into a whole-trace theorem.
 
