@@ -189,6 +189,9 @@ Current directory ownership is partially nested:
   instances recover the full kernel conclusion bundle, including exact
   execution correctness, the named authenticated temporal-support bundle, and
   the exact kernel row-summary audit surface.
+- `specs/chip8/Chip8AuditSummary.md`: short auditor-facing index for the
+  CHIP-8 bundle. Centralizes manifest ownership, `root0`, public-input
+  binding, exact trace closure, and the top-level kernel theorem.
 - `specs/chip8/Chip8BridgeBinding.spec.md`: exact per-row audit/provenance
   owner connecting an authenticated Stage-3 row-binding claim to the exported
   prepared step, while separately exposing the authenticated row-projection

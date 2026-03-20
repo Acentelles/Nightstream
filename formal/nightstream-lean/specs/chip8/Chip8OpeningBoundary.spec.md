@@ -102,6 +102,12 @@ The kernel manifest may reference only the commitments fixed in `root0`.
 The root manifest may reference only commitments created after bridge
 extraction.
 
+On the simple-kernel boundary, root-side binding is not modeled as a non-empty
+root opening manifest. It is carried instead by the exact prepared-step export
+and the explicit row-local bridge-binding leaves. Any later combined
+kernel-plus-root proof must introduce its own explicit root opening schema
+rather than inferring one from this simple boundary.
+
 ### Grouping rule
 
 There are two distinct grouping notions:
@@ -120,8 +126,8 @@ for one later claim-space reduction bucket.
 
 This boundary owns the first notion. It does not identify witness-space fold
 lanes and it does not collapse heterogeneous commitment families into one fold
-carrier. On the `simple` boundary, a single global `JointOpeningFoldPlan` is
-not merely unidentified; it is non-conforming and must be absent.
+carrier. On the `simple` boundary, a single global heterogeneous fold carrier
+is not merely unidentified; it is non-conforming and must be absent.
 
 If two admissible direct opening claims share the same
 `(commitmentId, point)`, they remain distinct only through their exact
@@ -184,6 +190,73 @@ The opening boundary must also state the exact exclusions:
   direct claims independently
 - no split or partial decode-table opening claims at `r_decode_addr` are
   admissible in this `simple` boundary
+
+### Boundary object classification
+
+This opening-boundary owner classifies only direct opening claims and manifest
+ownership. For audit clarity:
+
+- soundness-carrying opening path objects:
+  - `OpeningClaim`
+  - the lower-layer exact opening witness and refinement path imported by later
+    owners
+- protocol-binding boundary objects:
+  - `KernelOpeningManifest`
+  - `RootOpeningManifest`
+  - canonical manifest ordering / grouping
+- mandatory provenance but not opening claims:
+  - row-projection witnesses
+  - bridge-binding witnesses
+- optional implementation-side carriers / summaries, outside the direct opening
+  boundary:
+  - claim-space reduction summaries
+  - `JointOpeningUnifiedClaimReduction`
+  - family-local fold-bucket carriers
+
+On the `simple` boundary, the theorem-facing negative rule is:
+
+- one global heterogeneous fold carrier must be absent;
+- any optional family-local fold-bucket carrier remains outside the direct
+  opening-manifest theorem surface unless a later owner models it explicitly.
+
+### Optional family-local fold-bucket admissibility
+
+If a later owner chooses to model one optional family-local fold carrier, this
+boundary exposes only the minimal positive admissibility contract:
+
+$$
+\mathrm{FamilyLocalFoldBucketConforms}(pts, carrierCommitmentId, carrierPoint, claims)
+$$
+
+meaning:
+
+- the carrier summarizes a non-empty claim list
+- every summarized direct claim is kernel-owned
+- every summarized direct claim uses the same `commitmentId`
+- every summarized direct claim uses the same evaluation point value
+- every summarized direct claim is already admissible under the kernel opening
+  boundary
+- the summarized claim list itself has canonical ordering
+
+This is intentionally weaker than a CE / CCS fold theorem. It proves only that
+one optional bucket stays inside one homogeneous manifest-local opening family
+at one common point value. It does not prove that the bucket is itself a new
+opening claim or a proved folding lane.
+
+### Future combined root-side schema
+
+This `simple` boundary intentionally leaves `RootOpeningManifest = ∅`. If a
+later combined kernel-plus-root proof becomes part of the theorem surface, that
+owner must add an explicit root-side schema that includes:
+
+- the exact root commitment inventory
+- the exact root opening-manifest entry kinds
+- canonical root-manifest ordering rules
+- the exact root-side refinement / provenance path tying exported
+  `PreparedStep` artifacts to any root-owned opening claims
+
+This simple boundary does not infer that larger root-side schema on behalf of a
+future owner.
 
 ### Canonical manifest ordering
 
@@ -284,6 +357,7 @@ $$
 | Boundary | `CanonicalManifestOrder` | def | Definitional | Canonical ordering and grouping rule |
 | Boundary | `KernelOpeningBoundary` | def | Definitional | Complete kernel/root ownership and conformance predicate |
 | Boundary | `SimpleBoundaryGlobalFoldPlanAbsent` | def | Definitional | The simple boundary exports no single global fold plan |
+| Boundary | `FamilyLocalFoldBucketConforms` | def | Definitional | Optional family-local bucket carriers may summarize only one kernel commitment family at one common point value |
 | Boundary | `LaneShiftSourceOpeningAppearsInManifest` | def | Definitional | Names the required `C_lane @ r_shift` direct opening inside the kernel manifest |
 | Theorem | `kernelOpeningBoundary_conforms` | theorem | Theorem-Target | A conforming manifest contains only legal, correctly owned opening claims |
 | Theorem | `laneShift_not_openingClaim` | theorem | Theorem-Target | `LaneShiftProof` is not part of either opening manifest |
@@ -298,6 +372,9 @@ $$
   implementation prose.
 - The simple boundary must state the absence of one global fold plan
   theorem-facing, not only in the main kernel prose.
+- If a later owner models one optional family-local fold carrier, this module
+  must expose only the manifest-local admissibility conditions it can actually
+  own.
 - `LaneShiftProof` must remain outside the direct opening-manifest type.
 - The Stage-3 `C_lane @ r_shift` source opening must still appear explicitly in
   the kernel manifest even though `LaneShiftProof` itself is not an

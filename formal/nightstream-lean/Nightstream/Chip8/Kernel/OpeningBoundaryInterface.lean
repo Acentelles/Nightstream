@@ -34,6 +34,8 @@ abbrev RootManifestShape := @ExactOpeningBoundary.RootManifestShape
 abbrev RootManifestEmpty := @ExactOpeningBoundary.RootManifestEmpty
 abbrev SimpleBoundaryGlobalFoldPlanAbsent :=
   @ExactOpeningBoundary.SimpleBoundaryGlobalFoldPlanAbsent
+abbrev FamilyLocalFoldBucketConforms :=
+  @ExactOpeningBoundary.FamilyLocalFoldBucketConforms
 abbrev KernelOpeningBoundary := @ExactOpeningBoundary.ExactKernelOpeningBoundary
 abbrev LaneShiftAppearsInManifest := @ExactOpeningBoundary.LaneShiftAppearsInManifest
 abbrev LaneShiftSourceOpeningAppearsInManifest :=

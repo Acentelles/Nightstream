@@ -50,6 +50,11 @@ the caller. When downstream digest or audit owners already carry an exported
 prepared-step object, bridge binding must target that exact artifact rather
 than a locally recomputed placeholder.
 
+On the simple-kernel boundary, this is the root-facing binding surface. The
+root opening manifest remains empty there; root-side handoff is modeled through
+the exact prepared-step export plus this bridge leaf, not through a parallel
+root-opening schema.
+
 Define the stronger theorem-facing bridge bundle:
 
 $$
@@ -129,8 +134,8 @@ $$
 
 | Lean file | Local owner |
 |---|---|
-| `Nightstream/Chip8/BridgeBinding.lean` | Per-row projection and bridge-binding audit witnesses |
-| `Nightstream/Chip8/BridgeBindingInterface.lean` | Theorem-facing re-export surface |
+| `Nightstream/Chip8/Kernel/BridgeBinding.lean` | Per-row projection and bridge-binding audit witnesses |
+| `Nightstream/Chip8/Kernel/BridgeBindingInterface.lean` | Theorem-facing re-export surface |
 
 ## Contract Surface
 
@@ -174,9 +179,9 @@ $$
 ## Dependency and Consumer Map
 
 - **Upstream dependencies**:
-  - `Nightstream/Chip8/EvidenceCoverage.lean`
-  - `Nightstream/Chip8/ContinuityBridge.lean`
+  - `Nightstream/Chip8/Stage2/EvidenceCoverage.lean`
+  - `Nightstream/Chip8/Stage3/ContinuityBridge.lean`
 - **Downstream consumers**:
-  - `Nightstream/Chip8/StagedExecutionDigest.lean`
-  - `Nightstream/Chip8/ArtifactAudit.lean`
+  - `Nightstream/Chip8/Kernel/StagedExecutionDigest.lean`
+  - `Nightstream/Chip8/Kernel/ArtifactAudit.lean`
   - later Rust/Lean artifact refinement work

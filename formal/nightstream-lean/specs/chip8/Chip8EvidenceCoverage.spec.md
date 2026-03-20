@@ -209,6 +209,19 @@ to package:
 - the table-provenance and address-provenance objects required by those checked
   Shout claims
 
+For the `simple` kernel boundary, the Stage-1 table-auth mode is frozen
+channel-by-channel:
+
+- fetch uses the exact committed `C_rom_table @ r_fetch_addr` opening;
+- decode uses the exact committed `C_decode_table @ r_decode_addr` opening;
+- ALU uses the exact committed `C_alu_table @ r_add8lo_addr` opening whenever
+  the current row uses that subtable;
+- Eq4 uses the exact committed `C_eq4_table @ r_eq4_addr` opening whenever the
+  current row uses that table;
+- verifier-local helper evaluators such as identity/equality shims remain
+  explicit local helper objects, not `table_opening_claims`, and they never
+  replace the committed public table surfaces.
+
 This is the theorem-facing owner for Stage-1 checked-claim authentication. It
 is distinct from PCS direct-opening refinement: the direct-opening/refinement
 chain covers the row/view and Stage-3 direct scalar bundles, while Shout
@@ -407,8 +420,8 @@ top-level theorem parameters.
 
 | Lean file | Local owner |
 |---|---|
-| `Nightstream/Chip8/EvidenceCoverage.lean` | Kernel-proof-to-semantics extraction theorems for the final CHIP-8 kernel |
-| `Nightstream/Chip8/EvidenceCoverageInterface.lean` | Theorem-facing re-export surface |
+| `Nightstream/Chip8/Stage2/EvidenceCoverage.lean` | Kernel-proof-to-semantics extraction theorems for the final CHIP-8 kernel |
+| `Nightstream/Chip8/Stage2/EvidenceCoverageInterface.lean` | Theorem-facing re-export surface |
 
 ## Contract Surface
 
@@ -418,6 +431,7 @@ top-level theorem parameters.
 | Provenance | `VirtualValProvenance` | def | Definitional | Every register/RAM virtual `Val` object is justified by the exact Stage-2 chain |
 | Provenance | `AddressProvenance` | def | Definitional | Every Stage-1/Stage-2 address comes from the exact CHIP-8 family projection |
 | Provenance | `HandoffProvenance` | def | Definitional | Every Stage-2 handoff bit comes from `C_decode_handoff` and equals the Stage-1 decode output |
+| Stage 1 | `Stage1AuthenticatedBundle` | def/structure | Definitional | Packages the exact Stage-1 checked-claim surface, including the frozen per-channel table-auth mode of the simple kernel |
 | Closure | `TwistSessionClosed` | def | Definitional | Stage 2 contains closed register and RAM Twist sessions |
 | Closure | `RegisterTwistSessionRegistry` | abbrev | Definitional | Named register-side Twist registry surface |
 | Closure | `RamTwistSessionRegistry` | abbrev | Definitional | Named RAM-side Twist registry surface |
@@ -480,17 +494,17 @@ top-level theorem parameters.
 ## Dependency and Consumer Map
 
 - **Upstream dependencies**:
-  - `Nightstream/Chip8/OpeningBoundary.lean`
-  - `Nightstream/Chip8/FetchDecodeBinding.lean`
-  - `Nightstream/Chip8/DecodeAddressBinding.lean`
-  - `Nightstream/Chip8/WitnessMemoryBinding.lean`
-  - `Nightstream/Chip8/RomScheduleBinding.lean`
-  - `Nightstream/Chip8/ContinuityBridge.lean`
+  - `Nightstream/Chip8/Kernel/OpeningBoundary.lean`
+  - `Nightstream/Chip8/Stage1/FetchDecodeBinding.lean`
+  - `Nightstream/Chip8/Stage1/DecodeAddressBinding.lean`
+  - `Nightstream/Chip8/Stage2/WitnessMemoryBinding.lean`
+  - `Nightstream/Chip8/Kernel/RomScheduleBinding.lean`
+  - `Nightstream/Chip8/Stage3/ContinuityBridge.lean`
   - `Nightstream/PCSOpeningSemantics.lean`
 - **Downstream consumers**:
-  - `Nightstream/Chip8/StagedExecutionDigest.lean`
-  - `Nightstream/Chip8/ArtifactAudit.lean`
-  - `Nightstream/Chip8/StepComposition.lean`
+  - `Nightstream/Chip8/Kernel/StagedExecutionDigest.lean`
+  - `Nightstream/Chip8/Kernel/ArtifactAudit.lean`
+  - `Nightstream/Chip8/Execution/StepComposition.lean`
   - later Rust-refinement theorems about the final kernel proof object
 
 ## Implementation Plan

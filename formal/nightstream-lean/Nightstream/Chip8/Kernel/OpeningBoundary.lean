@@ -621,6 +621,20 @@ def CanonicalManifestOrder {Value Digest : Type*}
   (∀ claim ∈ manifest, strictlyIncreasing claim.polynomialIds) ∧
     manifest.Pairwise openingClaimLt
 
+def FamilyLocalFoldBucketConforms {Value Digest : Type*}
+  (pts : KernelPoints)
+  (carrierCommitmentId : CommitmentId)
+  (carrierPoint : List Nat)
+  (claims : List (OpeningClaim Value Digest)) : Prop :=
+  claims ≠ [] ∧
+    isKernelCommitment carrierCommitmentId ∧
+    CanonicalManifestOrder claims ∧
+    ∀ claim ∈ claims,
+      claim.source = .kernel ∧
+        claim.commitmentId = carrierCommitmentId ∧
+        claim.point = carrierPoint ∧
+        kernelClaimAllowed pts claim
+
 def ExactKernelOpeningBoundary {Value Digest : Type*}
   (pts : KernelPoints)
   (kernelManifest : KernelOpeningManifest Value Digest)
