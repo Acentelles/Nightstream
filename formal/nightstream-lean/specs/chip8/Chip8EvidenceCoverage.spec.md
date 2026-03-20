@@ -162,12 +162,75 @@ to mean:
 
 - `KernelPublicInputsBound(publicInput, meta, romTable, init)`
 - `KernelOpeningBoundary(kernelManifest, rootManifest)`
+- one explicit `Stage1AuthenticatedBundle`
+- one explicit `Stage2AuthenticatedBundle`
+- one explicit `Stage3AuthenticatedBundle`
 - object-level provenance for every table, virtual `Val`, address family, and
   handoff object used by the current row
-- `TwistSessionClosed(stage2)`
 - a row/view witness tied to the authenticated `C_lane` row-binding claims
-- lower-layer refinement for every direct scalar used by that row/view witness
+- lower-layer refinement, coordinatewise accepted-opening equality, and raw PCS
+  opening separation for every direct scalar transitively consumed by the
+  theorem-facing direct-opening bundles of the current row:
+  - the row/view projection bundle
+  - the Stage-3 current-row continuity bundle at `r_shift`
+  - the Stage-3 start-boundary bundle at `j0_bits`
+  - the Stage-3 final-boundary bundle at `j_last_bits`
 - exact Stage-1, Stage-2, and Stage-3 CHIP-8 bindings for the current row
+
+Define the explicit Stage-3 authenticated bundle:
+
+$$
+\mathrm{Stage3AuthenticatedBundle}(stage3, z)
+$$
+
+to package:
+
+- `LaneShiftBound`
+- `ContinuityBound`
+- `StartBoundaryBound`
+- `FinalBoundaryBound`
+- `StartBoundaryMatches`
+- `FinalBoundaryMatches`
+- `RowBound`
+- the direct-opening witness/refinement coverage for the current-row, start-row,
+  and final-row scalar openings consumed by those Stage-3 obligations
+
+Define the explicit Stage-1 authenticated bundle:
+
+$$
+\mathrm{Stage1AuthenticatedBundle}(\dots)
+$$
+
+to package:
+
+- one authenticated row/view projection path for the current row
+- one `FetchDecodeBound` witness bundle for fetch and decode
+- one `LookupBound` witness bundle for the optional ALU / Eq4 lookup row facts
+- the table-provenance and address-provenance objects required by those checked
+  Shout claims
+
+This is the theorem-facing owner for Stage-1 checked-claim authentication. It
+is distinct from PCS direct-opening refinement: the direct-opening/refinement
+chain covers the row/view and Stage-3 direct scalar bundles, while Shout
+lookup/read claims remain authenticated by their own checked-claim witnesses
+plus provenance predicates.
+
+Define the explicit Stage-2 authenticated bundle:
+
+$$
+\mathrm{Stage2AuthenticatedBundle}(\dots)
+$$
+
+to package:
+
+- one `MemoryBound` witness bundle for the current row
+- one closed authenticated register-side Twist session registry for the row
+- one closed authenticated RAM-side Twist session registry for the row
+- the address/value coverage consequences exported by those registries
+
+This is the theorem-facing owner for Stage-2 checked-claim authentication. It
+does not pretend that Twist read/write/`Val` checked claims are PCS direct
+openings; instead it makes their soundness-carrying checked-claim path explicit.
 
 ### Extraction theorems
 

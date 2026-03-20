@@ -55,6 +55,12 @@ abbrev MemoryFrameEvidence := @Nightstream.Chip8.EvidenceCoverage.MemoryFrameEvi
 abbrev MemoryEvidence := @Nightstream.Chip8.EvidenceCoverage.MemoryEvidence
 abbrev FramebufferEvidence := @Nightstream.Chip8.EvidenceCoverage.FramebufferEvidence
 abbrev ContinuityEvidence := @Nightstream.Chip8.EvidenceCoverage.ContinuityEvidence
+abbrev Stage1AuthenticatedBundle :=
+  @Nightstream.Chip8.EvidenceCoverage.Stage1AuthenticatedBundle
+abbrev Stage2AuthenticatedBundle :=
+  @Nightstream.Chip8.EvidenceCoverage.Stage2AuthenticatedBundle
+abbrev Stage3AuthenticatedBundle :=
+  @Nightstream.Chip8.EvidenceCoverage.Stage3AuthenticatedBundle
 abbrev SemanticEvidence := @Nightstream.Chip8.EvidenceCoverage.SemanticEvidence
 abbrev SemanticEvidenceCovered := @Nightstream.Chip8.EvidenceCoverage.SemanticEvidenceCovered
 abbrev ExactSemanticEvidenceCovered :=
@@ -126,6 +132,12 @@ abbrev ramTemporalSeedBound_of_stage2TemporalSeedBound :=
   @Nightstream.Chip8.EvidenceCoverage.ramTemporalSeedBound_of_stage2TemporalSeedBound
 abbrev semanticBounds_of_authenticatedEvidence :=
   @Nightstream.Chip8.EvidenceCoverage.semanticBounds_of_authenticatedEvidence
+abbrev stage1AuthenticatedBundle_of_evidence :=
+  @Nightstream.Chip8.EvidenceCoverage.stage1AuthenticatedBundle_of_evidence
+abbrev stage2AuthenticatedBundle_of_evidence :=
+  @Nightstream.Chip8.EvidenceCoverage.stage2AuthenticatedBundle_of_evidence
+abbrev stage3AuthenticatedBundle_of_evidence :=
+  @Nightstream.Chip8.EvidenceCoverage.stage3AuthenticatedBundle_of_evidence
 abbrev semanticEvidenceCovered_of_exactEvidence :=
   @Nightstream.Chip8.EvidenceCoverage.semanticEvidenceCovered_of_exactEvidence
 abbrev laneShiftSourceOpeningAppears_of_authenticatedEvidence :=

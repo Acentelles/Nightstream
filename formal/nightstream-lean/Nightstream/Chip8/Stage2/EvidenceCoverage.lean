@@ -1122,6 +1122,10 @@ def FramebufferEvidence
   True
 
 structure ContinuityEvidence
+  (pcs : PCSContext AuxIndex EvalPoint)
+  (evalBase : BaseFamily Nat AuxIndex → EvalPoint → F)
+  (B : Set (BaseFamily Nat AuxIndex))
+  (Γ₁ : List (Claim Nat AuxIndex EvalPoint AddressPoint CyclePoint F))
   (stepIdx : Nat)
   (semanticRows : Nat)
   (z : Nightstream.Chip8.Witness F) where
@@ -1131,8 +1135,35 @@ structure ContinuityEvidence
   shiftClaim : ContinuityBridge.LaneShiftClaim F
   shiftProof : ContinuityBridge.LaneShiftWitness F Unit
   currentRow : ContinuityBridge.ContinuityRow F
+  currentPoint : EvalPoint
+  currentPcNextWitness :
+    DirectValueWitness pcs evalBase B Γ₁ (.coreCol 2) currentPoint
+      currentRow.pcNext
+  currentXIdxWitness :
+    DirectValueWitness pcs evalBase B Γ₁ (.coreCol 20) currentPoint
+      currentRow.xIdx
+  currentIsMemOpWitness :
+    DirectValueWitness pcs evalBase B Γ₁ (.coreCol 19) currentPoint
+      currentRow.isMemOp
+  currentBurstLastWitness :
+    DirectValueWitness pcs evalBase B Γ₁ (.coreCol 22) currentPoint
+      currentRow.burstLast
   startRow : ContinuityBridge.StartBoundaryRow F
+  startPoint : EvalPoint
+  startIsMemOpWitness :
+    DirectValueWitness pcs evalBase B Γ₁ (.coreCol 19) startPoint
+      startRow.isMemOp
+  startXIdxWitness :
+    DirectValueWitness pcs evalBase B Γ₁ (.coreCol 20) startPoint
+      startRow.xIdx
   finalRow : ContinuityBridge.FinalBoundaryRow F
+  finalPoint : EvalPoint
+  finalIsMemOpWitness :
+    DirectValueWitness pcs evalBase B Γ₁ (.coreCol 19) finalPoint
+      finalRow.isMemOp
+  finalBurstLastWitness :
+    DirectValueWitness pcs evalBase B Γ₁ (.coreCol 22) finalPoint
+      finalRow.burstLast
   rowClaim : ContinuityBridge.RowBindingClaim F Unit
   continuity :
     ContinuityBridge.ContinuityBound N β1 β2 shiftClaim shiftProof currentRow
@@ -1150,6 +1181,83 @@ structure ContinuityEvidence
   currentBurstLast : currentRow.burstLast = z 22
   rowClaimIndex : rowClaim.rowIndex = stepIdx
   rowBinding : ContinuityBridge.RowBound rowClaim z
+
+abbrev Stage3AuthenticatedBundle
+  (pcs : PCSContext AuxIndex EvalPoint)
+  (evalBase : BaseFamily Nat AuxIndex → EvalPoint → F)
+  (B : Set (BaseFamily Nat AuxIndex))
+  (Γ₁ : List (Claim Nat AuxIndex EvalPoint AddressPoint CyclePoint F))
+  (stepIdx : Nat)
+  (semanticRows : Nat)
+  (z : Nightstream.Chip8.Witness F) :=
+  ContinuityEvidence (AuxIndex := AuxIndex) (EvalPoint := EvalPoint)
+    (AddressPoint := AddressPoint) (CyclePoint := CyclePoint) pcs evalBase B Γ₁
+    stepIdx semanticRows z
+
+def Stage1AuthenticatedBundle
+  (pcs : PCSContext AuxIndex EvalPoint)
+  (evalBase : BaseFamily Nat AuxIndex → EvalPoint → F)
+  (B : Set (BaseFamily Nat AuxIndex))
+  (Γ₁ : List (Claim Nat AuxIndex EvalPoint AddressPoint CyclePoint F))
+  (Γ₂ : List (Claim Nat AuxIndex EvalPoint AddressPoint CyclePoint F))
+  (publicTable : Table → Prop)
+  (tableBackedBy : Table → BaseFamily Nat AuxIndex → Prop)
+  (validAddressColumns : AddressColumns → Addr → Prop)
+  (kernelAddressBound : Addr → Prop)
+  (readCheckExpression : AddressColumns → Table → EvalPoint → F)
+  (readOnlyMemoryRelation : Table → Addr → Nat → Prop)
+  (rom : Program)
+  (pre post : MachineState)
+  (dec : DecodedStep Addr)
+  (stepIdx : Nat)
+  (z : Nightstream.Chip8.Witness F) : Prop :=
+  ∃ row : RowView,
+    RowProjectionWitness pcs evalBase B Γ₁ row ∧
+      RowConsistent row z dec pre post stepIdx ∧
+      Nonempty (
+        FetchDecodeEvidence evalBase B Γ₂ publicTable tableBackedBy
+          validAddressColumns kernelAddressBound readCheckExpression
+          readOnlyMemoryRelation rom pre dec stepIdx) ∧
+      LookupEvidence Γ₂ publicTable tableBackedBy B validAddressColumns
+        kernelAddressBound readCheckExpression readOnlyMemoryRelation pre dec
+        stepIdx row
+
+def Stage2AuthenticatedBundle
+  (readSessionKey : EvalPoint → SessionKey)
+  (pairedSessionKey : AddressPoint → CyclePoint → SessionKey)
+  (validAddressColumns : AddressColumns → Addr → Prop)
+  (kernelAddressBound : Addr → Prop)
+  (rwReadCheckExpression : AddressColumns → ValSurface → EvalPoint → F)
+  (writeCheckExpression : AddressPoint → CyclePoint → AddressColumns → Nat → ValSurface → F)
+  (valEvaluationExpression : Increment → AddressPoint → CyclePoint → F)
+  (readWriteMemoryRelation : ValSurface → Addr → Nat → Prop)
+  (incrementRelation : ValSurface → AddressColumns → Nat → Increment → Prop)
+  (Γ₃ : List (Claim Nat AuxIndex EvalPoint AddressPoint CyclePoint F))
+  (pre post : MachineState)
+  (z : Nightstream.Chip8.Witness F)
+  (dec : DecodedStep Addr)
+  (stepIdx : Nat) : Prop :=
+  ∃ memory :
+    MemoryEvidence readSessionKey pairedSessionKey validAddressColumns
+      kernelAddressBound rwReadCheckExpression writeCheckExpression
+      valEvaluationExpression readWriteMemoryRelation incrementRelation Γ₃ pre
+      post z dec stepIdx,
+    RegisterTwistSessionClosed (AuxIndex := AuxIndex) (EvalPoint := EvalPoint)
+      (AddressPoint := AddressPoint) (CyclePoint := CyclePoint)
+      (AddressColumns := AddressColumns) (Addr := Addr)
+      (ValSurface := ValSurface) (Increment := Increment)
+      (SessionKey := SessionKey) readSessionKey pairedSessionKey
+      validAddressColumns kernelAddressBound rwReadCheckExpression
+      writeCheckExpression valEvaluationExpression readWriteMemoryRelation
+      incrementRelation Γ₃ memory.registerRegistry ∧
+    RamTwistSessionClosed (AuxIndex := AuxIndex) (EvalPoint := EvalPoint)
+      (AddressPoint := AddressPoint) (CyclePoint := CyclePoint)
+      (AddressColumns := AddressColumns) (Addr := Addr)
+      (ValSurface := ValSurface) (Increment := Increment)
+      (SessionKey := SessionKey) readSessionKey pairedSessionKey
+      validAddressColumns kernelAddressBound rwReadCheckExpression
+      writeCheckExpression valEvaluationExpression readWriteMemoryRelation
+      incrementRelation Γ₃ memory.ramRegistry
 
 structure SemanticEvidence
   (pcs : PCSContext AuxIndex EvalPoint)
@@ -1198,7 +1306,9 @@ structure SemanticEvidence
     kernelAddressBound rwReadCheckExpression writeCheckExpression
     valEvaluationExpression readWriteMemoryRelation incrementRelation Γ₃
     pre post z dec stepIdx
-  continuity : ContinuityEvidence stepIdx inputs.pubMeta.semanticRows z
+  continuity :
+    Stage3AuthenticatedBundle pcs evalBase B Γ₁ stepIdx
+      inputs.pubMeta.semanticRows z
   boundary :
     ExactOpeningBoundary.ExactKernelOpeningBoundary openingPoints
       kernelManifest rootManifest
@@ -1292,6 +1402,136 @@ def ExactSemanticEvidenceCovered
       readCheckExpression rwReadCheckExpression writeCheckExpression
       valEvaluationExpression readOnlyMemoryRelation readWriteMemoryRelation
       incrementRelation Γ₁ Γ₂ Γ₃ rom σ stepIdx init pre post dec z
+
+theorem stage1AuthenticatedBundle_of_evidence
+  {pcs : PCSContext AuxIndex EvalPoint}
+  {inputs :
+    ExecutionInputContext DigestRom DigestSchedule RootParamsId VmSpec
+      TranscriptSeed}
+  {evalBase : BaseFamily Nat AuxIndex → EvalPoint → F}
+  {B : Set (BaseFamily Nat AuxIndex)}
+  {publicTable : Table → Prop}
+  {tableBackedBy : Table → BaseFamily Nat AuxIndex → Prop}
+  {readSessionKey : EvalPoint → SessionKey}
+  {pairedSessionKey : AddressPoint → CyclePoint → SessionKey}
+  {validAddressColumns : AddressColumns → Addr → Prop}
+  {kernelAddressBound : Addr → Prop}
+  {readCheckExpression : AddressColumns → Table → EvalPoint → F}
+  {rwReadCheckExpression : AddressColumns → ValSurface → EvalPoint → F}
+  {writeCheckExpression : AddressPoint → CyclePoint → AddressColumns → Nat → ValSurface → F}
+  {valEvaluationExpression : Increment → AddressPoint → CyclePoint → F}
+  {readOnlyMemoryRelation : Table → Addr → Nat → Prop}
+  {readWriteMemoryRelation : ValSurface → Addr → Nat → Prop}
+  {incrementRelation : ValSurface → AddressColumns → Nat → Increment → Prop}
+  {Γ₁ Γ₂ Γ₃ : List (Claim Nat AuxIndex EvalPoint AddressPoint CyclePoint F)}
+  {rom : Program}
+  {σ : ExternalSchedule}
+  {stepIdx : Nat}
+  {init : InitialState}
+  {pre post : MachineState}
+  {dec : DecodedStep Addr}
+  {z : Nightstream.Chip8.Witness F}
+  (h :
+    SemanticEvidenceCovered pcs inputs evalBase B publicTable tableBackedBy
+      readSessionKey pairedSessionKey validAddressColumns kernelAddressBound
+      readCheckExpression rwReadCheckExpression writeCheckExpression
+      valEvaluationExpression readOnlyMemoryRelation readWriteMemoryRelation
+      incrementRelation Γ₁ Γ₂ Γ₃ rom σ stepIdx init pre post dec z) :
+  Stage1AuthenticatedBundle (AuxIndex := AuxIndex) (EvalPoint := EvalPoint)
+    (AddressPoint := AddressPoint) (CyclePoint := CyclePoint)
+    (AddressColumns := AddressColumns) (Addr := Addr) (Table := Table) pcs
+    evalBase B Γ₁ Γ₂ publicTable tableBackedBy validAddressColumns
+    kernelAddressBound readCheckExpression readOnlyMemoryRelation rom pre post
+    dec stepIdx z := by
+  rcases h with ⟨ev⟩
+  exact
+    ⟨ev.row, ev.rowProjection, ev.rowConsistent, ⟨ev.fetchDecode⟩, ev.lookup⟩
+
+theorem stage2AuthenticatedBundle_of_evidence
+  {pcs : PCSContext AuxIndex EvalPoint}
+  {inputs :
+    ExecutionInputContext DigestRom DigestSchedule RootParamsId VmSpec
+      TranscriptSeed}
+  {evalBase : BaseFamily Nat AuxIndex → EvalPoint → F}
+  {B : Set (BaseFamily Nat AuxIndex)}
+  {publicTable : Table → Prop}
+  {tableBackedBy : Table → BaseFamily Nat AuxIndex → Prop}
+  {readSessionKey : EvalPoint → SessionKey}
+  {pairedSessionKey : AddressPoint → CyclePoint → SessionKey}
+  {validAddressColumns : AddressColumns → Addr → Prop}
+  {kernelAddressBound : Addr → Prop}
+  {readCheckExpression : AddressColumns → Table → EvalPoint → F}
+  {rwReadCheckExpression : AddressColumns → ValSurface → EvalPoint → F}
+  {writeCheckExpression : AddressPoint → CyclePoint → AddressColumns → Nat → ValSurface → F}
+  {valEvaluationExpression : Increment → AddressPoint → CyclePoint → F}
+  {readOnlyMemoryRelation : Table → Addr → Nat → Prop}
+  {readWriteMemoryRelation : ValSurface → Addr → Nat → Prop}
+  {incrementRelation : ValSurface → AddressColumns → Nat → Increment → Prop}
+  {Γ₁ Γ₂ Γ₃ : List (Claim Nat AuxIndex EvalPoint AddressPoint CyclePoint F)}
+  {rom : Program}
+  {σ : ExternalSchedule}
+  {stepIdx : Nat}
+  {init : InitialState}
+  {pre post : MachineState}
+  {dec : DecodedStep Addr}
+  {z : Nightstream.Chip8.Witness F}
+  (h :
+    SemanticEvidenceCovered pcs inputs evalBase B publicTable tableBackedBy
+      readSessionKey pairedSessionKey validAddressColumns kernelAddressBound
+      readCheckExpression rwReadCheckExpression writeCheckExpression
+      valEvaluationExpression readOnlyMemoryRelation readWriteMemoryRelation
+      incrementRelation Γ₁ Γ₂ Γ₃ rom σ stepIdx init pre post dec z) :
+  Stage2AuthenticatedBundle (AuxIndex := AuxIndex) (EvalPoint := EvalPoint)
+    (AddressPoint := AddressPoint) (CyclePoint := CyclePoint)
+    (AddressColumns := AddressColumns) (Addr := Addr)
+    (ValSurface := ValSurface) (Increment := Increment)
+    (SessionKey := SessionKey) readSessionKey pairedSessionKey
+    validAddressColumns kernelAddressBound rwReadCheckExpression
+    writeCheckExpression valEvaluationExpression readWriteMemoryRelation
+    incrementRelation Γ₃ pre post z dec stepIdx := by
+  rcases h with ⟨ev⟩
+  exact ⟨ev.memory, ev.registerTwistClosed, ev.ramTwistClosed⟩
+
+theorem stage3AuthenticatedBundle_of_evidence
+  {pcs : PCSContext AuxIndex EvalPoint}
+  {inputs :
+    ExecutionInputContext DigestRom DigestSchedule RootParamsId VmSpec
+      TranscriptSeed}
+  {evalBase : BaseFamily Nat AuxIndex → EvalPoint → F}
+  {B : Set (BaseFamily Nat AuxIndex)}
+  {publicTable : Table → Prop}
+  {tableBackedBy : Table → BaseFamily Nat AuxIndex → Prop}
+  {readSessionKey : EvalPoint → SessionKey}
+  {pairedSessionKey : AddressPoint → CyclePoint → SessionKey}
+  {validAddressColumns : AddressColumns → Addr → Prop}
+  {kernelAddressBound : Addr → Prop}
+  {readCheckExpression : AddressColumns → Table → EvalPoint → F}
+  {rwReadCheckExpression : AddressColumns → ValSurface → EvalPoint → F}
+  {writeCheckExpression : AddressPoint → CyclePoint → AddressColumns → Nat → ValSurface → F}
+  {valEvaluationExpression : Increment → AddressPoint → CyclePoint → F}
+  {readOnlyMemoryRelation : Table → Addr → Nat → Prop}
+  {readWriteMemoryRelation : ValSurface → Addr → Nat → Prop}
+  {incrementRelation : ValSurface → AddressColumns → Nat → Increment → Prop}
+  {Γ₁ Γ₂ Γ₃ : List (Claim Nat AuxIndex EvalPoint AddressPoint CyclePoint F)}
+  {rom : Program}
+  {σ : ExternalSchedule}
+  {stepIdx : Nat}
+  {init : InitialState}
+  {pre post : MachineState}
+  {dec : DecodedStep Addr}
+  {z : Nightstream.Chip8.Witness F}
+  (h :
+    SemanticEvidenceCovered pcs inputs evalBase B publicTable tableBackedBy
+      readSessionKey pairedSessionKey validAddressColumns kernelAddressBound
+      readCheckExpression rwReadCheckExpression writeCheckExpression
+      valEvaluationExpression readOnlyMemoryRelation readWriteMemoryRelation
+      incrementRelation Γ₁ Γ₂ Γ₃ rom σ stepIdx init pre post dec z) :
+  Nonempty (
+    Stage3AuthenticatedBundle (AuxIndex := AuxIndex) (EvalPoint := EvalPoint)
+      (AddressPoint := AddressPoint) (CyclePoint := CyclePoint) pcs evalBase B
+      Γ₁ stepIdx inputs.pubMeta.semanticRows z) := by
+  rcases h with ⟨ev⟩
+  exact ⟨ev.continuity⟩
 
 theorem kernelOpeningBoundary_of_evidence
   {pcs : PCSContext AuxIndex EvalPoint}
