@@ -1,5 +1,4 @@
 import SuperNeo.BarLift
-import SuperNeo.Generated.Vectors
 
 /-!
 Theorem-3 inner-product transform (paper-faithful).
@@ -63,11 +62,6 @@ def nativeBarEntry (i j : Nat) : F :=
 def nativeBarMatrix : Array (Array F) :=
   Array.ofFn (fun i : Fin d =>
     Array.ofFn (fun j : Fin d => nativeBarEntry i.1 j.1))
-
-/-- The closed-form native bar matrix matches the generated matrix artifact. -/
-theorem nativeBarMatrix_eq_generated :
-    nativeBarMatrix = thm3ToFMatrix SuperNeo.Generated.barMatrixU64 := by
-  native_decide
 
 @[simp] theorem nativeBarMatrix_size : nativeBarMatrix.size = d := by
   simp [nativeBarMatrix]

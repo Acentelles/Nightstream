@@ -8,42 +8,11 @@ rev = "v4.28.0"
 
 [[lean_lib]]
 name = "SuperNeo"
+globs = ["SuperNeo"]
 
 [[lean_exe]]
 name = "check"
 root = "Main"
-
-[[lean_exe]]
-name = "export-oracles"
-root = "ExportOracles"
-
-[[lean_exe]]
-name = "validate-protocol-artifacts"
-root = "ValidateProtocolArtifacts"
-
-[[lean_exe]]
-name = "validate-neo-fold-artifacts"
-root = "ValidateNeoFoldArtifacts"
-
-[[lean_exe]]
-name = "validate-neo-fold-artifact-scenario"
-root = "ValidateNeoFoldArtifactScenario"
-
-[[lean_exe]]
-name = "validate-neo-fold-refinement"
-root = "ValidateNeoFoldRefinement"
-
-[[lean_exe]]
-name = "validate-neo-fold-relations"
-root = "ValidateNeoFoldRelations"
-
-[[lean_exe]]
-name = "validate-neo-fold-step-semantics"
-root = "ValidateNeoFoldStepSemantics"
-
-[[lean_exe]]
-name = "validate-neo-fold-sessions"
-root = "ValidateNeoFoldSessions"
 
 [[lean_exe]]
 name = "goldilocks-golden"

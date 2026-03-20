@@ -7,10 +7,9 @@ Lean is the mathematical source of truth.
 
 Operationally:
 - Lean theorem/definition surfaces are authoritative.
-- Golden vectors from this formalization are used to validate Rust implementations.
-- Rust-generated vectors (`neo-math`) are used as executable regression evidence.
-- Target direction: run corresponding Lean and Rust computations in parallel and
-  require value equality at each compared surface.
+- The default maintenance boundary is now Lean-only.
+- Rust-generated vectors, artifact corpora, and cross-language conformance gates
+  are currently out of the maintained build path.
 
 ## What is checked
 
@@ -106,22 +105,16 @@ The module structure mirrors the paper's four main sections.
 ### Infrastructure
 
 - `SuperNeo/ProtocolReduction.lean`: medium-term theorem skeletons
-- `SuperNeo/Checks.lean`: cross-check predicates against generated vectors
-- `SuperNeo/Regression.lean`: regression harness
-- `SuperNeo/OracleExport.lean`: Lean-authored JSON oracle export for Rust conformance
-- `SuperNeo/Generated/Vectors.lean`: Rust-generated constants (bar matrix + cases)
-- `SuperNeo/Generated/Cases.lean`: structured Rust-generated case families for Lean regression checks
-- `SuperNeo/Generated/ProtocolArtifacts.lean`: Rust-generated protocol artifact families for Lean validation
-- `SuperNeo/Generated/NeoFoldArtifacts.lean`: Rust-generated optimized `neo-fold` artifact families for Lean validation
-- `SuperNeo/RustRefinement/`: Rust-only refinement surfaces that separate
-  implementation-sidecar semantics from the paper CE / folding semantics
-- `rust-vectors/`: standalone Rust generator crate
-
-## Regenerate vectors from Rust
-
-```bash
-cargo run --manifest-path formal/superneo-lean/rust-vectors/Cargo.toml --bin superneo-rust-vectors
-```
+- `SuperNeo/Regression.lean`: theorem-local regression harness
+- `SuperNeo/Checks.lean`: archived vector-backed executable checks, currently
+  outside the maintained default build path
+- `SuperNeo/OracleExport.lean`: archived Lean-to-Rust oracle export surface,
+  currently outside the maintained default build path
+- `SuperNeo/Generated/`: archived generated corpora from older Rust/Lean
+  conformance lanes, currently outside the maintained default build path
+- `SuperNeo/RustRefinement/`: archived Rust-integration refinement surfaces,
+  currently outside the maintained default build path
+- `rust-vectors/`: archived Rust generator crate for the older conformance lane
 
 ## Run Lean checks
 
@@ -131,169 +124,10 @@ lake build
 lake exe check
 ```
 
-## Export Lean-authored Rust oracles
-
-```bash
-cd formal/superneo-lean
-lake exe export-oracles
-```
-
-This writes deterministic JSON fixtures under `formal/superneo-lean/generated-oracles/`.
-
-## Validate Rust-exported protocol artifacts in Lean
-
-```bash
-cd formal/superneo-lean
-lake env lean --run ValidateProtocolArtifacts.lean
-```
-
-Expected output is:
-
-```text
-protocol_artifact_checks=true
-tampered_protocol_artifact_checks=false
-```
-
-## Validate Rust-exported `neo-fold` artifacts in Lean
-
-```bash
-cd formal/superneo-lean
-lake env lean --run ValidateNeoFoldArtifacts.lean
-```
-
-Expected output is:
-
-```text
-neo_fold_artifact_checks=true
-tampered_neo_fold_artifact_checks=false
-```
-
-The current real Rust `neo-fold` artifact families include:
-
-- `starstream_leaf`: one exported optimized leaf proof
-- `twist_shout_2step`: a real multi-step Route-A proof
-- `twist_shout_4step`: a longer real multi-step Route-A proof
-- `twist_shout_continuation_suffix`: a continuation export with nonzero step offset
-- `mixed_ccs_route_a_segments`: a mixed CCS-only / Route-A segmented proof family
-
-Each valid family has a matching tampered family that Lean rejects.
-
-The Lean validator checks:
-
-- stored `Π_CCS` FE transcript recurrence/final sums
-- stored `Π_CCS` NC transcript recurrence/final sums
-- Route-A batched-time transcript shape and per-claim recurrence
-- CPU and shift metadata wrappers against the exported transcripts
-- exported `Π_RLC` / `Π_DEC` lane summaries for the main lane and auxiliary lanes
-- exported CE-claim semantics for current, carried, parent, and child witnesses on the main and auxiliary lanes
-- cross-step chain shape on multi-step proof families
-- segment metadata consistency on mixed CCS-only / Route-A exports
-- `ccs_out.r` agreement with the exported `Π_CCS` challenge prefix
-
-The implementation-sidecar checks used by the Rust artifact validators are not
-paper theorems by themselves. Their intended formal contract lives under
-`specs/RustRefinement/` and requires any stronger Rust-side acceptance predicate
-to conservatively refine the projected paper-core CE / `Π_RLC` / `Π_DEC`
-relations. The slow Rust-refinement lane currently checks three layers:
-- whole-artifact refinement,
-- projected per-step relation validation,
-- whole-session refinement.
-
-## Validate Rust-exported `neo-fold` artifacts against the projected paper-core predicate
-
-```bash
-cd formal/superneo-lean
-lake exe validate-neo-fold-refinement
-```
-
-Expected output is:
-
-```text
-neo_fold_paper_refinement_checks=true
-```
-
-## Validate Rust-exported `neo-fold` per-step relations against the projected paper-core predicate
-
-```bash
-cd formal/superneo-lean
-lake exe validate-neo-fold-relations
-```
-
-Expected output is:
-
-```text
-neo_fold_relation_checks=true
-```
-
-## Validate Rust-exported `neo-fold` step semantics against the projected paper-core predicate
-
-```bash
-cd formal/superneo-lean
-lake exe validate-neo-fold-step-semantics
-```
-
-Expected output is:
-
-```text
-neo_fold_step_semantic_checks=true
-```
-
-This validator is stronger than the relation-only check. It reuses the exported
-current-step CE and witness-chain semantics already present in the Rust artifact
-corpus and checks:
-
-- current-step CE claim semantics
-- main-lane carried/current/parent/child witness-chain semantics
-- auxiliary-lane witness-chain semantics
-
-This relation layer is enforced only in the slow Rust-refinement lane.
-
-## Validate Rust-exported `neo-fold` session glue in Lean
-
-```bash
-cd formal/superneo-lean
-lake exe validate-neo-fold-sessions
-```
-
-Expected output is:
-
-```text
-neo_fold_session_checks=true
-neo_fold_session_paper_refinement_checks=true
-```
-
-The current session corpus includes:
-
-- ordinary single-run `FoldingSession` families with step linking and output binding
-- resumed / continuation families split into multiple proved segments
-- tampered resumed families with broken accumulator carry metadata
-
-The session validator checks only Rust-side session glue:
-
-- adjacent public-step linking
-- resumed-segment carry sizes across continuation boundaries
-- resumed-segment main-accumulator digest equality across continuation boundaries
-- output-binding claim consistency against the exported final state
-- valid/tampered corpus classification
-
-This executable reports both:
-
-- the implementation-side session validator result over valid and tampered
-  exported sessions, and
-- the theorem-backed paper-core session-refinement result over the valid
-  exported session corpus after erasing Rust-only sidecar fields.
-
-## Run the full Lean↔Rust conformance gate
-
-```bash
-bash scripts/check_lean_rust_conformance.sh
-```
-
-This regenerates the Lean fixtures/artifacts, runs `lake build`, runs the real
-Lean regression gate, validates both compact protocol artifacts and real
-optimized `neo-fold` artifacts inside Lean,
-runs the Rust release-mode oracle tests, audits Lean sources for trusted holes,
-and fails if any generated artifact would change.
+`lake exe check` currently verifies only the theorem import wall for the
+maintained Lean package. The older Rust-vector and Rust-artifact conformance
+commands remain in the repo only as archived integration machinery and are not
+part of the maintained default build.
 
 ## Run SumCheck tests
 
@@ -320,34 +154,11 @@ all_checks=true
 
 ## Check Output Breakdown (`lake exe check`)
 
-`lake exe check` reports 21 atomic checks plus one aggregate gate.
-`true` means the corresponding executable predicate passed on all configured inputs.
-This is stronger than unit smoke tests, but weaker than full universal theorem proofs.
+`lake exe check` now reports:
 
-| Output flag | `true` means (exactly what passed) | Evidence type | Remaining gap to a full SuperNeo proof |
-|---|---|---|---|
-| `superneo_cases` | For every generated `(a,b)`: `ct(mulRqPhi(superneoBarBlock(bar,a), b))`, `dot(a,b)`, and expected values all agree. | Rust-generated vectors + Lean recomputation | Native Theorem-3 closure is now proved constructively; optional extension only is broader non-native `bar` generalization. |
-| `ring_mul_cases` | `mulRqPhi a b` matches expected coefficient vectors for all generated multiplication cases. | Rust-generated vectors | Prove quotient-ring multiplication semantics universally. |
-| `norm_cases` | `normInfCoeffs` equals expected norms on all generated norm cases. | Rust-generated vectors | Prove general norm properties/bounds used in later theorems. |
-| `split_cases` | `splitBalancedVec` digits match expected, recomposition equals expected and original input, and per-digit bounds hold. | Rust-generated vectors + invariant check | The decomposition round-trip/bound theorems are now proved constructively in `Decomp.lean`; this executable gate remains regression evidence. |
-| `eq_cases` | `eqPoly x y` matches expected; Boolean points also satisfy indicator behavior check. | Rust-generated vectors + Boolean invariant | Prove full hypercube-indicator theorem. |
-| `mle_cases` | Inner-product MLE and folding MLE both match expected and match each other (`mleIdentity`). | Rust-generated vectors + identity check | The MLE identity, folding equivalence, chi/dot equivalence, and linearity packages are now proved in `MLE.lean`; this executable gate remains regression evidence. |
-| `embedding_vec_cases` | `embedVec` matches expected blocks and `unembedVec (embedVec v) = v`. | Rust-generated vectors + round-trip invariant | The quantified vector embedding theorems are now proved in `Embedding.lean`; this executable gate remains regression evidence. |
-| `embedding_matrix_cases` | `embedMatrix` matches expected blocks and `unembedMatrix (embedMatrix M) = M`. | Rust-generated vectors + round-trip invariant | The quantified matrix embedding theorems are now proved in `Embedding.lean`; this executable gate remains regression evidence. |
-| `bar_lift_vec_cases` | Bar-lift outputs for `v`, `w`, `v+w`, `s*v` match expected and satisfy add/scale linearity checks. | Rust-generated vectors + linearity invariant | The vector-level Definition-8 closure is now proved constructively; this executable gate remains regression evidence. |
-| `bar_lift_matrix_cases` | `barLiftMatrix` matches expected lifted matrices on all generated cases. | Rust-generated vectors | The matrix-level Definition-8 closure is now proved constructively; this executable gate remains regression evidence. |
-| `matrix_transform_cases` | `matrixVecDirect M z`, `matrixVecCtBar bar M z`, and expected vectors all agree; identity predicate also holds. | Rust-generated vectors + identity check | Theorem-4 closure is now proved constructively in `MatrixTransform.lean`, including direct theorem-native entrypoints from the finite basis-kernel Theorem-3 witness/checker; this executable gate remains regression evidence. |
-| `eval_link_cases` | Evaluation-link computations (`evalRingVec`, `ct`, expected outputs) agree and `evalLinkIdentity`/`evalLinkForMatrix` checks pass. | Rust-generated vectors + identity checks | The eval-link theorem layer is now proved; any remaining broader gaps are upstream open preliminaries such as coefficient-map and MLE generalization, not `EvalLink.lean` itself. |
-| `eval_hom_cases` | Evaluation homomorphism outputs (`Y1`, `Y2`, linear combo, direct combo) all match expected and each other; `evalHom2` holds. | Rust-generated vectors + homomorphism invariant | Theorem-5 closure is now proved constructively in `EvalHom.lean`; this executable gate remains regression evidence. |
-| `module_hom_cases` | `moduleHomSanity` passes add/scale preservation for representative concrete homomorphisms. | Fixed sanity witnesses (not generated) | The abstract module-hom theorem/check bridges are now proved in `ModuleHom.lean`; this executable gate remains regression evidence. |
-| `invertibility_cases` | Concrete Goldilocks arithmetic side-conditions for the low-norm invertibility interface are satisfied. | Deterministic constant checks | The active Goldilocks `paperCarrier`-difference theorem path is closed, and the shape-aware Goldilocks low-norm theorem at threshold `5` is proved; remaining optional work is the broader standalone low-norm theorem beyond that narrow route. |
-| `sampling_cases` | Strong-sampling predicate, max norm, bound, empirical expansion, and `empirical <= bound` all match expected/hold. | Rust-generated vectors + bound check | Theorem-9 closure is now proved in `SamplingSet.lean`; this executable gate remains regression evidence. |
-| `eq_lift_cases` | `eqLiftFromTable` matches expected sums; Boolean-point behavior matches expected values when applicable. | Rust-generated vectors + Boolean-point check | The quantified eq-lifting theorems are now proved in `PolyLemmas.lean`; this executable gate remains regression evidence. |
-| `poly_lemma_cases` | `polyLemmaSanity` passes (`eqLiftAllBoolean` on a sample table + SZ interface condition). | Fixed sanity witnesses | Theorem-native Schwartz-Zippel/eq-lift closure is now proved in `PolyLemmas.lean`; this executable gate remains regression evidence. |
-| `coeff_map_cases` | Coefficient-map round-trip checks pass on superneo/ring-generated data; additional sanity predicates pass. | Mixed: generated data + sanity predicates | Coefficient-map round-trip, `ct` compatibility, and shape-preservation theorem surfaces are now proved in `CoeffMaps.lean`; this executable gate remains regression evidence. |
-| `parameter_cases` | Shape sanity, concrete parameter sanity, and norm sanity predicates all hold. | Deterministic constant/invariant checks | Appendix B.2 constants and core positivity/bound theorems are now proved in `Parameters.lean`; this executable gate remains regression evidence. |
-| `interp_cases` | Lightweight interpolation regression slot reports green; the actual interpolation correctness/uniqueness claim now lives in the quantified proofs in `Interp.lean`. | Proof layer in `Interp.lean` + lightweight executable gate | Keep theorem closure and, if desired later, make the Goldilocks/ZMod interpolation path executable for vector replay. |
-| `all_checks` | Logical conjunction of every check above is `true`. | Aggregate gate | No new math content; only reports that all current executable checks passed. |
+- `proof_import_wall=true` when theorem-facing barrel modules do not import the
+  archived generated/vector/regression surfaces
+- `all_checks=true` when that import-wall gate passes
 
 ## Paper-Faithful Proof-Complete Goal (Project Policy)
 
