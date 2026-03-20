@@ -6,8 +6,12 @@
   authenticated CHIP-8 kernel chunk.
 - **Key property**: `kernelSoundness_of_boundaries` composes exact trace
   evidence, the simple-kernel chunk-input contract, exact kernel/root opening
-  discipline, the exact transcript schedule, and the exact soundness-accounting
-  package into one explicit kernel conclusion bundle.
+  discipline, the exact transcript schedule, one authenticated temporal-support
+  bundle, and the exact soundness-accounting package into one explicit kernel
+  conclusion bundle. The stronger corollary
+  `kernelSoundness_of_exactBoundaries` derives that temporal-support bundle
+  internally from exact trace evidence and therefore discharges the same kernel
+  conclusion from the raw exact boundary data alone.
 - **Auditor entrypoint**: `KernelSoundnessAccepted` packages the kernel
   acceptance boundary into one named predicate, and the direct corollaries
   expose the named authenticated temporal-support bundle, exact execution
@@ -166,6 +170,47 @@ This is the exact theorem-facing owner that turns the current Nightstream
 bridge into one kernel-level statement that includes the strong execution-trace
 soundness claim required by the kernel spec.
 
+### Strengthened exact-boundary corollary
+
+Because `Chip8AuthenticatedTrace` now derives the exact temporal-support bundle
+from exact trace evidence itself, this owner must also expose the stronger
+direct corollary:
+
+$$
+\mathrm{ExactTraceEvidence}(frames)
+\land
+\mathrm{SimpleKernelChunkInput}(init, meta.semanticRows, \mathrm{traceOf}(frames))
+\land
+\mathrm{ExactKernelOpeningBoundary}(pts, kernelManifest, rootManifest)
+\land
+\mathrm{KernelTranscriptSchedule}(meta.semanticRows, events)
+\land
+\mathrm{KernelSoundnessAccounting}(accounting)
+$$
+
+$$
+\Longrightarrow
+\mathrm{KernelSoundnessConclusion}(\dots).
+$$
+
+Equivalently, the exact boundary data above must determine one accepted kernel
+boundary instance:
+
+$$
+\mathrm{ExactTraceEvidence}(frames)
+\land
+\mathrm{SimpleKernelChunkInput}(init, meta.semanticRows, \mathrm{traceOf}(frames))
+\land
+\mathrm{ExactKernelOpeningBoundary}(pts, kernelManifest, rootManifest)
+\land
+\mathrm{KernelTranscriptSchedule}(meta.semanticRows, events)
+$$
+
+$$
+\Longrightarrow
+\mathrm{KernelSoundnessAccepted}(\dots).
+$$
+
 ### Accepted boundary packaging
 
 Define:
@@ -264,8 +309,8 @@ $$
 
 | Lean file | Local owner |
 |---|---|
-| `Nightstream/Chip8/KernelSoundness.lean` | Top-level CHIP-8 kernel soundness conclusion |
-| `Nightstream/Chip8/KernelSoundnessInterface.lean` | Theorem-facing re-export surface |
+| `Nightstream/Chip8/Kernel/KernelSoundness.lean` | Top-level CHIP-8 kernel soundness conclusion |
+| `Nightstream/Chip8/Kernel/KernelSoundnessInterface.lean` | Theorem-facing re-export surface |
 
 ## Contract Surface
 
@@ -275,6 +320,8 @@ $$
 | Conclusion | `KernelSoundnessConclusion` | def | Definitional | Bundles the exact top-level kernel conclusions |
 | Acceptance | `KernelSoundnessAccepted` | def | Definitional | Exact theorem-facing kernel acceptance boundary |
 | Theorem | `kernelSoundness_of_boundaries` | theorem | Theorem-Target | Exact row evidence + chunk input + opening boundary + transcript schedule + accounting imply the full kernel conclusion bundle |
+| Theorem | `kernelSoundnessAccepted_of_exactBoundaries` | theorem | Theorem-Target | Exact boundary data determines one accepted kernel boundary instance because temporal support is now derived internally from exact trace evidence |
+| Theorem | `kernelSoundness_of_exactBoundaries` | theorem | Theorem-Target | Exact row evidence + chunk input + opening boundary + transcript schedule + accounting imply the full kernel conclusion bundle without requiring temporal support as an external premise |
 | Theorem | `kernelSoundness_of_acceptance` | theorem | Theorem-Target | Accepted kernel boundary instances imply the full kernel conclusion bundle |
 | Theorem | `kernelAcceptanceImpliesAuthenticatedChunkTrace` | theorem | Theorem-Target | Accepted kernel boundary instances imply the authenticated chunk-trace surface exported by the current kernel boundary |
 | Theorem | `kernelAcceptanceImpliesStage2TemporalSeeds` | theorem | Theorem-Target | Accepted kernel boundary instances imply the exact per-row Stage-2 temporal seed summary exported by authenticated trace closure |

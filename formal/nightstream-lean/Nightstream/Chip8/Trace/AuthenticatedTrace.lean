@@ -31,6 +31,18 @@ abbrev MachineState := StepComposition.MachineState
 abbrev InitialState := StepComposition.InitialState
 abbrev ExternalSchedule := StepComposition.ExternalSchedule
 abbrev ExecutionFrame := StepComposition.ExecutionFrame
+abbrev RegisterAdjacentBound
+  {Addr : Type*} :=
+  RegisterTimeline.RegisterAdjacentBound (Addr := Addr)
+abbrev RegisterAdjacentTraceBound
+  {Addr : Type*} :=
+  RegisterTimeline.RegisterAdjacentTraceBound (Addr := Addr)
+abbrev RamAdjacentBound
+  {Addr : Type*} :=
+  RamTimeline.RamAdjacentBound (Addr := Addr)
+abbrev RamAdjacentTraceBound
+  {Addr : Type*} :=
+  RamTimeline.RamAdjacentTraceBound (Addr := Addr)
 abbrev RegisterValueTimeline := TemporalConsistency.RegisterValueTimeline
 abbrev RamValueTimeline := TemporalConsistency.RamValueTimeline
 
@@ -112,6 +124,108 @@ def traceOf
   List (ExecutionFrame Addr) :=
   frames.map ExactFrameEvidence.frame
 
+def ExactStage2AdjacentSupport
+  {pcs : PCSContext AuxIndex EvalPoint}
+  {inputs :
+    ExecutionInputContext DigestRom DigestSchedule RootParamsId VmSpec
+      TranscriptSeed}
+  {evalBase : BaseFamily Nat AuxIndex → EvalPoint → F}
+  {B : Set (BaseFamily Nat AuxIndex)}
+  {publicTable : Table → Prop}
+  {tableBackedBy : Table → BaseFamily Nat AuxIndex → Prop}
+  {readSessionKey : EvalPoint → SessionKey}
+  {pairedSessionKey : AddressPoint → CyclePoint → SessionKey}
+  {validAddressColumns : AddressColumns → Addr → Prop}
+  {kernelAddressBound : Addr → Prop}
+  {readCheckExpression : AddressColumns → Table → EvalPoint → F}
+  {rwReadCheckExpression : AddressColumns → ValSurface → EvalPoint → F}
+  {writeCheckExpression :
+    AddressPoint → CyclePoint → AddressColumns → Nat → ValSurface → F}
+  {valEvaluationExpression : Increment → AddressPoint → CyclePoint → F}
+  {readOnlyMemoryRelation : Table → Addr → Nat → Prop}
+  {readWriteMemoryRelation : ValSurface → Addr → Nat → Prop}
+  {incrementRelation : ValSurface → AddressColumns → Nat → Increment → Prop}
+  {rom : Program}
+  {σ : ExternalSchedule}
+  {init : InitialState}
+  (current next :
+    ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
+      readSessionKey pairedSessionKey validAddressColumns kernelAddressBound
+      readCheckExpression rwReadCheckExpression writeCheckExpression
+      valEvaluationExpression readOnlyMemoryRelation readWriteMemoryRelation
+      incrementRelation rom σ init) : Prop :=
+  RegisterAdjacentBound current.frame next.frame ∧
+    RamAdjacentBound current.frame next.frame
+
+def ExactPcAdjacentSupport
+  {pcs : PCSContext AuxIndex EvalPoint}
+  {inputs :
+    ExecutionInputContext DigestRom DigestSchedule RootParamsId VmSpec
+      TranscriptSeed}
+  {evalBase : BaseFamily Nat AuxIndex → EvalPoint → F}
+  {B : Set (BaseFamily Nat AuxIndex)}
+  {publicTable : Table → Prop}
+  {tableBackedBy : Table → BaseFamily Nat AuxIndex → Prop}
+  {readSessionKey : EvalPoint → SessionKey}
+  {pairedSessionKey : AddressPoint → CyclePoint → SessionKey}
+  {validAddressColumns : AddressColumns → Addr → Prop}
+  {kernelAddressBound : Addr → Prop}
+  {readCheckExpression : AddressColumns → Table → EvalPoint → F}
+  {rwReadCheckExpression : AddressColumns → ValSurface → EvalPoint → F}
+  {writeCheckExpression :
+    AddressPoint → CyclePoint → AddressColumns → Nat → ValSurface → F}
+  {valEvaluationExpression : Increment → AddressPoint → CyclePoint → F}
+  {readOnlyMemoryRelation : Table → Addr → Nat → Prop}
+  {readWriteMemoryRelation : ValSurface → Addr → Nat → Prop}
+  {incrementRelation : ValSurface → AddressColumns → Nat → Increment → Prop}
+  {rom : Program}
+  {σ : ExternalSchedule}
+  {init : InitialState}
+  (current next :
+    ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
+      readSessionKey pairedSessionKey validAddressColumns kernelAddressBound
+      readCheckExpression rwReadCheckExpression writeCheckExpression
+      valEvaluationExpression readOnlyMemoryRelation readWriteMemoryRelation
+      incrementRelation rom σ init) : Prop :=
+  ∃ N β1 β2 shiftClaim shiftProof currentRow rowClaim,
+    StepComposition.ContinuityRowBound current.stepIdx N β1 β2 shiftClaim
+      shiftProof currentRow rowClaim current.frame.row ∧
+      ShiftPcMatchesCurrentPcNext shiftProof currentRow ∧
+      ShiftPcMatchesNextRow shiftProof next.frame
+
+def ExactAdjacentSupport
+  {pcs : PCSContext AuxIndex EvalPoint}
+  {inputs :
+    ExecutionInputContext DigestRom DigestSchedule RootParamsId VmSpec
+      TranscriptSeed}
+  {evalBase : BaseFamily Nat AuxIndex → EvalPoint → F}
+  {B : Set (BaseFamily Nat AuxIndex)}
+  {publicTable : Table → Prop}
+  {tableBackedBy : Table → BaseFamily Nat AuxIndex → Prop}
+  {readSessionKey : EvalPoint → SessionKey}
+  {pairedSessionKey : AddressPoint → CyclePoint → SessionKey}
+  {validAddressColumns : AddressColumns → Addr → Prop}
+  {kernelAddressBound : Addr → Prop}
+  {readCheckExpression : AddressColumns → Table → EvalPoint → F}
+  {rwReadCheckExpression : AddressColumns → ValSurface → EvalPoint → F}
+  {writeCheckExpression :
+    AddressPoint → CyclePoint → AddressColumns → Nat → ValSurface → F}
+  {valEvaluationExpression : Increment → AddressPoint → CyclePoint → F}
+  {readOnlyMemoryRelation : Table → Addr → Nat → Prop}
+  {readWriteMemoryRelation : ValSurface → Addr → Nat → Prop}
+  {incrementRelation : ValSurface → AddressColumns → Nat → Increment → Prop}
+  {rom : Program}
+  {σ : ExternalSchedule}
+  {init : InitialState}
+  (current next :
+    ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
+      readSessionKey pairedSessionKey validAddressColumns kernelAddressBound
+      readCheckExpression rwReadCheckExpression writeCheckExpression
+      valEvaluationExpression readOnlyMemoryRelation readWriteMemoryRelation
+      incrementRelation rom σ init) : Prop :=
+  ExactStage2AdjacentSupport current next ∧
+    ExactPcAdjacentSupport current next
+
 def ExactTraceEvidenceFrom
   {pcs : PCSContext AuxIndex EvalPoint}
   {inputs :
@@ -145,8 +259,11 @@ def ExactTraceEvidenceFrom
         incrementRelation rom σ init) →
     Prop
   | _, [] => True
-  | stepIdx, frame :: rest =>
-      frame.stepIdx = stepIdx ∧ ExactTraceEvidenceFrom (stepIdx + 1) rest
+  | stepIdx, [frame] => frame.stepIdx = stepIdx
+  | stepIdx, current :: next :: rest =>
+      current.stepIdx = stepIdx ∧
+        ExactAdjacentSupport current next ∧
+        ExactTraceEvidenceFrom (stepIdx + 1) (next :: rest)
 
 abbrev ExactTraceEvidence
   {pcs : PCSContext AuxIndex EvalPoint}
@@ -180,6 +297,182 @@ abbrev ExactTraceEvidence
         valEvaluationExpression readOnlyMemoryRelation readWriteMemoryRelation
         incrementRelation rom σ init)) : Prop :=
   ExactTraceEvidenceFrom 0 frames
+
+theorem headStepIdx_of_exactTraceEvidenceFrom_cons
+  {pcs : PCSContext AuxIndex EvalPoint}
+  {inputs :
+    ExecutionInputContext DigestRom DigestSchedule RootParamsId VmSpec
+      TranscriptSeed}
+  {evalBase : BaseFamily Nat AuxIndex → EvalPoint → F}
+  {B : Set (BaseFamily Nat AuxIndex)}
+  {publicTable : Table → Prop}
+  {tableBackedBy : Table → BaseFamily Nat AuxIndex → Prop}
+  {readSessionKey : EvalPoint → SessionKey}
+  {pairedSessionKey : AddressPoint → CyclePoint → SessionKey}
+  {validAddressColumns : AddressColumns → Addr → Prop}
+  {kernelAddressBound : Addr → Prop}
+  {readCheckExpression : AddressColumns → Table → EvalPoint → F}
+  {rwReadCheckExpression : AddressColumns → ValSurface → EvalPoint → F}
+  {writeCheckExpression :
+    AddressPoint → CyclePoint → AddressColumns → Nat → ValSurface → F}
+  {valEvaluationExpression : Increment → AddressPoint → CyclePoint → F}
+  {readOnlyMemoryRelation : Table → Addr → Nat → Prop}
+  {readWriteMemoryRelation : ValSurface → Addr → Nat → Prop}
+  {incrementRelation : ValSurface → AddressColumns → Nat → Increment → Prop}
+  {rom : Program}
+  {σ : ExternalSchedule}
+  {init : InitialState}
+  {stepIdx : Nat}
+  {frame :
+    ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
+      readSessionKey pairedSessionKey validAddressColumns kernelAddressBound
+      readCheckExpression rwReadCheckExpression writeCheckExpression
+      valEvaluationExpression readOnlyMemoryRelation readWriteMemoryRelation
+      incrementRelation rom σ init}
+  {rest :
+    List
+      (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
+        readSessionKey pairedSessionKey validAddressColumns kernelAddressBound
+        readCheckExpression rwReadCheckExpression writeCheckExpression
+        valEvaluationExpression readOnlyMemoryRelation readWriteMemoryRelation
+        incrementRelation rom σ init)}
+  (hTrace : ExactTraceEvidenceFrom stepIdx (frame :: rest)) :
+  frame.stepIdx = stepIdx := by
+  cases rest with
+  | nil =>
+      simpa [ExactTraceEvidenceFrom] using hTrace
+  | cons next tail =>
+      simpa [ExactTraceEvidenceFrom] using hTrace.1
+
+theorem adjacentSupport_of_exactTraceEvidenceFrom_cons_cons
+  {pcs : PCSContext AuxIndex EvalPoint}
+  {inputs :
+    ExecutionInputContext DigestRom DigestSchedule RootParamsId VmSpec
+      TranscriptSeed}
+  {evalBase : BaseFamily Nat AuxIndex → EvalPoint → F}
+  {B : Set (BaseFamily Nat AuxIndex)}
+  {publicTable : Table → Prop}
+  {tableBackedBy : Table → BaseFamily Nat AuxIndex → Prop}
+  {readSessionKey : EvalPoint → SessionKey}
+  {pairedSessionKey : AddressPoint → CyclePoint → SessionKey}
+  {validAddressColumns : AddressColumns → Addr → Prop}
+  {kernelAddressBound : Addr → Prop}
+  {readCheckExpression : AddressColumns → Table → EvalPoint → F}
+  {rwReadCheckExpression : AddressColumns → ValSurface → EvalPoint → F}
+  {writeCheckExpression :
+    AddressPoint → CyclePoint → AddressColumns → Nat → ValSurface → F}
+  {valEvaluationExpression : Increment → AddressPoint → CyclePoint → F}
+  {readOnlyMemoryRelation : Table → Addr → Nat → Prop}
+  {readWriteMemoryRelation : ValSurface → Addr → Nat → Prop}
+  {incrementRelation : ValSurface → AddressColumns → Nat → Increment → Prop}
+  {rom : Program}
+  {σ : ExternalSchedule}
+  {init : InitialState}
+  {stepIdx : Nat}
+  {current next :
+    ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
+      readSessionKey pairedSessionKey validAddressColumns kernelAddressBound
+      readCheckExpression rwReadCheckExpression writeCheckExpression
+      valEvaluationExpression readOnlyMemoryRelation readWriteMemoryRelation
+      incrementRelation rom σ init}
+  {rest :
+    List
+      (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
+        readSessionKey pairedSessionKey validAddressColumns kernelAddressBound
+        readCheckExpression rwReadCheckExpression writeCheckExpression
+        valEvaluationExpression readOnlyMemoryRelation readWriteMemoryRelation
+        incrementRelation rom σ init)}
+  (hTrace : ExactTraceEvidenceFrom stepIdx (current :: next :: rest)) :
+  ExactAdjacentSupport current next := by
+  simpa [ExactTraceEvidenceFrom] using hTrace.2.1
+
+theorem tailExactTraceEvidenceFrom_of_exactTraceEvidenceFrom_cons_cons
+  {pcs : PCSContext AuxIndex EvalPoint}
+  {inputs :
+    ExecutionInputContext DigestRom DigestSchedule RootParamsId VmSpec
+      TranscriptSeed}
+  {evalBase : BaseFamily Nat AuxIndex → EvalPoint → F}
+  {B : Set (BaseFamily Nat AuxIndex)}
+  {publicTable : Table → Prop}
+  {tableBackedBy : Table → BaseFamily Nat AuxIndex → Prop}
+  {readSessionKey : EvalPoint → SessionKey}
+  {pairedSessionKey : AddressPoint → CyclePoint → SessionKey}
+  {validAddressColumns : AddressColumns → Addr → Prop}
+  {kernelAddressBound : Addr → Prop}
+  {readCheckExpression : AddressColumns → Table → EvalPoint → F}
+  {rwReadCheckExpression : AddressColumns → ValSurface → EvalPoint → F}
+  {writeCheckExpression :
+    AddressPoint → CyclePoint → AddressColumns → Nat → ValSurface → F}
+  {valEvaluationExpression : Increment → AddressPoint → CyclePoint → F}
+  {readOnlyMemoryRelation : Table → Addr → Nat → Prop}
+  {readWriteMemoryRelation : ValSurface → Addr → Nat → Prop}
+  {incrementRelation : ValSurface → AddressColumns → Nat → Increment → Prop}
+  {rom : Program}
+  {σ : ExternalSchedule}
+  {init : InitialState}
+  {stepIdx : Nat}
+  {current next :
+    ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
+      readSessionKey pairedSessionKey validAddressColumns kernelAddressBound
+      readCheckExpression rwReadCheckExpression writeCheckExpression
+      valEvaluationExpression readOnlyMemoryRelation readWriteMemoryRelation
+      incrementRelation rom σ init}
+  {rest :
+    List
+      (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
+        readSessionKey pairedSessionKey validAddressColumns kernelAddressBound
+        readCheckExpression rwReadCheckExpression writeCheckExpression
+        valEvaluationExpression readOnlyMemoryRelation readWriteMemoryRelation
+        incrementRelation rom σ init)}
+  (hTrace : ExactTraceEvidenceFrom stepIdx (current :: next :: rest)) :
+  ExactTraceEvidenceFrom (stepIdx + 1) (next :: rest) := by
+  simpa [ExactTraceEvidenceFrom] using hTrace.2.2
+
+theorem tailExactTraceEvidenceFrom_of_exactTraceEvidenceFrom_cons
+  {pcs : PCSContext AuxIndex EvalPoint}
+  {inputs :
+    ExecutionInputContext DigestRom DigestSchedule RootParamsId VmSpec
+      TranscriptSeed}
+  {evalBase : BaseFamily Nat AuxIndex → EvalPoint → F}
+  {B : Set (BaseFamily Nat AuxIndex)}
+  {publicTable : Table → Prop}
+  {tableBackedBy : Table → BaseFamily Nat AuxIndex → Prop}
+  {readSessionKey : EvalPoint → SessionKey}
+  {pairedSessionKey : AddressPoint → CyclePoint → SessionKey}
+  {validAddressColumns : AddressColumns → Addr → Prop}
+  {kernelAddressBound : Addr → Prop}
+  {readCheckExpression : AddressColumns → Table → EvalPoint → F}
+  {rwReadCheckExpression : AddressColumns → ValSurface → EvalPoint → F}
+  {writeCheckExpression :
+    AddressPoint → CyclePoint → AddressColumns → Nat → ValSurface → F}
+  {valEvaluationExpression : Increment → AddressPoint → CyclePoint → F}
+  {readOnlyMemoryRelation : Table → Addr → Nat → Prop}
+  {readWriteMemoryRelation : ValSurface → Addr → Nat → Prop}
+  {incrementRelation : ValSurface → AddressColumns → Nat → Increment → Prop}
+  {rom : Program}
+  {σ : ExternalSchedule}
+  {init : InitialState}
+  {stepIdx : Nat}
+  {frame :
+    ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
+      readSessionKey pairedSessionKey validAddressColumns kernelAddressBound
+      readCheckExpression rwReadCheckExpression writeCheckExpression
+      valEvaluationExpression readOnlyMemoryRelation readWriteMemoryRelation
+      incrementRelation rom σ init}
+  {rest :
+    List
+      (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
+        readSessionKey pairedSessionKey validAddressColumns kernelAddressBound
+        readCheckExpression rwReadCheckExpression writeCheckExpression
+        valEvaluationExpression readOnlyMemoryRelation readWriteMemoryRelation
+        incrementRelation rom σ init)}
+  (hTrace : ExactTraceEvidenceFrom stepIdx (frame :: rest)) :
+  ExactTraceEvidenceFrom (stepIdx + 1) rest := by
+  cases rest with
+  | nil =>
+      simp [ExactTraceEvidenceFrom]
+  | cons next tail =>
+      exact tailExactTraceEvidenceFrom_of_exactTraceEvidenceFrom_cons_cons hTrace
 
 def HeadInitialStateMatch
   {pcs : PCSContext AuxIndex EvalPoint}
@@ -1044,11 +1337,20 @@ theorem executionFramesBound_of_exactTraceFrom
       simp [traceOf, List.Forall]
   | cons frame rest ih =>
       intro stepIdx hTrace
-      rcases hTrace with ⟨_, hTail⟩
-      simpa [traceOf, List.Forall] using
-        And.intro
-          (executionFrameBound_of_exactFrameEvidence frame)
-          (ih hTail)
+      cases rest with
+      | nil =>
+          simpa [traceOf, List.Forall] using
+            And.intro
+              (executionFrameBound_of_exactFrameEvidence frame)
+              True.intro
+      | cons next tail =>
+          have hTail :
+              ExactTraceEvidenceFrom (stepIdx + 1) (next :: tail) :=
+            tailExactTraceEvidenceFrom_of_exactTraceEvidenceFrom_cons_cons hTrace
+          simpa [traceOf, List.Forall] using
+            And.intro
+              (executionFrameBound_of_exactFrameEvidence frame)
+              (ih hTail)
 
 theorem executionFramesBound_of_exactTrace
   {pcs : PCSContext AuxIndex EvalPoint}
@@ -1125,7 +1427,8 @@ theorem continuityTraceBound_of_exactTrace
       simp [traceOf, ExecutionSemantics.ContinuityTraceBound]
   | cons frame rest ih =>
       intro stepIdx hTrace
-      rcases hTrace with ⟨hStep, hTail⟩
+      have hStep : frame.stepIdx = stepIdx :=
+        headStepIdx_of_exactTraceEvidenceFrom_cons hTrace
       rcases semanticBounds_of_exactAuthenticatedEvidence frame.exactEvidence with
         ⟨_, _, _, _, _, _, hCont, _, _⟩
       have hHead :
@@ -1133,7 +1436,15 @@ theorem continuityTraceBound_of_exactTrace
             StepComposition.ContinuityRowBound stepIdx N β1 β2 shiftClaim
               shiftProof currentRow rowClaim frame.frame.row := by
         simpa [hStep] using hCont
-      exact ⟨hHead, ih hTail⟩
+      cases rest with
+      | nil =>
+          simpa [traceOf, ExecutionSemantics.ContinuityTraceBound] using
+            And.intro hHead True.intro
+      | cons next tail =>
+          have hTail :
+              ExactTraceEvidenceFrom (stepIdx + 1) (next :: tail) :=
+            tailExactTraceEvidenceFrom_of_exactTraceEvidenceFrom_cons_cons hTrace
+          exact ⟨hHead, ih hTail⟩
 
 theorem startBoundaryFrame_of_exactHead
   {pcs : PCSContext AuxIndex EvalPoint}
@@ -1174,7 +1485,8 @@ theorem startBoundaryFrame_of_exactHead
         incrementRelation rom σ init)}
   (hTrace : ExactTraceEvidence (frame :: rest)) :
   StepComposition.StartBoundaryFrame frame.frame := by
-  rcases hTrace with ⟨hStep, _⟩
+  have hStep : frame.stepIdx = 0 :=
+    headStepIdx_of_exactTraceEvidenceFrom_cons hTrace
   rcases semanticEvidenceCovered_of_exactEvidence frame.exactEvidence with
     ⟨Γ₁, Γ₂, Γ₃, hSem⟩
   exact startBoundaryFrame_of_evidence hSem hStep
@@ -1221,9 +1533,13 @@ theorem lastStepIdx_of_exactTraceFrom_appendLast
   lastFrame.stepIdx = stepIdx + framesPrefix.length := by
   induction framesPrefix generalizing stepIdx with
   | nil =>
-      simpa [ExactTraceEvidenceFrom] using hTrace.1
+      simpa [ExactTraceEvidenceFrom] using hTrace
   | cons frame framesPrefix ih =>
-      rcases hTrace with ⟨hFrame, hTail⟩
+      have hFrame : frame.stepIdx = stepIdx :=
+        headStepIdx_of_exactTraceEvidenceFrom_cons hTrace
+      have hTail :
+          ExactTraceEvidenceFrom (stepIdx + 1) (framesPrefix ++ [lastFrame]) :=
+        tailExactTraceEvidenceFrom_of_exactTraceEvidenceFrom_cons hTrace
       have hLast : lastFrame.stepIdx = stepIdx + 1 + framesPrefix.length := ih hTail
       calc
         lastFrame.stepIdx = stepIdx + 1 + framesPrefix.length := hLast
@@ -1538,6 +1854,349 @@ theorem authenticatedChunkTraceBound_of_exactTrace
       continuity := continuityTraceBound_of_exactTrace hExact
       boundary := boundaryTraceBound_of_exactTrace (inputs := inputs) hExact hChunk }
 
+theorem registerAdjacentTraceBound_of_exactTraceFrom
+  {pcs : PCSContext AuxIndex EvalPoint}
+  {inputs :
+    ExecutionInputContext DigestRom DigestSchedule RootParamsId VmSpec
+      TranscriptSeed}
+  {evalBase : BaseFamily Nat AuxIndex → EvalPoint → F}
+  {B : Set (BaseFamily Nat AuxIndex)}
+  {publicTable : Table → Prop}
+  {tableBackedBy : Table → BaseFamily Nat AuxIndex → Prop}
+  {readSessionKey : EvalPoint → SessionKey}
+  {pairedSessionKey : AddressPoint → CyclePoint → SessionKey}
+  {validAddressColumns : AddressColumns → Addr → Prop}
+  {kernelAddressBound : Addr → Prop}
+  {readCheckExpression : AddressColumns → Table → EvalPoint → F}
+  {rwReadCheckExpression : AddressColumns → ValSurface → EvalPoint → F}
+  {writeCheckExpression :
+    AddressPoint → CyclePoint → AddressColumns → Nat → ValSurface → F}
+  {valEvaluationExpression : Increment → AddressPoint → CyclePoint → F}
+  {readOnlyMemoryRelation : Table → Addr → Nat → Prop}
+  {readWriteMemoryRelation : ValSurface → Addr → Nat → Prop}
+  {incrementRelation : ValSurface → AddressColumns → Nat → Increment → Prop}
+  {rom : Program}
+  {σ : ExternalSchedule}
+  {init : InitialState}
+  {frames :
+    List
+      (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
+        readSessionKey pairedSessionKey validAddressColumns kernelAddressBound
+        readCheckExpression rwReadCheckExpression writeCheckExpression
+        valEvaluationExpression readOnlyMemoryRelation readWriteMemoryRelation
+        incrementRelation rom σ init)} :
+  ∀ {stepIdx : Nat},
+    ExactTraceEvidenceFrom stepIdx frames →
+      RegisterAdjacentTraceBound (traceOf frames) := by
+  induction frames with
+  | nil =>
+      intro stepIdx hTrace
+      simpa [traceOf, RegisterAdjacentTraceBound] using True.intro
+  | cons current rest ih =>
+      intro stepIdx hTrace
+      cases rest with
+      | nil =>
+          simpa [traceOf, RegisterAdjacentTraceBound] using True.intro
+      | cons next tail =>
+          have hAdj := adjacentSupport_of_exactTraceEvidenceFrom_cons_cons hTrace
+          have hTail :
+              ExactTraceEvidenceFrom (stepIdx + 1) (next :: tail) :=
+            tailExactTraceEvidenceFrom_of_exactTraceEvidenceFrom_cons_cons hTrace
+          simpa [traceOf, RegisterAdjacentTraceBound] using
+            And.intro hAdj.1.1 (ih hTail)
+
+theorem registerAdjacentTraceBound_of_exactTrace
+  {pcs : PCSContext AuxIndex EvalPoint}
+  {inputs :
+    ExecutionInputContext DigestRom DigestSchedule RootParamsId VmSpec
+      TranscriptSeed}
+  {evalBase : BaseFamily Nat AuxIndex → EvalPoint → F}
+  {B : Set (BaseFamily Nat AuxIndex)}
+  {publicTable : Table → Prop}
+  {tableBackedBy : Table → BaseFamily Nat AuxIndex → Prop}
+  {readSessionKey : EvalPoint → SessionKey}
+  {pairedSessionKey : AddressPoint → CyclePoint → SessionKey}
+  {validAddressColumns : AddressColumns → Addr → Prop}
+  {kernelAddressBound : Addr → Prop}
+  {readCheckExpression : AddressColumns → Table → EvalPoint → F}
+  {rwReadCheckExpression : AddressColumns → ValSurface → EvalPoint → F}
+  {writeCheckExpression :
+    AddressPoint → CyclePoint → AddressColumns → Nat → ValSurface → F}
+  {valEvaluationExpression : Increment → AddressPoint → CyclePoint → F}
+  {readOnlyMemoryRelation : Table → Addr → Nat → Prop}
+  {readWriteMemoryRelation : ValSurface → Addr → Nat → Prop}
+  {incrementRelation : ValSurface → AddressColumns → Nat → Increment → Prop}
+  {rom : Program}
+  {σ : ExternalSchedule}
+  {init : InitialState}
+  {frames :
+    List
+      (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
+        readSessionKey pairedSessionKey validAddressColumns kernelAddressBound
+        readCheckExpression rwReadCheckExpression writeCheckExpression
+        valEvaluationExpression readOnlyMemoryRelation readWriteMemoryRelation
+        incrementRelation rom σ init)}
+  (hExact : ExactTraceEvidence frames) :
+  RegisterAdjacentTraceBound (traceOf frames) :=
+  registerAdjacentTraceBound_of_exactTraceFrom hExact
+
+theorem ramAdjacentTraceBound_of_exactTraceFrom
+  {pcs : PCSContext AuxIndex EvalPoint}
+  {inputs :
+    ExecutionInputContext DigestRom DigestSchedule RootParamsId VmSpec
+      TranscriptSeed}
+  {evalBase : BaseFamily Nat AuxIndex → EvalPoint → F}
+  {B : Set (BaseFamily Nat AuxIndex)}
+  {publicTable : Table → Prop}
+  {tableBackedBy : Table → BaseFamily Nat AuxIndex → Prop}
+  {readSessionKey : EvalPoint → SessionKey}
+  {pairedSessionKey : AddressPoint → CyclePoint → SessionKey}
+  {validAddressColumns : AddressColumns → Addr → Prop}
+  {kernelAddressBound : Addr → Prop}
+  {readCheckExpression : AddressColumns → Table → EvalPoint → F}
+  {rwReadCheckExpression : AddressColumns → ValSurface → EvalPoint → F}
+  {writeCheckExpression :
+    AddressPoint → CyclePoint → AddressColumns → Nat → ValSurface → F}
+  {valEvaluationExpression : Increment → AddressPoint → CyclePoint → F}
+  {readOnlyMemoryRelation : Table → Addr → Nat → Prop}
+  {readWriteMemoryRelation : ValSurface → Addr → Nat → Prop}
+  {incrementRelation : ValSurface → AddressColumns → Nat → Increment → Prop}
+  {rom : Program}
+  {σ : ExternalSchedule}
+  {init : InitialState}
+  {frames :
+    List
+      (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
+        readSessionKey pairedSessionKey validAddressColumns kernelAddressBound
+        readCheckExpression rwReadCheckExpression writeCheckExpression
+        valEvaluationExpression readOnlyMemoryRelation readWriteMemoryRelation
+        incrementRelation rom σ init)} :
+  ∀ {stepIdx : Nat},
+    ExactTraceEvidenceFrom stepIdx frames →
+      RamAdjacentTraceBound (traceOf frames) := by
+  induction frames with
+  | nil =>
+      intro stepIdx hTrace
+      simpa [traceOf, RamAdjacentTraceBound] using True.intro
+  | cons current rest ih =>
+      intro stepIdx hTrace
+      cases rest with
+      | nil =>
+          simpa [traceOf, RamAdjacentTraceBound] using True.intro
+      | cons next tail =>
+          have hAdj := adjacentSupport_of_exactTraceEvidenceFrom_cons_cons hTrace
+          have hTail :
+              ExactTraceEvidenceFrom (stepIdx + 1) (next :: tail) :=
+            tailExactTraceEvidenceFrom_of_exactTraceEvidenceFrom_cons_cons hTrace
+          simpa [traceOf, RamAdjacentTraceBound] using
+            And.intro hAdj.1.2 (ih hTail)
+
+theorem ramAdjacentTraceBound_of_exactTrace
+  {pcs : PCSContext AuxIndex EvalPoint}
+  {inputs :
+    ExecutionInputContext DigestRom DigestSchedule RootParamsId VmSpec
+      TranscriptSeed}
+  {evalBase : BaseFamily Nat AuxIndex → EvalPoint → F}
+  {B : Set (BaseFamily Nat AuxIndex)}
+  {publicTable : Table → Prop}
+  {tableBackedBy : Table → BaseFamily Nat AuxIndex → Prop}
+  {readSessionKey : EvalPoint → SessionKey}
+  {pairedSessionKey : AddressPoint → CyclePoint → SessionKey}
+  {validAddressColumns : AddressColumns → Addr → Prop}
+  {kernelAddressBound : Addr → Prop}
+  {readCheckExpression : AddressColumns → Table → EvalPoint → F}
+  {rwReadCheckExpression : AddressColumns → ValSurface → EvalPoint → F}
+  {writeCheckExpression :
+    AddressPoint → CyclePoint → AddressColumns → Nat → ValSurface → F}
+  {valEvaluationExpression : Increment → AddressPoint → CyclePoint → F}
+  {readOnlyMemoryRelation : Table → Addr → Nat → Prop}
+  {readWriteMemoryRelation : ValSurface → Addr → Nat → Prop}
+  {incrementRelation : ValSurface → AddressColumns → Nat → Increment → Prop}
+  {rom : Program}
+  {σ : ExternalSchedule}
+  {init : InitialState}
+  {frames :
+    List
+      (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
+        readSessionKey pairedSessionKey validAddressColumns kernelAddressBound
+        readCheckExpression rwReadCheckExpression writeCheckExpression
+        valEvaluationExpression readOnlyMemoryRelation readWriteMemoryRelation
+        incrementRelation rom σ init)}
+  (hExact : ExactTraceEvidence frames) :
+  RamAdjacentTraceBound (traceOf frames) :=
+  ramAdjacentTraceBound_of_exactTraceFrom hExact
+
+theorem pcAdjacentBridgeFrom_of_exactTraceFrom
+  {pcs : PCSContext AuxIndex EvalPoint}
+  {inputs :
+    ExecutionInputContext DigestRom DigestSchedule RootParamsId VmSpec
+      TranscriptSeed}
+  {evalBase : BaseFamily Nat AuxIndex → EvalPoint → F}
+  {B : Set (BaseFamily Nat AuxIndex)}
+  {publicTable : Table → Prop}
+  {tableBackedBy : Table → BaseFamily Nat AuxIndex → Prop}
+  {readSessionKey : EvalPoint → SessionKey}
+  {pairedSessionKey : AddressPoint → CyclePoint → SessionKey}
+  {validAddressColumns : AddressColumns → Addr → Prop}
+  {kernelAddressBound : Addr → Prop}
+  {readCheckExpression : AddressColumns → Table → EvalPoint → F}
+  {rwReadCheckExpression : AddressColumns → ValSurface → EvalPoint → F}
+  {writeCheckExpression :
+    AddressPoint → CyclePoint → AddressColumns → Nat → ValSurface → F}
+  {valEvaluationExpression : Increment → AddressPoint → CyclePoint → F}
+  {readOnlyMemoryRelation : Table → Addr → Nat → Prop}
+  {readWriteMemoryRelation : ValSurface → Addr → Nat → Prop}
+  {incrementRelation : ValSurface → AddressColumns → Nat → Increment → Prop}
+  {rom : Program}
+  {σ : ExternalSchedule}
+  {init : InitialState}
+  {frames :
+    List
+      (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
+        readSessionKey pairedSessionKey validAddressColumns kernelAddressBound
+        readCheckExpression rwReadCheckExpression writeCheckExpression
+        valEvaluationExpression readOnlyMemoryRelation readWriteMemoryRelation
+        incrementRelation rom σ init)} :
+  ∀ {stepIdx : Nat},
+    ExactTraceEvidenceFrom stepIdx frames →
+      PcAdjacentBridgeFrom stepIdx (traceOf frames) := by
+  induction frames with
+  | nil =>
+      intro stepIdx hTrace
+      simp [traceOf, PcAdjacentBridgeFrom]
+  | cons current rest ih =>
+      intro stepIdx hTrace
+      cases rest with
+      | nil =>
+          simp [traceOf, PcAdjacentBridgeFrom]
+      | cons next tail =>
+          have hStep : current.stepIdx = stepIdx :=
+            headStepIdx_of_exactTraceEvidenceFrom_cons hTrace
+          have hAdj := adjacentSupport_of_exactTraceEvidenceFrom_cons_cons hTrace
+          have hTail :
+              ExactTraceEvidenceFrom (stepIdx + 1) (next :: tail) :=
+            tailExactTraceEvidenceFrom_of_exactTraceEvidenceFrom_cons_cons hTrace
+          rcases hAdj.2 with
+            ⟨N, β1, β2, shiftClaim, shiftProof, currentRow, rowClaim,
+              hContCurrent, hShiftCurrent, hShiftNext⟩
+          have hCont :
+              StepComposition.ContinuityRowBound stepIdx N β1 β2 shiftClaim
+                shiftProof currentRow rowClaim current.frame.row := by
+            simpa [hStep] using hContCurrent
+          refine ⟨?_, ih hTail⟩
+          exact ⟨N, β1, β2, shiftClaim, shiftProof, currentRow, rowClaim, hCont,
+            hShiftCurrent, hShiftNext⟩
+
+theorem pcAdjacentBridge_of_exactTrace
+  {pcs : PCSContext AuxIndex EvalPoint}
+  {inputs :
+    ExecutionInputContext DigestRom DigestSchedule RootParamsId VmSpec
+      TranscriptSeed}
+  {evalBase : BaseFamily Nat AuxIndex → EvalPoint → F}
+  {B : Set (BaseFamily Nat AuxIndex)}
+  {publicTable : Table → Prop}
+  {tableBackedBy : Table → BaseFamily Nat AuxIndex → Prop}
+  {readSessionKey : EvalPoint → SessionKey}
+  {pairedSessionKey : AddressPoint → CyclePoint → SessionKey}
+  {validAddressColumns : AddressColumns → Addr → Prop}
+  {kernelAddressBound : Addr → Prop}
+  {readCheckExpression : AddressColumns → Table → EvalPoint → F}
+  {rwReadCheckExpression : AddressColumns → ValSurface → EvalPoint → F}
+  {writeCheckExpression :
+    AddressPoint → CyclePoint → AddressColumns → Nat → ValSurface → F}
+  {valEvaluationExpression : Increment → AddressPoint → CyclePoint → F}
+  {readOnlyMemoryRelation : Table → Addr → Nat → Prop}
+  {readWriteMemoryRelation : ValSurface → Addr → Nat → Prop}
+  {incrementRelation : ValSurface → AddressColumns → Nat → Increment → Prop}
+  {rom : Program}
+  {σ : ExternalSchedule}
+  {init : InitialState}
+  {frames :
+    List
+      (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
+        readSessionKey pairedSessionKey validAddressColumns kernelAddressBound
+        readCheckExpression rwReadCheckExpression writeCheckExpression
+        valEvaluationExpression readOnlyMemoryRelation readWriteMemoryRelation
+        incrementRelation rom σ init)}
+  (hExact : ExactTraceEvidence frames) :
+  PcAdjacentBridge (traceOf frames) := by
+  exact pcAdjacentBridgeFrom_of_exactTraceFrom hExact
+
+theorem stage2TemporalContextBound_of_exactTrace
+  {pcs : PCSContext AuxIndex EvalPoint}
+  {inputs :
+    ExecutionInputContext DigestRom DigestSchedule RootParamsId VmSpec
+      TranscriptSeed}
+  {evalBase : BaseFamily Nat AuxIndex → EvalPoint → F}
+  {B : Set (BaseFamily Nat AuxIndex)}
+  {publicTable : Table → Prop}
+  {tableBackedBy : Table → BaseFamily Nat AuxIndex → Prop}
+  {readSessionKey : EvalPoint → SessionKey}
+  {pairedSessionKey : AddressPoint → CyclePoint → SessionKey}
+  {validAddressColumns : AddressColumns → Addr → Prop}
+  {kernelAddressBound : Addr → Prop}
+  {readCheckExpression : AddressColumns → Table → EvalPoint → F}
+  {rwReadCheckExpression : AddressColumns → ValSurface → EvalPoint → F}
+  {writeCheckExpression :
+    AddressPoint → CyclePoint → AddressColumns → Nat → ValSurface → F}
+  {valEvaluationExpression : Increment → AddressPoint → CyclePoint → F}
+  {readOnlyMemoryRelation : Table → Addr → Nat → Prop}
+  {readWriteMemoryRelation : ValSurface → Addr → Nat → Prop}
+  {incrementRelation : ValSurface → AddressColumns → Nat → Increment → Prop}
+  {rom : Program}
+  {σ : ExternalSchedule}
+  {init : InitialState}
+  {frames :
+    List
+      (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
+        readSessionKey pairedSessionKey validAddressColumns kernelAddressBound
+        readCheckExpression rwReadCheckExpression writeCheckExpression
+        valEvaluationExpression readOnlyMemoryRelation readWriteMemoryRelation
+        incrementRelation rom σ init)}
+  (hExact : ExactTraceEvidence frames) :
+  Stage2TemporalContextBound (traceOf frames) := by
+  exact
+    stage2TemporalContextBound_of_adjacentTraceBounds
+      (registerAdjacentTraceBound_of_exactTrace hExact)
+      (ramAdjacentTraceBound_of_exactTrace hExact)
+
+theorem authenticatedTemporalSupportBound_of_exactTrace
+  {pcs : PCSContext AuxIndex EvalPoint}
+  {inputs :
+    ExecutionInputContext DigestRom DigestSchedule RootParamsId VmSpec
+      TranscriptSeed}
+  {evalBase : BaseFamily Nat AuxIndex → EvalPoint → F}
+  {B : Set (BaseFamily Nat AuxIndex)}
+  {publicTable : Table → Prop}
+  {tableBackedBy : Table → BaseFamily Nat AuxIndex → Prop}
+  {readSessionKey : EvalPoint → SessionKey}
+  {pairedSessionKey : AddressPoint → CyclePoint → SessionKey}
+  {validAddressColumns : AddressColumns → Addr → Prop}
+  {kernelAddressBound : Addr → Prop}
+  {readCheckExpression : AddressColumns → Table → EvalPoint → F}
+  {rwReadCheckExpression : AddressColumns → ValSurface → EvalPoint → F}
+  {writeCheckExpression :
+    AddressPoint → CyclePoint → AddressColumns → Nat → ValSurface → F}
+  {valEvaluationExpression : Increment → AddressPoint → CyclePoint → F}
+  {readOnlyMemoryRelation : Table → Addr → Nat → Prop}
+  {readWriteMemoryRelation : ValSurface → Addr → Nat → Prop}
+  {incrementRelation : ValSurface → AddressColumns → Nat → Increment → Prop}
+  {rom : Program}
+  {σ : ExternalSchedule}
+  {init : InitialState}
+  {frames :
+    List
+      (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
+        readSessionKey pairedSessionKey validAddressColumns kernelAddressBound
+        readCheckExpression rwReadCheckExpression writeCheckExpression
+        valEvaluationExpression readOnlyMemoryRelation readWriteMemoryRelation
+        incrementRelation rom σ init)}
+  (hExact : ExactTraceEvidence frames) :
+  AuthenticatedTemporalSupportBound (inputs := inputs) frames := by
+  exact
+    { stage2 := stage2TemporalContextBound_of_exactTrace hExact
+      pcBridge := pcAdjacentBridge_of_exactTrace hExact }
+
 theorem authenticatedExecutionTraceBound_of_exactTrace_and_temporal
   {pcs : PCSContext AuxIndex EvalPoint}
   {inputs :
@@ -1671,6 +2330,46 @@ theorem authenticatedExecutionTraceBound_of_exactTrace_and_support
       hSupport
       (temporalInstantiationBound_of_authenticatedTemporalSupport
         (executionFramesBound_of_exactTrace hExact) hSupport)
+
+theorem authenticatedExecutionTraceBound_of_exactTrace
+  {pcs : PCSContext AuxIndex EvalPoint}
+  {inputs :
+    ExecutionInputContext DigestRom DigestSchedule RootParamsId VmSpec
+      TranscriptSeed}
+  {evalBase : BaseFamily Nat AuxIndex → EvalPoint → F}
+  {B : Set (BaseFamily Nat AuxIndex)}
+  {publicTable : Table → Prop}
+  {tableBackedBy : Table → BaseFamily Nat AuxIndex → Prop}
+  {readSessionKey : EvalPoint → SessionKey}
+  {pairedSessionKey : AddressPoint → CyclePoint → SessionKey}
+  {validAddressColumns : AddressColumns → Addr → Prop}
+  {kernelAddressBound : Addr → Prop}
+  {readCheckExpression : AddressColumns → Table → EvalPoint → F}
+  {rwReadCheckExpression : AddressColumns → ValSurface → EvalPoint → F}
+  {writeCheckExpression :
+    AddressPoint → CyclePoint → AddressColumns → Nat → ValSurface → F}
+  {valEvaluationExpression : Increment → AddressPoint → CyclePoint → F}
+  {readOnlyMemoryRelation : Table → Addr → Nat → Prop}
+  {readWriteMemoryRelation : ValSurface → Addr → Nat → Prop}
+  {incrementRelation : ValSurface → AddressColumns → Nat → Increment → Prop}
+  {rom : Program}
+  {σ : ExternalSchedule}
+  {init : InitialState}
+  {frames :
+    List
+      (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
+        readSessionKey pairedSessionKey validAddressColumns kernelAddressBound
+        readCheckExpression rwReadCheckExpression writeCheckExpression
+        valEvaluationExpression readOnlyMemoryRelation readWriteMemoryRelation
+        incrementRelation rom σ init)}
+  (hExact : ExactTraceEvidence frames)
+  (hChunk :
+    ChunkInput.SimpleKernelChunkInput init inputs.pubMeta.semanticRows
+      (traceOf frames)) :
+  AuthenticatedExecutionTraceBound (inputs := inputs) frames := by
+  exact authenticatedExecutionTraceBound_of_exactTrace_and_support
+    (inputs := inputs) hExact hChunk
+    (authenticatedTemporalSupportBound_of_exactTrace hExact)
 
 theorem traceLinkBound_of_authenticatedExecutionTraceBound
   {pcs : PCSContext AuxIndex EvalPoint}
@@ -1830,6 +2529,46 @@ theorem traceLinkBound_of_exactTrace_and_support
   exact traceLinkBound_of_authenticatedExecutionTraceBound
     (authenticatedExecutionTraceBound_of_exactTrace_and_support
       (inputs := inputs) hExact hChunk hSupport)
+
+theorem traceLinkBound_of_exactTrace_and_chunkInput
+  {pcs : PCSContext AuxIndex EvalPoint}
+  {inputs :
+    ExecutionInputContext DigestRom DigestSchedule RootParamsId VmSpec
+      TranscriptSeed}
+  {evalBase : BaseFamily Nat AuxIndex → EvalPoint → F}
+  {B : Set (BaseFamily Nat AuxIndex)}
+  {publicTable : Table → Prop}
+  {tableBackedBy : Table → BaseFamily Nat AuxIndex → Prop}
+  {readSessionKey : EvalPoint → SessionKey}
+  {pairedSessionKey : AddressPoint → CyclePoint → SessionKey}
+  {validAddressColumns : AddressColumns → Addr → Prop}
+  {kernelAddressBound : Addr → Prop}
+  {readCheckExpression : AddressColumns → Table → EvalPoint → F}
+  {rwReadCheckExpression : AddressColumns → ValSurface → EvalPoint → F}
+  {writeCheckExpression :
+    AddressPoint → CyclePoint → AddressColumns → Nat → ValSurface → F}
+  {valEvaluationExpression : Increment → AddressPoint → CyclePoint → F}
+  {readOnlyMemoryRelation : Table → Addr → Nat → Prop}
+  {readWriteMemoryRelation : ValSurface → Addr → Nat → Prop}
+  {incrementRelation : ValSurface → AddressColumns → Nat → Increment → Prop}
+  {rom : Program}
+  {σ : ExternalSchedule}
+  {init : InitialState}
+  {frames :
+    List
+      (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
+        readSessionKey pairedSessionKey validAddressColumns kernelAddressBound
+        readCheckExpression rwReadCheckExpression writeCheckExpression
+        valEvaluationExpression readOnlyMemoryRelation readWriteMemoryRelation
+        incrementRelation rom σ init)}
+  (hExact : ExactTraceEvidence frames)
+  (hChunk :
+    ChunkInput.SimpleKernelChunkInput init inputs.pubMeta.semanticRows
+      (traceOf frames)) :
+  TraceLinkBound (traceOf frames) := by
+  exact traceLinkBound_of_authenticatedExecutionTraceBound
+    (authenticatedExecutionTraceBound_of_exactTrace
+      (inputs := inputs) hExact hChunk)
 
 theorem executionCorrect_of_authenticatedChunkTraceBound_and_temporal
   {pcs : PCSContext AuxIndex EvalPoint}
@@ -2031,6 +2770,46 @@ theorem executionCorrect_of_exactTrace_and_support
   exact executionCorrect_of_authenticatedChunkTraceBound_and_support
     (authenticatedChunkTraceBound_of_exactTrace (inputs := inputs) hExact hChunk)
     hSupport
+
+theorem executionCorrect_of_exactTrace_and_chunkInput
+  {pcs : PCSContext AuxIndex EvalPoint}
+  {inputs :
+    ExecutionInputContext DigestRom DigestSchedule RootParamsId VmSpec
+      TranscriptSeed}
+  {evalBase : BaseFamily Nat AuxIndex → EvalPoint → F}
+  {B : Set (BaseFamily Nat AuxIndex)}
+  {publicTable : Table → Prop}
+  {tableBackedBy : Table → BaseFamily Nat AuxIndex → Prop}
+  {readSessionKey : EvalPoint → SessionKey}
+  {pairedSessionKey : AddressPoint → CyclePoint → SessionKey}
+  {validAddressColumns : AddressColumns → Addr → Prop}
+  {kernelAddressBound : Addr → Prop}
+  {readCheckExpression : AddressColumns → Table → EvalPoint → F}
+  {rwReadCheckExpression : AddressColumns → ValSurface → EvalPoint → F}
+  {writeCheckExpression :
+    AddressPoint → CyclePoint → AddressColumns → Nat → ValSurface → F}
+  {valEvaluationExpression : Increment → AddressPoint → CyclePoint → F}
+  {readOnlyMemoryRelation : Table → Addr → Nat → Prop}
+  {readWriteMemoryRelation : ValSurface → Addr → Nat → Prop}
+  {incrementRelation : ValSurface → AddressColumns → Nat → Increment → Prop}
+  {rom : Program}
+  {σ : ExternalSchedule}
+  {init : InitialState}
+  {frames :
+    List
+      (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
+        readSessionKey pairedSessionKey validAddressColumns kernelAddressBound
+        readCheckExpression rwReadCheckExpression writeCheckExpression
+        valEvaluationExpression readOnlyMemoryRelation readWriteMemoryRelation
+        incrementRelation rom σ init)}
+  (hExact : ExactTraceEvidence frames)
+  (hChunk :
+    ChunkInput.SimpleKernelChunkInput init inputs.pubMeta.semanticRows
+      (traceOf frames)) :
+  StepComposition.ExecutionCorrect rom σ init (traceOf frames) := by
+  exact executionCorrect_of_authenticatedExecutionTraceBound
+    (authenticatedExecutionTraceBound_of_exactTrace
+      (inputs := inputs) hExact hChunk)
 
 theorem executionCorrect_of_exactTrace
   {pcs : PCSContext AuxIndex EvalPoint}

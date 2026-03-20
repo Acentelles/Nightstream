@@ -289,6 +289,111 @@ theorem kernelSoundness_of_boundaries
     exact rowBinding_event_in_schedule_iff (j := j) hSchedule
   · exact emitKernelOpeningClaims_last hSchedule
 
+theorem kernelSoundnessAccepted_of_exactBoundaries
+  {pcs : EvidenceCoverage.PCSContext AuxIndex EvalPoint}
+  {inputs :
+    EvidenceCoverage.ExecutionInputContext DigestRom DigestSchedule RootParamsId
+      VmSpec TranscriptSeed}
+  {evalBase : BaseFamily Nat AuxIndex → EvalPoint → F}
+  {B : Set (BaseFamily Nat AuxIndex)}
+  {publicTable : Table → Prop}
+  {tableBackedBy : Table → BaseFamily Nat AuxIndex → Prop}
+  {readSessionKey : EvalPoint → SessionKey}
+  {pairedSessionKey : AddressPoint → CyclePoint → SessionKey}
+  {validAddressColumns : AddressColumns → Addr → Prop}
+  {kernelAddressBound : Addr → Prop}
+  {readCheckExpression : AddressColumns → Table → EvalPoint → F}
+  {rwReadCheckExpression : AddressColumns → ValSurface → EvalPoint → F}
+  {writeCheckExpression :
+    AddressPoint → CyclePoint → AddressColumns → Nat → ValSurface → F}
+  {valEvaluationExpression : Increment → AddressPoint → CyclePoint → F}
+  {readOnlyMemoryRelation : Table → Addr → Nat → Prop}
+  {readWriteMemoryRelation : ValSurface → Addr → Nat → Prop}
+  {incrementRelation : ValSurface → AddressColumns → Nat → Increment → Prop}
+  {rom : Program}
+  {σ : ExternalSchedule}
+  {init : InitialState}
+  {frames :
+    List
+      (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
+        readSessionKey pairedSessionKey validAddressColumns kernelAddressBound
+        readCheckExpression rwReadCheckExpression writeCheckExpression
+        valEvaluationExpression readOnlyMemoryRelation readWriteMemoryRelation
+        incrementRelation rom σ init)}
+  {pts : KernelPoints}
+  {kernelManifest : KernelOpeningManifest Value Digest}
+  {rootManifest : RootOpeningManifest Value Digest}
+  {events : List TranscriptEvent}
+  (hTrace : ExactTraceEvidence frames)
+  (hChunk :
+    ChunkInput.SimpleKernelChunkInput init inputs.pubMeta.semanticRows
+      (traceOf frames))
+  (hBoundary : ExactKernelOpeningBoundary pts kernelManifest rootManifest)
+  (hSchedule :
+    KernelTranscriptSchedule inputs.pubMeta.semanticRows events) :
+  KernelSoundnessAccepted (inputs := inputs) frames pts kernelManifest
+    rootManifest events := by
+  refine
+    ⟨hTrace, hChunk, hBoundary, hSchedule, ?_⟩
+  exact AuthenticatedTrace.authenticatedTemporalSupportBound_of_exactTrace
+    (inputs := inputs) hTrace
+
+theorem kernelSoundness_of_exactBoundaries
+  {pcs : EvidenceCoverage.PCSContext AuxIndex EvalPoint}
+  {inputs :
+    EvidenceCoverage.ExecutionInputContext DigestRom DigestSchedule RootParamsId
+      VmSpec TranscriptSeed}
+  {evalBase : BaseFamily Nat AuxIndex → EvalPoint → F}
+  {B : Set (BaseFamily Nat AuxIndex)}
+  {publicTable : Table → Prop}
+  {tableBackedBy : Table → BaseFamily Nat AuxIndex → Prop}
+  {readSessionKey : EvalPoint → SessionKey}
+  {pairedSessionKey : AddressPoint → CyclePoint → SessionKey}
+  {validAddressColumns : AddressColumns → Addr → Prop}
+  {kernelAddressBound : Addr → Prop}
+  {readCheckExpression : AddressColumns → Table → EvalPoint → F}
+  {rwReadCheckExpression : AddressColumns → ValSurface → EvalPoint → F}
+  {writeCheckExpression :
+    AddressPoint → CyclePoint → AddressColumns → Nat → ValSurface → F}
+  {valEvaluationExpression : Increment → AddressPoint → CyclePoint → F}
+  {readOnlyMemoryRelation : Table → Addr → Nat → Prop}
+  {readWriteMemoryRelation : ValSurface → Addr → Nat → Prop}
+  {incrementRelation : ValSurface → AddressColumns → Nat → Increment → Prop}
+  {rom : Program}
+  {σ : ExternalSchedule}
+  {init : InitialState}
+  {rootEncode : RootEncode W Z F}
+  {ajtaiCommit : Z → Commitment}
+  {frames :
+    List
+      (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
+        readSessionKey pairedSessionKey validAddressColumns kernelAddressBound
+        readCheckExpression rwReadCheckExpression writeCheckExpression
+        valEvaluationExpression readOnlyMemoryRelation readWriteMemoryRelation
+        incrementRelation rom σ init)}
+  {pts : KernelPoints}
+  {kernelManifest : KernelOpeningManifest Value Digest}
+  {rootManifest : RootOpeningManifest Value Digest}
+  {events : List TranscriptEvent}
+  {accounting : KernelSoundnessAccounting}
+  (hTrace : ExactTraceEvidence frames)
+  (hChunk :
+    ChunkInput.SimpleKernelChunkInput init inputs.pubMeta.semanticRows
+      (traceOf frames))
+  (hBoundary : ExactKernelOpeningBoundary pts kernelManifest rootManifest)
+  (hSchedule :
+    KernelTranscriptSchedule inputs.pubMeta.semanticRows events) :
+  KernelSoundnessConclusion rootEncode ajtaiCommit frames pts kernelManifest
+    rootManifest events accounting := by
+  exact kernelSoundness_of_boundaries
+    (inputs := inputs)
+    (rootEncode := rootEncode)
+    (ajtaiCommit := ajtaiCommit)
+    (accounting := accounting)
+    hTrace hChunk hBoundary hSchedule
+    (AuthenticatedTrace.authenticatedTemporalSupportBound_of_exactTrace
+      (inputs := inputs) hTrace)
+
 theorem kernelSoundness_of_acceptance
   {pcs : EvidenceCoverage.PCSContext AuxIndex EvalPoint}
   {inputs :
@@ -413,8 +518,6 @@ theorem kernelAcceptanceImpliesAuthenticatedExecutionTrace
   {rom : Program}
   {σ : ExternalSchedule}
   {init : InitialState}
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
   {frames :
     List
       (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
@@ -426,7 +529,6 @@ theorem kernelAcceptanceImpliesAuthenticatedExecutionTrace
   {kernelManifest : KernelOpeningManifest Value Digest}
   {rootManifest : RootOpeningManifest Value Digest}
   {events : List TranscriptEvent}
-  {accounting : KernelSoundnessAccounting}
   (hAccepted :
     KernelSoundnessAccepted (inputs := inputs) frames pts kernelManifest
       rootManifest events) :
@@ -562,8 +664,6 @@ theorem kernelAcceptanceImpliesExecutionCorrect
   {rom : Program}
   {σ : ExternalSchedule}
   {init : InitialState}
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
   {frames :
     List
       (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
@@ -575,18 +675,13 @@ theorem kernelAcceptanceImpliesExecutionCorrect
   {kernelManifest : KernelOpeningManifest Value Digest}
   {rootManifest : RootOpeningManifest Value Digest}
   {events : List TranscriptEvent}
-  {accounting : KernelSoundnessAccounting}
   (hAccepted :
     KernelSoundnessAccepted (inputs := inputs) frames pts kernelManifest
       rootManifest events) :
   StepComposition.ExecutionCorrect rom σ init (traceOf frames) := by
   exact executionCorrect_of_authenticatedExecutionTraceBound
     (kernelAcceptanceImpliesAuthenticatedExecutionTrace
-      (inputs := inputs)
-      (rootEncode := rootEncode)
-      (ajtaiCommit := ajtaiCommit)
-      (accounting := accounting)
-      hAccepted)
+      (inputs := inputs) hAccepted)
 
 theorem kernelAcceptanceImpliesTraceLinkBound
   {pcs : EvidenceCoverage.PCSContext AuxIndex EvalPoint}
@@ -612,8 +707,6 @@ theorem kernelAcceptanceImpliesTraceLinkBound
   {rom : Program}
   {σ : ExternalSchedule}
   {init : InitialState}
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
   {frames :
     List
       (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
@@ -625,18 +718,13 @@ theorem kernelAcceptanceImpliesTraceLinkBound
   {kernelManifest : KernelOpeningManifest Value Digest}
   {rootManifest : RootOpeningManifest Value Digest}
   {events : List TranscriptEvent}
-  {accounting : KernelSoundnessAccounting}
   (hAccepted :
     KernelSoundnessAccepted (inputs := inputs) frames pts kernelManifest
       rootManifest events) :
   TraceLinkBoundary.TraceLinkBound (traceOf frames) := by
   exact AuthenticatedTrace.traceLinkBound_of_authenticatedExecutionTraceBound
     (kernelAcceptanceImpliesAuthenticatedExecutionTrace
-      (inputs := inputs)
-      (rootEncode := rootEncode)
-      (ajtaiCommit := ajtaiCommit)
-      (accounting := accounting)
-      hAccepted)
+      (inputs := inputs) hAccepted)
 
 theorem kernelAcceptanceImpliesExecutionLinked
   {pcs : EvidenceCoverage.PCSContext AuxIndex EvalPoint}
@@ -662,8 +750,6 @@ theorem kernelAcceptanceImpliesExecutionLinked
   {rom : Program}
   {σ : ExternalSchedule}
   {init : InitialState}
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
   {frames :
     List
       (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
@@ -675,18 +761,13 @@ theorem kernelAcceptanceImpliesExecutionLinked
   {kernelManifest : KernelOpeningManifest Value Digest}
   {rootManifest : RootOpeningManifest Value Digest}
   {events : List TranscriptEvent}
-  {accounting : KernelSoundnessAccounting}
   (hAccepted :
     KernelSoundnessAccepted (inputs := inputs) frames pts kernelManifest
       rootManifest events) :
   StepComposition.ExecutionLinked (traceOf frames) := by
   exact TraceLinkBoundary.executionLinked_of_traceLinkBound
     (kernelAcceptanceImpliesTraceLinkBound
-      (inputs := inputs)
-      (rootEncode := rootEncode)
-      (ajtaiCommit := ajtaiCommit)
-      (accounting := accounting)
-      hAccepted)
+      (inputs := inputs) hAccepted)
 
 theorem kernelAcceptanceImpliesPreparedStepExport
   {pcs : EvidenceCoverage.PCSContext AuxIndex EvalPoint}

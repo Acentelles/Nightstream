@@ -82,6 +82,11 @@ $$
 to mean:
 
 - the head frame has `stepIdx = k`
+- if a next frame exists, the adjacent pair exports one exact Stage-2 support
+  object proving register adjacency and RAM adjacency between the two frames
+- if a next frame exists, the adjacent pair exports one exact Stage-3 support
+  object proving the current continuity witness is tied both to the current
+  row's `pcNext` and to the next row's `pc`
 - the tail satisfies `ExactTraceEvidenceFrom(k+1, tail)`
 
 and define:
@@ -121,6 +126,27 @@ $$
 The continuity theorem uses the row-local Stage-3 continuity witness exported by
 `Chip8EvidenceCoverage`, together with the exact row index tracked by
 `ExactTraceEvidenceFrom`.
+
+The strengthened exact-trace owner also proves the adjacent-frame support
+contracts required by the stronger temporal closure:
+
+$$
+\mathrm{ExactTraceEvidence}(frames)
+\Longrightarrow
+\mathrm{RegisterAdjacentTraceBound}(\mathrm{traceOf}(frames))
+$$
+
+$$
+\mathrm{ExactTraceEvidence}(frames)
+\Longrightarrow
+\mathrm{RamAdjacentTraceBound}(\mathrm{traceOf}(frames))
+$$
+
+$$
+\mathrm{ExactTraceEvidence}(frames)
+\Longrightarrow
+\mathrm{PcAdjacentBridge}(\mathrm{traceOf}(frames)).
+$$
 
 This owner also proves the exact Stage-3 boundary-frame transfer lemmas that
 are available from exact evidence plus trace indices:
@@ -171,7 +197,7 @@ This is the exact chunk-level execution / continuity / boundary closure owned
 directly by authenticated staged evidence.
 
 Define `AuthenticatedTemporalSupportBound(frames)` to package the exact
-protocol-shaped temporal support that remains global rather than row-local:
+protocol-shaped temporal support:
 
 $$
 \mathrm{Stage2TemporalContextBound}(\mathrm{traceOf}(frames))
@@ -201,20 +227,31 @@ surface to downstream consumers.
 closure bundle. It is not an opening claim, not a digest summary, and not a
 replacement for exact row-local evidence.
 
-The intended closure path is explicit:
+The strengthened closure path is explicit:
 
 1. exact row evidence recovers the per-row Stage-2 temporal seed summary;
-2. a later Stage-2 temporal owner composes those seeds into one chunk-global
+2. exact adjacent-pair Stage-2 support yields
+   `RegisterAdjacentTraceBound(traceOf(frames))` and
+   `RamAdjacentTraceBound(traceOf(frames))`;
+3. those adjacent bounds yield one chunk-global
    `Stage2TemporalContextBound(traceOf(frames))`;
-3. that context yields `Stage2TemporalInstantiationBound(traceOf(frames))`;
-4. together with `PcAdjacentBridge(traceOf(frames))`, authenticated trace
-   closure derives `TemporalInstantiationBound(traceOf(frames))` and then the
-   exact adjacent-state link theorem.
+4. exact adjacent-pair Stage-3 support yields
+   `PcAdjacentBridge(traceOf(frames))`;
+5. together they yield `TemporalInstantiationBound(traceOf(frames))` and then
+   the exact adjacent-state link theorem.
 
 ### Temporal consistency closure
 
-This owner must expose the direct bridge from the authenticated temporal
-support bundle to the generic temporal-instantiation witness:
+This owner must expose both the direct exact-trace-to-support bridge and the
+bridge from that support bundle to the generic temporal-instantiation witness:
+
+$$
+\mathrm{ExactTraceEvidence}(frames)
+\Longrightarrow
+\mathrm{AuthenticatedTemporalSupportBound}(frames)
+$$
+
+and
 
 $$
 \mathrm{ExactTraceEvidence}(frames)
@@ -238,27 +275,24 @@ $$
 \mathrm{ExactTraceEvidence}(frames)
 \land
 \mathrm{SimpleKernelChunkInput}(init, meta.semanticRows, \mathrm{traceOf}(frames))
-\land
-\mathrm{AuthenticatedTemporalSupportBound}(frames)
 \Longrightarrow
 \mathrm{TraceLinkBound}(\mathrm{traceOf}(frames)).
 $$
 
 This theorem may normalize through `Chip8TraceLinkBoundary`, but it must derive
-the contract from the authenticated temporal-support bundle instead of
-consuming a raw whole-trace link hypothesis as an external assumption.
+the contract from exact trace evidence itself via the exact temporal-support
+bundle instead of consuming a raw whole-trace link hypothesis as an external
+assumption.
 
 ### Strong execution theorem
 
 With the named link contract discharged from exact trace evidence plus the
-authenticated temporal-support bundle, this owner exposes:
+chunk-input contract, this owner exposes:
 
 $$
 \mathrm{ExactTraceEvidence}(frames)
 \land
 \mathrm{SimpleKernelChunkInput}(init, meta.semanticRows, \mathrm{traceOf}(frames))
-\land
-\mathrm{AuthenticatedTemporalSupportBound}(frames)
 \Longrightarrow
 \mathrm{ExecutionCorrect}(rom,\sigma,init,\mathrm{traceOf}(frames)).
 $$
@@ -304,8 +338,8 @@ $$
 
 | Lean file | Local owner |
 |---|---|
-| `Nightstream/Chip8/AuthenticatedTrace.lean` | Exact trace-evidence closure from authenticated staged rows to chunk-local trace semantics |
-| `Nightstream/Chip8/AuthenticatedTraceInterface.lean` | Theorem-facing re-export surface |
+| `Nightstream/Chip8/Trace/AuthenticatedTrace.lean` | Exact trace-evidence closure from authenticated staged rows to chunk-local trace semantics |
+| `Nightstream/Chip8/Trace/AuthenticatedTraceInterface.lean` | Theorem-facing re-export surface |
 
 ## Contract Surface
 
@@ -369,10 +403,10 @@ $$
 ## Dependency and Consumer Map
 
 - **Upstream dependencies**:
-  - `Nightstream/Chip8/EvidenceCoverage.lean`
-  - `Nightstream/Chip8/ChunkInput.lean`
-  - `Nightstream/Chip8/StepComposition.lean`
-  - `Nightstream/Chip8/ExecutionSemantics.lean`
+  - `Nightstream/Chip8/Stage2/EvidenceCoverage.lean`
+  - `Nightstream/Chip8/Trace/ChunkInput.lean`
+  - `Nightstream/Chip8/Execution/StepComposition.lean`
+  - `Nightstream/Chip8/Execution/ExecutionSemantics.lean`
 - **Downstream consumers**:
   - top-level kernel soundness
   - trace-level digest normalization

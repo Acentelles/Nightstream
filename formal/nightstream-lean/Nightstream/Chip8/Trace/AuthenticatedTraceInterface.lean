@@ -11,10 +11,24 @@ abbrev InitialState := Nightstream.Chip8.AuthenticatedTrace.InitialState
 abbrev ExternalSchedule := Nightstream.Chip8.AuthenticatedTrace.ExternalSchedule
 abbrev ExecutionFrame := Nightstream.Chip8.AuthenticatedTrace.ExecutionFrame
 abbrev ExactFrameEvidence := @Nightstream.Chip8.AuthenticatedTrace.ExactFrameEvidence
+abbrev ExactStage2AdjacentSupport :=
+  @Nightstream.Chip8.AuthenticatedTrace.ExactStage2AdjacentSupport
+abbrev ExactPcAdjacentSupport :=
+  @Nightstream.Chip8.AuthenticatedTrace.ExactPcAdjacentSupport
+abbrev ExactAdjacentSupport :=
+  @Nightstream.Chip8.AuthenticatedTrace.ExactAdjacentSupport
 abbrev traceOf := @Nightstream.Chip8.AuthenticatedTrace.traceOf
 abbrev ExactTraceEvidenceFrom :=
   @Nightstream.Chip8.AuthenticatedTrace.ExactTraceEvidenceFrom
 abbrev ExactTraceEvidence := @Nightstream.Chip8.AuthenticatedTrace.ExactTraceEvidence
+abbrev headStepIdx_of_exactTraceEvidenceFrom_cons :=
+  @Nightstream.Chip8.AuthenticatedTrace.headStepIdx_of_exactTraceEvidenceFrom_cons
+abbrev adjacentSupport_of_exactTraceEvidenceFrom_cons_cons :=
+  @Nightstream.Chip8.AuthenticatedTrace.adjacentSupport_of_exactTraceEvidenceFrom_cons_cons
+abbrev tailExactTraceEvidenceFrom_of_exactTraceEvidenceFrom_cons :=
+  @Nightstream.Chip8.AuthenticatedTrace.tailExactTraceEvidenceFrom_of_exactTraceEvidenceFrom_cons
+abbrev tailExactTraceEvidenceFrom_of_exactTraceEvidenceFrom_cons_cons :=
+  @Nightstream.Chip8.AuthenticatedTrace.tailExactTraceEvidenceFrom_of_exactTraceEvidenceFrom_cons_cons
 abbrev Stage2TemporalSeedSummaryEntry :=
   @Nightstream.Chip8.AuthenticatedTrace.Stage2TemporalSeedSummaryEntry
 abbrev RegisterTemporalSeedSummaryEntry :=
@@ -71,8 +85,20 @@ abbrev traceLength_le_publishedLength_of_exactTrace :=
   @Nightstream.Chip8.AuthenticatedTrace.traceLength_le_publishedLength_of_exactTrace
 abbrev authenticatedChunkTraceBound_of_exactTrace :=
   @Nightstream.Chip8.AuthenticatedTrace.authenticatedChunkTraceBound_of_exactTrace
+abbrev registerAdjacentTraceBound_of_exactTrace :=
+  @Nightstream.Chip8.AuthenticatedTrace.registerAdjacentTraceBound_of_exactTrace
+abbrev ramAdjacentTraceBound_of_exactTrace :=
+  @Nightstream.Chip8.AuthenticatedTrace.ramAdjacentTraceBound_of_exactTrace
+abbrev pcAdjacentBridge_of_exactTrace :=
+  @Nightstream.Chip8.AuthenticatedTrace.pcAdjacentBridge_of_exactTrace
+abbrev stage2TemporalContextBound_of_exactTrace :=
+  @Nightstream.Chip8.AuthenticatedTrace.stage2TemporalContextBound_of_exactTrace
+abbrev authenticatedTemporalSupportBound_of_exactTrace :=
+  @Nightstream.Chip8.AuthenticatedTrace.authenticatedTemporalSupportBound_of_exactTrace
 abbrev temporalInstantiationBound_of_authenticatedTemporalSupport :=
   @Nightstream.Chip8.AuthenticatedTrace.temporalInstantiationBound_of_authenticatedTemporalSupport
+abbrev authenticatedExecutionTraceBound_of_exactTrace :=
+  @Nightstream.Chip8.AuthenticatedTrace.authenticatedExecutionTraceBound_of_exactTrace
 abbrev authenticatedExecutionTraceBound_of_exactTrace_and_support :=
   @Nightstream.Chip8.AuthenticatedTrace.authenticatedExecutionTraceBound_of_exactTrace_and_support
 abbrev authenticatedExecutionTraceBound_of_exactTrace_and_temporal :=
@@ -83,6 +109,8 @@ abbrev executionCorrect_of_authenticatedExecutionTraceBound :=
   @Nightstream.Chip8.AuthenticatedTrace.executionCorrect_of_authenticatedExecutionTraceBound
 abbrev traceLinkBound_of_exactTrace_and_support :=
   @Nightstream.Chip8.AuthenticatedTrace.traceLinkBound_of_exactTrace_and_support
+abbrev traceLinkBound_of_exactTrace_and_chunkInput :=
+  @Nightstream.Chip8.AuthenticatedTrace.traceLinkBound_of_exactTrace_and_chunkInput
 abbrev traceLinkBound_of_exactTrace_and_temporal :=
   @Nightstream.Chip8.AuthenticatedTrace.traceLinkBound_of_exactTrace_and_temporal
 abbrev executionCorrect_of_authenticatedChunkTraceBound_and_support :=
@@ -91,6 +119,8 @@ abbrev executionCorrect_of_authenticatedChunkTraceBound :=
   @Nightstream.Chip8.AuthenticatedTrace.executionCorrect_of_authenticatedChunkTraceBound
 abbrev executionCorrect_of_exactTrace_and_support :=
   @Nightstream.Chip8.AuthenticatedTrace.executionCorrect_of_exactTrace_and_support
+abbrev executionCorrect_of_exactTrace_and_chunkInput :=
+  @Nightstream.Chip8.AuthenticatedTrace.executionCorrect_of_exactTrace_and_chunkInput
 abbrev executionCorrect_of_exactTrace :=
   @Nightstream.Chip8.AuthenticatedTrace.executionCorrect_of_exactTrace
 abbrev preparedStepTraceBound_of_exactTrace :=

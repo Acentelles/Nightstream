@@ -18,6 +18,10 @@ abbrev KernelSoundnessAccepted :=
   @Nightstream.Chip8.KernelSoundness.KernelSoundnessAccepted
 abbrev kernelSoundness_of_boundaries :=
   @Nightstream.Chip8.KernelSoundness.kernelSoundness_of_boundaries
+abbrev kernelSoundnessAccepted_of_exactBoundaries :=
+  @Nightstream.Chip8.KernelSoundness.kernelSoundnessAccepted_of_exactBoundaries
+abbrev kernelSoundness_of_exactBoundaries :=
+  @Nightstream.Chip8.KernelSoundness.kernelSoundness_of_exactBoundaries
 abbrev kernelSoundness_of_acceptance :=
   @Nightstream.Chip8.KernelSoundness.kernelSoundness_of_acceptance
 abbrev kernelAcceptanceImpliesAuthenticatedChunkTrace :=
