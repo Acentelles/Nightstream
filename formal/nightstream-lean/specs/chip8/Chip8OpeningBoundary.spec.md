@@ -6,8 +6,10 @@
   CHIP-8 kernel.
 - **Key property**: `kernelOpeningBoundary_conforms`: every kernel-owned opening
   claim references exactly one commitment fixed in `root0`, uses the exact
-  commitment-local polynomial registry, and appears in the correct kernel/root
-  ownership bucket.
+  commitment-local polynomial registry, appears in the correct kernel/root
+  ownership bucket, forbids one global heterogeneous fold carrier on the simple
+  boundary, and exposes only the minimal positive admissibility contract for
+  any optional family-local fold carrier.
 - **Protocol role**: This is the boundary that prevents the kernel from
   overclaiming direct opening access to undeclared commitments or from
   conflating kernel-owned openings with later root-prover openings.

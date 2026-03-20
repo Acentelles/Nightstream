@@ -259,12 +259,15 @@ Normative v1 rule:
     domain-size choices, variable-order identifiers, and root-parameter identifiers)`,
 - `meta_pub` is verifier-recomputed from that same public boundary and protocol
   constants; it is never accepted as prover-chosen metadata,
-- for each public table commitment `C_rom_table`, `C_decode_table`,
-  `C_alu_table`, and `C_eq4_table`, the verifier must either:
-  1. recompute the commitment and check equality when the commitment scheme is
-     deterministic, or
-  2. verify an explicit binding proof from the commitment to the canonical
-     public table digest,
+- v1 fixes one mandatory authentication path for those four public tables:
+  each of `C_rom_table`, `C_decode_table`, `C_alu_table`, and `C_eq4_table`
+  must be verifier-recomputable from that canonical table data, and the
+  verifier must recompute the commitment and check equality,
+- a v1 `SimpleKernelProof` therefore does **not** rely on optional public-table
+  binding proofs for those four tables,
+- any later protocol version that uses a non-deterministic table commitment for
+  one of those public tables must add an explicit table-binding proof object to
+  the proof boundary before that version is sound,
 - hashing prover-supplied table digests into `meta_pub` is not sufficient by
   itself.
 
@@ -475,7 +478,91 @@ forall j < N-1:
 ```
 
 These are not projected as CCS rows. They are owned by kernel Stage 3 as an
-explicit continuity support relation over `C_lane`.
+explicit continuity support relation over `C_lane`. By themselves they do not
+yet state full adjacent machine-state equality across the semantic prefix.
+
+### 4.3a Adjacent-state linking theorem obligation
+
+The continuity support relation from §4.3 is necessary but not sufficient for
+the strong semantic soundness claim of this kernel. It constrains only the
+projected control-lane coordinates needed to keep the lane local across rows.
+The kernel soundness theorem must also establish exact adjacent machine-state
+linking across the semantic prefix.
+
+Let `PreState(j)` and `PostState(j)` denote the semantic machine states
+determined for row `j` by the authenticated Stage-1 / Stage-2 interpretation of
+the opened row, together with the row-local root relation from §4.1.
+
+Strong kernel soundness requires:
+
+```text
+forall j < N-1: PostState(j) = PreState(j+1)
+```
+
+This theorem is discharged compositionally. The intended proof path follows the
+same shape Jolt uses for strong execution soundness: authenticate the temporal
+evolution of each mutable state component, then derive whole-state equality
+extensionally from those component facts. In this CHIP-8 kernel, the
+soundness-carrying closure objects are:
+
+- the theorem-level Stage-2 temporal closure object `Stage2TemporalContext`,
+  which determines one shared register / `I` timeline and one shared RAM
+  timeline over the semantic prefix together with per-row provenance into those
+  same timelines;
+- the theorem-level Stage-3 semantic bridge `PcAdjacentBridge`, which turns the
+  checked shift/boundary surface plus authenticated row binding into adjacent-
+  row `pc` equality;
+- the row-local root relation and staged row interpretation, which identify
+  `PreState(j)` / `PostState(j)` with those authenticated component values.
+
+Normative rules:
+
+- this is a theorem-level composition obligation, not a new direct opening
+  claim and not a standalone Stage-3 scalar identity;
+- Stage 3 owns only the continuity support relation, the start-boundary rule,
+  and the final-boundary rule;
+- the exact adjacent-state link must be justified by composing:
+  - the root row-local relation from §4.1,
+  - the Stage-1 / Stage-2 bindings that interpret the authenticated row,
+  - one shared `Stage2TemporalContext` over the chunk,
+  - one exact `PcAdjacentBridge` over the semantic prefix,
+  - and the row-binding / bridge extraction that ties those facts to the same
+    semantic row;
+- any implementation that claims the strong theorem
+  `accepted kernel proof => exact CHIP-8 execution trace` must discharge this
+  adjacent-state linking obligation;
+- a weaker theorem that stops at local row correctness, continuity support, and
+  bridge export is not sufficient for this spec.
+
+### 4.3b Exact-boundary closure requirement
+
+The accepted-kernel boundary from this spec is an auditor-facing packaging of
+the exact lower-layer boundary; it is not allowed to introduce a free
+theorem-facing oracle.
+
+Let the exact boundary data for one chunk consist of:
+
+- the exact authenticated row/trace evidence for the semantic prefix and its
+  padded extension;
+- the simple-kernel public input / chunk-input boundary from §9.5;
+- the exact kernel/root opening discipline from §9.4;
+- and the exact transcript schedule from §12.
+
+Then strong kernel soundness requires the following direct corollary:
+
+- that exact boundary data determines the same theorem-level temporal-support
+  contract needed by §4.3a, namely:
+  - one shared `Stage2TemporalContext` over the chunk,
+  - and one exact `PcAdjacentBridge` over the semantic prefix;
+- equivalently, the same exact boundary data determines one accepted kernel
+  boundary instance and therefore the same strong execution conclusion.
+
+Normative rule:
+
+- an implementation may expose the accepted-kernel boundary as a named audit
+  package, but it may not require any additional theorem-facing temporal-
+  support witness that is not itself determined by the exact boundary data
+  above.
 
 ---
 
@@ -998,6 +1085,46 @@ and proves the single batched equality
 This linkage batch is separate from the theorem-level Twist read/write/Val/RAF
 surfaces and is accounted separately in §10.
 
+### 6.2b Register / I temporal consistency consequence
+
+The explicit register `Val`-from-`Inc` theorem surface is not only a local
+lookup sidecar. It also carries the temporal register-state consequences needed
+by the strong adjacent-state linking theorem from §4.3a.
+
+For the 16 CHIP-8 `V` registers and the distinguished `I` slot carried on the
+same authenticated register timeline, the kernel must justify:
+
+```text
+forall j < N, idx in {0..15}: PreState(j).V[idx] = RegVal(idx, j)
+forall j < N: PreState(j).I = RegVal(16, j)
+```
+
+and:
+
+```text
+forall j < N-1, idx in {0..15}: PostState(j).V[idx] = RegVal(idx, j+1)
+forall j < N-1: PostState(j).I = RegVal(16, j+1)
+```
+
+These are theorem-level temporal consequences derived from the row-local
+register interpretation, the authenticated register read/write batch, and the
+explicit `RegVal` handoff rule. They are not additional direct openings and not
+new primary commitments.
+
+These row-local consequences are not yet the full Stage-2 closure object.
+Accepted kernel evidence for one chunk must additionally determine one shared
+chunk-global register timeline over the entire semantic prefix:
+
+```text
+forall idx in {0..15}, j in {0..N}: RegVal(idx, j)
+forall j in {0..N}: RegVal(16, j)
+```
+
+together with per-row provenance showing that the local Stage-2 seeds for row
+`j` read from and write back to that same shared timeline. No row may introduce
+its own incompatible register timeline. This chunk-global register timeline is
+the Stage-2 object later consumed by the adjacent-state closure from §4.3a.
+
 ### 6.3 RAM domain and ports
 
 The RAM domain is extended with a sink address `⊥_ram = 4096`.
@@ -1114,6 +1241,73 @@ The RAM read/write batch and the RAM RAF support proofs may consume only that
 authenticated `RamVal(r_addr_ram, r_twist_cycle)` evaluation. They must not use
 a direct opening of `RamVal` from `C_ram`, because `RamVal` is virtual and not a
 primary committed polynomial.
+
+### 6.4a RAM temporal consistency consequence
+
+The explicit RAM `Val`-from-`Inc` theorem surface also carries the temporal RAM
+consequences needed by the strong adjacent-state linking theorem from §4.3a.
+
+For the fixed CHIP-8 RAM domain `0..4095`, the kernel must justify:
+
+```text
+forall j < N, addr in {0..4095}: PreState(j).RAM[addr] = RamVal(addr, j)
+```
+
+and:
+
+```text
+forall j < N-1, addr in {0..4095}: PostState(j).RAM[addr] = RamVal(addr, j+1)
+```
+
+These are theorem-level temporal consequences derived from the row-local RAM
+interpretation, the authenticated RAM read/write batch, the RAM RAF support
+relation, and the explicit `RamVal` handoff rule. They are not new direct
+openings and not new primary commitments.
+
+These row-local consequences are not yet the full Stage-2 closure object.
+Accepted kernel evidence for one chunk must additionally determine one shared
+chunk-global RAM timeline over the entire semantic prefix:
+
+```text
+forall addr in {0..4095}, j in {0..N}: RamVal(addr, j)
+```
+
+together with per-row provenance showing that the local Stage-2 RAM seeds for
+row `j` read from and write back to that same shared timeline. No row may
+introduce its own incompatible RAM timeline. This chunk-global RAM timeline is
+the Stage-2 object later consumed by the adjacent-state closure from §4.3a.
+
+### 6.4b Stage-2 temporal closure object
+
+The theorem-level Stage-2 closure owner for one chunk is:
+
+```text
+Stage2TemporalContext {
+    reg_timeline,
+    ram_timeline,
+    row_links,
+}
+```
+
+Normative meaning:
+
+- `reg_timeline` determines one shared register / `I` timeline over times
+  `0..N`;
+- `ram_timeline` determines one shared RAM timeline over times `0..N`;
+- `row_links[j]` binds the authenticated Stage-2 register-side and RAM-side
+  seeds for row `j` to times `j` and `j+1` of those same shared timelines;
+- the row-local Stage-2 seeds from §6.2b and §6.4a are inputs to this object;
+  they are not themselves the closure theorem consumed by strong kernel
+  soundness;
+- accepted kernel evidence for one chunk must determine one coherent
+  `Stage2TemporalContext`; no row may be interpreted against a different
+  incompatible register or RAM timeline.
+
+Classification:
+
+- `Stage2TemporalContext` is a theorem-level kernel closure object;
+- it is not a direct opening claim, not a new commitment family, and not an
+  audit/provenance summary.
 
 ### 6.5 RAM RAF support relation
 
@@ -1539,6 +1733,10 @@ Boundary interpretation:
 - padded rows satisfy the public pad-row rule from §3.2 and do not induce extra
   semantic continuity obligations.
 
+These checks certify the Stage-3 continuity support relation used by the
+stronger adjacent-state linking theorem from §4.3a; they do not by themselves
+prove full post/pre machine-state equality across adjacent rows.
+
 ```text
 ContinuityProof {
     point: r_shift,
@@ -1561,6 +1759,33 @@ Normative implementation hook:
   explicit boundary checks from those authenticated inputs,
 - `pair_mask_eval = PairMask_N(r_shift)` is verifier-recomputable from public
   `N` and `T`; it is included only to pin the proof object shape.
+
+### 8.1c Stage-3 semantic `pc` bridge
+
+The theorem-level Stage-3 semantic bridge consumed by strong kernel soundness
+is:
+
+```text
+PcAdjacentBridge
+```
+
+Normative meaning:
+
+- for every semantic adjacent pair `j < N-1`, the checked Stage-3 shift witness
+  for row `j`, the current-row continuity witness, and the authenticated
+  row-binding openings for rows `j` and `j+1` together determine:
+
+  ```text
+  PostState(j).pc = PreState(j+1).pc
+  ```
+
+- this bridge consumes the checked Stage-3 support objects from §8.1a and
+  §8.1b together with the authenticated row-binding / bridge-binding path from
+  §9.4;
+- it is the theorem-level Stage-3 object used by the adjacent-state closure
+  from §4.3a;
+- it is not a direct opening claim, not a new reduction layer, and not an
+  audit/provenance summary.
 
 ### 8.2 What is projected
 
@@ -1628,7 +1853,26 @@ OpeningClaim {
 
 ### 9.2 Grouping rule
 
-Claims are grouped by `(commitment_id, point)`.
+There are two distinct grouping notions:
+
+- direct kernel opening claims are keyed by `(commitment_id, point)`;
+- later claim-space reduction groups are keyed by the narrower
+  `(source, ordinal, domain, point)` rule owned by `time_opening`.
+
+These must not be conflated. The first identifies one family-local direct
+opening surface; the second identifies one transcript-local reduction bucket.
+
+Same-surface collision rule:
+
+- if two required direct openings land on the same `(commitment_id, point)`,
+  they remain distinct direct claims only through their exact
+  `polynomial_ids`;
+- the `simple` boundary does not require canonical coalescing of such
+  same-surface claims;
+- canonical manifest order breaks same-surface ties by `polynomial_ids` in the
+  commitment-local registry order;
+- two distinct claims with the same
+  `(commitment_id, point, polynomial_ids)` are illegal duplicates.
 
 The opening boundary is split into two disjoint ownership buckets:
 
@@ -1638,7 +1882,7 @@ The opening boundary is split into two disjoint ownership buckets:
 `time_opening` verifies the union of both manifests, but the source/ownership tag
 must remain explicit for every claim.
 
-At minimum, `KernelOpeningManifest` contains:
+In this `simple` v1 kernel, `KernelOpeningManifest` contains exactly:
 
 - `C_lane @ r_lookup` opening exactly the lane columns
   `{PC, KK, NNN_ADDR, NNN_WORD, REG_X, REG_Y, LOOKUP_OUTPUT,
@@ -1648,16 +1892,22 @@ At minimum, `KernelOpeningManifest` contains:
 - `C_decode_ra @ (r_decode_addr, r_lookup)` for the Stage-1 decode address family,
 - `C_alu_ra @ (r_alu_addr, r_lookup)` for the Stage-1 ALU/branch address family,
 - `C_eq4_ra @ (r_eq4_addr, r_lookup)` for the Stage-1 burst-equality address family,
-- `C_decode_handoff @ r_lookup` for the Stage-1 decode-handoff columns,
+- `C_decode_handoff @ r_lookup` opening exactly
+  `{uses_y_dec, reads_ram_dec, writes_ram_dec}` for the Stage-1
+  decode-handoff surface,
 - `C_rom_table @ r_fetch_addr` for the ROM table,
-- `C_decode_table @ r_decode_addr` for the full-opcode decode table,
+- `C_decode_table @ r_decode_addr` opening exactly polynomial ids `0..21`
+  in the canonical registry order from §13.10 for the full-opcode decode
+  table,
 - `C_alu_table @ r_add8lo_addr` for the `Add8Lo` subtable,
 - `C_eq4_table @ r_eq4_addr` for the `Eq4` table,
 - `C_lane @ r_twist_cycle` opening exactly the lane columns
   `{REG_X, REG_Y, REG_X_NEXT, I_REG, I_NEXT, MEM_VALUE,
     WritesLookupToX, WritesMemToX, PreservesX, WritesNnnToI,
     IsMemOp, X_IDX, Y_IDX, RAM_ADDR}`,
-- `C_decode_handoff @ r_twist_cycle` for the Stage-2 decode-handoff columns,
+- `C_decode_handoff @ r_twist_cycle` opening exactly
+  `{uses_y_dec, reads_ram_dec, writes_ram_dec}` for the Stage-2
+  decode-handoff surface,
 - `C_reg  @ (r_addr_reg, r_twist_cycle)` opening exactly
   `{RegInc, RegRaX, RegRaY, RegRaI, RegWa}` for register Twist,
 - `C_ram  @ (r_addr_ram, r_twist_cycle)` opening exactly
@@ -1673,6 +1923,21 @@ At minimum, `KernelOpeningManifest` contains:
   every exported semantic row `j ∈ [0, N)`, in the canonical `C_lane` registry
   order.
 
+No other kernel-owned direct opening claims are admissible in this `simple`
+kernel spec. In particular:
+
+- virtual values such as `RegVal` / `RamVal`,
+- Stage-3 virtual shift values,
+- claim-space reduction summaries,
+- fold carriers,
+- row-projection summaries,
+- bridge-binding summaries,
+
+are not direct opening claims and must not appear in either manifest.
+
+No split or partial decode-table opening claims at `r_decode_addr` are
+admissible in this `simple` v1 boundary.
+
 `RegVal` and `RamVal` are virtual and never appear as primary `OpeningClaim`s`.
 
 `RootOpeningManifest` contains only the openings owned by the root prover
@@ -1683,6 +1948,26 @@ Kernel commitments and root commitments are intentionally disjoint:
 - `KernelOpeningManifest` may only reference `C_*` commitments fixed in `root0`.
 - `RootOpeningManifest` may only reference commitments created after bridge
   extraction, including the per-step root Ajtai commitments.
+- on the `SimpleKernelProof` / `SimpleKernelOutput` boundary defined in this
+  document, `RootOpeningManifest` is present only as an explicit ownership
+  bucket and must be empty. Any non-empty root-owned manifest belongs to a later
+  combined kernel-plus-root proof object, not to the simple kernel itself.
+
+For this `simple` boundary, root-side binding is carried by the exact
+`PreparedStep_j` export and the explicit `BridgeBinding_j` leaf, not by a
+non-empty root opening manifest.
+
+Any later combined kernel-plus-root proof that introduces root-owned openings
+must add an explicit root-side schema containing at least:
+
+- the exact root commitment inventory,
+- the exact root opening-manifest entry kinds,
+- canonical root-manifest ordering and uniqueness rules,
+- the exact root-side refinement / provenance path from root opening claim to
+  exported root-facing artifact.
+
+That larger root-side schema must be introduced explicitly by the later owner;
+it must not be inferred from the simple kernel boundary.
 
 Later kernel stages do **not** consume Stage-1 lookup openings; each stage opens
 its own claims independently.
@@ -1733,7 +2018,499 @@ Normative rules:
 `LaneShiftProof` is not an `OpeningClaim` and must not appear in either opening
 manifest.
 
-### 9.4 Rust-facing kernel boundary
+### 9.4 Opening provenance and semantic evidence chain
+
+The direct opening manifests above are necessary but not sufficient for audit.
+A third party must also be able to trace how each scalar opening used by Stage 1,
+Stage 2, Stage 3, and the bridge is authenticated, reduced, and consumed.
+
+This section defines that chain. It does **not** introduce any new kernel
+commitment families beyond the `C_*` commitments fixed in `root0`.
+
+#### 9.4.1 Exact lower-layer family openings
+
+For every direct kernel opening claim, there must exist an exact lower-layer
+opening witness against the referenced commitment family.
+
+An audit-facing lower-layer opening object has the semantic shape:
+
+```text
+ExactOpeningWitness {
+    commitment_id,
+    point,
+    polynomial_ids,
+    commitments,       // commitment-local columns within that family
+    claimed_values,    // one value per polynomial_id
+    lower_layer_proof, // exact family opening witness
+    proof_digest,
+}
+```
+
+Normative rules:
+
+- `commitment_id`, `point`, and `polynomial_ids` must match one direct
+  `OpeningClaim` exactly.
+- `claimed_values` must be the exact evaluation results of the referenced
+  family-local polynomials at `point`.
+- The lower-layer witness may use commitment-local digit evaluations,
+  commitment-local reduction data, or an equivalent exact opening construction,
+  but it must be sufficient to authenticate the `claimed_values` against the
+  referenced family commitment.
+- No lower-layer opening witness may authenticate values for a commitment family
+  other than the one named by its `commitment_id`.
+
+This requirement applies to every kernel-owned family:
+
+- `C_lane`
+- `C_fetch_ra`
+- `C_decode_ra`
+- `C_alu_ra`
+- `C_eq4_ra`
+- `C_decode_handoff`
+- `C_reg`
+- `C_ram`
+- `C_rom_table`
+- `C_decode_table`
+- `C_alu_table`
+- `C_eq4_table`
+
+#### 9.4.1a Accepted opening verifier contract
+
+For the `simple` kernel boundary, post-manifest opening verification is not left
+abstract. A direct kernel opening claim is accepted only if the verifier can
+exhibit the following exact chain:
+
+```text
+AcceptedOpening {
+    claim_digest,
+    exact_opening_digest,
+    refinement_digest,
+}
+```
+
+with normative meaning:
+
+- `claim_digest` names exactly one direct `OpeningClaim` in the canonical merged
+  manifest order;
+- `exact_opening_digest` names exactly one `ExactOpeningWitness` whose
+  `commitment_id`, `point`, and `polynomial_ids` match that direct claim;
+- that witness's `claimed_values` must equal the direct claim's
+  `claimed_values` coordinatewise in the same `polynomial_ids` order;
+- the verifier checks the `lower_layer_proof` inside that
+  `ExactOpeningWitness` against the referenced commitment family and accepts the
+  `claimed_values` only if that family-local opening verification succeeds;
+- `refinement_digest` names exactly one `OpeningRefinement` binding
+  `claim_digest` to `exact_opening_digest`.
+
+The canonical `time_opening` grouping key used later in this section is:
+
+```text
+(source_tag, ordinal, domain_shape, point)
+```
+
+where:
+
+- `source_tag` records whether the direct claim came from the kernel manifest or
+  the root manifest;
+- `ordinal` is the claim's position in the canonical manifest order within that
+  source;
+- `domain_shape` is the verifier-known evaluation-domain descriptor for the
+  referenced commitment family;
+- `point` is the exact opening point carried by the direct claim.
+
+`time_opening_summary` is an audit-only canonical ordered digest tree over these
+accepted direct claims after lower-layer family opening verification. It is not
+itself the verifier relation. The verifier relation is the successful existence
+of the exact chain above for every direct manifest claim.
+
+#### 9.4.2 OpeningRefinement
+
+Every direct scalar opening used by semantic extraction must carry an explicit
+refinement from the direct manifest claim to the lower-layer exact opening
+witness.
+
+```text
+OpeningRefinement {
+    commitment_id,
+    point,
+    polynomial_ids,
+    claim_digest,
+    opening_proof_digest,
+    digest,
+}
+```
+
+Normative rules:
+
+- `claim_digest` must be the digest of exactly one direct `OpeningClaim`.
+- `opening_proof_digest` must be the digest of exactly one exact lower-layer
+  opening witness covering that claim.
+- `OpeningRefinement` is a binding object only. It is not a new opening claim,
+  not a new commitment, and not a substitute for the lower-layer opening proof.
+- Every direct scalar consumed by Stage 1 / Stage 2 / Stage 3 / bridge
+  extraction must be justified by exactly one `OpeningRefinement`.
+
+#### 9.4.3 Joint opening reduction over refined claims
+
+The kernel may reduce refined opening claims for efficiency, but the reduction
+must remain explicit and transcript-bound.
+
+This section owns only claim-space aggregation. It does **not** by itself define
+or justify a witness-space fold lane. Reducing authenticated claims in
+transcript space is allowed across heterogeneous kernel commitment families;
+constructing a fold carrier is a separate later step with a strictly stronger
+homogeneity requirement.
+
+The audit-facing reduction chain has four layers.
+
+First, one summary per direct manifest claim:
+
+```text
+JointOpeningClaimSummary {
+    claim_digest,
+    refinement_digest,
+    joint_commitment,
+    joint_claim,
+    joint_claim_digits,
+    digest,
+}
+```
+
+This reduces one direct opening claim across its local `polynomial_ids` using
+fresh claim-local mixers `eta_0, ..., eta_{m-1}` sampled from a dedicated
+transcript domain that is bound to:
+
+- the referenced commitment family,
+- the point,
+- the exact `polynomial_ids`,
+- the `OpeningRefinement.digest`.
+
+Second, one summary per canonical `time_opening` group:
+
+```text
+JointOpeningGroupSummary {
+    group_digest,
+    claim_digests,
+    joint_commitment,
+    joint_claim,
+    joint_claim_digits,
+    digest,
+}
+```
+
+This reduces the claim summaries that share the same canonical
+`time_opening` group using fresh group-local mixers sampled from a transcript
+domain bound to:
+
+- the canonical reduction group digest,
+- the ordered claim-summary digests in that group.
+
+Third, one explicit joint-opening unification proof:
+
+```text
+JointOpeningUnificationProof {
+    claimed_sum,
+    round_polys,
+    r_unify,
+}
+```
+
+This is a selector-style unification proof over the joint-opening groups. It is
+separate from and in addition to any generic `time_opening` unification proof.
+
+Fourth, one unified claim-space reduction summary:
+
+```text
+JointOpeningUnifiedClaimReduction {
+    unified_commitment,
+    unified_claim,
+    unified_claim_digits,
+    digest,
+}
+```
+
+This reduces the authenticated group summaries using fresh unified-fold mixers
+sampled only after the group summaries and joint-opening unification proof are
+fixed.
+
+Normative meaning:
+
+- `JointOpeningUnifiedClaimReduction` is still a claim-space reduction summary.
+- `JointOpeningUnifiedClaimReduction` is not a witness-space
+  fold lane and not an algebraic combined commitment unless a later
+  homogeneous owner proves such a structure explicitly;
+- It is **not** yet a CE / CCS fold object.
+- Its existence does not imply that the underlying groups live in one
+  homogeneous witness space.
+- It may aggregate heterogeneous kernel commitment families so long as the
+  underlying direct claims remain separately authenticated and the reduction is
+  transcript-bound.
+- In this v1 kernel, it must not be interpreted as a single kernel-wide
+  witness-space fold lane.
+
+Normative rules:
+
+- none of the claim-local, group-local, or unified-fold mixers may reuse any
+  Stage-1, Stage-2, or Stage-3 challenge;
+- specifically they must not reuse `r_lookup`, any Stage-1 address point, any
+  Stage-1 lookup batching challenge, `r_twist_cycle`, `r_addr_reg`,
+  `r_addr_ram`, any Stage-2 batching or linkage challenge, `r_shift`, or the
+  Stage-3 continuity batching scalars;
+- each reduction layer must use its own transcript domain separation;
+- each reduction layer must be bound only after the previous layer's digests are
+  fixed.
+
+#### 9.4.4 Joint-opening fold carrier
+
+The kernel may export deterministic family-local folded carriers for a later
+root/opening lane, but those carriers must be represented honestly.
+
+```text
+FamilyLocalOpeningFoldCarrier {
+    commitment_id,
+    shape,
+    group_digests,
+    r_fold,
+    folded_commitment,
+    folded_claim_digits,
+    folded_claim,
+    digest,
+}
+```
+
+Normative rules:
+
+- `FamilyLocalOpeningFoldCarrier` is not an `OpeningClaim`.
+- `FamilyLocalOpeningFoldCarrier` is not a new commitment family.
+- `FamilyLocalOpeningFoldCarrier` is not by itself a CCS proof.
+- It is only an authenticated deterministic carrier derived from the already
+  checked joint-opening summaries.
+- every exported fold carrier must be family-local and may contain groups from
+  only one homogeneous witness space. Homogeneity here means:
+  - one commitment family,
+  - one commitment setup / committer surface,
+  - one encoded witness width,
+  - one fold-shape convention over the carried claims,
+  - one CE / CCS structure identifier,
+  - one commitment-map identifier,
+  - one point shape / evaluation convention,
+  - one common evaluation point value `r`,
+- one witness-layout identifier.
+- claims that differ in evaluation point value may be jointly summarized in
+  claim space, but they must not appear in the same
+  `FamilyLocalOpeningFoldCarrier`.
+- `r_fold` must be sampled fresh from a bucket-local transcript domain bound to
+  the family id and the source group digests.
+- `folded_commitment`, `folded_claim_digits`, and `folded_claim` must be the
+  exact linear combination induced by `r_fold` over the source group objects in
+  that bucket.
+- if the kernel opening set is heterogeneous, the kernel must either:
+  - omit a single global fold carrier, or
+  - export one fold carrier per homogeneous bucket.
+- a single global heterogeneous fold carrier across heterogeneous commitment
+  families is non-conforming.
+
+For the current `simple` kernel boundary, the intended carrier shape is:
+
+```text
+FamilyLocalOpeningFoldCarrier {
+    commitment_id,
+    shape,
+    group_digests,
+    r_fold,
+    folded_commitment,
+    folded_claim_digits,
+    folded_claim,
+    digest,
+}
+```
+
+where each bucket proof is family-local and all claims in that bucket live in
+the same homogeneous witness space at one common evaluation point value.
+`r_fold` is sampled fresh from a
+bucket-local transcript domain, and the folded commitment / folded claim values
+are the exact family-local linear combination induced by that point.
+For the current v1 CHIP-8 kernel opening inventory, a single global
+heterogeneous fold carrier is non-conforming and must be absent even when
+claim-space summaries exist.
+
+Any implementation that labels this carrier as a proved CCS lane before such a
+lane actually exists is non-conforming.
+
+#### 9.4.5 RowProjectionWitness
+
+The semantic layer must carry one explicit positive row/view witness per
+exported semantic row.
+
+```text
+RowProjectionWitness_j = {
+    row_index: j,
+    row_binding_claim_digest,
+    row_binding_refinement_digest,
+    semantic_row_digest,
+    semantic_view_digest,
+}
+```
+
+where:
+
+- `row_binding_claim_digest` references the exact `C_lane @ j_bits` row-binding
+  opening used by Stage 3,
+- `row_binding_refinement_digest` references the unique `OpeningRefinement`
+  whose `claim_digest = row_binding_claim_digest`,
+- `semantic_row_digest` commits to the canonical 24-coordinate row `z_j`, with
+  the verifier-known coordinate `ONE = 1` inserted at position 0,
+- `semantic_view_digest` commits to the derived row-local auxiliary view
+  consumed by semantic extraction, but only for data that is purely local to
+  the authenticated row plus verifier-known constants.
+
+Normative rules:
+
+- `RowProjectionWitness_j` must be tied to the same authenticated row-binding
+  claim that later feeds `PreparedStep_j`;
+- `RowProjectionWitness_j` must also point to the exact verified opening
+  refinement for that row-binding claim, not only to the direct claim digest;
+- the semantic view may include:
+  - the 24-coordinate semantic row itself,
+  - verifier-known fixed coordinates such as `ONE = 1`,
+  - purely row-local derived projections such as the root-facing witness row and
+    row-local aux fields that are definitionally determined by the authenticated
+    row and public constants;
+- the semantic view must **not** by itself claim provenance for:
+  - Stage-1 decode tables or handoff bits,
+  - Stage-2 virtual `Val` objects or closed Twist sessions,
+  - Stage-3 start/final-boundary transfer facts,
+  - any cross-row or session-level semantic fact;
+- those non-local facts must remain justified by the explicit Stage-1 / Stage-2
+  / Stage-3 proof objects and their own provenance predicates;
+- no semantic fact may be extracted from an unauthenticated recomputation path
+  that bypasses the row-binding claim.
+
+#### 9.4.6 BridgeBindingSummary
+
+The bridge must also carry one explicit binding object per exported semantic
+row, connecting the same authenticated row-binding claim to the root-facing
+prepared step.
+
+```text
+BridgeBinding_j = {
+    row_index: j,
+    row_binding_claim_digest,
+    row_binding_refinement_digest,
+    prepared_step_digest,
+}
+```
+
+Normative rules:
+
+- the bridge binding object must reference the same row-binding claim digest as
+  the row-projection witness for row `j`;
+- the bridge binding object must reference the same row-binding refinement
+  digest as the row-projection witness for row `j`, so the row-export leaf
+  points directly to the verified exact-opening path and not only to the direct
+  claim digest;
+- `prepared_step_digest` must commit to the exact `PreparedStep_j` object handed
+  to the root prover;
+- the verifier must check that `PreparedStep_j` is the exact canonical
+  `RootEncode` image of the authenticated row before accepting the bridge
+  binding; in particular it must check equality of the packed witness payload,
+  the exposed witness slice, and the root commitment induced by that packed
+  witness.
+
+#### 9.4.7 Audit rule for recomputation
+
+Verifier recomputation may be used as a cross-check, but not as the only
+authentication mechanism.
+
+Concretely:
+
+- recomputing a lane/table/address value from public data or reconstructed trace
+  data does not replace the direct opening claim for that value;
+- recomputing a semantic row from `RowBindingClaim` does not replace the
+  row-binding opening itself;
+- recomputing `PreparedStep_j.mcs.c` from an opened row does not replace the
+  requirement that the row itself first be authenticated against `C_lane`.
+
+The mandatory soundness edges are:
+
+```text
+root0 commitment
+  -> direct OpeningClaim
+  -> ExactOpeningWitness
+  -> OpeningRefinement
+  -> RowProjectionWitness
+  -> BridgeBinding_j
+  -> PreparedStep_j
+```
+
+The exact adjacent-state linking theorem from §4.3a sits above these mandatory
+edges. It is not a new opening object or summary object; it is the semantic
+composition consequence that ties the authenticated local rows into one exact
+execution trace.
+
+Optional claim-space aggregation edges are:
+
+```text
+OpeningRefinement
+  -> JointOpeningClaimSummary
+  -> JointOpeningGroupSummary
+  -> JointOpeningUnificationProof
+  -> JointOpeningUnifiedClaimReduction
+```
+
+Optional witness-space fold-carrier edges are:
+
+```text
+JointOpeningGroupSummary
+  -> FamilyLocalOpeningFoldCarrier(commitment_id = one homogeneous family)
+```
+
+Claim-space aggregation does not imply witness-space foldability.
+
+Any implementation that skips one of the mandatory binding edges above and
+replaces it with an unauthenticated recomputation shortcut is non-conforming.
+
+#### 9.4.8 Object classification
+
+To keep the opening boundary auditor-visible, every opening-related object in
+this section is classified as exactly one of the following:
+
+- theorem / soundness-carrying:
+  - direct `OpeningClaim`,
+  - lower-layer `ExactOpeningWitness`,
+  - `OpeningRefinement`,
+  - the exact Stage-1 / Stage-2 / Stage-3 checked objects that consume those
+    openings,
+  - the exact adjacent-state linking theorem from §4.3a;
+- protocol-binding:
+  - `root0`,
+  - `KernelOpeningManifest`,
+  - `RootOpeningManifest`,
+  - canonical manifest ordering / grouping,
+  - transcript-bound claim-space reduction objects;
+- mandatory provenance:
+  - `RowProjectionWitness_j`,
+  - `BridgeBinding_j`;
+- optional implementation-side carrier / summary:
+  - `JointOpeningClaimSummary`,
+  - `JointOpeningGroupSummary`,
+  - `JointOpeningUnificationProof`,
+  - `JointOpeningUnifiedClaimReduction`,
+  - `FamilyLocalOpeningFoldCarrier`.
+
+Normative consequences:
+
+- no optional carrier / summary object is a new direct opening claim;
+- no optional carrier / summary object replaces `ExactOpeningWitness` or
+  `OpeningRefinement`;
+- `RowProjectionWitness_j` and `BridgeBinding_j` are mandatory binding edges,
+  but they are provenance leaves rather than new semantic theorems;
+- `JointOpeningUnifiedClaimReduction` remains an optional claim-space reduction
+  summary;
+- `FamilyLocalOpeningFoldCarrier` is an optional family-local carrier and is not
+  by itself a proved CCS lane.
+
+### 9.5 Rust-facing kernel boundary
 
 The algebra above maps to the following Rust-facing boundary for `simple.rs`.
 
@@ -1816,6 +2593,21 @@ Stage1ShoutProof {
 }
 ```
 
+Normative Stage-1 table-auth mode for the `simple` kernel:
+
+- `table_opening_claims` contains only commitment-backed public-table openings.
+- for `fetch`, the table-auth surface is the exact `C_rom_table @ r_fetch_addr`
+  opening;
+- for `decode`, the table-auth surface is the exact
+  `C_decode_table @ r_decode_addr` opening;
+- for `alu`, the table-auth surface is the exact `C_alu_table @ r_add8lo_addr`
+  opening whenever the current row uses that subtable;
+- for `eq4`, the table-auth surface is the exact `C_eq4_table @ r_eq4_addr`
+  opening whenever the current row uses that table;
+- verifier-local helper evaluators such as identity or equality shims may still
+  exist as explicit local helper objects, but they are not
+  `table_opening_claims` and they do not replace the committed public tables.
+
 ```text
 Stage2TwistProof {
     cycle_point: r_twist_cycle,
@@ -1824,6 +2616,8 @@ Stage2TwistProof {
     gamma_reg,
     reg_rw_batched_proof,
     reg_val_from_inc_proof,
+    reg_session_registry,
+    reg_session_closure_proof,
     reg_addr_correctness_proofs: {
         RegRaX,
         RegRaY,
@@ -1835,6 +2629,8 @@ Stage2TwistProof {
     ram_val_from_inc_proof,
     ram_raf_read_proof,
     ram_raf_write_proof,
+    ram_session_registry,
+    ram_session_closure_proof,
     ram_addr_correctness_proofs: {
         RamRa,
         RamWa,
@@ -1843,6 +2639,21 @@ Stage2TwistProof {
     twist_linkage_proof,
 }
 ```
+
+Normative Stage-2 session-closure rule:
+
+- `reg_session_registry` enumerates the authenticated register-side Twist
+  sessions consumed by this chunk;
+- `reg_session_closure_proof` proves that the register-side read/write/`Val`
+  claims, address-correctness claims, and any row-local register semantic
+  extraction all refer to that one closed authenticated registry, with totality
+  and uniqueness by session key;
+- `ram_session_registry` enumerates the authenticated RAM-side Twist sessions
+  consumed by this chunk;
+- `ram_session_closure_proof` proves that the RAM-side read/write/`Val` claims,
+  RAF support, address-correctness claims, and any row-local RAM semantic
+  extraction all refer to that one closed authenticated registry, with totality
+  and uniqueness by session key.
 
 ```text
 LaneShiftProof {
@@ -1912,6 +2723,15 @@ SimpleKernelProof {
     stage2: Stage2TwistProof,
     stage3: Stage3Proof,
     kernel_opening_manifest: KernelOpeningManifest,
+    root_opening_manifest: RootOpeningManifest,
+    exact_opening_artifacts,     // per-family exact opening witnesses for every kernel claim
+    time_opening_summary,
+    opening_refinement_summary,
+    joint_opening_summary,
+    joint_opening_fold_bucket_proofs,
+    row_projection_summary,
+    bridge_binding_summary,
+    semantic_evidence_summary,
 }
 ```
 
@@ -1919,6 +2739,16 @@ SimpleKernelProof {
 KernelMetaPub {
     program_image_digest,
     initial_state_digest,
+    rom_table_digest,
+    decode_table_digest,
+    alu_table_digest,
+    eq4_table_digest,
+    transcript_seed_digest,
+    protocol_version_id,
+    root_params_id,
+    variable_order_id,
+    domain_shape_id,
+    sink_convention_id,
     program_word_count,
     semantic_rows: N,
     padded_trace_length: T,
@@ -1928,22 +2758,41 @@ KernelMetaPub {
 }
 ```
 
+`KernelMetaPub` is the single canonical public-metadata object absorbed into
+`root0` and reused by later verifier-side table/root reconstruction. Any
+challenge-relevant public parameter not represented directly by one of these
+fields must be a deterministic function of:
+
+- `vm_spec`,
+- the public program image,
+- the public initial state,
+- and the protocol version already fixed by the surrounding proof system.
+
+No later stage may rely on hidden prover-side public metadata that is outside
+this boundary.
+
 ```text
 RowBindingClaim {
     row_index,
     row_point_bits,
     opened_lane_values,
     opening_claim_ref,
-    prepared_step_commitment,
 }
 ```
+
+`RowBindingClaim` is intentionally pure row-binding metadata. Any prepared-step
+material belongs to `BridgeBinding_j`, not to the row-binding claim itself.
 
 ```text
 SimpleKernelOutput {
     prepared_steps: Vec<PreparedStep>,
     public_steps: Vec<PreparedStepInstance>,
-    extension_proofs: SessionExtensionProofs,
     kernel_opening_manifest: KernelOpeningManifest,
+    root_opening_manifest: RootOpeningManifest,
+    joint_opening_fold_bucket_proofs,
+    row_projection_summary,
+    bridge_binding_summary,
+    semantic_evidence_summary,
 }
 ```
 
@@ -1956,11 +2805,50 @@ Normative rule:
   root prover.
 - `prepared_steps.len() = public_steps.len() = N`; these vectors contain exactly
   the semantic rows `j ∈ [0, N)` and never include padded rows.
-- `extension_proofs` is empty for `simple.rs` v1; the sidecar obligations are
-  discharged inside kernel Stage 1 / Stage 2 / Stage 3 before handoff rather
-  than exported as deferred per-step extensions.
 - `kernel_opening_manifest` contains only kernel-owned openings against the
   commitments fixed in `root0`.
+- `root_opening_manifest` contains only root-owned openings created after bridge
+  extraction; it must be disjoint from `kernel_opening_manifest`.
+  On the simple-kernel boundary it must be empty.
+- `exact_opening_artifacts` must be sufficient to authenticate every direct
+  kernel opening claim in `kernel_opening_manifest`.
+- `opening_refinement_summary`, `joint_opening_summary`,
+  `joint_opening_fold_bucket_proofs`,
+  `row_projection_summary`,
+  `bridge_binding_summary`, and `semantic_evidence_summary` are
+  audit/provenance objects only; none of them introduces a new commitment
+  family or replaces the lower-layer exact opening requirement.
+- `row_projection_summary` and `bridge_binding_summary` are canonical ordered
+  summary trees over the exact per-row `RowProjectionWitness_j` and
+  `BridgeBinding_j` leaves for `j ∈ [0, N)`, with verifier-accessible row-index
+  mapping.
+- `joint_opening_fold_bucket_proofs` is the family-local fold-carrier surface
+  for the heterogeneous case. Every bucket proof must contain claims from
+  exactly one commitment family and one homogeneous witness space.
+  Each bucket proof must bind:
+  - the family id,
+  - the fold shape,
+  - the source group digests,
+  - the fresh bucket-local fold point,
+  - the folded commitment,
+  - the folded digit claims,
+  - and the folded scalar claim.
+  These bucket proofs do not by themselves constitute a proved CCS lane.
+- `semantic_evidence_summary` is the top-level theorem-facing digest over the
+  authenticated Stage 1 / Stage 2 / Stage 3 proof objects, manifests, opening
+  provenance summaries, row projection, and bridge binding objects consumed by
+  the semantic extraction layer from §9.4, including the ingredients required
+  by the adjacent-state linking theorem from §4.3a. In particular it must
+  canonically expose:
+  - the exact per-row Stage-2 temporal seed leaves for `j ∈ [0, N)`,
+  - one chunk-global Stage-2 register/RAM temporal-context leaf over the entire
+    semantic prefix,
+  - and one exact Stage-3 `pc`-adjacency support leaf tying the shift opening
+    path to adjacent semantic rows.
+- the exact kernel boundary above must be sufficient, together with the public
+  chunk input from §9.5, to recover the accepted-kernel theorem package and the
+  strong execution conclusion of §4.3a without any extra external temporal-
+  support premise.
 
 The intended Rust entrypoints are:
 
@@ -2122,14 +3010,22 @@ Normative rule for `RootEncode`:
 - `z_j` is the raw 24-field semantic row used by the root main-lane row-local CCS.
 - `w_j` is coordinates 1 through 23 inclusive of `z_j`.
 - `Z_j` is the canonical norm-bounded witness representation consumed by the root
-  prover for that row.
-- For the Rust root-spine targeted by this spec, that canonical representation is
-  the existing packed witness encoding implemented at
-  `neo_memory::ajtai::encode_vector_for_ccs_m` in
-  [ajtai.rs](/Users/nicolasarqueros/starstream/develop/nightstream-clean-up/crates/neo-memory/src/ajtai.rs):
-  `Z_j = neo_memory::ajtai::encode_vector_for_ccs_m(root_params, 24, z_j)`.
-- Equivalently, `Z_j ∈ F^{D × ceil(24 / D)}` with layout determined only by that
-  canonical encoding function and the public `root_params`.
+  prover for that row, defined here as follows:
+  1. let `m = 24`;
+  2. let `cols = ceil(m / D)`;
+  3. form the canonical padded witness vector
+     `z_pad = [z_j[0], z_j[1], ..., z_j[23], 0, ..., 0] ∈ F^{cols * D}`,
+     where padding zeros are appended only at the tail until the length is
+     exactly `cols * D`;
+  4. reshape `z_pad` into a `D × cols` matrix by columns:
+     the entry at row `r ∈ [0, D)` and column `c ∈ [0, cols)` is
+     `z_pad[c * D + r]`;
+  5. apply the canonical Ajtai witness encoding induced by the public
+     `root_params` to that `D × cols` matrix to obtain `Z_j`.
+- Equivalently, `Z_j ∈ F^{D × ceil(24 / D)}` with the column-major placement of
+  the padded semantic row fixed exactly by the previous rule.
+- Any implementation helper such as `encode_vector_for_ccs_m(root_params, 24, z_j)`
+  is conforming only if it implements exactly this algorithm.
 - Balanced base-`b` digit decomposition is a later NC/range-check view of the
   packed witness. It is **not** part of `RootEncode`.
 - `Z_j` is therefore **not** an ad hoc bridge-local row-major packing choice. The
@@ -2257,8 +3153,19 @@ The exact Fiat-Shamir ordering for the 3-stage kernel:
    - row-binding openings / row-membership proofs for each exported semantic row
      `j ∈ [0, N)` → transcript
 
-6. Emit kernel opening claims.
-   Hand off PreparedSteps + opening claims to root prover.
+6. Opening verification and reduction:
+   - emit `KernelOpeningManifest` and the empty `RootOpeningManifest`
+   - verify one exact family opening witness for every direct manifest claim in
+     canonical order
+   - emit one `OpeningRefinement` for every accepted direct claim / exact
+     opening pair
+   - derive the canonical `time_opening` groups by
+     `(source_tag, ordinal, domain_shape, point)`
+   - emit claim summaries, group summaries, the joint-opening unification
+     object, and any family-local fold-bucket carriers in that order
+
+7. Emit kernel proof/output artifacts.
+   Hand off PreparedSteps + accepted kernel opening artifacts to root prover.
 ```
 
 Each "sample" is a `transcript.challenge_field()` call. Each "absorb" is a
@@ -2481,7 +3388,6 @@ RowBindingClaim_j = {
     row_point_bits: j_bits,
     opened_lane_values: all non-fixed coordinates of z_j,
     opening_claim_ref,
-    prepared_step_commitment: PreparedStep_j.mcs.c,
 }
 ```
 
@@ -2498,10 +3404,11 @@ Bridge verifier algorithm for row `j`:
    `ONE = 1`.
 3. Compute `RootEncode(z_j) = (w_j, Z_j)` exactly as in §11.2, using the
    canonical SuperNeo packed witness encoding for `Z_j`.
-4. Recompute `c_j = Ajtai_commit(Z_j)`.
-5. Check `c_j = PreparedStep_j.mcs.c`.
-6. Check `PreparedStep_j.witness.w = w_j`.
-7. Check `PreparedStep_j.mcs.x = [F::ONE]` and `PreparedStep_j.mcs.m_in = 1`.
+4. Check `PreparedStep_j.witness.Z = Z_j`.
+5. Recompute `c_j = Ajtai_commit(Z_j)`.
+6. Check `c_j = PreparedStep_j.mcs.c`.
+7. Check `PreparedStep_j.witness.w = w_j`.
+8. Check `PreparedStep_j.mcs.x = [F::ONE]` and `PreparedStep_j.mcs.m_in = 1`.
 
 Only after those checks may the root prover consume `PreparedStep_j` for the
 main-lane CCS proof.
@@ -2559,3 +3466,18 @@ following are true.
    manifests with explicit source tags before they are merged by `time_opening`.
 12. The simple kernel does not duplicate the root row-local CCS proof; it only
     proves sidecars, continuity, and bridge binding into that root proof.
+13. Strong kernel soundness additionally requires the theorem-level adjacent
+    machine-state link `PostState(j) = PreState(j+1)` for every semantic
+    `j < N-1`. That link must be discharged compositionally from:
+    - one shared `Stage2TemporalContext`,
+    - one exact `PcAdjacentBridge`,
+    - and the row-local semantic binding of those authenticated values to
+      `PreState` / `PostState`.
+    Control-lane continuity alone, or row-local Stage-2 seeds alone, are not
+    accepted as sufficient trace theorems under this spec.
+14. The exact lower-layer kernel boundary for one chunk must determine the same
+    accepted-kernel theorem package used for auditing. A conforming
+    implementation may expose that accepted package as a named verifier
+    boundary, but it may not require an additional theorem-facing temporal-
+    support witness that is outside the exact boundary data already fixed by
+    the chunk input, exact openings/refinements, and transcript schedule.
