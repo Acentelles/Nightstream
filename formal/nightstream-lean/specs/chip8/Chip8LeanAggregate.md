@@ -230,8 +230,8 @@ with all imported source columns fixed to those chosen values and with
 
 | Lean file | Local owner |
 |---|---|
-| `Nightstream/Chip8/Routing.lean` | Local row-local routing lemma over the 24-coordinate CHIP-8 main lane |
-| `Nightstream/Chip8/RoutingInterface.lean` | Theorem-facing re-export surface |
+| `Nightstream/Chip8/Stage1/Routing.lean` | Local row-local routing lemma over the 24-coordinate CHIP-8 main lane |
+| `Nightstream/Chip8/Stage1/RoutingInterface.lean` | Theorem-facing re-export surface |
 
 ## Contract Surface
 
@@ -277,7 +277,7 @@ with all imported source columns fixed to those chosen values and with
 - **Upstream dependencies**:
   - local main-lane row design from `chip8-kernel.md`
 - **Downstream consumers**:
-  - `Nightstream/Chip8/StepComposition.lean`
+  - `Nightstream/Chip8/Execution/StepComposition.lean`
   - later Stage-3 continuity and bridge-binding theorems
 
 ## Implementation Plan
@@ -296,7 +296,7 @@ with all imported source columns fixed to those chosen values and with
 
 ## Acceptance Criteria
 
-1. `lake build Nightstream.Chip8.Routing` succeeds.
+1. `lake build Nightstream.Chip8.Stage1.Routing` succeeds.
 2. The theorem surface matches the 24-coordinate main-lane row, not the older
    reduced witness.
 3. The module proves only local row algebra and nothing stage-global.
@@ -575,8 +575,8 @@ The module must prove:
 
 | Lean file | Local owner |
 |---|---|
-| `Nightstream/Chip8/FetchDecodeBinding.lean` | Exact Stage-1 fetch/decode/lookup/handoff binding for the final CHIP-8 kernel |
-| `Nightstream/Chip8/FetchDecodeBindingInterface.lean` | Theorem-facing re-export surface |
+| `Nightstream/Chip8/Stage1/FetchDecodeBinding.lean` | Exact Stage-1 fetch/decode/lookup/handoff binding for the final CHIP-8 kernel |
+| `Nightstream/Chip8/Stage1/FetchDecodeBindingInterface.lean` | Theorem-facing re-export surface |
 
 ## Contract Surface
 
@@ -624,12 +624,12 @@ The module must prove:
 ## Dependency and Consumer Map
 
 - **Upstream dependencies**:
-  - `Nightstream/Chip8/Routing.lean`
+  - `Nightstream/Chip8/Stage1/Routing.lean`
 - **Downstream consumers**:
-  - `Nightstream/Chip8/DecodeAddressBinding.lean`
-  - `Nightstream/Chip8/WitnessMemoryBinding.lean`
-  - `Nightstream/Chip8/EvidenceCoverage.lean`
-  - `Nightstream/Chip8/StepComposition.lean`
+  - `Nightstream/Chip8/Stage1/DecodeAddressBinding.lean`
+  - `Nightstream/Chip8/Stage2/WitnessMemoryBinding.lean`
+  - `Nightstream/Chip8/Stage2/EvidenceCoverage.lean`
+  - `Nightstream/Chip8/Execution/StepComposition.lean`
 
 ## Implementation Plan
 
@@ -648,7 +648,7 @@ The module must prove:
 
 ## Acceptance Criteria
 
-1. `lake build Nightstream.Chip8.FetchDecodeBinding` succeeds.
+1. `lake build Nightstream.Chip8.Stage1.FetchDecodeBinding` succeeds.
 2. The theorem surface exposes the full decode tuple and the handoff bits.
 3. The theorem surface uses `AddRegNoCarry`, not full CHIP-8 `8xy4`.
 4. No `sorry`.
@@ -864,8 +864,8 @@ floating free of the intended row semantics.
 
 | Lean file | Local owner |
 |---|---|
-| `Nightstream/Chip8/DecodeAddressBinding.lean` | Exact family-specific address projection and sink-routing theorems |
-| `Nightstream/Chip8/DecodeAddressBindingInterface.lean` | Theorem-facing re-export surface |
+| `Nightstream/Chip8/Stage1/DecodeAddressBinding.lean` | Exact family-specific address projection and sink-routing theorems |
+| `Nightstream/Chip8/Stage1/DecodeAddressBindingInterface.lean` | Theorem-facing re-export surface |
 
 ## Contract Surface
 
@@ -906,11 +906,11 @@ floating free of the intended row semantics.
 ## Dependency and Consumer Map
 
 - **Upstream dependencies**:
-  - `Nightstream/Chip8/FetchDecodeBinding.lean`
+  - `Nightstream/Chip8/Stage1/FetchDecodeBinding.lean`
 - **Downstream consumers**:
-  - `Nightstream/Chip8/WitnessMemoryBinding.lean`
-  - `Nightstream/Chip8/EvidenceCoverage.lean`
-  - `Nightstream/Chip8/StepComposition.lean`
+  - `Nightstream/Chip8/Stage2/WitnessMemoryBinding.lean`
+  - `Nightstream/Chip8/Stage2/EvidenceCoverage.lean`
+  - `Nightstream/Chip8/Execution/StepComposition.lean`
 
 ## Implementation Plan
 
@@ -927,7 +927,7 @@ floating free of the intended row semantics.
 
 ## Acceptance Criteria
 
-1. `lake build Nightstream.Chip8.DecodeAddressBinding` succeeds.
+1. `lake build Nightstream.Chip8.Stage1.DecodeAddressBinding` succeeds.
 2. The theorem surface covers all exact Stage-1 and Stage-2 families from the
    final kernel.
 3. No unnamed address source remains.
@@ -1192,8 +1192,8 @@ CHIP-8 meaning of the Stage-2 subsystem.
 
 | Lean file | Local owner |
 |---|---|
-| `Nightstream/Chip8/WitnessMemoryBinding.lean` | CHIP-8-local semantic meaning of Stage-2 lane values, Twist ports, RAF, and initialization |
-| `Nightstream/Chip8/WitnessMemoryBindingInterface.lean` | Theorem-facing re-export surface |
+| `Nightstream/Chip8/Stage2/WitnessMemoryBinding.lean` | CHIP-8-local semantic meaning of Stage-2 lane values, Twist ports, RAF, and initialization |
+| `Nightstream/Chip8/Stage2/WitnessMemoryBindingInterface.lean` | Theorem-facing re-export surface |
 
 ## Contract Surface
 
@@ -1236,12 +1236,12 @@ CHIP-8 meaning of the Stage-2 subsystem.
 ## Dependency and Consumer Map
 
 - **Upstream dependencies**:
-  - `Nightstream/Chip8/FetchDecodeBinding.lean`
-  - `Nightstream/Chip8/DecodeAddressBinding.lean`
-  - `Nightstream/Chip8/Routing.lean`
+  - `Nightstream/Chip8/Stage1/FetchDecodeBinding.lean`
+  - `Nightstream/Chip8/Stage1/DecodeAddressBinding.lean`
+  - `Nightstream/Chip8/Stage1/Routing.lean`
 - **Downstream consumers**:
-  - `Nightstream/Chip8/EvidenceCoverage.lean`
-  - `Nightstream/Chip8/StepComposition.lean`
+  - `Nightstream/Chip8/Stage2/EvidenceCoverage.lean`
+  - `Nightstream/Chip8/Execution/StepComposition.lean`
   - later Rust-refinement theorems for Stage-2 proof objects
 
 ## Implementation Plan
@@ -1259,7 +1259,7 @@ CHIP-8 meaning of the Stage-2 subsystem.
 
 ## Acceptance Criteria
 
-1. `lake build Nightstream.Chip8.WitnessMemoryBinding` succeeds.
+1. `lake build Nightstream.Chip8.Stage2.WitnessMemoryBinding` succeeds.
 2. The theorem surface matches the final Stage-2 register/RAM design.
 3. `MEM_VALUE` totality, RAF support, and initialization are explicit.
 4. No `sorry`.
@@ -1382,8 +1382,8 @@ the authenticated row trace.
 
 | Lean file | Local owner |
 |---|---|
-| `Nightstream/Chip8/ExecutionSemantics.lean` | Shared semantic objects and trace relations for the supported CHIP-8 kernel |
-| `Nightstream/Chip8/ExecutionSemanticsInterface.lean` | Theorem-facing re-export surface |
+| `Nightstream/Chip8/Execution/ExecutionSemantics.lean` | Shared semantic objects and trace relations for the supported CHIP-8 kernel |
+| `Nightstream/Chip8/Execution/ExecutionSemanticsInterface.lean` | Theorem-facing re-export surface |
 
 ## Contract Surface
 
@@ -1414,11 +1414,11 @@ the authenticated row trace.
 ## Dependency and Consumer Map
 
 - **Upstream dependencies**:
-  - `Nightstream/Chip8/WitnessMemoryBinding.lean`
-  - `Nightstream/Chip8/ContinuityBridge.lean`
+  - `Nightstream/Chip8/Stage2/WitnessMemoryBinding.lean`
+  - `Nightstream/Chip8/Stage3/ContinuityBridge.lean`
 - **Downstream consumers**:
-  - `Nightstream/Chip8/StepComposition.lean`
-  - `Nightstream/Chip8/BurstSession.lean`
+  - `Nightstream/Chip8/Execution/StepComposition.lean`
+  - `Nightstream/Chip8/Execution/BurstSession.lean`
 
 ## Implementation Plan
 
@@ -1434,7 +1434,7 @@ the authenticated row trace.
 
 ## Acceptance Criteria
 
-1. `lake build Nightstream.Chip8.ExecutionSemantics` succeeds.
+1. `lake build Nightstream.Chip8.Execution.ExecutionSemantics` succeeds.
 2. `Chip8StepComposition` and `Chip8BurstSession` consume the same semantic owner.
 3. No `sorry`.
 
@@ -1590,8 +1590,8 @@ facts across a fixed public input bundle without re-proving the public bindings.
 
 | Lean file | Local owner |
 |---|---|
-| `Nightstream/Chip8/RomScheduleBinding.lean` | Authenticated public-input binding theorems for the final CHIP-8 kernel |
-| `Nightstream/Chip8/RomScheduleBindingInterface.lean` | Theorem-facing re-export surface |
+| `Nightstream/Chip8/Kernel/RomScheduleBinding.lean` | Authenticated public-input binding theorems for the final CHIP-8 kernel |
+| `Nightstream/Chip8/Kernel/RomScheduleBindingInterface.lean` | Theorem-facing re-export surface |
 
 ## Contract Surface
 
@@ -1632,10 +1632,10 @@ facts across a fixed public input bundle without re-proving the public bindings.
 - **Upstream dependencies**:
   - final kernel public boundary from `chip8-kernel.md`
 - **Downstream consumers**:
-  - `Nightstream/Chip8/FetchDecodeBinding.lean`
-  - `Nightstream/Chip8/WitnessMemoryBinding.lean`
-  - `Nightstream/Chip8/ContinuityBridge.lean`
-  - `Nightstream/Chip8/EvidenceCoverage.lean`
+  - `Nightstream/Chip8/Stage1/FetchDecodeBinding.lean`
+  - `Nightstream/Chip8/Stage2/WitnessMemoryBinding.lean`
+  - `Nightstream/Chip8/Stage3/ContinuityBridge.lean`
+  - `Nightstream/Chip8/Stage2/EvidenceCoverage.lean`
 
 ## Implementation Plan
 
@@ -1653,7 +1653,7 @@ facts across a fixed public input bundle without re-proving the public bindings.
 
 ## Acceptance Criteria
 
-1. `lake build Nightstream.Chip8.RomScheduleBinding` succeeds.
+1. `lake build Nightstream.Chip8.Kernel.RomScheduleBinding` succeeds.
 2. The theorem surface makes `meta_pub`, pad-row metadata, and initial-state
    authentication explicit.
 3. No `sorry`.
@@ -1902,8 +1902,8 @@ $$
 
 | Lean file | Local owner |
 |---|---|
-| `Nightstream/Chip8/OpeningBoundary.lean` | Kernel/root opening-manifest ownership and conformance theorems |
-| `Nightstream/Chip8/OpeningBoundaryInterface.lean` | Theorem-facing re-export surface |
+| `Nightstream/Chip8/Kernel/OpeningBoundary.lean` | Kernel/root opening-manifest ownership and conformance theorems |
+| `Nightstream/Chip8/Kernel/OpeningBoundaryInterface.lean` | Theorem-facing re-export surface |
 
 ## Contract Surface
 
@@ -1939,7 +1939,7 @@ $$
 - **Upstream dependencies**:
   - final kernel commitment surface from `chip8-kernel.md`
 - **Downstream consumers**:
-  - `Nightstream/Chip8/EvidenceCoverage.lean`
+  - `Nightstream/Chip8/Stage2/EvidenceCoverage.lean`
   - later Rust-refinement theorems for `KernelOpeningManifest`
 
 ## Implementation Plan
@@ -1957,7 +1957,7 @@ $$
 
 ## Acceptance Criteria
 
-1. `lake build Nightstream.Chip8.OpeningBoundary` succeeds.
+1. `lake build Nightstream.Chip8.Kernel.OpeningBoundary` succeeds.
 2. The theorem surface matches the final kernel/root opening-manifest split.
 3. Kernel and root commitment layers remain formally disjoint.
 4. No `sorry`.
@@ -2174,8 +2174,8 @@ $$
 
 | Lean file | Local owner |
 |---|---|
-| `Nightstream/Chip8/ContinuityBridge.lean` | Stage-3 continuity and row-to-`PreparedStep` bridge-binding theorems |
-| `Nightstream/Chip8/ContinuityBridgeInterface.lean` | Theorem-facing re-export surface |
+| `Nightstream/Chip8/Stage3/ContinuityBridge.lean` | Stage-3 continuity and row-to-`PreparedStep` bridge-binding theorems |
+| `Nightstream/Chip8/Stage3/ContinuityBridgeInterface.lean` | Theorem-facing re-export surface |
 
 ## Contract Surface
 
@@ -2218,7 +2218,7 @@ $$
   - `Nightstream/PCSOpeningSemantics.lean`
   - later root-encoding interface from the SuperNeo side
 - **Downstream consumers**:
-  - `Nightstream/Chip8/EvidenceCoverage.lean`
+  - `Nightstream/Chip8/Stage2/EvidenceCoverage.lean`
   - later Rust-refinement theorems for `PreparedStep` export
   - generic `MainLaneBridge`
 
@@ -2237,7 +2237,7 @@ $$
 
 ## Acceptance Criteria
 
-1. `lake build Nightstream.Chip8.ContinuityBridge` succeeds.
+1. `lake build Nightstream.Chip8.Stage3.ContinuityBridge` succeeds.
 2. The theorem surface covers `LaneShiftProof`, `ContinuityCheck`, and explicit
    row binding.
 3. The bridge uses explicit row openings, not an aggregate shortcut.
@@ -2477,8 +2477,8 @@ top-level theorem parameters.
 
 | Lean file | Local owner |
 |---|---|
-| `Nightstream/Chip8/EvidenceCoverage.lean` | Kernel-proof-to-semantics extraction theorems for the final CHIP-8 kernel |
-| `Nightstream/Chip8/EvidenceCoverageInterface.lean` | Theorem-facing re-export surface |
+| `Nightstream/Chip8/Stage2/EvidenceCoverage.lean` | Kernel-proof-to-semantics extraction theorems for the final CHIP-8 kernel |
+| `Nightstream/Chip8/Stage2/EvidenceCoverageInterface.lean` | Theorem-facing re-export surface |
 
 ## Contract Surface
 
@@ -2525,17 +2525,17 @@ top-level theorem parameters.
 ## Dependency and Consumer Map
 
 - **Upstream dependencies**:
-  - `Nightstream/Chip8/OpeningBoundary.lean`
-  - `Nightstream/Chip8/FetchDecodeBinding.lean`
-  - `Nightstream/Chip8/DecodeAddressBinding.lean`
-  - `Nightstream/Chip8/WitnessMemoryBinding.lean`
-  - `Nightstream/Chip8/RomScheduleBinding.lean`
-  - `Nightstream/Chip8/ContinuityBridge.lean`
+  - `Nightstream/Chip8/Kernel/OpeningBoundary.lean`
+  - `Nightstream/Chip8/Stage1/FetchDecodeBinding.lean`
+  - `Nightstream/Chip8/Stage1/DecodeAddressBinding.lean`
+  - `Nightstream/Chip8/Stage2/WitnessMemoryBinding.lean`
+  - `Nightstream/Chip8/Kernel/RomScheduleBinding.lean`
+  - `Nightstream/Chip8/Stage3/ContinuityBridge.lean`
   - `Nightstream/PCSOpeningSemantics.lean`
 - **Downstream consumers**:
-  - `Nightstream/Chip8/StagedExecutionDigest.lean`
-  - `Nightstream/Chip8/ArtifactAudit.lean`
-  - `Nightstream/Chip8/StepComposition.lean`
+  - `Nightstream/Chip8/Kernel/StagedExecutionDigest.lean`
+  - `Nightstream/Chip8/Kernel/ArtifactAudit.lean`
+  - `Nightstream/Chip8/Execution/StepComposition.lean`
   - later Rust-refinement theorems about the final kernel proof object
 
 ## Implementation Plan
@@ -2555,7 +2555,7 @@ top-level theorem parameters.
 
 ## Acceptance Criteria
 
-1. `lake build Nightstream.Chip8.EvidenceCoverage` succeeds.
+1. `lake build Nightstream.Chip8.Stage2.EvidenceCoverage` succeeds.
 2. The theorem surface rules out unauthenticated extraction from internal proof
    objects.
 3. The theorem surface rules out treating sparse openings as free full-row
@@ -2799,8 +2799,8 @@ surfaces, not a parallel informal interface.
 
 | Lean file | Local owner |
 |---|---|
-| `Nightstream/Chip8/StagedExecutionDigest.lean` | Normalized digest contract and normalization/projection theorems for the final CHIP-8 kernel |
-| `Nightstream/Chip8/StagedExecutionDigestInterface.lean` | Theorem-facing re-export surface |
+| `Nightstream/Chip8/Kernel/StagedExecutionDigest.lean` | Normalized digest contract and normalization/projection theorems for the final CHIP-8 kernel |
+| `Nightstream/Chip8/Kernel/StagedExecutionDigestInterface.lean` | Theorem-facing re-export surface |
 
 ## Contract Surface
 
@@ -2839,13 +2839,13 @@ surfaces, not a parallel informal interface.
 ## Dependency and Consumer Map
 
 - **Upstream dependencies**:
-  - `Nightstream/Chip8/RomScheduleBinding.lean`
-  - `Nightstream/Chip8/EvidenceCoverage.lean`
-  - `Nightstream/Chip8/ExecutionSemantics.lean`
-  - `Nightstream/Chip8/BurstSession.lean`
-  - `Nightstream/Chip8/StepComposition.lean`
+  - `Nightstream/Chip8/Kernel/RomScheduleBinding.lean`
+  - `Nightstream/Chip8/Stage2/EvidenceCoverage.lean`
+  - `Nightstream/Chip8/Execution/ExecutionSemantics.lean`
+  - `Nightstream/Chip8/Execution/BurstSession.lean`
+  - `Nightstream/Chip8/Execution/StepComposition.lean`
 - **Downstream consumers**:
-  - `Nightstream/Chip8/ArtifactAudit.lean`
+  - `Nightstream/Chip8/Kernel/ArtifactAudit.lean`
   - Rust-vs-Lean differential testing over normalized digest instances
   - later Rust-refinement theorems over the final kernel proof object
 
@@ -2864,7 +2864,7 @@ surfaces, not a parallel informal interface.
 
 ## Acceptance Criteria
 
-1. `lake build Nightstream.Chip8.StagedExecutionDigest` succeeds.
+1. `lake build Nightstream.Chip8.Kernel.StagedExecutionDigest` succeeds.
 2. The digest boundary is explicit and Lean-defined.
 3. The normalization and projection theorems are explicit.
 4. No `sorry`.
@@ -3020,8 +3020,8 @@ re-proved inside this module.
 
 | Lean file | Local owner |
 |---|---|
-| `Nightstream/Chip8/ArtifactAudit.lean` | Executable/declarative audit checker and soundness theorems over staged execution digests |
-| `Nightstream/Chip8/ArtifactAuditInterface.lean` | Theorem-facing re-export surface |
+| `Nightstream/Chip8/Kernel/ArtifactAudit.lean` | Executable/declarative audit checker and soundness theorems over staged execution digests |
+| `Nightstream/Chip8/Kernel/ArtifactAuditInterface.lean` | Theorem-facing re-export surface |
 
 ## Contract Surface
 
@@ -3057,9 +3057,9 @@ re-proved inside this module.
 ## Dependency and Consumer Map
 
 - **Upstream dependencies**:
-  - `Nightstream/Chip8/StagedExecutionDigest.lean`
-  - `Nightstream/Chip8/StepComposition.lean`
-  - `Nightstream/Chip8/ExecutionSemantics.lean`
+  - `Nightstream/Chip8/Kernel/StagedExecutionDigest.lean`
+  - `Nightstream/Chip8/Execution/StepComposition.lean`
+  - `Nightstream/Chip8/Execution/ExecutionSemantics.lean`
 - **Downstream consumers**:
   - release-qualification artifact audits
   - later Rust-refinement theorems for accepted staged digests
@@ -3080,7 +3080,7 @@ re-proved inside this module.
 
 ## Acceptance Criteria
 
-1. `lake build Nightstream.Chip8.ArtifactAudit` succeeds.
+1. `lake build Nightstream.Chip8.Kernel.ArtifactAudit` succeeds.
 2. Accepted digest instances imply the exact theorem-facing digest realization
    predicate.
 3. Accepted digest instances imply the exact supported-kernel semantic result.
@@ -3272,8 +3272,8 @@ $$
 
 | Lean file | Local owner |
 |---|---|
-| `Nightstream/Chip8/BurstSession.lean` | Burst-session correctness theorems for decomposed CHIP-8 instructions |
-| `Nightstream/Chip8/BurstSessionInterface.lean` | Theorem-facing re-export surface |
+| `Nightstream/Chip8/Execution/BurstSession.lean` | Burst-session correctness theorems for decomposed CHIP-8 instructions |
+| `Nightstream/Chip8/Execution/BurstSessionInterface.lean` | Theorem-facing re-export surface |
 
 ## Contract Surface
 
@@ -3313,9 +3313,9 @@ $$
 ## Dependency and Consumer Map
 
 - **Upstream dependencies**:
-  - `Nightstream/Chip8/ExecutionSemantics.lean`
-  - `Nightstream/Chip8/DecodeAddressBinding.lean`
-  - `Nightstream/Chip8/ContinuityBridge.lean`
+  - `Nightstream/Chip8/Execution/ExecutionSemantics.lean`
+  - `Nightstream/Chip8/Stage1/DecodeAddressBinding.lean`
+  - `Nightstream/Chip8/Stage3/ContinuityBridge.lean`
 - **Downstream consumers**:
   - later ROM-specific whole-instruction and execution theorems
 
@@ -3333,7 +3333,7 @@ $$
 
 ## Acceptance Criteria
 
-1. `lake build Nightstream.Chip8.BurstSession` succeeds.
+1. `lake build Nightstream.Chip8.Execution.BurstSession` succeeds.
 2. The theorem surface explicitly closes the decomposed-instruction schedule
    hole for the selected CHIP-8 families.
 3. No `sorry`.
@@ -3519,8 +3519,8 @@ $$
 
 | Lean file | Local owner |
 |---|---|
-| `Nightstream/Chip8/StepComposition.lean` | Composition theorems from final-kernel bounds to supported-subset CHIP-8 semantics |
-| `Nightstream/Chip8/StepCompositionInterface.lean` | Theorem-facing re-export surface |
+| `Nightstream/Chip8/Execution/StepComposition.lean` | Composition theorems from final-kernel bounds to supported-subset CHIP-8 semantics |
+| `Nightstream/Chip8/Execution/StepCompositionInterface.lean` | Theorem-facing re-export surface |
 
 ## Contract Surface
 
@@ -3564,16 +3564,16 @@ $$
 ## Dependency and Consumer Map
 
 - **Upstream dependencies**:
-  - `Nightstream/Chip8/Routing.lean`
-  - `Nightstream/Chip8/FetchDecodeBinding.lean`
-  - `Nightstream/Chip8/WitnessMemoryBinding.lean`
-  - `Nightstream/Chip8/ExecutionSemantics.lean`
-  - `Nightstream/Chip8/BurstSession.lean`
-  - `Nightstream/Chip8/ContinuityBridge.lean`
-  - `Nightstream/Chip8/EvidenceCoverage.lean`
+  - `Nightstream/Chip8/Stage1/Routing.lean`
+  - `Nightstream/Chip8/Stage1/FetchDecodeBinding.lean`
+  - `Nightstream/Chip8/Stage2/WitnessMemoryBinding.lean`
+  - `Nightstream/Chip8/Execution/ExecutionSemantics.lean`
+  - `Nightstream/Chip8/Execution/BurstSession.lean`
+  - `Nightstream/Chip8/Stage3/ContinuityBridge.lean`
+  - `Nightstream/Chip8/Stage2/EvidenceCoverage.lean`
 - **Downstream consumers**:
-  - `Nightstream/Chip8/StagedExecutionDigest.lean`
-  - `Nightstream/Chip8/ArtifactAudit.lean`
+  - `Nightstream/Chip8/Kernel/StagedExecutionDigest.lean`
+  - `Nightstream/Chip8/Kernel/ArtifactAudit.lean`
   - later Rust-refinement theorems for the final kernel proof object
   - later larger CHIP-8 kernels that add draw/input/timer families
 
@@ -3592,7 +3592,7 @@ $$
 
 ## Acceptance Criteria
 
-1. `lake build Nightstream.Chip8.StepComposition` succeeds.
+1. `lake build Nightstream.Chip8.Execution.StepComposition` succeeds.
 2. The theorem surface matches the final supported kernel exactly.
 3. The execution theorem is continuity-aware and chunk-local.
 4. No `sorry`.
