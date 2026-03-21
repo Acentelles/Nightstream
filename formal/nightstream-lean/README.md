@@ -52,6 +52,10 @@ architecture that combines:
 - `Nightstream/PCSOpeningSemantics.lean`
 - `Nightstream/NonZeroInitTwistInterface.lean`
 - `Nightstream/NonZeroInitTwist.lean`
+- `Nightstream/Chip8/ReleaseBridgeInterface.lean`
+- `Nightstream/Chip8/ReleaseBridge.lean`
+- `Nightstream/Chip8/StagedBridgeInterface.lean`
+- `Nightstream/Chip8/StagedBridge.lean`
 
 ### CHIP-8 VM constraint system
 
@@ -79,6 +83,22 @@ Current directory ownership is partially nested:
   fixed ROM word and `PC` determine the exact authenticated Stage-1 decode,
   ALU/Eq4 lookup keys, and the decode handoff consumed by the main lane and
   Stage 2.
+- `specs/chip8/Chip8InstructionSemanticsLookupProjection.spec.md`: concrete
+  CHIP-8 Stage-1 release-path owner for the `InstructionSemanticsLookup`
+  family. Packages the authenticated ALU-helper and burst-equality helper
+  facts into one exact helper-record surface and proves that this
+  `ShoutReadEval` family stays out of the main lane unless a later owner
+  explicitly supports a separate fold.
+- `specs/chip8/Chip8ReleaseBridge.spec.md`: concrete CHIP-8 release-path
+  bridge owner above the four individual extension families. Packages the
+  Rust-planner family-to-stage split, one concrete readonly-batch Stage-1
+  bundle, and one concrete Stage-2 history bundle that a later staged bridge
+  artifact can consume directly.
+- `specs/chip8/Chip8StagedBridge.spec.md`: concrete staged bridge artifact
+  replacing the compatibility bridge shape. Packages the canonical public
+  bridge view, the exact prepared-step export, the ordered readonly-batch
+  bundle trace, and the exact Stage-2 history bundle that the backend is
+  allowed to consume.
 - `specs/chip8/Chip8DecodeAddressBinding.spec.md`: CHIP-8-local decoded index
   and address-role binding surface. Proves that every Stage-1 or Stage-2
   address family is exactly the family-specific projection determined by the
@@ -100,6 +120,18 @@ Current directory ownership is partially nested:
   extraction surface. Owns the passage from exact authenticated frame evidence
   to explicit per-row register and conditional RAM role sessions across the
   whole trace.
+- `specs/chip8/Chip8RegisterHistoryProjection.spec.md`: concrete CHIP-8
+  Stage-2 release-path owner for the `RegisterHistory` family. Packages the
+  exact non-zero-init register surface, exact register-side role-session
+  extraction, and canonical register timeline consequence into one exact
+  `TwistValEval` family that stays out of the main lane unless a later owner
+  explicitly supports a separate fold.
+- `specs/chip8/Chip8RamHistoryProjection.spec.md`: concrete CHIP-8 Stage-2
+  release-path owner for the `RamHistory` family. Packages the exact
+  non-zero-init RAM surface, exact opcode-guarded RAM role-session extraction,
+  and canonical RAM timeline consequence into one exact `TwistValEval` family
+  that stays out of the main lane unless a later owner explicitly supports a
+  separate fold.
 - `specs/chip8/Chip8RegisterTimeline.spec.md`: exact Stage-2 register / `I`
   timeline surface. Owns the absolute-time contract relating authenticated
   register pre/post state to the `RegVal` timeline exported by the protocol.
@@ -109,6 +141,10 @@ Current directory ownership is partially nested:
 - `specs/chip8/Chip8PcContinuityBridge.spec.md`: theorem-facing Stage-3 `pc`
   bridge. Owns the exact semantic support surface needed to turn checked
   lane-shift continuity data into real adjacent-row `pc` equality.
+- `specs/chip8/Chip8PaddedContinuityCheck.spec.md`: low-level Stage-3 padded
+  continuity owner beneath the theorem-facing Stage-3 contract.
+- `specs/chip8/Chip8Stage3Refinement.spec.md`: explicit refinement from the
+  low-level padded Stage-3 check to the row-local continuity surface.
 - `specs/chip8/Chip8TemporalConsistency.spec.md`: component-wise temporal trace
   surface. Composes `Chip8RegisterTimeline`, `Chip8RamTimeline`, and
   `Chip8PcContinuityBridge` into exact adjacent-state linking across the
@@ -136,6 +172,30 @@ Current directory ownership is partially nested:
   binding surface for the final CHIP-8 kernel. Proves that the published
   program digest, program shape metadata, pad-row metadata, initial-state
   digests, and root parameters determine the exact semantic kernel inputs.
+- `specs/chip8/Chip8MetaPubEncoding.spec.md`: exact theorem-facing `KernelMetaPub`
+  payload and canonical labeled `meta_pub` absorb plan for `root0`.
+- `specs/chip8/Chip8Poseidon2Transcript.spec.md`: exact Rust-compatible
+  Poseidon2 transcript packing, domain separation, and `root0` transcript-input
+  semantics beneath the hash permutation.
+- `specs/chip8/Chip8Root0Digest.spec.md`: exact width-8/rate-4 sponge-state
+  evolution for `digest32`, `challenge_field`, and the resulting `root0` digest
+  bytes, leaving only the concrete Poseidon2 permutation as an explicit
+  parameter.
+- `specs/chip8/Chip8Poseidon2GoldilocksCore.spec.md`: exact concrete width-8
+  Poseidon2-over-Goldilocks permutation for the seeded simple-kernel transcript,
+  freezing the generated round constants and exposing golden-vector conformance
+  points for Rust↔Lean parity.
+- `specs/chip8/Chip8ChallengeDerivation.spec.md`: exact Rust-compatible
+  `sample_k` / `sample_point` semantics for the explicit shared CHIP-8 kernel
+  challenges and labeled terminal points, including the fact that Stage-1
+  `r_lookup` continues from the pre-digest `root0` transcript cursor rather
+  than from `digest32(root0)`.
+- `specs/chip8/Chip8ConcreteTranscriptParity.spec.md`: exact concrete
+  specialization of the generic `root0` digest and shared kernel challenge
+  layer to the frozen width-8 Poseidon2-over-Goldilocks core.
+- `specs/chip8/Chip8Root0Preimage.spec.md`: exact combined phase-0 `root0`
+  preimage, joining the canonical commitment absorbs with the exact lifted
+  `meta_pub` absorb plan before any concrete hash function.
 - `specs/chip8/Chip8OpeningBoundary.spec.md`: authenticated direct-opening
   manifest surface for the CHIP-8 kernel and root. Proves that the kernel and
   root expose only manifest-declared direct openings, with Stage 1 owned by
@@ -200,6 +260,10 @@ Current directory ownership is partially nested:
   digest contract for a staged kernel execution. Packages the exact public-input
   surface, Stage-1/Stage-2/Stage-3 theorem surfaces, and final semantic result
   into one explicit comparison and audit boundary shared by Rust and Lean.
+- `specs/chip8/Chip8StagedExecutionDigestBundle.spec.md`: Lean-defined
+  chunk-level bundle owner for normalized staged execution digests. Packages one
+  theorem-facing public surface plus one ordered per-frame staged digest entry
+  for an exact authenticated CHIP-8 frame list.
 - `specs/chip8/Chip8ArtifactAudit.spec.md`: Lean audit-checker surface for the
   staged execution digest. Proves that accepted digest instances satisfy the
   exact theorem-facing conditions required by the CHIP-8 composition theorem.
@@ -214,6 +278,10 @@ Current directory ownership is partially nested:
 - `Nightstream/Chip8/Stage1/Routing.lean`
 - `Nightstream/Chip8/Stage1/FetchDecodeBindingInterface.lean`
 - `Nightstream/Chip8/Stage1/FetchDecodeBinding.lean`
+- `Nightstream/Chip8/Stage1/BytecodeFetchProjectionInterface.lean`
+- `Nightstream/Chip8/Stage1/BytecodeFetchProjection.lean`
+- `Nightstream/Chip8/Stage1/InstructionSemanticsLookupProjectionInterface.lean`
+- `Nightstream/Chip8/Stage1/InstructionSemanticsLookupProjection.lean`
 - `Nightstream/Chip8/Stage1/DecodeAddressBindingInterface.lean`
 - `Nightstream/Chip8/Stage1/DecodeAddressBinding.lean`
 - `Nightstream/Chip8/Stage2/WitnessMemoryBindingInterface.lean`
@@ -224,6 +292,10 @@ Current directory ownership is partially nested:
 - `Nightstream/Chip8/Stage2/TwistRoleSessions.lean`
 - `Nightstream/Chip8/Stage2/TwistTraceRoleSessionsInterface.lean`
 - `Nightstream/Chip8/Stage2/TwistTraceRoleSessions.lean`
+- `Nightstream/Chip8/Stage2/RegisterHistoryProjectionInterface.lean`
+- `Nightstream/Chip8/Stage2/RegisterHistoryProjection.lean`
+- `Nightstream/Chip8/Stage2/RamHistoryProjectionInterface.lean`
+- `Nightstream/Chip8/Stage2/RamHistoryProjection.lean`
 - `Nightstream/Chip8/Stage2/TwistTemporalInstantiationInterface.lean`
 - `Nightstream/Chip8/Stage2/TwistTemporalInstantiation.lean`
 - `Nightstream/Chip8/Trace/RegisterTimelineInterface.lean`
@@ -232,6 +304,10 @@ Current directory ownership is partially nested:
 - `Nightstream/Chip8/Trace/RamTimeline.lean`
 - `Nightstream/Chip8/Stage3/PcContinuityBridgeInterface.lean`
 - `Nightstream/Chip8/Stage3/PcContinuityBridge.lean`
+- `Nightstream/Chip8/Stage3/PaddedContinuityCheckInterface.lean`
+- `Nightstream/Chip8/Stage3/PaddedContinuityCheck.lean`
+- `Nightstream/Chip8/Stage3/Stage3RefinementInterface.lean`
+- `Nightstream/Chip8/Stage3/Stage3Refinement.lean`
 - `Nightstream/Chip8/Trace/TemporalConsistencyInterface.lean`
 - `Nightstream/Chip8/Trace/TemporalConsistency.lean`
 - `Nightstream/Chip8/Trace/ChunkInputInterface.lean`
@@ -244,6 +320,20 @@ Current directory ownership is partially nested:
 - `Nightstream/Chip8/Execution/ExecutionSemantics.lean`
 - `Nightstream/Chip8/Kernel/RomScheduleBindingInterface.lean`
 - `Nightstream/Chip8/Kernel/RomScheduleBinding.lean`
+- `Nightstream/Chip8/Kernel/MetaPubEncodingInterface.lean`
+- `Nightstream/Chip8/Kernel/MetaPubEncoding.lean`
+- `Nightstream/Chip8/Kernel/Poseidon2TranscriptInterface.lean`
+- `Nightstream/Chip8/Kernel/Poseidon2Transcript.lean`
+- `Nightstream/Chip8/Kernel/Root0DigestInterface.lean`
+- `Nightstream/Chip8/Kernel/Root0Digest.lean`
+- `Nightstream/Chip8/Kernel/Poseidon2GoldilocksCoreInterface.lean`
+- `Nightstream/Chip8/Kernel/Poseidon2GoldilocksCore.lean`
+- `Nightstream/Chip8/Kernel/ChallengeDerivationInterface.lean`
+- `Nightstream/Chip8/Kernel/ChallengeDerivation.lean`
+- `Nightstream/Chip8/Kernel/ConcreteTranscriptParityInterface.lean`
+- `Nightstream/Chip8/Kernel/ConcreteTranscriptParity.lean`
+- `Nightstream/Chip8/Kernel/Root0PreimageInterface.lean`
+- `Nightstream/Chip8/Kernel/Root0Preimage.lean`
 - `Nightstream/Chip8/Kernel/OpeningBoundaryInterface.lean`
 - `Nightstream/Chip8/Kernel/OpeningBoundary.lean`
 - `Nightstream/Chip8/Kernel/TranscriptScheduleInterface.lean`
@@ -269,6 +359,8 @@ Current directory ownership is partially nested:
 - `Nightstream/Chip8/Kernel/KernelDigestAuditBoundary.lean`
 - `Nightstream/Chip8/Kernel/StagedExecutionDigestInterface.lean`
 - `Nightstream/Chip8/Kernel/StagedExecutionDigest.lean`
+- `Nightstream/Chip8/Kernel/StagedExecutionDigestBundleInterface.lean`
+- `Nightstream/Chip8/Kernel/StagedExecutionDigestBundle.lean`
 - `Nightstream/Chip8/Kernel/ArtifactAuditInterface.lean`
 - `Nightstream/Chip8/Kernel/ArtifactAudit.lean`
 - `Nightstream/Chip8/Execution/ExactFrameSemanticsInterface.lean`
@@ -409,6 +501,24 @@ The theorem-owned comparison and audit boundary is one explicit staged
 execution digest. Its fields are the normalized public and stage surfaces used
 by the composition theorem, rather than a Rust-chosen convenience export.
 
+The intended compatibility target is as close to golden-vector parity as
+practical at every protocol-binding boundary:
+
+- Lean should own the executable meaning of concrete Goldilocks arithmetic used
+  by the staged artifact boundary.
+- Lean should own the executable meaning of canonical field-element
+  serialization, labeled transcript absorption, and Poseidon2-derived digest /
+  challenge values wherever those values cross a theorem-facing boundary.
+- Rust-vs-Lean comparison should prefer exact value equality over
+  implementation-shaped summaries whenever the exported field is protocol
+  binding.
+- The preferred conformance style is deterministic golden vectors plus
+  Rust↔Lean exact-equality checks over the Lean-defined staged artifact.
+
+This is the intended contract, not an optional nicety: if an exported field is
+protocol-binding, the long-term goal is that Lean and Rust agree on its exact
+computational meaning.
+
 The recommended digest comparison boundary is:
 
 - public kernel inputs (`public_program_image`, `initial_state`, `meta_pub`)
@@ -422,7 +532,9 @@ The recommended digest comparison boundary is:
 
 This is intentionally **not** a requirement that Lean and Rust re-expose every
 scratch value or transcript-local temporary. The goal is to compare the
-canonical semantic boundary, not every low-level implementation detail.
+canonical semantic boundary, and to match the exact protocol-binding
+computations that define that boundary, without forcing every ephemeral scratch
+temporary into the exported artifact.
 
 The recommended operational split is:
 

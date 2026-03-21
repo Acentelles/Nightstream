@@ -227,6 +227,27 @@ Both Rust and Lean produce values of this type. In Layer 2, we
 compare them. In Layer 3, the Lean checker verifies the Rust-
 produced instance.
 
+For any exported field that is protocol-binding, this comparison must
+be as close to exact computational parity as practical, not merely
+shape parity. Concretely:
+
+```
+- Lean should own the executable meaning of the concrete Goldilocks
+  arithmetic used by that exported field.
+- Lean should own the canonical serialization / labeling / transcript
+  absorb order that gives that field its meaning.
+- If the field is Poseidon2-derived, Lean should own the executable
+  Poseidon2-over-Goldilocks meaning of that field as well.
+- Rust-vs-Lean compatibility should prefer exact value equality and
+  deterministic golden vectors over weaker summary-level agreement.
+```
+
+This does not mean Lean must sit in the production hot path, and it
+does not require a cryptographic security proof of Poseidon2 inside
+Lean. It means that when Rust exports a protocol-binding digest or
+challenge value for comparison or audit, Lean must define exactly what
+that value means.
+
 
 ## Key design decisions
 
