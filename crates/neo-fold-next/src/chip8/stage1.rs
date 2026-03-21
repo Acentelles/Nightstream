@@ -4,10 +4,10 @@
 //! address dimension), address-correctness sub-proofs (booleanity, Hamming-weight-1,
 //! decode-consistency). Does not own table construction (see `tables.rs`).
 
-use neo_math::{from_complex, F, K};
+use neo_math::{from_complex, KExtensions, F, K};
 use neo_reductions::sumcheck::{run_sumcheck_prover, RoundOracle};
 use neo_transcript::Transcript;
-use p3_field::PrimeCharacteristicRing;
+use p3_field::{PrimeCharacteristicRing, PrimeField64};
 
 use super::kernel::{
     batch_values, verify_stage1_channel_transcript, KernelStepAux, ShoutChannelProof, Stage1ShoutProof,
@@ -126,6 +126,65 @@ fn mle_eval_many_k_be(cols: &[Vec<F>], point_be: &[K]) -> Vec<K> {
     mle_eval_many_k(cols, &point_le)
 }
 
+fn stage1_linkage_terms(
+    lane_values_at_lookup: &[K],
+    decode_values: &[K],
+    decode_handoff_values: &[K],
+    alu_output: K,
+    burst_eq: K,
+) -> [K; 17] {
+    let lane_kk = lane_values_at_lookup[1];
+    let lane_nnn_addr = lane_values_at_lookup[2];
+    let lane_nnn_word = lane_values_at_lookup[3];
+    let lane_lookup_output = lane_values_at_lookup[6];
+    let lane_writes_lookup_to_x = lane_values_at_lookup[7];
+    let lane_writes_mem_to_x = lane_values_at_lookup[8];
+    let lane_preserves_x = lane_values_at_lookup[9];
+    let lane_writes_nnn_to_i = lane_values_at_lookup[10];
+    let lane_is_jump = lane_values_at_lookup[11];
+    let lane_is_branch = lane_values_at_lookup[12];
+    let lane_is_memop = lane_values_at_lookup[13];
+    let lane_x_idx = lane_values_at_lookup[14];
+    let lane_y_idx = lane_values_at_lookup[15];
+    let lane_burst_last = lane_values_at_lookup[16];
+
+    let decode_x = decode_values[1];
+    let decode_y = decode_values[2];
+    let decode_kk = decode_values[3];
+    let decode_nnn_addr = decode_values[4];
+    let decode_nnn_word = decode_values[5];
+    let decode_writes_lookup_to_x = decode_values[6];
+    let decode_writes_mem_to_x = decode_values[7];
+    let decode_preserves_x = decode_values[8];
+    let decode_writes_nnn_to_i = decode_values[9];
+    let decode_is_jump = decode_values[10];
+    let decode_is_branch = decode_values[11];
+    let decode_is_memop = decode_values[12];
+    let decode_reads_ram = decode_values[15];
+    let decode_writes_ram = decode_values[16];
+    let decode_uses_y = decode_values[17];
+
+    [
+        lane_kk - decode_kk,
+        lane_nnn_addr - decode_nnn_addr,
+        lane_nnn_word - decode_nnn_word,
+        lane_writes_lookup_to_x - decode_writes_lookup_to_x,
+        lane_writes_mem_to_x - decode_writes_mem_to_x,
+        lane_preserves_x - decode_preserves_x,
+        lane_writes_nnn_to_i - decode_writes_nnn_to_i,
+        lane_is_jump - decode_is_jump,
+        lane_is_branch - decode_is_branch,
+        lane_is_memop - decode_is_memop,
+        lane_lookup_output - alu_output,
+        lane_burst_last - lane_is_memop * burst_eq,
+        (K::ONE - lane_is_memop) * (lane_x_idx - decode_x),
+        decode_uses_y * (lane_y_idx - decode_y) + (K::ONE - decode_uses_y) * lane_y_idx,
+        decode_handoff_values[0] - decode_uses_y,
+        decode_handoff_values[1] - decode_reads_ram,
+        decode_handoff_values[2] - decode_writes_ram,
+    ]
+}
+
 fn open_onehot_at_point_be(addresses: &[usize], addr_point_be: &[K], cycle_point: &[K]) -> K {
     let addr_point_le: Vec<K> = addr_point_be.iter().rev().copied().collect();
     let chi_addr = build_chi_table(&addr_point_le);
@@ -164,6 +223,52 @@ fn handoff_values_at_cycle(aux: &[KernelStepAux], cycle_point: &[K]) -> Vec<K> {
         mle_eval_k(&reads_ram, cycle_point),
         mle_eval_k(&writes_ram, cycle_point),
     ]
+}
+
+fn stage1_fetch_claim(lane_values_at_lookup: &[K]) -> K {
+    lane_values_at_lookup[0]
+}
+
+fn stage1_decode_claim(fetch_opcode_at_lookup: K) -> K {
+    fetch_opcode_at_lookup
+}
+
+fn stage1_eq4_claim(lane_values_at_lookup: &[K], decode_values: &[K]) -> K {
+    let sixteen = K::from(F::from_u64(16));
+    sixteen * lane_values_at_lookup[14] + decode_values[21]
+}
+
+fn decode_small_base_u64(value: K, label: &str) -> Result<u64, String> {
+    let [real, imag] = value.as_coeffs();
+    if imag != F::ZERO {
+        return Err(format!("{label} must be a base-field value"));
+    }
+    Ok(real.as_canonical_u64())
+}
+
+fn decode_operand_value(selector: K, reg_x: K, reg_y: K, kk: K, label: &str) -> Result<K, String> {
+    match decode_small_base_u64(selector, label)? {
+        0 => Ok(reg_x),
+        1 => Ok(reg_y),
+        2 => Ok(kk),
+        3 => Ok(K::ZERO),
+        other => Err(format!("{label} has invalid selector value {other}")),
+    }
+}
+
+fn stage1_alu_claim(lane_values_at_lookup: &[K], decode_values: &[K]) -> Result<K, String> {
+    let reg_x = lane_values_at_lookup[4];
+    let reg_y = lane_values_at_lookup[5];
+    let kk = lane_values_at_lookup[1];
+    let lookup_kind = decode_small_base_u64(decode_values[18], "stage1 lookup_kind_dec")?;
+    if lookup_kind > 3 {
+        return Err(format!("stage1 lookup_kind_dec has invalid value {lookup_kind}"));
+    }
+    let lhs = decode_operand_value(decode_values[19], reg_x, reg_y, kk, "stage1 lhs_selector_dec")?;
+    let rhs = decode_operand_value(decode_values[20], reg_x, reg_y, kk, "stage1 rhs_selector_dec")?;
+    let kind_weight = K::from(F::from_u64(1u64 << 16));
+    let lhs_weight = K::from(F::from_u64(1u64 << 8));
+    Ok(K::from(F::from_u64(lookup_kind)) * kind_weight + lhs * lhs_weight + rhs)
 }
 
 // ---------------------------------------------------------------------------
@@ -832,39 +937,42 @@ pub fn prove_stage1<Tr: Transcript>(
 
     let decode_handoff_values = handoff_values_at_cycle(aux, &cycle_point);
     let lane_values_at_lookup = lane_values_at_cycle(trace_rows, &cycle_point);
+    let fetch_expected_at_lookup = mle_eval_k(&fetch_expected, &cycle_point);
+    let decode_expected_at_lookup = mle_eval_k(&decode_expected, &cycle_point);
+    let alu_expected_at_lookup = mle_eval_k(&alu_expected, &cycle_point);
+    let eq4_expected_at_lookup = mle_eval_k(&eq4_expected, &cycle_point);
+    let fetch_claim = stage1_fetch_claim(&lane_values_at_lookup);
+    let decode_claim = stage1_decode_claim(fetch_proof.read_values_at_cycle[0]);
+    let alu_claim = stage1_alu_claim(&lane_values_at_lookup, &decode_proof.read_values_at_cycle)?;
     let gamma_lookup_link = sample_challenge(transcript, b"stage1/gamma_lookup_link");
 
     let decode = &decode_proof.read_values_at_cycle;
+    let eq4_claim = stage1_eq4_claim(&lane_values_at_lookup, decode);
+    if fetch_expected_at_lookup != fetch_claim {
+        return Err("stage1 fetch address claim does not match PC at r_lookup".into());
+    }
+    if decode_expected_at_lookup != decode_claim {
+        return Err("stage1 decode address claim does not match fetched opcode at r_lookup".into());
+    }
+    if alu_expected_at_lookup != alu_claim {
+        return Err("stage1 ALU address claim does not match decoded ALU key at r_lookup".into());
+    }
+    if eq4_expected_at_lookup != eq4_claim {
+        return Err("stage1 Eq4 address claim does not match X_IDX/x_bound at r_lookup".into());
+    }
     if decode[0] != K::ONE {
         return Err("stage1 linkage: decode valid column must equal 1 at r_lookup".into());
     }
 
-    let is_memop = lane_values_at_lookup[13];
-    let burst_last = lane_values_at_lookup[16];
-    let x_idx = lane_values_at_lookup[14];
-    let y_idx = lane_values_at_lookup[15];
-    let uses_y_dec = decode[17];
     let burst_eq = eq4_proof.read_values_at_cycle[0];
     let alu_output = alu_proof.read_values_at_cycle[0];
-    let linkage_terms = [
-        lane_values_at_lookup[1] - decode[3],
-        lane_values_at_lookup[2] - decode[4],
-        lane_values_at_lookup[3] - decode[5],
-        lane_values_at_lookup[7] - decode[6],
-        lane_values_at_lookup[8] - decode[7],
-        lane_values_at_lookup[9] - decode[8],
-        lane_values_at_lookup[10] - decode[9],
-        lane_values_at_lookup[11] - decode[10],
-        lane_values_at_lookup[12] - decode[11],
-        lane_values_at_lookup[13] - decode[12],
-        lane_values_at_lookup[6] - alu_output,
-        burst_last - is_memop * burst_eq,
-        (K::ONE - is_memop) * (x_idx - decode[1]),
-        uses_y_dec * (y_idx - decode[2]) + (K::ONE - uses_y_dec) * y_idx,
-        decode_handoff_values[0] - decode[17],
-        decode_handoff_values[1] - decode[15],
-        decode_handoff_values[2] - decode[16],
-    ];
+    let linkage_terms = stage1_linkage_terms(
+        &lane_values_at_lookup,
+        decode,
+        &decode_handoff_values,
+        alu_output,
+        burst_eq,
+    );
 
     let mut batched_linkage = K::ZERO;
     let mut gamma_power = K::ONE;
@@ -888,10 +996,10 @@ pub fn prove_stage1<Tr: Transcript>(
 }
 
 // ---------------------------------------------------------------------------
-// Verifier stub
+// Verifier
 // ---------------------------------------------------------------------------
 
-/// Verify Stage 1 Shout proofs. Fail closed until the verifier lands.
+/// Verify Stage 1 Shout proofs.
 pub fn verify_stage1<Tr: Transcript>(
     proof: &Stage1ShoutProof,
     rom_table: &[F],
@@ -905,6 +1013,12 @@ pub fn verify_stage1<Tr: Transcript>(
     if proof.cycle_point != expected_cycle_point {
         return Err("stage1 cycle point mismatch".into());
     }
+    if proof.decode_handoff_values.len() != 3 || proof.lane_values_at_lookup.len() != 17 {
+        return Err("stage1 opening surface has the wrong shape".into());
+    }
+    if proof.decode_proof.read_values_at_cycle.len() <= 21 {
+        return Err("stage1 decode proof is missing required output columns".into());
+    }
 
     verify_stage1_channel_transcript(
         transcript,
@@ -916,6 +1030,7 @@ pub fn verify_stage1<Tr: Transcript>(
             .ok_or_else(|| "stage1 fetch read value missing".to_string())?,
         ROM_ADDR_BITS,
         cycle_bits,
+        Some(stage1_fetch_claim(&proof.lane_values_at_lookup)),
         "stage1 fetch",
     )
     .map_err(|err| err.to_string())?;
@@ -927,6 +1042,13 @@ pub fn verify_stage1<Tr: Transcript>(
         batch_values(&proof.decode_proof.read_values_at_cycle, decode_alpha),
         16,
         cycle_bits,
+        Some(stage1_decode_claim(
+            *proof
+                .fetch_proof
+                .read_values_at_cycle
+                .first()
+                .ok_or_else(|| "stage1 fetch read value missing".to_string())?,
+        )),
         "stage1 decode",
     )
     .map_err(|err| err.to_string())?;
@@ -941,6 +1063,10 @@ pub fn verify_stage1<Tr: Transcript>(
             .ok_or_else(|| "stage1 ALU read value missing".to_string())?,
         18,
         cycle_bits,
+        Some(stage1_alu_claim(
+            &proof.lane_values_at_lookup,
+            &proof.decode_proof.read_values_at_cycle,
+        )?),
         "stage1 alu",
     )
     .map_err(|err| err.to_string())?;
@@ -955,13 +1081,14 @@ pub fn verify_stage1<Tr: Transcript>(
             .ok_or_else(|| "stage1 Eq4 read value missing".to_string())?,
         8,
         cycle_bits,
+        Some(stage1_eq4_claim(
+            &proof.lane_values_at_lookup,
+            &proof.decode_proof.read_values_at_cycle,
+        )),
         "stage1 eq4",
     )
     .map_err(|err| err.to_string())?;
 
-    if proof.decode_handoff_values.len() != 3 || proof.lane_values_at_lookup.len() != 17 {
-        return Err("stage1 opening surface has the wrong shape".into());
-    }
     if proof.fetch_proof.table_opening_values != vec![mle_eval_k_be(rom_table, &proof.fetch_proof.addr_point)] {
         return Err("stage1 ROM table opening mismatch".into());
     }
@@ -974,9 +1101,6 @@ pub fn verify_stage1<Tr: Transcript>(
     if proof.eq4_proof.table_opening_values != vec![mle_eval_k_be(eq4_table, &proof.eq4_proof.addr_point)] {
         return Err("stage1 Eq4 table opening mismatch".into());
     }
-    if proof.decode_proof.read_values_at_cycle.len() <= 17 {
-        return Err("stage1 decode proof is missing required output columns".into());
-    }
     if proof.decode_proof.read_values_at_cycle[0] != K::ONE {
         return Err("stage1 decode valid column must equal 1 at r_lookup".into());
     }
@@ -985,25 +1109,13 @@ pub fn verify_stage1<Tr: Transcript>(
     let decode = &proof.decode_proof.read_values_at_cycle;
     let lane = &proof.lane_values_at_lookup;
     let handoff = &proof.decode_handoff_values;
-    let linkage_terms = [
-        lane[1] - decode[3],
-        lane[2] - decode[4],
-        lane[3] - decode[5],
-        lane[7] - decode[6],
-        lane[8] - decode[7],
-        lane[9] - decode[8],
-        lane[10] - decode[9],
-        lane[11] - decode[10],
-        lane[12] - decode[11],
-        lane[13] - decode[12],
-        lane[6] - proof.alu_proof.read_values_at_cycle[0],
-        lane[16] - lane[13] * proof.eq4_proof.read_values_at_cycle[0],
-        (K::ONE - lane[13]) * (lane[14] - decode[1]),
-        decode[17] * (lane[15] - decode[2]) + (K::ONE - decode[17]) * lane[15],
-        handoff[0] - decode[17],
-        handoff[1] - decode[15],
-        handoff[2] - decode[16],
-    ];
+    let linkage_terms = stage1_linkage_terms(
+        lane,
+        decode,
+        handoff,
+        proof.alu_proof.read_values_at_cycle[0],
+        proof.eq4_proof.read_values_at_cycle[0],
+    );
     if batch_values(&linkage_terms, gamma_lookup_link) != K::ZERO {
         return Err("stage1 linkage batch failed at r_lookup".into());
     }

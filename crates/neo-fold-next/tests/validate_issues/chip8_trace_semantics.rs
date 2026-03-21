@@ -5,7 +5,7 @@ use neo_fold_next::chip8::spec::{
     Chip8Program, Chip8State, Chip8VmSpec, COL_BURST_LAST, COL_NNN_ADDR, COL_NNN_WORD, COL_RAM_ADDR, COL_REG_X,
     COL_REG_X_NEXT, COL_X_IDX,
 };
-use neo_fold_next::chip8::trace::Chip8TraceBuilder;
+use neo_fold_next::chip8::trace::{build_row_extension_trace, Chip8TraceBuilder};
 use neo_fold_next::chip8::{RAM_SINK_ADDR, REG_SINK_ADDR};
 use neo_fold_next::proof::StepBuild;
 use neo_math::F;
@@ -196,4 +196,30 @@ fn load_regs_burst_rows_write_registers_with_value_deltas() {
     assert_eq!(second_aux.ram_inc, F::ZERO);
     assert_eq!(second_aux.reg_wa_addr, 1);
     assert_eq!(second_aux.reg_inc, F::from_u64(0xbb - 2));
+}
+
+#[test]
+fn execute_program_captures_row_traces_used_by_extension_projection() {
+    let program = Chip8Program::from_opcodes(&[
+        0x600a, // LD V0, 10
+        0x610b, // LD V1, 11
+        0xA300, // LD I, 0x300
+        0xF155, // StoreRegs V0..V1
+    ]);
+    let initial_state = Chip8State::with_program(&program).expect("initial state");
+    let steps = Chip8TraceBuilder::<()>::execute_program(&program, &initial_state, 4).expect("execution");
+    let store_step = &steps[3];
+
+    assert_eq!(store_step.row_traces.len(), 2);
+    assert_eq!(store_step.row_traces[0].kernel_aux.ram_wa_addr, 0x300);
+    assert_eq!(store_step.row_traces[1].kernel_aux.ram_wa_addr, 0x301);
+    assert_eq!(store_step.row_traces[0].row[COL_RAM_ADDR], F::from_u64(0x300));
+    assert_eq!(store_step.row_traces[1].row[COL_RAM_ADDR], F::from_u64(0x301));
+
+    let extension_rows = build_row_extension_trace(store_step);
+    assert_eq!(extension_rows.len(), 2);
+    assert_eq!(extension_rows[0].ram_writes[0].addr, 0x300);
+    assert_eq!(extension_rows[0].ram_writes[0].value, 10);
+    assert_eq!(extension_rows[1].ram_writes[0].addr, 0x301);
+    assert_eq!(extension_rows[1].ram_writes[0].value, 11);
 }

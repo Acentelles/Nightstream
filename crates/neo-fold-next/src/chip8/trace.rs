@@ -53,11 +53,21 @@ impl std::error::Error for Chip8BuildError {}
 // Execution step (one per logical instruction, pre-expansion)
 // ---------------------------------------------------------------------------
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct Chip8ExecutionStep {
     pub prev: Chip8State,
     pub next: Chip8State,
     pub trace: Chip8StepTrace,
+    pub decoded: Chip8DecodedStep,
+    pub row_traces: Vec<Chip8RowTrace>,
+}
+
+#[derive(Clone, Debug)]
+pub struct Chip8RowTrace {
+    pub row: [F; WITNESS_WIDTH],
+    pub burst: Option<(u8, u8)>,
+    pub extension_data: StepExtensionData,
+    pub kernel_aux: KernelStepAux,
 }
 
 // ---------------------------------------------------------------------------
@@ -94,16 +104,9 @@ impl<'a, L> Chip8TraceBuilder<'a, L> {
         let mut state = initial_state.clone();
         let mut out = Vec::with_capacity(step_count);
         for _ in 0..step_count {
-            let opcode = program
-                .opcode_at(state.pc)
-                .ok_or_else(|| Chip8BuildError::Program(format!("no opcode at pc 0x{:03x}", state.pc)))?;
-            let next = execute_step(program, &state, opcode)?;
-            out.push(Chip8ExecutionStep {
-                prev: state.clone(),
-                next: next.clone(),
-                trace: Chip8StepTrace { opcode },
-            });
-            state = next;
+            let step = capture_execution_step(program, &state)?;
+            state = step.next.clone();
+            out.push(step);
         }
         Ok(out)
     }
@@ -122,8 +125,9 @@ impl<'a, L> Chip8TraceBuilder<'a, L> {
         let execution = Self::execute_program(program, initial_state, step_count)?;
         let mut out = Vec::new();
         for step in &execution {
-            let rows = self.build_rows(vm, program, &step.prev, &step.next, &step.trace)?;
-            out.extend(rows);
+            for row_trace in &step.row_traces {
+                out.push(self.build_step_from_row_trace(vm, &step.trace, row_trace)?);
+            }
         }
         Ok(out)
     }
@@ -143,250 +147,238 @@ impl<'a, L> Chip8TraceBuilder<'a, L> {
     {
         let decoded = decode_opcode(trace.opcode).map_err(Chip8BuildError::Unsupported)?;
         let dec_out = decode_to_output(trace.opcode);
-
-        match decoded.opcode_id {
-            Chip8Opcode::StoreRegs | Chip8Opcode::LoadRegs => {
-                self.build_burst_rows(vm, prev, next, trace, &decoded, &dec_out)
-            }
-            _ => {
-                let build = self.build_single_row(vm, prev, next, trace, &decoded, &dec_out, None)?;
-                Ok(vec![build])
-            }
-        }
+        build_row_traces(prev, next, trace, &decoded, &dec_out)?
+            .iter()
+            .map(|row_trace| self.build_step_from_row_trace(vm, trace, row_trace))
+            .collect()
     }
 
-    /// Build CCS rows for a burst instruction (Fx55/Fx65).
-    fn build_burst_rows(
+    fn build_step_from_row_trace(
         &self,
         vm: &Chip8VmSpec,
-        prev: &Chip8State,
-        next: &Chip8State,
         trace: &Chip8StepTrace,
-        decoded: &Chip8DecodedStep,
-        dec_out: &DecodeOutput,
-    ) -> Result<Vec<StepBuild>, Chip8BuildError>
-    where
-        L: SModuleHomomorphism<F, Commitment> + Sync,
-    {
-        let x_bound = decoded.x as usize;
-        let mut rows = Vec::with_capacity(x_bound + 1);
-        for burst_index in 0..=x_bound {
-            let info = BurstInfo {
-                burst_index: burst_index as u8,
-                x_bound: decoded.x,
-            };
-            let build = self.build_single_row(vm, prev, next, trace, decoded, dec_out, Some(info))?;
-            rows.push(build);
-        }
-        Ok(rows)
-    }
-
-    /// Build exactly one CCS row (24 columns).
-    fn build_single_row(
-        &self,
-        vm: &Chip8VmSpec,
-        prev: &Chip8State,
-        next: &Chip8State,
-        trace: &Chip8StepTrace,
-        decoded: &Chip8DecodedStep,
-        dec_out: &DecodeOutput,
-        burst: Option<BurstInfo>,
+        row_trace: &Chip8RowTrace,
     ) -> Result<StepBuild, Chip8BuildError>
     where
         L: SModuleHomomorphism<F, Commitment> + Sync,
     {
-        let pc_word = pc_to_word(prev.pc);
-        let pc_next_word = pc_to_word(next.pc);
-
-        // For burst rows, determine the effective register index and burst flags.
-        let (x_idx, burst_last) = match burst {
-            Some(bi) => (bi.burst_index, bi.burst_index == bi.x_bound),
-            None => (effective_x_idx(dec_out, decoded), false),
-        };
-        let y_idx = if burst.is_some() {
-            0
-        } else if dec_out.uses_y {
-            decoded.y
-        } else {
-            0
-        };
-
-        // Resolve register values at the effective index.
-        let reg_x_val = prev.v[x_idx as usize];
-        let reg_y_val = if dec_out.uses_y { prev.v[decoded.y as usize] } else { 0 };
-
-        // reg_x_next: the post-step value of V[x_idx].
-        let reg_x_next_val = next.v[x_idx as usize];
-
-        // Compute LOOKUP_OUTPUT based on LookupKind.
-        let lookup_output = compute_lookup_output(dec_out, reg_x_val, reg_y_val, decoded.kk);
-
-        // Compute MEM_VALUE for burst rows.
-        let mem_value = if burst.is_some() {
-            let ram_addr = prev.i as usize + x_idx as usize;
-            if decoded.opcode_id == Chip8Opcode::StoreRegs {
-                prev.v[x_idx as usize]
-            } else {
-                // LoadRegs: value loaded from RAM
-                prev.memory[ram_addr]
-            }
-        } else {
-            0u8
-        };
-
-        // RAM address for memop rows.
-        let ram_addr_val = if dec_out.is_memop && burst.is_some() {
-            prev.i as u16 + x_idx as u16
-        } else {
-            0u16
-        };
-
-        // PC_NEXT: only advances on last burst row (or on non-burst rows).
-        let effective_pc_next = if let Some(bi) = burst {
-            if bi.burst_index == bi.x_bound {
-                pc_next_word
-            } else {
-                pc_word // same PC for non-last burst rows
-            }
-        } else {
-            pc_next_word
-        };
-
-        // Fill the 24-column witness.
-        let mut z = vec![F::ZERO; WITNESS_WIDTH];
-        z[COL_ONE] = F::ONE;
-        z[COL_PC] = F::from_u64(pc_word as u64);
-        z[COL_PC_NEXT] = F::from_u64(effective_pc_next as u64);
-        z[COL_REG_X] = F::from_u64(reg_x_val as u64);
-        z[COL_REG_Y] = F::from_u64(reg_y_val as u64);
-        z[COL_REG_X_NEXT] = F::from_u64(reg_x_next_val as u64);
-        z[COL_I_REG] = F::from_u64(prev.i as u64);
-        z[COL_I_NEXT] = F::from_u64(next.i as u64);
-        z[COL_KK] = F::from_u64(decoded.kk as u64);
-        z[COL_NNN_ADDR] = F::from_u64(dec_out.nnn_addr_dec as u64);
-        z[COL_NNN_WORD] = F::from_u64(dec_out.nnn_word_dec as u64);
-        z[COL_MEM_VALUE] = F::from_u64(mem_value as u64);
-        z[COL_LOOKUP_OUTPUT] = F::from_u64(lookup_output as u64);
-        z[COL_WRITES_LOOKUP_TO_X] = fbool(dec_out.writes_lookup_to_x);
-        z[COL_WRITES_MEM_TO_X] = fbool(dec_out.writes_mem_to_x);
-        z[COL_PRESERVES_X] = fbool(dec_out.preserves_x);
-        z[COL_WRITES_NNN_TO_I] = fbool(dec_out.writes_nnn_to_i);
-        z[COL_IS_JUMP] = fbool(dec_out.is_jump);
-        z[COL_IS_BRANCH] = fbool(dec_out.is_branch);
-        z[COL_IS_MEMOP] = fbool(dec_out.is_memop);
-        z[COL_X_IDX] = F::from_u64(x_idx as u64);
-        z[COL_Y_IDX] = F::from_u64(y_idx as u64);
-        z[COL_BURST_LAST] = fbool(burst_last);
-        z[COL_RAM_ADDR] = F::from_u64(ram_addr_val as u64);
-
-        // Build auxiliary data.
-        let lhs = resolve_operand(dec_out.lhs_selector, reg_x_val, reg_y_val, decoded.kk);
-        let rhs = resolve_operand(dec_out.rhs_selector, reg_x_val, reg_y_val, decoded.kk);
-        let alu_key = flatten_alu_key(dec_out.lookup_kind, lhs, rhs);
-        let eq4_key = flatten_eq4_key(x_idx, dec_out.x_bound);
-
-        let (reg_ra_x_addr, reg_ra_y_addr, reg_wa_addr) = if let Some(_) = burst {
-            let wa = if dec_out.is_load { x_idx as usize } else { REG_SINK_ADDR };
-            (x_idx as usize, REG_SINK_ADDR, wa)
-        } else {
-            let ra_x = x_idx as usize;
-            let ra_y = if dec_out.uses_y {
-                decoded.y as usize
-            } else {
-                REG_SINK_ADDR
-            };
-            let wa = if dec_out.writes_lookup_to_x || dec_out.writes_mem_to_x {
-                decoded.x as usize
-            } else if dec_out.writes_nnn_to_i {
-                16
-            } else {
-                REG_SINK_ADDR
-            };
-            (ra_x, ra_y, wa)
-        };
-
-        let reg_ra_i_addr = 16usize; // I register is always at index 16
-        let (ram_ra_addr, ram_wa_addr) = if dec_out.is_memop && burst.is_some() {
-            let addr = ram_addr_val as usize;
-            if dec_out.reads_ram {
-                (addr, RAM_SINK_ADDR)
-            } else {
-                (RAM_SINK_ADDR, addr)
-            }
-        } else {
-            (RAM_SINK_ADDR, RAM_SINK_ADDR)
-        };
-
-        let reg_inc = if let Some(_) = burst {
-            if dec_out.is_load {
-                field_delta_u8(reg_x_next_val, reg_x_val)
-            } else {
-                F::ZERO
-            }
-        } else if dec_out.writes_lookup_to_x || dec_out.writes_mem_to_x {
-            field_delta_u8(reg_x_next_val, reg_x_val)
-        } else if dec_out.writes_nnn_to_i {
-            field_delta_u16(next.i, prev.i)
-        } else {
-            F::ZERO
-        };
-        let ram_inc = if let Some(_) = burst {
-            if dec_out.is_store {
-                field_delta_u8(next.memory[ram_addr_val as usize], prev.memory[ram_addr_val as usize])
-            } else {
-                F::ZERO
-            }
-        } else {
-            F::ZERO
-        };
-
-        let aux = KernelStepAux {
-            fetch_addr: pc_word as usize,
-            decode_addr: trace.opcode,
-            alu_key,
-            eq4_key,
-            reg_ra_x_addr,
-            reg_ra_y_addr,
-            reg_ra_i_addr,
-            reg_wa_addr,
-            ram_ra_addr,
-            ram_wa_addr,
-            reg_inc,
-            ram_inc,
-            uses_y: dec_out.uses_y,
-            reads_ram: dec_out.reads_ram,
-            writes_ram: dec_out.writes_ram,
-        };
-
-        // Pack into row-major matrix and build the step.
-        let z_mat = pack_row_major(&z);
-        let x_pub = z[..PUBLIC_INPUTS].to_vec();
-        let w = z[PUBLIC_INPUTS..].to_vec();
-
-        let burst_label = burst
-            .map(|bi| format!("[{}/{}]", bi.burst_index, bi.x_bound))
+        let z_mat = pack_row_major(&row_trace.row);
+        let x_pub = row_trace.row[..PUBLIC_INPUTS].to_vec();
+        let w = row_trace.row[PUBLIC_INPUTS..].to_vec();
+        let burst_label = row_trace
+            .burst
+            .map(|(burst_index, x_bound)| format!("[{burst_index}/{x_bound}]"))
             .unwrap_or_default();
 
         let prepared = StepInput {
-            label: format!("chip8@w{:03x}:0x{:04x}{}", pc_word, trace.opcode, burst_label),
+            label: format!(
+                "chip8@w{:03x}:0x{:04x}{}",
+                row_trace.kernel_aux.fetch_addr, trace.opcode, burst_label
+            ),
             mcs: CcsClaim {
                 c: self.log.commit(&z_mat),
                 x: x_pub,
                 m_in: vm.core_ccs_spec().m_in,
             },
             witness: CcsWitness { w, Z: z_mat },
-            deferred_extensions: decoded.opcode_id.family_requirements().to_vec(),
         };
-
-        let extension_data = build_row_extension_data(decoded, dec_out, prev, next, trace, burst);
 
         Ok(StepBuild {
             public_step: prepared.instance(),
             prepared,
-            extension_data,
-            kernel_aux: Some(aux),
+            extension_data: row_trace.extension_data.clone(),
+            kernel_aux: Some(row_trace.kernel_aux.clone()),
         })
     }
+}
+
+fn build_row_traces(
+    prev: &Chip8State,
+    next: &Chip8State,
+    trace: &Chip8StepTrace,
+    decoded: &Chip8DecodedStep,
+    dec_out: &DecodeOutput,
+) -> Result<Vec<Chip8RowTrace>, Chip8BuildError> {
+    match decoded.opcode_id {
+        Chip8Opcode::StoreRegs | Chip8Opcode::LoadRegs => {
+            let x_bound = decoded.x as usize;
+            let mut rows = Vec::with_capacity(x_bound + 1);
+            for burst_index in 0..=x_bound {
+                rows.push(build_row_trace(
+                    prev,
+                    next,
+                    trace,
+                    decoded,
+                    dec_out,
+                    Some(BurstInfo {
+                        burst_index: burst_index as u8,
+                        x_bound: decoded.x,
+                    }),
+                )?);
+            }
+            Ok(rows)
+        }
+        _ => Ok(vec![build_row_trace(prev, next, trace, decoded, dec_out, None)?]),
+    }
+}
+
+fn build_row_trace(
+    prev: &Chip8State,
+    next: &Chip8State,
+    trace: &Chip8StepTrace,
+    decoded: &Chip8DecodedStep,
+    dec_out: &DecodeOutput,
+    burst: Option<BurstInfo>,
+) -> Result<Chip8RowTrace, Chip8BuildError> {
+    let pc_word = pc_to_word(prev.pc);
+    let pc_next_word = pc_to_word(next.pc);
+    let (x_idx, burst_last) = match burst {
+        Some(bi) => (bi.burst_index, bi.burst_index == bi.x_bound),
+        None => (effective_x_idx(dec_out, decoded), false),
+    };
+    let y_idx = if burst.is_some() {
+        0
+    } else if dec_out.uses_y {
+        decoded.y
+    } else {
+        0
+    };
+    let reg_x_val = prev.v[x_idx as usize];
+    let reg_y_val = if dec_out.uses_y { prev.v[decoded.y as usize] } else { 0 };
+    let reg_x_next_val = next.v[x_idx as usize];
+    let lookup_output = compute_lookup_output(dec_out, reg_x_val, reg_y_val, decoded.kk);
+    let mem_value = if burst.is_some() {
+        let ram_addr = prev.i as usize + x_idx as usize;
+        if decoded.opcode_id == Chip8Opcode::StoreRegs {
+            prev.v[x_idx as usize]
+        } else {
+            prev.memory[ram_addr]
+        }
+    } else {
+        0u8
+    };
+    let ram_addr_val = if dec_out.is_memop && burst.is_some() {
+        prev.i + x_idx as u16
+    } else {
+        0u16
+    };
+    let effective_pc_next = if let Some(bi) = burst {
+        if bi.burst_index == bi.x_bound {
+            pc_next_word
+        } else {
+            pc_word
+        }
+    } else {
+        pc_next_word
+    };
+
+    let mut row = [F::ZERO; WITNESS_WIDTH];
+    row[COL_ONE] = F::ONE;
+    row[COL_PC] = F::from_u64(pc_word as u64);
+    row[COL_PC_NEXT] = F::from_u64(effective_pc_next as u64);
+    row[COL_REG_X] = F::from_u64(reg_x_val as u64);
+    row[COL_REG_Y] = F::from_u64(reg_y_val as u64);
+    row[COL_REG_X_NEXT] = F::from_u64(reg_x_next_val as u64);
+    row[COL_I_REG] = F::from_u64(prev.i as u64);
+    row[COL_I_NEXT] = F::from_u64(next.i as u64);
+    row[COL_KK] = F::from_u64(decoded.kk as u64);
+    row[COL_NNN_ADDR] = F::from_u64(dec_out.nnn_addr_dec as u64);
+    row[COL_NNN_WORD] = F::from_u64(dec_out.nnn_word_dec as u64);
+    row[COL_MEM_VALUE] = F::from_u64(mem_value as u64);
+    row[COL_LOOKUP_OUTPUT] = F::from_u64(lookup_output as u64);
+    row[COL_WRITES_LOOKUP_TO_X] = fbool(dec_out.writes_lookup_to_x);
+    row[COL_WRITES_MEM_TO_X] = fbool(dec_out.writes_mem_to_x);
+    row[COL_PRESERVES_X] = fbool(dec_out.preserves_x);
+    row[COL_WRITES_NNN_TO_I] = fbool(dec_out.writes_nnn_to_i);
+    row[COL_IS_JUMP] = fbool(dec_out.is_jump);
+    row[COL_IS_BRANCH] = fbool(dec_out.is_branch);
+    row[COL_IS_MEMOP] = fbool(dec_out.is_memop);
+    row[COL_X_IDX] = F::from_u64(x_idx as u64);
+    row[COL_Y_IDX] = F::from_u64(y_idx as u64);
+    row[COL_BURST_LAST] = fbool(burst_last);
+    row[COL_RAM_ADDR] = F::from_u64(ram_addr_val as u64);
+
+    let lhs = resolve_operand(dec_out.lhs_selector, reg_x_val, reg_y_val, decoded.kk);
+    let rhs = resolve_operand(dec_out.rhs_selector, reg_x_val, reg_y_val, decoded.kk);
+    let alu_key = flatten_alu_key(dec_out.lookup_kind, lhs, rhs);
+    let eq4_key = flatten_eq4_key(x_idx, dec_out.x_bound);
+    let (reg_ra_x_addr, reg_ra_y_addr, reg_wa_addr) = if burst.is_some() {
+        let wa = if dec_out.is_load { x_idx as usize } else { REG_SINK_ADDR };
+        (x_idx as usize, REG_SINK_ADDR, wa)
+    } else {
+        let ra_x = x_idx as usize;
+        let ra_y = if dec_out.uses_y {
+            decoded.y as usize
+        } else {
+            REG_SINK_ADDR
+        };
+        let wa = if dec_out.writes_lookup_to_x || dec_out.writes_mem_to_x {
+            decoded.x as usize
+        } else if dec_out.writes_nnn_to_i {
+            16
+        } else {
+            REG_SINK_ADDR
+        };
+        (ra_x, ra_y, wa)
+    };
+    let reg_ra_i_addr = 16usize;
+    let (ram_ra_addr, ram_wa_addr) = if dec_out.is_memop && burst.is_some() {
+        let addr = ram_addr_val as usize;
+        if dec_out.reads_ram {
+            (addr, RAM_SINK_ADDR)
+        } else {
+            (RAM_SINK_ADDR, addr)
+        }
+    } else {
+        (RAM_SINK_ADDR, RAM_SINK_ADDR)
+    };
+    let reg_inc = if burst.is_some() {
+        if dec_out.is_load {
+            field_delta_u8(reg_x_next_val, reg_x_val)
+        } else {
+            F::ZERO
+        }
+    } else if dec_out.writes_lookup_to_x || dec_out.writes_mem_to_x {
+        field_delta_u8(reg_x_next_val, reg_x_val)
+    } else if dec_out.writes_nnn_to_i {
+        field_delta_u16(next.i, prev.i)
+    } else {
+        F::ZERO
+    };
+    let ram_inc = if burst.is_some() {
+        if dec_out.is_store {
+            field_delta_u8(next.memory[ram_addr_val as usize], prev.memory[ram_addr_val as usize])
+        } else {
+            F::ZERO
+        }
+    } else {
+        F::ZERO
+    };
+    let kernel_aux = KernelStepAux {
+        fetch_addr: pc_word as usize,
+        decode_addr: trace.opcode,
+        alu_key,
+        eq4_key,
+        reg_ra_x_addr,
+        reg_ra_y_addr,
+        reg_ra_i_addr,
+        reg_wa_addr,
+        ram_ra_addr,
+        ram_wa_addr,
+        reg_inc,
+        ram_inc,
+        uses_y: dec_out.uses_y,
+        reads_ram: dec_out.reads_ram,
+        writes_ram: dec_out.writes_ram,
+    };
+    let extension_data = build_row_extension_data(decoded, dec_out, prev, next, trace, burst);
+
+    Ok(Chip8RowTrace {
+        row,
+        burst: burst.map(|bi| (bi.burst_index, bi.x_bound)),
+        extension_data,
+        kernel_aux,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -417,6 +409,24 @@ where
             .next()
             .ok_or_else(|| Chip8BuildError::Program("no rows produced".into()))
     }
+}
+
+fn capture_execution_step(program: &Chip8Program, prev: &Chip8State) -> Result<Chip8ExecutionStep, Chip8BuildError> {
+    let opcode = program
+        .opcode_at(prev.pc)
+        .ok_or_else(|| Chip8BuildError::Program(format!("no opcode at pc 0x{:03x}", prev.pc)))?;
+    let decoded = decode_opcode(opcode).map_err(Chip8BuildError::Unsupported)?;
+    let decode_output = decode_to_output(opcode);
+    let next = execute_step(program, prev, opcode)?;
+    let trace = Chip8StepTrace { opcode };
+    let row_traces = build_row_traces(prev, &next, &trace, &decoded, &decode_output)?;
+    Ok(Chip8ExecutionStep {
+        prev: prev.clone(),
+        next,
+        trace,
+        decoded,
+        row_traces,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -639,37 +649,10 @@ pub fn build_extension_trace(step: &Chip8ExecutionStep) -> StepExtensionData {
 
 /// Build per-row extension data for a full execution step.
 pub fn build_row_extension_trace(step: &Chip8ExecutionStep) -> Vec<StepExtensionData> {
-    let decoded = decode_opcode(step.trace.opcode).expect("execute_program only emits supported opcodes");
-    let dec_out = decode_to_output(step.trace.opcode);
-
-    match decoded.opcode_id {
-        Chip8Opcode::StoreRegs | Chip8Opcode::LoadRegs => {
-            let mut rows = Vec::with_capacity(decoded.x as usize + 1);
-            for burst_index in 0..=decoded.x {
-                let bi = BurstInfo {
-                    burst_index,
-                    x_bound: decoded.x,
-                };
-                rows.push(build_row_extension_data(
-                    &decoded,
-                    &dec_out,
-                    &step.prev,
-                    &step.next,
-                    &step.trace,
-                    Some(bi),
-                ));
-            }
-            rows
-        }
-        _ => vec![build_row_extension_data(
-            &decoded,
-            &dec_out,
-            &step.prev,
-            &step.next,
-            &step.trace,
-            None,
-        )],
-    }
+    step.row_traces
+        .iter()
+        .map(|row_trace| row_trace.extension_data.clone())
+        .collect()
 }
 
 // ---------------------------------------------------------------------------

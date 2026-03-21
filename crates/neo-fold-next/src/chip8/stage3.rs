@@ -119,13 +119,14 @@ impl RoundOracle for LaneShiftOracle {
 }
 
 // ---------------------------------------------------------------------------
-// ActivePrev_N evaluator
+// PairMask_N evaluator
 // ---------------------------------------------------------------------------
 
-/// Evaluate the MLE of the indicator {0 <= j < N-1} at point r in K^{cycle_bits}.
+/// Evaluate `PairMask_N(X)` at `r`, where `PairMask_N(j) = 1` iff `0 <= j < N-1`.
 ///
-/// ActivePrev_N(r) = sum_{j=0}^{N-2} eq(r, j).
-fn eval_active_prev(r: &[K], active_rows: usize) -> K {
+/// Since `PairMask_N` is the indicator of real row pairs, its MLE is
+/// `sum_{j=0}^{N-2} eq(X, j)`.
+fn eval_pair_mask(r: &[K], active_rows: usize) -> K {
     let eq = build_eq_table(r);
     let mut acc = K::ZERO;
     let last_active = active_rows.saturating_sub(1);
@@ -351,6 +352,10 @@ pub fn prove_stage3<Tr: Transcript>(
         burst_last_at_r,
     ];
 
+    // Stage 3 checks the multilinear extension of the masked row-local
+    // relation over the padded `T = 2^cycle_bits` domain. The padded suffix
+    // must be removed before batching; multiplying raw padded-domain openings
+    // by `PairMask_N(r_shift)` is not equivalent once pad rows are present.
     let active_shift_pc = shift_pc - excluded_shift_tail(trace_rows, COL_PC, &eq, active_rows);
     let active_shift_x_idx = shift_x_idx - excluded_shift_tail(trace_rows, COL_X_IDX, &eq, active_rows);
     let active_shift_is_memop = shift_is_memop - excluded_shift_tail(trace_rows, COL_IS_MEMOP, &eq, active_rows);
@@ -359,22 +364,13 @@ pub fn prove_stage3<Tr: Transcript>(
     let active_is_memop_at_r = is_memop_at_r - excluded_current_tail(trace_rows, COL_IS_MEMOP, &eq, active_rows);
     let active_burst_last_at_r = burst_last_at_r - excluded_current_tail(trace_rows, COL_BURST_LAST, &eq, active_rows);
 
-    // delta_pc = ShiftActive[PC](r_shift) - PC_NEXT_active(r_shift)
     let delta_pc = active_shift_pc - active_pc_next_at_r;
-
-    // delta_burst_step = IsMemOp(r) * (1 - BURST_LAST(r)) * (shift_x_idx - X_IDX(r) - 1)
     let delta_burst_step =
         active_is_memop_at_r * (K::ONE - active_burst_last_at_r) * (active_shift_x_idx - active_x_idx_at_r - K::ONE);
-
-    // delta_burst_reset = shift_is_memop * (1 - IsMemOp(r) + BURST_LAST(r)) * shift_x_idx
     let delta_burst_reset =
         active_shift_is_memop * (K::ONE - active_is_memop_at_r + active_burst_last_at_r) * active_shift_x_idx;
-
-    let active_prev = eval_active_prev(&r_shift, active_rows);
-
-    // Full continuity identity value (should be zero for a valid trace):
-    // ActivePrev_N(r) * (delta_pc + beta1 * delta_burst_step + beta2 * delta_burst_reset)
-    let continuity_check_value = active_prev * (delta_pc + beta1 * delta_burst_step + beta2 * delta_burst_reset);
+    let pair_mask_at_r = eval_pair_mask(&r_shift, active_rows);
+    let continuity_check_value = pair_mask_at_r * (delta_pc + beta1 * delta_burst_step + beta2 * delta_burst_reset);
 
     // -----------------------------------------------------------------------
     // 6. Start-boundary: open IsMemOp(0) and X_IDX(0)
@@ -530,7 +526,7 @@ pub fn verify_stage3<Tr: Transcript>(
         active_is_memop_at_r * (K::ONE - active_burst_last_at_r) * (active_shift_x_idx - active_x_idx_at_r - K::ONE);
     let delta_burst_reset =
         active_shift_is_memop * (K::ONE - active_is_memop_at_r + active_burst_last_at_r) * active_shift_x_idx;
-    let continuity_check_value = eval_active_prev(&proof.shift_proof.source_point, active_rows)
+    let continuity_check_value = eval_pair_mask(&proof.shift_proof.source_point, active_rows)
         * (delta_pc + beta1 * delta_burst_step + beta2 * delta_burst_reset);
     expect_equal_k(
         proof.continuity_check_value,

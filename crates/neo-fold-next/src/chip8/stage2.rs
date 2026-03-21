@@ -9,9 +9,13 @@ use neo_transcript::Transcript;
 use p3_field::PrimeCharacteristicRing;
 
 use super::kernel::{
-    expect_equal_k, expect_equal_k_slice, replay_sumcheck_unchecked, verify_stage2_address_correctness_transcript,
-    verify_sumcheck_known, AddressCorrectnessProof, KernelStepAux, SimpleKernelError, Stage2LinkClaims,
-    Stage2TwistProof, STAGE2_LANE_OPEN_COLS,
+    expect_equal_k, expect_equal_k_slice, verify_stage2_address_correctness_transcript, verify_sumcheck_known,
+    AddressCorrectnessProof, CycleProductProof, KernelStepAux, SimpleKernelError, Stage2LinkClaims, Stage2TwistProof,
+    STAGE2_LANE_OPEN_COLS,
+};
+use super::spec::{
+    COL_I_NEXT, COL_MEM_VALUE, COL_RAM_ADDR, COL_REG_X, COL_REG_X_NEXT, COL_WRITES_LOOKUP_TO_X, COL_WRITES_MEM_TO_X,
+    COL_WRITES_NNN_TO_I, COL_X_IDX, COL_Y_IDX,
 };
 use super::tables::{build_unmap_ram, build_unmap_reg, ADDR_RAM_BITS, ADDR_REG_BITS, RAM_SINK_ADDR, REG_SINK_ADDR};
 
@@ -56,6 +60,52 @@ fn mle_eval_fk(v: &[F], r: &[K]) -> K {
     acc
 }
 
+fn mle_eval_fk_be(v: &[F], point_be: &[K]) -> K {
+    let point_le: Vec<K> = point_be.iter().rev().copied().collect();
+    mle_eval_fk(v, &point_le)
+}
+
+fn partial_eval_flat_k_at_addr_be(flat: &[K], addr_point_be: &[K], trace_len: usize) -> Vec<K> {
+    let domain = flat.len() / trace_len;
+    let addr_point_le: Vec<K> = addr_point_be.iter().rev().copied().collect();
+    let eq_addr = build_eq_table(&addr_point_le);
+    assert_eq!(eq_addr.len(), domain, "address-point dimension mismatch");
+    let mut out = vec![K::ZERO; trace_len];
+    for (addr, &weight) in eq_addr.iter().enumerate() {
+        let base = addr * trace_len;
+        for cycle in 0..trace_len {
+            out[cycle] += weight * flat[base + cycle];
+        }
+    }
+    out
+}
+
+fn mle_eval_flat_k_at_point_be(flat: &[K], addr_point_be: &[K], cycle_point: &[K], trace_len: usize) -> K {
+    let per_cycle = partial_eval_flat_k_at_addr_be(flat, addr_point_be, trace_len);
+    let eq_cycle = build_eq_table(cycle_point);
+    per_cycle
+        .iter()
+        .zip(eq_cycle.iter())
+        .fold(K::ZERO, |acc, (&value, &weight)| acc + value * weight)
+}
+
+fn initial_reg_values(initial_registers: &[u8; 16], initial_i: u16) -> Vec<F> {
+    let mut values = vec![F::ZERO; 1usize << ADDR_REG_BITS];
+    for i in 0..16 {
+        values[i] = F::from_u64(initial_registers[i] as u64);
+    }
+    values[16] = F::from_u64(initial_i as u64);
+    values
+}
+
+fn initial_ram_values(initial_ram: &[u8]) -> Vec<F> {
+    let mut values = vec![F::ZERO; 1usize << ADDR_RAM_BITS];
+    for (idx, &byte) in initial_ram.iter().enumerate().take(4096) {
+        values[idx] = F::from_u64(byte as u64);
+    }
+    values
+}
+
 fn lane_values_at_cycle(trace_rows: &[[F; 24]], cycle_point: &[K]) -> Vec<K> {
     STAGE2_LANE_OPEN_COLS
         .iter()
@@ -66,8 +116,9 @@ fn lane_values_at_cycle(trace_rows: &[[F; 24]], cycle_point: &[K]) -> Vec<K> {
         .collect()
 }
 
-fn mapped_address_trace(addresses: &[usize], unmap: &[F]) -> Vec<F> {
-    addresses.iter().map(|&addr| unmap[addr]).collect()
+fn raw_address_coeffs(addr_bits: usize) -> Vec<F> {
+    let domain = 1usize << addr_bits;
+    (0..domain).map(|addr| F::from_u64(addr as u64)).collect()
 }
 
 fn handoff_values_at_cycle(aux: &[KernelStepAux], cycle_point: &[K]) -> Vec<K> {
@@ -88,6 +139,42 @@ fn handoff_values_at_cycle(aux: &[KernelStepAux], cycle_point: &[K]) -> Vec<K> {
         mle_eval_fk(&reads_ram, cycle_point),
         mle_eval_fk(&writes_ram, cycle_point),
     ]
+}
+
+fn stage2_address_claims(
+    lane: &[K],
+    handoff: &[K],
+    reg_ra_y_mapped: K,
+    reg_wa_mapped: K,
+    ram_ra_mapped: K,
+    ram_wa_mapped: K,
+) -> ([K; 4], [K; 4], [K; 2], [K; 2]) {
+    let sink_reg = K::from(F::from_u64(REG_SINK_ADDR as u64));
+    let sink_ram = K::from(F::from_u64(RAM_SINK_ADDR as u64));
+    let i_slot = K::from(F::from_u64(16u64));
+    let mapped_reg_claims = [lane[11], reg_ra_y_mapped, i_slot, reg_wa_mapped];
+    let raw_reg_claims = [
+        lane[11],
+        reg_ra_y_mapped + (K::ONE - handoff[0]) * sink_reg,
+        i_slot,
+        reg_wa_mapped + (K::ONE - lane[6] - lane[7] - lane[9]) * sink_reg,
+    ];
+    let mapped_ram_claims = [ram_ra_mapped, ram_wa_mapped];
+    let raw_ram_claims = [
+        ram_ra_mapped + (K::ONE - handoff[1]) * sink_ram,
+        ram_wa_mapped + (K::ONE - handoff[2]) * sink_ram,
+    ];
+    (mapped_reg_claims, raw_reg_claims, mapped_ram_claims, raw_ram_claims)
+}
+
+fn col_values(trace_rows: &[[F; 24]], col: usize) -> Vec<K> {
+    trace_rows.iter().map(|row| K::from(row[col])).collect()
+}
+
+fn bool_values_from_aux(aux: &[KernelStepAux], f: impl Fn(&KernelStepAux) -> bool) -> Vec<K> {
+    aux.iter()
+        .map(|row| if f(row) { K::ONE } else { K::ZERO })
+        .collect()
 }
 
 /// Squeeze a K challenge from the transcript (two base-field squeezes).
@@ -543,16 +630,16 @@ impl RoundOracle for HammingOracle {
     }
 }
 
-/// Decode consistency: sum_a ra(a, r_cycle) * unmap(a) = expected_addr
-struct DecodeConsistencyOracle {
+/// Linear address relation: sum_a ra(a, r_cycle) * coeff(a) = expected_addr
+struct LinearAddressOracle {
     /// ra values after folding cycle dim with r_cycle.
     ra_addr: Vec<K>,
-    /// unmap polynomial values (lifted to K).
-    unmap: Vec<K>,
+    /// coefficient polynomial values (lifted to K).
+    coeffs: Vec<K>,
     addr_bits: usize,
 }
 
-impl RoundOracle for DecodeConsistencyOracle {
+impl RoundOracle for LinearAddressOracle {
     fn num_rounds(&self) -> usize {
         self.addr_bits
     }
@@ -568,8 +655,8 @@ impl RoundOracle for DecodeConsistencyOracle {
                 let lo = 2 * pair;
                 let hi = lo + 1;
                 let ra_x = self.ra_addr[lo] + (self.ra_addr[hi] - self.ra_addr[lo]) * x;
-                let um_x = self.unmap[lo] + (self.unmap[hi] - self.unmap[lo]) * x;
-                acc += ra_x * um_x;
+                let coeff_x = self.coeffs[lo] + (self.coeffs[hi] - self.coeffs[lo]) * x;
+                acc += ra_x * coeff_x;
             }
             ys[pi] = acc;
         }
@@ -581,7 +668,7 @@ impl RoundOracle for DecodeConsistencyOracle {
         }
         let half = 1usize << (self.addr_bits - 1);
         fold_vec(&mut self.ra_addr, half, r);
-        fold_vec(&mut self.unmap, half, r);
+        fold_vec(&mut self.coeffs, half, r);
         self.addr_bits -= 1;
     }
 }
@@ -658,8 +745,10 @@ fn prove_address_correctness<Tr: Transcript>(
     r_cycle: &[K],
     addr_bits: usize,
     cycle_bits: usize,
-    expected_addr: K,
-    unmap_f: &[F],
+    expected_mapped_addr: K,
+    expected_raw_addr: K,
+    mapped_coeffs_f: &[F],
+    label: &str,
     transcript: &mut Tr,
 ) -> Result<AddressCorrectnessProof, SimpleKernelError> {
     let trace_len = 1usize << cycle_bits;
@@ -673,7 +762,7 @@ fn prove_address_correctness<Tr: Transcript>(
     };
     let bool_claim = K::ZERO;
     let (bool_rounds, _) = run_sumcheck_prover(transcript, &mut bool_oracle, bool_claim)
-        .map_err(|e| SimpleKernelError::SumcheckFailed(format!("booleanity: {e}")))?;
+        .map_err(|e| SimpleKernelError::SumcheckFailed(format!("{label} booleanity: {e}")))?;
 
     // 2. Hamming-weight-1: sum_a ra(a, r_cycle) = 1
     let ra_at_r_cycle = fold_cycle_dim(ra_flat, r_cycle, domain, trace_len);
@@ -683,22 +772,36 @@ fn prove_address_correctness<Tr: Transcript>(
     };
     let hamming_claim = K::ONE;
     let (hamming_rounds, _) = run_sumcheck_prover(transcript, &mut hamming_oracle, hamming_claim)
-        .map_err(|e| SimpleKernelError::SumcheckFailed(format!("hamming: {e}")))?;
+        .map_err(|e| SimpleKernelError::SumcheckFailed(format!("{label} hamming: {e}")))?;
 
-    // 3. Decode consistency: sum_a ra(a, r_cycle) * unmap(a) = expected_addr
-    let unmap_k: Vec<K> = unmap_f.iter().map(|&f| K::from(f)).collect();
-    let mut decode_oracle = DecodeConsistencyOracle {
-        ra_addr: ra_at_r_cycle,
-        unmap: unmap_k,
+    // 3. Mapped address consistency: sum_a ra(a, r_cycle) * mapped(a) = expected_mapped_addr
+    let mapped_coeffs: Vec<K> = mapped_coeffs_f.iter().map(|&f| K::from(f)).collect();
+    let mut decode_oracle = LinearAddressOracle {
+        ra_addr: ra_at_r_cycle.clone(),
+        coeffs: mapped_coeffs,
         addr_bits,
     };
-    let (decode_rounds, _) = run_sumcheck_prover(transcript, &mut decode_oracle, expected_addr)
-        .map_err(|e| SimpleKernelError::SumcheckFailed(format!("decode consistency: {e}")))?;
+    let (decode_rounds, _) = run_sumcheck_prover(transcript, &mut decode_oracle, expected_mapped_addr)
+        .map_err(|e| SimpleKernelError::SumcheckFailed(format!("{label} mapped address: {e}")))?;
+
+    // 4. Raw sink-routing consistency: sum_a ra(a, r_cycle) * a = expected_raw_addr
+    let raw_coeffs: Vec<K> = raw_address_coeffs(addr_bits)
+        .into_iter()
+        .map(K::from)
+        .collect();
+    let mut raw_oracle = LinearAddressOracle {
+        ra_addr: ra_at_r_cycle.clone(),
+        coeffs: raw_coeffs,
+        addr_bits,
+    };
+    let (raw_rounds, _) = run_sumcheck_prover(transcript, &mut raw_oracle, expected_raw_addr)
+        .map_err(|e| SimpleKernelError::SumcheckFailed(format!("{label} raw address: {e}")))?;
 
     Ok(AddressCorrectnessProof {
         booleanity_rounds: bool_rounds,
         hamming_weight_rounds: hamming_rounds,
         decode_consistency_rounds: decode_rounds,
+        raw_address_rounds: raw_rounds,
     })
 }
 
@@ -783,6 +886,21 @@ impl RoundOracle for ProductOracle {
     }
 }
 
+fn prove_cycle_product_relation<Tr: Transcript>(
+    transcript: &mut Tr,
+    factors: Vec<Vec<K>>,
+    degree_bound: usize,
+    claim_label: &'static [u8],
+    label: &str,
+) -> Result<CycleProductProof, SimpleKernelError> {
+    let mut oracle = ProductOracle::new(factors, degree_bound);
+    let claim = oracle.sum_over_hypercube();
+    transcript.append_fields(claim_label, &claim.as_coeffs());
+    let (rounds, _) = run_sumcheck_prover(transcript, &mut oracle, claim)
+        .map_err(|e| SimpleKernelError::SumcheckFailed(format!("{label}: {e}")))?;
+    Ok(CycleProductProof { claim, rounds })
+}
+
 // ---------------------------------------------------------------------------
 // Val-from-Inc oracle
 // ---------------------------------------------------------------------------
@@ -793,38 +911,15 @@ impl RoundOracle for ProductOracle {
 ///
 /// We build this as a product oracle over factors: inc, wa, lt_table.
 /// For v1 we compute the LT table explicitly (O(T) per address, O(D*T) total).
-fn build_val_from_inc_factors(
-    cycle_bits: usize,
-    r_cycle: &[K],
-    inc_per_cycle: &[K],
-    wa_flat: &[K],
-    addr_bits: usize,
-) -> Vec<Vec<K>> {
+fn build_val_from_inc_factors(cycle_bits: usize, r_cycle: &[K], inc_per_cycle: &[K], wa_at_addr: &[K]) -> Vec<Vec<K>> {
     let trace_len = 1usize << cycle_bits;
-    let domain = 1usize << addr_bits;
-    let flat_size = domain * trace_len;
+    assert_eq!(inc_per_cycle.len(), trace_len, "inc trace length mismatch");
+    assert_eq!(wa_at_addr.len(), trace_len, "wa(addr, cycle) length mismatch");
 
     // Build LT(j, r_cycle) for all j in the boolean hypercube.
     // LT(j, r) = sum_i (1-j_i)*r_i * prod_{k>i} eq(j_k, r_k)
     let lt_table = build_lt_table(cycle_bits, r_cycle);
-
-    // Tile lt across address dimension.
-    let mut lt_flat = vec![K::ZERO; flat_size];
-    for a in 0..domain {
-        for j in 0..trace_len {
-            lt_flat[a * trace_len + j] = lt_table[j];
-        }
-    }
-
-    // Tile inc across address dimension.
-    let mut inc_flat = vec![K::ZERO; flat_size];
-    for a in 0..domain {
-        for j in 0..trace_len {
-            inc_flat[a * trace_len + j] = inc_per_cycle[j];
-        }
-    }
-
-    vec![inc_flat, wa_flat.to_vec(), lt_flat]
+    vec![inc_per_cycle.to_vec(), wa_at_addr.to_vec(), lt_table]
 }
 
 /// Build LT(j, r) for all j on the boolean hypercube.
@@ -873,9 +968,9 @@ fn prove_raf<Tr: Transcript>(
     let ra_at_r = fold_cycle_dim(ra_flat, r_cycle, domain, trace_len);
     let unmap_k: Vec<K> = unmap_f.iter().map(|&f| K::from(f)).collect();
 
-    let mut oracle = DecodeConsistencyOracle {
+    let mut oracle = LinearAddressOracle {
         ra_addr: ra_at_r,
-        unmap: unmap_k,
+        coeffs: unmap_k,
         addr_bits,
     };
     let (rounds, _) = run_sumcheck_prover(transcript, &mut oracle, claim)
@@ -912,6 +1007,8 @@ pub fn prove_stage2<Tr: Transcript>(
     // --- Squeeze cycle challenge point ---
     let r_cycle = squeeze_point(transcript, b"stage2/r_cycle", cycle_bits);
     let eq_cycle = build_eq_table(&r_cycle);
+    let lane_values_at_twist = lane_values_at_cycle(trace_rows, &r_cycle);
+    let handoff_values_at_twist = handoff_values_at_cycle(aux, &r_cycle);
 
     // --- Register subsystem ---
     let gamma_reg = squeeze_k(transcript, b"stage2/gamma_reg");
@@ -929,6 +1026,7 @@ pub fn prove_stage2<Tr: Transcript>(
 
     // Build Inc vector (per cycle).
     let reg_inc_k: Vec<K> = aux.iter().map(|a| K::from(a.reg_inc)).collect();
+    let initial_reg_values = initial_reg_values(initial_registers, initial_i);
 
     // Compute Val and flatten.
     let reg_val = compute_reg_val(trace_len, aux, initial_registers, initial_i);
@@ -970,24 +1068,70 @@ pub fn prove_stage2<Tr: Transcript>(
     let (reg_rw_rounds, _reg_rw_challenges) = run_sumcheck_prover(transcript, &mut reg_rw_oracle, reg_rw_claim)
         .map_err(|e| SimpleKernelError::SumcheckFailed(format!("reg_rw: {e}")))?;
 
-    // Val-from-Inc sumcheck: sum_{a,j} Inc(j) * Wa(a,j) * LT(j, r_cycle).
-    let val_inc_factors = build_val_from_inc_factors(cycle_bits, &r_cycle, &reg_inc_k, &reg_wa, ADDR_REG_BITS);
+    let reg_addr_point = squeeze_point(transcript, b"stage2/r_addr_reg", ADDR_REG_BITS);
+    let reg_wa_at_addr = partial_eval_flat_k_at_addr_be(&reg_wa, &reg_addr_point, trace_len);
+    let reg_val_at_point = mle_eval_flat_k_at_point_be(&reg_val_flat, &reg_addr_point, &r_cycle, trace_len);
+    let reg_init_at_point = mle_eval_fk_be(&initial_reg_values, &reg_addr_point);
+
+    // Val-from-Inc sumcheck: RegVal(r_addr_reg, r_twist_cycle) - Init(r_addr_reg)
+    // = sum_j Inc(j) * RegWa(r_addr_reg, j) * LT(j, r_twist_cycle).
+    let val_inc_factors = build_val_from_inc_factors(cycle_bits, &r_cycle, &reg_inc_k, &reg_wa_at_addr);
     let deg = val_inc_factors.len();
     let mut val_inc_oracle = ProductOracle::new(val_inc_factors, deg);
-    let val_inc_sum = val_inc_oracle.sum_over_hypercube();
+    let reg_val_delta_claim = reg_val_at_point - reg_init_at_point;
+    if val_inc_oracle.sum_over_hypercube() != reg_val_delta_claim {
+        return Err(SimpleKernelError::SumcheckFailed(
+            "stage2 register val-from-inc does not match RegVal(r_addr_reg, r_twist_cycle) - Init(r_addr_reg)".into(),
+        ));
+    }
 
-    transcript.append_fields(b"stage2/reg_val_inc_claim", &val_inc_sum.as_coeffs());
-    let (reg_val_rounds, _) = run_sumcheck_prover(transcript, &mut val_inc_oracle, val_inc_sum)
+    transcript.append_fields(b"stage2/reg_val_inc_claim", &reg_val_delta_claim.as_coeffs());
+    let (reg_val_rounds, _) = run_sumcheck_prover(transcript, &mut val_inc_oracle, reg_val_delta_claim)
         .map_err(|e| SimpleKernelError::SumcheckFailed(format!("reg_val_inc: {e}")))?;
+
+    let writes_lookup_to_x = col_values(trace_rows, COL_WRITES_LOOKUP_TO_X);
+    let writes_mem_to_x = col_values(trace_rows, COL_WRITES_MEM_TO_X);
+    let writes_nnn_to_i = col_values(trace_rows, COL_WRITES_NNN_TO_I);
+    let x_idx_vals = col_values(trace_rows, COL_X_IDX);
+    let y_idx_vals = col_values(trace_rows, COL_Y_IDX);
+    let uses_y_vals = bool_values_from_aux(aux, |row| row.uses_y);
+    let write_x_target_flag: Vec<K> = writes_lookup_to_x
+        .iter()
+        .zip(writes_mem_to_x.iter())
+        .map(|(&lookup, &mem)| lookup + mem)
+        .collect();
+    let reg_ra_y_target_proof = prove_cycle_product_relation(
+        transcript,
+        vec![eq_cycle.clone(), uses_y_vals, y_idx_vals],
+        3,
+        b"stage2/reg_ra_y_target/claim",
+        "reg_ra_y_target",
+    )?;
+    let reg_wa_x_addr_target_proof = prove_cycle_product_relation(
+        transcript,
+        vec![eq_cycle.clone(), write_x_target_flag.clone(), x_idx_vals],
+        3,
+        b"stage2/reg_wa_x_addr_target/claim",
+        "reg_wa_x_addr_target",
+    )?;
 
     // Address correctness for all 4 register families.
     let unmap_reg = build_unmap_reg();
-
-    // Expected addresses at r_cycle for each family.
-    let expected_ra_x = mle_eval_fk(&mapped_address_trace(&reg_ra_x_addrs, &unmap_reg), &r_cycle);
-    let expected_ra_y = mle_eval_fk(&mapped_address_trace(&reg_ra_y_addrs, &unmap_reg), &r_cycle);
-    let expected_ra_i = mle_eval_fk(&mapped_address_trace(&reg_ra_i_addrs, &unmap_reg), &r_cycle);
-    let expected_wa = mle_eval_fk(&mapped_address_trace(&reg_wa_addrs, &unmap_reg), &r_cycle);
+    let sink_reg = K::from(F::from_u64(REG_SINK_ADDR as u64));
+    let i_slot = K::from(F::from_u64(16u64));
+    let mapped_reg_claims = [
+        lane_values_at_twist[11],
+        reg_ra_y_target_proof.claim,
+        i_slot,
+        reg_wa_x_addr_target_proof.claim + lane_values_at_twist[9] * i_slot,
+    ];
+    let raw_reg_claims = [
+        mapped_reg_claims[0],
+        mapped_reg_claims[1] + (K::ONE - handoff_values_at_twist[0]) * sink_reg,
+        mapped_reg_claims[2],
+        mapped_reg_claims[3]
+            + (K::ONE - lane_values_at_twist[6] - lane_values_at_twist[7] - lane_values_at_twist[9]) * sink_reg,
+    ];
 
     let reg_addr_correctness = vec![
         prove_address_correctness(
@@ -995,8 +1139,10 @@ pub fn prove_stage2<Tr: Transcript>(
             &r_cycle,
             ADDR_REG_BITS,
             cycle_bits,
-            expected_ra_x,
+            mapped_reg_claims[0],
+            raw_reg_claims[0],
             &unmap_reg,
+            "stage2 register address family 0",
             transcript,
         )?,
         prove_address_correctness(
@@ -1004,8 +1150,10 @@ pub fn prove_stage2<Tr: Transcript>(
             &r_cycle,
             ADDR_REG_BITS,
             cycle_bits,
-            expected_ra_y,
+            mapped_reg_claims[1],
+            raw_reg_claims[1],
             &unmap_reg,
+            "stage2 register address family 1",
             transcript,
         )?,
         prove_address_correctness(
@@ -1013,8 +1161,10 @@ pub fn prove_stage2<Tr: Transcript>(
             &r_cycle,
             ADDR_REG_BITS,
             cycle_bits,
-            expected_ra_i,
+            mapped_reg_claims[2],
+            raw_reg_claims[2],
             &unmap_reg,
+            "stage2 register address family 2",
             transcript,
         )?,
         prove_address_correctness(
@@ -1022,14 +1172,13 @@ pub fn prove_stage2<Tr: Transcript>(
             &r_cycle,
             ADDR_REG_BITS,
             cycle_bits,
-            expected_wa,
+            mapped_reg_claims[3],
+            raw_reg_claims[3],
             &unmap_reg,
+            "stage2 register address family 3",
             transcript,
         )?,
     ];
-
-    // Squeeze register address point.
-    let reg_addr_point = squeeze_point(transcript, b"stage2/r_addr_reg", ADDR_REG_BITS);
 
     // --- RAM subsystem ---
     let gamma_ram = squeeze_k(transcript, b"stage2/gamma_ram");
@@ -1041,6 +1190,7 @@ pub fn prove_stage2<Tr: Transcript>(
     let ram_wa = build_onehot(trace_len, ram_domain, &ram_wa_addrs);
 
     let ram_inc_k: Vec<K> = aux.iter().map(|a| K::from(a.ram_inc)).collect();
+    let initial_ram_values = initial_ram_values(initial_ram);
 
     let ram_val = compute_ram_val(trace_len, aux, initial_ram);
     let mut ram_val_flat = vec![K::ZERO; ram_domain * trace_len];
@@ -1074,32 +1224,44 @@ pub fn prove_stage2<Tr: Transcript>(
     let (ram_rw_rounds, _) = run_sumcheck_prover(transcript, &mut ram_rw_oracle, ram_rw_claim)
         .map_err(|e| SimpleKernelError::SumcheckFailed(format!("ram_rw: {e}")))?;
 
-    // Val-from-Inc for RAM.
-    let ram_val_inc_factors = build_val_from_inc_factors(cycle_bits, &r_cycle, &ram_inc_k, &ram_wa, ADDR_RAM_BITS);
+    let ram_addr_point = squeeze_point(transcript, b"stage2/r_addr_ram", ADDR_RAM_BITS);
+    let ram_wa_at_addr = partial_eval_flat_k_at_addr_be(&ram_wa, &ram_addr_point, trace_len);
+    let ram_val_at_point = mle_eval_flat_k_at_point_be(&ram_val_flat, &ram_addr_point, &r_cycle, trace_len);
+    let ram_init_at_point = mle_eval_fk_be(&initial_ram_values, &ram_addr_point);
+
+    // Val-from-Inc for RAM:
+    // RamVal(r_addr_ram, r_twist_cycle) - Init(r_addr_ram)
+    // = sum_j Inc(j) * RamWa(r_addr_ram, j) * LT(j, r_twist_cycle).
+    let ram_val_inc_factors = build_val_from_inc_factors(cycle_bits, &r_cycle, &ram_inc_k, &ram_wa_at_addr);
     let factor_count = ram_val_inc_factors.len();
     let mut ram_val_inc_oracle = ProductOracle::new(ram_val_inc_factors, factor_count);
-    let ram_val_inc_sum = ram_val_inc_oracle.sum_over_hypercube();
+    let ram_val_delta_claim = ram_val_at_point - ram_init_at_point;
+    if ram_val_inc_oracle.sum_over_hypercube() != ram_val_delta_claim {
+        return Err(SimpleKernelError::SumcheckFailed(
+            "stage2 RAM val-from-inc does not match RamVal(r_addr_ram, r_twist_cycle) - Init(r_addr_ram)".into(),
+        ));
+    }
 
-    transcript.append_fields(b"stage2/ram_val_inc_claim", &ram_val_inc_sum.as_coeffs());
-    let (ram_val_rounds, _) = run_sumcheck_prover(transcript, &mut ram_val_inc_oracle, ram_val_inc_sum)
+    transcript.append_fields(b"stage2/ram_val_inc_claim", &ram_val_delta_claim.as_coeffs());
+    let (ram_val_rounds, _) = run_sumcheck_prover(transcript, &mut ram_val_inc_oracle, ram_val_delta_claim)
         .map_err(|e| SimpleKernelError::SumcheckFailed(format!("ram_val_inc: {e}")))?;
 
     // RAM RAF sumchecks.
     let unmap_ram = build_unmap_ram();
 
-    // RAF read claim: sum_a ra_read(a, r_cycle) * unmap(a) = reads_ram_mle(r_cycle) * RAM_ADDR_mle(r_cycle)
-    // For v1, compute the claim directly.
+    // RAF read claim: sum_a ra_read(a, r_cycle) * unmap(a)
+    // = MLE_j[(reads_ram(j) * RAM_ADDR(j))](r_cycle).
     let reads_ram_vals: Vec<F> = aux
         .iter()
         .map(|a| if a.reads_ram { F::ONE } else { F::ZERO })
         .collect();
-    let ram_addr_vals: Vec<F> = aux
+    let ram_addr_vals: Vec<F> = trace_rows.iter().map(|row| row[COL_RAM_ADDR]).collect();
+    let masked_ram_read_addr_vals: Vec<F> = reads_ram_vals
         .iter()
-        .map(|a| F::from_u64(a.ram_ra_addr as u64))
+        .zip(ram_addr_vals.iter())
+        .map(|(&reads, &addr)| reads * addr)
         .collect();
-    let reads_at_r = mle_eval_fk(&reads_ram_vals, &r_cycle);
-    let addr_read_at_r = mle_eval_fk(&ram_addr_vals, &r_cycle);
-    let raf_read_claim = reads_at_r * addr_read_at_r;
+    let raf_read_claim = mle_eval_fk(&masked_ram_read_addr_vals, &r_cycle);
 
     let ram_raf_read_rounds = prove_raf(
         &ram_ra,
@@ -1116,13 +1278,13 @@ pub fn prove_stage2<Tr: Transcript>(
         .iter()
         .map(|a| if a.writes_ram { F::ONE } else { F::ZERO })
         .collect();
-    let ram_wa_addr_vals: Vec<F> = aux
+    let ram_wa_addr_vals: Vec<F> = trace_rows.iter().map(|row| row[COL_RAM_ADDR]).collect();
+    let masked_ram_write_addr_vals: Vec<F> = writes_ram_vals
         .iter()
-        .map(|a| F::from_u64(a.ram_wa_addr as u64))
+        .zip(ram_wa_addr_vals.iter())
+        .map(|(&writes, &addr)| writes * addr)
         .collect();
-    let writes_at_r = mle_eval_fk(&writes_ram_vals, &r_cycle);
-    let addr_write_at_r = mle_eval_fk(&ram_wa_addr_vals, &r_cycle);
-    let raf_write_claim = writes_at_r * addr_write_at_r;
+    let raf_write_claim = mle_eval_fk(&masked_ram_write_addr_vals, &r_cycle);
 
     let ram_raf_write_rounds = prove_raf(
         &ram_wa,
@@ -1134,18 +1296,44 @@ pub fn prove_stage2<Tr: Transcript>(
         transcript,
     )?;
 
-    // Address correctness for RAM (2 families: read, write).
-    let expected_ram_ra = mle_eval_fk(&mapped_address_trace(&ram_ra_addrs, &unmap_ram), &r_cycle);
-    let expected_ram_wa = mle_eval_fk(&mapped_address_trace(&ram_wa_addrs, &unmap_ram), &r_cycle);
+    let reg_x_next_vals = col_values(trace_rows, COL_REG_X_NEXT);
+    let i_next_vals = col_values(trace_rows, COL_I_NEXT);
+    let mem_value_vals = col_values(trace_rows, COL_MEM_VALUE);
+    let reg_x_vals = col_values(trace_rows, COL_REG_X);
+    let reads_ram_vals = bool_values_from_aux(aux, |row| row.reads_ram);
+    let writes_ram_vals = bool_values_from_aux(aux, |row| row.writes_ram);
+    let idle_ram_flag: Vec<K> = reads_ram_vals
+        .iter()
+        .zip(writes_ram_vals.iter())
+        .map(|(&reads, &writes)| K::ONE - reads - writes)
+        .collect();
+    let mem_minus_reg_x: Vec<K> = mem_value_vals
+        .iter()
+        .zip(reg_x_vals.iter())
+        .map(|(&mem, &reg_x)| mem - reg_x)
+        .collect();
 
+    let reg_wa_mapped_claim = reg_wa_x_addr_target_proof.claim + lane_values_at_twist[9] * K::from(F::from_u64(16u64));
+    let (_, _, mapped_ram_claims, raw_ram_claims) = stage2_address_claims(
+        &lane_values_at_twist,
+        &handoff_values_at_twist,
+        reg_ra_y_target_proof.claim,
+        reg_wa_mapped_claim,
+        raf_read_claim,
+        raf_write_claim,
+    );
+
+    // Address correctness for RAM (2 families: read, write).
     let ram_addr_correctness = vec![
         prove_address_correctness(
             &ram_ra,
             &r_cycle,
             ADDR_RAM_BITS,
             cycle_bits,
-            expected_ram_ra,
+            mapped_ram_claims[0],
+            raw_ram_claims[0],
             &unmap_ram,
+            "stage2 RAM address family 0",
             transcript,
         )?,
         prove_address_correctness(
@@ -1153,39 +1341,81 @@ pub fn prove_stage2<Tr: Transcript>(
             &r_cycle,
             ADDR_RAM_BITS,
             cycle_bits,
-            expected_ram_wa,
+            mapped_ram_claims[1],
+            raw_ram_claims[1],
             &unmap_ram,
+            "stage2 RAM address family 1",
             transcript,
         )?,
     ];
 
-    let ram_addr_point = squeeze_point(transcript, b"stage2/r_addr_ram", ADDR_RAM_BITS);
-
-    let lane_values_at_twist = lane_values_at_cycle(trace_rows, &r_cycle);
-    let handoff_values_at_twist = handoff_values_at_cycle(aux, &r_cycle);
+    let reg_write_x_target_proof = prove_cycle_product_relation(
+        transcript,
+        vec![eq_cycle.clone(), write_x_target_flag, reg_x_next_vals],
+        3,
+        b"stage2/reg_write_x_target/claim",
+        "reg_write_x_target",
+    )?;
+    let reg_write_i_target_proof = prove_cycle_product_relation(
+        transcript,
+        vec![eq_cycle.clone(), writes_nnn_to_i, i_next_vals],
+        3,
+        b"stage2/reg_write_i_target/claim",
+        "reg_write_i_target",
+    )?;
+    let ram_read_target_proof = prove_cycle_product_relation(
+        transcript,
+        vec![eq_cycle.clone(), reads_ram_vals.clone(), mem_value_vals.clone()],
+        3,
+        b"stage2/ram_read_target/claim",
+        "ram_read_target",
+    )?;
+    let ram_write_target_proof = prove_cycle_product_relation(
+        transcript,
+        vec![eq_cycle.clone(), writes_ram_vals.clone(), mem_value_vals.clone()],
+        3,
+        b"stage2/ram_write_target/claim",
+        "ram_write_target",
+    )?;
+    let ram_write_matches_x_zero_proof = prove_cycle_product_relation(
+        transcript,
+        vec![eq_cycle.clone(), writes_ram_vals.clone(), mem_minus_reg_x],
+        3,
+        b"stage2/ram_write_matches_x_zero/claim",
+        "ram_write_matches_x_zero",
+    )?;
+    if ram_write_matches_x_zero_proof.claim != K::ZERO {
+        return Err(SimpleKernelError::SumcheckFailed(
+            "stage2 write-RAM MEM_VALUE must equal REG_X on active write rows".into(),
+        ));
+    }
+    let ram_idle_mem_zero_proof = prove_cycle_product_relation(
+        transcript,
+        vec![eq_cycle.clone(), idle_ram_flag, mem_value_vals],
+        3,
+        b"stage2/ram_idle_mem_zero/claim",
+        "ram_idle_mem_zero",
+    )?;
+    if ram_idle_mem_zero_proof.claim != K::ZERO {
+        return Err(SimpleKernelError::SumcheckFailed(
+            "stage2 MEM_VALUE must be zero on non-RAM rows".into(),
+        ));
+    }
     let gamma_twist_link = squeeze_k(transcript, b"stage2/gamma_twist_link");
 
     let reg_x = lane_values_at_twist[0];
     let reg_y = lane_values_at_twist[1];
-    let reg_x_next = lane_values_at_twist[2];
     let i_reg = lane_values_at_twist[3];
-    let i_next = lane_values_at_twist[4];
-    let mem_value = lane_values_at_twist[5];
-    let writes_lookup_to_x = lane_values_at_twist[6];
-    let writes_mem_to_x = lane_values_at_twist[7];
-    let writes_nnn_to_i = lane_values_at_twist[9];
-    let handoff_reads_ram = handoff_values_at_twist[1];
-    let handoff_writes_ram = handoff_values_at_twist[2];
 
     let linkage_terms = [
         rv_x_claim - reg_x,
         rv_y_claim - reg_y,
         rv_i_claim - i_reg,
-        wv_reg_claim - ((writes_lookup_to_x + writes_mem_to_x) * reg_x_next + writes_nnn_to_i * i_next),
-        rv_ram_claim - handoff_reads_ram * mem_value,
-        wv_ram_claim - handoff_writes_ram * mem_value,
-        handoff_writes_ram * (mem_value - reg_x),
-        (K::ONE - handoff_reads_ram - handoff_writes_ram) * mem_value,
+        wv_reg_claim - (reg_write_x_target_proof.claim + reg_write_i_target_proof.claim),
+        rv_ram_claim - ram_read_target_proof.claim,
+        wv_ram_claim - ram_write_target_proof.claim,
+        ram_write_matches_x_zero_proof.claim,
+        ram_idle_mem_zero_proof.claim,
     ];
     let mut linkage_batch_value = K::ZERO;
     let mut gamma_power = K::ONE;
@@ -1194,26 +1424,43 @@ pub fn prove_stage2<Tr: Transcript>(
         gamma_power *= gamma_twist_link;
     }
     if linkage_batch_value != K::ZERO {
-        return Err(SimpleKernelError::SumcheckFailed(
-            "stage2 linkage batch failed at r_twist_cycle".into(),
-        ));
+        let failing_terms: Vec<usize> = linkage_terms
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, term)| if *term != K::ZERO { Some(idx) } else { None })
+            .collect();
+        return Err(SimpleKernelError::SumcheckFailed(format!(
+            "stage2 linkage batch failed at r_twist_cycle (nonzero terms: {failing_terms:?})"
+        )));
     }
 
     Ok(Stage2TwistProof {
         cycle_point: r_cycle,
         reg_addr_point,
+        reg_val_at_point,
         ram_addr_point,
+        ram_val_at_point,
         gamma_reg,
         reg_rw_batched_rounds: reg_rw_rounds,
-        reg_val_from_inc_claim: val_inc_sum,
+        reg_val_from_inc_claim: reg_val_delta_claim,
         reg_val_from_inc_rounds: reg_val_rounds,
         reg_addr_correctness,
         gamma_ram,
         ram_rw_batched_rounds: ram_rw_rounds,
-        ram_val_from_inc_claim: ram_val_inc_sum,
+        ram_val_from_inc_claim: ram_val_delta_claim,
         ram_val_from_inc_rounds: ram_val_rounds,
+        ram_raf_read_claim: raf_read_claim,
         ram_raf_read_rounds,
+        ram_raf_write_claim: raf_write_claim,
         ram_raf_write_rounds,
+        reg_ra_y_target_proof,
+        reg_wa_addr_target_proof: reg_wa_x_addr_target_proof,
+        reg_write_x_target_proof,
+        reg_write_i_target_proof,
+        ram_read_target_proof,
+        ram_write_target_proof,
+        ram_write_matches_x_zero_proof,
+        ram_idle_mem_zero_proof,
         ram_addr_correctness,
         link_claims: Stage2LinkClaims {
             rv_x: rv_x_claim,
@@ -1231,18 +1478,27 @@ pub fn prove_stage2<Tr: Transcript>(
 }
 
 // ---------------------------------------------------------------------------
-// Verifier stub
+// Verifier
 // ---------------------------------------------------------------------------
 
-/// Verify Stage 2 Twist memory checking (stub).
+/// Verify Stage 2 Twist memory checking.
 pub fn verify_stage2<Tr: Transcript>(
     proof: &Stage2TwistProof,
-    _initial_registers: &[u8; 16],
-    _initial_i: u16,
-    _initial_ram: &[u8],
+    initial_registers: &[u8; 16],
+    initial_i: u16,
+    initial_ram: &[u8],
     cycle_bits: usize,
     transcript: &mut Tr,
 ) -> Result<(), SimpleKernelError> {
+    if proof.handoff_values_at_twist.len() != 3 || proof.lane_values_at_twist.len() != 14 {
+        return Err(SimpleKernelError::OpeningFailed(
+            "stage2 opening surface has the wrong shape".into(),
+        ));
+    }
+
+    let lane = &proof.lane_values_at_twist;
+    let handoff = &proof.handoff_values_at_twist;
+
     let expected_cycle_point = squeeze_point(transcript, b"stage2/r_cycle", cycle_bits);
     expect_equal_k_slice(&proof.cycle_point, &expected_cycle_point, "stage2 cycle point")?;
 
@@ -1260,13 +1516,53 @@ pub fn verify_stage2<Tr: Transcript>(
         &proof.reg_rw_batched_rounds,
         "stage2 register read/write",
     )?;
+    let expected_reg_addr_point = squeeze_point(transcript, b"stage2/r_addr_reg", ADDR_REG_BITS);
+    expect_equal_k_slice(&proof.reg_addr_point, &expected_reg_addr_point, "stage2 reg addr point")?;
+    let reg_init_at_point = mle_eval_fk_be(&initial_reg_values(initial_registers, initial_i), &proof.reg_addr_point);
+    expect_equal_k(
+        proof.reg_val_at_point - reg_init_at_point,
+        proof.reg_val_from_inc_claim,
+        "stage2 register val-from-inc anchor",
+    )?;
     transcript.append_fields(b"stage2/reg_val_inc_claim", &proof.reg_val_from_inc_claim.as_coeffs());
-    replay_sumcheck_unchecked(
+    verify_sumcheck_known(
         transcript,
         3,
+        proof.reg_val_from_inc_claim,
         &proof.reg_val_from_inc_rounds,
         "stage2 register val-from-inc",
     )?;
+    transcript.append_fields(
+        b"stage2/reg_ra_y_target/claim",
+        &proof.reg_ra_y_target_proof.claim.as_coeffs(),
+    );
+    verify_sumcheck_known(
+        transcript,
+        3,
+        proof.reg_ra_y_target_proof.claim,
+        &proof.reg_ra_y_target_proof.rounds,
+        "stage2 register ra_y target",
+    )?;
+    transcript.append_fields(
+        b"stage2/reg_wa_x_addr_target/claim",
+        &proof.reg_wa_addr_target_proof.claim.as_coeffs(),
+    );
+    verify_sumcheck_known(
+        transcript,
+        3,
+        proof.reg_wa_addr_target_proof.claim,
+        &proof.reg_wa_addr_target_proof.rounds,
+        "stage2 register wa-address target",
+    )?;
+    let reg_wa_mapped_claim = proof.reg_wa_addr_target_proof.claim + lane[9] * K::from(F::from_u64(16u64));
+    let (mapped_reg_claims, raw_reg_claims, _, _) = stage2_address_claims(
+        lane,
+        handoff,
+        proof.reg_ra_y_target_proof.claim,
+        reg_wa_mapped_claim,
+        K::ZERO,
+        K::ZERO,
+    );
     if proof.reg_addr_correctness.len() != 4 {
         return Err(SimpleKernelError::SumcheckFailed(
             "stage2 register address correctness proof count must be 4".into(),
@@ -1278,11 +1574,11 @@ pub fn verify_stage2<Tr: Transcript>(
             addr_proof,
             ADDR_REG_BITS,
             cycle_bits,
+            mapped_reg_claims[idx],
+            raw_reg_claims[idx],
             &format!("stage2 register address family {idx}"),
         )?;
     }
-    let expected_reg_addr_point = squeeze_point(transcript, b"stage2/r_addr_reg", ADDR_REG_BITS);
-    expect_equal_k_slice(&proof.reg_addr_point, &expected_reg_addr_point, "stage2 reg addr point")?;
 
     let expected_gamma_ram = squeeze_k(transcript, b"stage2/gamma_ram");
     expect_equal_k(proof.gamma_ram, expected_gamma_ram, "stage2 gamma_ram")?;
@@ -1295,30 +1591,45 @@ pub fn verify_stage2<Tr: Transcript>(
         &proof.ram_rw_batched_rounds,
         "stage2 RAM read/write",
     )?;
+    let expected_ram_addr_point = squeeze_point(transcript, b"stage2/r_addr_ram", ADDR_RAM_BITS);
+    expect_equal_k_slice(&proof.ram_addr_point, &expected_ram_addr_point, "stage2 RAM addr point")?;
+    let ram_init_at_point = mle_eval_fk_be(&initial_ram_values(initial_ram), &proof.ram_addr_point);
+    expect_equal_k(
+        proof.ram_val_at_point - ram_init_at_point,
+        proof.ram_val_from_inc_claim,
+        "stage2 RAM val-from-inc anchor",
+    )?;
     transcript.append_fields(b"stage2/ram_val_inc_claim", &proof.ram_val_from_inc_claim.as_coeffs());
-    replay_sumcheck_unchecked(transcript, 3, &proof.ram_val_from_inc_rounds, "stage2 RAM val-from-inc")?;
+    verify_sumcheck_known(
+        transcript,
+        3,
+        proof.ram_val_from_inc_claim,
+        &proof.ram_val_from_inc_rounds,
+        "stage2 RAM val-from-inc",
+    )?;
 
-    if proof.handoff_values_at_twist.len() != 3 || proof.lane_values_at_twist.len() != 14 {
-        return Err(SimpleKernelError::OpeningFailed(
-            "stage2 opening surface has the wrong shape".into(),
-        ));
-    }
-    let raf_read_claim = proof.handoff_values_at_twist[1] * proof.lane_values_at_twist[13];
     verify_sumcheck_known(
         transcript,
         2,
-        raf_read_claim,
+        proof.ram_raf_read_claim,
         &proof.ram_raf_read_rounds,
         "stage2 RAM raf-read",
     )?;
-    let raf_write_claim = proof.handoff_values_at_twist[2] * proof.lane_values_at_twist[13];
     verify_sumcheck_known(
         transcript,
         2,
-        raf_write_claim,
+        proof.ram_raf_write_claim,
         &proof.ram_raf_write_rounds,
         "stage2 RAM raf-write",
     )?;
+    let (_, _, mapped_ram_claims, raw_ram_claims) = stage2_address_claims(
+        lane,
+        handoff,
+        K::ZERO,
+        K::ZERO,
+        proof.ram_raf_read_claim,
+        proof.ram_raf_write_claim,
+    );
     if proof.ram_addr_correctness.len() != 2 {
         return Err(SimpleKernelError::SumcheckFailed(
             "stage2 RAM address correctness proof count must be 2".into(),
@@ -1330,11 +1641,88 @@ pub fn verify_stage2<Tr: Transcript>(
             addr_proof,
             ADDR_RAM_BITS,
             cycle_bits,
+            mapped_ram_claims[idx],
+            raw_ram_claims[idx],
             &format!("stage2 RAM address family {idx}"),
         )?;
     }
-    let expected_ram_addr_point = squeeze_point(transcript, b"stage2/r_addr_ram", ADDR_RAM_BITS);
-    expect_equal_k_slice(&proof.ram_addr_point, &expected_ram_addr_point, "stage2 RAM addr point")?;
+
+    transcript.append_fields(
+        b"stage2/reg_write_x_target/claim",
+        &proof.reg_write_x_target_proof.claim.as_coeffs(),
+    );
+    verify_sumcheck_known(
+        transcript,
+        3,
+        proof.reg_write_x_target_proof.claim,
+        &proof.reg_write_x_target_proof.rounds,
+        "stage2 register write-to-x target",
+    )?;
+    transcript.append_fields(
+        b"stage2/reg_write_i_target/claim",
+        &proof.reg_write_i_target_proof.claim.as_coeffs(),
+    );
+    verify_sumcheck_known(
+        transcript,
+        3,
+        proof.reg_write_i_target_proof.claim,
+        &proof.reg_write_i_target_proof.rounds,
+        "stage2 register write-to-i target",
+    )?;
+    transcript.append_fields(
+        b"stage2/ram_read_target/claim",
+        &proof.ram_read_target_proof.claim.as_coeffs(),
+    );
+    verify_sumcheck_known(
+        transcript,
+        3,
+        proof.ram_read_target_proof.claim,
+        &proof.ram_read_target_proof.rounds,
+        "stage2 RAM read target",
+    )?;
+    transcript.append_fields(
+        b"stage2/ram_write_target/claim",
+        &proof.ram_write_target_proof.claim.as_coeffs(),
+    );
+    verify_sumcheck_known(
+        transcript,
+        3,
+        proof.ram_write_target_proof.claim,
+        &proof.ram_write_target_proof.rounds,
+        "stage2 RAM write target",
+    )?;
+    expect_equal_k(
+        proof.ram_write_matches_x_zero_proof.claim,
+        K::ZERO,
+        "stage2 write-RAM MEM_VALUE/REG_X zero claim",
+    )?;
+    transcript.append_fields(
+        b"stage2/ram_write_matches_x_zero/claim",
+        &proof.ram_write_matches_x_zero_proof.claim.as_coeffs(),
+    );
+    verify_sumcheck_known(
+        transcript,
+        3,
+        proof.ram_write_matches_x_zero_proof.claim,
+        &proof.ram_write_matches_x_zero_proof.rounds,
+        "stage2 RAM write matches REG_X",
+    )?;
+    expect_equal_k(
+        proof.ram_idle_mem_zero_proof.claim,
+        K::ZERO,
+        "stage2 idle MEM_VALUE zero claim",
+    )?;
+    transcript.append_fields(
+        b"stage2/ram_idle_mem_zero/claim",
+        &proof.ram_idle_mem_zero_proof.claim.as_coeffs(),
+    );
+    verify_sumcheck_known(
+        transcript,
+        3,
+        proof.ram_idle_mem_zero_proof.claim,
+        &proof.ram_idle_mem_zero_proof.rounds,
+        "stage2 idle MEM_VALUE",
+    )?;
 
     let expected_gamma_twist_link = squeeze_k(transcript, b"stage2/gamma_twist_link");
     expect_equal_k(
@@ -1343,17 +1731,15 @@ pub fn verify_stage2<Tr: Transcript>(
         "stage2 gamma_twist_link",
     )?;
 
-    let lane = &proof.lane_values_at_twist;
-    let handoff = &proof.handoff_values_at_twist;
     let linkage_terms = [
         proof.link_claims.rv_x - lane[0],
         proof.link_claims.rv_y - lane[1],
         proof.link_claims.rv_i - lane[3],
-        proof.link_claims.wv_reg - ((lane[6] + lane[7]) * lane[2] + lane[9] * lane[4]),
-        proof.link_claims.rv_ram - handoff[1] * lane[5],
-        proof.link_claims.wv_ram - handoff[2] * lane[5],
-        handoff[2] * (lane[5] - lane[0]),
-        (K::ONE - handoff[1] - handoff[2]) * lane[5],
+        proof.link_claims.wv_reg - (proof.reg_write_x_target_proof.claim + proof.reg_write_i_target_proof.claim),
+        proof.link_claims.rv_ram - proof.ram_read_target_proof.claim,
+        proof.link_claims.wv_ram - proof.ram_write_target_proof.claim,
+        proof.ram_write_matches_x_zero_proof.claim,
+        proof.ram_idle_mem_zero_proof.claim,
     ];
     let mut linkage_batch_value = K::ZERO;
     let mut gamma_power = K::ONE;
@@ -1367,9 +1753,14 @@ pub fn verify_stage2<Tr: Transcript>(
         "stage2 linkage batch value",
     )?;
     if linkage_batch_value != K::ZERO {
-        return Err(SimpleKernelError::SumcheckFailed(
-            "stage2 linkage batch failed at r_twist_cycle".into(),
-        ));
+        let failing_terms: Vec<usize> = linkage_terms
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, term)| if *term != K::ZERO { Some(idx) } else { None })
+            .collect();
+        return Err(SimpleKernelError::SumcheckFailed(format!(
+            "stage2 linkage batch failed at r_twist_cycle (nonzero terms: {failing_terms:?})"
+        )));
     }
 
     Ok(())

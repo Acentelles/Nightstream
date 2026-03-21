@@ -3,7 +3,6 @@
 use neo_math::F;
 use p3_field::PrimeCharacteristicRing;
 
-use crate::proof::ExtensionFamily;
 use crate::vm::decode::{DecodeField, DecodeSpec};
 use crate::vm::opcode_classes::OpcodeClassSpec;
 use crate::vm::r1cs_builder::R1csBuilder;
@@ -80,6 +79,7 @@ pub enum CommitmentId {
     DecodeTable,
     AluTable,
     Eq4Table,
+    RootProver(u64),
 }
 
 // LookupKind, OperandSelector, DecodeOutput, and decode_to_output are
@@ -115,19 +115,6 @@ impl Chip8Opcode {
             Self::StoreRegs,
             Self::LoadRegs,
         ]
-    }
-
-    pub fn family_requirements(self) -> &'static [ExtensionFamily] {
-        match self {
-            Self::LdImm | Self::AddImm | Self::Mov | Self::AddReg | Self::SkipEqImm | Self::Jump | Self::LdI => {
-                &[ExtensionFamily::BytecodeFetch, ExtensionFamily::RegisterHistory]
-            }
-            Self::StoreRegs | Self::LoadRegs => &[
-                ExtensionFamily::BytecodeFetch,
-                ExtensionFamily::RegisterHistory,
-                ExtensionFamily::RamHistory,
-            ],
-        }
     }
 }
 
