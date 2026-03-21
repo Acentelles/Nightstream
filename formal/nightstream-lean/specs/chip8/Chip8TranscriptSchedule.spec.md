@@ -12,7 +12,10 @@
   Twist/Shout commitment-before-challenge discipline. It does not own opening
   manifests or semantic extraction; it owns the exact order in which the kernel
   fixes commitments, records terminal points, samples challenges, and emits
-  row-binding events.
+  row-binding events. It stops at the final manifest-emission event; later
+  accepted-opening verification, refinements, and any optional reduction
+  artifacts are post-transcript materialization steps, not additional transcript
+  events of this owner.
 
 ## Target Formulas
 
@@ -39,18 +42,71 @@ $$
 ].
 $$
 
+Define the theorem-facing bound inventory of actual absorbed commitment
+payloads:
+
+$$
+\mathrm{Root0CommitmentBinding} := (\mathrm{id}, \mathrm{digest}),
+$$
+
+and the conformance predicate:
+
+$$
+\mathrm{root0CommitmentBindingsConform}(bindings)
+\;:=\;
+\mathrm{map}\ \mathrm{id}\ bindings = \mathrm{root0CommitmentIds}.
+$$
+
 The phase-0 absorb events are:
 
 $$
-\mathrm{phase0Events}
+\mathrm{phase0Events}(bindings)
 :=
-\mathrm{map}\ \mathrm{absorbCommitment}\ \mathrm{root0CommitmentIds}
+\mathrm{map}\ \mathrm{absorbCommitment}\ bindings
 \mathbin{+\!\!+}
 [\mathrm{absorbMetaPub}].
 $$
 
 This is the theorem-facing `root0` boundary: all later challenges are sampled
- only after these events have occurred.
+ only after these events have occurred, and the absorbed commitment payloads are
+ required to conform to `root0CommitmentIds`.
+
+Here `root0` is a transcript-digest boundary over the absorbed kernel
+commitment payloads plus `meta_pub`. It is not itself a commitment family, and
+it is not a root-side opening surface.
+
+Here `absorbMetaPub` is not an implementation-defined struct hash. It means the
+exact labeled absorb sequence fixed by the kernel spec:
+
+- absorb `protocol_version_id` under the root0 version label
+- absorb `field_id`
+- absorb `extension_field_id`
+- absorb `program_image_digest`
+- absorb `initial_state_digest`
+- absorb `rom_table_digest`
+- absorb `decode_table_digest`
+- absorb `alu_table_digest`
+- absorb `eq4_table_digest`
+- absorb `transcript_seed_digest`
+- absorb `root_params_id`
+- absorb the ordered numeric suffix
+  `(variable_order_id, domain_shape_id, sink_convention_id, init_mode_id,
+  lowering_convention_id, padding_convention_id, table_auth_mode_id,
+  opening_reduction_mode_id, program_word_count, semantic_rows,
+  padded_trace_length, pad_pc_word, program_base_addr, cycle_bits)`
+
+in exactly that order and under the exact root0 labels fixed by the kernel
+spec.
+
+This schedule is not only an abstract ordering law. It is also the canonical
+protocol-binding absorb order that any executable Rust↔Lean compatibility lane
+must reuse when deriving transcript-bound Poseidon2 digest and challenge
+values.
+
+Post-transcript verifier artifacts such as exact-opening verification records,
+`OpeningRefinement` objects, and any future claim-space reduction summaries are
+outside `KernelTranscriptSchedule`. This owner fixes the challenge-bearing
+kernel schedule only.
 
 ### Canonical stage schedule
 
@@ -120,9 +176,9 @@ $$
 Then:
 
 $$
-\mathrm{transcriptEvents}(N)
+\mathrm{transcriptEvents}(bindings, N)
 :=
-\mathrm{phase0Events}
+\mathrm{phase0Events}(bindings)
 \mathbin{+\!\!+}
 \mathrm{stage1Events}
 \mathbin{+\!\!+}
@@ -136,13 +192,15 @@ $$
 Define:
 
 $$
-\mathrm{KernelTranscriptSchedule}(N, events)
+\mathrm{KernelTranscriptSchedule}(bindings, N, events)
 $$
 
 to mean:
 
 $$
-events = \mathrm{transcriptEvents}(N).
+\mathrm{root0CommitmentBindingsConform}(bindings)
+\;\land\;
+events = \mathrm{transcriptEvents}(bindings, N).
 $$
 
 ### Challenge and terminal-point classes
@@ -189,6 +247,40 @@ for:
 - `recordRegAddr`
 - `recordRamAddr`
 
+### Challenge prerequisite table
+
+For auditor use, the exact local prerequisite schedule is:
+
+- `r_lookup`
+  - must already be bound: the actual `root0` commitment digests/encodings,
+    absorbed in canonical `root0CommitmentIds` order via
+    `root0CommitmentBindingsConform`, and then the exact labeled `meta_pub`
+    absorb sequence
+  - must not yet depend on: any Stage-1 proof transcript, any terminal address
+    point, any later stage event
+- `γ_lookup_link`
+  - must already be bound: `r_lookup`, all Stage-1 Shout transcript events, and
+    the recorded Stage-1 terminal points
+  - must not yet depend on: any Stage-2 or Stage-3 event
+- `r_twist_cycle`
+  - must already be bound: the complete Stage-1 transcript including
+    `γ_lookup_link`
+  - must not yet depend on: any Stage-2 terminal point or later stage event
+- `γ_reg`, `γ_ram`, `γ_twist_link`
+  - must already be bound: `r_twist_cycle` and the preceding Stage-2 transcript
+    events in exact local order
+  - must not yet depend on: any Stage-3 event
+- `β1`, `β2`, `r_shift`
+  - must already be bound: the complete Stage-1 and Stage-2 transcripts
+  - must not yet depend on: any Stage-3 row-binding or later post-transcript
+    reduction artifact
+- claim-local mixers, group-local mixers, and unification mixers
+  - if a future non-simple format materializes them, they belong to dedicated
+    post-transcript reduction domains rather than to `KernelTranscriptSchedule`
+  - they must not reuse: `r_lookup`, any Stage-1 address point,
+    `γ_lookup_link`, `r_twist_cycle`, `r_addr_reg`, `r_addr_ram`, `γ_reg`,
+    `γ_ram`, `γ_twist_link`, `β1`, `β2`, or `r_shift`
+
 ### Theorem targets
 
 The transcript owner must expose:
@@ -221,19 +313,19 @@ $$
 The schedule owner must also prove:
 
 $$
-\mathrm{KernelTranscriptSchedule}(N, events)
+\mathrm{KernelTranscriptSchedule}(bindings, N, events)
 \Longrightarrow
-\exists rest,\ events = \mathrm{phase0Events} \mathbin{+\!\!+} rest.
+\exists rest,\ events = \mathrm{phase0Events}(bindings) \mathbin{+\!\!+} rest.
 $$
 
 and the commitment-before-challenge theorem:
 
 $$
-\mathrm{KernelTranscriptSchedule}(N, events)
+\mathrm{KernelTranscriptSchedule}(bindings, N, events)
 \land
 \mathrm{ChallengeEvent}(e)
 \Longrightarrow
-\exists rest,\ events = \mathrm{phase0Events} \mathbin{+\!\!+} rest
+\exists rest,\ events = \mathrm{phase0Events}(bindings) \mathbin{+\!\!+} rest
 \land e \in rest.
 $$
 
@@ -300,7 +392,9 @@ $$
 |---|---|---|---|---|
 | Events | `TranscriptEvent` | def | Definitional | Canonical theorem-facing transcript event alphabet |
 | Phase 0 | `root0CommitmentIds` | def | Definitional | Exact kernel commitments absorbed into `root0` |
-| Phase 0 | `phase0Events` | def | Definitional | Exact phase-0 absorb prefix |
+| Phase 0 | `Root0CommitmentBinding` | def | Definitional | Exact `(commitment id, absorbed digest/encoding)` inventory entry |
+| Phase 0 | `root0CommitmentBindingsConform` | def | Definitional | Binds the absorbed root0 payload inventory to canonical `root0CommitmentIds` order |
+| Phase 0 | `phase0Events` | def | Definitional | Exact phase-0 absorb prefix over actual root0 commitment payloads |
 | Stages | `stage1Events` | def | Definitional | Exact Stage-1 transcript segment |
 | Stages | `stage2Events` | def | Definitional | Exact Stage-2 transcript segment |
 | Stages | `stage3PrefixEvents` | def | Definitional | Exact Stage-3 pre-row-binding segment |
@@ -311,6 +405,7 @@ $$
 | Classes | `Stage1TerminalPointEvent` | def | Definitional | Exact Stage-1 terminal-point classifier |
 | Classes | `Stage2TerminalPointEvent` | def | Definitional | Exact Stage-2 terminal-point classifier |
 | Theorem | `root0CommitmentIds_nodup` | theorem | Theorem-Target | Root0 commitment inventory is duplicate-free |
+| Theorem | `root0CommitmentBindings_ids` | theorem | Theorem-Target | A conforming absorbed root0 inventory projects back to canonical `root0CommitmentIds` |
 | Theorem | `mem_root0CommitmentIds_iff_isKernelCommitment` | theorem | Theorem-Target | Root0 commitments are exactly the kernel commitments |
 | Theorem | `kernelClaim_commitment_fixed_in_root0` | theorem | Theorem-Target | Every conforming kernel-manifest claim references a commitment fixed in `root0` |
 | Theorem | `challenge_after_phase0` | theorem | Theorem-Target | Every challenge event occurs after the exact phase-0 absorb prefix |

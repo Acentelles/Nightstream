@@ -33,6 +33,17 @@ structure OpeningRefinement
   witness : OpeningWitness params
   extracts : extractsRawScalar extract witness claim
 
+structure AcceptedScalarOpening
+  (params : AjtaiParams)
+  (extract : Commitment → Opening → Family → Point → F)
+  (claim : RawScalarClaim Family Point) where
+  refinement : OpeningRefinement params extract claim
+  valueEq :
+    claim.value =
+      extract refinement.witness.commitment refinement.witness.opening
+        claim.family claim.point
+  normSound : Opening.NormSound refinement.witness.opening
+
 def RawOpeningSeparation
   (params : AjtaiParams)
   (extract : Commitment → Opening → Family → Point → F)
@@ -83,6 +94,33 @@ theorem rawScalarMatches_of_refinement
   claim.value =
     extract h.witness.commitment h.witness.opening claim.family claim.point := by
   exact h.extracts
+
+def acceptedOpening_of_refinement
+  {params : AjtaiParams}
+  {extract : Commitment → Opening → Family → Point → F}
+  {claim : RawScalarClaim Family Point}
+  (h : OpeningRefinement params extract claim) :
+  AcceptedScalarOpening params extract claim := by
+  exact
+    { refinement := h
+      valueEq := rawScalarMatches_of_refinement h
+      normSound := openingNormSound_of_refinement h }
+
+def refinement_of_acceptedOpening
+  {params : AjtaiParams}
+  {extract : Commitment → Opening → Family → Point → F}
+  {claim : RawScalarClaim Family Point}
+  (h : AcceptedScalarOpening params extract claim) :
+  OpeningRefinement params extract claim :=
+  h.refinement
+
+theorem rawOpeningSeparation_of_acceptedOpening
+  {params : AjtaiParams}
+  {extract : Commitment → Opening → Family → Point → F}
+  {claim : RawScalarClaim Family Point}
+  (h : AcceptedScalarOpening params extract claim) :
+  RawOpeningSeparation params extract claim := by
+  exact ⟨h.refinement, h.valueEq, h.normSound⟩
 
 theorem rawOpeningSeparation_of_refinement
   {params : AjtaiParams}

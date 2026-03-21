@@ -447,6 +447,43 @@ structure OpeningClaim (Value Digest : Type*) where
   digest : Digest
 deriving DecidableEq, Repr
 
+def claimMatches {Value Digest : Type*}
+  (source : OpeningSource)
+  (commitmentId : CommitmentId)
+  (point : List Nat)
+  (polynomialIds : List Nat)
+  (claim : OpeningClaim Value Digest) : Prop :=
+  claim.source = source ∧
+    claim.commitmentId = commitmentId ∧
+    claim.point = point ∧
+    claim.polynomialIds = polynomialIds
+
+structure ExactOpeningWitness (Value Digest : Type*) where
+  commitmentId : CommitmentId
+  point : List Nat
+  polynomialIds : List Nat
+  claimedValues : List Value
+  digest : Digest
+deriving DecidableEq, Repr
+
+structure OpeningRefinement (Digest : Type*) where
+  claimDigest : Digest
+  exactOpeningDigest : Digest
+  digest : Digest
+deriving DecidableEq, Repr
+
+structure AcceptedDirectOpening (Value Digest : Type*) where
+  claim : OpeningClaim Value Digest
+  exactWitness : ExactOpeningWitness Value Digest
+  refinement : OpeningRefinement Digest
+  commitmentIdEq : exactWitness.commitmentId = claim.commitmentId
+  pointEq : exactWitness.point = claim.point
+  polynomialIdsEq : exactWitness.polynomialIds = claim.polynomialIds
+  claimedValuesEq : exactWitness.claimedValues = claim.claimedValues
+  refinementClaimEq : refinement.claimDigest = claim.digest
+  refinementWitnessEq : refinement.exactOpeningDigest = exactWitness.digest
+deriving DecidableEq, Repr
+
 abbrev KernelOpeningManifest (Value Digest : Type*) := List (OpeningClaim Value Digest)
 abbrev RootOpeningManifest (Value Digest : Type*) := List (OpeningClaim Value Digest)
 
@@ -572,6 +609,58 @@ def kernelClaimAllowed {Value Digest : Type*}
       claim.point = pts.rEq4Table ∧ claim.polynomialIds = singletonPolynomialIds
   | .rootProver _ => False
 
+def SimpleKernelManifestOrder {Value Digest : Type*}
+  (pts : KernelPoints)
+  (manifest : KernelOpeningManifest Value Digest) : Prop :=
+  ∃ laneLookup fetchRa decodeRa aluRa eq4Ra decodeLookup
+      romTable decodeTable aluTable eq4Table
+      laneTwist decodeTwist regTwist ramTwist
+      laneShift laneStart laneFinal
+      rowClaims,
+    manifest =
+      [ laneLookup
+      , fetchRa
+      , decodeRa
+      , aluRa
+      , eq4Ra
+      , decodeLookup
+      , romTable
+      , decodeTable
+      , aluTable
+      , eq4Table
+      , laneTwist
+      , decodeTwist
+      , regTwist
+      , ramTwist
+      , laneShift
+      , laneStart
+      , laneFinal
+      ] ++ rowClaims ∧
+    claimMatches .kernel .lane pts.rLookup laneLookupPolynomialIds laneLookup ∧
+    claimMatches .kernel .fetchRa pts.rFetchRa singletonPolynomialIds fetchRa ∧
+    claimMatches .kernel .decodeRa pts.rDecodeRa singletonPolynomialIds decodeRa ∧
+    claimMatches .kernel .aluRa pts.rAluRa singletonPolynomialIds aluRa ∧
+    claimMatches .kernel .eq4Ra pts.rEq4Ra singletonPolynomialIds eq4Ra ∧
+    claimMatches .kernel .decodeHandoff pts.rDecodeHandoffLookup
+      decodeHandoffPolynomialIds decodeLookup ∧
+    claimMatches .kernel .romTable pts.rRomTable singletonPolynomialIds romTable ∧
+    claimMatches .kernel .decodeTable pts.rDecodeTable decodeTablePolynomialIds
+      decodeTable ∧
+    claimMatches .kernel .aluTable pts.rAluTable singletonPolynomialIds aluTable ∧
+    claimMatches .kernel .eq4Table pts.rEq4Table singletonPolynomialIds eq4Table ∧
+    claimMatches .kernel .lane pts.rTwistCycle laneTwistPolynomialIds laneTwist ∧
+    claimMatches .kernel .decodeHandoff pts.rDecodeHandoffTwist
+      decodeHandoffPolynomialIds decodeTwist ∧
+    claimMatches .kernel .regTwist pts.rRegTwist regTwistPolynomialIds regTwist ∧
+    claimMatches .kernel .ramTwist pts.rRamTwist ramTwistPolynomialIds ramTwist ∧
+    claimMatches .kernel .lane pts.rShift laneShiftPolynomialIds laneShift ∧
+    claimMatches .kernel .lane pts.j0Bits laneStartPolynomialIds laneStart ∧
+    claimMatches .kernel .lane pts.jLastBits laneFinalPolynomialIds laneFinal ∧
+    List.Forall₂
+      (fun point claim =>
+        claimMatches .kernel .lane point laneRowBindingPolynomialIds claim)
+      (List.ofFn pts.jBits) rowClaims
+
 def rootClaimAllowed {Value Digest : Type*} (claim : OpeningClaim Value Digest) : Prop :=
   claim.source = .root ∧ isRootCommitment claim.commitmentId
 
@@ -582,27 +671,7 @@ def KernelManifestShape {Value Digest : Type*}
     claim.source = .kernel ∧
       isKernelCommitment claim.commitmentId ∧
       kernelClaimAllowed pts claim) ∧
-    hasManifestClaim manifest .kernel .lane pts.rLookup laneLookupPolynomialIds ∧
-    hasManifestClaim manifest .kernel .fetchRa pts.rFetchRa singletonPolynomialIds ∧
-    hasManifestClaim manifest .kernel .decodeRa pts.rDecodeRa singletonPolynomialIds ∧
-    hasManifestClaim manifest .kernel .aluRa pts.rAluRa singletonPolynomialIds ∧
-    hasManifestClaim manifest .kernel .eq4Ra pts.rEq4Ra singletonPolynomialIds ∧
-    hasManifestClaim manifest .kernel .decodeHandoff pts.rDecodeHandoffLookup
-      decodeHandoffPolynomialIds ∧
-    hasManifestClaim manifest .kernel .romTable pts.rRomTable singletonPolynomialIds ∧
-    hasManifestClaim manifest .kernel .decodeTable pts.rDecodeTable decodeTablePolynomialIds ∧
-    hasManifestClaim manifest .kernel .aluTable pts.rAluTable singletonPolynomialIds ∧
-    hasManifestClaim manifest .kernel .eq4Table pts.rEq4Table singletonPolynomialIds ∧
-    hasManifestClaim manifest .kernel .lane pts.rTwistCycle laneTwistPolynomialIds ∧
-    hasManifestClaim manifest .kernel .decodeHandoff pts.rDecodeHandoffTwist
-      decodeHandoffPolynomialIds ∧
-    hasManifestClaim manifest .kernel .regTwist pts.rRegTwist regTwistPolynomialIds ∧
-    hasManifestClaim manifest .kernel .ramTwist pts.rRamTwist ramTwistPolynomialIds ∧
-    hasManifestClaim manifest .kernel .lane pts.rShift laneShiftPolynomialIds ∧
-    hasManifestClaim manifest .kernel .lane pts.j0Bits laneStartPolynomialIds ∧
-    hasManifestClaim manifest .kernel .lane pts.jLastBits laneFinalPolynomialIds ∧
-    (∀ j : Fin pts.exportedRows,
-      hasManifestClaim manifest .kernel .lane (pts.jBits j) laneRowBindingPolynomialIds)
+    SimpleKernelManifestOrder pts manifest
 
 def RootManifestShape {Value Digest : Type*}
   (manifest : RootOpeningManifest Value Digest) : Prop :=
@@ -642,7 +711,6 @@ def ExactKernelOpeningBoundary {Value Digest : Type*}
   KernelManifestShape pts kernelManifest ∧
     RootManifestShape rootManifest ∧
     RootManifestEmpty rootManifest ∧
-    CanonicalManifestOrder kernelManifest ∧
     CanonicalManifestOrder rootManifest
 
 def LaneShiftAppearsInManifest {Value Digest : Type*}
@@ -674,12 +742,18 @@ theorem laneShiftSourceOpeningAppears_of_kernelManifestShape
   {manifest : KernelOpeningManifest Value Digest}
   (h : KernelManifestShape pts manifest) :
   LaneShiftSourceOpeningAppearsInManifest pts manifest := by
-  rcases h with
-    ⟨_, _hLookup, _hFetch, _hDecode, _hAlu, _hEq4, _hDecodeLookup,
-      _hRom, _hDecodeTable, _hAluTable, _hEq4Table, _hTwistCycle,
-      _hDecodeTwist, _hRegTwist, _hRamTwist, hShift, _hStart, _hFinal,
-      _hRows⟩
-  exact hShift
+  rcases h with ⟨_, hOrder⟩
+  rcases hOrder with
+    ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, laneShift, _, _, _, _manifestEq,
+      _hLookup, _hFetch, _hDecode, _hAlu, _hEq4, _hDecodeLookup, _hRom,
+      _hDecodeTable, _hAluTable, _hEq4Table, _hTwistCycle, _hDecodeTwist,
+      _hRegTwist, _hRamTwist, hShift, _hStart, _hFinal, _hRows⟩
+  refine ⟨laneShift, ?_, ?_, ?_, ?_⟩
+  · rw [_manifestEq]
+    simp
+  · exact hShift.1
+  · exact hShift.2.1
+  · exact ⟨hShift.2.2.1, hShift.2.2.2⟩
 
 theorem laneShiftSourceOpeningAppears_of_exactKernelOpeningBoundary
   {Value Digest : Type*}
@@ -703,7 +777,7 @@ theorem exact_kernelOpeningBoundary_conforms
     (∀ claim ∈ rootManifest,
       claim.source = .root ∧
         isRootCommitment claim.commitmentId) := by
-  rcases h with ⟨hKernel, hRoot, _, _, _⟩
+  rcases h with ⟨hKernel, hRoot, _, _⟩
   refine ⟨?_, ?_⟩
   · intro claim hMem
     exact hKernel.1 claim hMem

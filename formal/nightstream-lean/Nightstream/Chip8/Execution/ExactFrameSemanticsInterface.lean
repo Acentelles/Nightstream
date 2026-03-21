@@ -4,11 +4,16 @@ namespace Nightstream.Chip8
 
 namespace ExactFrameSemanticsInterface
 
+-- ── Types ──
+
 abbrev F := Nightstream.Chip8.ExactFrameSemantics.F
 abbrev Program := Nightstream.Chip8.ExactFrameSemantics.Program
 abbrev MachineState := Nightstream.Chip8.ExactFrameSemantics.MachineState
 abbrev InitialState := Nightstream.Chip8.ExactFrameSemantics.InitialState
 abbrev ExternalSchedule := Nightstream.Chip8.ExactFrameSemantics.ExternalSchedule
+
+-- ── Theorems ──
+
 abbrev microstepCorrect_of_exactFrameEvidence :=
   @Nightstream.Chip8.ExactFrameSemantics.microstepCorrect_of_exactFrameEvidence
 abbrev ldImm_facts_of_exactFrameEvidence :=

@@ -67,6 +67,10 @@ $$
 These are theorem-facing semantic consequences of the Stage-3 checked objects.
 They are not new direct opening claims.
 
+Here `shiftProof.shiftPc` is the refined Stage-3 shift value above
+`Chip8PaddedContinuityCheck`, not the raw padded-domain `Shift[PC](r_shift)`
+before excluded-tail correction.
+
 Classification:
 
 - `PcAdjacentBridgeFrom` / `PcAdjacentBridge` are theorem-level kernel closure

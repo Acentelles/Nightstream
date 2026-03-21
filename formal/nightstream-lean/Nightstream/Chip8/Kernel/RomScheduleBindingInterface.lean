@@ -4,12 +4,20 @@ namespace Nightstream.Chip8
 
 namespace RomScheduleBindingInterface
 
+-- ── Types ──
+
 abbrev Program := Nightstream.Chip8.RomScheduleBinding.Program
 abbrev InitialState := Nightstream.Chip8.RomScheduleBinding.InitialState
 abbrev ExternalSchedule := Nightstream.Chip8.RomScheduleBinding.ExternalSchedule
 abbrev PublicDigest := Nightstream.Chip8.RomScheduleBinding.PublicDigest
+
+-- ── Structures ──
+
 abbrev KernelMeta := @Nightstream.Chip8.RomScheduleBinding.KernelMeta
 abbrev KernelPublicInput := @Nightstream.Chip8.RomScheduleBinding.KernelPublicInput
+
+-- ── Constraints (individual bounds) ──
+
 abbrev RomHashBound := @Nightstream.Chip8.RomScheduleBinding.RomHashBound
 abbrev ScheduleDigestBound := @Nightstream.Chip8.RomScheduleBinding.ScheduleDigestBound
 abbrev ScheduleLengthBound := @Nightstream.Chip8.RomScheduleBinding.ScheduleLengthBound
@@ -20,6 +28,9 @@ abbrev PadRowMetadataBound := @Nightstream.Chip8.RomScheduleBinding.PadRowMetada
 abbrev InitialStateDigestBound :=
   @Nightstream.Chip8.RomScheduleBinding.InitialStateDigestBound
 abbrev RootParamsBound := @Nightstream.Chip8.RomScheduleBinding.RootParamsBound
+
+-- ── Constraints (authenticated bundles) ──
+
 abbrev AuthenticatedRom := @Nightstream.Chip8.RomScheduleBinding.AuthenticatedRom
 abbrev AuthenticatedSchedule := @Nightstream.Chip8.RomScheduleBinding.AuthenticatedSchedule
 abbrev AuthenticatedStepSchedule := @Nightstream.Chip8.RomScheduleBinding.AuthenticatedStepSchedule
@@ -33,6 +44,8 @@ abbrev ExecutionInputsBound := @Nightstream.Chip8.RomScheduleBinding.ExecutionIn
 abbrev KernelPublicInputsBound :=
   @Nightstream.Chip8.RomScheduleBinding.KernelPublicInputsBound
 
+-- ── Theorems (bound extraction) ──
+
 abbrev romHashBound_of_authenticatedRom :=
   @Nightstream.Chip8.RomScheduleBinding.romHashBound_of_authenticatedRom
 abbrev scheduleDigestBound_of_authenticatedSchedule :=
@@ -43,6 +56,9 @@ abbrev scheduleStepBound_of_authenticatedStepSchedule :=
   @Nightstream.Chip8.RomScheduleBinding.scheduleStepBound_of_authenticatedStepSchedule
 abbrev executionInputsBound_of_authenticatedInputs :=
   @Nightstream.Chip8.RomScheduleBinding.executionInputsBound_of_authenticatedInputs
+
+-- ── Theorems (pad-row metadata) ──
+
 abbrev padRowMetadataBound_semanticRows_pos :=
   @Nightstream.Chip8.RomScheduleBinding.padRowMetadataBound_semanticRows_pos
 abbrev padRowMetadataBound_semanticRows_le_padded :=
@@ -53,6 +69,9 @@ abbrev padRowMetadataBound_padPcWord :=
   @Nightstream.Chip8.RomScheduleBinding.padRowMetadataBound_padPcWord
 abbrev padRowMetadataBound_powerOfTwo :=
   @Nightstream.Chip8.RomScheduleBinding.padRowMetadataBound_powerOfTwo
+
+-- ── Theorems (shared digest and composition) ──
+
 abbrev kernelPublicInputsBound_of_authenticatedInputs :=
   @Nightstream.Chip8.RomScheduleBinding.kernelPublicInputsBound_of_authenticatedInputs
 abbrev rom_eq_of_sharedDigest :=

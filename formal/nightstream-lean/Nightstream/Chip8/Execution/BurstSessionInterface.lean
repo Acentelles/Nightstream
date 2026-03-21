@@ -4,9 +4,14 @@ namespace Nightstream.Chip8
 
 namespace BurstSessionInterface
 
+-- ── Types ──
+
 abbrev MachineState := Nightstream.Chip8.BurstSession.MachineState
 abbrev ExternalSchedule := Nightstream.Chip8.BurstSession.ExternalSchedule
 abbrev ExecutionFrame := Nightstream.Chip8.BurstSession.ExecutionFrame
+
+-- ── Bounds / Constraints ──
+
 abbrev RamPreservedExcept := @Nightstream.Chip8.BurstSession.RamPreservedExcept
 abbrev BurstMicrostepCorrect := @Nightstream.Chip8.BurstSession.BurstMicrostepCorrect
 abbrev BurstSession := @Nightstream.Chip8.BurstSession.BurstSession
@@ -21,6 +26,8 @@ abbrev BurstPcStable := @Nightstream.Chip8.BurstSession.BurstPcStable
 abbrev BurstFramesBound := @Nightstream.Chip8.BurstSession.BurstFramesBound
 abbrev BurstContinuityBound := @Nightstream.Chip8.BurstSession.BurstContinuityBound
 abbrev BurstScheduleCorrect := @Nightstream.Chip8.BurstSession.BurstScheduleCorrect
+
+-- ── Theorems ──
 
 abbrev instructionCorrect_of_burstSession :=
   @Nightstream.Chip8.BurstSession.instructionCorrect_of_burstSession

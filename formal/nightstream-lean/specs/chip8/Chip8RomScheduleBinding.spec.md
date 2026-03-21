@@ -33,6 +33,12 @@ Let the public metadata package include at least:
 
 - program image digest
 - table digests
+- field / extension identifiers
+- initialization-mode identifier
+- lowering / visibility-order identifier
+- padding-convention identifier
+- public-table-authentication identifier
+- opening-reduction-mode identifier
 - trace length `N`
 - `program_word_count`
 - `program_base_addr`
@@ -72,6 +78,8 @@ These express, respectively, that:
   register/RAM state
 - `vm_spec` fixes the canonical root witness-encoding parameters used by
   `RootEncode`
+- the relation-shaping metadata ids are fixed exactly before `root0` and are
+  not hidden prover-chosen conventions
 
 ### Authenticated public inputs
 
@@ -169,6 +177,10 @@ facts across a fixed public input bundle without re-proving the public bindings.
 - The exact pad-row metadata and initial-state digest bindings must be explicit.
 - The root witness-encoding parameters must be fixed by the public boundary, not
   left as hidden prover-chosen values.
+- The exact `meta_pub` field order absorbed into `root0` must be fixed by the
+  public boundary, not left as an implementation-defined struct serialization.
+- The exact relation-shaping metadata ids fixed by `meta_pub` must be explicit
+  at the public boundary, not left implicit in implementation convention.
 - Shared-public-input transport theorems must require only the exact needed
   injectivity hypotheses.
 

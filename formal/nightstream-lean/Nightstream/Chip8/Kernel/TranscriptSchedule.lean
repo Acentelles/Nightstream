@@ -11,8 +11,15 @@ namespace Nightstream.Chip8.TranscriptSchedule
 open Nightstream.Chip8
 open Nightstream.Chip8.ExactOpeningBoundary
 
+abbrev CommitmentDigest := List Nat
+
+structure Root0CommitmentBinding where
+  id : CommitmentId
+  digest : CommitmentDigest
+deriving DecidableEq, Repr
+
 inductive TranscriptEvent where
-  | absorbCommitment (id : CommitmentId)
+  | absorbCommitment (binding : Root0CommitmentBinding)
   | absorbMetaPub
   | sampleStage1Cycle
   | stage1FetchSumcheck
@@ -75,8 +82,13 @@ def root0CommitmentIds : List CommitmentId :=
   , .eq4Table
   ]
 
-def phase0Events : List TranscriptEvent :=
-  root0CommitmentIds.map TranscriptEvent.absorbCommitment ++ [.absorbMetaPub]
+def root0CommitmentBindingsConform
+  (bindings : List Root0CommitmentBinding) : Prop :=
+  bindings.map Root0CommitmentBinding.id = root0CommitmentIds
+
+def phase0Events
+  (root0Bindings : List Root0CommitmentBinding) : List TranscriptEvent :=
+  root0Bindings.map TranscriptEvent.absorbCommitment ++ [.absorbMetaPub]
 
 def stage1Events : List TranscriptEvent :=
   [ .sampleStage1Cycle
@@ -135,17 +147,21 @@ def stage3RowBindingEvents (exportedRows : Nat) : List TranscriptEvent :=
 def stage3Events (exportedRows : Nat) : List TranscriptEvent :=
   stage3PrefixEvents ++ stage3RowBindingEvents exportedRows
 
-def transcriptEvents (exportedRows : Nat) : List TranscriptEvent :=
-  phase0Events ++
+def transcriptEvents
+  (root0Bindings : List Root0CommitmentBinding)
+  (exportedRows : Nat) : List TranscriptEvent :=
+  phase0Events root0Bindings ++
     stage1Events ++
     stage2Events ++
     stage3Events exportedRows ++
     [.emitKernelOpeningClaims]
 
 def KernelTranscriptSchedule
+  (root0Bindings : List Root0CommitmentBinding)
   (exportedRows : Nat)
   (events : List TranscriptEvent) : Prop :=
-  events = transcriptEvents exportedRows
+  root0CommitmentBindingsConform root0Bindings ∧
+    events = transcriptEvents root0Bindings exportedRows
 
 def challengeEvents : List TranscriptEvent :=
   [ .sampleStage1Cycle
@@ -183,6 +199,12 @@ def Stage2TerminalPointEvent (e : TranscriptEvent) : Prop :=
 theorem root0CommitmentIds_nodup : root0CommitmentIds.Nodup := by
   native_decide
 
+theorem root0CommitmentBindings_ids
+  {root0Bindings : List Root0CommitmentBinding}
+  (h : root0CommitmentBindingsConform root0Bindings) :
+  root0Bindings.map Root0CommitmentBinding.id = root0CommitmentIds :=
+  h
+
 theorem mem_root0CommitmentIds_iff_isKernelCommitment
   (cid : CommitmentId) :
   cid ∈ root0CommitmentIds ↔ isKernelCommitment cid := by
@@ -203,78 +225,92 @@ theorem kernelClaim_commitment_fixed_in_root0
     hKernelCommitment
 
 theorem kernelTranscriptSchedule_phase0_prefix
+  {root0Bindings : List Root0CommitmentBinding}
   {exportedRows : Nat}
   {events : List TranscriptEvent}
-  (h : KernelTranscriptSchedule exportedRows events) :
-  ∃ rest, events = phase0Events ++ rest := by
+  (h : KernelTranscriptSchedule root0Bindings exportedRows events) :
+  ∃ rest, events = phase0Events root0Bindings ++ rest := by
+  rcases h with ⟨_, rfl⟩
   refine ⟨stage1Events ++ stage2Events ++ stage3Events exportedRows ++
       [.emitKernelOpeningClaims], ?_⟩
-  simpa [KernelTranscriptSchedule, transcriptEvents, stage3Events] using h
+  simp [transcriptEvents, stage3Events, List.append_assoc]
 
 theorem kernelTranscriptSchedule_stage1_prefix
+  {root0Bindings : List Root0CommitmentBinding}
   {exportedRows : Nat}
   {events : List TranscriptEvent}
-  (h : KernelTranscriptSchedule exportedRows events) :
-  ∃ rest, events = phase0Events ++ stage1Events ++ rest := by
-  refine ⟨stage2Events ++ stage3Events exportedRows ++
-      [.emitKernelOpeningClaims], ?_⟩
-  simpa [KernelTranscriptSchedule, transcriptEvents, stage3Events] using h
+  (h : KernelTranscriptSchedule root0Bindings exportedRows events) :
+  ∃ rest, events = phase0Events root0Bindings ++ stage1Events ++ rest := by
+  rcases h with ⟨_, rfl⟩
+  refine ⟨stage2Events ++ stage3Events exportedRows ++ [.emitKernelOpeningClaims], ?_⟩
+  simp [transcriptEvents, stage3Events, List.append_assoc]
 
 theorem kernelTranscriptSchedule_stage2_prefix
+  {root0Bindings : List Root0CommitmentBinding}
   {exportedRows : Nat}
   {events : List TranscriptEvent}
-  (h : KernelTranscriptSchedule exportedRows events) :
-  ∃ rest, events = phase0Events ++ stage1Events ++ stage2Events ++ rest := by
+  (h : KernelTranscriptSchedule root0Bindings exportedRows events) :
+  ∃ rest, events = phase0Events root0Bindings ++ stage1Events ++ stage2Events ++ rest := by
+  rcases h with ⟨_, rfl⟩
   refine ⟨stage3Events exportedRows ++ [.emitKernelOpeningClaims], ?_⟩
-  simpa [KernelTranscriptSchedule, transcriptEvents, stage3Events] using h
+  simp [transcriptEvents, stage3Events, List.append_assoc]
 
 theorem kernelTranscriptSchedule_stage3_prefix
+  {root0Bindings : List Root0CommitmentBinding}
   {exportedRows : Nat}
   {events : List TranscriptEvent}
-  (h : KernelTranscriptSchedule exportedRows events) :
+  (h : KernelTranscriptSchedule root0Bindings exportedRows events) :
   ∃ rest, events =
-      phase0Events ++ stage1Events ++ stage2Events ++ stage3PrefixEvents ++ rest := by
+      phase0Events root0Bindings ++ stage1Events ++ stage2Events ++
+        stage3PrefixEvents ++ rest := by
+  rcases h with ⟨_, rfl⟩
   refine ⟨stage3RowBindingEvents exportedRows ++ [.emitKernelOpeningClaims], ?_⟩
-  simpa [KernelTranscriptSchedule, transcriptEvents, stage3Events] using h
+  simp [transcriptEvents, stage3Events, List.append_assoc]
 
 theorem challenge_after_phase0
+  {root0Bindings : List Root0CommitmentBinding}
   {exportedRows : Nat}
   {events : List TranscriptEvent}
   {e : TranscriptEvent}
-  (hSchedule : KernelTranscriptSchedule exportedRows events)
+  (hSchedule : KernelTranscriptSchedule root0Bindings exportedRows events)
   (hChallenge : ChallengeEvent e) :
-  ∃ rest, events = phase0Events ++ rest ∧ e ∈ rest := by
+  ∃ rest, events = phase0Events root0Bindings ++ rest ∧ e ∈ rest := by
   refine ⟨stage1Events ++ stage2Events ++ stage3Events exportedRows ++
       [.emitKernelOpeningClaims], ?_, ?_⟩
-  · simpa [KernelTranscriptSchedule, transcriptEvents, stage3Events] using hSchedule
+  · rcases hSchedule with ⟨_, rfl⟩
+    simp [transcriptEvents, stage3Events, List.append_assoc]
   · cases e <;>
       simp [ChallengeEvent, challengeEvents, stage1Events, stage2Events,
         stage3Events, stage3PrefixEvents] at hChallenge ⊢
 
 theorem stage1TerminalPoint_after_phase0
+  {root0Bindings : List Root0CommitmentBinding}
   {exportedRows : Nat}
   {events : List TranscriptEvent}
   {e : TranscriptEvent}
-  (hSchedule : KernelTranscriptSchedule exportedRows events)
+  (hSchedule : KernelTranscriptSchedule root0Bindings exportedRows events)
   (hTerminal : Stage1TerminalPointEvent e) :
-  ∃ rest, events = phase0Events ++ rest ∧ e ∈ rest := by
+  ∃ rest, events = phase0Events root0Bindings ++ rest ∧ e ∈ rest := by
   refine ⟨stage1Events ++ stage2Events ++ stage3Events exportedRows ++
       [.emitKernelOpeningClaims], ?_, ?_⟩
-  · simpa [KernelTranscriptSchedule, transcriptEvents, stage3Events] using hSchedule
+  · rcases hSchedule with ⟨_, rfl⟩
+    simp [transcriptEvents, stage3Events, List.append_assoc]
   · cases e <;>
       simp [Stage1TerminalPointEvent, stage1TerminalPointEvents, stage1Events,
         stage2Events, stage3Events, stage3PrefixEvents] at hTerminal ⊢
 
 theorem stage2TerminalPoint_after_phase0
+  {root0Bindings : List Root0CommitmentBinding}
   {exportedRows : Nat}
   {events : List TranscriptEvent}
   {e : TranscriptEvent}
-  (hSchedule : KernelTranscriptSchedule exportedRows events)
+  (hSchedule : KernelTranscriptSchedule root0Bindings exportedRows events)
   (hTerminal : Stage2TerminalPointEvent e) :
-  ∃ rest, events = phase0Events ++ rest ∧ e ∈ rest := by
+  ∃ rest, events = phase0Events root0Bindings ++ rest ∧ e ∈ rest := by
   refine ⟨stage1Events ++ stage2Events ++ stage3Events exportedRows ++
       [.emitKernelOpeningClaims], ?_, ?_⟩
-  · simpa [KernelTranscriptSchedule, transcriptEvents, stage3Events] using hSchedule
+  · rcases hSchedule with ⟨_, rfl⟩
+    simp [transcriptEvents, stage3Events, List.append_assoc]
   · cases e <;>
       simp [Stage2TerminalPointEvent, stage2TerminalPointEvents, stage1Events,
         stage2Events, stage3Events, stage3PrefixEvents] at hTerminal ⊢
@@ -315,21 +351,24 @@ private theorem exists_fin_eq_iff_lt
     exact ⟨⟨j, hj⟩, rfl⟩
 
 theorem rowBinding_event_in_schedule_iff
+  {root0Bindings : List Root0CommitmentBinding}
   {exportedRows : Nat}
   {events : List TranscriptEvent}
   {j : Nat}
-  (hSchedule : KernelTranscriptSchedule exportedRows events) :
+  (hSchedule : KernelTranscriptSchedule root0Bindings exportedRows events) :
   TranscriptEvent.rowBinding j ∈ events ↔ j < exportedRows := by
-  rcases hSchedule with rfl
+  rcases hSchedule with ⟨_, rfl⟩
   simp [transcriptEvents, phase0Events, stage1Events, stage2Events, stage3Events,
     stage3PrefixEvents, stage3RowBindingEvents, exists_fin_eq_iff_lt]
 
 theorem emitKernelOpeningClaims_last
+  {root0Bindings : List Root0CommitmentBinding}
   {exportedRows : Nat}
   {events : List TranscriptEvent}
-  (hSchedule : KernelTranscriptSchedule exportedRows events) :
+  (hSchedule : KernelTranscriptSchedule root0Bindings exportedRows events) :
   ∃ pre, events = pre ++ [.emitKernelOpeningClaims] := by
-  refine ⟨phase0Events ++ stage1Events ++ stage2Events ++ stage3Events exportedRows, ?_⟩
-  simpa [KernelTranscriptSchedule, transcriptEvents, stage3Events] using hSchedule
+  rcases hSchedule with ⟨_, rfl⟩
+  refine ⟨phase0Events root0Bindings ++ stage1Events ++ stage2Events ++
+      stage3Events exportedRows, rfl⟩
 
 end Nightstream.Chip8.TranscriptSchedule

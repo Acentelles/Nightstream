@@ -4,9 +4,14 @@ namespace Nightstream.Chip8
 
 namespace PcContinuityBridgeInterface
 
+-- ── Types ──
+
 abbrev F := Nightstream.Chip8.PcContinuityBridge.F
 abbrev MachineState := Nightstream.Chip8.PcContinuityBridge.MachineState
 abbrev ExecutionFrame := Nightstream.Chip8.PcContinuityBridge.ExecutionFrame
+
+-- ── Bounds / Constraints ──
+
 abbrev PcTemporalBound := @Nightstream.Chip8.PcContinuityBridge.PcTemporalBound
 abbrev ShiftPcMatchesCurrentPcNext :=
   @Nightstream.Chip8.PcContinuityBridge.ShiftPcMatchesCurrentPcNext
@@ -15,6 +20,9 @@ abbrev ShiftPcMatchesNextRow :=
 abbrev PcAdjacentBridgeFrom :=
   @Nightstream.Chip8.PcContinuityBridge.PcAdjacentBridgeFrom
 abbrev PcAdjacentBridge := @Nightstream.Chip8.PcContinuityBridge.PcAdjacentBridge
+
+-- ── Theorems ──
+
 abbrev headPcTemporal_of_pcTemporalBound :=
   @Nightstream.Chip8.PcContinuityBridge.headPcTemporal_of_pcTemporalBound
 abbrev tailPcTemporal_of_pcTemporalBound :=

@@ -4,33 +4,50 @@ namespace Nightstream.Chip8
 
 namespace SoundnessAccountingInterface
 
+-- ── Types ──
+
 abbrev Stage1ShoutChannel :=
   Nightstream.Chip8.SoundnessAccounting.Stage1ShoutChannel
+abbrev AddressFamily := Nightstream.Chip8.SoundnessAccounting.AddressFamily
+abbrev TwistReadFamily := Nightstream.Chip8.SoundnessAccounting.TwistReadFamily
+abbrev TwistMemoryFamily :=
+  Nightstream.Chip8.SoundnessAccounting.TwistMemoryFamily
+
+-- ── Definitions (family enumerations) ──
+
 abbrev stage1ShoutChannels :=
   Nightstream.Chip8.SoundnessAccounting.stage1ShoutChannels
-abbrev AddressFamily := Nightstream.Chip8.SoundnessAccounting.AddressFamily
 abbrev stage1AddressFamily :=
   Nightstream.Chip8.SoundnessAccounting.stage1AddressFamily
 abbrev regAddressFamilies :=
   Nightstream.Chip8.SoundnessAccounting.regAddressFamilies
 abbrev ramAddressFamilies :=
   Nightstream.Chip8.SoundnessAccounting.ramAddressFamilies
-abbrev TwistReadFamily := Nightstream.Chip8.SoundnessAccounting.TwistReadFamily
 abbrev regReadFamilies := Nightstream.Chip8.SoundnessAccounting.regReadFamilies
-abbrev TwistMemoryFamily :=
-  Nightstream.Chip8.SoundnessAccounting.TwistMemoryFamily
+
+-- ── Structures ──
+
 abbrev KernelSoundnessTerms :=
   Nightstream.Chip8.SoundnessAccounting.KernelSoundnessTerms
 abbrev PrimitiveNegligibility :=
   Nightstream.Chip8.SoundnessAccounting.PrimitiveNegligibility
+
+-- ── Definitions (error bounds) ──
+
 abbrev sumErrorFns := Nightstream.Chip8.SoundnessAccounting.sumErrorFns
 abbrev epsStage1 := Nightstream.Chip8.SoundnessAccounting.epsStage1
 abbrev epsStage2 := Nightstream.Chip8.SoundnessAccounting.epsStage2
 abbrev epsStage3 := Nightstream.Chip8.SoundnessAccounting.epsStage3
 abbrev epsBatch := Nightstream.Chip8.SoundnessAccounting.epsBatch
 abbrev epsTotalUpper := Nightstream.Chip8.SoundnessAccounting.epsTotalUpper
+
+-- ── Constraints ──
+
 abbrev KernelSoundnessAccounting :=
   Nightstream.Chip8.SoundnessAccounting.KernelSoundnessAccounting
+
+-- ── Theorems (nodup) ──
+
 abbrev stage1ShoutChannels_nodup :=
   Nightstream.Chip8.SoundnessAccounting.stage1ShoutChannels_nodup
 abbrev regReadFamilies_nodup :=
@@ -39,6 +56,9 @@ abbrev regAddressFamilies_nodup :=
   Nightstream.Chip8.SoundnessAccounting.regAddressFamilies_nodup
 abbrev ramAddressFamilies_nodup :=
   Nightstream.Chip8.SoundnessAccounting.ramAddressFamilies_nodup
+
+-- ── Theorems (negligibility) ──
+
 abbrev isNegligible_of_le :=
   @Nightstream.Chip8.SoundnessAccounting.isNegligible_of_le
 abbrev isNegligible_sumErrorFns :=

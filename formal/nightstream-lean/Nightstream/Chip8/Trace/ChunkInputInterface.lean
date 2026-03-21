@@ -4,9 +4,17 @@ namespace Nightstream.Chip8
 
 namespace ChunkInputInterface
 
+-- ── Types ──
+
 abbrev InitialState := Nightstream.Chip8.ChunkInput.InitialState
 abbrev ExecutionFrame := Nightstream.Chip8.ChunkInput.ExecutionFrame
+
+-- ── Structures ──
+
 abbrev SimpleKernelChunkInput := @Nightstream.Chip8.ChunkInput.SimpleKernelChunkInput
+
+-- ── Theorems ──
+
 abbrev semanticRows_pos_of_simpleKernelChunkInput :=
   @Nightstream.Chip8.ChunkInput.semanticRows_pos_of_simpleKernelChunkInput
 abbrev traceLength_of_simpleKernelChunkInput :=

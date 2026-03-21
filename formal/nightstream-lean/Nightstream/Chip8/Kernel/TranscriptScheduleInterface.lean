@@ -4,7 +4,19 @@ namespace Nightstream.Chip8
 
 namespace TranscriptScheduleInterface
 
+-- ── Types ──
+
+abbrev CommitmentDigest := Nightstream.Chip8.TranscriptSchedule.CommitmentDigest
+abbrev Root0CommitmentBinding := Nightstream.Chip8.TranscriptSchedule.Root0CommitmentBinding
 abbrev TranscriptEvent := Nightstream.Chip8.TranscriptSchedule.TranscriptEvent
+abbrev ChallengeEvent := Nightstream.Chip8.TranscriptSchedule.ChallengeEvent
+abbrev Stage1TerminalPointEvent :=
+  Nightstream.Chip8.TranscriptSchedule.Stage1TerminalPointEvent
+abbrev Stage2TerminalPointEvent :=
+  Nightstream.Chip8.TranscriptSchedule.Stage2TerminalPointEvent
+
+-- ── Definitions (event lists) ──
+
 abbrev root0CommitmentIds := Nightstream.Chip8.TranscriptSchedule.root0CommitmentIds
 abbrev phase0Events := Nightstream.Chip8.TranscriptSchedule.phase0Events
 abbrev stage1Events := Nightstream.Chip8.TranscriptSchedule.stage1Events
@@ -13,20 +25,25 @@ abbrev stage3PrefixEvents := Nightstream.Chip8.TranscriptSchedule.stage3PrefixEv
 abbrev stage3RowBindingEvents := Nightstream.Chip8.TranscriptSchedule.stage3RowBindingEvents
 abbrev stage3Events := Nightstream.Chip8.TranscriptSchedule.stage3Events
 abbrev transcriptEvents := Nightstream.Chip8.TranscriptSchedule.transcriptEvents
-abbrev KernelTranscriptSchedule :=
-  @Nightstream.Chip8.TranscriptSchedule.KernelTranscriptSchedule
 abbrev challengeEvents := Nightstream.Chip8.TranscriptSchedule.challengeEvents
-abbrev ChallengeEvent := Nightstream.Chip8.TranscriptSchedule.ChallengeEvent
 abbrev stage1TerminalPointEvents :=
   Nightstream.Chip8.TranscriptSchedule.stage1TerminalPointEvents
-abbrev Stage1TerminalPointEvent :=
-  Nightstream.Chip8.TranscriptSchedule.Stage1TerminalPointEvent
 abbrev stage2TerminalPointEvents :=
   Nightstream.Chip8.TranscriptSchedule.stage2TerminalPointEvents
-abbrev Stage2TerminalPointEvent :=
-  Nightstream.Chip8.TranscriptSchedule.Stage2TerminalPointEvent
+
+-- ── Constraints ──
+
+abbrev KernelTranscriptSchedule :=
+  @Nightstream.Chip8.TranscriptSchedule.KernelTranscriptSchedule
+
+-- ── Theorems ──
+
 abbrev root0CommitmentIds_nodup :=
   Nightstream.Chip8.TranscriptSchedule.root0CommitmentIds_nodup
+abbrev root0CommitmentBindingsConform :=
+  Nightstream.Chip8.TranscriptSchedule.root0CommitmentBindingsConform
+abbrev root0CommitmentBindings_ids :=
+  @Nightstream.Chip8.TranscriptSchedule.root0CommitmentBindings_ids
 abbrev mem_root0CommitmentIds_iff_isKernelCommitment :=
   Nightstream.Chip8.TranscriptSchedule.mem_root0CommitmentIds_iff_isKernelCommitment
 abbrev kernelClaim_commitment_fixed_in_root0 :=

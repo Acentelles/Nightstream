@@ -14,6 +14,10 @@
   the later theorem-facing real-row `pc` consequence; that semantic bridge is
   owned upstream by `Chip8PcContinuityBridge`.
 
+This owner is intentionally above `Chip8PaddedContinuityCheck`. The shifted and
+current values used here are the refined active-prefix values after explicit
+excluded-tail correction, not the raw padded-domain openings at `r_shift`.
+
 ## Target Formulas
 
 ### Continuity support relation
@@ -173,7 +177,13 @@ to mean that if `stepIdx + 1 = N`, then `jLastRow.IsMemOp = z[19]` and
 For each exported row `j`, the bridge owns:
 
 $$
-\mathrm{RowBindingClaim}_j = (C_{lane}, j_{bits}, \text{all 23 committed non-fixed lane coordinates}).
+\mathrm{RowBindingClaim}_j = (C_{lane}, j_{bits},
+[\mathrm{PC}, \mathrm{PC\_NEXT}, \mathrm{REG\_X}, \mathrm{REG\_Y}, \mathrm{REG\_X\_NEXT},
+\mathrm{I\_REG}, \mathrm{I\_NEXT}, \mathrm{KK}, \mathrm{NNN\_ADDR},
+\mathrm{NNN\_WORD}, \mathrm{MEM\_VALUE}, \mathrm{LOOKUP\_OUTPUT},
+\mathrm{WritesLookupToX}, \mathrm{WritesMemToX}, \mathrm{PreservesX},
+\mathrm{WritesNnnToI}, \mathrm{IsJump}, \mathrm{IsBranch}, \mathrm{IsMemOp},
+\mathrm{X\_IDX}, \mathrm{Y\_IDX}, \mathrm{BURST\_LAST}, \mathrm{RAM\_ADDR}]).
 $$
 
 Define:
@@ -184,8 +194,8 @@ $$
 
 to mean:
 
-- the claim opens exactly the 23 committed non-fixed lane coordinates of row
-  `j` from `C_lane`
+- the claim opens exactly those 23 committed non-fixed lane coordinates of row
+  `j` from `C_lane`, in that canonical registry order
 - `z_j[0] = ONE = 1` is inserted as the fixed verifier-known coordinate
 - the resulting semantic row is exactly `z_j`
 
@@ -207,6 +217,9 @@ Normative meaning:
   2. reshaping that padded vector into a `D × cols` matrix by columns,
   3. applying the canonical Ajtai/root witness encoding determined only by the
      public root parameters;
+- the imported root encoding and Ajtai commitment context is fixed by the
+  public `root_params_id` / `vm_spec` boundary from `Chip8RomScheduleBinding`,
+  not by hidden caller-chosen functions or witness-layout conventions;
 - `RootEncode` must therefore be fixed by theorem text or an imported root
   encoding interface, not by reference to an implementation helper.
 
@@ -226,8 +239,9 @@ to mean:
 
 The explicit bridge-binding leaves are protocol-binding objects:
 
-- `BridgeBinding_j` reuses the same authenticated row-binding claim and the same
-  opening refinement as `RowProjectionWitness_j`;
+- `BridgeBinding_j` reuses the exact same accepted row-opening path as
+  `RowProjectionWitness_j`, not merely the same row index or the same direct
+  claim label;
 - these leaves are not direct opening claims and not theorem-level temporal
   closure objects;
 - the theorem-level Stage-3 semantic closure object remains
@@ -309,13 +323,15 @@ $$
 - Row binding must use explicit row openings against `C_lane`, not the rejected
   aggregate-identity shortcut.
 - `RootEncode` must be the exact canonical root encoding used by the root
-  prover.
+  prover and must be fixed by the imported public root-parameter boundary, not
+  by ad hoc caller choice.
 
 ## Assumption Ledger
 
 - This module does not re-prove the root main-lane CCS proof.
 - This module does not re-prove PCS opening verification.
-- This module imports the canonical root encoding and Ajtai commitment surface.
+- This module imports the canonical root encoding and Ajtai commitment surface
+  from the public root-parameter boundary.
 
 ## Dependency and Consumer Map
 

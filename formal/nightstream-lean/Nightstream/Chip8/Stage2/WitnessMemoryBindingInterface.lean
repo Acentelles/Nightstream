@@ -4,6 +4,8 @@ namespace Nightstream.Chip8
 
 namespace WitnessMemoryBindingInterface
 
+-- ── Types ──
+
 abbrev MachineState := Nightstream.Chip8.WitnessMemoryBinding.MachineState
 abbrev InitialState := Nightstream.Chip8.WitnessMemoryBinding.InitialState
 abbrev RegisterAccess := Nightstream.Chip8.WitnessMemoryBinding.RegisterAccess
@@ -11,6 +13,8 @@ abbrev RamAccess := Nightstream.Chip8.WitnessMemoryBinding.RamAccess
 abbrev StepMemoryTrace := Nightstream.Chip8.WitnessMemoryBinding.StepMemoryTrace
 abbrev RegAddress := Nightstream.Chip8.WitnessMemoryBinding.RegAddress
 abbrev RamAddress := Nightstream.Chip8.WitnessMemoryBinding.RamAddress
+
+-- ── Definitions ──
 
 abbrev vAccess := @Nightstream.Chip8.WitnessMemoryBinding.vAccess
 abbrev iAccess := @Nightstream.Chip8.WitnessMemoryBinding.iAccess
@@ -50,6 +54,8 @@ abbrev registerWriteClaimValue := @Nightstream.Chip8.WitnessMemoryBinding.regist
 abbrev ramReadClaimValue := @Nightstream.Chip8.WitnessMemoryBinding.ramReadClaimValue
 abbrev ramWriteClaimValue := @Nightstream.Chip8.WitnessMemoryBinding.ramWriteClaimValue
 
+-- ── Bounds & Constraints ──
+
 abbrev WitnessBinds := @Nightstream.Chip8.WitnessMemoryBinding.WitnessBinds
 abbrev SourceColumnsBound := @Nightstream.Chip8.WitnessMemoryBinding.SourceColumnsBound
 abbrev MemValueBound := @Nightstream.Chip8.WitnessMemoryBinding.MemValueBound
@@ -62,12 +68,16 @@ abbrev LocalMemoryBound := @Nightstream.Chip8.WitnessMemoryBinding.LocalMemoryBo
 abbrev memValueOf := @Nightstream.Chip8.WitnessMemoryBinding.memValueOf
 abbrev MemoryBound := @Nightstream.Chip8.WitnessMemoryBinding.MemoryBound
 
+-- ── Trace Expectations ──
+
 abbrev registerReadsExpected := @Nightstream.Chip8.WitnessMemoryBinding.registerReadsExpected
 abbrev registerWritesExpected := @Nightstream.Chip8.WitnessMemoryBinding.registerWritesExpected
 abbrev ramReadsExpected := @Nightstream.Chip8.WitnessMemoryBinding.ramReadsExpected
 abbrev ramWritesExpected := @Nightstream.Chip8.WitnessMemoryBinding.ramWritesExpected
 abbrev expectedMemoryTrace := @Nightstream.Chip8.WitnessMemoryBinding.expectedMemoryTrace
 abbrev TraceMatches := @Nightstream.Chip8.WitnessMemoryBinding.TraceMatches
+
+-- ── Theorems: Witness Field Projections ──
 
 abbrev witnessBinds_pc := @Nightstream.Chip8.WitnessMemoryBinding.witnessBinds_pc
 abbrev witnessBinds_pcNext := @Nightstream.Chip8.WitnessMemoryBinding.witnessBinds_pcNext
@@ -87,6 +97,8 @@ abbrev witnessBinds_nnn := @Nightstream.Chip8.WitnessMemoryBinding.witnessBinds_
 abbrev witnessBinds_flags := @Nightstream.Chip8.WitnessMemoryBinding.witnessBinds_flags
 abbrev witnessBinds_flags_mem_decodeImage :=
   @Nightstream.Chip8.WitnessMemoryBinding.witnessBinds_flags_mem_decodeImage
+
+-- ── Theorems: Bound Decompositions ──
 
 abbrev sourceColumnsBound_vx := @Nightstream.Chip8.WitnessMemoryBinding.sourceColumnsBound_vx
 abbrev sourceColumnsBound_vy := @Nightstream.Chip8.WitnessMemoryBinding.sourceColumnsBound_vy
@@ -140,6 +152,8 @@ abbrev ramTimeTableMLE_shifted_at_bitAddress :=
   @Nightstream.Chip8.WitnessMemoryBinding.ramTimeTableMLE_shifted_at_bitAddress
 abbrev initialStateBound_exact :=
   @Nightstream.Chip8.WitnessMemoryBinding.initialStateBound_exact
+
+-- ── Theorems: Trace Matching ──
 
 abbrev traceMatches_registerReads :=
   @Nightstream.Chip8.WitnessMemoryBinding.traceMatches_registerReads

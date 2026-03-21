@@ -38,6 +38,18 @@ for the exact supported 9-family kernel:
 This is the exact semantic target later proved from authenticated row-local
 bounds by `Chip8StepComposition`.
 
+The lowering / visibility convention owned by this semantic layer is:
+
+- each authenticated row is one CHIP-8 microstep;
+- row reads observe the semantic `pre` state of that microstep;
+- row writes determine only the semantic `post` state of that microstep;
+- therefore Twist's "latest prior write" theorem is consumed at row granularity,
+  never by assuming a same-row read may observe a same-row write that has not
+  yet been exported into `post`;
+- ROM / public lookup tables are separate Stage-1 Shout surfaces, while the
+  register file and RAM are separate Stage-2 Twist surfaces rather than one
+  tagged shared memory.
+
 ### Whole-instruction semantics
 
 Define:
@@ -85,6 +97,27 @@ to mean:
 - the trace satisfies the authenticated Stage-3 continuity relation
 - the first frame matches the authenticated initial state and start-boundary law
 - the last frame satisfies the authenticated Stage-3 final-boundary law
+
+On the simple kernel boundary, `BoundaryTraceBound([]) = \mathrm{False}`. The
+initial-state, start-boundary, and final-boundary obligations are therefore
+never discharged vacuously on the empty trace, and the exported
+`FirstRowPubliclyBound` object always refers to a real head frame.
+
+Define the explicit head-row bundle:
+
+$$
+\mathrm{FirstRowPubliclyBound}(init, frame)
+$$
+
+meaning:
+
+- `InitialStateMatches(init, frame.pre)`
+- `StartBoundaryFrame(frame)`
+
+This is the theorem-facing object that packages the public first-row ownership
+split: `PC(0)` comes from the authenticated initial state carried by the chunk
+input, while the burst-start side condition comes from the Stage-3 start
+boundary.
 
 ### Prepared-step export
 
@@ -136,10 +169,12 @@ $$
 | Semantics | `InstructionCorrect` | def | Definitional | Exact whole-instruction semantics |
 | Trace | `ExecutionFrame` | def | Definitional | Row-backed semantic trace element |
 | Trace | `ExecutionFrameBound` | def | Definitional | Authenticated row-backed microstep witness |
+| Trace | `FirstRowPubliclyBound` | def | Definitional | Exact head-row public/input plus start-boundary bundle |
 | Trace | `BoundaryTraceBound` | def | Definitional | The chunk-level initial-state, start-boundary, and final-boundary bundle |
 | Trace | `ExecutionCorrect` | def | Definitional | Authenticated chunk-local semantic execution trace |
 | Bridge | `PreparedStepTraceBound` | def | Definitional | Prepared steps are exactly the Stage-3 images of the row trace |
 | Theorem | `instructionCorrect_of_nonBurstMicrostep` | theorem | Theorem-Target | Non-burst microstep correctness implies whole-instruction correctness |
+| Theorem | `firstRowPubliclyBound_of_boundaryTrace` | theorem | Theorem-Target | The chunk boundary bundle exports the exact head-row public/start-boundary object |
 | Theorem | `executionCorrect_of_trace` | theorem | Theorem-Target | Chaining plus frame bounds plus continuity plus the chunk-boundary bundle imply execution correctness |
 | Theorem | `preparedStepTraceBound_of_continuity` | theorem | Theorem-Target | Continuity alone determines the exact prepared-step export for a row trace |
 | Theorem | `preparedStepTraceBound_of_execution` | theorem | Theorem-Target | Correct execution yields exact prepared-step export |
@@ -154,6 +189,8 @@ $$
   continuity alone is not sufficient to discharge local chaining.
 - `ExecutionCorrect` must include the final Stage-3 boundary on the last active
   row, not only the start boundary on the head row.
+- On the simple kernel boundary, the boundary bundle must exclude the empty
+  trace rather than letting the boundary facts disappear vacuously.
 
 ## Assumption Ledger
 

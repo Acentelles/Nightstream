@@ -191,6 +191,13 @@ def StartBoundaryFrame
   ContinuityBridge.StartBoundaryBound
     { isMemOp := frame.row 19, xIdx := frame.row 20 }
 
+def FirstRowPubliclyBound
+  {Addr : Type*}
+  (init : InitialState)
+  (frame : ExecutionFrame Addr) : Prop :=
+  InitialStateMatches init frame.pre ∧
+    StartBoundaryFrame frame
+
 def FinalBoundaryFrame
   {Addr : Type*}
   (frame : ExecutionFrame Addr) : Prop :=
@@ -202,7 +209,7 @@ def BoundaryTraceBound
   (init : InitialState)
   (trace : List (ExecutionFrame Addr)) : Prop :=
   match trace with
-  | [] => True
+  | [] => False
   | first :: _ =>
       InitialStateMatches init first.pre ∧
         StartBoundaryFrame first ∧
@@ -227,6 +234,31 @@ theorem executionFrameBound_witnessBinds
   (h : ExecutionFrameBound rom σ frame) :
   WitnessMemoryBinding.WitnessBinds (K := F) frame.pre frame.post frame.dec frame.row := by
   exact h.2.1
+
+theorem initialStateMatches_of_firstRowPubliclyBound
+  {Addr : Type*}
+  {init : InitialState}
+  {frame : ExecutionFrame Addr}
+  (h : FirstRowPubliclyBound init frame) :
+  InitialStateMatches init frame.pre :=
+  h.1
+
+theorem startBoundaryFrame_of_firstRowPubliclyBound
+  {Addr : Type*}
+  {init : InitialState}
+  {frame : ExecutionFrame Addr}
+  (h : FirstRowPubliclyBound init frame) :
+  StartBoundaryFrame frame :=
+  h.2
+
+theorem firstRowPubliclyBound_of_boundaryTrace
+  {Addr : Type*}
+  {init : InitialState}
+  {first : ExecutionFrame Addr}
+  {rest : List (ExecutionFrame Addr)}
+  (h : BoundaryTraceBound init (first :: rest)) :
+  FirstRowPubliclyBound init first := by
+  exact ⟨h.1, h.2.1⟩
 
 theorem executionFrameBound_microstepCorrect
   {Addr : Type*}
@@ -310,10 +342,8 @@ theorem executionCorrect_of_trace
   ExecutionCorrect rom σ init trace := by
   cases trace with
   | nil =>
-      change ExecutionLinked [] ∧
-          List.Forall (ExecutionFrameBound rom σ) [] ∧
-          ContinuityTraceBound 0 [] ∧ True
-      exact ⟨hLinked, hFrames, hContinuity, hBoundary⟩
+      exfalso
+      exact hBoundary
   | cons first rest =>
       change ExecutionLinked (first :: rest) ∧
           List.Forall (ExecutionFrameBound rom σ) (first :: rest) ∧

@@ -1,3 +1,4 @@
+import Nightstream.Chip8.Kernel.RootHandoffContext
 import Nightstream.Chip8.Stage2.EvidenceCoverage
 
 /-!
@@ -13,6 +14,7 @@ open Nightstream.Chip8
 open Nightstream.Chip8.DecodeAddressBinding
 open Nightstream.Chip8.EvidenceCoverage
 open Nightstream.Chip8.ContinuityBridge
+open Nightstream.Chip8.RootHandoffContext
 
 abbrev F := EvidenceCoverage.F
 abbrev MachineState := EvidenceCoverage.MachineState
@@ -29,15 +31,37 @@ variable
   {W Z Commitment : Type*}
 
 structure BridgeBindingWitness
-  (rootEncode : RootEncode W Z F)
-  (ajtaiCommit : Z → Commitment)
+  (rootCtx : RootHandoffContext RootParamsId W Z Commitment F)
   (stepIdx : Nat)
   (z : Nightstream.Chip8.Witness F)
   (rowClaim : RowBindingClaim F Unit)
   (preparedStep : PreparedStep W Z Commitment F) where
+  acceptedRowOpening : ExactOpeningBoundary.AcceptedDirectOpening F Unit
+  acceptedRowOpeningClaim : acceptedRowOpening.claim = rowClaim.openingClaim
   rowClaimIndex : rowClaim.rowIndex = stepIdx
   rowBinding : RowBound rowClaim z
-  prepared : PreparedStepBound rootEncode ajtaiCommit z preparedStep
+  prepared : PreparedStepBound rootCtx.rootEncode rootCtx.ajtaiCommit z preparedStep
+
+structure ProjectedRowPath
+  (pcs : PCSContext AuxIndex EvalPoint)
+  (evalBase : BaseFamily Nat AuxIndex → EvalPoint → F)
+  (B : Set (BaseFamily Nat AuxIndex))
+  (Γ₁ : List (Claim Nat AuxIndex EvalPoint AddressPoint CyclePoint F))
+  (stepIdx : Nat)
+  (pre post : MachineState)
+  (dec : DecodedStep Addr)
+  (z : Nightstream.Chip8.Witness F)
+  (rowClaim : RowBindingClaim F Unit) where
+  acceptedRowOpening : ExactOpeningBoundary.AcceptedDirectOpening F Unit
+  acceptedRowOpeningClaim : acceptedRowOpening.claim = rowClaim.openingClaim
+  row : RowView
+  rowProjection :
+    RowProjection (AuxIndex := AuxIndex) (EvalPoint := EvalPoint)
+      (AddressPoint := AddressPoint) (CyclePoint := CyclePoint) pcs evalBase B Γ₁
+      row
+  rowConsistent : RowConsistent row z dec pre post stepIdx
+  rowClaimIndex : rowClaim.rowIndex = stepIdx
+  rowBinding : RowBound rowClaim z
 
 structure BridgeBindingBundle
   (pcs : PCSContext AuxIndex EvalPoint)
@@ -48,44 +72,73 @@ structure BridgeBindingBundle
   (pre post : MachineState)
   (dec : DecodedStep Addr)
   (z : Nightstream.Chip8.Witness F)
-  (rootEncode : RootEncode W Z F)
-  (ajtaiCommit : Z → Commitment)
+  (rootCtx : RootHandoffContext RootParamsId W Z Commitment F)
   (preparedStep : PreparedStep W Z Commitment F) where
-  row : RowView
-  rowProjection :
-    RowProjection (AuxIndex := AuxIndex) (EvalPoint := EvalPoint)
-      (AddressPoint := AddressPoint) (CyclePoint := CyclePoint) pcs evalBase B Γ₁
-      row
-  rowConsistent : RowConsistent row z dec pre post stepIdx
   rowClaim : RowBindingClaim F Unit
+  projectionPath :
+    ProjectedRowPath (AuxIndex := AuxIndex) (EvalPoint := EvalPoint)
+      (AddressPoint := AddressPoint) (CyclePoint := CyclePoint) pcs evalBase B Γ₁
+      stepIdx pre post dec z rowClaim
   bridge :
-    BridgeBindingWitness rootEncode ajtaiCommit stepIdx z rowClaim preparedStep
+    BridgeBindingWitness rootCtx stepIdx z rowClaim preparedStep
+  sameAcceptedRowOpening :
+    projectionPath.acceptedRowOpening = bridge.acceptedRowOpening
 
 theorem rowBound_of_bridgeBinding
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
+  {rootCtx : RootHandoffContext RootParamsId W Z Commitment F}
   {stepIdx : Nat}
   {z : Nightstream.Chip8.Witness F}
   {rowClaim : RowBindingClaim F Unit}
   {preparedStep : PreparedStep W Z Commitment F}
   (h :
-    BridgeBindingWitness rootEncode ajtaiCommit stepIdx z rowClaim
-      preparedStep) :
+    BridgeBindingWitness rootCtx stepIdx z rowClaim preparedStep) :
   RowBound rowClaim z :=
   h.rowBinding
 
 theorem preparedStepBound_of_bridgeBinding
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
+  {rootCtx : RootHandoffContext RootParamsId W Z Commitment F}
   {stepIdx : Nat}
   {z : Nightstream.Chip8.Witness F}
   {rowClaim : RowBindingClaim F Unit}
   {preparedStep : PreparedStep W Z Commitment F}
   (h :
-    BridgeBindingWitness rootEncode ajtaiCommit stepIdx z rowClaim
-      preparedStep) :
-  PreparedStepBound rootEncode ajtaiCommit z preparedStep :=
+    BridgeBindingWitness rootCtx stepIdx z rowClaim preparedStep) :
+  PreparedStepBound rootCtx.rootEncode rootCtx.ajtaiCommit z preparedStep :=
   h.prepared
+
+theorem rowBound_of_projectedRowPath
+  {pcs : PCSContext AuxIndex EvalPoint}
+  {evalBase : BaseFamily Nat AuxIndex → EvalPoint → F}
+  {B : Set (BaseFamily Nat AuxIndex)}
+  {Γ₁ : List (Claim Nat AuxIndex EvalPoint AddressPoint CyclePoint F)}
+  {stepIdx : Nat}
+  {pre post : MachineState}
+  {dec : DecodedStep Addr}
+  {z : Nightstream.Chip8.Witness F}
+  {rowClaim : RowBindingClaim F Unit}
+  (h :
+    ProjectedRowPath (AuxIndex := AuxIndex) (EvalPoint := EvalPoint)
+      (AddressPoint := AddressPoint) (CyclePoint := CyclePoint) pcs evalBase B
+      Γ₁ stepIdx pre post dec z rowClaim) :
+  RowBound rowClaim z :=
+  h.rowBinding
+
+theorem rowProjectionWitness_of_projectedRowPath
+  {pcs : PCSContext AuxIndex EvalPoint}
+  {evalBase : BaseFamily Nat AuxIndex → EvalPoint → F}
+  {B : Set (BaseFamily Nat AuxIndex)}
+  {Γ₁ : List (Claim Nat AuxIndex EvalPoint AddressPoint CyclePoint F)}
+  {stepIdx : Nat}
+  {pre post : MachineState}
+  {dec : DecodedStep Addr}
+  {z : Nightstream.Chip8.Witness F}
+  {rowClaim : RowBindingClaim F Unit}
+  (h :
+    ProjectedRowPath (AuxIndex := AuxIndex) (EvalPoint := EvalPoint)
+      (AddressPoint := AddressPoint) (CyclePoint := CyclePoint) pcs evalBase B
+      Γ₁ stepIdx pre post dec z rowClaim) :
+  RowProjectionWitness pcs evalBase B Γ₁ h.row := by
+  exact ⟨h.rowProjection⟩
 
 theorem rowBound_of_bridgeBindingBundle
   {pcs : PCSContext AuxIndex EvalPoint}
@@ -96,15 +149,32 @@ theorem rowBound_of_bridgeBindingBundle
   {pre post : MachineState}
   {dec : DecodedStep Addr}
   {z : Nightstream.Chip8.Witness F}
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
+  {rootCtx : RootHandoffContext RootParamsId W Z Commitment F}
   {preparedStep : PreparedStep W Z Commitment F}
   (h :
     BridgeBindingBundle (AuxIndex := AuxIndex) (EvalPoint := EvalPoint)
       (AddressPoint := AddressPoint) (CyclePoint := CyclePoint) pcs evalBase B
-      Γ₁ stepIdx pre post dec z rootEncode ajtaiCommit preparedStep) :
+      Γ₁ stepIdx pre post dec z rootCtx preparedStep) :
   RowBound h.rowClaim z :=
-  rowBound_of_bridgeBinding h.bridge
+  rowBound_of_projectedRowPath h.projectionPath
+
+theorem rowProjectionWitness_of_bridgeBindingBundle
+  {pcs : PCSContext AuxIndex EvalPoint}
+  {evalBase : BaseFamily Nat AuxIndex → EvalPoint → F}
+  {B : Set (BaseFamily Nat AuxIndex)}
+  {Γ₁ : List (Claim Nat AuxIndex EvalPoint AddressPoint CyclePoint F)}
+  {stepIdx : Nat}
+  {pre post : MachineState}
+  {dec : DecodedStep Addr}
+  {z : Nightstream.Chip8.Witness F}
+  {rootCtx : RootHandoffContext RootParamsId W Z Commitment F}
+  {preparedStep : PreparedStep W Z Commitment F}
+  (h :
+    BridgeBindingBundle (AuxIndex := AuxIndex) (EvalPoint := EvalPoint)
+      (AddressPoint := AddressPoint) (CyclePoint := CyclePoint) pcs evalBase B
+      Γ₁ stepIdx pre post dec z rootCtx preparedStep) :
+  RowProjectionWitness pcs evalBase B Γ₁ h.projectionPath.row := by
+  exact rowProjectionWitness_of_projectedRowPath h.projectionPath
 
 theorem preparedStepBound_of_bridgeBindingBundle
   {pcs : PCSContext AuxIndex EvalPoint}
@@ -115,14 +185,13 @@ theorem preparedStepBound_of_bridgeBindingBundle
   {pre post : MachineState}
   {dec : DecodedStep Addr}
   {z : Nightstream.Chip8.Witness F}
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
+  {rootCtx : RootHandoffContext RootParamsId W Z Commitment F}
   {preparedStep : PreparedStep W Z Commitment F}
   (h :
     BridgeBindingBundle (AuxIndex := AuxIndex) (EvalPoint := EvalPoint)
       (AddressPoint := AddressPoint) (CyclePoint := CyclePoint) pcs evalBase B
-      Γ₁ stepIdx pre post dec z rootEncode ajtaiCommit preparedStep) :
-  PreparedStepBound rootEncode ajtaiCommit z preparedStep :=
+      Γ₁ stepIdx pre post dec z rootCtx preparedStep) :
+  PreparedStepBound rootCtx.rootEncode rootCtx.ajtaiCommit z preparedStep :=
   preparedStepBound_of_bridgeBinding h.bridge
 
 theorem exists_rowProjection_of_semanticEvidence
@@ -234,8 +303,7 @@ theorem exists_bridgeBindingWitness_of_semanticEvidence
   {pre post : MachineState}
   {dec : DecodedStep Addr}
   {z : Nightstream.Chip8.Witness F}
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
+  {rootCtx : RootHandoffContext RootParamsId W Z Commitment F}
   {preparedStep : PreparedStep W Z Commitment F}
   (h :
     SemanticEvidenceCovered pcs inputs evalBase B publicTable tableBackedBy
@@ -244,16 +312,18 @@ theorem exists_bridgeBindingWitness_of_semanticEvidence
       valEvaluationExpression readOnlyMemoryRelation readWriteMemoryRelation
       incrementRelation Γ₁ Γ₂ Γ₃ rom σ stepIdx init pre post dec z)
   (hPrepared :
-    PreparedStepBound rootEncode ajtaiCommit z preparedStep) :
+    PreparedStepBound rootCtx.rootEncode rootCtx.ajtaiCommit z preparedStep) :
   ∃ rowClaim,
-    BridgeBindingWitness rootEncode ajtaiCommit stepIdx z rowClaim
-      preparedStep := by
+    Nonempty (BridgeBindingWitness rootCtx stepIdx z rowClaim preparedStep) := by
   rcases h with ⟨ev⟩
   refine ⟨ev.continuity.rowClaim, ?_⟩
-  refine
-    { rowClaimIndex := ev.continuity.rowClaimIndex
-      rowBinding := ev.continuity.rowBinding
-      prepared := hPrepared }
+  exact ⟨{
+    acceptedRowOpening := ev.acceptedRowOpening
+    acceptedRowOpeningClaim := ev.acceptedRowOpeningClaim
+    rowClaimIndex := ev.continuity.rowClaimIndex
+    rowBinding := ev.continuity.rowBinding
+    prepared := hPrepared
+  }⟩
 
 theorem exists_bridgeBindingWitness_of_exactEvidence
   {pcs : PCSContext AuxIndex EvalPoint}
@@ -283,8 +353,7 @@ theorem exists_bridgeBindingWitness_of_exactEvidence
   {pre post : MachineState}
   {dec : DecodedStep Addr}
   {z : Nightstream.Chip8.Witness F}
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
+  {rootCtx : RootHandoffContext RootParamsId W Z Commitment F}
   {preparedStep : PreparedStep W Z Commitment F}
   (h :
     ExactSemanticEvidenceCovered pcs inputs evalBase B publicTable tableBackedBy
@@ -293,14 +362,12 @@ theorem exists_bridgeBindingWitness_of_exactEvidence
       valEvaluationExpression readOnlyMemoryRelation readWriteMemoryRelation
       incrementRelation rom σ stepIdx init pre post dec z)
   (hPrepared :
-    PreparedStepBound rootEncode ajtaiCommit z preparedStep) :
+    PreparedStepBound rootCtx.rootEncode rootCtx.ajtaiCommit z preparedStep) :
   ∃ rowClaim,
-    BridgeBindingWitness rootEncode ajtaiCommit stepIdx z rowClaim
-      preparedStep := by
+    Nonempty (BridgeBindingWitness rootCtx stepIdx z rowClaim preparedStep) := by
   rcases h with ⟨Γ₁, Γ₂, Γ₃, hSem⟩
   exact exists_bridgeBindingWitness_of_semanticEvidence
-    (Γ₁ := Γ₁) (Γ₂ := Γ₂) (Γ₃ := Γ₃) (rootEncode := rootEncode)
-    (ajtaiCommit := ajtaiCommit) hSem hPrepared
+    (Γ₁ := Γ₁) (Γ₂ := Γ₂) (Γ₃ := Γ₃) (rootCtx := rootCtx) hSem hPrepared
 
 theorem exists_bridgeBindingBundle_of_semanticEvidence
   {pcs : PCSContext AuxIndex EvalPoint}
@@ -331,8 +398,7 @@ theorem exists_bridgeBindingBundle_of_semanticEvidence
   {pre post : MachineState}
   {dec : DecodedStep Addr}
   {z : Nightstream.Chip8.Witness F}
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
+  {rootCtx : RootHandoffContext RootParamsId W Z Commitment F}
   {preparedStep : PreparedStep W Z Commitment F}
   (h :
     SemanticEvidenceCovered pcs inputs evalBase B publicTable tableBackedBy
@@ -341,23 +407,32 @@ theorem exists_bridgeBindingBundle_of_semanticEvidence
       valEvaluationExpression readOnlyMemoryRelation readWriteMemoryRelation
       incrementRelation Γ₁ Γ₂ Γ₃ rom σ stepIdx init pre post dec z)
   (hPrepared :
-    PreparedStepBound rootEncode ajtaiCommit z preparedStep) :
+    PreparedStepBound rootCtx.rootEncode rootCtx.ajtaiCommit z preparedStep) :
   Nonempty (
     BridgeBindingBundle (AuxIndex := AuxIndex) (EvalPoint := EvalPoint)
       (AddressPoint := AddressPoint) (CyclePoint := CyclePoint) pcs evalBase B
-      Γ₁ stepIdx pre post dec z rootEncode ajtaiCommit preparedStep) := by
+      Γ₁ stepIdx pre post dec z rootCtx preparedStep) := by
   rcases h with ⟨ev⟩
   rcases ev.rowProjection with ⟨rowProjection⟩
   exact ⟨{
-    row := ev.row
-    rowProjection := rowProjection
-    rowConsistent := ev.rowConsistent
     rowClaim := ev.continuity.rowClaim
+    projectionPath := {
+      acceptedRowOpening := ev.acceptedRowOpening
+      acceptedRowOpeningClaim := ev.acceptedRowOpeningClaim
+      row := ev.row
+      rowProjection := rowProjection
+      rowConsistent := ev.rowConsistent
+      rowClaimIndex := ev.continuity.rowClaimIndex
+      rowBinding := ev.continuity.rowBinding
+    }
     bridge := {
+      acceptedRowOpening := ev.acceptedRowOpening
+      acceptedRowOpeningClaim := ev.acceptedRowOpeningClaim
       rowClaimIndex := ev.continuity.rowClaimIndex
       rowBinding := ev.continuity.rowBinding
       prepared := hPrepared
     }
+    sameAcceptedRowOpening := rfl
   }⟩
 
 theorem exists_bridgeBindingBundle_of_exactEvidence
@@ -388,8 +463,7 @@ theorem exists_bridgeBindingBundle_of_exactEvidence
   {pre post : MachineState}
   {dec : DecodedStep Addr}
   {z : Nightstream.Chip8.Witness F}
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
+  {rootCtx : RootHandoffContext RootParamsId W Z Commitment F}
   {preparedStep : PreparedStep W Z Commitment F}
   (h :
     ExactSemanticEvidenceCovered pcs inputs evalBase B publicTable tableBackedBy
@@ -398,16 +472,16 @@ theorem exists_bridgeBindingBundle_of_exactEvidence
       valEvaluationExpression readOnlyMemoryRelation readWriteMemoryRelation
       incrementRelation rom σ stepIdx init pre post dec z)
   (hPrepared :
-    PreparedStepBound rootEncode ajtaiCommit z preparedStep) :
+    PreparedStepBound rootCtx.rootEncode rootCtx.ajtaiCommit z preparedStep) :
   ∃ Γ₁ : List (Claim Nat AuxIndex EvalPoint AddressPoint CyclePoint F),
     Nonempty (
       BridgeBindingBundle (AuxIndex := AuxIndex) (EvalPoint := EvalPoint)
         (AddressPoint := AddressPoint) (CyclePoint := CyclePoint) pcs evalBase
-        B Γ₁ stepIdx pre post dec z rootEncode ajtaiCommit preparedStep) := by
+        B Γ₁ stepIdx pre post dec z rootCtx preparedStep) := by
   rcases h with ⟨Γ₁, Γ₂, Γ₃, hSem⟩
   rcases exists_bridgeBindingBundle_of_semanticEvidence
-      (Γ₁ := Γ₁) (Γ₂ := Γ₂) (Γ₃ := Γ₃) (rootEncode := rootEncode)
-      (ajtaiCommit := ajtaiCommit) hSem hPrepared with ⟨bundle⟩
+      (Γ₁ := Γ₁) (Γ₂ := Γ₂) (Γ₃ := Γ₃) (rootCtx := rootCtx) hSem hPrepared with
+    ⟨bundle⟩
   exact ⟨Γ₁, ⟨bundle⟩⟩
 
 end Binding

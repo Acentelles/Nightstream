@@ -5,63 +5,112 @@ namespace Nightstream.Chip8
 variable {K : Type*} [Field K]
 
 abbrev Witness (K : Type*) := Fin 24 → K
-abbrev FlagTuple (K : Type*) := K × K × K × K × K × K × K
 abbrev ControlTuple (K : Type*) := K × K × K × K × K × K × K × K
 
-def routingFlags (z : Witness K) : FlagTuple K :=
-  (z 13, z 14, z 15, z 16, z 17, z 18, z 19)
+structure RoutingFlags (K : Type*) where
+  writesLookupToX : K
+  writesMemToX : K
+  preservesX : K
+  writesNnnToI : K
+  isJump : K
+  isBranch : K
+  isMemOp : K
+
+@[simp] def colOne : Fin 24 := 0
+@[simp] def colPc : Fin 24 := 1
+@[simp] def colPcNext : Fin 24 := 2
+@[simp] def colRegX : Fin 24 := 3
+@[simp] def colRegY : Fin 24 := 4
+@[simp] def colRegXNext : Fin 24 := 5
+@[simp] def colIReg : Fin 24 := 6
+@[simp] def colINext : Fin 24 := 7
+@[simp] def colKk : Fin 24 := 8
+@[simp] def colNnnAddr : Fin 24 := 9
+@[simp] def colNnnWord : Fin 24 := 10
+@[simp] def colMemValue : Fin 24 := 11
+@[simp] def colLookupOutput : Fin 24 := 12
+@[simp] def colWritesLookupToX : Fin 24 := 13
+@[simp] def colWritesMemToX : Fin 24 := 14
+@[simp] def colPreservesX : Fin 24 := 15
+@[simp] def colWritesNnnToI : Fin 24 := 16
+@[simp] def colIsJump : Fin 24 := 17
+@[simp] def colIsBranch : Fin 24 := 18
+@[simp] def colIsMemOp : Fin 24 := 19
+@[simp] def colXIdx : Fin 24 := 20
+@[simp] def colYIdx : Fin 24 := 21
+@[simp] def colBurstLast : Fin 24 := 22
+@[simp] def colRamAddr : Fin 24 := 23
+
+@[simp] abbrev flagWritesLookupToX (t : RoutingFlags K) : K := t.writesLookupToX
+@[simp] abbrev flagWritesMemToX (t : RoutingFlags K) : K := t.writesMemToX
+@[simp] abbrev flagPreservesX (t : RoutingFlags K) : K := t.preservesX
+@[simp] abbrev flagWritesNnnToI (t : RoutingFlags K) : K := t.writesNnnToI
+@[simp] abbrev flagIsJump (t : RoutingFlags K) : K := t.isJump
+@[simp] abbrev flagIsBranch (t : RoutingFlags K) : K := t.isBranch
+@[simp] abbrev flagIsMemOp (t : RoutingFlags K) : K := t.isMemOp
+
+def routingFlags (z : Witness K) : RoutingFlags K :=
+  { writesLookupToX := z colWritesLookupToX
+    writesMemToX := z colWritesMemToX
+    preservesX := z colPreservesX
+    writesNnnToI := z colWritesNnnToI
+    isJump := z colIsJump
+    isBranch := z colIsBranch
+    isMemOp := z colIsMemOp }
 
 def controlBits (z : Witness K) : ControlTuple K :=
-  (z 13, z 14, z 15, z 16, z 17, z 18, z 19, z 22)
+  (z colWritesLookupToX, z colWritesMemToX, z colPreservesX, z colWritesNnnToI,
+    z colIsJump, z colIsBranch, z colIsMemOp, z colBurstLast)
 
 def wf (z : Witness K) : Prop :=
-  z 0 = 1
+  z colOne = 1
 
 def isBit (x : K) : Prop :=
   x * (x - 1) = 0
 
 def controlBitConstraints (z : Witness K) : Prop :=
-  isBit (z 13) ∧
-    isBit (z 14) ∧
-    isBit (z 15) ∧
-    isBit (z 16) ∧
-    isBit (z 17) ∧
-    isBit (z 18) ∧
-    isBit (z 19) ∧
-    isBit (z 22)
+  isBit (z colWritesLookupToX) ∧
+    isBit (z colWritesMemToX) ∧
+    isBit (z colPreservesX) ∧
+    isBit (z colWritesNnnToI) ∧
+    isBit (z colIsJump) ∧
+    isBit (z colIsBranch) ∧
+    isBit (z colIsMemOp) ∧
+    isBit (z colBurstLast)
 
 def xLanePartitionConstraint (z : Witness K) : Prop :=
-  z 13 + z 14 + z 15 = 1
+  z colWritesLookupToX + z colWritesMemToX + z colPreservesX = 1
 
 def xLookupConstraint (z : Witness K) : Prop :=
-  z 13 * (z 5 - z 12) = 0
+  z colWritesLookupToX * (z colRegXNext - z colLookupOutput) = 0
 
 def xMemConstraint (z : Witness K) : Prop :=
-  z 14 * (z 5 - z 11) = 0
+  z colWritesMemToX * (z colRegXNext - z colMemValue) = 0
 
 def xPreserveConstraint (z : Witness K) : Prop :=
-  z 15 * (z 5 - z 3) = 0
+  z colPreservesX * (z colRegXNext - z colRegX) = 0
 
 def iRoutingConstraint (z : Witness K) : Prop :=
-  z 16 * (z 9 - z 6) = z 7 - z 6
+  z colWritesNnnToI * (z colNnnAddr - z colIReg) = z colINext - z colIReg
 
 def pcJumpConstraint (z : Witness K) : Prop :=
-  z 17 * (z 2 - z 10) = 0
+  z colIsJump * (z colPcNext - z colNnnWord) = 0
 
 def pcBranchConstraint (z : Witness K) : Prop :=
-  z 18 * (z 2 - z 1 - z 0 - z 12) = 0
+  z colIsBranch * (z colPcNext - z colPc - z colOne - z colLookupOutput) = 0
 
 def pcMemConstraint (z : Witness K) : Prop :=
-  z 19 * (z 2 - z 1 - z 22) = 0
+  z colIsMemOp * (z colPcNext - z colPc - z colBurstLast) = 0
 
 def pcDefaultConstraint (z : Witness K) : Prop :=
-  (z 0 - z 17 - z 18 - z 19) * (z 2 - z 1 - z 0) = 0
+  (z colOne - z colIsJump - z colIsBranch - z colIsMemOp) *
+      (z colPcNext - z colPc - z colOne) = 0
 
 def ramAddrActiveConstraint (z : Witness K) : Prop :=
-  z 19 * (z 23 - z 6 - z 20) = 0
+  z colIsMemOp * (z colRamAddr - z colIReg - z colXIdx) = 0
 
 def ramAddrInactiveConstraint (z : Witness K) : Prop :=
-  (z 0 - z 19) * z 23 = 0
+  (z colOne - z colIsMemOp) * z colRamAddr = 0
 
 def chip8RowLocalConstraints (z : Witness K) : Prop :=
   controlBitConstraints z ∧
@@ -78,17 +127,18 @@ def chip8RowLocalConstraints (z : Witness K) : Prop :=
     ramAddrInactiveConstraint z
 
 def chip8RowLocalSound (z : Witness K) : Prop :=
-  (z 13 = 1 → z 5 = z 12) ∧
-    (z 14 = 1 → z 5 = z 11) ∧
-    (z 15 = 1 → z 5 = z 3) ∧
-    (z 16 = 1 → z 7 = z 9) ∧
-    (z 16 = 0 → z 7 = z 6) ∧
-    (z 17 = 1 → z 2 = z 10) ∧
-    (wf z ∧ z 18 = 1 → z 2 = z 1 + 1 + z 12) ∧
-    (z 19 = 1 → z 2 = z 1 + z 22) ∧
-    (wf z ∧ z 17 = 0 ∧ z 18 = 0 ∧ z 19 = 0 → z 2 = z 1 + 1) ∧
-    (z 19 = 1 → z 23 = z 6 + z 20) ∧
-    (wf z ∧ z 19 = 0 → z 23 = 0)
+  (z colWritesLookupToX = 1 → z colRegXNext = z colLookupOutput) ∧
+    (z colWritesMemToX = 1 → z colRegXNext = z colMemValue) ∧
+    (z colPreservesX = 1 → z colRegXNext = z colRegX) ∧
+    (z colWritesNnnToI = 1 → z colINext = z colNnnAddr) ∧
+    (z colWritesNnnToI = 0 → z colINext = z colIReg) ∧
+    (z colIsJump = 1 → z colPcNext = z colNnnWord) ∧
+    (wf z ∧ z colIsBranch = 1 → z colPcNext = z colPc + 1 + z colLookupOutput) ∧
+    (z colIsMemOp = 1 → z colPcNext = z colPc + z colBurstLast) ∧
+    (wf z ∧ z colIsJump = 0 ∧ z colIsBranch = 0 ∧ z colIsMemOp = 0 →
+      z colPcNext = z colPc + 1) ∧
+    (z colIsMemOp = 1 → z colRamAddr = z colIReg + z colXIdx) ∧
+    (wf z ∧ z colIsMemOp = 0 → z colRamAddr = 0)
 
 inductive BehaviorClass where
   | writesLookupToVx
@@ -99,15 +149,57 @@ inductive BehaviorClass where
   | loadRegs
 deriving DecidableEq, Repr
 
-def behaviorFlags : BehaviorClass → FlagTuple K
-  | .writesLookupToVx => (1, 0, 0, 0, 0, 0, 0)
-  | .skipEqImm => (0, 0, 1, 0, 0, 1, 0)
-  | .jump => (0, 0, 1, 0, 1, 0, 0)
-  | .writesNnnToI => (0, 0, 1, 1, 0, 0, 0)
-  | .storeRegs => (0, 0, 1, 0, 0, 0, 1)
-  | .loadRegs => (0, 1, 0, 0, 0, 0, 1)
+def behaviorFlags : BehaviorClass → RoutingFlags K
+  | .writesLookupToVx =>
+      { writesLookupToX := 1
+        writesMemToX := 0
+        preservesX := 0
+        writesNnnToI := 0
+        isJump := 0
+        isBranch := 0
+        isMemOp := 0 }
+  | .skipEqImm =>
+      { writesLookupToX := 0
+        writesMemToX := 0
+        preservesX := 1
+        writesNnnToI := 0
+        isJump := 0
+        isBranch := 1
+        isMemOp := 0 }
+  | .jump =>
+      { writesLookupToX := 0
+        writesMemToX := 0
+        preservesX := 1
+        writesNnnToI := 0
+        isJump := 1
+        isBranch := 0
+        isMemOp := 0 }
+  | .writesNnnToI =>
+      { writesLookupToX := 0
+        writesMemToX := 0
+        preservesX := 1
+        writesNnnToI := 1
+        isJump := 0
+        isBranch := 0
+        isMemOp := 0 }
+  | .storeRegs =>
+      { writesLookupToX := 0
+        writesMemToX := 0
+        preservesX := 1
+        writesNnnToI := 0
+        isJump := 0
+        isBranch := 0
+        isMemOp := 1 }
+  | .loadRegs =>
+      { writesLookupToX := 0
+        writesMemToX := 1
+        preservesX := 0
+        writesNnnToI := 0
+        isJump := 0
+        isBranch := 0
+        isMemOp := 1 }
 
-def decodeImage : Set (FlagTuple K) :=
+def decodeImage : Set (RoutingFlags K) :=
   Set.range (behaviorFlags (K := K))
 
 def mkWitness
@@ -321,9 +413,9 @@ theorem xRouting_oneHot
   [NeZero (2 : K)]
   {z : Witness K}
   (h : chip8RowLocalConstraints z) :
-  (z 13 = 1 ∧ z 14 = 0 ∧ z 15 = 0) ∨
-    (z 13 = 0 ∧ z 14 = 1 ∧ z 15 = 0) ∨
-    (z 13 = 0 ∧ z 14 = 0 ∧ z 15 = 1) := by
+  (z colWritesLookupToX = 1 ∧ z colWritesMemToX = 0 ∧ z colPreservesX = 0) ∨
+    (z colWritesLookupToX = 0 ∧ z colWritesMemToX = 1 ∧ z colPreservesX = 0) ∨
+    (z colWritesLookupToX = 0 ∧ z colWritesMemToX = 0 ∧ z colPreservesX = 1) := by
   have hBits := controlBitConstraints_of_constraints h
   exact threeBitPartition_oneHot
     hBits.1
@@ -334,68 +426,90 @@ theorem xRouting_oneHot
 theorem iRouting_forced
   {z : Witness K}
   (h : chip8RowLocalConstraints z) :
-  (z 16 = 1 → z 7 = z 9) ∧ (z 16 = 0 → z 7 = z 6) := by
+  (z colWritesNnnToI = 1 → z colINext = z colNnnAddr) ∧
+    (z colWritesNnnToI = 0 → z colINext = z colIReg) := by
   constructor
-  · intro h16
-    have hEq : z 9 - z 6 = z 7 - z 6 := by
-      simpa [iRoutingConstraint, h16] using iRoutingConstraint_of_constraints h
+  · intro hWriteI
+    have hEq := iRoutingConstraint_of_constraints h
+    rw [iRoutingConstraint] at hEq
+    rw [hWriteI, one_mul] at hEq
     calc
-      z 7 = (z 7 - z 6) + z 6 := by ring
-      _ = (z 9 - z 6) + z 6 := by rw [← hEq]
-      _ = z 9 := by ring
-  · intro h16
-    have hEq : z 7 - z 6 = 0 := by
-      simpa [iRoutingConstraint, h16] using (iRoutingConstraint_of_constraints h).symm
-    exact eq_of_sub_eq_zero hEq
+      z colINext = (z colINext - z colIReg) + z colIReg := by ring
+      _ = (z colNnnAddr - z colIReg) + z colIReg := by rw [← hEq]
+      _ = z colNnnAddr := by ring
+  · intro hWriteI
+    have hEq := iRoutingConstraint_of_constraints h
+    rw [iRoutingConstraint] at hEq
+    rw [hWriteI, zero_mul] at hEq
+    have hEq' : z colINext - z colIReg = 0 := by simpa using hEq.symm
+    exact eq_of_sub_eq_zero hEq'
 
 theorem pcRouting_forced
   {z : Witness K}
   (h : chip8RowLocalConstraints z) :
-  (z 17 = 1 → z 2 = z 10) ∧
-    (wf z ∧ z 18 = 1 → z 2 = z 1 + 1 + z 12) ∧
-    (z 19 = 1 → z 2 = z 1 + z 22) ∧
-    (wf z ∧ z 17 = 0 ∧ z 18 = 0 ∧ z 19 = 0 → z 2 = z 1 + 1) := by
+  (z colIsJump = 1 → z colPcNext = z colNnnWord) ∧
+    (wf z ∧ z colIsBranch = 1 → z colPcNext = z colPc + 1 + z colLookupOutput) ∧
+    (z colIsMemOp = 1 → z colPcNext = z colPc + z colBurstLast) ∧
+    (wf z ∧ z colIsJump = 0 ∧ z colIsBranch = 0 ∧ z colIsMemOp = 0 →
+      z colPcNext = z colPc + 1) := by
   constructor
-  · intro h17
-    have hEq : z 2 - z 10 = 0 := by
-      simpa [pcJumpConstraint, h17] using pcJumpConstraint_of_constraints h
+  · intro hJump
+    have hEq := pcJumpConstraint_of_constraints h
+    rw [pcJumpConstraint] at hEq
+    rw [hJump, one_mul] at hEq
     exact eq_of_sub_eq_zero hEq
   constructor
-  · rintro ⟨hWf, h18⟩
+  · rintro ⟨hWf, hBranch⟩
     simp [wf] at hWf
-    have hEq : z 2 - z 1 - z 0 - z 12 = 0 := by
-      simpa [pcBranchConstraint, h18] using pcBranchConstraint_of_constraints h
-    have hEq' : z 2 - z 1 - 1 - z 12 = 0 := by
+    have hEq := pcBranchConstraint_of_constraints h
+    rw [pcBranchConstraint] at hEq
+    rw [hBranch, one_mul] at hEq
+    have hEq' : z colPcNext - z colPc - 1 - z colLookupOutput = 0 := by
       simpa [hWf] using hEq
     exact eq_of_sub_sub_sub_eq_zero hEq'
   constructor
-  · intro h19
-    have hEq : z 2 - z 1 - z 22 = 0 := by
-      simpa [pcMemConstraint, h19] using pcMemConstraint_of_constraints h
+  · intro hMemOp
+    have hEq := pcMemConstraint_of_constraints h
+    rw [pcMemConstraint] at hEq
+    rw [hMemOp, one_mul] at hEq
     exact eq_of_sub_sub_eq_zero hEq
-  · rintro ⟨hWf, h17, h18, h19⟩
+  · rintro ⟨hWf, hJump, hBranch, hMemOp⟩
     simp [wf] at hWf
-    have hEq : z 2 - z 1 - z 0 = 0 := by
-      simpa [pcDefaultConstraint, h17, h18, h19, hWf] using
-        pcDefaultConstraint_of_constraints h
-    have hEq' : z 2 - z 1 - 1 = 0 := by
+    have hEq := pcDefaultConstraint_of_constraints h
+    rw [pcDefaultConstraint] at hEq
+    have hJump' : z 17 = 0 := by simpa [colIsJump] using hJump
+    have hBranch' : z 18 = 0 := by simpa [colIsBranch] using hBranch
+    have hMemOp' : z 19 = 0 := by simpa [colIsMemOp] using hMemOp
+    have hCoeff : z colOne - z colIsJump - z colIsBranch - z colIsMemOp = 1 := by
+      change z 0 - z 17 - z 18 - z 19 = 1
+      rw [hWf, hJump', hBranch', hMemOp']
+      ring
+    rw [hCoeff, one_mul] at hEq
+    have hEq' : z colPcNext - z colPc - 1 = 0 := by
       simpa [hWf] using hEq
     exact eq_of_sub_sub_eq_zero hEq'
 
 theorem ramAddrRouting_forced
   {z : Witness K}
   (h : chip8RowLocalConstraints z) :
-  (z 19 = 1 → z 23 = z 6 + z 20) ∧
-    (wf z ∧ z 19 = 0 → z 23 = 0) := by
+  (z colIsMemOp = 1 → z colRamAddr = z colIReg + z colXIdx) ∧
+    (wf z ∧ z colIsMemOp = 0 → z colRamAddr = 0) := by
   constructor
-  · intro h19
-    have hEq : z 23 - z 6 - z 20 = 0 := by
-      simpa [ramAddrActiveConstraint, h19] using ramAddrActiveConstraint_of_constraints h
+  · intro hMemOp
+    have hEq := ramAddrActiveConstraint_of_constraints h
+    rw [ramAddrActiveConstraint] at hEq
+    rw [hMemOp, one_mul] at hEq
     exact eq_of_sub_sub_eq_zero hEq
-  · rintro ⟨hWf, h19⟩
+  · rintro ⟨hWf, hMemOp⟩
     simp [wf] at hWf
-    have hEq : z 23 = 0 := by
-      simpa [ramAddrInactiveConstraint, hWf, h19] using ramAddrInactiveConstraint_of_constraints h
+    have hEq := ramAddrInactiveConstraint_of_constraints h
+    rw [ramAddrInactiveConstraint] at hEq
+    have hMemOp' : z 19 = 0 := by simpa [colIsMemOp] using hMemOp
+    have hCoeff : z colOne - z colIsMemOp = 1 := by
+      change z 0 - z 19 = 1
+      rw [hWf, hMemOp']
+      ring
+    rw [hCoeff, one_mul] at hEq
     exact hEq
 
 theorem chip8RowLocalSound_of_constraints
@@ -404,16 +518,19 @@ theorem chip8RowLocalSound_of_constraints
   chip8RowLocalSound z := by
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro h13
-    have hEq : z 5 - z 12 = 0 := by
-      simpa [xLookupConstraint, h13] using xLookupConstraint_of_constraints h
+    have hEq := xLookupConstraint_of_constraints h
+    rw [xLookupConstraint] at hEq
+    rw [h13, one_mul] at hEq
     exact eq_of_sub_eq_zero hEq
   · intro h14
-    have hEq : z 5 - z 11 = 0 := by
-      simpa [xMemConstraint, h14] using xMemConstraint_of_constraints h
+    have hEq := xMemConstraint_of_constraints h
+    rw [xMemConstraint] at hEq
+    rw [h14, one_mul] at hEq
     exact eq_of_sub_eq_zero hEq
   · intro h15
-    have hEq : z 5 - z 3 = 0 := by
-      simpa [xPreserveConstraint, h15] using xPreserveConstraint_of_constraints h
+    have hEq := xPreserveConstraint_of_constraints h
+    rw [xPreserveConstraint] at hEq
+    rw [h15, one_mul] at hEq
     exact eq_of_sub_eq_zero hEq
   · exact (iRouting_forced h).1
   · exact (iRouting_forced h).2
@@ -437,7 +554,7 @@ theorem chip8RowLocalSound_of_constraints
   routingFlags (witnessForBehavior (K := K) behavior last pc regX regY iReg kk nnnAddr nnnWord
     memValue lookupOutput xIdx yIdx) =
     behaviorFlags (K := K) behavior := by
-  cases behavior <;> rfl
+  cases behavior <;> simp [routingFlags, witnessForBehavior, mkWitness, behaviorFlags]
 
 theorem chip8RowLocalConstraints_witnessForBehavior
   (behavior : BehaviorClass)
@@ -473,7 +590,7 @@ theorem chip8RowLocalConstraints_witnessForBehavior
   · cases behavior <;> simp [ramAddrInactiveConstraint, witnessForBehavior, mkWitness]
 
 theorem rowWitness_exists_of_decodeImage
-  (b : FlagTuple K)
+  (b : RoutingFlags K)
   (hb : b ∈ decodeImage (K := K))
   {last : K}
   (hLast : isBit last)
@@ -482,18 +599,18 @@ theorem rowWitness_exists_of_decodeImage
     wf z ∧
       chip8RowLocalConstraints z ∧
       routingFlags z = b ∧
-      z 22 = last ∧
-      z 1 = pc ∧
-      z 3 = regX ∧
-      z 4 = regY ∧
-      z 6 = iReg ∧
-      z 8 = kk ∧
-      z 9 = nnnAddr ∧
-      z 10 = nnnWord ∧
-      z 11 = memValue ∧
-      z 12 = lookupOutput ∧
-      z 20 = xIdx ∧
-      z 21 = yIdx ∧
+      z colBurstLast = last ∧
+      z colPc = pc ∧
+      z colRegX = regX ∧
+      z colRegY = regY ∧
+      z colIReg = iReg ∧
+      z colKk = kk ∧
+      z colNnnAddr = nnnAddr ∧
+      z colNnnWord = nnnWord ∧
+      z colMemValue = memValue ∧
+      z colLookupOutput = lookupOutput ∧
+      z colXIdx = xIdx ∧
+      z colYIdx = yIdx ∧
       chip8RowLocalSound z := by
   rcases hb with ⟨behavior, rfl⟩
   refine ⟨witnessForBehavior (K := K) behavior last pc regX regY iReg kk nnnAddr nnnWord
@@ -520,7 +637,7 @@ theorem rowWitness_exists_of_decodeImage
     chip8RowLocalConstraints_witnessForBehavior (K := K) behavior hLast pc regX regY iReg kk
       nnnAddr nnnWord memValue lookupOutput xIdx yIdx
 
-abbrev flags {K : Type*} [Field K] (z : Witness K) : FlagTuple K :=
+abbrev flags {K : Type*} [Field K] (z : Witness K) : RoutingFlags K :=
   routingFlags z
 
 abbrev chip8RoutingConstraints {K : Type*} [Field K] (z : Witness K) : Prop :=
@@ -556,7 +673,7 @@ theorem flags_witnessForBehavior
     memValue lookupOutput xIdx yIdx
 
 theorem routingWitness_exists_of_decodeImage
-  (b : FlagTuple K)
+  (b : RoutingFlags K)
   (hb : b ∈ decodeImage (K := K))
   {last : K}
   (hLast : isBit last)
@@ -565,18 +682,18 @@ theorem routingWitness_exists_of_decodeImage
     wf z ∧
       chip8RoutingConstraints z ∧
       flags z = b ∧
-      z 22 = last ∧
-      z 1 = pc ∧
-      z 3 = regX ∧
-      z 4 = regY ∧
-      z 6 = iReg ∧
-      z 8 = kk ∧
-      z 9 = nnnAddr ∧
-      z 10 = nnnWord ∧
-      z 11 = memValue ∧
-      z 12 = lookupOutput ∧
-      z 20 = xIdx ∧
-      z 21 = yIdx ∧
+      z colBurstLast = last ∧
+      z colPc = pc ∧
+      z colRegX = regX ∧
+      z colRegY = regY ∧
+      z colIReg = iReg ∧
+      z colKk = kk ∧
+      z colNnnAddr = nnnAddr ∧
+      z colNnnWord = nnnWord ∧
+      z colMemValue = memValue ∧
+      z colLookupOutput = lookupOutput ∧
+      z colXIdx = xIdx ∧
+      z colYIdx = yIdx ∧
       chip8RoutingSound z :=
   rowWitness_exists_of_decodeImage (K := K) b hb hLast pc regX regY iReg kk nnnAddr nnnWord
     memValue lookupOutput xIdx yIdx

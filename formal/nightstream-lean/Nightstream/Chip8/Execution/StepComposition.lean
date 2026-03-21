@@ -57,7 +57,7 @@ def LookupBound
   (dec : DecodedStep Addr)
   (pre : MachineState)
   (z : Nightstream.Chip8.Witness F) : Prop :=
-  z 12 = (lookupValueOf pre dec : F)
+  z colLookupOutput = (lookupValueOf pre dec : F)
 
 def FramebufferBound
   {Addr : Type*}
@@ -133,120 +133,123 @@ private theorem primaryValue_eq_vx_of_nonBurst
   simp [WitnessMemoryBinding.primaryValue, WitnessMemoryBinding.primaryIndex,
     DecodeAddressBinding.activeXIndex_of_nonBurst hStore hLoad]
 
-private def flag1 {K : Type*} (t : FlagTuple K) : K := t.1
-private def flag2 {K : Type*} (t : FlagTuple K) : K := t.2.1
-private def flag3 {K : Type*} (t : FlagTuple K) : K := t.2.2.1
-private def flag4 {K : Type*} (t : FlagTuple K) : K := t.2.2.2.1
-private def flag5 {K : Type*} (t : FlagTuple K) : K := t.2.2.2.2.1
-private def flag6 {K : Type*} (t : FlagTuple K) : K := t.2.2.2.2.2.1
-private def flag7 {K : Type*} (t : FlagTuple K) : K := t.2.2.2.2.2.2
-
 private theorem routing_lookup_to_vx
   {z : Nightstream.Chip8.Witness F}
   (h : Nightstream.Chip8.chip8RoutingSound z) :
-  z 13 = 1 → z 5 = z 12 := h.1
+  z colWritesLookupToX = 1 → z colRegXNext = z colLookupOutput := h.1
 
 private theorem routing_mem_to_vx
   {z : Nightstream.Chip8.Witness F}
   (h : Nightstream.Chip8.chip8RoutingSound z) :
-  z 14 = 1 → z 5 = z 11 := h.2.1
+  z colWritesMemToX = 1 → z colRegXNext = z colMemValue := h.2.1
 
 private theorem routing_preserve_vx
   {z : Nightstream.Chip8.Witness F}
   (h : Nightstream.Chip8.chip8RoutingSound z) :
-  z 15 = 1 → z 5 = z 3 := h.2.2.1
+  z colPreservesX = 1 → z colRegXNext = z colRegX := h.2.2.1
 
 private theorem routing_write_i
   {z : Nightstream.Chip8.Witness F}
   (h : Nightstream.Chip8.chip8RoutingSound z) :
-  z 16 = 1 → z 7 = z 9 := h.2.2.2.1
+  z colWritesNnnToI = 1 → z colINext = z colNnnAddr := h.2.2.2.1
 
 private theorem routing_preserve_i
   {z : Nightstream.Chip8.Witness F}
   (h : Nightstream.Chip8.chip8RoutingSound z) :
-  z 16 = 0 → z 7 = z 6 := h.2.2.2.2.1
+  z colWritesNnnToI = 0 → z colINext = z colIReg := h.2.2.2.2.1
 
 private theorem routing_jump_pc
   {z : Nightstream.Chip8.Witness F}
   (h : Nightstream.Chip8.chip8RoutingSound z) :
-  z 17 = 1 → z 2 = z 10 := h.2.2.2.2.2.1
+  z colIsJump = 1 → z colPcNext = z colNnnWord := h.2.2.2.2.2.1
 
 private theorem routing_branch_pc
   {z : Nightstream.Chip8.Witness F}
   (h : Nightstream.Chip8.chip8RoutingSound z) :
-  Nightstream.Chip8.wf z ∧ z 18 = 1 → z 2 = z 1 + 1 + z 12 := h.2.2.2.2.2.2.1
+  Nightstream.Chip8.wf z ∧ z colIsBranch = 1 →
+    z colPcNext = z colPc + 1 + z colLookupOutput := h.2.2.2.2.2.2.1
 
 private theorem routing_mem_pc
   {z : Nightstream.Chip8.Witness F}
   (h : Nightstream.Chip8.chip8RoutingSound z) :
-  z 19 = 1 → z 2 = z 1 + z 22 := h.2.2.2.2.2.2.2.1
+  z colIsMemOp = 1 → z colPcNext = z colPc + z colBurstLast := h.2.2.2.2.2.2.2.1
 
 private theorem routing_default_pc
   {z : Nightstream.Chip8.Witness F}
   (h : Nightstream.Chip8.chip8RoutingSound z) :
-  Nightstream.Chip8.wf z ∧ z 17 = 0 ∧ z 18 = 0 ∧ z 19 = 0 → z 2 = z 1 + 1 :=
+  Nightstream.Chip8.wf z ∧ z colIsJump = 0 ∧ z colIsBranch = 0 ∧
+      z colIsMemOp = 0 → z colPcNext = z colPc + 1 :=
   h.2.2.2.2.2.2.2.2.1
 
 private theorem routing_ram_addr
   {z : Nightstream.Chip8.Witness F}
   (h : Nightstream.Chip8.chip8RoutingSound z) :
-  z 19 = 1 → z 23 = z 6 + z 20 := h.2.2.2.2.2.2.2.2.2.1
+  z colIsMemOp = 1 → z colRamAddr = z colIReg + z colXIdx := h.2.2.2.2.2.2.2.2.2.1
 
-private theorem witness_flag1
+private theorem witness_lookupFlag
   {Addr : Type*}
   {pre post : MachineState}
   {dec : DecodedStep Addr}
   {z : Nightstream.Chip8.Witness F}
   (hWitness : WitnessMemoryBinding.WitnessBinds (K := F) pre post dec z) :
-  z 13 = flag1 (Nightstream.Chip8.behaviorFlags (K := F) dec.behavior) := by
-  simpa [flag1, Nightstream.Chip8.flags] using congrArg flag1 (witnessBinds_flags hWitness)
+  z colWritesLookupToX =
+      flagWritesLookupToX (Nightstream.Chip8.behaviorFlags (K := F) dec.behavior) := by
+  simpa [Nightstream.Chip8.flags] using
+    congrArg flagWritesLookupToX (witnessBinds_flags hWitness)
 
-private theorem witness_flag2
+private theorem witness_memFlag
   {Addr : Type*}
   {pre post : MachineState}
   {dec : DecodedStep Addr}
   {z : Nightstream.Chip8.Witness F}
   (hWitness : WitnessMemoryBinding.WitnessBinds (K := F) pre post dec z) :
-  z 14 = flag2 (Nightstream.Chip8.behaviorFlags (K := F) dec.behavior) := by
-  simpa [flag2, Nightstream.Chip8.flags] using congrArg flag2 (witnessBinds_flags hWitness)
+  z colWritesMemToX =
+      flagWritesMemToX (Nightstream.Chip8.behaviorFlags (K := F) dec.behavior) := by
+  simpa [Nightstream.Chip8.flags] using
+    congrArg flagWritesMemToX (witnessBinds_flags hWitness)
 
-private theorem witness_flag4
+private theorem witness_writeIFlag
   {Addr : Type*}
   {pre post : MachineState}
   {dec : DecodedStep Addr}
   {z : Nightstream.Chip8.Witness F}
   (hWitness : WitnessMemoryBinding.WitnessBinds (K := F) pre post dec z) :
-  z 16 = flag4 (Nightstream.Chip8.behaviorFlags (K := F) dec.behavior) := by
-  simpa [flag4, Nightstream.Chip8.flags] using congrArg flag4 (witnessBinds_flags hWitness)
+  z colWritesNnnToI =
+      flagWritesNnnToI (Nightstream.Chip8.behaviorFlags (K := F) dec.behavior) := by
+  simpa [Nightstream.Chip8.flags] using
+    congrArg flagWritesNnnToI (witnessBinds_flags hWitness)
 
-private theorem witness_flag5
+private theorem witness_jumpFlag
   {Addr : Type*}
   {pre post : MachineState}
   {dec : DecodedStep Addr}
   {z : Nightstream.Chip8.Witness F}
   (hWitness : WitnessMemoryBinding.WitnessBinds (K := F) pre post dec z) :
-  z 17 = flag5 (Nightstream.Chip8.behaviorFlags (K := F) dec.behavior) := by
-  simpa [flag5, Nightstream.Chip8.flags] using congrArg flag5 (witnessBinds_flags hWitness)
+  z colIsJump = flagIsJump (Nightstream.Chip8.behaviorFlags (K := F) dec.behavior) := by
+  simpa [Nightstream.Chip8.flags] using
+    congrArg flagIsJump (witnessBinds_flags hWitness)
 
-private theorem witness_flag6
+private theorem witness_branchFlag
   {Addr : Type*}
   {pre post : MachineState}
   {dec : DecodedStep Addr}
   {z : Nightstream.Chip8.Witness F}
   (hWitness : WitnessMemoryBinding.WitnessBinds (K := F) pre post dec z) :
-  z 18 = flag6 (Nightstream.Chip8.behaviorFlags (K := F) dec.behavior) := by
-  simpa [flag6, Nightstream.Chip8.flags] using congrArg flag6 (witnessBinds_flags hWitness)
+  z colIsBranch = flagIsBranch (Nightstream.Chip8.behaviorFlags (K := F) dec.behavior) := by
+  simpa [Nightstream.Chip8.flags] using
+    congrArg flagIsBranch (witnessBinds_flags hWitness)
 
-private theorem witness_flag7
+private theorem witness_memOpFlag
   {Addr : Type*}
   {pre post : MachineState}
   {dec : DecodedStep Addr}
   {z : Nightstream.Chip8.Witness F}
   (hWitness : WitnessMemoryBinding.WitnessBinds (K := F) pre post dec z) :
-  z 19 = flag7 (Nightstream.Chip8.behaviorFlags (K := F) dec.behavior) := by
-  simpa [flag7, Nightstream.Chip8.flags] using congrArg flag7 (witnessBinds_flags hWitness)
+  z colIsMemOp = flagIsMemOp (Nightstream.Chip8.behaviorFlags (K := F) dec.behavior) := by
+  simpa [Nightstream.Chip8.flags] using
+    congrArg flagIsMemOp (witnessBinds_flags hWitness)
 
-private theorem witness_flag1_of_opcode
+private theorem witness_lookupFlag_of_opcode
   {Addr : Type*}
   {pre post : MachineState}
   {dec : DecodedStep Addr}
@@ -254,12 +257,16 @@ private theorem witness_flag1_of_opcode
   {opcode : OpcodeId}
   (hWitness : WitnessMemoryBinding.WitnessBinds (K := F) pre post dec z)
   (hOpcode : dec.opcodeId = opcode) :
-  z 13 = flag1 (Nightstream.Chip8.behaviorFlags (K := F) (FetchDecodeBinding.behaviorOfOpcode opcode)) := by
-  have h := witness_flag1 hWitness
-  change z 13 = flag1 (Nightstream.Chip8.behaviorFlags (K := F) (DecodeAddressBinding.behavior dec)) at h
+  z colWritesLookupToX =
+      flagWritesLookupToX
+        (Nightstream.Chip8.behaviorFlags (K := F) (FetchDecodeBinding.behaviorOfOpcode opcode)) := by
+  have h := witness_lookupFlag hWitness
+  change z colWritesLookupToX =
+      flagWritesLookupToX
+        (Nightstream.Chip8.behaviorFlags (K := F) (DecodeAddressBinding.behavior dec)) at h
   simpa [DecodeAddressBinding.behavior, hOpcode] using h
 
-private theorem witness_flag2_of_opcode
+private theorem witness_memFlag_of_opcode
   {Addr : Type*}
   {pre post : MachineState}
   {dec : DecodedStep Addr}
@@ -267,12 +274,16 @@ private theorem witness_flag2_of_opcode
   {opcode : OpcodeId}
   (hWitness : WitnessMemoryBinding.WitnessBinds (K := F) pre post dec z)
   (hOpcode : dec.opcodeId = opcode) :
-  z 14 = flag2 (Nightstream.Chip8.behaviorFlags (K := F) (FetchDecodeBinding.behaviorOfOpcode opcode)) := by
-  have h := witness_flag2 hWitness
-  change z 14 = flag2 (Nightstream.Chip8.behaviorFlags (K := F) (DecodeAddressBinding.behavior dec)) at h
+  z colWritesMemToX =
+      flagWritesMemToX
+        (Nightstream.Chip8.behaviorFlags (K := F) (FetchDecodeBinding.behaviorOfOpcode opcode)) := by
+  have h := witness_memFlag hWitness
+  change z colWritesMemToX =
+      flagWritesMemToX
+        (Nightstream.Chip8.behaviorFlags (K := F) (DecodeAddressBinding.behavior dec)) at h
   simpa [DecodeAddressBinding.behavior, hOpcode] using h
 
-private theorem witness_flag4_of_opcode
+private theorem witness_writeIFlag_of_opcode
   {Addr : Type*}
   {pre post : MachineState}
   {dec : DecodedStep Addr}
@@ -280,12 +291,16 @@ private theorem witness_flag4_of_opcode
   {opcode : OpcodeId}
   (hWitness : WitnessMemoryBinding.WitnessBinds (K := F) pre post dec z)
   (hOpcode : dec.opcodeId = opcode) :
-  z 16 = flag4 (Nightstream.Chip8.behaviorFlags (K := F) (FetchDecodeBinding.behaviorOfOpcode opcode)) := by
-  have h := witness_flag4 hWitness
-  change z 16 = flag4 (Nightstream.Chip8.behaviorFlags (K := F) (DecodeAddressBinding.behavior dec)) at h
+  z colWritesNnnToI =
+      flagWritesNnnToI
+        (Nightstream.Chip8.behaviorFlags (K := F) (FetchDecodeBinding.behaviorOfOpcode opcode)) := by
+  have h := witness_writeIFlag hWitness
+  change z colWritesNnnToI =
+      flagWritesNnnToI
+        (Nightstream.Chip8.behaviorFlags (K := F) (DecodeAddressBinding.behavior dec)) at h
   simpa [DecodeAddressBinding.behavior, hOpcode] using h
 
-private theorem witness_flag5_of_opcode
+private theorem witness_jumpFlag_of_opcode
   {Addr : Type*}
   {pre post : MachineState}
   {dec : DecodedStep Addr}
@@ -293,12 +308,16 @@ private theorem witness_flag5_of_opcode
   {opcode : OpcodeId}
   (hWitness : WitnessMemoryBinding.WitnessBinds (K := F) pre post dec z)
   (hOpcode : dec.opcodeId = opcode) :
-  z 17 = flag5 (Nightstream.Chip8.behaviorFlags (K := F) (FetchDecodeBinding.behaviorOfOpcode opcode)) := by
-  have h := witness_flag5 hWitness
-  change z 17 = flag5 (Nightstream.Chip8.behaviorFlags (K := F) (DecodeAddressBinding.behavior dec)) at h
+  z colIsJump =
+      flagIsJump
+        (Nightstream.Chip8.behaviorFlags (K := F) (FetchDecodeBinding.behaviorOfOpcode opcode)) := by
+  have h := witness_jumpFlag hWitness
+  change z colIsJump =
+      flagIsJump
+        (Nightstream.Chip8.behaviorFlags (K := F) (DecodeAddressBinding.behavior dec)) at h
   simpa [DecodeAddressBinding.behavior, hOpcode] using h
 
-private theorem witness_flag6_of_opcode
+private theorem witness_branchFlag_of_opcode
   {Addr : Type*}
   {pre post : MachineState}
   {dec : DecodedStep Addr}
@@ -306,12 +325,16 @@ private theorem witness_flag6_of_opcode
   {opcode : OpcodeId}
   (hWitness : WitnessMemoryBinding.WitnessBinds (K := F) pre post dec z)
   (hOpcode : dec.opcodeId = opcode) :
-  z 18 = flag6 (Nightstream.Chip8.behaviorFlags (K := F) (FetchDecodeBinding.behaviorOfOpcode opcode)) := by
-  have h := witness_flag6 hWitness
-  change z 18 = flag6 (Nightstream.Chip8.behaviorFlags (K := F) (DecodeAddressBinding.behavior dec)) at h
+  z colIsBranch =
+      flagIsBranch
+        (Nightstream.Chip8.behaviorFlags (K := F) (FetchDecodeBinding.behaviorOfOpcode opcode)) := by
+  have h := witness_branchFlag hWitness
+  change z colIsBranch =
+      flagIsBranch
+        (Nightstream.Chip8.behaviorFlags (K := F) (DecodeAddressBinding.behavior dec)) at h
   simpa [DecodeAddressBinding.behavior, hOpcode] using h
 
-private theorem witness_flag7_of_opcode
+private theorem witness_memOpFlag_of_opcode
   {Addr : Type*}
   {pre post : MachineState}
   {dec : DecodedStep Addr}
@@ -319,9 +342,13 @@ private theorem witness_flag7_of_opcode
   {opcode : OpcodeId}
   (hWitness : WitnessMemoryBinding.WitnessBinds (K := F) pre post dec z)
   (hOpcode : dec.opcodeId = opcode) :
-  z 19 = flag7 (Nightstream.Chip8.behaviorFlags (K := F) (FetchDecodeBinding.behaviorOfOpcode opcode)) := by
-  have h := witness_flag7 hWitness
-  change z 19 = flag7 (Nightstream.Chip8.behaviorFlags (K := F) (DecodeAddressBinding.behavior dec)) at h
+  z colIsMemOp =
+      flagIsMemOp
+        (Nightstream.Chip8.behaviorFlags (K := F) (FetchDecodeBinding.behaviorOfOpcode opcode)) := by
+  have h := witness_memOpFlag hWitness
+  change z colIsMemOp =
+      flagIsMemOp
+        (Nightstream.Chip8.behaviorFlags (K := F) (DecodeAddressBinding.behavior dec)) at h
   simpa [DecodeAddressBinding.behavior, hOpcode] using h
 
 theorem goldilocks_q_gt_256 : 256 < Goldilocks.q := by decide
@@ -491,20 +518,25 @@ theorem microstepCorrect_of_bounds
   rcases fetchDecodeBound_wellFormed hFetch with ⟨_, _, hkk, hnnn⟩
   cases hOpcode : dec.opcodeId
   · have hz13 : z 13 = (1 : F) := by
-      simpa [flag1, FetchDecodeBinding.behaviorOfOpcode, Nightstream.Chip8.behaviorFlags] using
-        witness_flag1_of_opcode hWitness hOpcode
+      simpa [flagWritesLookupToX, FetchDecodeBinding.behaviorOfOpcode,
+        Nightstream.Chip8.behaviorFlags] using
+        witness_lookupFlag_of_opcode hWitness hOpcode
     have hz16 : z 16 = (0 : F) := by
-      simpa [flag4, FetchDecodeBinding.behaviorOfOpcode, Nightstream.Chip8.behaviorFlags] using
-        witness_flag4_of_opcode hWitness hOpcode
+      simpa [flagWritesNnnToI, FetchDecodeBinding.behaviorOfOpcode,
+        Nightstream.Chip8.behaviorFlags] using
+        witness_writeIFlag_of_opcode hWitness hOpcode
     have hz17 : z 17 = (0 : F) := by
-      simpa [flag5, FetchDecodeBinding.behaviorOfOpcode, Nightstream.Chip8.behaviorFlags] using
-        witness_flag5_of_opcode hWitness hOpcode
+      simpa [flagIsJump, FetchDecodeBinding.behaviorOfOpcode,
+        Nightstream.Chip8.behaviorFlags] using
+        witness_jumpFlag_of_opcode hWitness hOpcode
     have hz18 : z 18 = (0 : F) := by
-      simpa [flag6, FetchDecodeBinding.behaviorOfOpcode, Nightstream.Chip8.behaviorFlags] using
-        witness_flag6_of_opcode hWitness hOpcode
+      simpa [flagIsBranch, FetchDecodeBinding.behaviorOfOpcode,
+        Nightstream.Chip8.behaviorFlags] using
+        witness_branchFlag_of_opcode hWitness hOpcode
     have hz19 : z 19 = (0 : F) := by
-      simpa [flag7, FetchDecodeBinding.behaviorOfOpcode, Nightstream.Chip8.behaviorFlags] using
-        witness_flag7_of_opcode hWitness hOpcode
+      simpa [flagIsMemOp, FetchDecodeBinding.behaviorOfOpcode,
+        Nightstream.Chip8.behaviorFlags] using
+        witness_memOpFlag_of_opcode hWitness hOpcode
     have hRest : RegistersPreservedExcept pre post dec.x ∧ RamPreserved pre post := by
       simpa [MemoryBound, hOpcode] using hMem.2
     have hz5 : z 5 = z 12 := routing_lookup_to_vx hRouting hz13
@@ -542,20 +574,25 @@ theorem microstepCorrect_of_bounds
     simpa [ExecutionSemantics.MicrostepCorrect, hOpcode] using
       ⟨hPcNat, hINat, hVxNat, hRest.1, hRest.2⟩
   · have hz13 : z 13 = (1 : F) := by
-      simpa [flag1, FetchDecodeBinding.behaviorOfOpcode, Nightstream.Chip8.behaviorFlags] using
-        witness_flag1_of_opcode hWitness hOpcode
+      simpa [flagWritesLookupToX, FetchDecodeBinding.behaviorOfOpcode,
+        Nightstream.Chip8.behaviorFlags] using
+        witness_lookupFlag_of_opcode hWitness hOpcode
     have hz16 : z 16 = (0 : F) := by
-      simpa [flag4, FetchDecodeBinding.behaviorOfOpcode, Nightstream.Chip8.behaviorFlags] using
-        witness_flag4_of_opcode hWitness hOpcode
+      simpa [flagWritesNnnToI, FetchDecodeBinding.behaviorOfOpcode,
+        Nightstream.Chip8.behaviorFlags] using
+        witness_writeIFlag_of_opcode hWitness hOpcode
     have hz17 : z 17 = (0 : F) := by
-      simpa [flag5, FetchDecodeBinding.behaviorOfOpcode, Nightstream.Chip8.behaviorFlags] using
-        witness_flag5_of_opcode hWitness hOpcode
+      simpa [flagIsJump, FetchDecodeBinding.behaviorOfOpcode,
+        Nightstream.Chip8.behaviorFlags] using
+        witness_jumpFlag_of_opcode hWitness hOpcode
     have hz18 : z 18 = (0 : F) := by
-      simpa [flag6, FetchDecodeBinding.behaviorOfOpcode, Nightstream.Chip8.behaviorFlags] using
-        witness_flag6_of_opcode hWitness hOpcode
+      simpa [flagIsBranch, FetchDecodeBinding.behaviorOfOpcode,
+        Nightstream.Chip8.behaviorFlags] using
+        witness_branchFlag_of_opcode hWitness hOpcode
     have hz19 : z 19 = (0 : F) := by
-      simpa [flag7, FetchDecodeBinding.behaviorOfOpcode, Nightstream.Chip8.behaviorFlags] using
-        witness_flag7_of_opcode hWitness hOpcode
+      simpa [flagIsMemOp, FetchDecodeBinding.behaviorOfOpcode,
+        Nightstream.Chip8.behaviorFlags] using
+        witness_memOpFlag_of_opcode hWitness hOpcode
     have hRest : RegistersPreservedExcept pre post dec.x ∧ RamPreserved pre post := by
       simpa [MemoryBound, hOpcode] using hMem.2
     have hz5 : z 5 = z 12 := routing_lookup_to_vx hRouting hz13
@@ -590,20 +627,25 @@ theorem microstepCorrect_of_bounds
     simpa [ExecutionSemantics.MicrostepCorrect, hOpcode] using
       ⟨hPcNat, hINat, hVxNat, hRest.1, hRest.2⟩
   · have hz13 : z 13 = (1 : F) := by
-      simpa [flag1, FetchDecodeBinding.behaviorOfOpcode, Nightstream.Chip8.behaviorFlags] using
-        witness_flag1_of_opcode hWitness hOpcode
+      simpa [flagWritesLookupToX, FetchDecodeBinding.behaviorOfOpcode,
+        Nightstream.Chip8.behaviorFlags] using
+        witness_lookupFlag_of_opcode hWitness hOpcode
     have hz16 : z 16 = (0 : F) := by
-      simpa [flag4, FetchDecodeBinding.behaviorOfOpcode, Nightstream.Chip8.behaviorFlags] using
-        witness_flag4_of_opcode hWitness hOpcode
+      simpa [flagWritesNnnToI, FetchDecodeBinding.behaviorOfOpcode,
+        Nightstream.Chip8.behaviorFlags] using
+        witness_writeIFlag_of_opcode hWitness hOpcode
     have hz17 : z 17 = (0 : F) := by
-      simpa [flag5, FetchDecodeBinding.behaviorOfOpcode, Nightstream.Chip8.behaviorFlags] using
-        witness_flag5_of_opcode hWitness hOpcode
+      simpa [flagIsJump, FetchDecodeBinding.behaviorOfOpcode,
+        Nightstream.Chip8.behaviorFlags] using
+        witness_jumpFlag_of_opcode hWitness hOpcode
     have hz18 : z 18 = (0 : F) := by
-      simpa [flag6, FetchDecodeBinding.behaviorOfOpcode, Nightstream.Chip8.behaviorFlags] using
-        witness_flag6_of_opcode hWitness hOpcode
+      simpa [flagIsBranch, FetchDecodeBinding.behaviorOfOpcode,
+        Nightstream.Chip8.behaviorFlags] using
+        witness_branchFlag_of_opcode hWitness hOpcode
     have hz19 : z 19 = (0 : F) := by
-      simpa [flag7, FetchDecodeBinding.behaviorOfOpcode, Nightstream.Chip8.behaviorFlags] using
-        witness_flag7_of_opcode hWitness hOpcode
+      simpa [flagIsMemOp, FetchDecodeBinding.behaviorOfOpcode,
+        Nightstream.Chip8.behaviorFlags] using
+        witness_memOpFlag_of_opcode hWitness hOpcode
     have hRest : RegistersPreservedExcept pre post dec.x ∧ RamPreserved pre post := by
       simpa [MemoryBound, hOpcode] using hMem.2
     have hz5 : z 5 = z 12 := routing_lookup_to_vx hRouting hz13
@@ -638,20 +680,25 @@ theorem microstepCorrect_of_bounds
     simpa [ExecutionSemantics.MicrostepCorrect, hOpcode] using
       ⟨hPcNat, hINat, hVxNat, hRest.1, hRest.2⟩
   · have hz13 : z 13 = (1 : F) := by
-      simpa [flag1, FetchDecodeBinding.behaviorOfOpcode, Nightstream.Chip8.behaviorFlags] using
-        witness_flag1_of_opcode hWitness hOpcode
+      simpa [flagWritesLookupToX, FetchDecodeBinding.behaviorOfOpcode,
+        Nightstream.Chip8.behaviorFlags] using
+        witness_lookupFlag_of_opcode hWitness hOpcode
     have hz16 : z 16 = (0 : F) := by
-      simpa [flag4, FetchDecodeBinding.behaviorOfOpcode, Nightstream.Chip8.behaviorFlags] using
-        witness_flag4_of_opcode hWitness hOpcode
+      simpa [flagWritesNnnToI, FetchDecodeBinding.behaviorOfOpcode,
+        Nightstream.Chip8.behaviorFlags] using
+        witness_writeIFlag_of_opcode hWitness hOpcode
     have hz17 : z 17 = (0 : F) := by
-      simpa [flag5, FetchDecodeBinding.behaviorOfOpcode, Nightstream.Chip8.behaviorFlags] using
-        witness_flag5_of_opcode hWitness hOpcode
+      simpa [flagIsJump, FetchDecodeBinding.behaviorOfOpcode,
+        Nightstream.Chip8.behaviorFlags] using
+        witness_jumpFlag_of_opcode hWitness hOpcode
     have hz18 : z 18 = (0 : F) := by
-      simpa [flag6, FetchDecodeBinding.behaviorOfOpcode, Nightstream.Chip8.behaviorFlags] using
-        witness_flag6_of_opcode hWitness hOpcode
+      simpa [flagIsBranch, FetchDecodeBinding.behaviorOfOpcode,
+        Nightstream.Chip8.behaviorFlags] using
+        witness_branchFlag_of_opcode hWitness hOpcode
     have hz19 : z 19 = (0 : F) := by
-      simpa [flag7, FetchDecodeBinding.behaviorOfOpcode, Nightstream.Chip8.behaviorFlags] using
-        witness_flag7_of_opcode hWitness hOpcode
+      simpa [flagIsMemOp, FetchDecodeBinding.behaviorOfOpcode,
+        Nightstream.Chip8.behaviorFlags] using
+        witness_memOpFlag_of_opcode hWitness hOpcode
     have hRest : RegistersPreservedExcept pre post dec.x ∧ RamPreserved pre post := by
       simpa [MemoryBound, hOpcode] using hMem.2
     have hz5 : z 5 = z 12 := routing_lookup_to_vx hRouting hz13
@@ -686,20 +733,24 @@ theorem microstepCorrect_of_bounds
     simpa [ExecutionSemantics.MicrostepCorrect, hOpcode] using
       ⟨hPcNat, hINat, hVxNat, hRest.1, hRest.2⟩
   · have hz16 : z 16 = (0 : F) := by
-      simpa [flag4, FetchDecodeBinding.behaviorOfOpcode, Nightstream.Chip8.behaviorFlags] using
-        witness_flag4_of_opcode hWitness hOpcode
+      simpa [flagWritesNnnToI, FetchDecodeBinding.behaviorOfOpcode,
+        Nightstream.Chip8.behaviorFlags] using
+        witness_writeIFlag_of_opcode hWitness hOpcode
     have hz18 : z 18 = (1 : F) := by
-      simpa [flag6, FetchDecodeBinding.behaviorOfOpcode, Nightstream.Chip8.behaviorFlags] using
-        witness_flag6_of_opcode hWitness hOpcode
+      simpa [flagIsBranch, FetchDecodeBinding.behaviorOfOpcode,
+        Nightstream.Chip8.behaviorFlags] using
+        witness_branchFlag_of_opcode hWitness hOpcode
     have hRest : RegistersPreserved pre post ∧ RamPreserved pre post := by
       simpa [MemoryBound, hOpcode] using hMem.2
     have hIeq : z 7 = z 6 := routing_preserve_i hRouting hz16
-    have hPcEq : z 2 = z 1 + 1 + z 12 := routing_branch_pc hRouting ⟨hWf, hz18⟩
+    have hPcEq : z colPcNext = z colPc + 1 + z colLookupOutput := routing_branch_pc hRouting ⟨hWf, hz18⟩
     have hPcField : (post.pc : F) = ((pre.pc + 1 + skipEqBit (pre.v dec.x) dec.kk : Nat) : F) := by
       calc
         (post.pc : F) = z 2 := by symm; exact witnessBinds_pcNext hWitness
-        _ = z 1 + 1 + z 12 := hPcEq
-        _ = (pre.pc : F) + 1 + (lookupValueOf pre dec : F) := by rw [witnessBinds_pc hWitness, hLookup]
+        _ = z 1 + 1 + z 12 := by simpa using hPcEq
+        _ = (pre.pc : F) + 1 + (lookupValueOf pre dec : F) := by
+          rw [witnessBinds_pc hWitness]
+          simpa [LookupBound] using hLookup
         _ = ((pre.pc + 1 + skipEqBit (pre.v dec.x) dec.kk : Nat) : F) := by
           simp [lookupValueOf, hOpcode, add_assoc]
     have hIField : (post.i : F) = (pre.i : F) := by
@@ -717,11 +768,13 @@ theorem microstepCorrect_of_bounds
     simpa [ExecutionSemantics.MicrostepCorrect, hOpcode] using
       ⟨hPcNat, hINat, hRest.1, hRest.2⟩
   · have hz16 : z 16 = (0 : F) := by
-      simpa [flag4, FetchDecodeBinding.behaviorOfOpcode, Nightstream.Chip8.behaviorFlags] using
-        witness_flag4_of_opcode hWitness hOpcode
+      simpa [flagWritesNnnToI, FetchDecodeBinding.behaviorOfOpcode,
+        Nightstream.Chip8.behaviorFlags] using
+        witness_writeIFlag_of_opcode hWitness hOpcode
     have hz17 : z 17 = (1 : F) := by
-      simpa [flag5, FetchDecodeBinding.behaviorOfOpcode, Nightstream.Chip8.behaviorFlags] using
-        witness_flag5_of_opcode hWitness hOpcode
+      simpa [flagIsJump, FetchDecodeBinding.behaviorOfOpcode,
+        Nightstream.Chip8.behaviorFlags] using
+        witness_jumpFlag_of_opcode hWitness hOpcode
     have hRest : RegistersPreserved pre post ∧ RamPreserved pre post := by
       simpa [MemoryBound, hOpcode] using hMem.2
     have hIeq : z 7 = z 6 := routing_preserve_i hRouting hz16
@@ -743,17 +796,21 @@ theorem microstepCorrect_of_bounds
     simpa [ExecutionSemantics.MicrostepCorrect, hOpcode] using
       ⟨hPcNat, hINat, hRest.1, hRest.2⟩
   · have hz16 : z 16 = (1 : F) := by
-      simpa [flag4, FetchDecodeBinding.behaviorOfOpcode, Nightstream.Chip8.behaviorFlags] using
-        witness_flag4_of_opcode hWitness hOpcode
+      simpa [flagWritesNnnToI, FetchDecodeBinding.behaviorOfOpcode,
+        Nightstream.Chip8.behaviorFlags] using
+        witness_writeIFlag_of_opcode hWitness hOpcode
     have hz17 : z 17 = (0 : F) := by
-      simpa [flag5, FetchDecodeBinding.behaviorOfOpcode, Nightstream.Chip8.behaviorFlags] using
-        witness_flag5_of_opcode hWitness hOpcode
+      simpa [flagIsJump, FetchDecodeBinding.behaviorOfOpcode,
+        Nightstream.Chip8.behaviorFlags] using
+        witness_jumpFlag_of_opcode hWitness hOpcode
     have hz18 : z 18 = (0 : F) := by
-      simpa [flag6, FetchDecodeBinding.behaviorOfOpcode, Nightstream.Chip8.behaviorFlags] using
-        witness_flag6_of_opcode hWitness hOpcode
+      simpa [flagIsBranch, FetchDecodeBinding.behaviorOfOpcode,
+        Nightstream.Chip8.behaviorFlags] using
+        witness_branchFlag_of_opcode hWitness hOpcode
     have hz19 : z 19 = (0 : F) := by
-      simpa [flag7, FetchDecodeBinding.behaviorOfOpcode, Nightstream.Chip8.behaviorFlags] using
-        witness_flag7_of_opcode hWitness hOpcode
+      simpa [flagIsMemOp, FetchDecodeBinding.behaviorOfOpcode,
+        Nightstream.Chip8.behaviorFlags] using
+        witness_memOpFlag_of_opcode hWitness hOpcode
     have hRest : RegistersPreserved pre post ∧ RamPreserved pre post := by
       simpa [MemoryBound, hOpcode] using hMem.2
     have hPcEq : z 2 = z 1 + 1 := routing_default_pc hRouting ⟨hWf, hz17, hz18, hz19⟩
@@ -774,17 +831,21 @@ theorem microstepCorrect_of_bounds
     simpa [ExecutionSemantics.MicrostepCorrect, hOpcode] using
       ⟨hPcNat, hINat, hRest.1, hRest.2⟩
   · have hz16 : z 16 = (0 : F) := by
-      simpa [flag4, FetchDecodeBinding.behaviorOfOpcode, Nightstream.Chip8.behaviorFlags] using
-        witness_flag4_of_opcode hWitness hOpcode
+      simpa [flagWritesNnnToI, FetchDecodeBinding.behaviorOfOpcode,
+        Nightstream.Chip8.behaviorFlags] using
+        witness_writeIFlag_of_opcode hWitness hOpcode
     have hz17 : z 17 = (0 : F) := by
-      simpa [flag5, FetchDecodeBinding.behaviorOfOpcode, Nightstream.Chip8.behaviorFlags] using
-        witness_flag5_of_opcode hWitness hOpcode
+      simpa [flagIsJump, FetchDecodeBinding.behaviorOfOpcode,
+        Nightstream.Chip8.behaviorFlags] using
+        witness_jumpFlag_of_opcode hWitness hOpcode
     have hz18 : z 18 = (0 : F) := by
-      simpa [flag6, FetchDecodeBinding.behaviorOfOpcode, Nightstream.Chip8.behaviorFlags] using
-        witness_flag6_of_opcode hWitness hOpcode
+      simpa [flagIsBranch, FetchDecodeBinding.behaviorOfOpcode,
+        Nightstream.Chip8.behaviorFlags] using
+        witness_branchFlag_of_opcode hWitness hOpcode
     have hz19 : z 19 = (1 : F) := by
-      simpa [flag7, FetchDecodeBinding.behaviorOfOpcode, Nightstream.Chip8.behaviorFlags] using
-        witness_flag7_of_opcode hWitness hOpcode
+      simpa [flagIsMemOp, FetchDecodeBinding.behaviorOfOpcode,
+        Nightstream.Chip8.behaviorFlags] using
+        witness_memOpFlag_of_opcode hWitness hOpcode
     have hRest :
         RegistersPreserved pre post ∧
           RamPrefixStored pre post dec ∧
@@ -811,20 +872,25 @@ theorem microstepCorrect_of_bounds
     simpa [ExecutionSemantics.MicrostepCorrect, hOpcode] using
       ⟨hPcNat, hINat, hRest.1, hRest.2.1, hRest.2.2⟩
   · have hz14 : z 14 = (1 : F) := by
-      simpa [flag2, FetchDecodeBinding.behaviorOfOpcode, Nightstream.Chip8.behaviorFlags] using
-        witness_flag2_of_opcode hWitness hOpcode
+      simpa [flagWritesMemToX, FetchDecodeBinding.behaviorOfOpcode,
+        Nightstream.Chip8.behaviorFlags] using
+        witness_memFlag_of_opcode hWitness hOpcode
     have hz16 : z 16 = (0 : F) := by
-      simpa [flag4, FetchDecodeBinding.behaviorOfOpcode, Nightstream.Chip8.behaviorFlags] using
-        witness_flag4_of_opcode hWitness hOpcode
+      simpa [flagWritesNnnToI, FetchDecodeBinding.behaviorOfOpcode,
+        Nightstream.Chip8.behaviorFlags] using
+        witness_writeIFlag_of_opcode hWitness hOpcode
     have hz17 : z 17 = (0 : F) := by
-      simpa [flag5, FetchDecodeBinding.behaviorOfOpcode, Nightstream.Chip8.behaviorFlags] using
-        witness_flag5_of_opcode hWitness hOpcode
+      simpa [flagIsJump, FetchDecodeBinding.behaviorOfOpcode,
+        Nightstream.Chip8.behaviorFlags] using
+        witness_jumpFlag_of_opcode hWitness hOpcode
     have hz18 : z 18 = (0 : F) := by
-      simpa [flag6, FetchDecodeBinding.behaviorOfOpcode, Nightstream.Chip8.behaviorFlags] using
-        witness_flag6_of_opcode hWitness hOpcode
+      simpa [flagIsBranch, FetchDecodeBinding.behaviorOfOpcode,
+        Nightstream.Chip8.behaviorFlags] using
+        witness_branchFlag_of_opcode hWitness hOpcode
     have hz19 : z 19 = (1 : F) := by
-      simpa [flag7, FetchDecodeBinding.behaviorOfOpcode, Nightstream.Chip8.behaviorFlags] using
-        witness_flag7_of_opcode hWitness hOpcode
+      simpa [flagIsMemOp, FetchDecodeBinding.behaviorOfOpcode,
+        Nightstream.Chip8.behaviorFlags] using
+        witness_memOpFlag_of_opcode hWitness hOpcode
     have hRest :
         RegistersLoadedPrefix pre post dec ∧
           RegistersPreservedAbove pre post dec.x ∧

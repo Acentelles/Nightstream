@@ -4,10 +4,15 @@ namespace Nightstream.Chip8
 
 namespace EvidenceCoverageInterface
 
+-- ── Types ──
+
 abbrev F := Nightstream.Chip8.EvidenceCoverage.F
 abbrev Program := Nightstream.Chip8.EvidenceCoverage.Program
 abbrev MachineState := Nightstream.Chip8.EvidenceCoverage.MachineState
 abbrev ExternalSchedule := Nightstream.Chip8.EvidenceCoverage.ExternalSchedule
+
+-- ── Structures ──
+
 abbrev PCSContext := @Nightstream.Chip8.EvidenceCoverage.PCSContext
 abbrev rawScalarClaim := @Nightstream.Chip8.EvidenceCoverage.rawScalarClaim
 abbrev ExecutionInputContext := @Nightstream.Chip8.EvidenceCoverage.ExecutionInputContext
@@ -66,7 +71,11 @@ abbrev SemanticEvidenceCovered := @Nightstream.Chip8.EvidenceCoverage.SemanticEv
 abbrev ExactSemanticEvidenceCovered :=
   @Nightstream.Chip8.EvidenceCoverage.ExactSemanticEvidenceCovered
 
+-- ── Theorems: Witness Checked Projections ──
+
 abbrev DirectValueWitness.checked := @Nightstream.Chip8.EvidenceCoverage.DirectValueWitness.checked
+abbrev DirectValueWitness.acceptedOpening :=
+  @Nightstream.Chip8.EvidenceCoverage.DirectValueWitness.acceptedOpening
 abbrev DirectValueWitness.rawOpeningSeparation :=
   @Nightstream.Chip8.EvidenceCoverage.DirectValueWitness.rawOpeningSeparation
 abbrev witnessBinds_of_rowConsistent :=
@@ -91,6 +100,9 @@ abbrev twistSessionClosed_valTotal :=
   @Nightstream.Chip8.EvidenceCoverage.twistSessionClosed_valTotal
 abbrev twistSessionClosed_uniqueByKey :=
   @Nightstream.Chip8.EvidenceCoverage.twistSessionClosed_uniqueByKey
+
+-- ── Theorems: Evidence-to-Bound Extraction ──
+
 abbrev kernelOpeningBoundary_of_evidence :=
   @Nightstream.Chip8.EvidenceCoverage.kernelOpeningBoundary_of_evidence
 abbrev witnessBinds_of_evidence := @Nightstream.Chip8.EvidenceCoverage.witnessBinds_of_evidence
@@ -116,6 +128,9 @@ abbrev kernelPublicInputsBound_of_evidence :=
 abbrev executionInputsBound_of_evidence :=
   @Nightstream.Chip8.EvidenceCoverage.executionInputsBound_of_evidence
 abbrev scheduleBound_of_evidence := @Nightstream.Chip8.EvidenceCoverage.scheduleBound_of_evidence
+
+-- ── Temporal Seed Bounds ──
+
 abbrev Stage2TemporalSeedBound :=
   @Nightstream.Chip8.EvidenceCoverage.Stage2TemporalSeedBound
 abbrev RegisterTemporalSeedBound :=
@@ -130,6 +145,9 @@ abbrev registerTemporalSeedBound_of_stage2TemporalSeedBound :=
   @Nightstream.Chip8.EvidenceCoverage.registerTemporalSeedBound_of_stage2TemporalSeedBound
 abbrev ramTemporalSeedBound_of_stage2TemporalSeedBound :=
   @Nightstream.Chip8.EvidenceCoverage.ramTemporalSeedBound_of_stage2TemporalSeedBound
+
+-- ── Theorems: Authenticated Evidence Bundles ──
+
 abbrev semanticBounds_of_authenticatedEvidence :=
   @Nightstream.Chip8.EvidenceCoverage.semanticBounds_of_authenticatedEvidence
 abbrev stage1AuthenticatedBundle_of_evidence :=

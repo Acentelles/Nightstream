@@ -4,12 +4,17 @@ namespace Nightstream.Chip8
 
 namespace AuthenticatedTraceInterface
 
+-- ── Types ──
+
 abbrev F := Nightstream.Chip8.AuthenticatedTrace.F
 abbrev Program := Nightstream.Chip8.AuthenticatedTrace.Program
 abbrev MachineState := Nightstream.Chip8.AuthenticatedTrace.MachineState
 abbrev InitialState := Nightstream.Chip8.AuthenticatedTrace.InitialState
 abbrev ExternalSchedule := Nightstream.Chip8.AuthenticatedTrace.ExternalSchedule
 abbrev ExecutionFrame := Nightstream.Chip8.AuthenticatedTrace.ExecutionFrame
+
+-- ── Structures ──
+
 abbrev ExactFrameEvidence := @Nightstream.Chip8.AuthenticatedTrace.ExactFrameEvidence
 abbrev ExactStage2AdjacentSupport :=
   @Nightstream.Chip8.AuthenticatedTrace.ExactStage2AdjacentSupport
@@ -21,6 +26,9 @@ abbrev traceOf := @Nightstream.Chip8.AuthenticatedTrace.traceOf
 abbrev ExactTraceEvidenceFrom :=
   @Nightstream.Chip8.AuthenticatedTrace.ExactTraceEvidenceFrom
 abbrev ExactTraceEvidence := @Nightstream.Chip8.AuthenticatedTrace.ExactTraceEvidence
+
+-- ── Trace Evidence Destructors ──
+
 abbrev headStepIdx_of_exactTraceEvidenceFrom_cons :=
   @Nightstream.Chip8.AuthenticatedTrace.headStepIdx_of_exactTraceEvidenceFrom_cons
 abbrev adjacentSupport_of_exactTraceEvidenceFrom_cons_cons :=
@@ -29,18 +37,27 @@ abbrev tailExactTraceEvidenceFrom_of_exactTraceEvidenceFrom_cons :=
   @Nightstream.Chip8.AuthenticatedTrace.tailExactTraceEvidenceFrom_of_exactTraceEvidenceFrom_cons
 abbrev tailExactTraceEvidenceFrom_of_exactTraceEvidenceFrom_cons_cons :=
   @Nightstream.Chip8.AuthenticatedTrace.tailExactTraceEvidenceFrom_of_exactTraceEvidenceFrom_cons_cons
+
+-- ── Temporal Seed Summaries ──
+
 abbrev Stage2TemporalSeedSummaryEntry :=
   @Nightstream.Chip8.AuthenticatedTrace.Stage2TemporalSeedSummaryEntry
 abbrev RegisterTemporalSeedSummaryEntry :=
   @Nightstream.Chip8.AuthenticatedTrace.RegisterTemporalSeedSummaryEntry
 abbrev RamTemporalSeedSummaryEntry :=
   @Nightstream.Chip8.AuthenticatedTrace.RamTemporalSeedSummaryEntry
+
+-- ── Bounds ──
+
 abbrev AuthenticatedChunkTraceBound :=
   @Nightstream.Chip8.AuthenticatedTrace.AuthenticatedChunkTraceBound
 abbrev AuthenticatedTemporalSupportBound :=
   @Nightstream.Chip8.AuthenticatedTrace.AuthenticatedTemporalSupportBound
 abbrev AuthenticatedExecutionTraceBound :=
   @Nightstream.Chip8.AuthenticatedTrace.AuthenticatedExecutionTraceBound
+
+-- ── Temporal Seed Derivations ──
+
 abbrev stage2TemporalSeedSummaryEntry_of_exactFrameEvidence :=
   @Nightstream.Chip8.AuthenticatedTrace.stage2TemporalSeedSummaryEntry_of_exactFrameEvidence
 abbrev registerTemporalSeedSummaryEntry_of_stage2TemporalSeedSummaryEntry :=
@@ -61,6 +78,9 @@ abbrev registerTemporalSeeds_of_authenticatedExecutionTraceBound :=
   @Nightstream.Chip8.AuthenticatedTrace.registerTemporalSeeds_of_authenticatedExecutionTraceBound
 abbrev ramTemporalSeeds_of_authenticatedExecutionTraceBound :=
   @Nightstream.Chip8.AuthenticatedTrace.ramTemporalSeeds_of_authenticatedExecutionTraceBound
+
+-- ── Well-Formedness ──
+
 abbrev wf_of_exactFrameEvidence :=
   @Nightstream.Chip8.AuthenticatedTrace.wf_of_exactFrameEvidence
 abbrev stateWellFormedFrames_of_frames :=
@@ -69,6 +89,9 @@ abbrev headInitialStateMatch_of_chunkInput :=
   @Nightstream.Chip8.AuthenticatedTrace.headInitialStateMatch_of_chunkInput
 abbrev traceLength_eq_semanticRows_of_chunkInput :=
   @Nightstream.Chip8.AuthenticatedTrace.traceLength_eq_semanticRows_of_chunkInput
+
+-- ── Execution and Continuity Theorems ──
+
 abbrev executionFrameBound_of_exactFrameEvidence :=
   @Nightstream.Chip8.AuthenticatedTrace.executionFrameBound_of_exactFrameEvidence
 abbrev executionFramesBound_of_exactTrace :=
@@ -83,6 +106,9 @@ abbrev finalBoundaryFrame_of_exactTail :=
   @Nightstream.Chip8.AuthenticatedTrace.finalBoundaryFrame_of_exactTail
 abbrev traceLength_le_publishedLength_of_exactTrace :=
   @Nightstream.Chip8.AuthenticatedTrace.traceLength_le_publishedLength_of_exactTrace
+
+-- ── Authenticated Bound Assembly Theorems ──
+
 abbrev authenticatedChunkTraceBound_of_exactTrace :=
   @Nightstream.Chip8.AuthenticatedTrace.authenticatedChunkTraceBound_of_exactTrace
 abbrev registerAdjacentTraceBound_of_exactTrace :=
@@ -103,6 +129,9 @@ abbrev authenticatedExecutionTraceBound_of_exactTrace_and_support :=
   @Nightstream.Chip8.AuthenticatedTrace.authenticatedExecutionTraceBound_of_exactTrace_and_support
 abbrev authenticatedExecutionTraceBound_of_exactTrace_and_temporal :=
   @Nightstream.Chip8.AuthenticatedTrace.authenticatedExecutionTraceBound_of_exactTrace_and_temporal
+
+-- ── Trace Link and Execution Correctness Theorems ──
+
 abbrev traceLinkBound_of_authenticatedExecutionTraceBound :=
   @Nightstream.Chip8.AuthenticatedTrace.traceLinkBound_of_authenticatedExecutionTraceBound
 abbrev executionCorrect_of_authenticatedExecutionTraceBound :=
@@ -123,6 +152,9 @@ abbrev executionCorrect_of_exactTrace_and_chunkInput :=
   @Nightstream.Chip8.AuthenticatedTrace.executionCorrect_of_exactTrace_and_chunkInput
 abbrev executionCorrect_of_exactTrace :=
   @Nightstream.Chip8.AuthenticatedTrace.executionCorrect_of_exactTrace
+
+-- ── Prepared Step Export ──
+
 abbrev preparedStepTraceBound_of_exactTrace :=
   @Nightstream.Chip8.AuthenticatedTrace.preparedStepTraceBound_of_exactTrace
 abbrev preparedStepExport_of_exactTrace :=

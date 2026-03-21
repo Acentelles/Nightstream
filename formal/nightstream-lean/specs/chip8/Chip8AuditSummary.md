@@ -12,8 +12,8 @@ owner is responsible for each soundness-carrying boundary.
 
 | Audit question | Owning spec | What it owns |
 |---|---|---|
-| Which direct openings may appear, and which commitments are kernel-owned vs root-owned? | `Chip8OpeningBoundary.spec.md` | Kernel/root manifest schema for the simple boundary, canonical ordering, exact exclusions, the negative rule forbidding one global heterogeneous fold carrier, and the minimal positive admissibility rule for any optional family-local fold carrier |
-| What is fixed in `root0`, and when are challenges sampled? | `Chip8TranscriptSchedule.spec.md` | Exact phase-0 commitment bundle, exact transcript events, exact challenge-after-phase0 discipline, and exact row-binding event schedule |
+| Which direct openings may appear, and which commitments are kernel-owned vs root-owned? | `Chip8OpeningBoundary.spec.md` | Kernel/root manifest schema for the simple boundary, canonical ordering, exact exclusions, the negative rule forbidding one global heterogeneous fold carrier, and the intentionally minimal positive admissibility rule for any optional family-local fold carrier |
+| What is fixed in `root0`, and when are challenges sampled? | `Chip8TranscriptSchedule.spec.md` | Exact phase-0 commitment bundle, exact labeled `meta_pub` absorb order, exact transcript events, exact challenge-after-phase0 discipline, and exact row-binding event schedule |
 | Which public inputs fix ROM layout, padding, initial state, and root parameters? | `Chip8RomScheduleBinding.spec.md` | Theorem-facing public-input binding surface for `meta_pub`, ROM shape, pad row, initial-state digests, and canonical root parameters |
 | Which authenticated Stage 1 / Stage 2 / Stage 3 objects are sufficient for semantic extraction? | `Chip8EvidenceCoverage.spec.md` | Exact stage-local authenticated bundles, PCS refinement path, session closure, row projection, and semantic evidence coverage |
 | How does one authenticated row bind to the exported prepared-step artifact? | `Chip8BridgeBinding.spec.md` | Exact row-local bridge/provenance surface tying authenticated row binding to the caller-supplied prepared-step artifact |
@@ -53,6 +53,17 @@ On the simple CHIP-8 kernel boundary:
   row-local bridge-binding surface
 - any later combined kernel-plus-root proof must add an explicit root-side
   commitment/opening schema instead of inferring one from the simple boundary
+
+## Start-boundary note
+
+On the simple CHIP-8 kernel boundary:
+
+- the Stage-3 `j0_bits` opening is only the burst-start boundary and therefore
+  contains `{IsMemOp, X_IDX}`
+- `PC(0)` is not owned by that opening
+- the first-row `pc` is owned by the simple-kernel chunk-input contract
+  (`InitialStateMatches(init, first.pre)`) together with the authenticated
+  first row and the exact trace-closure theorems
 
 ## Recommended reading order
 

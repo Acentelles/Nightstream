@@ -92,6 +92,19 @@ meaning:
 - the session key identifies one coherent read/write/`Val` triple rather than a
   multiset of conflicting local sessions
 
+For this boundary, the session-key and registry-entry shape is fixed
+positively:
+
+- a register-side session key names one logical register timeline cell
+  `(cycle_index, reg_addr)` over `V[0..15] ∪ {I}`
+- a RAM-side session key names one logical RAM timeline cell
+  `(cycle_index, ram_addr)` over `RAM[0..4095] ∪ {⊥_ram}`
+- one registry entry packages exactly one read claim, one write claim, one
+  `Val` claim, and the address/RAF provenance refs consumed later by row-local
+  semantic extraction
+- if two CHIP-8 roles on the same row touch the same logical cell, they must
+  resolve to the same session key and therefore to the same registry entry
+
 The Lean evidence layer therefore exposes separate register-side and RAM-side
 session registries and their corresponding closure witnesses, rather than one
 undifferentiated Stage-2 registry field. The main kernel Stage-2 proof surface
@@ -148,6 +161,15 @@ also enforce coordinatewise equality between the direct claim's
 `polynomialIds` order. Refinement binds one direct scalar claim to one accepted
 exact opening; it does not replace that value-equality check.
 
+The theorem-facing scalar carrier for that projected scalar view is
+`AcceptedScalarOpening`, exported through the direct-value witness layer. It is
+a scalar projection of the stronger direct-claim object
+`AcceptedDirectOpening`, which keeps one direct manifest claim, one exact
+lower-layer opening witness, and one refinement chain tied together at
+vector level. Downstream Stage-1 / Stage-2 / Stage-3 consumers may not justify
+a direct scalar by a bare refinement object alone or by a scalar projection
+detached from that accepted direct-opening path.
+
 ### Evidence coverage of semantic facts
 
 Define:
@@ -186,7 +208,8 @@ $$
 to package:
 
 - `LaneShiftBound`
-- `ContinuityBound`
+- one explicit `PaddedContinuityCheckBound`
+- the refinement from that padded-domain check to `ContinuityBound`
 - `StartBoundaryBound`
 - `FinalBoundaryBound`
 - `StartBoundaryMatches`
@@ -244,6 +267,15 @@ to package:
 This is the theorem-facing owner for Stage-2 checked-claim authentication. It
 does not pretend that Twist read/write/`Val` checked claims are PCS direct
 openings; instead it makes their soundness-carrying checked-claim path explicit.
+
+For the current simple kernel, the Stage-2 initialization mode is fixed
+positively, not left as an implicit implementation convention:
+
+- `init_mode_id = authenticated_nonzero_init`
+- register and RAM `Val` chains use the authenticated initial surfaces directly
+- the Stage-2 `Val` consequences are therefore interpreted through the modified
+  non-zero-init identity imported from `Chip8WitnessMemoryBinding`, not through
+  a synthetic preload-write reduction.
 
 ### Extraction theorems
 
@@ -327,7 +359,8 @@ $$
 $$
 
 Those are separate theorem-level closure objects consumed later by
-`Chip8AuthenticatedTrace`.
+`Chip8TwistTemporalInstantiation`, `Chip8PcContinuityBridge`,
+`Chip8TemporalConsistency`, and then `Chip8AuthenticatedTrace`.
 
 $$
 \mathrm{SemanticEvidenceCovered}(\dots)

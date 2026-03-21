@@ -30,6 +30,16 @@ $$
 
 This is a provenance object. It is not a new semantic theorem.
 
+The stronger theorem-facing packaging is one explicit `ProjectedRowPath`
+carrying:
+
+- the exact accepted direct opening for the row-binding claim,
+- the row/view projection witness,
+- the semantic row-consistency proof,
+- the exact authenticated `rowClaim`,
+- and the theorem that this same accepted row-opening path binds the projected
+  semantic row.
+
 ### Bridge-binding witness
 
 Define:
@@ -40,6 +50,8 @@ $$
 
 to mean the conjunction of:
 
+- one explicit `AcceptedDirectOpening` whose direct claim is exactly
+  `rowClaim.openingClaim`
 - `rowClaim.rowIndex = stepIdx`
 - `RowBound(rowClaim, z)`
 - `PreparedStepBound(z, preparedStep)`
@@ -63,14 +75,20 @@ $$
 
 to package:
 
-- one explicit authenticated row projection carrying the direct-opening
-  refinements for that row
+- one explicit authenticated row projection carrying the exact accepted
+  row-opening path for that row
 - one `RowConsistent(row, z, dec, pre, post, stepIdx)` proof tying that row
   projection to the semantic row `z`
 - one `BridgeBindingWitness(stepIdx, z, rowClaim, preparedStep)`
+- one explicit identity witnessing that the row-projection path and the bridge
+  witness reuse the same accepted direct opening
 
 This is the row-local object that proves the prepared-step artifact is bound to
-the same authenticated row-opening/refinement path used by semantic extraction.
+the exact same accepted row-opening path used by semantic extraction. The
+same-path identity is not merely prose: the theorem-facing bridge bundle must
+carry one shared `AcceptedDirectOpening`, and both the row-projection path and
+the prepared-step bridge witness must be parameterized by that exact accepted
+opening rather than merely by the same `rowClaim`.
 
 ### Existence from authenticated evidence
 
@@ -142,7 +160,8 @@ $$
 | Group | Lean surface | Kind | Role | Guarantee |
 |---|---|---|---|---|
 | Witness | `BridgeBindingWitness` | structure | Definitional | Packages the exact row-claim and prepared-step audit object for one exported row |
-| Witness | `BridgeBindingBundle` | structure | Definitional | Packages the bridge witness together with the authenticated row-projection/refinement path |
+| Witness | `ProjectedRowPath` | structure | Definitional | Packages the row projection together with the exact accepted row-opening path used by semantic extraction |
+| Witness | `BridgeBindingBundle` | structure | Definitional | Packages the bridge witness together with the exact accepted row-opening path reused by the authenticated row projection |
 | Theorem | `rowBound_of_bridgeBinding` | theorem | Theorem-Target | Recovers the authenticated row-binding theorem |
 | Theorem | `preparedStepBound_of_bridgeBinding` | theorem | Theorem-Target | Recovers the exported prepared-step theorem |
 | Theorem | `rowBound_of_bridgeBindingBundle` | theorem | Theorem-Target | Recovers the authenticated row-binding theorem from the stronger bridge bundle |
@@ -165,7 +184,8 @@ $$
   artifact supplied by downstream digest or audit owners; they must not force
   `mkPreparedStep(z)` as the theorem target.
 - The stronger bridge bundle must include the same authenticated row-projection
-  path used by semantic extraction, not merely an existentially recomputed row.
+  path used by semantic extraction, not merely an existentially recomputed row
+  or a bundle that only reuses the same `rowClaim`.
 - This owner must remain row-local; it must not silently upgrade one witness
   into a whole-trace theorem.
 

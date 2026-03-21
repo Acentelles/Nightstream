@@ -9,7 +9,10 @@
   realization predicate and therefore carries the semantic facts needed by the
   composition theorem.
 - **Protocol role**: This is the theorem-facing audit layer that checks a
-  concrete digest instance against the Lean-defined contract.
+  concrete digest instance against the Lean-defined contract. For any imported
+  digest field that is protocol-binding, the contract must be compatible with
+  the exact Lean-owned Goldilocks / serialization / Poseidon2 semantics of that
+  field rather than treating it as an implementation-defined blob.
 
 ## Target Formulas
 
@@ -23,6 +26,11 @@ $$
 
 It does not own cryptographic verification. It owns only the semantic audit of
 the staged execution boundary after a digest has been produced.
+
+When a staged digest carries protocol-binding hash or challenge fields, those
+fields must enter this boundary through an exact Lean-owned import meaning. The
+checker may stay separate from the lower-layer cryptographic verifier while
+still requiring exact computational agreement on the imported values.
 
 ### Executable checker surfaces
 
@@ -140,6 +148,11 @@ means:
 It does not mean that low-level PCS or transcript verification has been
 re-proved inside this module.
 
+It does mean that the imported digest fields must have one exact Lean-owned
+meaning. In particular, any imported Poseidon2-derived field must be tied to
+the canonical Goldilocks serialization and transcript semantics fixed elsewhere
+in the formal stack.
+
 ## Paper Anchors
 
 - **Sources**:
@@ -189,6 +202,9 @@ re-proved inside this module.
   is not already part of the imported boundary.
 - A slice-scoped audit owner must not silently upgrade one accepted digest into
   a whole authenticated execution trace.
+- The import meaning of any protocol-binding digest or challenge field must be
+  exact enough to support deterministic Rust↔Lean equality checks and
+  golden-vector conformance.
 
 ## Assumption Ledger
 
@@ -220,6 +236,8 @@ re-proved inside this module.
 - Keep executable checks aligned with the exact theorem-facing digest boundary.
 - Separate digest checking from external serialization and cryptographic
   verification.
+- Keep imported protocol-binding fields exact and executable enough for
+  near-`1:1` Rust↔Lean compatibility testing.
 
 ## Acceptance Criteria
 

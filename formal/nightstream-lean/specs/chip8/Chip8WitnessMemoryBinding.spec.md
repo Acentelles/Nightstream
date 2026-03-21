@@ -215,6 +215,14 @@ synthetic preload-write encoding. The modified `init + Inc -> Val` identity for
 that route is owned by `Nightstream/NonZeroInitTwist.lean`; this module imports
 that bridge and specializes it to the CHIP-8 register and RAM surfaces.
 
+The theorem-facing initialization mode is therefore fixed positively:
+
+- `initialization_mode = authenticated_nonzero_init`
+- the public / transcript metadata must carry the matching `init_mode_id`
+- any proof surface that appeals to Stage-2 `Val` consequences is appealing to
+  the authenticated non-zero-init identity, not to a zero-init theorem plus an
+  implicit preload-write reduction.
+
 ### Memory bound
 
 Define:

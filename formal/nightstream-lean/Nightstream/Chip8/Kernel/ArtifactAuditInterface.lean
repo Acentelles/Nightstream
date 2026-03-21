@@ -4,11 +4,16 @@ namespace Nightstream.Chip8
 
 namespace ArtifactAuditInterface
 
+-- ── Types ──
+
 abbrev F := Nightstream.Chip8.ArtifactAudit.F
 abbrev Program := Nightstream.Chip8.ArtifactAudit.Program
 abbrev MachineState := Nightstream.Chip8.ArtifactAudit.MachineState
 abbrev InitialState := Nightstream.Chip8.ArtifactAudit.InitialState
 abbrev ExternalSchedule := Nightstream.Chip8.ArtifactAudit.ExternalSchedule
+
+-- ── Definitions (surface checkers) ──
+
 abbrev checkDigestPublicSurface := @Nightstream.Chip8.ArtifactAudit.checkDigestPublicSurface
 abbrev checkStage1Surface := @Nightstream.Chip8.ArtifactAudit.checkStage1Surface
 abbrev checkStage2Surface := @Nightstream.Chip8.ArtifactAudit.checkStage2Surface
@@ -17,7 +22,13 @@ abbrev checkExecutionResultSurface :=
   @Nightstream.Chip8.ArtifactAudit.checkExecutionResultSurface
 abbrev checkStagedExecutionDigest :=
   @Nightstream.Chip8.ArtifactAudit.checkStagedExecutionDigest
+
+-- ── Constraints ──
+
 abbrev ArtifactAuditAccepted := @Nightstream.Chip8.ArtifactAudit.ArtifactAuditAccepted
+
+-- ── Theorems ──
+
 abbrev artifactAuditSound := @Nightstream.Chip8.ArtifactAudit.artifactAuditSound
 abbrev artifactAuditImpliesBridgeBinding :=
   @Nightstream.Chip8.ArtifactAudit.artifactAuditImpliesBridgeBinding

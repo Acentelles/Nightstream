@@ -23,6 +23,24 @@
   `Chip8TranscriptSchedule`, and `Chip8SoundnessAccounting`. It does not re-own
   any Stage 1 / Stage 2 / Stage 3 theorem.
 
+Scope for this owner is intentionally narrow and exact:
+
+- it is complete for the current simple kernel boundary imported from
+  `Chip8OpeningBoundary`, where `RootOpeningManifest = ∅`;
+- it is not the owner for a future combined kernel-plus-root opening boundary
+  with non-empty root opening claims.
+
+The strong closure chain consumed here is likewise explicit:
+
+- `Chip8TwistTemporalInstantiation` owns the chunk-global Stage-2 temporal
+  context and its bridge to one concrete temporal instantiation
+- `Chip8PcContinuityBridge` owns the Stage-3 `pc` component
+- `Chip8TemporalConsistency` turns those component-wise temporal facts into the
+  named whole-trace link contract
+- `Chip8AuthenticatedTrace` derives that closure from exact trace evidence
+- this owner packages the resulting exact accepted-boundary and execution
+  corollaries
+
 ## Target Formulas
 
 ### Kernel prepared steps
@@ -81,6 +99,12 @@ $$
 5. exact `root0` commitment binding for kernel opening claims:
 
 $$
+\mathrm{root0CommitmentBindingsConform}(root0Bindings)
+$$
+
+and:
+
+$$
 \forall claim \in kernelManifest,\;
 claim.commitmentId \in \mathrm{root0CommitmentIds}
 $$
@@ -101,7 +125,7 @@ $$
 \mathrm{ChallengeEvent}(e)
 \Longrightarrow
 \exists rest,\;
-events = \mathrm{phase0Events} \mathbin{+\!\!+} rest \land e \in rest
+events = \mathrm{phase0Events}(root0Bindings) \mathbin{+\!\!+} rest \land e \in rest
 $$
 
 for every Stage-1 terminal-point event:
@@ -110,7 +134,7 @@ $$
 \mathrm{Stage1TerminalPointEvent}(e)
 \Longrightarrow
 \exists rest,\;
-events = \mathrm{phase0Events} \mathbin{+\!\!+} rest \land e \in rest
+events = \mathrm{phase0Events}(root0Bindings) \mathbin{+\!\!+} rest \land e \in rest
 $$
 
 for every Stage-2 terminal-point event:
@@ -119,7 +143,7 @@ $$
 \mathrm{Stage2TerminalPointEvent}(e)
 \Longrightarrow
 \exists rest,\;
-events = \mathrm{phase0Events} \mathbin{+\!\!+} rest \land e \in rest
+events = \mathrm{phase0Events}(root0Bindings) \mathbin{+\!\!+} rest \land e \in rest
 $$
 
 exact Stage-3 row-binding coverage:
@@ -154,7 +178,7 @@ $$
 \land
 \mathrm{ExactKernelOpeningBoundary}(pts, kernelManifest, rootManifest)
 \land
-\mathrm{KernelTranscriptSchedule}(meta.semanticRows, events)
+\mathrm{KernelTranscriptSchedule}(root0Bindings, meta.semanticRows, events)
 \land
 \mathrm{AuthenticatedTemporalSupportBound}(frames)
 \land
@@ -183,7 +207,7 @@ $$
 \land
 \mathrm{ExactKernelOpeningBoundary}(pts, kernelManifest, rootManifest)
 \land
-\mathrm{KernelTranscriptSchedule}(meta.semanticRows, events)
+\mathrm{KernelTranscriptSchedule}(root0Bindings, meta.semanticRows, events)
 \land
 \mathrm{KernelSoundnessAccounting}(accounting)
 $$
@@ -203,7 +227,7 @@ $$
 \land
 \mathrm{ExactKernelOpeningBoundary}(pts, kernelManifest, rootManifest)
 \land
-\mathrm{KernelTranscriptSchedule}(meta.semanticRows, events)
+\mathrm{KernelTranscriptSchedule}(root0Bindings, meta.semanticRows, events)
 $$
 
 $$
@@ -228,7 +252,7 @@ $$
 \land
 \mathrm{ExactKernelOpeningBoundary}(pts, kernelManifest, rootManifest)
 \land
-\mathrm{KernelTranscriptSchedule}(meta.semanticRows, events)
+\mathrm{KernelTranscriptSchedule}(root0Bindings, meta.semanticRows, events)
 \land
 \mathrm{AuthenticatedTemporalSupportBound}(frames).
 $$
@@ -317,12 +341,12 @@ $$
 | Group | Lean surface | Kind | Role | Guarantee |
 |---|---|---|---|---|
 | Export | `kernelPreparedSteps` | def | Definitional | Canonical prepared-step list exported from one authenticated trace |
-| Conclusion | `KernelSoundnessConclusion` | def | Definitional | Bundles the exact top-level kernel conclusions |
-| Acceptance | `KernelSoundnessAccepted` | def | Definitional | Exact theorem-facing kernel acceptance boundary |
-| Theorem | `kernelSoundness_of_boundaries` | theorem | Theorem-Target | Exact row evidence + chunk input + opening boundary + transcript schedule + accounting imply the full kernel conclusion bundle |
-| Theorem | `kernelSoundnessAccepted_of_exactBoundaries` | theorem | Theorem-Target | Exact boundary data determines one accepted kernel boundary instance because temporal support is now derived internally from exact trace evidence |
-| Theorem | `kernelSoundness_of_exactBoundaries` | theorem | Theorem-Target | Exact row evidence + chunk input + opening boundary + transcript schedule + accounting imply the full kernel conclusion bundle without requiring temporal support as an external premise |
-| Theorem | `kernelSoundness_of_acceptance` | theorem | Theorem-Target | Accepted kernel boundary instances imply the full kernel conclusion bundle |
+| Conclusion | `KernelSoundnessConclusion` | structure | Definitional | Bundles the exact top-level kernel conclusions, including the absorbed `root0` binding inventory |
+| Acceptance | `KernelSoundnessAccepted` | structure | Definitional | Exact theorem-facing kernel acceptance boundary, including one explicit `root0` binding inventory |
+| Theorem | `kernelSoundness_of_boundaries` | def | Theorem-Target | Exact row evidence + chunk input + opening boundary + transcript schedule + accounting imply the full kernel conclusion bundle |
+| Theorem | `kernelSoundnessAccepted_of_exactBoundaries` | def | Theorem-Target | Exact boundary data determines one accepted kernel boundary instance because temporal support is now derived internally from exact trace evidence |
+| Theorem | `kernelSoundness_of_exactBoundaries` | def | Theorem-Target | Exact row evidence + chunk input + opening boundary + transcript schedule + accounting imply the full kernel conclusion bundle without requiring temporal support as an external premise |
+| Theorem | `kernelSoundness_of_acceptance` | def | Theorem-Target | Accepted kernel boundary instances imply the full kernel conclusion bundle |
 | Theorem | `kernelAcceptanceImpliesAuthenticatedChunkTrace` | theorem | Theorem-Target | Accepted kernel boundary instances imply the authenticated chunk-trace surface exported by the current kernel boundary |
 | Theorem | `kernelAcceptanceImpliesStage2TemporalSeeds` | theorem | Theorem-Target | Accepted kernel boundary instances imply the exact per-row Stage-2 temporal seed summary exported by authenticated trace closure |
 | Theorem | `kernelAcceptanceImpliesTraceLinkBound` | theorem | Theorem-Target | Accepted kernel boundary instances imply the exact adjacent-state link contract directly |

@@ -4,6 +4,8 @@ namespace Nightstream.Chip8
 
 namespace KernelArtifactAuditInterface
 
+-- ── Types ──
+
 abbrev F := Nightstream.Chip8.KernelArtifactAudit.F
 abbrev Program := Nightstream.Chip8.KernelArtifactAudit.Program
 abbrev MachineState := Nightstream.Chip8.KernelArtifactAudit.MachineState
@@ -12,6 +14,9 @@ abbrev ExternalSchedule := Nightstream.Chip8.KernelArtifactAudit.ExternalSchedul
 abbrev ExecutionFrame := Nightstream.Chip8.KernelArtifactAudit.ExecutionFrame
 abbrev ExecutionInputContext := Nightstream.Chip8.KernelArtifactAudit.ExecutionInputContext
 abbrev RootEncode := @Nightstream.Chip8.KernelArtifactAudit.RootEncode
+
+-- ── Definitions (surface checkers) ──
+
 abbrev checkKernelTraceSurface :=
   @Nightstream.Chip8.KernelArtifactAudit.checkKernelTraceSurface
 abbrev checkKernelExportSurface :=
@@ -26,12 +31,21 @@ abbrev checkKernelErrorSurface :=
   @Nightstream.Chip8.KernelArtifactAudit.checkKernelErrorSurface
 abbrev checkKernelExecutionDigest :=
   @Nightstream.Chip8.KernelArtifactAudit.checkKernelExecutionDigest
+
+-- ── Constraints ──
+
 abbrev KernelArtifactAuditAccepted :=
   @Nightstream.Chip8.KernelArtifactAudit.KernelArtifactAuditAccepted
+
+-- ── Theorems (soundness) ──
+
 abbrev kernelArtifactAuditSound :=
   @Nightstream.Chip8.KernelArtifactAudit.kernelArtifactAuditSound
 abbrev kernelArtifactAuditImpliesKernelSoundnessConclusion :=
   @Nightstream.Chip8.KernelArtifactAudit.kernelArtifactAuditImpliesKernelSoundnessConclusion
+
+-- ── Theorems (audit implications) ──
+
 abbrev kernelArtifactAuditImpliesAuthenticatedChunkTrace :=
   @Nightstream.Chip8.KernelArtifactAudit.kernelArtifactAuditImpliesAuthenticatedChunkTrace
 abbrev kernelArtifactAuditImpliesStage2TemporalSeeds :=

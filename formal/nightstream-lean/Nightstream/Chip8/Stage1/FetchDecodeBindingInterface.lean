@@ -4,6 +4,8 @@ namespace Nightstream.Chip8
 
 namespace FetchDecodeBindingInterface
 
+-- ── Types & Enumerations ──
+
 abbrev OpcodeId := Nightstream.Chip8.FetchDecodeBinding.OpcodeId
 abbrev LookupKind := Nightstream.Chip8.FetchDecodeBinding.LookupKind
 abbrev OperandSelector := Nightstream.Chip8.FetchDecodeBinding.OperandSelector
@@ -12,6 +14,9 @@ abbrev DecodedStage1 := Nightstream.Chip8.FetchDecodeBinding.DecodedStage1
 abbrev DecodedCore := Nightstream.Chip8.FetchDecodeBinding.DecodedCore
 abbrev DecodedRow := Nightstream.Chip8.FetchDecodeBinding.DecodedRow
 abbrev Program := Nightstream.Chip8.FetchDecodeBinding.Program
+
+-- ── Field Extraction & Decode Functions ──
+
 abbrev opcodeAt := @Nightstream.Chip8.FetchDecodeBinding.opcodeAt
 abbrev topNibble := @Nightstream.Chip8.FetchDecodeBinding.topNibble
 abbrev xField := @Nightstream.Chip8.FetchDecodeBinding.xField
@@ -29,10 +34,15 @@ abbrev byteAddLo := @Nightstream.Chip8.FetchDecodeBinding.byteAddLo
 abbrev equal8 := @Nightstream.Chip8.FetchDecodeBinding.equal8
 abbrev evalLookup := @Nightstream.Chip8.FetchDecodeBinding.evalLookup
 abbrev eq4Eval := @Nightstream.Chip8.FetchDecodeBinding.eq4Eval
+
+-- ── Boundary Propositions ──
+
 abbrev AluLookupBound := @Nightstream.Chip8.FetchDecodeBinding.AluLookupBound
 abbrev BurstEqBound := @Nightstream.Chip8.FetchDecodeBinding.BurstEqBound
 abbrev DecodeHandoffBound := @Nightstream.Chip8.FetchDecodeBinding.DecodeHandoffBound
 abbrev FetchDecodeBound := @Nightstream.Chip8.FetchDecodeBinding.FetchDecodeBound
+
+-- ── Field & Decode Theorems ──
 
 abbrev behaviorOfOpcode_mem_decodeImage :=
   @Nightstream.Chip8.FetchDecodeBinding.behaviorOfOpcode_mem_decodeImage
@@ -75,6 +85,9 @@ abbrev decodeOpcodeWord_readsRam_is_loadRegs :=
   @Nightstream.Chip8.FetchDecodeBinding.decodeOpcodeWord_readsRam_is_loadRegs
 abbrev decodeOpcodeWord_writesRam_is_storeRegs :=
   @Nightstream.Chip8.FetchDecodeBinding.decodeOpcodeWord_writesRam_is_storeRegs
+
+-- ── FetchDecode Boundary Theorems ──
+
 abbrev fetchDecodeBound_opcodeAt := @Nightstream.Chip8.FetchDecodeBinding.fetchDecodeBound_opcodeAt
 abbrev fetchDecodeBound_decodes := @Nightstream.Chip8.FetchDecodeBinding.fetchDecodeBound_decodes
 abbrev fetchDecodeBound_unique := @Nightstream.Chip8.FetchDecodeBinding.fetchDecodeBound_unique
@@ -82,6 +95,9 @@ abbrev fetchDecodeBound_wellFormed := @Nightstream.Chip8.FetchDecodeBinding.fetc
 abbrev fetchDecodeBound_valid := @Nightstream.Chip8.FetchDecodeBinding.fetchDecodeBound_valid
 abbrev fetchDecodeBound_flags_mem_decodeImage :=
   @Nightstream.Chip8.FetchDecodeBinding.fetchDecodeBound_flags_mem_decodeImage
+
+-- ── ALU / Burst Boundary Theorems ──
+
 abbrev aluLookupBound_noLookup_zero :=
   @Nightstream.Chip8.FetchDecodeBinding.aluLookupBound_noLookup_zero
 abbrev burstEqBound_nonMem_zero :=

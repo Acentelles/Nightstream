@@ -4,20 +4,31 @@ namespace Nightstream.Chip8
 
 namespace RegisterTimelineInterface
 
+-- ── Types ──
+
 abbrev F := Nightstream.Chip8.RegisterTimeline.F
 abbrev MachineState := Nightstream.Chip8.RegisterTimeline.MachineState
 abbrev ExecutionFrame := Nightstream.Chip8.RegisterTimeline.ExecutionFrame
 abbrev RegisterValueTimeline := Nightstream.Chip8.RegisterTimeline.RegisterValueTimeline
 abbrev RegisterIndexBound := Nightstream.Chip8.RegisterTimeline.RegisterIndexBound
+
+-- ── Definitions ──
+
 abbrev RegisterAdjacentTraceBound :=
   @Nightstream.Chip8.RegisterTimeline.RegisterAdjacentTraceBound
 abbrev registerTimelineOfTraceFrom :=
   @Nightstream.Chip8.RegisterTimeline.registerTimelineOfTraceFrom
 abbrev registerTimelineOfTrace :=
   @Nightstream.Chip8.RegisterTimeline.registerTimelineOfTrace
+
+-- ── Bounds ──
+
 abbrev RegisterAdjacentBound := @Nightstream.Chip8.RegisterTimeline.RegisterAdjacentBound
 abbrev RegisterTemporalBoundFrom := @Nightstream.Chip8.RegisterTimeline.RegisterTemporalBoundFrom
 abbrev RegisterTemporalBound := @Nightstream.Chip8.RegisterTimeline.RegisterTemporalBound
+
+-- ── Theorems ──
+
 abbrev headRegisterPreBound_of_registerTemporalBoundFrom :=
   @Nightstream.Chip8.RegisterTimeline.headRegisterPreBound_of_registerTemporalBoundFrom
 abbrev registerAdjacentBound_of_registerTemporalBoundFrom :=

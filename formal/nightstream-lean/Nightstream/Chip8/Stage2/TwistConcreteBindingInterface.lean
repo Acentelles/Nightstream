@@ -4,6 +4,8 @@ namespace Nightstream.Chip8
 
 namespace TwistConcreteBindingInterface
 
+-- ── Types ──
+
 abbrev F := Nightstream.Chip8.TwistConcreteBinding.F
 abbrev InitialState := Nightstream.Chip8.TwistConcreteBinding.InitialState
 abbrev RegAddress := Nightstream.Chip8.TwistConcreteBinding.RegAddress
@@ -17,6 +19,9 @@ abbrev RamAddressColumns :=
 abbrev RegisterCycleValues :=
   Nightstream.Chip8.TwistConcreteBinding.RegisterCycleValues
 abbrev RamCycleValues := Nightstream.Chip8.TwistConcreteBinding.RamCycleValues
+
+-- ── Theorems: Register Concrete Bindings ──
+
 abbrev registerReadCheckAtBitCycle_of_relation :=
   @Nightstream.Chip8.TwistConcreteBinding.registerReadCheckAtBitCycle_of_relation
 abbrev registerWriteCheckAtBitPoint_of_incrementRelation :=
@@ -27,6 +32,8 @@ abbrev registerShiftedReadCheckAtBitCycle_of_relation :=
   @Nightstream.Chip8.TwistConcreteBinding.registerShiftedReadCheckAtBitCycle_of_relation
 abbrev registerShiftedWriteCheckAtBitPoint_of_incrementRelation :=
   @Nightstream.Chip8.TwistConcreteBinding.registerShiftedWriteCheckAtBitPoint_of_incrementRelation
+-- ── Theorems: RAM Concrete Bindings ──
+
 abbrev ramReadCheckAtBitCycle_of_relation :=
   @Nightstream.Chip8.TwistConcreteBinding.ramReadCheckAtBitCycle_of_relation
 abbrev ramWriteCheckAtBitPoint_of_incrementRelation :=

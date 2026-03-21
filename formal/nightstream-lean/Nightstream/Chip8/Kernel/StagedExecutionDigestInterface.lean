@@ -4,19 +4,29 @@ namespace Nightstream.Chip8
 
 namespace StagedExecutionDigestInterface
 
+-- ── Types ──
+
 abbrev F := Nightstream.Chip8.StagedExecutionDigest.F
 abbrev Program := Nightstream.Chip8.StagedExecutionDigest.Program
 abbrev MachineState := Nightstream.Chip8.StagedExecutionDigest.MachineState
 abbrev InitialState := Nightstream.Chip8.StagedExecutionDigest.InitialState
 abbrev ExternalSchedule := Nightstream.Chip8.StagedExecutionDigest.ExternalSchedule
+
+-- ── Structures ──
+
 abbrev DigestPublicSurface := @Nightstream.Chip8.StagedExecutionDigest.DigestPublicSurface
 abbrev Stage1DigestSurface := @Nightstream.Chip8.StagedExecutionDigest.Stage1DigestSurface
 abbrev Stage2DigestSurface := @Nightstream.Chip8.StagedExecutionDigest.Stage2DigestSurface
 abbrev Stage3DigestSurface := @Nightstream.Chip8.StagedExecutionDigest.Stage3DigestSurface
 abbrev ExecutionResultSurface := @Nightstream.Chip8.StagedExecutionDigest.ExecutionResultSurface
+
+-- ── Constraints ──
+
 abbrev StagedExecutionDigest := @Nightstream.Chip8.StagedExecutionDigest.StagedExecutionDigest
 abbrev StagedExecutionDigestBound :=
   @Nightstream.Chip8.StagedExecutionDigest.StagedExecutionDigestBound
+
+-- ── Theorems ──
 
 abbrev kernelPublicInputsBound_of_digest :=
   @Nightstream.Chip8.StagedExecutionDigest.kernelPublicInputsBound_of_digest

@@ -1794,22 +1794,31 @@ At minimum, the kernel-owned manifest contains direct openings for:
 - `C_decode_ra @ (r_decode_addr, r_lookup)`
 - `C_alu_ra @ (r_alu_addr, r_lookup)`
 - `C_eq4_ra @ (r_eq4_addr, r_lookup)`
-- `C_decode_handoff @ r_lookup`
+- `C_decode_handoff @ r_lookup` with exact polynomial subset
+  `{uses_y_dec, reads_ram_dec, writes_ram_dec}`
 - `C_rom_table @ r_fetch_addr`
-- `C_decode_table @ r_decode_addr`
+- `C_decode_table @ r_decode_addr` with exact polynomial subset `0..21`
 - `C_alu_table @ r_add8lo_addr`
 - `C_eq4_table @ r_eq4_addr`
 - `C_lane @ r_twist_cycle` for the Stage-2 lane columns
   `{REG_X, REG_Y, REG_X_NEXT, I_REG, I_NEXT, MEM_VALUE,
     WritesLookupToX, WritesMemToX, PreservesX, WritesNnnToI,
     IsMemOp, X_IDX, Y_IDX, RAM_ADDR}`
-- `C_decode_handoff @ r_twist_cycle`
-- `C_reg @ (r_addr_reg, r_twist_cycle)`
-- `C_ram @ (r_addr_ram, r_twist_cycle)`
-- `C_lane @ r_shift` for `{PC_NEXT, X_IDX, IsMemOp, BURST_LAST}`
+- `C_decode_handoff @ r_twist_cycle` with exact polynomial subset
+  `{uses_y_dec, reads_ram_dec, writes_ram_dec}`
+- `C_reg @ (r_addr_reg, r_twist_cycle)` with exact polynomial subset
+  `{RegInc, RegRaX, RegRaY, RegRaI, RegWa}`
+- `C_ram @ (r_addr_ram, r_twist_cycle)` with exact polynomial subset
+  `{RamInc, RamRa, RamWa}`
+- `C_lane @ r_shift` for `{PC, PC_NEXT, X_IDX, IsMemOp, BURST_LAST}`
 - `C_lane @ j0_bits` for `{IsMemOp, X_IDX}`
-- `C_lane @ j_bits` for all 23 committed non-fixed lane coordinates of every
-  exported semantic row
+- `C_lane @ j_last_bits` for `{IsMemOp, BURST_LAST}`
+- `C_lane @ j_bits` for the exact 23 committed non-fixed lane coordinates of
+  every exported semantic row, in canonical `C_lane` registry order:
+  `{PC, PC_NEXT, REG_X, REG_Y, REG_X_NEXT, I_REG, I_NEXT, KK, NNN_ADDR,
+    NNN_WORD, MEM_VALUE, LOOKUP_OUTPUT, WritesLookupToX, WritesMemToX,
+    PreservesX, WritesNnnToI, IsJump, IsBranch, IsMemOp, X_IDX, Y_IDX,
+    BURST_LAST, RAM_ADDR}`
 
 ### Exact exclusions
 
@@ -2096,7 +2105,13 @@ boundaries with no in-flight burst state.
 For each exported row `j`, the bridge owns:
 
 $$
-\mathrm{RowBindingClaim}_j = (C_{lane}, j_{bits}, \text{all 23 committed non-fixed lane coordinates}).
+\mathrm{RowBindingClaim}_j = (C_{lane}, j_{bits},
+[\mathrm{PC}, \mathrm{PC\_NEXT}, \mathrm{REG\_X}, \mathrm{REG\_Y}, \mathrm{REG\_X\_NEXT},
+\mathrm{I\_REG}, \mathrm{I\_NEXT}, \mathrm{KK}, \mathrm{NNN\_ADDR},
+\mathrm{NNN\_WORD}, \mathrm{MEM\_VALUE}, \mathrm{LOOKUP\_OUTPUT},
+\mathrm{WritesLookupToX}, \mathrm{WritesMemToX}, \mathrm{PreservesX},
+\mathrm{WritesNnnToI}, \mathrm{IsJump}, \mathrm{IsBranch}, \mathrm{IsMemOp},
+\mathrm{X\_IDX}, \mathrm{Y\_IDX}, \mathrm{BURST\_LAST}, \mathrm{RAM\_ADDR}]).
 $$
 
 Define:
@@ -2107,8 +2122,8 @@ $$
 
 to mean:
 
-- the claim opens exactly the 23 committed non-fixed lane coordinates of row
-  `j` from `C_lane`
+- the claim opens exactly those 23 committed non-fixed lane coordinates of row
+  `j` from `C_lane`, in that canonical registry order
 - `z_j[0] = ONE = 1` is inserted as the fixed verifier-known coordinate
 - the resulting semantic row is exactly `z_j`
 
@@ -2121,6 +2136,15 @@ $$
 $$
 
 be the canonical packed root witness encoding used by the root prover.
+
+Normative meaning:
+
+- `w_j` is coordinates `1..23` of the semantic row `z_j`;
+- `Z_j` is obtained by padding, canonical reshaping, and the canonical
+  Ajtai/root witness encoding determined only by the public root parameters;
+- the imported root encoding and Ajtai commitment context is fixed by the
+  public `root_params_id` / `vm_spec` boundary, not by hidden caller-chosen
+  functions or witness-layout conventions.
 
 Define:
 
@@ -2366,6 +2390,13 @@ $$
 
 from `Chip8KernelInputBinding`.
 
+For every direct scalar consumed by this layer, accepted-opening provenance must
+also enforce coordinatewise equality between the direct claim's
+`claimedValues` and the exact-opening witness values in the same
+`polynomialIds` order. The scalar theorem-facing carrier is
+`AcceptedScalarOpening`, which is a scalar projection of the stronger
+direct-claim object `AcceptedDirectOpening`.
+
 ### Evidence coverage of semantic facts
 
 Define:
@@ -2384,7 +2415,8 @@ to mean:
   handoff object used by the current row
 - `TwistSessionClosed(stage2)`
 - a row/view witness tied to the authenticated `C_lane` row-binding claims
-- lower-layer refinement for every direct scalar used by that row/view witness
+- lower-layer refinement, coordinatewise accepted-opening equality, and raw PCS
+  opening separation for every direct scalar used by that row/view witness
 - exact Stage-1, Stage-2, and Stage-3 CHIP-8 bindings for the current row
 
 ### Extraction theorems

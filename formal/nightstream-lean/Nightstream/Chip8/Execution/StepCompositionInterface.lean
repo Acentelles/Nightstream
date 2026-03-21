@@ -4,14 +4,25 @@ namespace Nightstream.Chip8
 
 namespace StepCompositionInterface
 
+-- ── Types ──
+
 abbrev F := Nightstream.Chip8.StepComposition.F
 abbrev MachineState := Nightstream.Chip8.StepComposition.MachineState
 abbrev ExternalSchedule := Nightstream.Chip8.StepComposition.ExternalSchedule
-abbrev StateWellFormed := Nightstream.Chip8.StepComposition.StateWellFormed
-abbrev FetchDecodeBound := @Nightstream.Chip8.StepComposition.FetchDecodeBound
+abbrev ExecutionFrame := Nightstream.Chip8.StepComposition.ExecutionFrame
+abbrev GoalPredicate := Nightstream.Chip8.StepComposition.GoalPredicate
+
+-- ── Definitions ──
+
 abbrev byteAdd := @Nightstream.Chip8.StepComposition.byteAdd
 abbrev skipEqBit := @Nightstream.Chip8.StepComposition.skipEqBit
 abbrev lookupValueOf := @Nightstream.Chip8.StepComposition.lookupValueOf
+abbrev FinalState := @Nightstream.Chip8.StepComposition.FinalState
+
+-- ── Bounds / Constraints ──
+
+abbrev StateWellFormed := Nightstream.Chip8.StepComposition.StateWellFormed
+abbrev FetchDecodeBound := @Nightstream.Chip8.StepComposition.FetchDecodeBound
 abbrev LookupBound := @Nightstream.Chip8.StepComposition.LookupBound
 abbrev FramebufferBound := @Nightstream.Chip8.StepComposition.FramebufferBound
 abbrev ScheduleBound := @Nightstream.Chip8.StepComposition.ScheduleBound
@@ -27,7 +38,6 @@ abbrev ContinuityRowBound := @Nightstream.Chip8.StepComposition.ContinuityRowBou
 abbrev MicrostepCorrect := @Nightstream.Chip8.StepComposition.MicrostepCorrect
 abbrev InstructionCorrect := @Nightstream.Chip8.StepComposition.InstructionCorrect
 abbrev BurstScheduleCorrect := @Nightstream.Chip8.StepComposition.BurstScheduleCorrect
-abbrev ExecutionFrame := Nightstream.Chip8.StepComposition.ExecutionFrame
 abbrev ExecutionLinked := @Nightstream.Chip8.StepComposition.ExecutionLinked
 abbrev InitialStateMatches := @Nightstream.Chip8.StepComposition.InitialStateMatches
 abbrev StartBoundaryFrame := @Nightstream.Chip8.StepComposition.StartBoundaryFrame
@@ -37,8 +47,8 @@ abbrev ExecutionFrameBound := @Nightstream.Chip8.StepComposition.ExecutionFrameB
 abbrev ContinuityTraceBound := @Nightstream.Chip8.StepComposition.ContinuityTraceBound
 abbrev PreparedStepTraceBound := @Nightstream.Chip8.StepComposition.PreparedStepTraceBound
 abbrev ExecutionCorrect := @Nightstream.Chip8.StepComposition.ExecutionCorrect
-abbrev FinalState := @Nightstream.Chip8.StepComposition.FinalState
-abbrev GoalPredicate := Nightstream.Chip8.StepComposition.GoalPredicate
+
+-- ── Theorems: Field Bounds ──
 
 abbrev goldilocks_q_gt_256 := Nightstream.Chip8.StepComposition.goldilocks_q_gt_256
 abbrev goldilocks_q_gt_4096 := Nightstream.Chip8.StepComposition.goldilocks_q_gt_4096
@@ -51,10 +61,16 @@ abbrev fetchDecodeBound_wellFormed := @Nightstream.Chip8.StepComposition.fetchDe
 abbrev byteAdd_lt_256 := @Nightstream.Chip8.StepComposition.byteAdd_lt_256
 abbrev lookupValueOf_lt_256 := @Nightstream.Chip8.StepComposition.lookupValueOf_lt_256
 abbrev lookupValueOf_lt_q := @Nightstream.Chip8.StepComposition.lookupValueOf_lt_q
+
+-- ── Theorems: Frame & Execution ──
+
 abbrev executionFrameBound_witnessBinds :=
   @Nightstream.Chip8.StepComposition.executionFrameBound_witnessBinds
 abbrev executionFrameBound_microstepCorrect :=
   @Nightstream.Chip8.StepComposition.executionFrameBound_microstepCorrect
+
+-- ── Theorems: Per-Instruction Correctness ──
+
 abbrev microstepCorrect_of_bounds := @Nightstream.Chip8.StepComposition.microstepCorrect_of_bounds
 abbrev microstepCorrect_ldImm := @Nightstream.Chip8.StepComposition.microstepCorrect_ldImm
 abbrev microstepCorrect_addImm := @Nightstream.Chip8.StepComposition.microstepCorrect_addImm
@@ -68,6 +84,9 @@ abbrev microstepCorrect_storeRegs :=
   @Nightstream.Chip8.StepComposition.microstepCorrect_storeRegs
 abbrev microstepCorrect_loadRegs :=
   @Nightstream.Chip8.StepComposition.microstepCorrect_loadRegs
+
+-- ── Theorems: Composition ──
+
 abbrev instructionCorrect_of_nonBurstMicrostep :=
   @Nightstream.Chip8.StepComposition.instructionCorrect_of_nonBurstMicrostep
 abbrev instructionCorrect_of_burst :=

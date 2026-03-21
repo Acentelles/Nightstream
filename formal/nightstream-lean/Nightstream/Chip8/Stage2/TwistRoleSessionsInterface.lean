@@ -2,15 +2,23 @@ import Nightstream.Chip8.Stage2.TwistRoleSessions
 
 namespace Nightstream.Chip8.TwistRoleSessionsInterface
 
+-- ── Structures ──
+
 abbrev RegisterRoleSessions := @Nightstream.Chip8.TwistRoleSessions.RegisterRoleSessions
 abbrev LoadRamRoleSession := @Nightstream.Chip8.TwistRoleSessions.LoadRamRoleSession
 abbrev StoreRamRoleSession := @Nightstream.Chip8.TwistRoleSessions.StoreRamRoleSession
+
+-- ── Definitions: Session Construction ──
+
 noncomputable abbrev registerRoleSessions_of_seed :=
   @Nightstream.Chip8.TwistRoleSessions.registerRoleSessions_of_seed
 noncomputable abbrev loadRamRoleSession_of_seed :=
   @Nightstream.Chip8.TwistRoleSessions.loadRamRoleSession_of_seed
 noncomputable abbrev storeRamRoleSession_of_seed :=
   @Nightstream.Chip8.TwistRoleSessions.storeRamRoleSession_of_seed
+
+-- ── Theorems: Key & Value Equalities ──
+
 abbrev twistSessionWitness_readKey_eq_key :=
   @Nightstream.Chip8.TwistRoleSessions.twistSessionWitness_readKey_eq_key
 abbrev twistSessionWitness_writeKey_eq_key :=
@@ -23,6 +31,9 @@ abbrev twistSessionWitness_writeVal_eq_valClaimVal :=
   @Nightstream.Chip8.TwistRoleSessions.twistSessionWitness_writeVal_eq_valClaimVal
 abbrev twistSessionWitness_readVal_eq_valClaimVal :=
   @Nightstream.Chip8.TwistRoleSessions.twistSessionWitness_readVal_eq_valClaimVal
+
+-- ── Theorems: Claims Membership ──
+
 abbrev registerSessionClaimsInΓ₃_of_seed :=
   @Nightstream.Chip8.TwistRoleSessions.registerSessionClaimsInΓ₃_of_seed
 abbrev ramSessionClaimsInΓ₃_of_seed :=
@@ -39,6 +50,9 @@ abbrev loadRamRoleSession_claimsInΓ₃ :=
   @Nightstream.Chip8.TwistRoleSessions.loadRamRoleSession_claimsInΓ₃
 abbrev storeRamRoleSession_claimsInΓ₃ :=
   @Nightstream.Chip8.TwistRoleSessions.storeRamRoleSession_claimsInΓ₃
+
+-- ── Theorems: Value Coherence ──
+
 abbrev registerRoleSessions_readXValue_eq_primaryValue :=
   @Nightstream.Chip8.TwistRoleSessions.registerRoleSessions_readXValue_eq_primaryValue
 abbrev registerRoleSessions_readYValue_eq_secondaryValue :=

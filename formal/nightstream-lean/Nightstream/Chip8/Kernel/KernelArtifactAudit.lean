@@ -17,6 +17,7 @@ open Nightstream.Chip8.KernelSoundness
 open Nightstream.Chip8.SoundnessAccounting
 open Nightstream.Chip8.ExactOpeningBoundary
 open Nightstream.Chip8.TranscriptSchedule
+open Nightstream.Chip8.RootHandoffContext
 
 abbrev F := KernelExecutionDigest.F
 abbrev Program := KernelExecutionDigest.Program
@@ -63,8 +64,7 @@ def checkKernelTraceSurface
   {rom : Program}
   {σ : ExternalSchedule}
   {init : InitialState}
-  (rootEncode : RootEncode W Z F)
-  (ajtaiCommit : Z → Commitment)
+  (rootCtx : RootHandoffContext RootParamsId W Z Commitment F)
   (frames :
     List
       (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
@@ -78,7 +78,7 @@ def checkKernelTraceSurface
   (events : List TranscriptEvent)
   (accounting : KernelSoundnessAccounting)
   (_d :
-    ExecutionDigest rootEncode ajtaiCommit frames pts kernelManifest rootManifest
+    ExecutionDigest rootCtx frames pts kernelManifest rootManifest
       events accounting) : Prop :=
   AuthenticatedChunkTraceBound (inputs := inputs) frames ∧
     List.Forall
@@ -111,8 +111,7 @@ def checkKernelExportSurface
   {rom : Program}
   {σ : ExternalSchedule}
   {init : InitialState}
-  (rootEncode : RootEncode W Z F)
-  (ajtaiCommit : Z → Commitment)
+  (rootCtx : RootHandoffContext RootParamsId W Z Commitment F)
   (frames :
     List
       (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
@@ -126,12 +125,13 @@ def checkKernelExportSurface
   (events : List TranscriptEvent)
   (accounting : KernelSoundnessAccounting)
   (_d :
-    ExecutionDigest rootEncode ajtaiCommit frames pts kernelManifest rootManifest
+    ExecutionDigest rootCtx frames pts kernelManifest rootManifest
       events accounting) : Prop :=
-  (KernelSoundness.kernelPreparedSteps rootEncode ajtaiCommit frames).length =
+  RootHandoffContextBound inputs rootCtx ∧
+    (KernelSoundness.kernelPreparedSteps rootCtx frames).length =
       inputs.pubMeta.semanticRows ∧
-    StepComposition.PreparedStepTraceBound rootEncode ajtaiCommit (traceOf frames)
-      (KernelSoundness.kernelPreparedSteps rootEncode ajtaiCommit frames)
+    StepComposition.PreparedStepTraceBound rootCtx.rootEncode rootCtx.ajtaiCommit (traceOf frames)
+      (KernelSoundness.kernelPreparedSteps rootCtx frames)
 
 def checkKernelAuditSurface
   {pcs : EvidenceCoverage.PCSContext AuxIndex EvalPoint}
@@ -157,8 +157,7 @@ def checkKernelAuditSurface
   {rom : Program}
   {σ : ExternalSchedule}
   {init : InitialState}
-  (rootEncode : RootEncode W Z F)
-  (ajtaiCommit : Z → Commitment)
+  (rootCtx : RootHandoffContext RootParamsId W Z Commitment F)
   (frames :
     List
       (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
@@ -172,14 +171,14 @@ def checkKernelAuditSurface
   (events : List TranscriptEvent)
   (accounting : KernelSoundnessAccounting)
   (_d :
-    ExecutionDigest rootEncode ajtaiCommit frames pts kernelManifest rootManifest
+    ExecutionDigest rootCtx frames pts kernelManifest rootManifest
       events accounting) : Prop :=
   List.Forall
       (RowProjectionSummaryEntry (inputs := inputs) (evalBase := evalBase)
         (B := B)) frames ∧
     List.Forall
       (BridgeBindingSummaryEntry (inputs := inputs) (evalBase := evalBase)
-        (B := B) rootEncode ajtaiCommit) frames
+        (B := B) rootCtx) frames
 
 def checkKernelManifestSurface'
   {pcs : EvidenceCoverage.PCSContext AuxIndex EvalPoint}
@@ -205,8 +204,7 @@ def checkKernelManifestSurface'
   {rom : Program}
   {σ : ExternalSchedule}
   {init : InitialState}
-  (rootEncode : RootEncode W Z F)
-  (ajtaiCommit : Z → Commitment)
+  (rootCtx : RootHandoffContext RootParamsId W Z Commitment F)
   (frames :
     List
       (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
@@ -220,7 +218,7 @@ def checkKernelManifestSurface'
   (events : List TranscriptEvent)
   (accounting : KernelSoundnessAccounting)
   (_d :
-    ExecutionDigest rootEncode ajtaiCommit frames pts kernelManifest rootManifest
+    ExecutionDigest rootCtx frames pts kernelManifest rootManifest
       events accounting) : Prop :=
   (∀ claim, claim ∈ kernelManifest → claim.commitmentId ∈ root0CommitmentIds) ∧
     (∀ {kernelClaim rootClaim},
@@ -252,8 +250,7 @@ def checkKernelTranscriptSurface
   {rom : Program}
   {σ : ExternalSchedule}
   {init : InitialState}
-  (rootEncode : RootEncode W Z F)
-  (ajtaiCommit : Z → Commitment)
+  (rootCtx : RootHandoffContext RootParamsId W Z Commitment F)
   (frames :
     List
       (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
@@ -266,18 +263,19 @@ def checkKernelTranscriptSurface
   (rootManifest : RootOpeningManifest Value Digest)
   (events : List TranscriptEvent)
   (accounting : KernelSoundnessAccounting)
-  (_d :
-    ExecutionDigest rootEncode ajtaiCommit frames pts kernelManifest rootManifest
+  (d :
+    ExecutionDigest rootCtx frames pts kernelManifest rootManifest
       events accounting) : Prop :=
-  (∀ {e : TranscriptEvent},
+  root0CommitmentBindingsConform d.transcript.root0Bindings ∧
+    (∀ {e : TranscriptEvent},
       ChallengeEvent e →
-        ∃ rest, events = phase0Events ++ rest ∧ e ∈ rest) ∧
+        ∃ rest, events = phase0Events d.transcript.root0Bindings ++ rest ∧ e ∈ rest) ∧
     (∀ {e : TranscriptEvent},
       Stage1TerminalPointEvent e →
-        ∃ rest, events = phase0Events ++ rest ∧ e ∈ rest) ∧
+        ∃ rest, events = phase0Events d.transcript.root0Bindings ++ rest ∧ e ∈ rest) ∧
     (∀ {e : TranscriptEvent},
       Stage2TerminalPointEvent e →
-        ∃ rest, events = phase0Events ++ rest ∧ e ∈ rest) ∧
+        ∃ rest, events = phase0Events d.transcript.root0Bindings ++ rest ∧ e ∈ rest) ∧
     (∀ j : Nat,
       TranscriptEvent.rowBinding j ∈ events ↔ j < inputs.pubMeta.semanticRows) ∧
     (∃ pre, events = pre ++ [.emitKernelOpeningClaims])
@@ -306,8 +304,7 @@ def checkKernelErrorSurface
   {rom : Program}
   {σ : ExternalSchedule}
   {init : InitialState}
-  (rootEncode : RootEncode W Z F)
-  (ajtaiCommit : Z → Commitment)
+  (rootCtx : RootHandoffContext RootParamsId W Z Commitment F)
   (frames :
     List
       (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
@@ -321,7 +318,7 @@ def checkKernelErrorSurface
   (events : List TranscriptEvent)
   (accounting : KernelSoundnessAccounting)
   (_d :
-    ExecutionDigest rootEncode ajtaiCommit frames pts kernelManifest rootManifest
+    ExecutionDigest rootCtx frames pts kernelManifest rootManifest
       events accounting) : Prop :=
   SuperNeo.ProofSystem.IsNegligible accounting.epsTotal
 
@@ -349,8 +346,7 @@ def checkKernelExecutionDigest
   {rom : Program}
   {σ : ExternalSchedule}
   {init : InitialState}
-  (rootEncode : RootEncode W Z F)
-  (ajtaiCommit : Z → Commitment)
+  (rootCtx : RootHandoffContext RootParamsId W Z Commitment F)
   (frames :
     List
       (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
@@ -364,19 +360,19 @@ def checkKernelExecutionDigest
   (events : List TranscriptEvent)
   (accounting : KernelSoundnessAccounting)
   (d :
-    ExecutionDigest rootEncode ajtaiCommit frames pts kernelManifest rootManifest
+    ExecutionDigest rootCtx frames pts kernelManifest rootManifest
       events accounting) : Prop :=
-  checkKernelTraceSurface rootEncode ajtaiCommit frames pts kernelManifest
+  checkKernelTraceSurface rootCtx frames pts kernelManifest
       rootManifest events accounting d ∧
-    checkKernelExportSurface rootEncode ajtaiCommit frames pts kernelManifest
+    checkKernelExportSurface rootCtx frames pts kernelManifest
       rootManifest events accounting d ∧
-    checkKernelAuditSurface rootEncode ajtaiCommit frames pts kernelManifest
+    checkKernelAuditSurface rootCtx frames pts kernelManifest
       rootManifest events accounting d ∧
-    checkKernelManifestSurface' rootEncode ajtaiCommit frames pts kernelManifest
+    checkKernelManifestSurface' rootCtx frames pts kernelManifest
       rootManifest events accounting d ∧
-    checkKernelTranscriptSurface rootEncode ajtaiCommit frames pts kernelManifest
+    checkKernelTranscriptSurface rootCtx frames pts kernelManifest
       rootManifest events accounting d ∧
-    checkKernelErrorSurface rootEncode ajtaiCommit frames pts kernelManifest
+    checkKernelErrorSurface rootCtx frames pts kernelManifest
       rootManifest events accounting d
 
 def KernelArtifactAuditAccepted
@@ -403,8 +399,7 @@ def KernelArtifactAuditAccepted
   {rom : Program}
   {σ : ExternalSchedule}
   {init : InitialState}
-  (rootEncode : RootEncode W Z F)
-  (ajtaiCommit : Z → Commitment)
+  (rootCtx : RootHandoffContext RootParamsId W Z Commitment F)
   (frames :
     List
       (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
@@ -418,9 +413,9 @@ def KernelArtifactAuditAccepted
   (events : List TranscriptEvent)
   (accounting : KernelSoundnessAccounting)
   (d :
-    ExecutionDigest rootEncode ajtaiCommit frames pts kernelManifest rootManifest
+    ExecutionDigest rootCtx frames pts kernelManifest rootManifest
       events accounting) : Prop :=
-  checkKernelExecutionDigest rootEncode ajtaiCommit frames pts kernelManifest
+  checkKernelExecutionDigest rootCtx frames pts kernelManifest
     rootManifest events accounting d
 
 theorem kernelArtifactAuditSound
@@ -447,8 +442,7 @@ theorem kernelArtifactAuditSound
   {rom : Program}
   {σ : ExternalSchedule}
   {init : InitialState}
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
+  {rootCtx : RootHandoffContext RootParamsId W Z Commitment F}
   {frames :
     List
       (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
@@ -462,25 +456,25 @@ theorem kernelArtifactAuditSound
   {events : List TranscriptEvent}
   {accounting : KernelSoundnessAccounting}
   {d :
-    ExecutionDigest rootEncode ajtaiCommit frames pts kernelManifest rootManifest
+    ExecutionDigest rootCtx frames pts kernelManifest rootManifest
       events accounting}
   (h :
-    KernelArtifactAuditAccepted rootEncode ajtaiCommit frames pts kernelManifest
+    KernelArtifactAuditAccepted rootCtx frames pts kernelManifest
       rootManifest events accounting d) :
-  KernelExecutionDigestBound rootEncode ajtaiCommit frames pts kernelManifest
+  KernelExecutionDigestBound rootCtx frames pts kernelManifest
     rootManifest events accounting d := by
   rcases h with ⟨hTrace, hExport, hAudit, hManifest, hTranscript, hErr⟩
   rcases hTrace with ⟨hChunkTrace, hStage2Seeds, hSupport⟩
-  rcases hExport with ⟨hPreparedCount, hPreparedTrace⟩
+  rcases hExport with ⟨hRootCtx, hPreparedCount, hPreparedTrace⟩
   rcases hAudit with ⟨hRowProjection, hBridgeBinding⟩
   rcases hManifest with ⟨hRoot0, hDisjoint⟩
   rcases hTranscript with
-    ⟨hChallenge, hStage1Terminal, hStage2Terminal, hRowBinding, hEmit⟩
+    ⟨hBindings, hChallenge, hStage1Terminal, hStage2Terminal, hRowBinding, hEmit⟩
   exact ⟨hChunkTrace, hStage2Seeds, hPreparedCount, hPreparedTrace, hRowProjection,
-    hBridgeBinding, hRoot0, hDisjoint, hChallenge, hStage1Terminal,
+    hBridgeBinding, hRootCtx, hBindings, hRoot0, hDisjoint, hChallenge, hStage1Terminal,
     hStage2Terminal, hRowBinding, hEmit, hErr, hSupport⟩
 
-theorem kernelArtifactAuditImpliesKernelSoundnessConclusion
+def kernelArtifactAuditImpliesKernelSoundnessConclusion
   {pcs : EvidenceCoverage.PCSContext AuxIndex EvalPoint}
   {inputs :
     ExecutionInputContext DigestRom DigestSchedule RootParamsId VmSpec
@@ -504,8 +498,7 @@ theorem kernelArtifactAuditImpliesKernelSoundnessConclusion
   {rom : Program}
   {σ : ExternalSchedule}
   {init : InitialState}
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
+  {rootCtx : RootHandoffContext RootParamsId W Z Commitment F}
   {frames :
     List
       (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
@@ -519,12 +512,12 @@ theorem kernelArtifactAuditImpliesKernelSoundnessConclusion
   {events : List TranscriptEvent}
   {accounting : KernelSoundnessAccounting}
   {d :
-    ExecutionDigest rootEncode ajtaiCommit frames pts kernelManifest rootManifest
+    ExecutionDigest rootCtx frames pts kernelManifest rootManifest
       events accounting}
   (h :
-    KernelArtifactAuditAccepted rootEncode ajtaiCommit frames pts kernelManifest
+    KernelArtifactAuditAccepted rootCtx frames pts kernelManifest
       rootManifest events accounting d) :
-  KernelSoundness.KernelSoundnessConclusion rootEncode ajtaiCommit frames pts
+  KernelSoundness.KernelSoundnessConclusion rootCtx frames pts
     kernelManifest rootManifest events accounting := by
   exact kernelSoundnessConclusion_of_digest (kernelArtifactAuditSound h)
 
@@ -552,8 +545,7 @@ theorem kernelArtifactAuditImpliesAuthenticatedChunkTrace
   {rom : Program}
   {σ : ExternalSchedule}
   {init : InitialState}
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
+  {rootCtx : RootHandoffContext RootParamsId W Z Commitment F}
   {frames :
     List
       (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
@@ -567,10 +559,10 @@ theorem kernelArtifactAuditImpliesAuthenticatedChunkTrace
   {events : List TranscriptEvent}
   {accounting : KernelSoundnessAccounting}
   {d :
-    ExecutionDigest rootEncode ajtaiCommit frames pts kernelManifest rootManifest
+    ExecutionDigest rootCtx frames pts kernelManifest rootManifest
       events accounting}
   (h :
-    KernelArtifactAuditAccepted rootEncode ajtaiCommit frames pts kernelManifest
+    KernelArtifactAuditAccepted rootCtx frames pts kernelManifest
       rootManifest events accounting d) :
   AuthenticatedChunkTraceBound (inputs := inputs) frames := by
   exact authenticatedChunkTraceBound_of_digest (kernelArtifactAuditSound h)
@@ -599,8 +591,7 @@ theorem kernelArtifactAuditImpliesStage2TemporalSeeds
   {rom : Program}
   {σ : ExternalSchedule}
   {init : InitialState}
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
+  {rootCtx : RootHandoffContext RootParamsId W Z Commitment F}
   {frames :
     List
       (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
@@ -614,10 +605,10 @@ theorem kernelArtifactAuditImpliesStage2TemporalSeeds
   {events : List TranscriptEvent}
   {accounting : KernelSoundnessAccounting}
   {d :
-    ExecutionDigest rootEncode ajtaiCommit frames pts kernelManifest rootManifest
+    ExecutionDigest rootCtx frames pts kernelManifest rootManifest
       events accounting}
   (h :
-    KernelArtifactAuditAccepted rootEncode ajtaiCommit frames pts kernelManifest
+    KernelArtifactAuditAccepted rootCtx frames pts kernelManifest
       rootManifest events accounting d) :
   List.Forall
     (AuthenticatedTrace.Stage2TemporalSeedSummaryEntry (inputs := inputs)
@@ -649,8 +640,7 @@ theorem kernelArtifactAuditImpliesTemporalSupport
   {rom : Program}
   {σ : ExternalSchedule}
   {init : InitialState}
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
+  {rootCtx : RootHandoffContext RootParamsId W Z Commitment F}
   {frames :
     List
       (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
@@ -664,10 +654,10 @@ theorem kernelArtifactAuditImpliesTemporalSupport
   {events : List TranscriptEvent}
   {accounting : KernelSoundnessAccounting}
   {d :
-    ExecutionDigest rootEncode ajtaiCommit frames pts kernelManifest rootManifest
+    ExecutionDigest rootCtx frames pts kernelManifest rootManifest
       events accounting}
   (h :
-    KernelArtifactAuditAccepted rootEncode ajtaiCommit frames pts kernelManifest
+    KernelArtifactAuditAccepted rootCtx frames pts kernelManifest
       rootManifest events accounting d) :
   AuthenticatedTrace.AuthenticatedTemporalSupportBound (inputs := inputs)
     frames := by
@@ -698,8 +688,7 @@ theorem kernelArtifactAuditImpliesAuthenticatedExecutionTrace
   {rom : Program}
   {σ : ExternalSchedule}
   {init : InitialState}
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
+  {rootCtx : RootHandoffContext RootParamsId W Z Commitment F}
   {frames :
     List
       (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
@@ -713,10 +702,10 @@ theorem kernelArtifactAuditImpliesAuthenticatedExecutionTrace
   {events : List TranscriptEvent}
   {accounting : KernelSoundnessAccounting}
   {d :
-    ExecutionDigest rootEncode ajtaiCommit frames pts kernelManifest rootManifest
+    ExecutionDigest rootCtx frames pts kernelManifest rootManifest
       events accounting}
   (h :
-    KernelArtifactAuditAccepted rootEncode ajtaiCommit frames pts kernelManifest
+    KernelArtifactAuditAccepted rootCtx frames pts kernelManifest
       rootManifest events accounting d) :
   AuthenticatedTrace.AuthenticatedExecutionTraceBound (inputs := inputs)
     frames := by
@@ -748,8 +737,7 @@ theorem kernelArtifactAuditImpliesPreparedStepExport
   {rom : Program}
   {σ : ExternalSchedule}
   {init : InitialState}
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
+  {rootCtx : RootHandoffContext RootParamsId W Z Commitment F}
   {frames :
     List
       (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
@@ -763,15 +751,15 @@ theorem kernelArtifactAuditImpliesPreparedStepExport
   {events : List TranscriptEvent}
   {accounting : KernelSoundnessAccounting}
   {d :
-    ExecutionDigest rootEncode ajtaiCommit frames pts kernelManifest rootManifest
+    ExecutionDigest rootCtx frames pts kernelManifest rootManifest
       events accounting}
   (h :
-    KernelArtifactAuditAccepted rootEncode ajtaiCommit frames pts kernelManifest
+    KernelArtifactAuditAccepted rootCtx frames pts kernelManifest
       rootManifest events accounting d) :
-  (KernelSoundness.kernelPreparedSteps rootEncode ajtaiCommit frames).length =
+  (KernelSoundness.kernelPreparedSteps rootCtx frames).length =
       inputs.pubMeta.semanticRows ∧
-    StepComposition.PreparedStepTraceBound rootEncode ajtaiCommit (traceOf frames)
-      (KernelSoundness.kernelPreparedSteps rootEncode ajtaiCommit frames) := by
+    StepComposition.PreparedStepTraceBound rootCtx.rootEncode rootCtx.ajtaiCommit (traceOf frames)
+      (KernelSoundness.kernelPreparedSteps rootCtx frames) := by
   exact preparedStepExport_of_digest (kernelArtifactAuditSound h)
 
 theorem kernelArtifactAuditImpliesRowProjectionSummary
@@ -798,8 +786,7 @@ theorem kernelArtifactAuditImpliesRowProjectionSummary
   {rom : Program}
   {σ : ExternalSchedule}
   {init : InitialState}
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
+  {rootCtx : RootHandoffContext RootParamsId W Z Commitment F}
   {frames :
     List
       (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
@@ -813,10 +800,10 @@ theorem kernelArtifactAuditImpliesRowProjectionSummary
   {events : List TranscriptEvent}
   {accounting : KernelSoundnessAccounting}
   {d :
-    ExecutionDigest rootEncode ajtaiCommit frames pts kernelManifest rootManifest
+    ExecutionDigest rootCtx frames pts kernelManifest rootManifest
       events accounting}
   (h :
-    KernelArtifactAuditAccepted rootEncode ajtaiCommit frames pts kernelManifest
+    KernelArtifactAuditAccepted rootCtx frames pts kernelManifest
       rootManifest events accounting d) :
   List.Forall
       (RowProjectionSummaryEntry (inputs := inputs) (evalBase := evalBase)
@@ -848,8 +835,7 @@ theorem kernelArtifactAuditImpliesBridgeBindingSummary
   {rom : Program}
   {σ : ExternalSchedule}
   {init : InitialState}
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
+  {rootCtx : RootHandoffContext RootParamsId W Z Commitment F}
   {frames :
     List
       (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
@@ -863,14 +849,14 @@ theorem kernelArtifactAuditImpliesBridgeBindingSummary
   {events : List TranscriptEvent}
   {accounting : KernelSoundnessAccounting}
   {d :
-    ExecutionDigest rootEncode ajtaiCommit frames pts kernelManifest rootManifest
+    ExecutionDigest rootCtx frames pts kernelManifest rootManifest
       events accounting}
   (h :
-    KernelArtifactAuditAccepted rootEncode ajtaiCommit frames pts kernelManifest
+    KernelArtifactAuditAccepted rootCtx frames pts kernelManifest
       rootManifest events accounting d) :
   List.Forall
       (BridgeBindingSummaryEntry (inputs := inputs) (evalBase := evalBase)
-        (B := B) rootEncode ajtaiCommit) frames := by
+        (B := B) rootCtx) frames := by
   exact KernelExecutionDigest.bridgeBindingSummary_of_digest
     (kernelArtifactAuditSound h)
 
@@ -898,8 +884,7 @@ theorem kernelArtifactAuditImpliesKernelClaimsFixedInRoot0
   {rom : Program}
   {σ : ExternalSchedule}
   {init : InitialState}
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
+  {rootCtx : RootHandoffContext RootParamsId W Z Commitment F}
   {frames :
     List
       (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
@@ -913,10 +898,10 @@ theorem kernelArtifactAuditImpliesKernelClaimsFixedInRoot0
   {events : List TranscriptEvent}
   {accounting : KernelSoundnessAccounting}
   {d :
-    ExecutionDigest rootEncode ajtaiCommit frames pts kernelManifest rootManifest
+    ExecutionDigest rootCtx frames pts kernelManifest rootManifest
       events accounting}
   (h :
-    KernelArtifactAuditAccepted rootEncode ajtaiCommit frames pts kernelManifest
+    KernelArtifactAuditAccepted rootCtx frames pts kernelManifest
       rootManifest events accounting d) :
   ∀ claim, claim ∈ kernelManifest → claim.commitmentId ∈ root0CommitmentIds := by
   exact KernelExecutionDigest.kernelClaimsFixedInRoot0_of_digest
@@ -946,8 +931,7 @@ theorem kernelArtifactAuditImpliesKernelRootCommitmentsDisjoint
   {rom : Program}
   {σ : ExternalSchedule}
   {init : InitialState}
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
+  {rootCtx : RootHandoffContext RootParamsId W Z Commitment F}
   {frames :
     List
       (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
@@ -961,10 +945,10 @@ theorem kernelArtifactAuditImpliesKernelRootCommitmentsDisjoint
   {events : List TranscriptEvent}
   {accounting : KernelSoundnessAccounting}
   {d :
-    ExecutionDigest rootEncode ajtaiCommit frames pts kernelManifest rootManifest
+    ExecutionDigest rootCtx frames pts kernelManifest rootManifest
       events accounting}
   (h :
-    KernelArtifactAuditAccepted rootEncode ajtaiCommit frames pts kernelManifest
+    KernelArtifactAuditAccepted rootCtx frames pts kernelManifest
       rootManifest events accounting d) :
   ∀ {kernelClaim rootClaim},
     kernelClaim ∈ kernelManifest →
@@ -997,8 +981,7 @@ theorem kernelArtifactAuditImpliesChallengeAfterPhase0
   {rom : Program}
   {σ : ExternalSchedule}
   {init : InitialState}
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
+  {rootCtx : RootHandoffContext RootParamsId W Z Commitment F}
   {frames :
     List
       (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
@@ -1012,14 +995,14 @@ theorem kernelArtifactAuditImpliesChallengeAfterPhase0
   {events : List TranscriptEvent}
   {accounting : KernelSoundnessAccounting}
   {d :
-    ExecutionDigest rootEncode ajtaiCommit frames pts kernelManifest rootManifest
+    ExecutionDigest rootCtx frames pts kernelManifest rootManifest
       events accounting}
   (h :
-    KernelArtifactAuditAccepted rootEncode ajtaiCommit frames pts kernelManifest
+    KernelArtifactAuditAccepted rootCtx frames pts kernelManifest
       rootManifest events accounting d) :
   ∀ {e : TranscriptEvent},
     ChallengeEvent e →
-      ∃ rest, events = phase0Events ++ rest ∧ e ∈ rest := by
+      ∃ rest, events = phase0Events d.transcript.root0Bindings ++ rest ∧ e ∈ rest := by
   exact KernelExecutionDigest.challengeAfterPhase0_of_digest
     (kernelArtifactAuditSound h)
 
@@ -1047,8 +1030,7 @@ theorem kernelArtifactAuditImpliesStage1TerminalAfterPhase0
   {rom : Program}
   {σ : ExternalSchedule}
   {init : InitialState}
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
+  {rootCtx : RootHandoffContext RootParamsId W Z Commitment F}
   {frames :
     List
       (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
@@ -1062,14 +1044,14 @@ theorem kernelArtifactAuditImpliesStage1TerminalAfterPhase0
   {events : List TranscriptEvent}
   {accounting : KernelSoundnessAccounting}
   {d :
-    ExecutionDigest rootEncode ajtaiCommit frames pts kernelManifest rootManifest
+    ExecutionDigest rootCtx frames pts kernelManifest rootManifest
       events accounting}
   (h :
-    KernelArtifactAuditAccepted rootEncode ajtaiCommit frames pts kernelManifest
+    KernelArtifactAuditAccepted rootCtx frames pts kernelManifest
       rootManifest events accounting d) :
   ∀ {e : TranscriptEvent},
     Stage1TerminalPointEvent e →
-      ∃ rest, events = phase0Events ++ rest ∧ e ∈ rest := by
+      ∃ rest, events = phase0Events d.transcript.root0Bindings ++ rest ∧ e ∈ rest := by
   exact KernelExecutionDigest.stage1TerminalAfterPhase0_of_digest
     (kernelArtifactAuditSound h)
 
@@ -1097,8 +1079,7 @@ theorem kernelArtifactAuditImpliesStage2TerminalAfterPhase0
   {rom : Program}
   {σ : ExternalSchedule}
   {init : InitialState}
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
+  {rootCtx : RootHandoffContext RootParamsId W Z Commitment F}
   {frames :
     List
       (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
@@ -1112,14 +1093,14 @@ theorem kernelArtifactAuditImpliesStage2TerminalAfterPhase0
   {events : List TranscriptEvent}
   {accounting : KernelSoundnessAccounting}
   {d :
-    ExecutionDigest rootEncode ajtaiCommit frames pts kernelManifest rootManifest
+    ExecutionDigest rootCtx frames pts kernelManifest rootManifest
       events accounting}
   (h :
-    KernelArtifactAuditAccepted rootEncode ajtaiCommit frames pts kernelManifest
+    KernelArtifactAuditAccepted rootCtx frames pts kernelManifest
       rootManifest events accounting d) :
   ∀ {e : TranscriptEvent},
     Stage2TerminalPointEvent e →
-      ∃ rest, events = phase0Events ++ rest ∧ e ∈ rest := by
+      ∃ rest, events = phase0Events d.transcript.root0Bindings ++ rest ∧ e ∈ rest := by
   exact KernelExecutionDigest.stage2TerminalAfterPhase0_of_digest
     (kernelArtifactAuditSound h)
 
@@ -1147,8 +1128,7 @@ theorem kernelArtifactAuditImpliesRowBindingCoverage
   {rom : Program}
   {σ : ExternalSchedule}
   {init : InitialState}
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
+  {rootCtx : RootHandoffContext RootParamsId W Z Commitment F}
   {frames :
     List
       (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
@@ -1162,10 +1142,10 @@ theorem kernelArtifactAuditImpliesRowBindingCoverage
   {events : List TranscriptEvent}
   {accounting : KernelSoundnessAccounting}
   {d :
-    ExecutionDigest rootEncode ajtaiCommit frames pts kernelManifest rootManifest
+    ExecutionDigest rootCtx frames pts kernelManifest rootManifest
       events accounting}
   (h :
-    KernelArtifactAuditAccepted rootEncode ajtaiCommit frames pts kernelManifest
+    KernelArtifactAuditAccepted rootCtx frames pts kernelManifest
       rootManifest events accounting d) :
   ∀ j : Nat,
     TranscriptEvent.rowBinding j ∈ events ↔ j < inputs.pubMeta.semanticRows := by
@@ -1196,8 +1176,7 @@ theorem kernelArtifactAuditImpliesEmitKernelOpeningClaimsLast
   {rom : Program}
   {σ : ExternalSchedule}
   {init : InitialState}
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
+  {rootCtx : RootHandoffContext RootParamsId W Z Commitment F}
   {frames :
     List
       (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
@@ -1211,10 +1190,10 @@ theorem kernelArtifactAuditImpliesEmitKernelOpeningClaimsLast
   {events : List TranscriptEvent}
   {accounting : KernelSoundnessAccounting}
   {d :
-    ExecutionDigest rootEncode ajtaiCommit frames pts kernelManifest rootManifest
+    ExecutionDigest rootCtx frames pts kernelManifest rootManifest
       events accounting}
   (h :
-    KernelArtifactAuditAccepted rootEncode ajtaiCommit frames pts kernelManifest
+    KernelArtifactAuditAccepted rootCtx frames pts kernelManifest
       rootManifest events accounting d) :
   ∃ pre, events = pre ++ [.emitKernelOpeningClaims] := by
   exact KernelExecutionDigest.emitKernelOpeningClaimsLast_of_digest
@@ -1244,8 +1223,7 @@ theorem kernelArtifactAuditImpliesNegligibleTotal
   {rom : Program}
   {σ : ExternalSchedule}
   {init : InitialState}
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
+  {rootCtx : RootHandoffContext RootParamsId W Z Commitment F}
   {frames :
     List
       (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
@@ -1259,10 +1237,10 @@ theorem kernelArtifactAuditImpliesNegligibleTotal
   {events : List TranscriptEvent}
   {accounting : KernelSoundnessAccounting}
   {d :
-    ExecutionDigest rootEncode ajtaiCommit frames pts kernelManifest rootManifest
+    ExecutionDigest rootCtx frames pts kernelManifest rootManifest
       events accounting}
   (h :
-    KernelArtifactAuditAccepted rootEncode ajtaiCommit frames pts kernelManifest
+    KernelArtifactAuditAccepted rootCtx frames pts kernelManifest
       rootManifest events accounting d) :
   SuperNeo.ProofSystem.IsNegligible accounting.epsTotal := by
   exact negligibleTotal_of_digest (kernelArtifactAuditSound h)
@@ -1291,8 +1269,7 @@ theorem kernelArtifactAuditImpliesExecutionCorrect
   {rom : Program}
   {σ : ExternalSchedule}
   {init : InitialState}
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
+  {rootCtx : RootHandoffContext RootParamsId W Z Commitment F}
   {frames :
     List
       (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
@@ -1306,10 +1283,10 @@ theorem kernelArtifactAuditImpliesExecutionCorrect
   {events : List TranscriptEvent}
   {accounting : KernelSoundnessAccounting}
   {d :
-    ExecutionDigest rootEncode ajtaiCommit frames pts kernelManifest rootManifest
+    ExecutionDigest rootCtx frames pts kernelManifest rootManifest
       events accounting}
   (h :
-    KernelArtifactAuditAccepted rootEncode ajtaiCommit frames pts kernelManifest
+    KernelArtifactAuditAccepted rootCtx frames pts kernelManifest
       rootManifest events accounting d) :
   StepComposition.ExecutionCorrect rom σ init (traceOf frames) := by
   exact AuthenticatedTrace.executionCorrect_of_authenticatedExecutionTraceBound
@@ -1340,8 +1317,7 @@ theorem kernelArtifactAuditImpliesTraceLinkBound
   {rom : Program}
   {σ : ExternalSchedule}
   {init : InitialState}
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
+  {rootCtx : RootHandoffContext RootParamsId W Z Commitment F}
   {frames :
     List
       (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
@@ -1355,10 +1331,10 @@ theorem kernelArtifactAuditImpliesTraceLinkBound
   {events : List TranscriptEvent}
   {accounting : KernelSoundnessAccounting}
   {d :
-    ExecutionDigest rootEncode ajtaiCommit frames pts kernelManifest rootManifest
+    ExecutionDigest rootCtx frames pts kernelManifest rootManifest
       events accounting}
   (h :
-    KernelArtifactAuditAccepted rootEncode ajtaiCommit frames pts kernelManifest
+    KernelArtifactAuditAccepted rootCtx frames pts kernelManifest
       rootManifest events accounting d) :
   TraceLinkBoundary.TraceLinkBound (traceOf frames) := by
   have hExecTrace :=
@@ -1391,8 +1367,7 @@ theorem kernelArtifactAuditImpliesExecutionLinked
   {rom : Program}
   {σ : ExternalSchedule}
   {init : InitialState}
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
+  {rootCtx : RootHandoffContext RootParamsId W Z Commitment F}
   {frames :
     List
       (ExactFrameEvidence pcs inputs evalBase B publicTable tableBackedBy
@@ -1406,10 +1381,10 @@ theorem kernelArtifactAuditImpliesExecutionLinked
   {events : List TranscriptEvent}
   {accounting : KernelSoundnessAccounting}
   {d :
-    ExecutionDigest rootEncode ajtaiCommit frames pts kernelManifest rootManifest
+    ExecutionDigest rootCtx frames pts kernelManifest rootManifest
       events accounting}
   (h :
-    KernelArtifactAuditAccepted rootEncode ajtaiCommit frames pts kernelManifest
+    KernelArtifactAuditAccepted rootCtx frames pts kernelManifest
       rootManifest events accounting d) :
   StepComposition.ExecutionLinked (traceOf frames) := by
   exact TraceLinkBoundary.executionLinked_of_traceLinkBound

@@ -4,17 +4,28 @@ namespace Nightstream.Chip8
 
 namespace RamTimelineInterface
 
+-- ── Types ──
+
 abbrev F := Nightstream.Chip8.RamTimeline.F
 abbrev MachineState := Nightstream.Chip8.RamTimeline.MachineState
 abbrev ExecutionFrame := Nightstream.Chip8.RamTimeline.ExecutionFrame
 abbrev RamValueTimeline := Nightstream.Chip8.RamTimeline.RamValueTimeline
 abbrev RamAddressBound := Nightstream.Chip8.RamTimeline.RamAddressBound
+
+-- ── Definitions ──
+
 abbrev RamAdjacentTraceBound := @Nightstream.Chip8.RamTimeline.RamAdjacentTraceBound
 abbrev ramTimelineOfTraceFrom := @Nightstream.Chip8.RamTimeline.ramTimelineOfTraceFrom
 abbrev ramTimelineOfTrace := @Nightstream.Chip8.RamTimeline.ramTimelineOfTrace
+
+-- ── Bounds ──
+
 abbrev RamAdjacentBound := @Nightstream.Chip8.RamTimeline.RamAdjacentBound
 abbrev RamTemporalBoundFrom := @Nightstream.Chip8.RamTimeline.RamTemporalBoundFrom
 abbrev RamTemporalBound := @Nightstream.Chip8.RamTimeline.RamTemporalBound
+
+-- ── Theorems ──
+
 abbrev headRamPreBound_of_ramTemporalBoundFrom :=
   @Nightstream.Chip8.RamTimeline.headRamPreBound_of_ramTemporalBoundFrom
 abbrev ramAdjacentBound_of_ramTemporalBoundFrom :=

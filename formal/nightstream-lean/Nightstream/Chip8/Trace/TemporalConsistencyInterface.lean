@@ -4,17 +4,25 @@ namespace Nightstream.Chip8
 
 namespace TemporalConsistencyInterface
 
+-- ── Types ──
+
 abbrev F := Nightstream.Chip8.TemporalConsistency.F
 abbrev MachineState := Nightstream.Chip8.TemporalConsistency.MachineState
 abbrev ExecutionFrame := Nightstream.Chip8.TemporalConsistency.ExecutionFrame
 abbrev RegisterValueTimeline := Nightstream.Chip8.TemporalConsistency.RegisterValueTimeline
 abbrev RamValueTimeline := Nightstream.Chip8.TemporalConsistency.RamValueTimeline
+
+-- ── Bounds ──
+
 abbrev PcTemporalBound := @Nightstream.Chip8.PcContinuityBridge.PcTemporalBound
 abbrev TemporalTraceBound := @Nightstream.Chip8.TemporalConsistency.TemporalTraceBound
 abbrev TemporalInstantiation :=
   @Nightstream.Chip8.TemporalConsistency.TemporalInstantiation
 abbrev TemporalInstantiationBound :=
   @Nightstream.Chip8.TemporalConsistency.TemporalInstantiationBound
+
+-- ── Theorems ──
+
 abbrev temporalTraceBound_of_instantiation :=
   @Nightstream.Chip8.TemporalConsistency.temporalTraceBound_of_instantiation
 abbrev headPcTemporal_of_pcTemporalBound :=

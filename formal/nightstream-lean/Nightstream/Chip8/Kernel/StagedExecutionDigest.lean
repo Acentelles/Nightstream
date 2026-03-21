@@ -10,6 +10,7 @@ open Nightstream.Chip8.ContinuityBridge
 open Nightstream.Chip8.BridgeBinding
 open Nightstream.Chip8.RomScheduleBinding
 open Nightstream.Chip8.EvidenceCoverage
+open Nightstream.Chip8.RootHandoffContext
 
 abbrev F := StepComposition.F
 abbrev Program := EvidenceCoverage.Program
@@ -55,8 +56,7 @@ structure Stage2DigestSurface
   memory : StepComposition.MemoryBound pre post init dec z
 
 structure Stage3DigestSurface
-  (rootEncode : RootEncode W Z F)
-  (ajtaiCommit : Z → Commitment)
+  (rootCtx : RootHandoffContext RootParamsId W Z Commitment F)
   (stepIdx : Nat)
   (z : Nightstream.Chip8.Witness F) where
   N : Nat
@@ -71,9 +71,9 @@ structure Stage3DigestSurface
       currentRow rowClaim z
   preparedStep : PreparedStep W Z Commitment F
   prepared :
-    PreparedStepBound rootEncode ajtaiCommit z preparedStep
+    PreparedStepBound rootCtx.rootEncode rootCtx.ajtaiCommit z preparedStep
   bridgeBinding :
-    BridgeBindingWitness rootEncode ajtaiCommit stepIdx z rowClaim preparedStep
+    BridgeBindingWitness rootCtx stepIdx z rowClaim preparedStep
 
 structure ExecutionResultSurface
   (rom : Program)
@@ -89,8 +89,7 @@ structure ExecutionDigest
   (inputs :
     ExecutionInputContext DigestRom DigestSchedule RootParamsId VmSpec
       TranscriptSeed)
-  (rootEncode : RootEncode W Z F)
-  (ajtaiCommit : Z → Commitment)
+  (rootCtx : RootHandoffContext RootParamsId W Z Commitment F)
   (rom : Program)
   (σ : ExternalSchedule)
   (stepIdx : Nat)
@@ -101,7 +100,7 @@ structure ExecutionDigest
   pub : DigestPublicSurface inputs rom init
   stage1 : Stage1DigestSurface rom pre dec z
   stage2 : Stage2DigestSurface pre post init dec z
-  stage3 : Stage3DigestSurface rootEncode ajtaiCommit stepIdx z
+  stage3 : Stage3DigestSurface rootCtx stepIdx z
   result : ExecutionResultSurface rom σ stepIdx pre post dec
 
 abbrev StagedExecutionDigest := @ExecutionDigest
@@ -110,8 +109,7 @@ def StagedExecutionDigestBound
   (inputs :
     ExecutionInputContext DigestRom DigestSchedule RootParamsId VmSpec
       TranscriptSeed)
-  (rootEncode : RootEncode W Z F)
-  (ajtaiCommit : Z → Commitment)
+  (rootCtx : RootHandoffContext RootParamsId W Z Commitment F)
   (rom : Program)
   (σ : ExternalSchedule)
   (stepIdx : Nat)
@@ -120,7 +118,7 @@ def StagedExecutionDigestBound
   (dec : DecodedStep Addr)
   (z : Nightstream.Chip8.Witness F)
   (d :
-    ExecutionDigest inputs rootEncode ajtaiCommit rom σ stepIdx init pre post
+    ExecutionDigest inputs rootCtx rom σ stepIdx init pre post
       dec z) : Prop :=
   @KernelPublicInputsBound DigestRom RootParamsId VmSpec TranscriptSeed
       inputs.hashProgram inputs.hashInitialState inputs.programWordCountOf
@@ -134,9 +132,7 @@ def StagedExecutionDigestBound
     StepComposition.ContinuityRowBound stepIdx d.stage3.N d.stage3.β1 d.stage3.β2
       d.stage3.shiftClaim d.stage3.shiftProof d.stage3.currentRow d.stage3.rowClaim
       z ∧
-    PreparedStepBound rootEncode ajtaiCommit z d.stage3.preparedStep ∧
-    BridgeBindingWitness rootEncode ajtaiCommit stepIdx z d.stage3.rowClaim
-      d.stage3.preparedStep ∧
+    PreparedStepBound rootCtx.rootEncode rootCtx.ajtaiCommit z d.stage3.preparedStep ∧
     StepComposition.MicrostepCorrect rom σ dec pre post ∧
     StepComposition.FramebufferBound pre post dec ∧
     StepComposition.ScheduleBound σ stepIdx pre post dec
@@ -145,8 +141,7 @@ theorem kernelPublicInputsBound_of_digest
   {inputs :
     ExecutionInputContext DigestRom DigestSchedule RootParamsId VmSpec
       TranscriptSeed}
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
+  {rootCtx : RootHandoffContext RootParamsId W Z Commitment F}
   {rom : Program}
   {σ : ExternalSchedule}
   {stepIdx : Nat}
@@ -155,23 +150,21 @@ theorem kernelPublicInputsBound_of_digest
   {dec : DecodedStep Addr}
   {z : Nightstream.Chip8.Witness F}
   {d :
-    ExecutionDigest inputs rootEncode ajtaiCommit rom σ stepIdx init pre post
+    ExecutionDigest inputs rootCtx rom σ stepIdx init pre post
       dec z}
   (h :
-    StagedExecutionDigestBound inputs rootEncode ajtaiCommit rom σ stepIdx init
+    StagedExecutionDigestBound inputs rootCtx rom σ stepIdx init
       pre post dec z d) :
   @KernelPublicInputsBound DigestRom RootParamsId VmSpec TranscriptSeed
     inputs.hashProgram inputs.hashInitialState inputs.programWordCountOf
     inputs.programBaseAddrOf inputs.padPcWordOf inputs.paddedTraceLengthOf
-    inputs.twoPow inputs.rootParamsOf inputs.publicInput inputs.pubMeta rom
-    init := h.1
+    inputs.twoPow inputs.rootParamsOf inputs.publicInput inputs.pubMeta rom init := h.1
 
 theorem fetchDecodeBound_of_digest
   {inputs :
     ExecutionInputContext DigestRom DigestSchedule RootParamsId VmSpec
       TranscriptSeed}
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
+  {rootCtx : RootHandoffContext RootParamsId W Z Commitment F}
   {rom : Program}
   {σ : ExternalSchedule}
   {stepIdx : Nat}
@@ -180,10 +173,10 @@ theorem fetchDecodeBound_of_digest
   {dec : DecodedStep Addr}
   {z : Nightstream.Chip8.Witness F}
   {d :
-    ExecutionDigest inputs rootEncode ajtaiCommit rom σ stepIdx init pre post
+    ExecutionDigest inputs rootCtx rom σ stepIdx init pre post
       dec z}
   (h :
-    StagedExecutionDigestBound inputs rootEncode ajtaiCommit rom σ stepIdx init
+    StagedExecutionDigestBound inputs rootCtx rom σ stepIdx init
       pre post dec z d) :
   StepComposition.FetchDecodeBound rom pre.pc dec := h.2.1
 
@@ -191,8 +184,7 @@ theorem lookupBound_of_digest
   {inputs :
     ExecutionInputContext DigestRom DigestSchedule RootParamsId VmSpec
       TranscriptSeed}
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
+  {rootCtx : RootHandoffContext RootParamsId W Z Commitment F}
   {rom : Program}
   {σ : ExternalSchedule}
   {stepIdx : Nat}
@@ -201,10 +193,10 @@ theorem lookupBound_of_digest
   {dec : DecodedStep Addr}
   {z : Nightstream.Chip8.Witness F}
   {d :
-    ExecutionDigest inputs rootEncode ajtaiCommit rom σ stepIdx init pre post
+    ExecutionDigest inputs rootCtx rom σ stepIdx init pre post
       dec z}
   (h :
-    StagedExecutionDigestBound inputs rootEncode ajtaiCommit rom σ stepIdx init
+    StagedExecutionDigestBound inputs rootCtx rom σ stepIdx init
       pre post dec z d) :
   StepComposition.LookupBound dec pre z := h.2.2.1
 
@@ -212,8 +204,7 @@ theorem witnessBinds_of_digest
   {inputs :
     ExecutionInputContext DigestRom DigestSchedule RootParamsId VmSpec
       TranscriptSeed}
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
+  {rootCtx : RootHandoffContext RootParamsId W Z Commitment F}
   {rom : Program}
   {σ : ExternalSchedule}
   {stepIdx : Nat}
@@ -222,10 +213,10 @@ theorem witnessBinds_of_digest
   {dec : DecodedStep Addr}
   {z : Nightstream.Chip8.Witness F}
   {d :
-    ExecutionDigest inputs rootEncode ajtaiCommit rom σ stepIdx init pre post
+    ExecutionDigest inputs rootCtx rom σ stepIdx init pre post
       dec z}
   (h :
-    StagedExecutionDigestBound inputs rootEncode ajtaiCommit rom σ stepIdx init
+    StagedExecutionDigestBound inputs rootCtx rom σ stepIdx init
       pre post dec z d) :
   WitnessMemoryBinding.WitnessBinds (K := F) pre post dec z := h.2.2.2.1
 
@@ -233,8 +224,7 @@ theorem memoryBound_of_digest
   {inputs :
     ExecutionInputContext DigestRom DigestSchedule RootParamsId VmSpec
       TranscriptSeed}
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
+  {rootCtx : RootHandoffContext RootParamsId W Z Commitment F}
   {rom : Program}
   {σ : ExternalSchedule}
   {stepIdx : Nat}
@@ -243,10 +233,10 @@ theorem memoryBound_of_digest
   {dec : DecodedStep Addr}
   {z : Nightstream.Chip8.Witness F}
   {d :
-    ExecutionDigest inputs rootEncode ajtaiCommit rom σ stepIdx init pre post
+    ExecutionDigest inputs rootCtx rom σ stepIdx init pre post
       dec z}
   (h :
-    StagedExecutionDigestBound inputs rootEncode ajtaiCommit rom σ stepIdx init
+    StagedExecutionDigestBound inputs rootCtx rom σ stepIdx init
       pre post dec z d) :
   StepComposition.MemoryBound pre post init dec z := h.2.2.2.2.1
 
@@ -254,8 +244,7 @@ theorem continuityRowBound_of_digest
   {inputs :
     ExecutionInputContext DigestRom DigestSchedule RootParamsId VmSpec
       TranscriptSeed}
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
+  {rootCtx : RootHandoffContext RootParamsId W Z Commitment F}
   {rom : Program}
   {σ : ExternalSchedule}
   {stepIdx : Nat}
@@ -264,10 +253,10 @@ theorem continuityRowBound_of_digest
   {dec : DecodedStep Addr}
   {z : Nightstream.Chip8.Witness F}
   {d :
-    ExecutionDigest inputs rootEncode ajtaiCommit rom σ stepIdx init pre post
+    ExecutionDigest inputs rootCtx rom σ stepIdx init pre post
       dec z}
   (h :
-    StagedExecutionDigestBound inputs rootEncode ajtaiCommit rom σ stepIdx init
+    StagedExecutionDigestBound inputs rootCtx rom σ stepIdx init
       pre post dec z d) :
   StepComposition.ContinuityRowBound stepIdx d.stage3.N d.stage3.β1 d.stage3.β2
     d.stage3.shiftClaim d.stage3.shiftProof d.stage3.currentRow d.stage3.rowClaim
@@ -277,8 +266,7 @@ theorem preparedStepBound_of_digest
   {inputs :
     ExecutionInputContext DigestRom DigestSchedule RootParamsId VmSpec
       TranscriptSeed}
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
+  {rootCtx : RootHandoffContext RootParamsId W Z Commitment F}
   {rom : Program}
   {σ : ExternalSchedule}
   {stepIdx : Nat}
@@ -287,19 +275,18 @@ theorem preparedStepBound_of_digest
   {dec : DecodedStep Addr}
   {z : Nightstream.Chip8.Witness F}
   {d :
-    ExecutionDigest inputs rootEncode ajtaiCommit rom σ stepIdx init pre post
+    ExecutionDigest inputs rootCtx rom σ stepIdx init pre post
       dec z}
   (h :
-    StagedExecutionDigestBound inputs rootEncode ajtaiCommit rom σ stepIdx init
+    StagedExecutionDigestBound inputs rootCtx rom σ stepIdx init
       pre post dec z d) :
-  PreparedStepBound rootEncode ajtaiCommit z d.stage3.preparedStep := h.2.2.2.2.2.2.1
+  PreparedStepBound rootCtx.rootEncode rootCtx.ajtaiCommit z d.stage3.preparedStep := h.2.2.2.2.2.2.1
 
-theorem bridgeBinding_of_digest
+def bridgeBinding_of_digest
   {inputs :
     ExecutionInputContext DigestRom DigestSchedule RootParamsId VmSpec
       TranscriptSeed}
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
+  {rootCtx : RootHandoffContext RootParamsId W Z Commitment F}
   {rom : Program}
   {σ : ExternalSchedule}
   {stepIdx : Nat}
@@ -308,20 +295,20 @@ theorem bridgeBinding_of_digest
   {dec : DecodedStep Addr}
   {z : Nightstream.Chip8.Witness F}
   {d :
-    ExecutionDigest inputs rootEncode ajtaiCommit rom σ stepIdx init pre post
+    ExecutionDigest inputs rootCtx rom σ stepIdx init pre post
       dec z}
-  (h :
-    StagedExecutionDigestBound inputs rootEncode ajtaiCommit rom σ stepIdx init
+  (_h :
+    StagedExecutionDigestBound inputs rootCtx rom σ stepIdx init
       pre post dec z d) :
-  BridgeBindingWitness rootEncode ajtaiCommit stepIdx z d.stage3.rowClaim
-    d.stage3.preparedStep := h.2.2.2.2.2.2.2.1
+  BridgeBindingWitness rootCtx stepIdx z d.stage3.rowClaim
+    d.stage3.preparedStep :=
+  d.stage3.bridgeBinding
 
 theorem executionResultSurface_of_digest
   {inputs :
     ExecutionInputContext DigestRom DigestSchedule RootParamsId VmSpec
       TranscriptSeed}
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
+  {rootCtx : RootHandoffContext RootParamsId W Z Commitment F}
   {rom : Program}
   {σ : ExternalSchedule}
   {stepIdx : Nat}
@@ -330,21 +317,19 @@ theorem executionResultSurface_of_digest
   {dec : DecodedStep Addr}
   {z : Nightstream.Chip8.Witness F}
   {d :
-    ExecutionDigest inputs rootEncode ajtaiCommit rom σ stepIdx init pre post
+    ExecutionDigest inputs rootCtx rom σ stepIdx init pre post
       dec z}
   (h :
-    StagedExecutionDigestBound inputs rootEncode ajtaiCommit rom σ stepIdx init
+    StagedExecutionDigestBound inputs rootCtx rom σ stepIdx init
       pre post dec z d) :
   ExecutionResultSurface rom σ stepIdx pre post dec := by
-  exact ⟨h.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.1,
-    h.2.2.2.2.2.2.2.2.2.2⟩
+  exact ⟨h.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2⟩
 
 theorem microstepCorrect_of_digest
   {inputs :
     ExecutionInputContext DigestRom DigestSchedule RootParamsId VmSpec
       TranscriptSeed}
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
+  {rootCtx : RootHandoffContext RootParamsId W Z Commitment F}
   {rom : Program}
   {σ : ExternalSchedule}
   {stepIdx : Nat}
@@ -353,10 +338,10 @@ theorem microstepCorrect_of_digest
   {dec : DecodedStep Addr}
   {z : Nightstream.Chip8.Witness F}
   {d :
-    ExecutionDigest inputs rootEncode ajtaiCommit rom σ stepIdx init pre post
+    ExecutionDigest inputs rootCtx rom σ stepIdx init pre post
       dec z}
   (h :
-    StagedExecutionDigestBound inputs rootEncode ajtaiCommit rom σ stepIdx init
+    StagedExecutionDigestBound inputs rootCtx rom σ stepIdx init
       pre post dec z d) :
   StepComposition.MicrostepCorrect rom σ dec pre post := by
   exact (executionResultSurface_of_digest h).1
@@ -365,8 +350,7 @@ theorem executionFrameBound_of_digest
   {inputs :
     ExecutionInputContext DigestRom DigestSchedule RootParamsId VmSpec
       TranscriptSeed}
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
+  {rootCtx : RootHandoffContext RootParamsId W Z Commitment F}
   {rom : Program}
   {σ : ExternalSchedule}
   {stepIdx : Nat}
@@ -375,10 +359,10 @@ theorem executionFrameBound_of_digest
   {dec : DecodedStep Addr}
   {z : Nightstream.Chip8.Witness F}
   {d :
-    ExecutionDigest inputs rootEncode ajtaiCommit rom σ stepIdx init pre post
+    ExecutionDigest inputs rootCtx rom σ stepIdx init pre post
       dec z}
   (h :
-    StagedExecutionDigestBound inputs rootEncode ajtaiCommit rom σ stepIdx init
+    StagedExecutionDigestBound inputs rootCtx rom σ stepIdx init
       pre post dec z d) :
   StepComposition.ExecutionFrameBound rom σ
     ({ dec := dec, pre := pre, post := post, row := z } :
@@ -408,8 +392,7 @@ theorem stagedExecutionDigest_of_exactEvidence
   {readOnlyMemoryRelation : Table → Addr → Nat → Prop}
   {readWriteMemoryRelation : ValSurface → Addr → Nat → Prop}
   {incrementRelation : ValSurface → AddressColumns → Nat → Increment → Prop}
-  {rootEncode : RootEncode W Z F}
-  {ajtaiCommit : Z → Commitment}
+  {rootCtx : RootHandoffContext RootParamsId W Z Commitment F}
   {rom : Program}
   {σ : ExternalSchedule}
   {stepIdx : Nat}
@@ -425,12 +408,12 @@ theorem stagedExecutionDigest_of_exactEvidence
       incrementRelation rom σ stepIdx init pre post dec z)
   (hResult : StepComposition.MicrostepCorrect rom σ dec pre post) :
   ∃ d :
-    ExecutionDigest inputs rootEncode ajtaiCommit rom σ stepIdx init pre post
+    ExecutionDigest inputs rootCtx rom σ stepIdx init pre post
       dec z,
-    StagedExecutionDigestBound inputs rootEncode ajtaiCommit rom σ stepIdx init
+    StagedExecutionDigestBound inputs rootCtx rom σ stepIdx init
       pre post dec z d := by
   rcases semanticBounds_of_exactAuthenticatedEvidence h with
-    ⟨hInputs, _hExecInputs, hWitness, hFetch, hLookup, hMem, hCont,
+    ⟨hInputs, _hExecInputs, hWitness, hFetch, hLookup, hMem, _hCont,
       hFramebuffer, hSchedule⟩
   rcases h with ⟨Γ₁, Γ₂, Γ₃, hSem⟩
   rcases hSem with ⟨ev⟩
@@ -438,19 +421,23 @@ theorem stagedExecutionDigest_of_exactEvidence
       StepComposition.ContinuityRowBound stepIdx ev.continuity.N ev.continuity.β1
         ev.continuity.β2 ev.continuity.shiftClaim ev.continuity.shiftProof
         ev.continuity.currentRow ev.continuity.rowClaim z := by
-    exact ⟨ev.continuity.continuity, ev.continuity.currentRowIndex,
-      ev.continuity.currentPcNext, ev.continuity.currentXIdx,
-      ev.continuity.currentIsMemOp, ev.continuity.currentBurstLast,
-      ev.continuity.rowClaimIndex, ev.continuity.rowBinding⟩
-  let preparedStep := mkPreparedStep rootEncode ajtaiCommit z
+    exact Stage3Refinement.continuityRowBound_of_paddedCheck
+      ev.continuity.paddedCheck ev.continuity.currentRowIndex
+      ev.continuity.currentPcNext ev.continuity.currentXIdx
+      ev.continuity.currentIsMemOp ev.continuity.currentBurstLast
+      ev.continuity.rowClaimIndex ev.continuity.rowBinding
+  let preparedStep := mkPreparedStep rootCtx.rootEncode rootCtx.ajtaiCommit z
   have hPrepared :
-      PreparedStepBound rootEncode ajtaiCommit z preparedStep := by
+      PreparedStepBound rootCtx.rootEncode rootCtx.ajtaiCommit z preparedStep := by
     exact preparedStepBound_of_rowBinding ev.continuity.rowBinding
   have hBridge :
-      BridgeBindingWitness rootEncode ajtaiCommit stepIdx z ev.continuity.rowClaim
+      BridgeBindingWitness rootCtx stepIdx z
+        ev.continuity.rowClaim
         preparedStep := by
     refine
-      { rowClaimIndex := ev.continuity.rowClaimIndex
+      { acceptedRowOpening := ev.acceptedRowOpening
+        acceptedRowOpeningClaim := ev.acceptedRowOpeningClaim
+        rowClaimIndex := ev.continuity.rowClaimIndex
         rowBinding := ev.continuity.rowBinding
         prepared := hPrepared }
   refine ⟨{
@@ -473,7 +460,7 @@ theorem stagedExecutionDigest_of_exactEvidence
     result := ⟨hResult, hFramebuffer, hSchedule⟩
   }, by
     exact ⟨hInputs, hFetch, hLookup, hWitness, hMem, hContRow, hPrepared,
-      hBridge, hResult, hFramebuffer, hSchedule⟩⟩
+      hResult, hFramebuffer, hSchedule⟩⟩
 
 end Digest
 
