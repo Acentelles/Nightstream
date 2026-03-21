@@ -14,17 +14,19 @@
 - Obligation shape:
 
 $$
-\mathrm{Obligation}(P) := (\mathrm{relation}, \mathrm{point}, \mathrm{source}).
+\mathrm{Obligation}(F, P) := (\mathrm{family}, \mathrm{relation}, \mathrm{point}, \mathrm{source}).
 $$
 
-- Non-empty foldability at one relation and one point:
+- Non-empty foldability at one family, one relation, and one point:
 
 $$
-\mathrm{FoldableAt}(R, p, \Gamma)
+\mathrm{FoldableAt}(F, R, p, \Gamma)
 \iff
 \Gamma \neq \varnothing
 \land
 \forall o \in \Gamma,\;
+o.\mathrm{family} = F
+\land
 o.\mathrm{relation} = R
 \land
 o.\mathrm{point} = p.
@@ -36,15 +38,15 @@ $$
 $$
 \mathrm{Homogeneous}(\Gamma)
 \iff
-\exists R,p,\; \mathrm{FoldableAt}(R,p,\Gamma).
+\exists F,R,p,\; \mathrm{FoldableAt}(F,R,p,\Gamma).
 $$
 
 - Main-lane admissibility:
 
 $$
-\mathrm{MainLaneAdmissible}(p_{\mathrm{main}}, \Gamma)
+\mathrm{MainLaneAdmissible}(f_{\mathrm{main}}, p_{\mathrm{main}}, \Gamma)
 \iff
-\mathrm{FoldableAt}(\mathrm{CE}, p_{\mathrm{main}}, \Gamma).
+\mathrm{FoldableAt}(f_{\mathrm{main}}, \mathrm{CE}, p_{\mathrm{main}}, \Gamma).
 $$
 
 - Explicit support for a separate fold family:
@@ -52,7 +54,7 @@ $$
 $$
 \mathrm{SeparateFoldSupported}(S, \Gamma)
 \iff
-\exists R,p,\; S(R,p) \land \mathrm{FoldableAt}(R,p,\Gamma).
+\exists F,R,p,\; S(F,R,p) \land \mathrm{FoldableAt}(F,R,p,\Gamma).
 $$
 
 ## Dependency and Consumer Map

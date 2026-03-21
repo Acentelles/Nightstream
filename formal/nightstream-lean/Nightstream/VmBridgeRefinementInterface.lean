@@ -1,0 +1,16 @@
+import Nightstream.VmBridgeRefinement
+
+namespace Nightstream
+
+namespace VmBridgeRefinementInterface
+
+abbrev RefinesReleaseBridge := @Nightstream.RefinesReleaseBridge
+abbrev canonicalStageViews_eq_of_refines := @Nightstream.canonicalStageViews_eq_of_refines
+abbrev releaseBridgePublicViewBound_of_refines :=
+  @Nightstream.releaseBridgePublicViewBound_of_refines
+abbrev releaseBridgePublicViewBound_of_publicView_eq :=
+  @Nightstream.releaseBridgePublicViewBound_of_publicView_eq
+
+end VmBridgeRefinementInterface
+
+end Nightstream

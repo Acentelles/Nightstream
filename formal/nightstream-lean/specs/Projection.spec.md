@@ -8,42 +8,59 @@
 
 ## Target Formulas
 
-- Projection families are Twist/Shout-owned obligation families at one relation and one point:
+- Projection families are Twist/Shout-owned obligation families at one family, one relation, and one point:
 
 $$
-\mathrm{ProjectionFamilyAt}(R, p, \Gamma)
+\mathrm{ProjectionFamilyAt}(F, R, p, \Gamma)
 \iff
 \Gamma \neq \varnothing
 \land
 \forall o \in \Gamma,\;
 o.\mathrm{source} = \mathrm{twistShout}
 \land
+o.\mathrm{family} = F
+\land
 o.\mathrm{relation} = R
 \land
 o.\mathrm{point} = p.
 $$
 
+- Canonical singleton witness for a Twist/Shout-emitted CE obligation:
+
+$$
+\mathrm{CEProjection}(F, p) =
+\left[(F, \mathrm{CE}, p, \mathrm{twistShout})\right]
+$$
+
 - Canonical singleton witnesses:
 
 $$
-\mathrm{ShoutReadProjection}(p_{\mathrm{shout}}) =
-\left[(\mathrm{ShoutReadEval}, p_{\mathrm{shout}}, \mathrm{twistShout})\right]
+\mathrm{ShoutReadProjection}(F, p_{\mathrm{shout}}) =
+\left[(F, \mathrm{ShoutReadEval}, p_{\mathrm{shout}}, \mathrm{twistShout})\right]
 $$
 
 $$
-\mathrm{TwistValProjection}(p_{\mathrm{twist}}) =
-\left[(\mathrm{TwistValEval}, p_{\mathrm{twist}}, \mathrm{twistShout})\right]
+\mathrm{TwistValProjection}(F, p_{\mathrm{twist}}) =
+\left[(F, \mathrm{TwistValEval}, p_{\mathrm{twist}}, \mathrm{twistShout})\right]
 $$
 
 $$
-\mathrm{OpeningProjection}(p) =
-\left[(\mathrm{Opening}, p, \mathrm{twistShout})\right]
+\mathrm{OpeningProjection}(F, p) =
+\left[(F, \mathrm{Opening}, p, \mathrm{twistShout})\right]
 $$
 
 $$
-\mathrm{FinalProjection}(p) =
-\left[(\mathrm{Final}, p, \mathrm{twistShout})\right]
+\mathrm{FinalProjection}(F, p) =
+\left[(F, \mathrm{Final}, p, \mathrm{twistShout})\right]
 $$
+
+- This bridge layer therefore distinguishes two different Twist/Shout outcomes:
+  - a projected family may emit a genuine `CE` obligation at a main-lane point,
+  - or it may emit a non-`CE` auxiliary obligation such as
+    `ShoutReadEval`, `TwistValEval`, `Opening`, or `Final`.
+
+Only the first case is even eligible for main-lane merging; the second case
+must remain outside the main lane unless a later owner proves a separate route.
 
 - Shout paper-backed projection identity:
 

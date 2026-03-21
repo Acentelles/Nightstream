@@ -17,14 +17,14 @@ abbrev RelationKind := Nightstream.RelationKind
 abbrev SourceKind := Nightstream.SourceKind
 abbrev ShoutReadPoint (K : Type*) [Field K] := Nightstream.ShoutReadPoint K
 abbrev TwistValPoint (K : Type*) [Field K] := Nightstream.TwistValPoint K
-abbrev Obligation (Point : Type*) := Nightstream.Obligation Point
+abbrev Obligation (Family Point : Type*) := Nightstream.Obligation Family Point
 abbrev FamilyDecision := Nightstream.FamilyDecision
 
-abbrev FoldableAt {Point : Type*} := @Nightstream.FoldableAt Point
-abbrev Homogeneous {Point : Type*} := @Nightstream.Homogeneous Point
-abbrev MainLaneAdmissible {Point : Type*} := @Nightstream.MainLaneAdmissible Point
-abbrev SeparateFoldSupported {Point : Type*} := @Nightstream.SeparateFoldSupported Point
-noncomputable abbrev classifyFamily {Point : Type*} := @Nightstream.classifyFamily Point
+abbrev FoldableAt {Family Point : Type*} := @Nightstream.FoldableAt Family Point
+abbrev Homogeneous {Family Point : Type*} := @Nightstream.Homogeneous Family Point
+abbrev MainLaneAdmissible {Family Point : Type*} := @Nightstream.MainLaneAdmissible Family Point
+abbrev SeparateFoldSupported {Family Point : Type*} := @Nightstream.SeparateFoldSupported Family Point
+noncomputable abbrev classifyFamily {Family Point : Type*} := @Nightstream.classifyFamily Family Point
 
 end BridgeTypesInterface
 

@@ -11,11 +11,13 @@
 - Main-lane admissibility:
 
 $$
-\mathrm{MainLaneAdmissible}(p_{\mathrm{main}}, \Gamma)
+\mathrm{MainLaneAdmissible}(f_{\mathrm{main}}, p_{\mathrm{main}}, \Gamma)
 \iff
 \Gamma \neq \varnothing
 \land
 \forall o \in \Gamma,\;
+o.\mathrm{family} = f_{\mathrm{main}}
+\land
 o.\mathrm{relation} = \mathrm{CE}
 \land
 o.\mathrm{point} = p_{\mathrm{main}}.
@@ -26,17 +28,17 @@ $$
 $$
 \mathrm{SeparateFoldSupported}(S, \Gamma)
 \iff
-\exists R,p,\; S(R,p) \land \mathrm{FoldableAt}(R,p,\Gamma).
+\exists F,R,p,\; S(F,R,p) \land \mathrm{FoldableAt}(F,R,p,\Gamma).
 $$
 
 - Decision rule:
 
 $$
-\mathrm{classifyFamily}(p_{\mathrm{main}}, S, \Gamma)
+\mathrm{classifyFamily}(f_{\mathrm{main}}, p_{\mathrm{main}}, S, \Gamma)
 =
 \begin{cases}
-\mathrm{mergeMain} & \text{if } \mathrm{MainLaneAdmissible}(p_{\mathrm{main}}, \Gamma), \\
-\mathrm{foldSeparate} & \text{if } \neg \mathrm{MainLaneAdmissible}(p_{\mathrm{main}}, \Gamma)\; \land\; \mathrm{SeparateFoldSupported}(S,\Gamma), \\
+\mathrm{mergeMain} & \text{if } \mathrm{MainLaneAdmissible}(f_{\mathrm{main}}, p_{\mathrm{main}}, \Gamma), \\
+\mathrm{foldSeparate} & \text{if } \neg \mathrm{MainLaneAdmissible}(f_{\mathrm{main}}, p_{\mathrm{main}}, \Gamma)\; \land\; \mathrm{SeparateFoldSupported}(S,\Gamma), \\
 \mathrm{exportFinal} & \text{otherwise.}
 \end{cases}
 $$

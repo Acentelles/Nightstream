@@ -39,7 +39,8 @@ structure TwistValPoint (K : Type*) [Field K] where
   address : Fin d → TwistPoint (K := K) m
   cycle : TwistPoint (K := K) t
 
-structure Obligation (Point : Type*) where
+structure Obligation (Family Point : Type*) where
+  family : Family
   relation : RelationKind
   point : Point
   source : SourceKind
@@ -51,35 +52,40 @@ inductive FamilyDecision where
 deriving DecidableEq, Repr
 
 def FoldableAt
-  {Point : Type*}
+  {Family Point : Type*}
+  (family : Family)
   (relation : RelationKind)
   (point : Point)
-  (claims : List (Obligation Point)) : Prop :=
-  claims ≠ [] ∧ ∀ claim ∈ claims, claim.relation = relation ∧ claim.point = point
+  (claims : List (Obligation Family Point)) : Prop :=
+  claims ≠ [] ∧
+    ∀ claim ∈ claims,
+      claim.family = family ∧ claim.relation = relation ∧ claim.point = point
 
-def Homogeneous {Point : Type*} (claims : List (Obligation Point)) : Prop :=
-  ∃ relation point, FoldableAt relation point claims
+def Homogeneous {Family Point : Type*} (claims : List (Obligation Family Point)) : Prop :=
+  ∃ family relation point, FoldableAt family relation point claims
 
 def MainLaneAdmissible
-  {Point : Type*}
+  {Family Point : Type*}
+  (mainFamily : Family)
   (mainPoint : Point)
-  (claims : List (Obligation Point)) : Prop :=
-  FoldableAt .ce mainPoint claims
+  (claims : List (Obligation Family Point)) : Prop :=
+  FoldableAt mainFamily .ce mainPoint claims
 
 def SeparateFoldSupported
-  {Point : Type*}
-  (supports : RelationKind → Point → Prop)
-  (claims : List (Obligation Point)) : Prop :=
-  ∃ relation point, supports relation point ∧ FoldableAt relation point claims
+  {Family Point : Type*}
+  (supports : Family → RelationKind → Point → Prop)
+  (claims : List (Obligation Family Point)) : Prop :=
+  ∃ family relation point, supports family relation point ∧ FoldableAt family relation point claims
 
 noncomputable def classifyFamily
-  {Point : Type*}
+  {Family Point : Type*}
+  (mainFamily : Family)
   (mainPoint : Point)
-  (supports : RelationKind → Point → Prop)
-  (claims : List (Obligation Point)) : FamilyDecision := by
+  (supports : Family → RelationKind → Point → Prop)
+  (claims : List (Obligation Family Point)) : FamilyDecision := by
   classical
   exact
-    if MainLaneAdmissible mainPoint claims then .mergeMain
+    if MainLaneAdmissible mainFamily mainPoint claims then .mergeMain
     else if SeparateFoldSupported supports claims then .foldSeparate
     else .exportFinal
 

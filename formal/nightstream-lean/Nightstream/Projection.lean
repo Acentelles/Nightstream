@@ -6,94 +6,144 @@ import TwistShout.TwistValueEvalInterface
 namespace Nightstream
 
 def ProjectionFamilyAt
-  {Point : Type*}
+  {Family Point : Type*}
+  (family : Family)
   (relation : RelationKind)
   (point : Point)
-  (claims : List (Obligation Point)) : Prop :=
+  (claims : List (Obligation Family Point)) : Prop :=
   claims ≠ [] ∧
     ∀ claim ∈ claims,
       claim.source = SourceKind.twistShout ∧
+      claim.family = family ∧
       claim.relation = relation ∧
       claim.point = point
 
+def ceProjectionObligation
+  {Family Point : Type*}
+  (family : Family)
+  (point : Point) : Obligation Family Point where
+  family := family
+  relation := .ce
+  point := point
+  source := .twistShout
+
 def shoutReadCheckObligation
-  {K : Type*} [Field K]
-  (point : ShoutReadPoint K) : Obligation (ShoutReadPoint K) where
+  {Family K : Type*} [Field K]
+  (family : Family)
+  (point : ShoutReadPoint K) : Obligation Family (ShoutReadPoint K) where
+  family := family
   relation := .shoutReadEval
   point := point
   source := .twistShout
 
 def twistValEvaluationObligation
-  {K : Type*} [Field K]
-  (point : TwistValPoint K) : Obligation (TwistValPoint K) where
+  {Family K : Type*} [Field K]
+  (family : Family)
+  (point : TwistValPoint K) : Obligation Family (TwistValPoint K) where
+  family := family
   relation := .twistValEval
   point := point
   source := .twistShout
 
 def openingProjectionObligation
-  {Point : Type*}
-  (point : Point) : Obligation Point where
+  {Family Point : Type*}
+  (family : Family)
+  (point : Point) : Obligation Family Point where
+  family := family
   relation := .opening
   point := point
   source := .twistShout
 
 def finalProjectionObligation
-  {Point : Type*}
-  (point : Point) : Obligation Point where
+  {Family Point : Type*}
+  (family : Family)
+  (point : Point) : Obligation Family Point where
+  family := family
   relation := .final
   point := point
   source := .twistShout
 
+def ceProjection
+  {Family Point : Type*}
+  (family : Family)
+  (point : Point) : List (Obligation Family Point) :=
+  [ceProjectionObligation family point]
+
 def shoutReadProjection
-  {K : Type*} [Field K]
-  (point : ShoutReadPoint K) : List (Obligation (ShoutReadPoint K)) :=
-  [shoutReadCheckObligation point]
+  {Family K : Type*} [Field K]
+  (family : Family)
+  (point : ShoutReadPoint K) : List (Obligation Family (ShoutReadPoint K)) :=
+  [shoutReadCheckObligation family point]
 
 def twistValProjection
-  {K : Type*} [Field K]
-  (point : TwistValPoint K) : List (Obligation (TwistValPoint K)) :=
-  [twistValEvaluationObligation point]
+  {Family K : Type*} [Field K]
+  (family : Family)
+  (point : TwistValPoint K) : List (Obligation Family (TwistValPoint K)) :=
+  [twistValEvaluationObligation family point]
 
 def openingProjection
-  {Point : Type*}
-  (point : Point) : List (Obligation Point) :=
-  [openingProjectionObligation point]
+  {Family Point : Type*}
+  (family : Family)
+  (point : Point) : List (Obligation Family Point) :=
+  [openingProjectionObligation family point]
 
 def finalProjection
-  {Point : Type*}
-  (point : Point) : List (Obligation Point) :=
-  [finalProjectionObligation point]
+  {Family Point : Type*}
+  (family : Family)
+  (point : Point) : List (Obligation Family Point) :=
+  [finalProjectionObligation family point]
 
 theorem projectionFamilyAt_implies_homogeneous
-  {Point : Type*}
+  {Family Point : Type*}
+  {family : Family}
   {relation : RelationKind}
   {point : Point}
-  {claims : List (Obligation Point)} :
-  ProjectionFamilyAt relation point claims →
+  {claims : List (Obligation Family Point)} :
+  ProjectionFamilyAt family relation point claims →
     Homogeneous claims := by
   intro hProjection
-  refine ⟨relation, point, ?_⟩
+  refine ⟨family, relation, point, ?_⟩
   refine ⟨hProjection.1, ?_⟩
   intro claim hMem
   exact (hProjection.2 claim hMem).2
 
 theorem projectionFamilyAt_members_have_shape
-  {Point : Type*}
+  {Family Point : Type*}
+  {family : Family}
   {relation : RelationKind}
   {point : Point}
-  {claims : List (Obligation Point)}
-  (hProjection : ProjectionFamilyAt relation point claims)
-  {claim : Obligation Point}
+  {claims : List (Obligation Family Point)}
+  (hProjection : ProjectionFamilyAt family relation point claims)
+  {claim : Obligation Family Point}
   (hMem : claim ∈ claims) :
   claim.source = SourceKind.twistShout ∧
+    claim.family = family ∧
     claim.relation = relation ∧
     claim.point = point := by
   exact hProjection.2 claim hMem
 
+theorem ceProjection_is_projectionFamily
+  {Family Point : Type*}
+  {family : Family}
+  {point : Point} :
+  ProjectionFamilyAt family .ce point (ceProjection family point) := by
+  refine ⟨by simp [ceProjection], ?_⟩
+  intro claim hMem
+  simp [ceProjection] at hMem
+  rcases hMem with rfl
+  constructor
+  · rfl
+  · constructor
+    · rfl
+    · constructor
+      · rfl
+      · rfl
+
 theorem shoutReadProjection_is_projectionFamily
-  {K : Type*} [Field K]
+  {Family K : Type*} [Field K]
+  {family : Family}
   {point : ShoutReadPoint K} :
-  ProjectionFamilyAt .shoutReadEval point (shoutReadProjection point) := by
+  ProjectionFamilyAt family .shoutReadEval point (shoutReadProjection family point) := by
   refine ⟨by simp [shoutReadProjection], ?_⟩
   intro claim hMem
   simp [shoutReadProjection] at hMem
@@ -102,12 +152,15 @@ theorem shoutReadProjection_is_projectionFamily
   · rfl
   · constructor
     · rfl
-    · rfl
+    · constructor
+      · rfl
+      · rfl
 
 theorem twistValProjection_is_projectionFamily
-  {K : Type*} [Field K]
+  {Family K : Type*} [Field K]
+  {family : Family}
   {point : TwistValPoint K} :
-  ProjectionFamilyAt .twistValEval point (twistValProjection point) := by
+  ProjectionFamilyAt family .twistValEval point (twistValProjection family point) := by
   refine ⟨by simp [twistValProjection], ?_⟩
   intro claim hMem
   simp [twistValProjection] at hMem
@@ -116,12 +169,15 @@ theorem twistValProjection_is_projectionFamily
   · rfl
   · constructor
     · rfl
-    · rfl
+    · constructor
+      · rfl
+      · rfl
 
 theorem openingProjection_is_projectionFamily
-  {Point : Type*}
+  {Family Point : Type*}
+  {family : Family}
   {point : Point} :
-  ProjectionFamilyAt .opening point (openingProjection point) := by
+  ProjectionFamilyAt family .opening point (openingProjection family point) := by
   refine ⟨by simp [openingProjection], ?_⟩
   intro claim hMem
   simp [openingProjection] at hMem
@@ -130,12 +186,15 @@ theorem openingProjection_is_projectionFamily
   · rfl
   · constructor
     · rfl
-    · rfl
+    · constructor
+      · rfl
+      · rfl
 
 theorem finalProjection_is_projectionFamily
-  {Point : Type*}
+  {Family Point : Type*}
+  {family : Family}
   {point : Point} :
-  ProjectionFamilyAt .final point (finalProjection point) := by
+  ProjectionFamilyAt family .final point (finalProjection family point) := by
   refine ⟨by simp [finalProjection], ?_⟩
   intro claim hMem
   simp [finalProjection] at hMem
@@ -144,18 +203,29 @@ theorem finalProjection_is_projectionFamily
   · rfl
   · constructor
     · rfl
-    · rfl
+    · constructor
+      · rfl
+      · rfl
+
+theorem ceProjection_homogeneous
+  {Family Point : Type*}
+  {family : Family}
+  {point : Point} :
+  Homogeneous (ceProjection family point) := by
+  exact projectionFamilyAt_implies_homogeneous ceProjection_is_projectionFamily
 
 theorem shoutReadProjection_homogeneous
-  {K : Type*} [Field K]
+  {Family K : Type*} [Field K]
+  {family : Family}
   {point : ShoutReadPoint K} :
-  Homogeneous (shoutReadProjection point) := by
+  Homogeneous (shoutReadProjection family point) := by
   exact projectionFamilyAt_implies_homogeneous shoutReadProjection_is_projectionFamily
 
 theorem twistValProjection_homogeneous
-  {K : Type*} [Field K]
+  {Family K : Type*} [Field K]
+  {family : Family}
   {point : TwistValPoint K} :
-  Homogeneous (twistValProjection point) := by
+  Homogeneous (twistValProjection family point) := by
   exact projectionFamilyAt_implies_homogeneous twistValProjection_is_projectionFamily
 
 theorem shoutReadProjectionSound

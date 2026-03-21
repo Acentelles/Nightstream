@@ -11,40 +11,49 @@
 - A family policy consists of:
 
 $$
-\mathrm{FamilyPolicy}(P) := \left(p_{\mathrm{main}}, S\right)
+\mathrm{FamilyPolicy}(F, P) := \left(f_{\mathrm{main}}, p_{\mathrm{main}}, S\right)
 $$
 
-where \(p_{\mathrm{main}} : P\) is the main-lane point and
-\(S : \mathrm{RelationKind} \to P \to \mathrm{Prop}\) is the explicit separate-fold support predicate.
+where \(f_{\mathrm{main}} : F\) is the main-lane family id,
+\(p_{\mathrm{main}} : P\) is the main-lane point, and
+\(S : F \to \mathrm{RelationKind} \to P \to \mathrm{Prop}\) is the explicit separate-fold support predicate.
 
 - The decision function is:
 
 $$
 \mathrm{decideFamily}(\Pi, \Gamma)
 :=
-\mathrm{classifyFamily}(\Pi.p_{\mathrm{main}}, \Pi.S, \Gamma).
+\mathrm{classifyFamily}(\Pi.f_{\mathrm{main}}, \Pi.p_{\mathrm{main}}, \Pi.S, \Gamma).
 $$
 
 - CE projection families merge into the main lane exactly at the policy main point:
 
 $$
-\mathrm{ProjectionFamilyAt}(\mathrm{CE}, p, \Gamma)
+\mathrm{ProjectionFamilyAt}(F, \mathrm{CE}, p, \Gamma)
 \Longrightarrow
 \left(
 \mathrm{decideFamily}(\Pi, \Gamma) = \mathrm{mergeMain}
 \iff
-p = \Pi.p_{\mathrm{main}}
+F = \Pi.f_{\mathrm{main}} \land p = \Pi.p_{\mathrm{main}}
 \right).
+$$
+
+- In particular:
+
+$$
+\mathrm{decideFamily}(\Pi, \mathrm{CEProjection}(F, p)) = \mathrm{mergeMain}
+\iff
+F = \Pi.f_{\mathrm{main}} \land p = \Pi.p_{\mathrm{main}}.
 $$
 
 - A non-main projection family with explicit support folds separately:
 
 $$
-\mathrm{ProjectionFamilyAt}(R, p, \Gamma)
+\mathrm{ProjectionFamilyAt}(F, R, p, \Gamma)
 \land
-\neg \mathrm{MainLaneAdmissible}(\Pi.p_{\mathrm{main}}, \Gamma)
+\neg \mathrm{MainLaneAdmissible}(\Pi.f_{\mathrm{main}}, \Pi.p_{\mathrm{main}}, \Gamma)
 \land
-\Pi.S(R,p)
+\Pi.S(F,R,p)
 \Longrightarrow
 \mathrm{decideFamily}(\Pi, \Gamma) = \mathrm{foldSeparate}.
 $$
@@ -52,11 +61,11 @@ $$
 - A non-main projection family without explicit support remains final:
 
 $$
-\mathrm{ProjectionFamilyAt}(R, p, \Gamma)
+\mathrm{ProjectionFamilyAt}(F, R, p, \Gamma)
 \land
-\neg \mathrm{MainLaneAdmissible}(\Pi.p_{\mathrm{main}}, \Gamma)
+\neg \mathrm{MainLaneAdmissible}(\Pi.f_{\mathrm{main}}, \Pi.p_{\mathrm{main}}, \Gamma)
 \land
-\neg \Pi.S(R,p)
+\neg \Pi.S(F,R,p)
 \Longrightarrow
 \mathrm{decideFamily}(\Pi, \Gamma) = \mathrm{exportFinal}.
 $$
@@ -64,28 +73,34 @@ $$
 - Immediate Nightstream consequences:
 
 $$
-\Pi.S(\mathrm{ShoutReadEval}, p)
+\Pi.S(F, \mathrm{ShoutReadEval}, p)
 \Longrightarrow
-\mathrm{decideFamily}(\Pi, \mathrm{ShoutReadProjection}(p)) = \mathrm{foldSeparate}.
+\mathrm{decideFamily}(\Pi, \mathrm{ShoutReadProjection}(F, p)) = \mathrm{foldSeparate}.
 $$
 
 $$
-\neg \Pi.S(\mathrm{ShoutReadEval}, p)
+\neg \Pi.S(F, \mathrm{ShoutReadEval}, p)
 \Longrightarrow
-\mathrm{decideFamily}(\Pi, \mathrm{ShoutReadProjection}(p)) = \mathrm{exportFinal}.
+\mathrm{decideFamily}(\Pi, \mathrm{ShoutReadProjection}(F, p)) = \mathrm{exportFinal}.
 $$
 
 $$
-\Pi.S(\mathrm{TwistValEval}, p)
+\Pi.S(F, \mathrm{TwistValEval}, p)
 \Longrightarrow
-\mathrm{decideFamily}(\Pi, \mathrm{TwistValProjection}(p)) = \mathrm{foldSeparate}.
+\mathrm{decideFamily}(\Pi, \mathrm{TwistValProjection}(F, p)) = \mathrm{foldSeparate}.
 $$
 
 $$
-\neg \Pi.S(\mathrm{TwistValEval}, p)
+\neg \Pi.S(F, \mathrm{TwistValEval}, p)
 \Longrightarrow
-\mathrm{decideFamily}(\Pi, \mathrm{TwistValProjection}(p)) = \mathrm{exportFinal}.
+\mathrm{decideFamily}(\Pi, \mathrm{TwistValProjection}(F, p)) = \mathrm{exportFinal}.
 $$
+
+For a `CEProjection(F, p)` away from the policy main lane, the same generic
+classification rule applies:
+
+- with explicit support for `(\mathrm{CE}, F, p)`, it folds separately;
+- without that support, it remains final.
 
 ## Dependency and Consumer Map
 
