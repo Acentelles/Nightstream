@@ -4,8 +4,8 @@ use crate::chip8::spec::{Chip8State, WITNESS_WIDTH};
 
 use super::stage3_digest::{build_kernel_stage3_digest_surfaces_from_frames, KernelStage3DigestSurface};
 use super::{
-    build_kernel_exact_frames, KernelFrameDecodeView, KernelMetaPub, KernelStepAux, SimpleKernelError,
-    SimpleKernelOutput, SimpleKernelProof, SimpleKernelPublicInput,
+    build_kernel_exact_frames, KernelFrameDecodeView, KernelMetaPub, SimpleKernelError, SimpleKernelOutput,
+    SimpleKernelProof, SimpleKernelPublicInput,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -27,7 +27,6 @@ pub struct KernelStage2DigestSurface {
     pub post: Chip8State,
     pub dec: KernelFrameDecodeView,
     pub row: [neo_math::F; WITNESS_WIDTH],
-    pub kernel_aux: KernelStepAux,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -81,7 +80,6 @@ pub fn build_kernel_staged_execution_digest_bundle(
                 post: frame.post.clone(),
                 dec: frame.dec.clone(),
                 row: frame.row,
-                kernel_aux: frame.kernel_aux.clone(),
             },
             result: KernelExecutionResultSurface {
                 step_idx: frame.step_idx,

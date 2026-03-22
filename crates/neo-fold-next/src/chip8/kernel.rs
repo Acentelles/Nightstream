@@ -12,6 +12,7 @@ mod opening_boundary;
 mod opening_refinement;
 mod opening_transcript;
 mod public_meta;
+mod release_artifact;
 mod root_context;
 mod row_projection;
 mod semantic_evidence;
@@ -33,15 +34,14 @@ use super::tables::{
 use super::{stage1, stage2, stage3};
 use crate::proof::TimeOpeningProofSummary;
 use crate::time_opening::{prove_time_opening, verify_time_opening};
-use bridge_binding::{
-    build_kernel_bridge_binding_summary, verify_kernel_bridge_binding_summary, KernelBridgeBindingSummary,
-};
+pub use bridge_binding::prepared_step_digest;
+use bridge_binding::{build_kernel_bridge_binding_summary, verify_kernel_bridge_binding_summary};
+pub use bridge_binding::{KernelBridgeBindingClaim, KernelBridgeBindingSummary};
 pub use execution_digest::{
     build_kernel_execution_digest, verify_kernel_execution_digest, KernelAuditSurface, KernelExecutionDigest,
     KernelExportSurface, KernelManifestSurface, KernelTraceSurface, KernelTranscriptEvent, KernelTranscriptSurface,
 };
-pub(crate) use frame_artifact::build_kernel_exact_frames;
-pub use frame_artifact::{KernelExactFrame, KernelFrameDecodeView};
+pub use frame_artifact::{build_kernel_exact_frames, KernelExactFrame, KernelFrameDecodeView};
 use joint_opening::{build_kernel_joint_opening_summary, verify_kernel_joint_opening_summary};
 pub use joint_opening::{KernelJointOpeningGroupSummary, KernelJointOpeningSummary};
 pub use joint_opening_bucket_fold::KernelJointOpeningFoldBucketProof;
@@ -87,11 +87,15 @@ use opening_transcript::emit_kernel_opening_artifacts_to_transcript;
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
 use public_meta::validate_public_input;
 pub use public_meta::{absorb_root0, build_kernel_meta_pub, new_simple_kernel_transcript, KernelMetaPub};
+pub use release_artifact::{
+    build_kernel_external_release_artifact, build_kernel_release_artifact, verify_kernel_external_release_artifact,
+    verify_kernel_release_artifact, KernelExternalReleaseArtifact, KernelReleaseArtifact, KernelRoot0CommitmentBinding,
+    KernelTraceDigestSource,
+};
 pub use root_context::chip8_simple_root_params;
 use root_context::{build_prepared_step_from_semantic_row, SimpleKernelRootContext};
-use row_projection::{
-    build_kernel_row_projection_summary, verify_kernel_row_projection_summary, KernelRowProjectionSummary,
-};
+use row_projection::{build_kernel_row_projection_summary, verify_kernel_row_projection_summary};
+pub use row_projection::{KernelRowProjection, KernelRowProjectionSummary};
 pub use semantic_evidence::KernelSemanticEvidenceSummary;
 use semantic_evidence::{
     build_kernel_semantic_evidence_summary, verify_kernel_semantic_evidence_summary, KernelSemanticEvidenceInputs,

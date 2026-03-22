@@ -20,7 +20,7 @@ impl TranscriptRngBuilder {
     pub fn from_transcript(tr: &Poseidon2Transcript) -> Self {
         Self {
             st: tr.state(),
-            rate_idx: 0,
+            rate_idx: tr.absorbed(),
         }
     }
     pub fn from_state(state: [Goldilocks; p2::WIDTH]) -> Self {

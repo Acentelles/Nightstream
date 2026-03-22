@@ -131,6 +131,11 @@ impl Poseidon2Transcript {
     pub fn state(&self) -> [Goldilocks; p2::WIDTH] {
         self.st
     }
+
+    /// Export the current absorb cursor within the rate portion.
+    pub fn absorbed(&self) -> usize {
+        self.absorbed
+    }
 }
 
 impl Transcript for Poseidon2Transcript {
