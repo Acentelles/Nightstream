@@ -4,6 +4,9 @@ mod chip8_trace_semantics;
 #[path = "validate_issues/kernel_progress.rs"]
 mod kernel_progress;
 
+#[path = "validate_issues/kernel_mixed_progress.rs"]
+mod kernel_mixed_progress;
+
 #[path = "validate_issues/kernel_opening_refinement.rs"]
 mod kernel_opening_refinement;
 

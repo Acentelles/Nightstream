@@ -248,6 +248,7 @@ fn replay_stage3_challenges(
         &alu_table,
         &eq4_table,
         proof.meta_pub.cycle_bits,
+        None,
         &mut transcript,
     )
     .map_err(SimpleKernelError::ContinuityFailed)?;

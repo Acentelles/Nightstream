@@ -1196,6 +1196,7 @@ pub fn verify_simple_kernel(
         &alu_table,
         &eq4_table,
         cycle_bits,
+        Some(stage1::stage1_alu_expected_claim(&aux_data, &proof.stage1.cycle_point)),
         &mut transcript,
     )
     .map_err(SimpleKernelError::SumcheckFailed)?;

@@ -2,13 +2,13 @@
 
 use neo_math::{from_complex, KExtensions, F, K};
 use neo_transcript::{Poseidon2Transcript, Transcript};
-use p3_field::{PrimeCharacteristicRing, PrimeField64};
+use p3_field::PrimeCharacteristicRing;
 
 use crate::chip8::spec::{
     COL_IS_MEMOP, COL_I_NEXT, COL_MEM_VALUE, COL_PC, COL_REG_X, COL_REG_X_NEXT, COL_WRITES_LOOKUP_TO_X,
     COL_WRITES_MEM_TO_X, COL_WRITES_NNN_TO_I, COL_X_IDX, COL_Y_IDX, WITNESS_WIDTH,
 };
-use crate::chip8::tables::{build_unmap_ram, build_unmap_reg, LookupKind, RAM_SINK_ADDR, REG_SINK_ADDR};
+use crate::chip8::tables::{build_unmap_ram, build_unmap_reg, RAM_SINK_ADDR, REG_SINK_ADDR};
 
 use super::verify_support::{split_round_groups, verify_sumcheck_known_with_terminal};
 use super::{batch_values, expect_equal_k, expect_equal_k_slice, KernelStepAux, SimpleKernelError};
@@ -220,45 +220,6 @@ fn build_alu_mixed_table(alu_add8lo: &[F]) -> Vec<F> {
     table
 }
 
-fn decode_small_base_u64(value: K, label: &str) -> Result<u64, SimpleKernelError> {
-    let [real, imag] = value.as_coeffs();
-    if imag != F::ZERO {
-        return Err(SimpleKernelError::SumcheckFailed(format!(
-            "{label} must be a base-field value"
-        )));
-    }
-    Ok(real.as_canonical_u64())
-}
-
-fn decode_operand_value(selector: K, reg_x: K, reg_y: K, kk: K, label: &str) -> Result<K, SimpleKernelError> {
-    match decode_small_base_u64(selector, label)? {
-        0 => Ok(reg_x),
-        1 => Ok(reg_y),
-        2 => Ok(kk),
-        3 => Ok(K::ZERO),
-        other => Err(SimpleKernelError::SumcheckFailed(format!(
-            "{label} has invalid selector value {other}"
-        ))),
-    }
-}
-
-fn stage1_alu_claim(lane_values_at_lookup: &[K], decode_values: &[K]) -> Result<K, SimpleKernelError> {
-    let reg_x = lane_values_at_lookup[4];
-    let reg_y = lane_values_at_lookup[5];
-    let kk = lane_values_at_lookup[1];
-    let lookup_kind = decode_small_base_u64(decode_values[18], "stage1 lookup_kind_dec")?;
-    if lookup_kind > LookupKind::Add8Lo as u64 {
-        return Err(SimpleKernelError::SumcheckFailed(format!(
-            "stage1 lookup_kind_dec has invalid value {lookup_kind}"
-        )));
-    }
-    let lhs = decode_operand_value(decode_values[19], reg_x, reg_y, kk, "stage1 lhs_selector_dec")?;
-    let rhs = decode_operand_value(decode_values[20], reg_x, reg_y, kk, "stage1 rhs_selector_dec")?;
-    let kind_weight = K::from(F::from_u64(1u64 << 16));
-    let lhs_weight = K::from(F::from_u64(1u64 << 8));
-    Ok(K::from(F::from_u64(lookup_kind)) * kind_weight + lhs * lhs_weight + rhs)
-}
-
 fn stage1_eq4_claim(lane_values_at_lookup: &[K], decode_values: &[K]) -> K {
     let sixteen = K::from(F::from_u64(16));
     sixteen * lane_values_at_lookup[14] + decode_values[21]
@@ -392,13 +353,17 @@ pub(crate) fn verify_kernel_stage1_sumcheck_terminals(
 
     let alu_addrs: Vec<_> = aux.iter().map(|step| step.alu_key as usize).collect();
     let alu_mixed_table = build_alu_mixed_table(alu_table);
+    let alu_expected: Vec<F> = aux
+        .iter()
+        .map(|step| F::from_u64(step.alu_key as u64))
+        .collect();
     verify_stage1_channel_terminals(
         transcript,
         &proof.alu_proof,
         proof.alu_proof.read_values_at_cycle[0],
         18,
         cycle_bits,
-        stage1_alu_claim(&proof.lane_values_at_lookup, &proof.decode_proof.read_values_at_cycle)?,
+        mle_eval_f_le(&alu_expected, &proof.cycle_point),
         &alu_addrs,
         mle_eval_f_be(&alu_mixed_table, &proof.alu_proof.addr_point),
         &proof.cycle_point,

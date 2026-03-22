@@ -4,10 +4,10 @@
 //! address dimension), address-correctness sub-proofs (booleanity, Hamming-weight-1,
 //! decode-consistency). Does not own table construction (see `tables.rs`).
 
-use neo_math::{from_complex, KExtensions, F, K};
+use neo_math::{from_complex, F, K};
 use neo_reductions::sumcheck::{run_sumcheck_prover, RoundOracle};
 use neo_transcript::Transcript;
-use p3_field::{PrimeCharacteristicRing, PrimeField64};
+use p3_field::PrimeCharacteristicRing;
 
 use super::kernel::{
     batch_values, verify_stage1_channel_transcript, KernelStepAux, ShoutChannelProof, Stage1ShoutProof,
@@ -238,37 +238,12 @@ fn stage1_eq4_claim(lane_values_at_lookup: &[K], decode_values: &[K]) -> K {
     sixteen * lane_values_at_lookup[14] + decode_values[21]
 }
 
-fn decode_small_base_u64(value: K, label: &str) -> Result<u64, String> {
-    let [real, imag] = value.as_coeffs();
-    if imag != F::ZERO {
-        return Err(format!("{label} must be a base-field value"));
-    }
-    Ok(real.as_canonical_u64())
-}
-
-fn decode_operand_value(selector: K, reg_x: K, reg_y: K, kk: K, label: &str) -> Result<K, String> {
-    match decode_small_base_u64(selector, label)? {
-        0 => Ok(reg_x),
-        1 => Ok(reg_y),
-        2 => Ok(kk),
-        3 => Ok(K::ZERO),
-        other => Err(format!("{label} has invalid selector value {other}")),
-    }
-}
-
-fn stage1_alu_claim(lane_values_at_lookup: &[K], decode_values: &[K]) -> Result<K, String> {
-    let reg_x = lane_values_at_lookup[4];
-    let reg_y = lane_values_at_lookup[5];
-    let kk = lane_values_at_lookup[1];
-    let lookup_kind = decode_small_base_u64(decode_values[18], "stage1 lookup_kind_dec")?;
-    if lookup_kind > 3 {
-        return Err(format!("stage1 lookup_kind_dec has invalid value {lookup_kind}"));
-    }
-    let lhs = decode_operand_value(decode_values[19], reg_x, reg_y, kk, "stage1 lhs_selector_dec")?;
-    let rhs = decode_operand_value(decode_values[20], reg_x, reg_y, kk, "stage1 rhs_selector_dec")?;
-    let kind_weight = K::from(F::from_u64(1u64 << 16));
-    let lhs_weight = K::from(F::from_u64(1u64 << 8));
-    Ok(K::from(F::from_u64(lookup_kind)) * kind_weight + lhs * lhs_weight + rhs)
+pub fn stage1_alu_expected_claim(aux: &[KernelStepAux], cycle_point: &[K]) -> K {
+    let alu_expected: Vec<F> = aux
+        .iter()
+        .map(|step| F::from_u64(step.alu_key as u64))
+        .collect();
+    mle_eval_k(&alu_expected, cycle_point)
 }
 
 // ---------------------------------------------------------------------------
@@ -939,11 +914,9 @@ pub fn prove_stage1<Tr: Transcript>(
     let lane_values_at_lookup = lane_values_at_cycle(trace_rows, &cycle_point);
     let fetch_expected_at_lookup = mle_eval_k(&fetch_expected, &cycle_point);
     let decode_expected_at_lookup = mle_eval_k(&decode_expected, &cycle_point);
-    let alu_expected_at_lookup = mle_eval_k(&alu_expected, &cycle_point);
     let eq4_expected_at_lookup = mle_eval_k(&eq4_expected, &cycle_point);
     let fetch_claim = stage1_fetch_claim(&lane_values_at_lookup);
     let decode_claim = stage1_decode_claim(fetch_proof.read_values_at_cycle[0]);
-    let alu_claim = stage1_alu_claim(&lane_values_at_lookup, &decode_proof.read_values_at_cycle)?;
     let gamma_lookup_link = sample_challenge(transcript, b"stage1/gamma_lookup_link");
 
     let decode = &decode_proof.read_values_at_cycle;
@@ -953,9 +926,6 @@ pub fn prove_stage1<Tr: Transcript>(
     }
     if decode_expected_at_lookup != decode_claim {
         return Err("stage1 decode address claim does not match fetched opcode at r_lookup".into());
-    }
-    if alu_expected_at_lookup != alu_claim {
-        return Err("stage1 ALU address claim does not match decoded ALU key at r_lookup".into());
     }
     if eq4_expected_at_lookup != eq4_claim {
         return Err("stage1 Eq4 address claim does not match X_IDX/x_bound at r_lookup".into());
@@ -1007,6 +977,7 @@ pub fn verify_stage1<Tr: Transcript>(
     alu_table: &[F],
     eq4_table: &[F],
     cycle_bits: usize,
+    alu_decode_consistency_claim: Option<K>,
     transcript: &mut Tr,
 ) -> Result<(), String> {
     let expected_cycle_point = sample_challenge_vec(transcript, b"stage1/r_lookup", cycle_bits);
@@ -1063,10 +1034,7 @@ pub fn verify_stage1<Tr: Transcript>(
             .ok_or_else(|| "stage1 ALU read value missing".to_string())?,
         18,
         cycle_bits,
-        Some(stage1_alu_claim(
-            &proof.lane_values_at_lookup,
-            &proof.decode_proof.read_values_at_cycle,
-        )?),
+        alu_decode_consistency_claim,
         "stage1 alu",
     )
     .map_err(|err| err.to_string())?;
