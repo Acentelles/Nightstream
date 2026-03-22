@@ -108,7 +108,7 @@ Some of the critical assurance owners sit above any single row.
 | Single-slice staged digest | One row digest entry has Lean-owned meaning | `Yes` | `Indirectly` | more direct per-entry equality is possible | `Low-Medium` |
 | Staged execution digest bundle | The whole chunk bundle has Lean-owned meaning | `Yes` | `Yes` on generated Rust cases | real normal-path artifact ingestion still needs wiring | `Medium` |
 | Release artifact | Final grouped CHIP-8 artifact has Lean-owned schema and checker | `Yes` | `Yes` on generated Rust cases | direct normal-path export/import wiring | `Medium` |
-| External release artifact schema | Rust export shape is Lean-owned, not ad hoc | `Yes` | `Yes` on generated cases | direct file/blob ingestion in the normal flow | `Medium` |
+| External release artifact schema | Rust export shape is Lean-owned, not ad hoc | `Yes` | `Yes` on generated cases and on the imported audit artifact | direct file/blob ingestion in the normal flow | `Medium` |
 
 ## What We Already Have
 
@@ -118,6 +118,7 @@ Some of the critical assurance owners sit above any single row.
 | Chunk-level mathematical artifact story | `Yes` |
 | Exact Rust↔Lean parity for transcript core | `Yes` |
 | Exact Rust↔Lean parity for chunk bundle and release artifact on generated cases | `Yes` |
+| Lean checking an imported Rust-produced release artifact in the audit build | `Yes` |
 | Lean checking a real normal-path Rust release artifact as a mandatory release gate | `Not fully yet` |
 | Proof that the Rust trace executor/prover/verifier implementation is correct line-by-line | `No, and not the main goal` |
 | Proof of every internal transcript step / sumcheck round / control-flow detail in Rust | `No` |
@@ -133,7 +134,7 @@ These are the remaining gaps for the assurance model described in
 
 | Missing thing | What it really means | Why missing | Difficulty |
 |---|---|---|---|
-| Real release-gate wiring | Rust normal release flow emits the artifact; Lean checks it; release fails if it does not pass | mostly plumbing/integration, not theorem weakness | `Medium` |
+| Real release-gate wiring | Rust normal release flow emits the artifact; Lean checks it; release fails if it does not pass | the checker exists in the audit build, but normal release jobs still need to invoke it | `Medium` |
 | Broader parity corpus | More programs/rows/chunks to catch more implementation drift | coverage work | `Low-Medium` |
 | Replay of more internal transcript events | Check more than the current shared challenge/artifact boundaries | this is the main remaining protocol/transcript assurance item | `Medium-High` |
 
@@ -206,6 +207,42 @@ The right closure condition for this concern is:
    exact challenge/digest boundaries.
 
 For the transcript question, that is effectively enough.
+
+## Next 5 Tasks
+
+For the current CHIP-8 assurance target, the next concrete tasks are:
+
+1. **Expand transcript-call parity inside the kernel path**
+   - replay/export more exact Rust transcript events from:
+     - `stage_terminal.rs`
+     - `opening_boundary.rs`
+     - `joint_opening.rs`
+     - `semantic_evidence.rs`
+     - `bridge_binding.rs`
+     - `execution_digest.rs`
+   - keep Lean as the owner of the event meaning
+
+2. **Use the `chip8-audit` feature only for audit/export plumbing**
+   - keep it off by default
+   - keep production proving/verifying semantics unchanged
+   - keep release-artifact export and Lean-audit glue behind this narrow gate
+
+3. **Promote the current audit-build artifact check into normal release qualification**
+   - release builds/jobs should enable `chip8-audit`
+   - release qualification should fail if the imported artifact does not pass the
+     Lean-owned checker
+   - use the Lean-owned external artifact schema as the only exported audit shape
+
+4. **Wire the normal release path to emit the same external release artifact**
+   - not only the vector-generator / audit harness path
+   - keep the exported shape identical to the current Lean-owned imported artifact
+
+5. **Broaden the parity and artifact corpus**
+   - keep expanding the supported CHIP-8 subset cases that flow through:
+     - Rust proof generation
+     - Rust artifact export
+     - Lean parity checks
+   - prioritize mixed-family and transcript-interesting cases over raw count
 
 ## Best Short Summary
 
