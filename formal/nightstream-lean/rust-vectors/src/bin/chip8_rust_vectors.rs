@@ -104,6 +104,15 @@ struct ReleaseArtifactCase {
     imported_artifact: KernelExternalReleaseArtifact,
 }
 
+#[derive(Clone)]
+struct KernelFixture {
+    name: &'static str,
+    program: Chip8Program,
+    initial_state: Chip8State,
+    semantic_steps: usize,
+    transcript_seed: Vec<u8>,
+}
+
 impl LoggingTranscript {
     fn from_inner(inner: Poseidon2Transcript) -> Self {
         Self {
@@ -191,11 +200,10 @@ impl Transcript for LoggingTranscript {
     }
 }
 
-fn build_jump_kernel_input(semantic_rows: usize, transcript_seed: Vec<u8>) -> SimpleKernelProverInput {
-    let program = Chip8Program::from_opcodes(&[0x1200]);
-    let initial_state = Chip8State::default();
+fn build_fixture_input(fixture: &KernelFixture) -> SimpleKernelProverInput {
     let execution =
-        Chip8TraceBuilder::<()>::execute_program(&program, &initial_state, semantic_rows).expect("jump trace");
+        Chip8TraceBuilder::<()>::execute_program(&fixture.program, &fixture.initial_state, fixture.semantic_steps)
+            .expect("fixture trace");
 
     let mut semantic_trace_rows = Vec::new();
     let mut semantic_aux_data = Vec::new();
@@ -208,18 +216,99 @@ fn build_jump_kernel_input(semantic_rows: usize, transcript_seed: Vec<u8>) -> Si
 
     SimpleKernelProverInput {
         public: SimpleKernelPublicInput {
-            program_image: program.bytes,
-            initial_pc_word: initial_state.pc / 2,
-            initial_registers: initial_state.v,
-            initial_i: initial_state.i,
-            initial_ram: initial_state.memory.to_vec(),
-            transcript_seed,
+            program_image: fixture.program.bytes.clone(),
+            initial_pc_word: fixture.initial_state.pc / 2,
+            initial_registers: fixture.initial_state.v,
+            initial_i: fixture.initial_state.i,
+            initial_ram: fixture.initial_state.memory.to_vec(),
+            transcript_seed: fixture.transcript_seed.clone(),
         },
         witness: SimpleKernelWitness {
             semantic_trace_rows,
             semantic_aux_data,
         },
     }
+}
+
+fn make_fixture(
+    name: &'static str,
+    opcodes: &[u16],
+    semantic_steps: usize,
+    transcript_seed: &[u8],
+    patch: impl FnOnce(&mut Chip8State),
+) -> KernelFixture {
+    let program = Chip8Program::from_opcodes(opcodes);
+    let mut initial_state = Chip8State::with_program(&program).expect("fixture initial state");
+    patch(&mut initial_state);
+    KernelFixture {
+        name,
+        program,
+        initial_state,
+        semantic_steps,
+        transcript_seed: transcript_seed.to_vec(),
+    }
+}
+
+fn chip8_subset_fixtures() -> Vec<KernelFixture> {
+    vec![
+        make_fixture("jump_rows_2_seed_empty", &[0x1200], 2, b"", |_| {}),
+        make_fixture(
+            "jump_rows_3_seed_nonempty",
+            &[0x1200],
+            3,
+            b"chip8-transcript-seed-v1",
+            |_| {},
+        ),
+        make_fixture(
+            "ldimm_chain_4",
+            &[
+                0x6001, // LD V0, 0x01
+                0x6102, // LD V1, 0x02
+                0x6203, // LD V2, 0x03
+                0x6304, // LD V3, 0x04
+            ],
+            4,
+            b"chip8-ldimm-chain-v1",
+            |_| {},
+        ),
+        make_fixture(
+            "addimm_chain_4",
+            &[
+                0x7001, // ADD V0, 0x01
+                0x7102, // ADD V1, 0x02
+                0x7203, // ADD V2, 0x03
+                0x7304, // ADD V3, 0x04
+            ],
+            4,
+            b"chip8-addimm-chain-v1",
+            |state| {
+                state.v[0] = 10;
+                state.v[1] = 20;
+                state.v[2] = 30;
+                state.v[3] = 40;
+            },
+        ),
+        make_fixture(
+            "ldimm_addimm_mix_2",
+            &[
+                0x6001, // LD V0, 0x01
+                0x7002, // ADD V0, 0x02
+            ],
+            2,
+            b"chip8-ldimm-addimm-mix-v1",
+            |_| {},
+        ),
+        make_fixture(
+            "ldimm_skipeq_mix_2",
+            &[
+                0x6001, // LD V0, 0x01
+                0x3001, // SE V0, 0x01
+            ],
+            2,
+            b"chip8-ldimm-skipeq-mix-v1",
+            |_| {},
+        ),
+    ]
 }
 
 fn commitment_bindings(commitments: &KernelCommitments) -> Vec<(&'static str, Vec<u8>)> {
@@ -332,8 +421,8 @@ fn pad_semantic_witness(
     (trace_rows, aux_data)
 }
 
-fn build_case(name: &'static str, semantic_rows: usize, transcript_seed: Vec<u8>) -> TranscriptVectorCase {
-    let input = build_jump_kernel_input(semantic_rows, transcript_seed.clone());
+fn build_case(fixture: &KernelFixture) -> TranscriptVectorCase {
+    let input = build_fixture_input(fixture);
     let (_output, proof) = prove_simple_kernel(&input).expect("simple kernel proof");
 
     let mut root0_transcript = new_simple_kernel_transcript(&input.public.transcript_seed);
@@ -386,7 +475,7 @@ fn build_case(name: &'static str, semantic_rows: usize, transcript_seed: Vec<u8>
     .expect("stage2 proof");
     let _stage3_proof = stage3::prove_stage3(
         &trace_rows,
-        semantic_rows,
+        input.witness.semantic_trace_rows.len(),
         proof.meta_pub.cycle_bits,
         &mut transcript,
     )
@@ -416,8 +505,8 @@ fn build_case(name: &'static str, semantic_rows: usize, transcript_seed: Vec<u8>
         logged_pair(&transcript, "stage3/gamma_shift");
 
     TranscriptVectorCase {
-        name,
-        transcript_seed,
+        name: fixture.name,
+        transcript_seed: fixture.transcript_seed.clone(),
         commitment_bindings: commitment_bindings(&proof.commitments),
         meta_pub: proof.meta_pub,
         root0_transcript_cursor,
@@ -450,8 +539,8 @@ fn build_case(name: &'static str, semantic_rows: usize, transcript_seed: Vec<u8>
     }
 }
 
-fn build_bundle_case(name: &'static str, semantic_rows: usize, transcript_seed: Vec<u8>) -> BundleVectorCase {
-    let input = build_jump_kernel_input(semantic_rows, transcript_seed);
+fn build_bundle_case(fixture: &KernelFixture) -> BundleVectorCase {
+    let input = build_fixture_input(fixture);
     let (output, proof) = prove_simple_kernel(&input).expect("simple kernel proof");
     let frames = build_kernel_exact_frames(&input.public, &proof).expect("kernel exact frames");
     let stage3s =
@@ -459,7 +548,7 @@ fn build_bundle_case(name: &'static str, semantic_rows: usize, transcript_seed: 
     let bundle = build_kernel_staged_execution_digest_bundle(&input.public, &proof, &output)
         .expect("kernel staged execution digest bundle");
     BundleVectorCase {
-        name,
+        name: fixture.name,
         public: input.public,
         meta_pub: proof.meta_pub,
         frames,
@@ -468,17 +557,13 @@ fn build_bundle_case(name: &'static str, semantic_rows: usize, transcript_seed: 
     }
 }
 
-fn build_release_artifact_case(
-    name: &'static str,
-    semantic_rows: usize,
-    transcript_seed: Vec<u8>,
-) -> ReleaseArtifactCase {
-    let input = build_jump_kernel_input(semantic_rows, transcript_seed);
+fn build_release_artifact_case(fixture: &KernelFixture) -> ReleaseArtifactCase {
+    let input = build_fixture_input(fixture);
     let (output, proof) = prove_simple_kernel(&input).expect("simple kernel proof");
     let imported_artifact = build_kernel_external_release_artifact(&input.public, &proof, &output)
         .expect("kernel external release artifact");
     ReleaseArtifactCase {
-        name,
+        name: fixture.name,
         imported_artifact,
     }
 }
@@ -568,6 +653,14 @@ fn bundle_meta_pub_def_name_from_name(name: &str) -> String {
 
 fn release_artifact_meta_pub_def_name_from_name(name: &str) -> String {
     format!("releaseArtifactMetaPub_{}", lean_ident_fragment(name))
+}
+
+fn bundle_case_def_name_from_name(name: &str) -> String {
+    format!("bundleCase_{}", lean_ident_fragment(name))
+}
+
+fn release_artifact_case_def_name_from_name(name: &str) -> String {
+    format!("releaseArtifactCase_{}", lean_ident_fragment(name))
 }
 
 fn render_case(case: &TranscriptVectorCase) -> String {
@@ -888,6 +981,14 @@ fn render_bundle_case(case: &BundleVectorCase) -> String {
         frames = frames,
         stage3s = stage3s,
         expected_bundle = render_bundle_view(&case.bundle, &bundle_meta_pub_def_name_from_name(case.name)),
+    )
+}
+
+fn render_named_bundle_case_def(case: &BundleVectorCase) -> String {
+    format!(
+        "def {name} : StagedExecutionDigestBundleVectorCase :=\n  {value}\n",
+        name = bundle_case_def_name_from_name(case.name),
+        value = render_bundle_case(case),
     )
 }
 
@@ -1354,6 +1455,14 @@ fn render_release_artifact_case(case: &ReleaseArtifactCase) -> String {
     )
 }
 
+fn render_named_release_artifact_case_def(case: &ReleaseArtifactCase) -> String {
+    format!(
+        "def {name} : KernelReleaseArtifactVectorCase :=\n  {value}\n",
+        name = release_artifact_case_def_name_from_name(case.name),
+        value = render_release_artifact_case(case),
+    )
+}
+
 fn release_artifact_output_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../Nightstream/Chip8/Generated/ReleaseArtifactVectors.lean")
@@ -1370,18 +1479,22 @@ fn bundle_output_path() -> PathBuf {
 }
 
 fn main() {
-    let transcript_cases = vec![
-        build_case("jump_rows_2_seed_empty", 2, vec![]),
-        build_case("jump_rows_3_seed_nonempty", 3, b"chip8-transcript-seed-v1".to_vec()),
-    ];
-    let bundle_cases = vec![
-        build_bundle_case("jump_rows_2_seed_empty", 2, vec![]),
-        build_bundle_case("jump_rows_3_seed_nonempty", 3, b"chip8-transcript-seed-v1".to_vec()),
-    ];
-    let release_artifact_cases = vec![
-        build_release_artifact_case("jump_rows_2_seed_empty", 2, vec![]),
-        build_release_artifact_case("jump_rows_3_seed_nonempty", 3, b"chip8-transcript-seed-v1".to_vec()),
-    ];
+    let fixtures = chip8_subset_fixtures();
+    let transcript_cases: Vec<_> = fixtures.iter().map(build_case).collect();
+    let artifact_fixtures: Vec<_> = fixtures
+        .iter()
+        .filter(|fixture| {
+            matches!(
+                fixture.name,
+                "jump_rows_2_seed_empty" | "jump_rows_3_seed_nonempty"
+            )
+        })
+        .collect();
+    let bundle_cases: Vec<_> = artifact_fixtures.iter().map(|fixture| build_bundle_case(fixture)).collect();
+    let release_artifact_cases: Vec<_> = artifact_fixtures
+        .iter()
+        .map(|fixture| build_release_artifact_case(fixture))
+        .collect();
 
     let mut transcript_out = String::new();
     transcript_out.push_str("import Nightstream.Chip8.Generated.TranscriptVectorTypes\n\n");
@@ -1405,7 +1518,7 @@ fn main() {
 
     let mut bundle_out = String::new();
     bundle_out.push_str("import Nightstream.Chip8.Generated.StagedExecutionDigestBundleVectorTypes\n\n");
-    bundle_out.push_str("set_option maxHeartbeats 1000000\n\n");
+    bundle_out.push_str("set_option maxHeartbeats 0\n\n");
     bundle_out.push_str("namespace Nightstream.Chip8.Generated\n\n");
     for case in &bundle_cases {
         bundle_out.push_str(&render_named_meta_pub_def(
@@ -1413,12 +1526,14 @@ fn main() {
             &case.meta_pub,
         ));
         bundle_out.push('\n');
+        bundle_out.push_str(&render_named_bundle_case_def(case));
+        bundle_out.push('\n');
     }
     bundle_out.push_str("def stagedExecutionDigestBundleVectorCases : List StagedExecutionDigestBundleVectorCase :=\n");
     bundle_out.push_str("  [\n");
     for (idx, case) in bundle_cases.iter().enumerate() {
         bundle_out.push_str("    ");
-        bundle_out.push_str(&render_bundle_case(case));
+        bundle_out.push_str(&bundle_case_def_name_from_name(case.name));
         if idx + 1 < bundle_cases.len() {
             bundle_out.push(',');
         }
@@ -1429,7 +1544,7 @@ fn main() {
 
     let mut release_artifact_out = String::new();
     release_artifact_out.push_str("import Nightstream.Chip8.Generated.ReleaseArtifactVectorTypes\n\n");
-    release_artifact_out.push_str("set_option maxHeartbeats 1000000\n\n");
+    release_artifact_out.push_str("set_option maxHeartbeats 0\n\n");
     release_artifact_out.push_str("namespace Nightstream.Chip8.Generated\n\n");
     for case in &release_artifact_cases {
         release_artifact_out.push_str(&render_named_meta_pub_def(
@@ -1437,12 +1552,14 @@ fn main() {
             &case.imported_artifact.artifact.staged_bundle.public.meta_pub,
         ));
         release_artifact_out.push('\n');
+        release_artifact_out.push_str(&render_named_release_artifact_case_def(case));
+        release_artifact_out.push('\n');
     }
     release_artifact_out.push_str("def releaseArtifactVectorCases : List KernelReleaseArtifactVectorCase :=\n");
     release_artifact_out.push_str("  [\n");
     for (idx, case) in release_artifact_cases.iter().enumerate() {
         release_artifact_out.push_str("    ");
-        release_artifact_out.push_str(&render_release_artifact_case(case));
+        release_artifact_out.push_str(&release_artifact_case_def_name_from_name(case.name));
         if idx + 1 < release_artifact_cases.len() {
             release_artifact_out.push(',');
         }
