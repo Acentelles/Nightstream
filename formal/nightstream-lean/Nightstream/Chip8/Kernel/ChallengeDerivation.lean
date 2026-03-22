@@ -30,6 +30,7 @@ def stage2GammaTwistLinkLabel : String := "stage2/gamma_twist_link"
 def stage3Beta1Label : String := "stage3/beta1"
 def stage3Beta2Label : String := "stage3/beta2"
 def stage3ShiftLabel : String := "stage3/r_shift"
+def stage3GammaShiftLabel : String := "stage3/gamma_shift"
 
 def sampleFieldCursor
     (core : Poseidon2Width8Core)
@@ -136,6 +137,11 @@ def sampleStage3ShiftPoint
     (cursor : Cursor)
     (cycleBits : Nat) : List ChallengePair × Cursor :=
   samplePointCursor core cursor stage3ShiftLabel cycleBits
+
+def sampleStage3GammaShift
+    (core : Poseidon2Width8Core)
+    (cursor : Cursor) : ChallengePair × Cursor :=
+  sampleChallengePairCursor core cursor stage3GammaShiftLabel
 
 @[simp] theorem sampleFieldCursor_absorbed
     (core : Poseidon2Width8Core)

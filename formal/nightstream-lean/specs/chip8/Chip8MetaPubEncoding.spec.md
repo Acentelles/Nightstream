@@ -49,6 +49,35 @@ with fields:
 - `program_base_addr`
 - `cycle_bits`
 
+### Relation-shaping mode identifiers
+
+For the current `simple` kernel boundary, the relation-shaping mode fields are
+not free-form labels. They are fixed positively to the exact theorem surfaces
+already owned elsewhere in this bundle:
+
+- `init_mode_id = authenticated_nonzero_init`
+- `lowering_convention_id = chip8_microstep_pre_post_v1`
+- `table_auth_mode_id = committed_public_tables_v1`
+- `opening_reduction_mode_id = no_post_transcript_reduction_v1`
+
+with exact meaning:
+
+- `authenticated_nonzero_init` means the Stage-2 register and RAM `Val` chains
+  use the authenticated initial surfaces directly, via the modified non-zero-init
+  identity from `Chip8WitnessMemoryBinding`;
+- `chip8_microstep_pre_post_v1` means the exact row-granular lowering and
+  same-row visibility order from `chip8-kernel.md` §3.4, including separate
+  register/RAM timelines and the explicit `Fx55/Fx65` burst decomposition;
+- `committed_public_tables_v1` means fetch/decode/ALU/Eq4 table authentication
+  is carried by the exact committed public-table openings fixed by the simple
+  kernel boundary; verifier-local helper evaluators remain cross-checks only;
+- `no_post_transcript_reduction_v1` means the simple boundary exports no
+  post-transcript claim-space reduction summaries and no family-local fold
+  carriers.
+
+Any other value for one of these fields is non-conforming under the current
+`protocol_version_id`.
+
 ### Public-kernel projection
 
 Define:

@@ -16,6 +16,7 @@ abbrev stage2GammaTwistLinkLabel := Nightstream.Chip8.ChallengeDerivation.stage2
 abbrev stage3Beta1Label := Nightstream.Chip8.ChallengeDerivation.stage3Beta1Label
 abbrev stage3Beta2Label := Nightstream.Chip8.ChallengeDerivation.stage3Beta2Label
 abbrev stage3ShiftLabel := Nightstream.Chip8.ChallengeDerivation.stage3ShiftLabel
+abbrev stage3GammaShiftLabel := Nightstream.Chip8.ChallengeDerivation.stage3GammaShiftLabel
 abbrev sampleFieldCursor := Nightstream.Chip8.ChallengeDerivation.sampleFieldCursor
 abbrev sampleChallengePairCursor := Nightstream.Chip8.ChallengeDerivation.sampleChallengePairCursor
 abbrev samplePointCursor := Nightstream.Chip8.ChallengeDerivation.samplePointCursor
@@ -31,6 +32,7 @@ abbrev sampleStage2GammaTwistLink := Nightstream.Chip8.ChallengeDerivation.sampl
 abbrev sampleStage3Beta1 := Nightstream.Chip8.ChallengeDerivation.sampleStage3Beta1
 abbrev sampleStage3Beta2 := Nightstream.Chip8.ChallengeDerivation.sampleStage3Beta2
 abbrev sampleStage3ShiftPoint := Nightstream.Chip8.ChallengeDerivation.sampleStage3ShiftPoint
+abbrev sampleStage3GammaShift := Nightstream.Chip8.ChallengeDerivation.sampleStage3GammaShift
 
 abbrev sampleFieldCursor_absorbed := @Nightstream.Chip8.ChallengeDerivation.sampleFieldCursor_absorbed
 abbrev sampleChallengePairCursor_absorbed := @Nightstream.Chip8.ChallengeDerivation.sampleChallengePairCursor_absorbed

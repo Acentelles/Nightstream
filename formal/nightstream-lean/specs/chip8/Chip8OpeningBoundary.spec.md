@@ -18,6 +18,14 @@ This module classifies opening claims and manifests only. It does **not** own
 the checked Shout/Twist proofs themselves, the continuity reduction proof, or
 semantic extraction from those claims.
 
+Scope warning:
+
+- this owner is complete only for the `simple` boundary with
+  `RootOpeningManifest = ∅`;
+- any later combined kernel-plus-root proof with root-owned opening claims must
+  introduce its own explicit root opening schema rather than inferring one from
+  this owner.
+
 ## Target Formulas
 
 ### Kernel commitment surface
@@ -61,10 +69,10 @@ $$
 ).
 $$
 
-The commitment identifier is drawn from:
+The kernel-owned commitment identifier is drawn from:
 
 $$
-\mathrm{CommitmentId}
+\mathrm{KernelCommitmentId}
 :=
 \mathrm{Lane}
 \mid
@@ -88,7 +96,15 @@ $$
 \mid
 \mathrm{AluTable}
 \mid
-\mathrm{Eq4Table}
+\mathrm{Eq4Table}.
+$$
+
+The boundary-wide commitment identifier is then:
+
+$$
+\mathrm{CommitmentId}
+:=
+\mathrm{Kernel}(\mathrm{KernelCommitmentId})
 \mid
 \mathrm{RootProver}(\_).
 $$
@@ -111,7 +127,9 @@ kernel-plus-root proof must introduce its own explicit root opening schema
 rather than inferring one from this simple boundary.
 
 On that simple boundary, any `OpeningClaim` with `source = root` or
-`commitmentId = RootProver(_)` is ill-formed.
+`commitmentId = RootProver(_)` is ill-formed. Any kernel-owned direct opening
+claim on that boundary must therefore use `commitmentId = Kernel(cid)` for some
+`cid : KernelCommitmentId`.
 
 ### Grouping rule
 
@@ -411,6 +429,7 @@ $$
 
 | Group | Lean surface | Kind | Role | Guarantee |
 |---|---|---|---|---|
+| Commitments | `KernelCommitmentId` | def | Definitional | Enumerates the kernel-owned opening commitment classes fixed in `root0` |
 | Commitments | `CommitmentId` | def | Definitional | Enumerates every opening commitment class relevant to the kernel/root boundary |
 | Claims | `OpeningClaim` | def | Definitional | Theorem-facing direct opening claim object |
 | Manifests | `KernelOpeningManifest` | def | Definitional | Kernel-owned direct opening manifest |

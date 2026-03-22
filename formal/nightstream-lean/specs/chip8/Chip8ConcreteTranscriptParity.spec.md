@@ -23,6 +23,8 @@ This module defines:
 - the exact concrete `challenge_field`, `sample_k`, and `sample_point`
   specializations used by the shared CHIP-8 kernel challenge layer
 - the exact concrete Stage 1 / Stage 2 / Stage 3 shared challenge samplers
+- the exact concrete cursor-snapshot replay surface used by the generated
+  Rust↔Lean transcript vectors
 
 This module does not define:
 
@@ -67,7 +69,8 @@ This fixes the exact Lean meaning of:
 - the Stage-2 cycle point
 - the Stage-2 register and RAM linkage challenge pairs
 - the Stage-2 register and RAM address points
-- the Stage-3 continuity batching challenge pairs and shift point
+- the Stage-3 continuity batching challenge pairs, shift point, and
+  `gamma_shift`
 
 ## Rust-parity role
 

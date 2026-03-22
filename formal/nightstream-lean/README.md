@@ -193,6 +193,13 @@ Current directory ownership is partially nested:
 - `specs/chip8/Chip8ConcreteTranscriptParity.spec.md`: exact concrete
   specialization of the generic `root0` digest and shared kernel challenge
   layer to the frozen width-8 Poseidon2-over-Goldilocks core.
+- `specs/chip8/Chip8Checks.spec.md`: executable Layer-2 Rust↔Lean parity lane
+  for generated CHIP-8 protocol vectors. Checks exact equality for the shared
+  transcript-bound challenge surface, exact rebuild parity for the
+  chunk-level staged execution digest bundle exported by Rust, and grouped
+  release-artifact consistency for the combined kernel-digest plus staged-bundle
+  export and the proof-free external artifact schema that Rust now emits for
+  Lean release checks.
 - `specs/chip8/Chip8Root0Preimage.spec.md`: exact combined phase-0 `root0`
   preimage, joining the canonical commitment absorbs with the exact lifted
   `meta_pub` absorb plan before any concrete hash function.
@@ -264,6 +271,26 @@ Current directory ownership is partially nested:
   chunk-level bundle owner for normalized staged execution digests. Packages one
   theorem-facing public surface plus one ordered per-frame staged digest entry
   for an exact authenticated CHIP-8 frame list.
+- `specs/chip8/Chip8StagedExecutionBundleAudit.spec.md`: chunk-level audit
+  acceptance layer above the Lean-owned staged digest bundle. Recovers exact
+  per-entry slice audit acceptance, execution-frame consequences, and
+  semantic-row alignment from one accepted chunk bundle.
+- `specs/chip8/Chip8ReleaseArtifact.spec.md`: final theorem-facing release
+  package above the normalized kernel digest and the accepted chunk-ordered
+  staged bundle. Keeps the simple-kernel chunk-input contract explicit and
+  gives the external import/export owner one Lean-owned target object.
+- `specs/chip8/Chip8ReleaseArtifactAudit.spec.md`: final Layer-3 checker above
+  `Chip8ReleaseArtifact`. Recovers kernel-level soundness consequences,
+  per-entry staged-bundle consequences, and packaged export-count alignment
+  from one accepted release artifact.
+- `specs/chip8/Chip8ExternalReleaseArtifact.spec.md`: proof-free external
+  release-artifact schema above `Chip8ReleaseArtifact`. Fixes the exact Rust
+  import surface that Lean checks using `root0` bindings, trace digests, exact
+  frames, Stage-3 digest sources, and the grouped release-artifact view.
+- `specs/chip8/Chip8ExternalReleaseArtifactAudit.spec.md`: executable Lean
+  checker over the imported external release artifact. Validates the imported
+  grouped surfaces against Lean-owned source rebuilds and preserves the final
+  row-path/count invariants needed for release qualification.
 - `specs/chip8/Chip8ArtifactAudit.spec.md`: Lean audit-checker surface for the
   staged execution digest. Proves that accepted digest instances satisfy the
   exact theorem-facing conditions required by the CHIP-8 composition theorem.
@@ -332,6 +359,14 @@ Current directory ownership is partially nested:
 - `Nightstream/Chip8/Kernel/ChallengeDerivation.lean`
 - `Nightstream/Chip8/Kernel/ConcreteTranscriptParityInterface.lean`
 - `Nightstream/Chip8/Kernel/ConcreteTranscriptParity.lean`
+- `Nightstream/Chip8/Generated/TranscriptVectorTypes.lean`
+- `Nightstream/Chip8/Generated/TranscriptVectors.lean`
+- `Nightstream/Chip8/Generated/StagedExecutionDigestBundleVectorTypes.lean`
+- `Nightstream/Chip8/Generated/StagedExecutionDigestBundleVectors.lean`
+- `Nightstream/Chip8/Generated/ReleaseArtifactVectorTypes.lean`
+- `Nightstream/Chip8/Generated/ReleaseArtifactVectors.lean`
+- `Nightstream/Chip8/ChecksInterface.lean`
+- `Nightstream/Chip8/Checks.lean`
 - `Nightstream/Chip8/Kernel/Root0PreimageInterface.lean`
 - `Nightstream/Chip8/Kernel/Root0Preimage.lean`
 - `Nightstream/Chip8/Kernel/OpeningBoundaryInterface.lean`
@@ -361,6 +396,12 @@ Current directory ownership is partially nested:
 - `Nightstream/Chip8/Kernel/StagedExecutionDigest.lean`
 - `Nightstream/Chip8/Kernel/StagedExecutionDigestBundleInterface.lean`
 - `Nightstream/Chip8/Kernel/StagedExecutionDigestBundle.lean`
+- `Nightstream/Chip8/Kernel/StagedExecutionBundleAuditInterface.lean`
+- `Nightstream/Chip8/Kernel/StagedExecutionBundleAudit.lean`
+- `Nightstream/Chip8/Kernel/ReleaseArtifactInterface.lean`
+- `Nightstream/Chip8/Kernel/ReleaseArtifact.lean`
+- `Nightstream/Chip8/Kernel/ReleaseArtifactAuditInterface.lean`
+- `Nightstream/Chip8/Kernel/ReleaseArtifactAudit.lean`
 - `Nightstream/Chip8/Kernel/ArtifactAuditInterface.lean`
 - `Nightstream/Chip8/Kernel/ArtifactAudit.lean`
 - `Nightstream/Chip8/Execution/ExactFrameSemanticsInterface.lean`
@@ -518,6 +559,10 @@ practical at every protocol-binding boundary:
 This is the intended contract, not an optional nicety: if an exported field is
 protocol-binding, the long-term goal is that Lean and Rust agree on its exact
 computational meaning.
+
+For CHIP-8, the current concrete parity lane already covers the exact `root0`
+cursor/digest slice plus the shared labeled Stage 1 / Stage 2 / Stage 3
+challenge groups exported from the live Rust transcript path.
 
 The recommended digest comparison boundary is:
 

@@ -23,7 +23,7 @@ private def checkProofImportWall : IO Bool := do
       IO.println out.stderr.trimAscii.toString
     pure false
 
-private def runChip8TranscriptParity : IO Bool := do
+private def runChip8ProtocolParity : IO Bool := do
   let out ← IO.Process.output {
     cmd := "lake"
     args := #["env", "lean", "--run", "CheckCli.lean"]
@@ -38,10 +38,10 @@ private def runChip8TranscriptParity : IO Bool := do
 
 def main : IO UInt32 := do
   let okProofImportWall ← checkProofImportWall
-  let okChip8TranscriptParity ← runChip8TranscriptParity
+  let okChip8ProtocolParity ← runChip8ProtocolParity
   IO.println s!"proof_import_wall={okProofImportWall}"
-  IO.println s!"chip8_transcript_parity={okChip8TranscriptParity}"
-  if okProofImportWall && okChip8TranscriptParity then
+  IO.println s!"chip8_protocol_parity={okChip8ProtocolParity}"
+  if okProofImportWall && okChip8ProtocolParity then
     IO.println "all_checks=true"
     pure 0
   else

@@ -25,6 +25,7 @@ abbrev sampleStage2GammaTwistLink := Nightstream.Chip8.ConcreteTranscriptParity.
 abbrev sampleStage3Beta1 := Nightstream.Chip8.ConcreteTranscriptParity.sampleStage3Beta1
 abbrev sampleStage3Beta2 := Nightstream.Chip8.ConcreteTranscriptParity.sampleStage3Beta2
 abbrev sampleStage3ShiftPoint := Nightstream.Chip8.ConcreteTranscriptParity.sampleStage3ShiftPoint
+abbrev sampleStage3GammaShift := Nightstream.Chip8.ConcreteTranscriptParity.sampleStage3GammaShift
 
 abbrev root0DigestCursor_absorbed := @Nightstream.Chip8.ConcreteTranscriptParity.root0DigestCursor_absorbed
 abbrev root0DigestWords_length := @Nightstream.Chip8.ConcreteTranscriptParity.root0DigestWords_length

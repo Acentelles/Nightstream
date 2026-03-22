@@ -36,6 +36,7 @@ This owner fixes:
   - `stage3/beta1`
   - `stage3/beta2`
   - `stage3/r_shift`
+  - `stage3/gamma_shift`
 
 This owner does **not** fix:
 
@@ -135,6 +136,7 @@ Then the explicit shared kernel challenges are the following derived objects:
 - `β1` := `sampleK(cursor_before_beta1, "stage3/beta1")`
 - `β2` := `sampleK(cursor_before_beta2, "stage3/beta2")`
 - `r_shift` := `samplePoint(cursor_before_shift_point, "stage3/r_shift", cycle_bits)`
+- `γ_shift` := `sampleK(cursor_before_gamma_shift, "stage3/gamma_shift")`
 
 The special case `r_lookup` is derived from the exact pre-digest `root0`
 transcript cursor because it is the first shared challenge sampled after the

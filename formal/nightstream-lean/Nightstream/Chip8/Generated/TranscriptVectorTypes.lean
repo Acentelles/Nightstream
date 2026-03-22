@@ -24,20 +24,53 @@ structure ChallengePairWords where
   im : Nat
 deriving DecidableEq, Repr
 
+structure CursorSnapshotWords where
+  stateWords : List Nat
+  absorbed : Nat
+deriving DecidableEq, Repr
+
+def regAddrBits : Nat := 5
+def ramAddrBits : Nat := 13
+
 structure TranscriptVectorCase where
   name : String
   transcriptSeed : List Byte
   commitmentBindings : List CommitmentBinding
   metaPub : MetaPub
-  expectedRoot0TranscriptStateWords : List Nat
-  expectedRoot0DigestStateWords : List Nat
+  expectedRoot0TranscriptCursor : CursorSnapshotWords
+  expectedRoot0DigestCursor : CursorSnapshotWords
   expectedRoot0DigestWords : List Nat
   expectedRoot0DigestBytes : List Byte
   expectedStage1LookupPoint : List ChallengePairWords
+  expectedStage1GammaLookupLinkCursor : CursorSnapshotWords
+  expectedStage1GammaLookupLink : ChallengePairWords
+  expectedStage2TwistCycleCursor : CursorSnapshotWords
+  expectedStage2TwistCyclePoint : List ChallengePairWords
+  expectedStage2GammaRegCursor : CursorSnapshotWords
+  expectedStage2GammaReg : ChallengePairWords
+  expectedStage2RegAddrCursor : CursorSnapshotWords
+  expectedStage2RegAddrPoint : List ChallengePairWords
+  expectedStage2GammaRamCursor : CursorSnapshotWords
+  expectedStage2GammaRam : ChallengePairWords
+  expectedStage2RamAddrCursor : CursorSnapshotWords
+  expectedStage2RamAddrPoint : List ChallengePairWords
+  expectedStage2GammaTwistLinkCursor : CursorSnapshotWords
+  expectedStage2GammaTwistLink : ChallengePairWords
+  expectedStage3Beta1Cursor : CursorSnapshotWords
+  expectedStage3Beta1 : ChallengePairWords
+  expectedStage3Beta2Cursor : CursorSnapshotWords
+  expectedStage3Beta2 : ChallengePairWords
+  expectedStage3ShiftCursor : CursorSnapshotWords
+  expectedStage3ShiftPoint : List ChallengePairWords
+  expectedStage3GammaShiftCursor : CursorSnapshotWords
+  expectedStage3GammaShift : ChallengePairWords
 deriving Repr
 
 def bytes (values : List Nat) : List Byte :=
   values.map UInt8.ofNat
+
+def zeroBytes (n : Nat) : List Byte :=
+  bytes (List.replicate n 0)
 
 def mkMetaPub
     (programImageDigest : List Byte)
@@ -97,6 +130,9 @@ def binding (id : ExactOpeningBoundary.CommitmentId) (digest : List Byte) : Comm
 def pair (re im : Nat) : ChallengePairWords :=
   { re := re, im := im }
 
+def cursorSnapshot (stateWords : List Nat) (absorbed : Nat) : CursorSnapshotWords :=
+  { stateWords := stateWords, absorbed := absorbed }
+
 def pairOfChallenge (value : ChallengePair) : ChallengePairWords :=
   { re := value.re.val, im := value.im.val }
 
@@ -108,19 +144,63 @@ def mkTranscriptVectorCase
     (transcriptSeed : List Byte)
     (commitmentBindings : List CommitmentBinding)
     (metaPub : MetaPub)
-    (expectedRoot0TranscriptStateWords : List Nat)
-    (expectedRoot0DigestStateWords : List Nat)
+    (expectedRoot0TranscriptCursor : CursorSnapshotWords)
+    (expectedRoot0DigestCursor : CursorSnapshotWords)
     (expectedRoot0DigestWords : List Nat)
     (expectedRoot0DigestBytes : List Byte)
-    (expectedStage1LookupPoint : List ChallengePairWords) : TranscriptVectorCase :=
+    (expectedStage1LookupPoint : List ChallengePairWords)
+    (expectedStage1GammaLookupLinkCursor : CursorSnapshotWords)
+    (expectedStage1GammaLookupLink : ChallengePairWords)
+    (expectedStage2TwistCycleCursor : CursorSnapshotWords)
+    (expectedStage2TwistCyclePoint : List ChallengePairWords)
+    (expectedStage2GammaRegCursor : CursorSnapshotWords)
+    (expectedStage2GammaReg : ChallengePairWords)
+    (expectedStage2RegAddrCursor : CursorSnapshotWords)
+    (expectedStage2RegAddrPoint : List ChallengePairWords)
+    (expectedStage2GammaRamCursor : CursorSnapshotWords)
+    (expectedStage2GammaRam : ChallengePairWords)
+    (expectedStage2RamAddrCursor : CursorSnapshotWords)
+    (expectedStage2RamAddrPoint : List ChallengePairWords)
+    (expectedStage2GammaTwistLinkCursor : CursorSnapshotWords)
+    (expectedStage2GammaTwistLink : ChallengePairWords)
+    (expectedStage3Beta1Cursor : CursorSnapshotWords)
+    (expectedStage3Beta1 : ChallengePairWords)
+    (expectedStage3Beta2Cursor : CursorSnapshotWords)
+    (expectedStage3Beta2 : ChallengePairWords)
+    (expectedStage3ShiftCursor : CursorSnapshotWords)
+    (expectedStage3ShiftPoint : List ChallengePairWords)
+    (expectedStage3GammaShiftCursor : CursorSnapshotWords)
+    (expectedStage3GammaShift : ChallengePairWords) : TranscriptVectorCase :=
   { name := name
   , transcriptSeed := transcriptSeed
   , commitmentBindings := commitmentBindings
   , metaPub := metaPub
-  , expectedRoot0TranscriptStateWords := expectedRoot0TranscriptStateWords
-  , expectedRoot0DigestStateWords := expectedRoot0DigestStateWords
+  , expectedRoot0TranscriptCursor := expectedRoot0TranscriptCursor
+  , expectedRoot0DigestCursor := expectedRoot0DigestCursor
   , expectedRoot0DigestWords := expectedRoot0DigestWords
   , expectedRoot0DigestBytes := expectedRoot0DigestBytes
-  , expectedStage1LookupPoint := expectedStage1LookupPoint }
+  , expectedStage1LookupPoint := expectedStage1LookupPoint
+  , expectedStage1GammaLookupLinkCursor := expectedStage1GammaLookupLinkCursor
+  , expectedStage1GammaLookupLink := expectedStage1GammaLookupLink
+  , expectedStage2TwistCycleCursor := expectedStage2TwistCycleCursor
+  , expectedStage2TwistCyclePoint := expectedStage2TwistCyclePoint
+  , expectedStage2GammaRegCursor := expectedStage2GammaRegCursor
+  , expectedStage2GammaReg := expectedStage2GammaReg
+  , expectedStage2RegAddrCursor := expectedStage2RegAddrCursor
+  , expectedStage2RegAddrPoint := expectedStage2RegAddrPoint
+  , expectedStage2GammaRamCursor := expectedStage2GammaRamCursor
+  , expectedStage2GammaRam := expectedStage2GammaRam
+  , expectedStage2RamAddrCursor := expectedStage2RamAddrCursor
+  , expectedStage2RamAddrPoint := expectedStage2RamAddrPoint
+  , expectedStage2GammaTwistLinkCursor := expectedStage2GammaTwistLinkCursor
+  , expectedStage2GammaTwistLink := expectedStage2GammaTwistLink
+  , expectedStage3Beta1Cursor := expectedStage3Beta1Cursor
+  , expectedStage3Beta1 := expectedStage3Beta1
+  , expectedStage3Beta2Cursor := expectedStage3Beta2Cursor
+  , expectedStage3Beta2 := expectedStage3Beta2
+  , expectedStage3ShiftCursor := expectedStage3ShiftCursor
+  , expectedStage3ShiftPoint := expectedStage3ShiftPoint
+  , expectedStage3GammaShiftCursor := expectedStage3GammaShiftCursor
+  , expectedStage3GammaShift := expectedStage3GammaShift }
 
 end Nightstream.Chip8.Generated

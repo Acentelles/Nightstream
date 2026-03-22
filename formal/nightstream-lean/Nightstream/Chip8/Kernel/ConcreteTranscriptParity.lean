@@ -139,6 +139,10 @@ def sampleStage3ShiftPoint
     (cycleBits : Nat) : List ChallengePair × Cursor :=
   ChallengeDerivation.sampleStage3ShiftPoint concreteCore cursor cycleBits
 
+def sampleStage3GammaShift
+    (cursor : Cursor) : ChallengePair × Cursor :=
+  ChallengeDerivation.sampleStage3GammaShift concreteCore cursor
+
 @[simp] theorem root0DigestCursor_absorbed
     (encodeCommitmentDigest : CommitmentDigest → List Byte)
     (encodeDigest : Digest → List Byte)
