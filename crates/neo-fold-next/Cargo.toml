@@ -8,6 +8,10 @@ license = "Apache-2.0"
 [lints]
 workspace = true
 
+[features]
+default = []
+chip8-audit = []
+
 [dependencies]
 neo-ajtai = { path = "../neo-ajtai" }
 neo-ccs = { path = "../neo-ccs" }

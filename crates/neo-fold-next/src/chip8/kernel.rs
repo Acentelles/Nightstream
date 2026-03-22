@@ -12,6 +12,7 @@ mod opening_boundary;
 mod opening_refinement;
 mod opening_transcript;
 mod public_meta;
+#[cfg(feature = "chip8-audit")]
 mod release_artifact;
 mod root_context;
 mod row_projection;
@@ -87,6 +88,7 @@ use opening_transcript::emit_kernel_opening_artifacts_to_transcript;
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
 use public_meta::validate_public_input;
 pub use public_meta::{absorb_root0, build_kernel_meta_pub, new_simple_kernel_transcript, KernelMetaPub};
+#[cfg(feature = "chip8-audit")]
 pub use release_artifact::{
     build_kernel_external_release_artifact, build_kernel_release_artifact, verify_kernel_external_release_artifact,
     verify_kernel_release_artifact, KernelExternalReleaseArtifact, KernelReleaseArtifact, KernelRoot0CommitmentBinding,

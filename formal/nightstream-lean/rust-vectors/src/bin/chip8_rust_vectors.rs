@@ -1468,6 +1468,11 @@ fn release_artifact_output_path() -> PathBuf {
         .join("../Nightstream/Chip8/Generated/ReleaseArtifactVectors.lean")
 }
 
+fn imported_release_artifact_output_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../Nightstream/Chip8/Generated/ImportedReleaseArtifact.lean")
+}
+
 fn transcript_output_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../Nightstream/Chip8/Generated/TranscriptVectors.lean")
@@ -1478,8 +1483,77 @@ fn bundle_output_path() -> PathBuf {
         .join("../Nightstream/Chip8/Generated/StagedExecutionDigestBundleVectors.lean")
 }
 
+fn fixture_named<'a>(fixtures: &'a [KernelFixture], name: &str) -> &'a KernelFixture {
+    fixtures
+        .iter()
+        .find(|fixture| fixture.name == name)
+        .unwrap_or_else(|| panic!("unknown CHIP-8 fixture '{name}'"))
+}
+
+fn is_release_artifact_fixture(name: &str) -> bool {
+    matches!(name, "jump_rows_2_seed_empty" | "jump_rows_3_seed_nonempty")
+}
+
+fn release_artifact_fixture_index(name: &str) -> usize {
+    match name {
+        "jump_rows_2_seed_empty" => 0,
+        "jump_rows_3_seed_nonempty" => 1,
+        _ => panic!(
+            "fixture '{name}' is not in the audited release-artifact corpus; supported fixtures: jump_rows_2_seed_empty, jump_rows_3_seed_nonempty"
+        ),
+    }
+}
+
+fn render_imported_release_artifact_module(case: &ReleaseArtifactCase) -> String {
+    let case_idx = release_artifact_fixture_index(case.name);
+
+    let mut out = String::new();
+    out.push_str("import Nightstream.Chip8.Generated.ReleaseArtifactVectors\n");
+    out.push_str("import Nightstream.Chip8.Kernel.ExternalReleaseArtifact\n\n");
+    out.push_str("namespace Nightstream.Chip8.Generated\n\n");
+    out.push_str(&format!("def importedReleaseArtifactName : String := \"{}\"\n\n", case.name));
+    out.push_str(&format!(
+        "def importedReleaseArtifact : Nightstream.Chip8.ExternalReleaseArtifact.ImportedArtifact :=\n  Nightstream.Chip8.ExternalReleaseArtifact.ofVectorCase\n    (Nightstream.Chip8.Generated.releaseArtifactVectorCases.get ⟨{case_idx}, by decide⟩)\n\n",
+    ));
+    out.push_str("end Nightstream.Chip8.Generated\n");
+    out
+}
+
 fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
     let fixtures = chip8_subset_fixtures();
+
+    if !args.is_empty() {
+        if args.first().map(String::as_str) == Some("--export-imported-release-artifact") {
+            if args.len() > 3 {
+                panic!("usage: chip8_rust_vectors --export-imported-release-artifact <fixture> [output-path]");
+            }
+            let fixture_name = args
+                .get(1)
+                .map(String::as_str)
+                .unwrap_or("jump_rows_2_seed_empty");
+            if !is_release_artifact_fixture(fixture_name) {
+                let _ = release_artifact_fixture_index(fixture_name);
+            }
+            let fixture = fixture_named(&fixtures, fixture_name);
+            let case = build_release_artifact_case(fixture);
+            let out = render_imported_release_artifact_module(&case);
+            let output_path = args
+                .get(2)
+                .map(PathBuf::from)
+                .unwrap_or_else(imported_release_artifact_output_path);
+            fs::create_dir_all(output_path.parent().expect("generated dir"))
+                .expect("create generated dir");
+            fs::write(&output_path, out).expect("write imported release artifact");
+            println!("{}", output_path.display());
+            return;
+        }
+        panic!(
+            "unknown arguments: {:?}\nusage:\n  chip8_rust_vectors\n  chip8_rust_vectors --export-imported-release-artifact <fixture> [output-path]",
+            args
+        );
+    }
+
     let transcript_cases: Vec<_> = fixtures.iter().map(build_case).collect();
     let artifact_fixtures: Vec<_> = fixtures
         .iter()
