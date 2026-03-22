@@ -13,6 +13,7 @@ use super::kernel::{
     batch_values, verify_stage1_channel_transcript, KernelStepAux, ShoutChannelProof, Stage1ShoutProof,
     STAGE1_LANE_OPEN_COLS,
 };
+use super::poly::{build_eq_table, mle_eval_f_be, mle_eval_f_le, open_onehot_at_point_be};
 use super::tables::{DECODE_TABLE_COLUMNS, ROM_ADDR_BITS};
 
 // ---------------------------------------------------------------------------
@@ -37,37 +38,6 @@ fn build_onehot_witness(trace_len: usize, table_size: usize, addresses: &[usize]
 }
 
 // ---------------------------------------------------------------------------
-// Chi-table (local helper, avoids neo-memory dependency)
-// ---------------------------------------------------------------------------
-
-/// Build the chi table for point `r` of length `ell`, returning `2^ell` entries.
-///
-/// chi_r[i] = prod_{bit} (r[bit] if (i>>bit)&1 else (1-r[bit])), little-endian.
-fn build_chi_table(r: &[K]) -> Vec<K> {
-    let ell = r.len();
-    let n = 1usize << ell;
-    let mut out = vec![K::ONE; n];
-    for (i, &ri) in r.iter().enumerate() {
-        let stride = 1usize << i;
-        let block = 1usize << (ell - i - 1);
-        let one_minus = K::ONE - ri;
-        let mut idx = 0usize;
-        for _ in 0..block {
-            for j in 0..stride {
-                let a = out[idx + j];
-                out[idx + j] = a * one_minus;
-            }
-            for j in 0..stride {
-                let a = out[idx + stride + j];
-                out[idx + stride + j] = a * ri;
-            }
-            idx += 2 * stride;
-        }
-    }
-    out
-}
-
-// ---------------------------------------------------------------------------
 // MLE partial evaluation helpers
 // ---------------------------------------------------------------------------
 
@@ -76,7 +46,7 @@ fn build_chi_table(r: &[K]) -> Vec<K> {
 ///
 /// `flat[addr * trace_len + cycle]` is the (addr, cycle) entry.
 fn partial_eval_at_cycle(flat: &[F], table_size: usize, trace_len: usize, r_cycle: &[K]) -> Vec<K> {
-    let chi_cycle = build_chi_table(r_cycle);
+    let chi_cycle = build_eq_table(r_cycle);
     debug_assert_eq!(chi_cycle.len(), trace_len);
     let mut out = vec![K::ZERO; table_size];
     for addr in 0..table_size {
@@ -95,17 +65,11 @@ fn partial_eval_at_cycle(flat: &[F], table_size: usize, trace_len: usize, r_cycl
 
 /// Evaluate MLE of a 1D vector at a point in K^ell.
 fn mle_eval_k(v: &[F], r: &[K]) -> K {
-    let chi = build_chi_table(r);
-    debug_assert_eq!(v.len(), chi.len());
-    let mut acc = K::ZERO;
-    for (&val, &weight) in v.iter().zip(chi.iter()) {
-        acc += K::from(val) * weight;
-    }
-    acc
+    mle_eval_f_le(v, r)
 }
 
 fn mle_eval_many_k(cols: &[Vec<F>], point: &[K]) -> Vec<K> {
-    let chi = build_chi_table(point);
+    let chi = build_eq_table(point);
     cols.iter()
         .map(|col| {
             debug_assert_eq!(col.len(), chi.len());
@@ -117,8 +81,7 @@ fn mle_eval_many_k(cols: &[Vec<F>], point: &[K]) -> Vec<K> {
 }
 
 fn mle_eval_k_be(v: &[F], point_be: &[K]) -> K {
-    let point_le: Vec<K> = point_be.iter().rev().copied().collect();
-    mle_eval_k(v, &point_le)
+    mle_eval_f_be(v, point_be)
 }
 
 fn mle_eval_many_k_be(cols: &[Vec<F>], point_be: &[K]) -> Vec<K> {
@@ -183,16 +146,6 @@ fn stage1_linkage_terms(
         decode_handoff_values[1] - decode_reads_ram,
         decode_handoff_values[2] - decode_writes_ram,
     ]
-}
-
-fn open_onehot_at_point_be(addresses: &[usize], addr_point_be: &[K], cycle_point: &[K]) -> K {
-    let addr_point_le: Vec<K> = addr_point_be.iter().rev().copied().collect();
-    let chi_addr = build_chi_table(&addr_point_le);
-    let chi_cycle = build_chi_table(cycle_point);
-    addresses
-        .iter()
-        .enumerate()
-        .fold(K::ZERO, |acc, (cycle, &addr)| acc + chi_cycle[cycle] * chi_addr[addr])
 }
 
 fn lane_values_at_cycle(trace_rows: &[[F; 24]], cycle_point: &[K]) -> Vec<K> {
@@ -713,7 +666,7 @@ fn prove_decode_channel<Tr: Transcript>(
     }
 
     // 4. Compute rv_batched(r_cycle) at the shared stage point.
-    let chi_cycle = build_chi_table(cycle_point);
+    let chi_cycle = build_eq_table(cycle_point);
     let mut rv_at_r = K::ZERO;
     for (j, &chi_j) in chi_cycle.iter().enumerate() {
         rv_at_r += rv_batched[j] * chi_j;

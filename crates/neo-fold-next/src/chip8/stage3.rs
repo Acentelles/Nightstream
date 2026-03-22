@@ -12,47 +12,8 @@ use super::kernel::{
     expect_equal_k, expect_equal_k_slice, verify_sumcheck_known, LaneShiftProof, RowBindingClaim, SimpleKernelError,
     Stage3Proof,
 };
+use super::poly::{build_eq_table, mle_eval_f_le};
 use super::spec::{build_pad_row, COL_BURST_LAST, COL_IS_MEMOP, COL_PC, COL_PC_NEXT, COL_X_IDX, WITNESS_WIDTH};
-
-// ---------------------------------------------------------------------------
-// MLE helpers (local, mirrors stage1/stage2 pattern)
-// ---------------------------------------------------------------------------
-
-/// Build eq(r, .) table over the boolean hypercube {0,1}^ell.
-fn build_eq_table(r: &[K]) -> Vec<K> {
-    let ell = r.len();
-    let n = 1usize << ell;
-    let mut out = vec![K::ONE; n];
-    for (i, &ri) in r.iter().enumerate() {
-        let stride = 1usize << i;
-        let block = 1usize << (ell - i - 1);
-        let one_minus = K::ONE - ri;
-        let mut idx = 0usize;
-        for _ in 0..block {
-            for j in 0..stride {
-                let a = out[idx + j];
-                out[idx + j] = a * one_minus;
-            }
-            for j in 0..stride {
-                let a = out[idx + stride + j];
-                out[idx + stride + j] = a * ri;
-            }
-            idx += 2 * stride;
-        }
-    }
-    out
-}
-
-/// Evaluate MLE of a base-field vector at an extension-field point.
-fn mle_eval_fk(v: &[F], r: &[K]) -> K {
-    let eq = build_eq_table(r);
-    debug_assert_eq!(v.len(), eq.len());
-    let mut acc = K::ZERO;
-    for (&val, &w) in v.iter().zip(eq.iter()) {
-        acc += K::from(val) * w;
-    }
-    acc
-}
 
 /// Squeeze a K challenge from the transcript.
 fn squeeze_k<Tr: Transcript>(tr: &mut Tr, label: &'static [u8]) -> K {
@@ -64,6 +25,10 @@ fn squeeze_k<Tr: Transcript>(tr: &mut Tr, label: &'static [u8]) -> K {
 /// Squeeze a vector of K challenges from the transcript.
 fn squeeze_point<Tr: Transcript>(tr: &mut Tr, label: &'static [u8], n: usize) -> Vec<K> {
     (0..n).map(|_| squeeze_k(tr, label)).collect()
+}
+
+fn mle_eval_fk(v: &[F], r: &[K]) -> K {
+    mle_eval_f_le(v, r)
 }
 
 /// Sumcheck oracle for the batched LaneShift reduction.

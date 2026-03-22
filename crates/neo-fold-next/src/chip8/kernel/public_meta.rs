@@ -6,7 +6,7 @@ use neo_transcript::{Poseidon2Transcript, Transcript};
 use crate::chip8::spec::{CHIP8_MEMORY_BYTES, CHIP8_PROGRAM_START};
 use crate::chip8::tables::ROM_ADDR_BITS;
 
-use super::root_context::chip8_simple_root_context_id;
+use super::artifacts::chip8_simple_root_context_id;
 use super::{KernelCommitments, SimpleKernelError, SimpleKernelPublicInput};
 
 const SIMPLE_KERNEL_TRANSCRIPT_DOMAIN: &[u8] = b"neo.fold.next/chip8/simple_kernel";

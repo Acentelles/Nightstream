@@ -1,8 +1,6 @@
-//! Owns verifier-side transcript replay, row reconstruction, and manifest authentication.
+//! Owns verifier-side row reconstruction and manifest-backed opening authentication.
 
-use neo_math::{from_complex, KExtensions, F, K};
-use neo_reductions::sumcheck::verify_sumcheck_rounds;
-use neo_transcript::Transcript;
+use neo_math::{F, K};
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
 
 use crate::chip8::spec::{
@@ -15,346 +13,65 @@ use crate::chip8::tables::{
     decode_to_output, flatten_alu_key, flatten_eq4_key, LookupKind, OperandSelector, RAM_SINK_ADDR, REG_SINK_ADDR,
 };
 
-use super::opening_boundary::{bits_point, lane_poly_ids, mle_eval_vec, open_onehot_at_point_be};
+use super::artifacts::build_semantic_row_from_row_binding;
+use super::openings::{bits_point, lane_poly_ids, mle_eval_vec, open_onehot_at_point_be};
+use super::verify_common::{expect_equal_k, expect_equal_k_slice, find_manifest_claim};
 use super::{
-    base_value, build_pad_aux, is_kernel_commitment_id, is_root_commitment_id, kernel_opening_claim_cmp,
-    normalize_opening_pairs, normalize_polynomial_ids, AddressCorrectnessProof, KernelOpeningClaim,
-    KernelOpeningManifest, KernelOpeningSource, KernelStepAux, RootOpeningManifest, RowBindingClaim, ShoutChannelProof,
-    SimpleKernelError, SimpleKernelProof, DECODE_HANDOFF_POLY_IDS, RAM_TWIST_POLY_IDS, REG_TWIST_POLY_IDS,
-    STAGE1_LANE_OPEN_COLS, STAGE2_LANE_OPEN_COLS, STAGE3_FINAL_BOUNDARY_COLS, STAGE3_SHIFT_OPEN_COLS,
-    STAGE3_START_BOUNDARY_COLS,
+    normalize_opening_pairs, KernelOpeningManifest, KernelStepAux, RowBindingClaim, SimpleKernelError,
+    SimpleKernelProof, DECODE_HANDOFF_POLY_IDS, RAM_TWIST_POLY_IDS, REG_TWIST_POLY_IDS, STAGE1_LANE_OPEN_COLS,
+    STAGE2_LANE_OPEN_COLS, STAGE3_FINAL_BOUNDARY_COLS, STAGE3_SHIFT_OPEN_COLS, STAGE3_START_BOUNDARY_COLS,
 };
 
-pub(crate) fn expect_digest32(actual: [u8; 32], expected: [u8; 32], label: &str) -> Result<(), SimpleKernelError> {
-    if actual == expected {
-        Ok(())
-    } else {
-        Err(SimpleKernelError::OpeningFailed(format!("{label} mismatch")))
+pub(crate) fn build_pad_aux(pad_pc_word: u16) -> KernelStepAux {
+    KernelStepAux {
+        fetch_addr: pad_pc_word as usize,
+        decode_addr: 0x1000 | (2 * pad_pc_word),
+        alu_key: flatten_alu_key(LookupKind::NoLookup, 0, 0),
+        eq4_key: flatten_eq4_key(0, 0),
+        reg_ra_x_addr: 0,
+        reg_ra_y_addr: REG_SINK_ADDR,
+        reg_ra_i_addr: 16,
+        reg_wa_addr: REG_SINK_ADDR,
+        ram_ra_addr: RAM_SINK_ADDR,
+        ram_wa_addr: RAM_SINK_ADDR,
+        reg_inc: F::ZERO,
+        ram_inc: F::ZERO,
+        uses_y: false,
+        reads_ram: false,
+        writes_ram: false,
     }
 }
 
-pub(crate) fn sample_sumcheck_challenge<Tr: Transcript>(transcript: &mut Tr) -> K {
-    let c0 = transcript.challenge_field(b"sumcheck/challenge/0");
-    let c1 = transcript.challenge_field(b"sumcheck/challenge/1");
-    from_complex(c0, c1)
-}
-
-pub(crate) fn replay_sumcheck_unchecked<Tr: Transcript>(
-    transcript: &mut Tr,
-    degree_bound: usize,
-    rounds: &[Vec<K>],
-    label: &str,
-) -> Result<Vec<K>, SimpleKernelError> {
-    let mut challenges = Vec::with_capacity(rounds.len());
-    for (round_idx, round) in rounds.iter().enumerate() {
-        if round.len() > degree_bound + 1 {
-            return Err(SimpleKernelError::SumcheckFailed(format!(
-                "{label} round {round_idx} exceeds degree bound {degree_bound}"
-            )));
-        }
-        for coeff in round {
-            transcript.append_fields(b"sumcheck/round/coeff", &coeff.as_coeffs());
-        }
-        challenges.push(sample_sumcheck_challenge(transcript));
+pub(crate) fn pad_semantic_witness(
+    semantic_trace_rows: &[[F; WITNESS_WIDTH]],
+    semantic_aux_data: &[KernelStepAux],
+    pad_pc_word: u16,
+) -> Result<(Vec<[F; WITNESS_WIDTH]>, Vec<KernelStepAux>), SimpleKernelError> {
+    if semantic_trace_rows.is_empty() {
+        return Err(SimpleKernelError::InvalidWitness(
+            "semantic trace must contain at least one row".into(),
+        ));
     }
-    Ok(challenges)
-}
-
-pub(crate) fn verify_sumcheck_known<Tr: Transcript>(
-    transcript: &mut Tr,
-    degree_bound: usize,
-    initial_sum: K,
-    rounds: &[Vec<K>],
-    label: &str,
-) -> Result<Vec<K>, SimpleKernelError> {
-    let (challenges, _, ok) = verify_sumcheck_rounds(transcript, degree_bound, initial_sum, rounds);
-    if ok {
-        Ok(challenges)
-    } else {
-        Err(SimpleKernelError::SumcheckFailed(format!(
-            "{label} sumcheck verification failed"
-        )))
-    }
-}
-
-pub(crate) fn verify_sumcheck_known_with_terminal<Tr: Transcript>(
-    transcript: &mut Tr,
-    degree_bound: usize,
-    initial_sum: K,
-    rounds: &[Vec<K>],
-    label: &str,
-) -> Result<(Vec<K>, K), SimpleKernelError> {
-    let (challenges, final_value, ok) = verify_sumcheck_rounds(transcript, degree_bound, initial_sum, rounds);
-    if ok {
-        Ok((challenges, final_value))
-    } else {
-        Err(SimpleKernelError::SumcheckFailed(format!(
-            "{label} sumcheck verification failed"
-        )))
-    }
-}
-
-pub(crate) fn expect_equal_k_slice(actual: &[K], expected: &[K], label: &str) -> Result<(), SimpleKernelError> {
-    if actual == expected {
-        Ok(())
-    } else {
-        Err(SimpleKernelError::OpeningFailed(format!("{label} mismatch")))
-    }
-}
-
-pub(crate) fn expect_equal_k(actual: K, expected: K, label: &str) -> Result<(), SimpleKernelError> {
-    if actual == expected {
-        Ok(())
-    } else {
-        Err(SimpleKernelError::OpeningFailed(format!("{label} mismatch")))
-    }
-}
-
-pub(crate) fn batch_values(values: &[K], gamma: K) -> K {
-    let mut acc = K::ZERO;
-    let mut gamma_power = K::ONE;
-    for &value in values {
-        acc += gamma_power * value;
-        gamma_power *= gamma;
-    }
-    acc
-}
-
-pub(crate) fn split_round_groups<'a>(
-    rounds: &'a [Vec<K>],
-    first_len: usize,
-    second_len: usize,
-    third_len: usize,
-    label: &str,
-) -> Result<(&'a [Vec<K>], &'a [Vec<K>], &'a [Vec<K>]), SimpleKernelError> {
-    let expected = first_len + second_len + third_len;
-    if rounds.len() != expected {
-        return Err(SimpleKernelError::SumcheckFailed(format!(
-            "{label} round count {} != expected {expected}",
-            rounds.len()
+    if semantic_trace_rows.len() != semantic_aux_data.len() {
+        return Err(SimpleKernelError::InvalidWitness(format!(
+            "semantic trace row count {} does not match aux row count {}",
+            semantic_trace_rows.len(),
+            semantic_aux_data.len()
         )));
     }
-    let (first, rest) = rounds.split_at(first_len);
-    let (second, third) = rest.split_at(second_len);
-    Ok((first, second, third))
-}
 
-fn assert_opening_manifest_canonical(
-    claims: &[KernelOpeningClaim],
-    digest: [u8; 32],
-    expected_digest: [u8; 32],
-    expected_source: KernelOpeningSource,
-    manifest_label: &str,
-) -> Result<(), SimpleKernelError> {
-    expect_digest32(digest, expected_digest, &format!("{manifest_label} digest"))?;
+    let padded_len = semantic_trace_rows.len().next_power_of_two();
+    let mut trace_rows = semantic_trace_rows.to_vec();
+    let mut aux_data = semantic_aux_data.to_vec();
+    let pad_row = build_pad_row(pad_pc_word);
+    let pad_aux = build_pad_aux(pad_pc_word);
 
-    for claim in claims {
-        let claim_allowed = match expected_source {
-            KernelOpeningSource::Kernel => {
-                claim.source == KernelOpeningSource::Kernel && is_kernel_commitment_id(claim.commitment_id)
-            }
-            KernelOpeningSource::Root => {
-                claim.source == KernelOpeningSource::Root && is_root_commitment_id(claim.commitment_id)
-            }
-        };
-        if !claim_allowed {
-            return Err(SimpleKernelError::OpeningFailed(format!(
-                "{manifest_label} contains mis-owned claim"
-            )));
-        }
-        if claim.polynomial_ids.is_empty() {
-            return Err(SimpleKernelError::OpeningFailed(format!(
-                "{manifest_label} contains claim with empty polynomial_ids"
-            )));
-        }
-        if !claim
-            .polynomial_ids
-            .windows(2)
-            .all(|pair| pair[0] < pair[1])
-        {
-            return Err(SimpleKernelError::OpeningFailed(format!(
-                "{manifest_label} contains claim with unsorted or duplicate polynomial_ids"
-            )));
-        }
-        expect_digest32(claim.digest, claim.expected_digest(), "opening-claim digest")?;
+    while trace_rows.len() < padded_len {
+        trace_rows.push(pad_row);
+        aux_data.push(pad_aux.clone());
     }
 
-    for window in claims.windows(2) {
-        let lhs = &window[0];
-        let rhs = &window[1];
-        if kernel_opening_claim_cmp(lhs, rhs).is_gt() {
-            return Err(SimpleKernelError::OpeningFailed(format!(
-                "{manifest_label} is not in canonical order"
-            )));
-        }
-        if lhs.source == rhs.source
-            && lhs.commitment_id == rhs.commitment_id
-            && lhs.point == rhs.point
-            && lhs.polynomial_ids == rhs.polynomial_ids
-        {
-            return Err(SimpleKernelError::OpeningFailed(format!(
-                "{manifest_label} contains duplicate claims"
-            )));
-        }
-    }
-    Ok(())
-}
-
-pub(crate) fn assert_manifest_canonical(manifest: &KernelOpeningManifest) -> Result<(), SimpleKernelError> {
-    assert_opening_manifest_canonical(
-        &manifest.claims,
-        manifest.digest,
-        manifest.expected_digest(),
-        KernelOpeningSource::Kernel,
-        "kernel opening manifest",
-    )
-}
-
-pub(crate) fn assert_root_manifest_canonical(manifest: &RootOpeningManifest) -> Result<(), SimpleKernelError> {
-    assert_opening_manifest_canonical(
-        &manifest.claims,
-        manifest.digest,
-        manifest.expected_digest(),
-        KernelOpeningSource::Root,
-        "root opening manifest",
-    )
-}
-
-pub(crate) fn find_manifest_claim<'a>(
-    manifest: &'a KernelOpeningManifest,
-    commitment_id: CommitmentId,
-    point: &[K],
-    polynomial_ids: &[usize],
-    label: &str,
-) -> Result<&'a KernelOpeningClaim, SimpleKernelError> {
-    let normalized_polynomial_ids = normalize_polynomial_ids(polynomial_ids);
-    let mut matches = manifest.claims.iter().filter(|claim| {
-        claim.commitment_id == commitment_id
-            && claim.point == point
-            && claim.polynomial_ids == normalized_polynomial_ids
-    });
-    let claim = matches
-        .next()
-        .ok_or_else(|| SimpleKernelError::OpeningFailed(format!("{label} missing from kernel opening manifest")))?;
-    if matches.next().is_some() {
-        return Err(SimpleKernelError::OpeningFailed(format!(
-            "{label} appears multiple times in kernel opening manifest"
-        )));
-    }
-    Ok(claim)
-}
-
-pub(crate) fn verify_stage1_channel_transcript<Tr: Transcript>(
-    transcript: &mut Tr,
-    proof: &ShoutChannelProof,
-    initial_sum: K,
-    addr_bits: usize,
-    cycle_bits: usize,
-    decode_consistency_claim: Option<K>,
-    label: &str,
-) -> Result<(), SimpleKernelError> {
-    let core_point = verify_sumcheck_known(
-        transcript,
-        2,
-        initial_sum,
-        &proof.sumcheck_rounds,
-        &format!("{label} core"),
-    )?;
-    expect_equal_k_slice(&proof.addr_point, &core_point, &format!("{label} addr point"))?;
-
-    let total_bits = addr_bits + cycle_bits;
-    let (bool_rounds, hamming_rounds, decode_rounds) = split_round_groups(
-        &proof.addr_correctness_rounds,
-        total_bits,
-        addr_bits,
-        addr_bits,
-        &format!("{label} address correctness"),
-    )?;
-    verify_sumcheck_known(transcript, 2, K::ZERO, bool_rounds, &format!("{label} booleanity"))?;
-    verify_sumcheck_known(
-        transcript,
-        1,
-        K::ONE,
-        hamming_rounds,
-        &format!("{label} hamming weight"),
-    )?;
-    if let Some(claim) = decode_consistency_claim {
-        verify_sumcheck_known(
-            transcript,
-            2,
-            claim,
-            decode_rounds,
-            &format!("{label} decode consistency"),
-        )?;
-    } else {
-        replay_sumcheck_unchecked(transcript, 2, decode_rounds, &format!("{label} decode consistency"))?;
-    }
-    Ok(())
-}
-
-pub(crate) fn verify_stage2_address_correctness_transcript<Tr: Transcript>(
-    transcript: &mut Tr,
-    proof: &AddressCorrectnessProof,
-    addr_bits: usize,
-    cycle_bits: usize,
-    mapped_claim: K,
-    raw_claim: K,
-    label: &str,
-) -> Result<(), SimpleKernelError> {
-    let total_bits = addr_bits + cycle_bits;
-    verify_sumcheck_known(
-        transcript,
-        2,
-        K::ZERO,
-        &proof.booleanity_rounds,
-        &format!("{label} booleanity"),
-    )?;
-    if proof.booleanity_rounds.len() != total_bits {
-        return Err(SimpleKernelError::SumcheckFailed(format!(
-            "{label} booleanity round count {} != expected {total_bits}",
-            proof.booleanity_rounds.len()
-        )));
-    }
-    verify_sumcheck_known(
-        transcript,
-        1,
-        K::ONE,
-        &proof.hamming_weight_rounds,
-        &format!("{label} hamming weight"),
-    )?;
-    if proof.hamming_weight_rounds.len() != addr_bits {
-        return Err(SimpleKernelError::SumcheckFailed(format!(
-            "{label} hamming round count {} != expected {addr_bits}",
-            proof.hamming_weight_rounds.len()
-        )));
-    }
-    verify_sumcheck_known(
-        transcript,
-        2,
-        mapped_claim,
-        &proof.decode_consistency_rounds,
-        &format!("{label} decode consistency"),
-    )?;
-    if proof.decode_consistency_rounds.len() != addr_bits {
-        return Err(SimpleKernelError::SumcheckFailed(format!(
-            "{label} decode-consistency round count {} != expected {addr_bits}",
-            proof.decode_consistency_rounds.len()
-        )));
-    }
-    verify_sumcheck_known(
-        transcript,
-        2,
-        raw_claim,
-        &proof.raw_address_rounds,
-        &format!("{label} raw address"),
-    )?;
-    if proof.raw_address_rounds.len() != addr_bits {
-        return Err(SimpleKernelError::SumcheckFailed(format!(
-            "{label} raw-address round count {} != expected {addr_bits}",
-            proof.raw_address_rounds.len()
-        )));
-    }
-    Ok(())
+    Ok((trace_rows, aux_data))
 }
 
 pub(crate) fn reconstruct_trace_rows_and_aux(
@@ -712,35 +429,7 @@ fn reconstruct_opened_row(
     row_binding: &RowBindingClaim,
     cycle_bits: usize,
 ) -> Result<[F; WITNESS_WIDTH], SimpleKernelError> {
-    if row_binding.row_bits.len() != cycle_bits {
-        return Err(SimpleKernelError::BridgeFailed(format!(
-            "row {} has {} row bits, expected {}",
-            row_binding.row_index,
-            row_binding.row_bits.len(),
-            cycle_bits
-        )));
-    }
-    if !row_index_matches_bits(row_binding.row_index, &row_binding.row_bits) {
-        return Err(SimpleKernelError::BridgeFailed(format!(
-            "row {} bits do not match its row index",
-            row_binding.row_index
-        )));
-    }
-    if row_binding.opened_values.len() != WITNESS_WIDTH - 1 {
-        return Err(SimpleKernelError::BridgeFailed(format!(
-            "row {} has {} opened values, expected {}",
-            row_binding.row_index,
-            row_binding.opened_values.len(),
-            WITNESS_WIDTH - 1
-        )));
-    }
-
-    let mut row = [F::ZERO; WITNESS_WIDTH];
-    row[0] = F::ONE;
-    for (col, &value) in row_binding.opened_values.iter().enumerate() {
-        row[col + 1] = base_value(value, &format!("row {} column {}", row_binding.row_index, col + 1))?;
-    }
-    Ok(row)
+    build_semantic_row_from_row_binding(row_binding, cycle_bits)
 }
 
 fn derive_semantic_aux(
@@ -993,13 +682,6 @@ fn derive_semantic_aux(
     }
 
     Ok(out)
-}
-
-fn row_index_matches_bits(row_index: usize, row_bits: &[bool]) -> bool {
-    row_bits
-        .iter()
-        .enumerate()
-        .all(|(bit, &is_one)| ((row_index >> bit) & 1 == 1) == is_one)
 }
 
 fn lane_values_at_point(trace_rows: &[[F; WITNESS_WIDTH]], cols: &[usize], point: &[K]) -> Vec<K> {
