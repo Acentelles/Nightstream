@@ -62,6 +62,11 @@ import Nightstream.Chip8.Kernel.KernelArtifactAuditInterface
 import Nightstream.Chip8.Kernel.KernelDigestAuditBoundaryInterface
 import Nightstream.Chip8.Kernel.StagedExecutionDigestInterface
 import Nightstream.Chip8.Kernel.StagedExecutionDigestBundleInterface
+import Nightstream.Chip8.Kernel.StagedExecutionBundleAuditInterface
+import Nightstream.Chip8.Kernel.ReleaseArtifactInterface
+import Nightstream.Chip8.Kernel.ReleaseArtifactAuditInterface
+import Nightstream.Chip8.Kernel.ExternalReleaseArtifactInterface
+import Nightstream.Chip8.Kernel.ExternalReleaseArtifactAuditInterface
 import Nightstream.Chip8.Kernel.ArtifactAuditInterface
 import Nightstream.Chip8.Execution.BurstSessionInterface
 import Nightstream.Chip8.Execution.StepCompositionInterface

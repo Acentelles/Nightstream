@@ -216,6 +216,36 @@ theorem artifactAuditSound
   exact ⟨hPub, hFetch, hLookup, hWitness, hMem, hCont, hPrepared, hMicro,
     hFramebuffer, hSchedule⟩
 
+theorem artifactAuditAccepted_of_bound
+  {inputs :
+    ExecutionInputContext DigestRom DigestSchedule RootParamsId VmSpec
+      TranscriptSeed}
+  {rootCtx : RootHandoffContext RootParamsId W Z Commitment F}
+  {rom : Program}
+  {σ : ExternalSchedule}
+  {stepIdx : Nat}
+  {init : InitialState}
+  {pre post : MachineState}
+  {dec : DecodedStep Addr}
+  {z : Nightstream.Chip8.Witness F}
+  {d :
+    ExecutionDigest inputs rootCtx rom σ stepIdx init pre post
+      dec z}
+  (h :
+    StagedExecutionDigest.StagedExecutionDigestBound inputs rootCtx rom σ
+      stepIdx init pre post dec z d) :
+  ArtifactAuditAccepted inputs rootCtx rom σ stepIdx init pre
+    post dec z d := by
+  rcases h with
+    ⟨hPub, hFetch, hLookup, hWitness, hMem, hCont, hPrepared, hMicro,
+      hFramebuffer, hSchedule⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  · exact hPub
+  · exact ⟨hFetch, hLookup⟩
+  · exact ⟨hWitness, hMem⟩
+  · exact ⟨hCont, hPrepared⟩
+  · exact ⟨hMicro, hFramebuffer, hSchedule⟩
+
 def artifactAuditImpliesBridgeBinding
   {inputs :
     ExecutionInputContext DigestRom DigestSchedule RootParamsId VmSpec
