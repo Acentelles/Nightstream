@@ -1,6 +1,7 @@
 import Nightstream.Chip8.Generated.TranscriptVectors
 import Nightstream.Chip8.Generated.StagedExecutionDigestBundleVectors
 import Nightstream.Chip8.Generated.ReleaseArtifactVectors
+import Nightstream.Chip8.Generated.ImportedReleaseArtifact
 import Nightstream.Chip8.Kernel.ExternalReleaseArtifactAudit
 
 /-!
@@ -238,9 +239,8 @@ private def rebuiltBundleOfSources
     (stage3s : List Stage3View) : StagedExecutionDigestBundleView :=
   stagedExecutionDigestBundleViewOfSources publicSurface frames stage3s
 
-private def releaseArtifactCheckResults
-    (case : KernelReleaseArtifactVectorCase) : List (String × Bool) :=
-  let imported := ExternalReleaseArtifact.ofVectorCase case
+private def importedReleaseArtifactCheckResults
+    (imported : ExternalReleaseArtifact.ImportedArtifact) : List (String × Bool) :=
   [ ("traceSurface", ExternalReleaseArtifactAudit.checkTraceSurface imported)
   , ("exportSurface", ExternalReleaseArtifactAudit.checkExportSurface imported)
   , ("bundleSurface", ExternalReleaseArtifactAudit.checkBundleSurface imported)
@@ -260,6 +260,10 @@ private def releaseArtifactCheckResults
   , ("auditReuseRowBinding", ExternalReleaseArtifactAudit.checkAuditReuseRowBinding imported)
   , ("auditPreparedSteps", ExternalReleaseArtifactAudit.checkAuditPreparedSteps imported)
   ]
+
+private def releaseArtifactCheckResults
+    (case : KernelReleaseArtifactVectorCase) : List (String × Bool) :=
+  importedReleaseArtifactCheckResults (ExternalReleaseArtifact.ofVectorCase case)
 
 structure ReleaseArtifactVectorReport where
   name : String
@@ -281,9 +285,20 @@ def releaseArtifactVectorReports : List ReleaseArtifactVectorReport :=
     { name := case.name
     , checks := releaseArtifactCheckResults case }
 
+def importedReleaseArtifactChecks : List (String × Bool) :=
+  importedReleaseArtifactCheckResults Generated.importedReleaseArtifact
+
+def validImportedReleaseArtifact : Bool :=
+  ExternalReleaseArtifactAudit.checkImportedReleaseArtifact Generated.importedReleaseArtifact
+
+def importedReleaseArtifactReport : ReleaseArtifactVectorReport :=
+  { name := Generated.importedReleaseArtifactName
+  , checks := importedReleaseArtifactChecks }
+
 def validGeneratedChip8ProtocolCases : Bool :=
   validGeneratedTranscriptVectorCases &&
     validGeneratedBundleVectorCases &&
-    validGeneratedReleaseArtifactVectorCases
+    validGeneratedReleaseArtifactVectorCases &&
+    validImportedReleaseArtifact
 
 end Nightstream.Chip8
