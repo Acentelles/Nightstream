@@ -25,6 +25,15 @@ These families name the exact external proof owners:
 - `registerHistory`: Stage-2 register Twist history
 - `ramHistory`: Stage-2 RAM Twist history
 
+The following proof owners are intentionally **not** modeled by this family
+inventory because they are theorem surfaces rather than release-family ids:
+
+- expanded-bytecode start/successor binding,
+- Stage-2 temporal closure,
+- PC-adjacent bridge,
+- opening provenance / row binding,
+- final-boundary claim.
+
 ## Contract Surface
 
 | Group | Lean surface | Kind | Role | Guarantee |
@@ -50,3 +59,4 @@ These families name the exact external proof owners:
 - prepared-step export
 - execution semantics
 - transcript / PCS instantiation
+- successor / provenance theorem surfaces

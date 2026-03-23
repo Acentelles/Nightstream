@@ -3073,13 +3073,15 @@ implementation details, not part of the RV64IM theorem surface.
 The `vm/` trait layer (`VmSpec`, `VmTraceBuilder`) provides the abstraction
 boundary. The RV64IM kernel implements these traits with its own:
 
-- `spec.rs`: witness layout, commitment IDs, opcode enum
+- `layout.rs`, `isa.rs`, `ccs.rs`: witness layout, opcode/state/decode, and CCS contract
 - `tables.rs`: lowering logic, bytecode metadata, ALU tables
-- `trace.rs`: execution engine, witness generation
-- `stage1.rs`, `stage2.rs`, `stage3.rs`: kernel proofs
-- `kernel.rs`: kernel boundary (prove/verify entry points)
+- `execute.rs`, `lower.rs`, `builder.rs`: execution engine, witness lowering, and step packaging
+- `stage1/`, `stage2/`, `stage3/`: kernel proofs
+- `kernel/`: kernel boundary (prove/verify entry points)
 
-Shared infrastructure (`families/`, `pipeline/`, `proof.rs`) must be
-parameterized by the VM spec. Any shared-code identifier, enum, helper, or
-extension path that hardcodes some other VM kernel must be generalized to a
-VM-polymorphic equivalent before the RV64IM kernel can plug in cleanly.
+Shared infrastructure (`proof.rs`, `opening.rs`, `step_build.rs`, `prover.rs`,
+`verifier.rs`, `run.rs`, `finalize.rs`, `time_opening.rs`) must stay
+parameterized by the VM spec or otherwise remain VM-agnostic. Any shared-code
+identifier, enum, helper, or extension path that hardcodes some other VM kernel
+must be generalized to a VM-polymorphic equivalent before the RV64IM kernel can
+plug in cleanly.

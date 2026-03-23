@@ -112,6 +112,9 @@ $$
 - The readonly release stage must own only readonly Stage-1 proof families.
 - Register and RAM temporal families must remain separated at the release boundary.
 - The concrete RV64IM release shape must refine the generic Nightstream release-bridge surface by exact equality, not heuristic correspondence.
+- Expanded-bytecode successor, temporal closure, opening provenance, and final-boundary
+  claims are intentionally modeled by separate RV64IM theorem surfaces, not by
+  the release-stage family inventory itself.
 
 ## Out of Scope
 

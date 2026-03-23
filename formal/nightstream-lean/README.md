@@ -610,7 +610,9 @@ audited release-artifact corpus:
 - Lean imports that generated artifact through
   `Nightstream.Chip8.Generated.ImportedReleaseArtifact`
 - `lake exe check` runs the Lean-owned imported-artifact checker and reports
-  `chip8_imported_release_artifact_check=true` when the artifact passes
+  `chip8_imported_release_artifact_check=true` when the whole audited imported
+  corpus passes, with per-case booleans in
+  `chip8_imported_release_artifact_checks`
 
 That closes Layer 3 for the current audit build. The remaining follow-on work
 is wider transcript-call replay, broader audited corpora, and wiring the same

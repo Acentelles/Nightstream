@@ -9,7 +9,8 @@
 - **Protocol role**: It fixes the exact obligations for a fixed committed row
   list, a fixed touched-state set, and a fixed sequence-boundary result row
   before an advice-using lowered sequence may be accepted as part of the RV64IM
-  expanded-bytecode theorem package.
+  expanded-bytecode theorem package. This is the advice-specialized instance of
+  the general fixed committed-sequence soundness surface.
 
 ## Target Formulas
 
@@ -110,6 +111,7 @@ fixed committed sequence.
 
 | Lean file | Local owner |
 |---|---|
+| `Nightstream/Rv64IM/Execution/CommittedSequenceSoundness.lean` | General fixed committed-sequence theorem surface specialized by this owner |
 | `Nightstream/Rv64IM/Execution/AdviceSequenceSoundness.lean` | Advice-backed lowered-sequence theorem surface |
 | `Nightstream/Rv64IM/Execution/AdviceSequenceSoundnessInterface.lean` | Theorem-facing re-export surface |
 
@@ -139,6 +141,9 @@ fixed committed sequence.
 - Determinism forbids two satisfying advice assignments from producing
   different committed outputs or state effects on the same fixed committed
   sequence, the same architectural input, and the same authenticated reads.
+- `VAdvice` has no standalone proof power in this kernel. Advice values are
+  accepted only through the fixed committed-sequence row assertions and the
+  downstream correctness/determinism theorems for that sequence.
 - The accepted theorem package for an advice-backed sequence contains the fixed
   committed-sequence metadata and both semantic obligations, even if
   determinism is later derived from correctness.
