@@ -1,0 +1,36 @@
+import Nightstream.Rv64IM.Kernel.ExactKernelBoundaries
+import Nightstream.Rv64IM.Kernel.AlignedMemoryOpcodeSemantics
+import Nightstream.Rv64IM.Kernel.NarrowMemoryHelperResultSemantics
+import Nightstream.Rv64IM.Kernel.NarrowMemoryPayloadSemantics
+import Nightstream.Rv64IM.Kernel.OpcodeFamilySemantics
+import Nightstream.Rv64IM.Kernel.WordArithmeticSemantics
+
+namespace Nightstream.Rv64IM
+
+namespace ExactKernelBoundariesInterface
+
+abbrev ExactKernelBoundaries := @Nightstream.Rv64IM.ExactKernelBoundaries
+abbrev kernelSoundnessAccepted_of_exactBoundaries :=
+  @Nightstream.Rv64IM.kernelSoundnessAccepted_of_exactBoundaries
+abbrev kernelSoundness_of_exactBoundaries :=
+  @Nightstream.Rv64IM.kernelSoundness_of_exactBoundaries
+abbrev executionCorrect_of_exactKernelBoundaries :=
+  @Nightstream.Rv64IM.executionCorrect_of_exactKernelBoundaries
+abbrev exactPreparedStepBridgeAtIndex_of_exactKernelBoundaries :=
+  @Nightstream.Rv64IM.exactPreparedStepBridgeAtIndex_of_exactKernelBoundaries
+noncomputable abbrev canonicalOpcodeProofs_of_exactKernelBoundaries :=
+  @Nightstream.Rv64IM.canonicalOpcodeProofs_of_exactKernelBoundaries
+noncomputable abbrev exactOpcodeFamilySemantics_of_exactKernelBoundaries :=
+  @Nightstream.Rv64IM.exactOpcodeFamilySemantics_of_exactKernelBoundaries
+noncomputable abbrev exactWordArithmeticSemantics_of_exactKernelBoundaries :=
+  @Nightstream.Rv64IM.exactWordArithmeticSemantics_of_exactKernelBoundaries
+noncomputable abbrev exactAlignedMemoryOpcodeSemantics_of_exactKernelBoundaries :=
+  @Nightstream.Rv64IM.exactAlignedMemoryOpcodeSemantics_of_exactKernelBoundaries
+noncomputable abbrev exactNarrowMemoryHelperResultSemantics_of_exactKernelBoundaries :=
+  @Nightstream.Rv64IM.exactNarrowMemoryHelperResultSemantics_of_exactKernelBoundaries
+noncomputable abbrev exactNarrowMemoryPayloadSemantics_of_exactKernelBoundaries :=
+  @Nightstream.Rv64IM.exactNarrowMemoryPayloadSemantics_of_exactKernelBoundaries
+
+end ExactKernelBoundariesInterface
+
+end Nightstream.Rv64IM

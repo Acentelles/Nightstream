@@ -1,0 +1,30 @@
+import Nightstream.Rv64IM.Trace.UnsignedDivRemOpcodeSemantics
+
+namespace Nightstream.Rv64IM
+
+namespace UnsignedDivRemOpcodeSemanticsInterface
+
+abbrev opcodeBound_of_authenticatedChunkTrace_unsignedDivRem :=
+  @Nightstream.Rv64IM.opcodeBound_of_authenticatedChunkTrace_unsignedDivRem
+abbrev divu_flags_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.divu_flags_of_authenticatedChunkTrace
+abbrev remu_flags_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.remu_flags_of_authenticatedChunkTrace
+abbrev divuw_flags_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.divuw_flags_of_authenticatedChunkTrace
+abbrev remuw_flags_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.remuw_flags_of_authenticatedChunkTrace
+abbrev spec_of_unsignedDivu_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.spec_of_unsignedDivu_authenticatedChunkTrace
+abbrev spec_of_unsignedRemu_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.spec_of_unsignedRemu_authenticatedChunkTrace
+abbrev deterministic_of_unsignedDivRem_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.deterministic_of_unsignedDivRem_authenticatedChunkTrace
+abbrev divu_flags_of_exactBoundaries :=
+  @Nightstream.Rv64IM.divu_flags_of_exactBoundaries
+abbrev spec_of_unsignedDivu_of_exactBoundaries :=
+  @Nightstream.Rv64IM.spec_of_unsignedDivu_of_exactBoundaries
+
+end UnsignedDivRemOpcodeSemanticsInterface
+
+end Nightstream.Rv64IM

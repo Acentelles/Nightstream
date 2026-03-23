@@ -1,0 +1,14 @@
+import Nightstream.Rv64IM.Kernel.OpcodeFamilySemantics
+
+namespace Nightstream.Rv64IM
+
+namespace OpcodeFamilySemanticsInterface
+
+noncomputable abbrev exactOpcodeFamilySemantics_of_kernelSoundness :=
+  @Nightstream.Rv64IM.exactOpcodeFamilySemantics_of_kernelSoundness
+noncomputable abbrev exactOpcodeFamilySemantics_of_exactKernelBoundaries :=
+  @Nightstream.Rv64IM.exactOpcodeFamilySemantics_of_exactKernelBoundaries
+
+end OpcodeFamilySemanticsInterface
+
+end Nightstream.Rv64IM

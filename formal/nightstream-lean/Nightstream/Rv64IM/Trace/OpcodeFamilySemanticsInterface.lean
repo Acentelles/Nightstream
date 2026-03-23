@@ -1,0 +1,14 @@
+import Nightstream.Rv64IM.Trace.OpcodeFamilySemantics
+
+namespace Nightstream.Rv64IM
+
+namespace OpcodeFamilySemanticsInterface
+
+noncomputable abbrev exactOpcodeFamilySemantics_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.exactOpcodeFamilySemantics_of_authenticatedChunkTrace
+noncomputable abbrev exactOpcodeFamilySemantics_of_exactBoundaries :=
+  @Nightstream.Rv64IM.exactOpcodeFamilySemantics_of_exactBoundaries
+
+end OpcodeFamilySemanticsInterface
+
+end Nightstream.Rv64IM

@@ -1,0 +1,109 @@
+import Nightstream.Rv64IM.Kernel.KernelSoundness
+import Nightstream.Rv64IM.Kernel.AlignedMemoryOpcodeSemantics
+import Nightstream.Rv64IM.Kernel.NarrowMemoryHelperResultSemantics
+import Nightstream.Rv64IM.Kernel.NarrowMemoryPayloadSemantics
+import Nightstream.Rv64IM.Kernel.OpcodeFamilySemantics
+import Nightstream.Rv64IM.Kernel.WordArithmeticSemantics
+
+namespace Nightstream.Rv64IM
+
+namespace KernelSoundnessInterface
+
+abbrev KernelSoundnessAccepted := @Nightstream.Rv64IM.KernelSoundnessAccepted
+abbrev KernelSoundnessConclusion := @Nightstream.Rv64IM.KernelSoundnessConclusion
+abbrev kernelSoundness_of_acceptance := @Nightstream.Rv64IM.kernelSoundness_of_acceptance
+abbrev kernelSoundness_of_authenticatedTrace :=
+  @Nightstream.Rv64IM.kernelSoundness_of_authenticatedTrace
+abbrev programBinding_of_kernelSoundness := @Nightstream.Rv64IM.programBinding_of_kernelSoundness
+abbrev authenticatedTrace_of_kernelSoundness :=
+  @Nightstream.Rv64IM.authenticatedTrace_of_kernelSoundness
+abbrev executionCorrect_of_kernelSoundness :=
+  @Nightstream.Rv64IM.executionCorrect_of_kernelSoundness
+abbrev executionCorrect_on_authenticatedPrefix_of_kernelSoundness :=
+  @Nightstream.Rv64IM.executionCorrect_on_authenticatedPrefix_of_kernelSoundness
+abbrev mainLaneTraceBoundary_of_kernelSoundness :=
+  @Nightstream.Rv64IM.mainLaneTraceBoundary_of_kernelSoundness
+abbrev traceLinkBoundary_of_kernelSoundness :=
+  @Nightstream.Rv64IM.traceLinkBoundary_of_kernelSoundness
+abbrev expandedBytecodeExecutionBound_of_kernelSoundness :=
+  @Nightstream.Rv64IM.expandedBytecodeExecutionBound_of_kernelSoundness
+abbrev adjacentStateClosed_of_kernelSoundness :=
+  @Nightstream.Rv64IM.adjacentStateClosed_of_kernelSoundness
+abbrev fullHaltedExecutionClaim_of_kernelSoundness :=
+  @Nightstream.Rv64IM.fullHaltedExecutionClaim_of_kernelSoundness
+abbrev pcAdjacentBridgeProofPackage_of_kernelSoundness :=
+  @Nightstream.Rv64IM.pcAdjacentBridgeProofPackage_of_kernelSoundness
+abbrev pcAdjacentBridge_of_kernelSoundness :=
+  @Nightstream.Rv64IM.pcAdjacentBridge_of_kernelSoundness
+abbrev prePc_eq_stage2PreStatePc_of_kernelSoundness :=
+  @Nightstream.Rv64IM.prePc_eq_stage2PreStatePc_of_kernelSoundness
+abbrev postPc_eq_stage2PostStatePc_of_kernelSoundness :=
+  @Nightstream.Rv64IM.postPc_eq_stage2PostStatePc_of_kernelSoundness
+abbrev preparedStepExportBound_of_kernelSoundness :=
+  @Nightstream.Rv64IM.preparedStepExportBound_of_kernelSoundness
+abbrev preparedStepExportBound_on_authenticatedPrefix_of_kernelSoundness :=
+  @Nightstream.Rv64IM.preparedStepExportBound_on_authenticatedPrefix_of_kernelSoundness
+abbrev twistConcreteBinding_of_kernelSoundness :=
+  @Nightstream.Rv64IM.twistConcreteBinding_of_kernelSoundness
+abbrev stage2LinkageBound_of_kernelSoundness :=
+  @Nightstream.Rv64IM.stage2LinkageBound_of_kernelSoundness
+abbrev registerLinkageBound_of_kernelSoundness :=
+  @Nightstream.Rv64IM.registerLinkageBound_of_kernelSoundness
+abbrev ramLinkageBound_of_kernelSoundness :=
+  @Nightstream.Rv64IM.ramLinkageBound_of_kernelSoundness
+abbrev registerWriteValue_of_kernelSoundness :=
+  @Nightstream.Rv64IM.registerWriteValue_of_kernelSoundness
+abbrev ramLoadMemVal_of_kernelSoundness :=
+  @Nightstream.Rv64IM.ramLoadMemVal_of_kernelSoundness
+abbrev ramStorePayload_of_kernelSoundness :=
+  @Nightstream.Rv64IM.ramStorePayload_of_kernelSoundness
+abbrev ramInactiveMemValZero_of_kernelSoundness :=
+  @Nightstream.Rv64IM.ramInactiveMemValZero_of_kernelSoundness
+abbrev stage1LinkageBound_of_kernelSoundness :=
+  @Nightstream.Rv64IM.stage1LinkageBound_of_kernelSoundness
+abbrev takenTargetAlignmentBound_of_kernelSoundness :=
+  @Nightstream.Rv64IM.takenTargetAlignmentBound_of_kernelSoundness
+abbrev mulUNoOverflowBound_of_kernelSoundness :=
+  @Nightstream.Rv64IM.mulUNoOverflowBound_of_kernelSoundness
+abbrev temporaryRegisterHygiene_of_kernelSoundness :=
+  @Nightstream.Rv64IM.temporaryRegisterHygiene_of_kernelSoundness
+abbrev mulUNoOverflow_of_kernelSoundness :=
+  @Nightstream.Rv64IM.mulUNoOverflow_of_kernelSoundness
+abbrev unsignedDivRemSpec_of_kernelSoundness :=
+  @Nightstream.Rv64IM.unsignedDivRemSpec_of_kernelSoundness
+abbrev unsignedDivRemDeterministic_of_kernelSoundness :=
+  @Nightstream.Rv64IM.unsignedDivRemDeterministic_of_kernelSoundness
+abbrev changeDivisorCorrect_of_kernelSoundness :=
+  @Nightstream.Rv64IM.changeDivisorCorrect_of_kernelSoundness
+abbrev remainderFromDividendSign_of_kernelSoundness :=
+  @Nightstream.Rv64IM.remainderFromDividendSign_of_kernelSoundness
+abbrev signedDivRemSpec_of_kernelSoundness :=
+  @Nightstream.Rv64IM.signedDivRemSpec_of_kernelSoundness
+noncomputable abbrev canonicalOpcodeProofs_of_kernelSoundness :=
+  @Nightstream.Rv64IM.canonicalOpcodeProofs_of_kernelSoundness
+noncomputable abbrev exactOpcodeFamilySemantics_of_kernelSoundness :=
+  @Nightstream.Rv64IM.exactOpcodeFamilySemantics_of_kernelSoundness
+noncomputable abbrev exactWordArithmeticSemantics_of_kernelSoundness :=
+  @Nightstream.Rv64IM.exactWordArithmeticSemantics_of_kernelSoundness
+noncomputable abbrev exactAlignedMemoryOpcodeSemantics_of_kernelSoundness :=
+  @Nightstream.Rv64IM.exactAlignedMemoryOpcodeSemantics_of_kernelSoundness
+noncomputable abbrev exactNarrowMemoryHelperResultSemantics_of_kernelSoundness :=
+  @Nightstream.Rv64IM.exactNarrowMemoryHelperResultSemantics_of_kernelSoundness
+noncomputable abbrev exactNarrowMemoryPayloadSemantics_of_kernelSoundness :=
+  @Nightstream.Rv64IM.exactNarrowMemoryPayloadSemantics_of_kernelSoundness
+abbrev rowBindingCoverage_of_kernelSoundness :=
+  @Nightstream.Rv64IM.rowBindingCoverage_of_kernelSoundness
+abbrev bridgeBindings_length_of_kernelSoundness :=
+  @Nightstream.Rv64IM.bridgeBindings_length_of_kernelSoundness
+abbrev bridgeBindingWitness_at_index_of_kernelSoundness :=
+  @Nightstream.Rv64IM.bridgeBindingWitness_at_index_of_kernelSoundness
+abbrev exactPreparedStepBridgeAtIndex_of_kernelSoundness :=
+  @Nightstream.Rv64IM.exactPreparedStepBridgeAtIndex_of_kernelSoundness
+abbrev transcriptSchedule_of_kernelSoundness :=
+  @Nightstream.Rv64IM.transcriptSchedule_of_kernelSoundness
+abbrev negligible_epsTotal_of_kernelSoundness :=
+  @Nightstream.Rv64IM.negligible_epsTotal_of_kernelSoundness
+
+end KernelSoundnessInterface
+
+end Nightstream.Rv64IM

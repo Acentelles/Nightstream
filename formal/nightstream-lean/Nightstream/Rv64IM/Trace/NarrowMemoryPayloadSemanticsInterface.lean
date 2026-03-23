@@ -1,0 +1,14 @@
+import Nightstream.Rv64IM.Trace.NarrowMemoryPayloadSemantics
+
+namespace Nightstream.Rv64IM
+
+namespace NarrowMemoryPayloadSemanticsInterface
+
+abbrev exactNarrowMemoryPayloadSemantics_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.exactNarrowMemoryPayloadSemantics_of_authenticatedChunkTrace
+abbrev exactNarrowMemoryPayloadSemantics_of_exactBoundaries :=
+  @Nightstream.Rv64IM.exactNarrowMemoryPayloadSemantics_of_exactBoundaries
+
+end NarrowMemoryPayloadSemanticsInterface
+
+end Nightstream.Rv64IM

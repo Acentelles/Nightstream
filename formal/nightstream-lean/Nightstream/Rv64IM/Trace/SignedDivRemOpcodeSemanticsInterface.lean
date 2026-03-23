@@ -1,0 +1,28 @@
+import Nightstream.Rv64IM.Trace.SignedDivRemOpcodeSemantics
+
+namespace Nightstream.Rv64IM
+
+namespace SignedDivRemOpcodeSemanticsInterface
+
+abbrev opcodeBound_of_authenticatedChunkTrace_signedDivRem :=
+  @Nightstream.Rv64IM.opcodeBound_of_authenticatedChunkTrace_signedDivRem
+abbrev div_flags_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.div_flags_of_authenticatedChunkTrace
+abbrev rem_flags_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.rem_flags_of_authenticatedChunkTrace
+abbrev divw_flags_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.divw_flags_of_authenticatedChunkTrace
+abbrev remw_flags_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.remw_flags_of_authenticatedChunkTrace
+abbrev spec_of_signedDiv_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.spec_of_signedDiv_authenticatedChunkTrace
+abbrev spec_of_signedRem_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.spec_of_signedRem_authenticatedChunkTrace
+abbrev div_flags_of_exactBoundaries :=
+  @Nightstream.Rv64IM.div_flags_of_exactBoundaries
+abbrev spec_of_signedDiv_of_exactBoundaries :=
+  @Nightstream.Rv64IM.spec_of_signedDiv_of_exactBoundaries
+
+end SignedDivRemOpcodeSemanticsInterface
+
+end Nightstream.Rv64IM

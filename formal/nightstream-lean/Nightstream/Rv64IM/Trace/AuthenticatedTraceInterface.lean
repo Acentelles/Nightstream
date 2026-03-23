@@ -1,0 +1,96 @@
+import Nightstream.Rv64IM.Trace.AuthenticatedTrace
+import Nightstream.Rv64IM.Trace.OpcodeFamilySemantics
+import Nightstream.Rv64IM.Trace.WordArithmeticSemantics
+import Nightstream.Rv64IM.Trace.AlignedMemoryOpcodeSemantics
+import Nightstream.Rv64IM.Trace.NarrowMemoryHelperResultSemantics
+import Nightstream.Rv64IM.Trace.NarrowMemoryPayloadSemantics
+
+namespace Nightstream.Rv64IM
+
+namespace AuthenticatedTraceInterface
+
+abbrev AuthenticatedChunkTrace := @Nightstream.Rv64IM.AuthenticatedChunkTrace
+abbrev authenticatedChunkTrace_executionCorrect :=
+  @Nightstream.Rv64IM.authenticatedChunkTrace_executionCorrect
+abbrev authenticatedChunkTrace_executionCorrect_on_chunkInput :=
+  @Nightstream.Rv64IM.authenticatedChunkTrace_executionCorrect_on_chunkInput
+abbrev mainLaneSemanticRows_eq_chunkInput_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.mainLaneSemanticRows_eq_chunkInput_of_authenticatedChunkTrace
+abbrev traceLinkSemanticRows_eq_chunkInput_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.traceLinkSemanticRows_eq_chunkInput_of_authenticatedChunkTrace
+abbrev mainLaneTraceBoundary_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.mainLaneTraceBoundary_of_authenticatedChunkTrace
+abbrev traceLinkBoundary_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.traceLinkBoundary_of_authenticatedChunkTrace
+abbrev preparedStepExportBound_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.preparedStepExportBound_of_authenticatedChunkTrace
+abbrev expandedRowSequenceBound_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.expandedRowSequenceBound_of_authenticatedChunkTrace
+abbrev expandedBytecodeExecutionBound_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.expandedBytecodeExecutionBound_of_authenticatedChunkTrace
+abbrev fullHaltedExecutionClaim_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.fullHaltedExecutionClaim_of_authenticatedChunkTrace
+abbrev authenticatedChunkTrace_adjacentStateClosed :=
+  @Nightstream.Rv64IM.authenticatedChunkTrace_adjacentStateClosed
+abbrev pcAdjacentBridge_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.pcAdjacentBridge_of_authenticatedChunkTrace
+abbrev prePc_eq_stage2PreStatePc_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.prePc_eq_stage2PreStatePc_of_authenticatedChunkTrace
+abbrev postPc_eq_stage2PostStatePc_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.postPc_eq_stage2PostStatePc_of_authenticatedChunkTrace
+abbrev registerTimelineBound_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.registerTimelineBound_of_authenticatedChunkTrace
+abbrev ramTimelineBound_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.ramTimelineBound_of_authenticatedChunkTrace
+abbrev twistConcreteBinding_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.twistConcreteBinding_of_authenticatedChunkTrace
+abbrev stage2LinkageBound_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.stage2LinkageBound_of_authenticatedChunkTrace
+abbrev registerLinkageBound_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.registerLinkageBound_of_authenticatedChunkTrace
+abbrev ramLinkageBound_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.ramLinkageBound_of_authenticatedChunkTrace
+abbrev registerWriteValue_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.registerWriteValue_of_authenticatedChunkTrace
+abbrev ramLoadMemVal_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.ramLoadMemVal_of_authenticatedChunkTrace
+abbrev ramStorePayload_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.ramStorePayload_of_authenticatedChunkTrace
+abbrev ramInactiveMemValZero_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.ramInactiveMemValZero_of_authenticatedChunkTrace
+abbrev stage1LinkageBound_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.stage1LinkageBound_of_authenticatedChunkTrace
+abbrev takenTargetAlignmentBound_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.takenTargetAlignmentBound_of_authenticatedChunkTrace
+abbrev mulUNoOverflowBound_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.mulUNoOverflowBound_of_authenticatedChunkTrace
+abbrev temporaryRegisterHygiene_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.temporaryRegisterHygiene_of_authenticatedChunkTrace
+abbrev mulUNoOverflow_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.mulUNoOverflow_of_authenticatedChunkTrace
+abbrev unsignedDivRemSpec_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.unsignedDivRemSpec_of_authenticatedChunkTrace
+abbrev unsignedDivRemDeterministic_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.unsignedDivRemDeterministic_of_authenticatedChunkTrace
+noncomputable abbrev canonicalOpcodeProofs_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.canonicalOpcodeProofs_of_authenticatedChunkTrace
+noncomputable abbrev exactOpcodeFamilySemantics_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.exactOpcodeFamilySemantics_of_authenticatedChunkTrace
+abbrev exactWordArithmeticSemantics_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.exactWordArithmeticSemantics_of_authenticatedChunkTrace
+noncomputable abbrev exactAlignedMemoryOpcodeSemantics_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.exactAlignedMemoryOpcodeSemantics_of_authenticatedChunkTrace
+noncomputable abbrev exactNarrowMemoryHelperResultSemantics_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.exactNarrowMemoryHelperResultSemantics_of_authenticatedChunkTrace
+noncomputable abbrev exactNarrowMemoryPayloadSemantics_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.exactNarrowMemoryPayloadSemantics_of_authenticatedChunkTrace
+abbrev changeDivisorCorrect_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.changeDivisorCorrect_of_authenticatedChunkTrace
+abbrev remainderFromDividendSign_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.remainderFromDividendSign_of_authenticatedChunkTrace
+abbrev signedDivRemSpec_of_authenticatedChunkTrace :=
+  @Nightstream.Rv64IM.signedDivRemSpec_of_authenticatedChunkTrace
+
+end AuthenticatedTraceInterface
+
+end Nightstream.Rv64IM

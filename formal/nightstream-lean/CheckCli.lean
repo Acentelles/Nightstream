@@ -9,6 +9,7 @@ def main : IO UInt32 := do
   IO.println s!"chip8_release_artifact_vector_checks={Nightstream.Chip8.releaseArtifactVectorChecks}"
   IO.println s!"chip8_release_artifact_vector_reports={reprStr Nightstream.Chip8.releaseArtifactVectorReports}"
   IO.println s!"chip8_imported_release_artifact_check={Nightstream.Chip8.validImportedReleaseArtifact}"
+  IO.println s!"chip8_imported_release_artifact_checks={Nightstream.Chip8.importedReleaseArtifactChecks}"
   IO.println s!"chip8_imported_release_artifact_report={reprStr Nightstream.Chip8.importedReleaseArtifactReport}"
   if Nightstream.Chip8.validGeneratedChip8ProtocolCases then
     pure 0
