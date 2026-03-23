@@ -125,6 +125,7 @@ import Nightstream.Rv64IM.Kernel.MultiplyWordArithmeticInterface
 import Nightstream.Rv64IM.Kernel.WordArithmeticSemanticsInterface
 import Nightstream.Rv64IM.Kernel.UnsignedDivRemOpcodeSemanticsInterface
 import Nightstream.Rv64IM.Kernel.SignedDivRemOpcodeSemanticsInterface
+import Nightstream.Rv64IM.ChecksInterface
 import Nightstream.Chip8.ReleaseBridgeInterface
 import Nightstream.Chip8.StagedBridgeInterface
 import Nightstream.Chip8.VmBridgeRefinementInterface

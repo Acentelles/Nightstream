@@ -16,6 +16,7 @@ pub mod opening;
 pub mod proof;
 pub mod prover;
 pub mod run;
+pub mod rv64im;
 pub mod step_build;
 pub mod time_opening;
 pub mod verifier;
