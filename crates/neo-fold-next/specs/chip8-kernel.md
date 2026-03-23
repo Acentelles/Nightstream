@@ -417,10 +417,10 @@ The theorem-facing lowering convention fixed by this kernel is:
   - `LoadRegs`: read `RAM[pre.I + i]` and write `post.V[i]`,
   - `BURST_LAST = 1` exactly on the final covered microstep.
 
-This is the `lowering_convention_id` carried in `meta_pub`. Any implementation
-that changes same-row visibility, burst row order, or memory-space separation is
-proving a different relation and is non-conforming unless it also changes the
-public metadata and theorem surface.
+This is the `lowering_convention_id = chip8_microstep_pre_post_v1` carried in
+`meta_pub`. Any implementation that changes same-row visibility, burst row
+order, or memory-space separation is proving a different relation and is
+non-conforming unless it also changes the public metadata and theorem surface.
 
 ---
 
@@ -1911,6 +1911,16 @@ document defines only the kernel/root claim manifests. PCS batching and final
 opening verification are external to this document and are owned by
 `time_opening`.
 
+Scope warning:
+
+- this opening-boundary material is complete only for the `simple` v1 kernel
+  boundary defined here;
+- on that boundary, `RootOpeningManifest` is an explicit ownership bucket that
+  must remain empty;
+- any later combined kernel-plus-root proof that exports root-owned openings
+  must introduce its own explicit root opening schema rather than inferring one
+  from this section.
+
 ### 9.1 OpeningClaim
 
 ```text
@@ -2075,7 +2085,10 @@ For the `simple` kernel boundary, the canonical `KernelOpeningManifest` order is
 the exact numbered stage-local order fixed above. The generic sort key in this
 section does **not** reorder that simple manifest. It is reserved only for
 later owners whose manifests are not already fixed by the simple boundary, such
-as a future non-empty root manifest or later claim-space summary objects.
+as a future non-empty root manifest.
+
+If a later owner introduces claim-space summary registries, that owner must
+define their ordering separately outside this opening-manifest section.
 
 Canonical `commitment_id` order:
 
@@ -2183,7 +2196,7 @@ Canonical digest identity rule:
   canonical order owned by this spec:
   - manifest-local claim order uses the canonical manifest order from §9.3,
   - `time_opening` group members use canonical manifest ordinal order inside the
-    fixed `(source_tag, domain_shape, point)` bucket,
+    fixed `(source, domain, point)` bucket,
   - row-indexed collections use increasing `row_index`;
 - point coordinates use the exact canonical coordinate encoding from §9.3;
 - field elements and vectors of field elements use the transcript's canonical
@@ -2233,18 +2246,18 @@ with normative meaning:
 The canonical `time_opening` grouping key used later in this section is:
 
 ```text
-(source_tag, domain_shape, point)
+(source, domain, point)
 ```
 
 where:
 
-- `source_tag` records whether the direct claim came from the kernel manifest or
+- `source` records whether the direct claim came from the kernel manifest or
   the root manifest;
-- `domain_shape` is the verifier-known evaluation-domain descriptor for the
+- `domain` is the verifier-known evaluation-domain descriptor for the
   referenced commitment family;
 - `point` is the exact opening point carried by the direct claim.
 - each accepted direct claim still carries its canonical manifest `ordinal`
-  within that `source_tag`, but that ordinal is an ordering key inside the
+  within that `source`, but that ordinal is an ordering key inside the
   group rather than part of the grouping key itself.
 
 `time_opening_summary` is an audit-only canonical ordered digest tree over these
@@ -2302,6 +2315,8 @@ Normative rules:
 The current `simple` kernel boundary does not export joint-opening reduction
 artifacts. A future extended boundary may reduce refined opening claims for
 efficiency, but any such reduction must remain explicit and transcript-bound.
+The concrete mode identifier for this boundary is
+`opening_reduction_mode_id = no_post_transcript_reduction_v1`.
 
 This section owns only claim-space aggregation. It does **not** by itself define
 or justify a witness-space fold lane. Reducing authenticated claims in
@@ -2313,36 +2328,35 @@ If a future proof instance chooses to export those optional claim-space
 summaries, the
 audit-facing reduction chain has four layers.
 
-First, one summary per direct manifest claim:
+First, one summary per accepted direct opening:
 
 ```text
 JointOpeningClaimSummary {
-    claim_digest,
-    refinement_digest,
-    joint_commitment,
-    joint_claim,
+    accepted_opening_digest,
+    reduced_commitment_ref,
+    reduced_claim,
     digest,
 }
 ```
 
-This reduces one direct opening claim across its local `polynomial_ids` using
-fresh claim-local mixers `eta_0, ..., eta_{m-1}` sampled from a dedicated
-post-transcript reduction domain after the accepted-opening inventory is fixed.
-That reduction domain is bound to:
+This reduces one accepted direct opening across its local `polynomial_ids`
+using fresh claim-local mixers `eta_0, ..., eta_{m-1}` sampled from a
+dedicated post-transcript reduction domain after the accepted-opening
+inventory is fixed. That reduction domain is bound to:
 
-- the referenced commitment family,
-- the point,
-- the exact `polynomial_ids`,
-- the `OpeningRefinement.digest`.
+- the exact `AcceptedDirectOpening.digest`,
+- the referenced commitment family from that accepted opening,
+- the point from that accepted opening,
+- the exact `polynomial_ids` from that accepted opening.
 
 Second, one summary per canonical `time_opening` group:
 
 ```text
 JointOpeningGroupSummary {
     group_digest,
-    claim_digests,
-    joint_commitment,
-    joint_claim,
+    accepted_opening_digests,
+    reduced_commitment_ref,
+    reduced_claim,
     digest,
 }
 ```
@@ -2353,7 +2367,7 @@ post-transcript reduction domain bound to:
 
 - the canonical reduction group digest,
 - the ordered claim-summary digests in that group, where the order is the
-  canonical manifest ordinal order within the fixed `(source_tag, domain_shape,
+  canonical manifest ordinal order within the fixed `(source, domain,
   point)` bucket.
 
 Third, one explicit joint-opening unification proof:
@@ -2527,8 +2541,7 @@ exported semantic row.
 ```text
 RowProjectionWitness_j = {
     row_index: j,
-    row_binding_claim_digest,
-    row_binding_refinement_digest,
+    row_binding_accepted_opening_digest,
     semantic_row_digest,
     semantic_view_digest,
 }
@@ -2536,10 +2549,9 @@ RowProjectionWitness_j = {
 
 where:
 
-- `row_binding_claim_digest` references the exact `C_lane @ j_bits` row-binding
-  opening used by Stage 3,
-- `row_binding_refinement_digest` references the unique `OpeningRefinement`
-  whose `claim_digest = row_binding_claim_digest`,
+- `row_binding_accepted_opening_digest` references the exact
+  `AcceptedDirectOpening` whose direct claim is the `C_lane @ j_bits`
+  row-binding opening used by Stage 3,
 - `semantic_row_digest` commits to the canonical 24-coordinate row `z_j`, with
   the verifier-known coordinate `ONE = 1` inserted at position 0,
 - `semantic_view_digest` commits to the derived row-local auxiliary view
@@ -2549,9 +2561,10 @@ where:
 Normative rules:
 
 - `RowProjectionWitness_j` must be tied to the same authenticated row-binding
-  claim that later feeds `PreparedStep_j`;
-- `RowProjectionWitness_j` must also point to the exact verified opening
-  refinement for that row-binding claim, not only to the direct claim digest;
+  accepted opening that later feeds `PreparedStep_j`;
+- the referenced accepted opening must package the exact row-binding direct
+  claim, the exact lower-layer opening witness for that claim, and the exact
+  refinement path tying those two together;
 - the semantic view may include:
   - the 24-coordinate semantic row itself,
   - verifier-known fixed coordinates such as `ONE = 1`,
@@ -2571,26 +2584,24 @@ Normative rules:
 #### 9.4.6 BridgeBindingSummary
 
 The bridge must also carry one explicit binding object per exported semantic
-row, connecting the same authenticated row-binding claim to the root-facing
-prepared step.
+row, connecting the same authenticated row-binding accepted opening to the
+root-facing prepared step.
 
 ```text
 BridgeBinding_j = {
     row_index: j,
-    row_binding_claim_digest,
-    row_binding_refinement_digest,
+    row_binding_accepted_opening_digest,
     prepared_step_digest,
 }
 ```
 
 Normative rules:
 
-- the bridge binding object must reference the same row-binding claim digest as
-  the row-projection witness for row `j`;
-- the bridge binding object must reference the same row-binding refinement
-  digest as the row-projection witness for row `j`, so the row-export leaf
-  points directly to the verified exact-opening path and not only to the direct
-  claim digest;
+- the bridge binding object must reference the same accepted row-binding opening
+  as the row-projection witness for row `j`;
+- the bridge binding object and `RowProjectionWitness_j` must therefore share
+  one exact `AcceptedDirectOpening`, not merely the same `row_index`, direct
+  claim digest, or refinement digest;
 - `prepared_step_digest` must commit to the exact `PreparedStep_j` object handed
   to the root prover;
 - the verifier must check that `PreparedStep_j` is the exact canonical
@@ -2620,6 +2631,7 @@ root0 commitment
   -> direct OpeningClaim
   -> ExactOpeningWitness
   -> OpeningRefinement
+  -> AcceptedDirectOpening
   -> RowProjectionWitness
   -> BridgeBinding_j
   -> PreparedStep_j
@@ -2633,7 +2645,7 @@ execution trace.
 Optional claim-space aggregation edges are:
 
 ```text
-OpeningRefinement
+AcceptedDirectOpening
   -> JointOpeningClaimSummary
   -> JointOpeningGroupSummary
   -> JointOpeningUnificationProof
@@ -2689,12 +2701,20 @@ Normative consequences:
   `OpeningRefinement`;
 - `RowProjectionWitness_j` and `BridgeBinding_j` are mandatory binding edges,
   but they are provenance leaves rather than new semantic theorems;
+- optional claim-space summaries may reference only accepted openings and their
+  canonical digests; they may not summarize raw unaccepted manifest claims;
 - `JointOpeningUnifiedClaimReduction` remains an optional claim-space reduction
   summary;
 - `FamilyLocalOpeningFoldCarrier` is an optional family-local carrier and is not
   by itself a proved CCS lane.
 
 Stage-obligation carrier map for the `simple` boundary:
+
+The theorem-facing owner map for the Lean surfaces named in this section is
+`Chip8KernelBoundaryParity`. That owner adds no new protocol logic; it is the
+thin owner-index tying this boundary text to the exact Lean interfaces that own
+accepted openings, transcript/public-input binding, Stage-2 temporal support,
+Stage-3 refinement, and bridge handoff.
 
 | Obligation | Exact carrier(s) on this boundary |
 | --- | --- |
@@ -2708,7 +2728,30 @@ Stage-obligation carrier map for the `simple` boundary:
 | Stage-3 continuity and boundary checks | `Stage3Proof.shift_proof`, `padded_continuity_check`, `continuity_refinement`, and `continuity_proof`, together with the accepted-opening paths for the current-row, `j0_bits`, and `j_last_bits` direct openings consumed by those checks |
 | Row binding for one exported row | The row's `RowBindingClaim` together with the accepted `C_lane @ j_bits` direct opening path named by that claim |
 | Bridge binding for one exported row | `BridgeBinding_j`, with verifier-side recomputation that the authenticated row is exactly the row encoded by `PreparedStep_j` |
-| Same-path row/bridge reuse | `RowProjectionWitness_j` and `BridgeBinding_j` must reference the same row-binding claim and the same accepted-opening path for that row |
+| Same-path row/bridge reuse | `RowProjectionWitness_j` and `BridgeBinding_j` must share one exact `AcceptedDirectOpening` for that row-binding claim |
+
+Manifest-to-theorem coverage matrix for the `simple` boundary:
+
+| Manifest item | Primary theorem owner(s) | Exact consumer on this boundary | Opening role | Bridge/root handoff |
+| --- | --- | --- | --- | --- |
+| `C_lane @ r_lookup` | `Stage1AuthenticatedBundle` | Stage-1 row/view and linkage scalars | accepted direct opening | no |
+| `C_fetch_ra @ (r_fetch_addr, r_lookup)` | `Stage1AuthenticatedBundle` | `Stage1ShoutProof.fetch` | committed address-family opening used by checked Shout claims | no |
+| `C_decode_ra @ (r_decode_addr, r_lookup)` | `Stage1AuthenticatedBundle` | `Stage1ShoutProof.decode` | committed address-family opening used by checked Shout claims | no |
+| `C_alu_ra @ (r_alu_addr, r_lookup)` | `Stage1AuthenticatedBundle` | `Stage1ShoutProof.alu` | committed address-family opening used by checked Shout claims | no |
+| `C_eq4_ra @ (r_eq4_addr, r_lookup)` | `Stage1AuthenticatedBundle` | `Stage1ShoutProof.eq4` | committed address-family opening used by checked Shout claims | no |
+| `C_decode_handoff @ r_lookup` | `Stage1AuthenticatedBundle` | `Stage1ShoutProof.decode_handoff_openings` | accepted direct opening plus Stage-1 handoff equalities | no |
+| `C_rom_table @ r_fetch_addr` | `Stage1AuthenticatedBundle` | `Stage1ChannelProof.table_opening_claims` for `fetch` | accepted committed public-table opening | no |
+| `C_decode_table @ r_decode_addr` | `Stage1AuthenticatedBundle` | `Stage1ChannelProof.table_opening_claims` for `decode` | accepted committed public-table opening | no |
+| `C_alu_table @ r_add8lo_addr` | `Stage1AuthenticatedBundle` | `Stage1ChannelProof.table_opening_claims` for `alu` | accepted committed public-table opening | no |
+| `C_eq4_table @ r_eq4_addr` | `Stage1AuthenticatedBundle` | `Stage1ChannelProof.table_opening_claims` for `eq4` | accepted committed public-table opening | no |
+| `C_lane @ r_twist_cycle` | `Stage2AuthenticatedBundle` | Stage-2 linkage scalars and lane-derived memory values | accepted direct opening | no |
+| `C_decode_handoff @ r_twist_cycle` | `Stage2AuthenticatedBundle` | Stage-2 decode-handoff linkage | accepted direct opening | no |
+| `C_reg @ (r_addr_reg, r_twist_cycle)` | `Stage2AuthenticatedBundle` | register read/write batching, `Val`-from-`Inc`, and address correctness | accepted committed Twist opening | no |
+| `C_ram @ (r_addr_ram, r_twist_cycle)` | `Stage2AuthenticatedBundle` | RAM read/write batching, `Val`-from-`Inc`, RAF support, and address correctness | accepted committed Twist opening | no |
+| `C_lane @ r_shift` | `Stage3AuthenticatedBundle` | lane-shift and padded continuity source opening | accepted direct opening | no |
+| `C_lane @ j0_bits` | `Stage3AuthenticatedBundle` | start-boundary bundle | accepted direct opening | no |
+| `C_lane @ j_last_bits` | `Stage3AuthenticatedBundle` | final-boundary bundle | accepted direct opening | no |
+| `C_lane @ j_bits` for each exported row `j` | `RowBound`, `RowProjectionWitness_j`, `BridgeBinding_j`, root handoff | per-row semantic extraction and prepared-step binding | one shared `AcceptedDirectOpening` per exported row | yes, via `PreparedStep_j` |
 
 ### 9.5 Rust-facing kernel boundary
 
@@ -2795,6 +2838,9 @@ Stage1ShoutProof {
 
 Normative Stage-1 table-auth mode for the `simple` kernel:
 
+- the concrete mode identifier for this boundary is
+  `table_auth_mode_id = committed_public_tables_v1`;
+
 - `table_opening_claims` contains only commitment-backed public-table openings.
 - for `fetch`, the table-auth surface is the exact `C_rom_table @ r_fetch_addr`
   opening;
@@ -2860,8 +2906,8 @@ TwistSessionEntry {
 where:
 
 - `cycle_index` is the active semantic row index `j`;
-- `reg_addr ∈ {0, ..., 16}` ranges over `V[0..15]` together with the
-  distinguished `I` slot at address `16`;
+- `reg_addr ∈ {0, ..., 17}` ranges over `V[0..15]`, the distinguished `I`
+  slot at address `16`, and the sink slot `⊥_reg = 17`;
 - `ram_addr ∈ {0, ..., 4096}` ranges over `RAM[0..4095]` together with the sink
   slot `⊥_ram = 4096`;
 - one session key names one logical timeline cell `(j, addr)` on one
@@ -2869,6 +2915,14 @@ where:
   unrelated claims;
 - if two Stage-2 roles touch the same logical cell on the same row, they must
   resolve to the same session key and therefore to the same registry entry.
+- sink-routed register roles are therefore not exempt from register-session
+  closure; they resolve through the same `RegisterSessionKey` space using
+  `reg_addr = 17`, and the sink semantics from §6.1 force the carried
+  read/write/`Val` consequence to remain the authenticated zero timeline.
+- the theorem-facing formal owner for this concrete register-side key surface is
+  `Chip8RegisterSessionBoundary`; later Stage-2 evidence and trace owners must
+  import that exact keying discipline rather than restating the address range in
+  free-form prose.
 
 Normative Stage-2 session-closure rule:
 
@@ -2969,6 +3023,20 @@ Normative Stage-3 refinement rule:
   correction bundle from §8.1b;
 - `ActivePrefixContinuityRefinement` is the theorem-facing bridge from that
   padded-domain check to the refined active-prefix continuity relation;
+- `row_binding_ref` inside `ActivePrefixContinuityRefinement` must reference the
+  exact accepted `C_lane @ bits_le(stepIdx)` row-binding opening for the same
+  semantic row whose current-row coordinates are identified by
+  `corrected_current_row_ref`; it is not a free-form provenance label and it is
+  not the last-active-row correction witness unless `stepIdx = N - 1`;
+- the authenticated last-active-row data needed to remove the padded suffix
+  lives in `excluded_tail_correction_bundle`, not in `row_binding_ref`;
+- `ActivePrefixContinuityRefinement` is a post-transcript theorem/provenance
+  object derived from already accepted openings and the padded check; it does
+  not sample challenges and it does not add new manifest entries;
+- the theorem-facing formal owner for this exact refinement object is
+  `Chip8Stage3Refinement`; later evidence/trace owners must consume that typed
+  refinement surface rather than silently collapsing the padded-domain check and
+  the current-row accepted opening into one unnamed helper object;
 - `ContinuityProof` is the active-prefix continuity object consumed later by the
   semantic `pc` bridge; it must refer to both the padded check and the
   refinement rather than silently identifying the raw padded-domain check with
@@ -3061,6 +3129,18 @@ Version-gating rule:
   function of the existing public boundary must be added to `KernelMetaPub` and
   therefore to `root0` under a new protocol-version identifier before that
   later version is conforming.
+
+Normative relation-shaping mode identifiers for this `simple` boundary:
+
+| Field | Allowed value on this boundary | Exact meaning |
+| --- | --- | --- |
+| `init_mode_id` | `authenticated_nonzero_init` | Stage-2 `Val` chains use authenticated initial register/RAM surfaces directly, as specified in §6.8 |
+| `lowering_convention_id` | `chip8_microstep_pre_post_v1` | the exact row-granular lowering and same-row visibility discipline from §3.4, including separate register/RAM timelines and `Fx55/Fx65` burst decomposition |
+| `table_auth_mode_id` | `committed_public_tables_v1` | fetch/decode/ALU/Eq4 table authentication is carried by the exact committed public-table openings listed under the Stage-1 table-auth rule; verifier-local evaluators are cross-checks only |
+| `opening_reduction_mode_id` | `no_post_transcript_reduction_v1` | the simple boundary exports no claim-space reduction summaries and no family-local fold carriers |
+
+These mode identifiers are not free-form debug labels. Under the current
+`protocol_version_id`, any other value is non-conforming.
 
 Canonical `meta_pub` absorption rule:
 
@@ -3496,7 +3576,7 @@ The exact Fiat-Shamir ordering for the 3-stage kernel:
      opening pair
    - if a future non-simple format re-enables claim-space reduction artifacts,
      derive the canonical `time_opening` groups by
-     `(source_tag, domain_shape, point)`,
+     `(source, domain, point)`,
      keeping canonical manifest ordinals only as the deterministic ordering key
      of claims inside each group
    - any such reduction artifacts remain post-transcript

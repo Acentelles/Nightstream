@@ -1,5 +1,9 @@
 # CHIP-8 Rust File Structure Plan
 
+This document is the CHIP-8-specific slice of the broader crate plan in
+[neo-fold-next-rust-structure-plan.md](./neo-fold-next-rust-structure-plan.md).
+It should not be read as the full crate owner map.
+
 ## Purpose
 
 This document records the target Rust file structure for the CHIP-8 kernel in
@@ -29,13 +33,21 @@ exported protocol surfaces.
 crates/neo-fold-next/src/chip8/
 ├── mod.rs
 ├── poly.rs
+├── layout.rs
+├── isa.rs
+├── ccs.rs
 ├── spec.rs
 ├── tables.rs
+├── execute.rs
+├── lower.rs
+├── builder.rs
 ├── trace.rs
 ├── stage1.rs
-├── stage2.rs
-├── stage2_reg.rs
-├── stage2_ram.rs
+├── stage2/
+│   ├── mod.rs
+│   ├── common.rs
+│   ├── reg.rs
+│   └── ram.rs
 ├── stage3.rs
 ├── kernel.rs
 └── kernel/
@@ -57,18 +69,30 @@ crates/neo-fold-next/src/chip8/
 
 ## Ownership rules
 
+### Transitional compatibility files
+
+| File | Owns | Does not own |
+|---|---|---|
+| `spec.rs` | temporary machine-layer compatibility re-exports | decode/layout/CCS ownership |
+| `trace.rs` | temporary runtime-builder compatibility re-exports | execution/lowering/build ownership |
+
 ### Top-level CHIP-8 files
 
 | File | Owns | Does not own |
 |---|---|---|
-| `spec.rs` | opcode decode, lane columns, constants, machine layout | proving logic |
+| `layout.rs` | lane columns, memory bounds, pad-row shape | opcode decode |
+| `isa.rs` | opcode/program/state/decode ownership | CCS construction |
+| `ccs.rs` | `Chip8VmSpec`, `CommitmentId`, CCS construction | execution |
 | `tables.rs` | ROM/decode/ALU/EQ4 tables | transcript or digest policy |
-| `trace.rs` | witness generation from CHIP-8 execution | proof packaging |
+| `execute.rs` | concrete CHIP-8 execution | proof-row lowering |
+| `lower.rs` | execution step -> semantic/kernel rows | `StepBuild` packaging |
+| `builder.rs` | row trace -> `StepBuild` packaging | execution semantics |
 | `poly.rs` | pure MLE / one-hot helpers | protocol policy |
 | `stage1.rs` | Stage 1 proving and verification | bundle/export logic |
-| `stage2.rs` | Stage 2 orchestration | all register and RAM internals inline |
-| `stage2_reg.rs` | register-side Twist logic | RAM-side logic |
-| `stage2_ram.rs` | RAM-side Twist logic | register-side logic |
+| `stage2/mod.rs` | Stage 2 orchestration and linkage batch | subsystem-local replay internals |
+| `stage2/common.rs` | shared Stage 2 math and address/oracle machinery | final Stage 2 linkage batch |
+| `stage2/reg.rs` | register-side Twist logic | RAM-side logic |
+| `stage2/ram.rs` | RAM-side Twist logic | register-side logic |
 | `stage3.rs` | Stage 3 proving and verification | release artifacts |
 | `kernel.rs` | simple-kernel orchestration and public entrypoints | large local type/helper bags |
 
@@ -108,9 +132,10 @@ The current CHIP-8 refactor should continue in this order:
 1. keep `kernel.rs` shrinking toward orchestration only,
 2. keep repeated commitment/opening wiring in one owned kernel object instead of
    re-spelling it several times,
-3. only split `stage_terminal.rs` if a stage-local ownership boundary becomes
+3. keep `spec.rs` and `trace.rs` thin while callers migrate onto the narrower owners,
+4. only split `stage_terminal.rs` if a stage-local ownership boundary becomes
    clearer than the current shared owner,
-4. only split `lane_commitment.rs` if the split preserves explicit family
+5. only split `lane_commitment.rs` if the split preserves explicit family
    meaning without introducing generic indirection.
 
 ## Done condition
