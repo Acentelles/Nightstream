@@ -1,0 +1,58 @@
+import Nightstream.Rv64IM.Execution.MultiplyOpcodeSemantics
+
+namespace Nightstream.Rv64IM
+
+namespace MultiplyOpcodeSemanticsInterface
+
+abbrev opcodeBound_of_multiplyOpcodeSemantics :=
+  @Nightstream.Rv64IM.opcodeBound_of_multiplyOpcodeSemantics
+abbrev flags_of_multiplyOpcodeSemantics :=
+  @Nightstream.Rv64IM.flags_of_multiplyOpcodeSemantics
+abbrev mul_flags_of_multiplyOpcodeSemantics :=
+  @Nightstream.Rv64IM.mul_flags_of_multiplyOpcodeSemantics
+abbrev mulh_flags_of_multiplyOpcodeSemantics :=
+  @Nightstream.Rv64IM.mulh_flags_of_multiplyOpcodeSemantics
+abbrev mulhu_flags_of_multiplyOpcodeSemantics :=
+  @Nightstream.Rv64IM.mulhu_flags_of_multiplyOpcodeSemantics
+abbrev mulhsu_flags_of_multiplyOpcodeSemantics :=
+  @Nightstream.Rv64IM.mulhsu_flags_of_multiplyOpcodeSemantics
+abbrev mulw_flags_of_multiplyOpcodeSemantics :=
+  @Nightstream.Rv64IM.mulw_flags_of_multiplyOpcodeSemantics
+abbrev x0WritePreserved_of_multiplyOpcodeSemantics :=
+  @Nightstream.Rv64IM.x0WritePreserved_of_multiplyOpcodeSemantics
+abbrev registerOperands_of_multiplyOpcodeSemantics :=
+  @Nightstream.Rv64IM.registerOperands_of_multiplyOpcodeSemantics
+abbrev activeWrite_of_multiplyOpcodeSemantics :=
+  @Nightstream.Rv64IM.activeWrite_of_multiplyOpcodeSemantics
+abbrev authenticatedWriteback_of_activeMultiplyOpcodeSemantics :=
+  @Nightstream.Rv64IM.authenticatedWriteback_of_activeMultiplyOpcodeSemantics
+abbrev routedWriteback_of_activeMultiplyOpcodeSemantics :=
+  @Nightstream.Rv64IM.routedWriteback_of_activeMultiplyOpcodeSemantics
+abbrev authenticatedRoutedWriteback_of_activeMultiplyOpcodeSemantics :=
+  @Nightstream.Rv64IM.authenticatedRoutedWriteback_of_activeMultiplyOpcodeSemantics
+abbrev encodedAluOut_of_activeMultiplyOpcodeSemantics :=
+  @Nightstream.Rv64IM.encodedAluOut_of_activeMultiplyOpcodeSemantics
+abbrev encodedAluResult_of_activeMultiplyOpcodeSemantics :=
+  @Nightstream.Rv64IM.encodedAluResult_of_activeMultiplyOpcodeSemantics
+abbrev authenticatedEncodedAluOut_of_activeMultiplyOpcodeSemantics :=
+  @Nightstream.Rv64IM.authenticatedEncodedAluOut_of_activeMultiplyOpcodeSemantics
+abbrev authenticatedEncodedAluResult_of_activeMultiplyOpcodeSemantics :=
+  @Nightstream.Rv64IM.authenticatedEncodedAluResult_of_activeMultiplyOpcodeSemantics
+abbrev mul_writeback_of_multiplyOpcodeSemantics :=
+  @Nightstream.Rv64IM.mul_writeback_of_multiplyOpcodeSemantics
+abbrev mulh_writeback_of_multiplyOpcodeSemantics :=
+  @Nightstream.Rv64IM.mulh_writeback_of_multiplyOpcodeSemantics
+abbrev mulhu_writeback_of_multiplyOpcodeSemantics :=
+  @Nightstream.Rv64IM.mulhu_writeback_of_multiplyOpcodeSemantics
+abbrev mulhsu_writeback_of_multiplyOpcodeSemantics :=
+  @Nightstream.Rv64IM.mulhsu_writeback_of_multiplyOpcodeSemantics
+abbrev mulw_writeback_of_multiplyOpcodeSemantics :=
+  @Nightstream.Rv64IM.mulw_writeback_of_multiplyOpcodeSemantics
+abbrev sequenceCorrect_of_multiplyOpcodeSemantics :=
+  @Nightstream.Rv64IM.sequenceCorrect_of_multiplyOpcodeSemantics
+abbrev sequenceDeterministic_of_multiplyOpcodeSemantics :=
+  @Nightstream.Rv64IM.sequenceDeterministic_of_multiplyOpcodeSemantics
+
+end MultiplyOpcodeSemanticsInterface
+
+end Nightstream.Rv64IM

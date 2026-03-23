@@ -1,0 +1,24 @@
+import Nightstream.Rv64IM.Execution.SignedDivRemOpcodeSemantics
+
+namespace Nightstream.Rv64IM
+
+namespace SignedDivRemOpcodeSemanticsInterface
+
+abbrev opcodeBound_of_signedDivRemOpcodeSemantics :=
+  @Nightstream.Rv64IM.opcodeBound_of_signedDivRemOpcodeSemantics
+abbrev div_flags_of_signedDivRemOpcodeSemantics :=
+  @Nightstream.Rv64IM.div_flags_of_signedDivRemOpcodeSemantics
+abbrev rem_flags_of_signedDivRemOpcodeSemantics :=
+  @Nightstream.Rv64IM.rem_flags_of_signedDivRemOpcodeSemantics
+abbrev divw_flags_of_signedDivRemOpcodeSemantics :=
+  @Nightstream.Rv64IM.divw_flags_of_signedDivRemOpcodeSemantics
+abbrev remw_flags_of_signedDivRemOpcodeSemantics :=
+  @Nightstream.Rv64IM.remw_flags_of_signedDivRemOpcodeSemantics
+abbrev spec_of_signedDivOpcodeSemantics :=
+  @Nightstream.Rv64IM.spec_of_signedDivOpcodeSemantics
+abbrev spec_of_signedRemOpcodeSemantics :=
+  @Nightstream.Rv64IM.spec_of_signedRemOpcodeSemantics
+
+end SignedDivRemOpcodeSemanticsInterface
+
+end Nightstream.Rv64IM

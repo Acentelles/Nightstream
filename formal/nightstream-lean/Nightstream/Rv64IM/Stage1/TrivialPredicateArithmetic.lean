@@ -48,4 +48,14 @@ theorem arithmetic_from_lowByte_of_naturalAlignment
   intro hNatural
   exact (naturalAlignment_iff_arithmetic_from_lowByte w addr).1 hNatural
 
+def FourByteTargetAlignment (addr : Nat) : Prop :=
+  NaturalAlignment .word addr
+
+theorem fourByteTargetAlignment_iff_lowByte
+  (addr lowByte : Nat)
+  (hLowByte : lowByte = addr % 256) :
+  FourByteTargetAlignment addr ↔ ArithmeticAlignmentFromLowByte .word lowByte := by
+  simpa [FourByteTargetAlignment] using
+    naturalAlignment_iff_of_lowByte_eq_mod .word addr lowByte hLowByte
+
 end Nightstream.Rv64IM

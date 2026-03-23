@@ -1,0 +1,16 @@
+import Nightstream.Rv64IM.Execution.ExactNarrowMemoryPayloadSemantics
+
+namespace Nightstream.Rv64IM
+
+namespace ExactNarrowMemoryPayloadSemanticsInterface
+
+abbrev ExactNarrowMemoryPayloadSemantics :=
+  @Nightstream.Rv64IM.ExactNarrowMemoryPayloadSemantics
+abbrev exactNarrowMemoryPayloadSemantics_of_exactOpcodeFamilySemantics :=
+  @Nightstream.Rv64IM.exactNarrowMemoryPayloadSemantics_of_exactOpcodeFamilySemantics
+abbrev exactNarrowMemoryPayloadSemantics_of_stepComposition :=
+  @Nightstream.Rv64IM.exactNarrowMemoryPayloadSemantics_of_stepComposition
+
+end ExactNarrowMemoryPayloadSemanticsInterface
+
+end Nightstream.Rv64IM

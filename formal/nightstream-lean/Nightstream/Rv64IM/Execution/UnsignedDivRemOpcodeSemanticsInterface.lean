@@ -1,0 +1,26 @@
+import Nightstream.Rv64IM.Execution.UnsignedDivRemOpcodeSemantics
+
+namespace Nightstream.Rv64IM
+
+namespace UnsignedDivRemOpcodeSemanticsInterface
+
+abbrev opcodeBound_of_unsignedDivRemOpcodeSemantics :=
+  @Nightstream.Rv64IM.opcodeBound_of_unsignedDivRemOpcodeSemantics
+abbrev divu_flags_of_unsignedDivRemOpcodeSemantics :=
+  @Nightstream.Rv64IM.divu_flags_of_unsignedDivRemOpcodeSemantics
+abbrev remu_flags_of_unsignedDivRemOpcodeSemantics :=
+  @Nightstream.Rv64IM.remu_flags_of_unsignedDivRemOpcodeSemantics
+abbrev divuw_flags_of_unsignedDivRemOpcodeSemantics :=
+  @Nightstream.Rv64IM.divuw_flags_of_unsignedDivRemOpcodeSemantics
+abbrev remuw_flags_of_unsignedDivRemOpcodeSemantics :=
+  @Nightstream.Rv64IM.remuw_flags_of_unsignedDivRemOpcodeSemantics
+abbrev spec_of_unsignedDivuOpcodeSemantics :=
+  @Nightstream.Rv64IM.spec_of_unsignedDivuOpcodeSemantics
+abbrev spec_of_unsignedRemuOpcodeSemantics :=
+  @Nightstream.Rv64IM.spec_of_unsignedRemuOpcodeSemantics
+abbrev deterministic_of_unsignedDivRemOpcodeSemantics :=
+  @Nightstream.Rv64IM.deterministic_of_unsignedDivRemOpcodeSemantics
+
+end UnsignedDivRemOpcodeSemanticsInterface
+
+end Nightstream.Rv64IM

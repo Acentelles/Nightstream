@@ -1,0 +1,40 @@
+import Nightstream.Rv64IM.Execution.SignedDivRemLoweringSemantics
+
+namespace Nightstream.Rv64IM
+
+namespace SignedDivRemLoweringSemanticsInterface
+
+abbrev fetchDecodeBound_of_signedDivRemLoweringSemantics :=
+  @Nightstream.Rv64IM.fetchDecodeBound_of_signedDivRemLoweringSemantics
+abbrev decodedRow_valid_of_signedDivRemLoweringSemantics :=
+  @Nightstream.Rv64IM.decodedRow_valid_of_signedDivRemLoweringSemantics
+abbrev decodeHandoffBound_of_signedDivRemLoweringSemantics :=
+  @Nightstream.Rv64IM.decodeHandoffBound_of_signedDivRemLoweringSemantics
+abbrev x0WritePreserved_of_signedDivRemLoweringSemantics :=
+  @Nightstream.Rv64IM.x0WritePreserved_of_signedDivRemLoweringSemantics
+abbrev nonFinalRdTarget_of_signedDivRemLoweringSemantics :=
+  @Nightstream.Rv64IM.nonFinalRdTarget_of_signedDivRemLoweringSemantics
+abbrev frame_row_eq_at_index_of_signedDivRemLoweringSemantics :=
+  @Nightstream.Rv64IM.frame_row_eq_at_index_of_signedDivRemLoweringSemantics
+abbrev adjacentStates_of_signedDivRemLoweringSemantics :=
+  @Nightstream.Rv64IM.adjacentStates_of_signedDivRemLoweringSemantics
+abbrev preparedStep_matches_row_of_signedDivRemLoweringSemantics :=
+  @Nightstream.Rv64IM.preparedStep_matches_row_of_signedDivRemLoweringSemantics
+abbrev successor_matches_rows_of_signedDivRemLoweringSemantics :=
+  @Nightstream.Rv64IM.successor_matches_rows_of_signedDivRemLoweringSemantics
+abbrev row_has_opcodeClass_at_index_of_signedDivRemLoweringSemantics :=
+  @Nightstream.Rv64IM.row_has_opcodeClass_at_index_of_signedDivRemLoweringSemantics
+abbrev changeDivisorCorrect_of_signedDivRemLoweringSemantics :=
+  @Nightstream.Rv64IM.changeDivisorCorrect_of_signedDivRemLoweringSemantics
+abbrev remainderFromDividendSign_of_signedDivRemLoweringSemantics :=
+  @Nightstream.Rv64IM.remainderFromDividendSign_of_signedDivRemLoweringSemantics
+abbrev signedDivRemSpec_of_signedDivRemLoweringSemantics :=
+  @Nightstream.Rv64IM.signedDivRemSpec_of_signedDivRemLoweringSemantics
+abbrev sequenceCorrect_of_signedDivRemLoweringSemantics :=
+  @Nightstream.Rv64IM.sequenceCorrect_of_signedDivRemLoweringSemantics
+abbrev sequenceDeterministic_of_signedDivRemLoweringSemantics :=
+  @Nightstream.Rv64IM.sequenceDeterministic_of_signedDivRemLoweringSemantics
+
+end SignedDivRemLoweringSemanticsInterface
+
+end Nightstream.Rv64IM

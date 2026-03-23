@@ -1,0 +1,34 @@
+import Nightstream.Rv64IM.Execution.MultiplyLoweringSemantics
+
+namespace Nightstream.Rv64IM
+
+namespace MultiplyLoweringSemanticsInterface
+
+abbrev fetchDecodeBound_of_multiplyLoweringSemantics :=
+  @Nightstream.Rv64IM.fetchDecodeBound_of_multiplyLoweringSemantics
+abbrev decodedRow_valid_of_multiplyLoweringSemantics :=
+  @Nightstream.Rv64IM.decodedRow_valid_of_multiplyLoweringSemantics
+abbrev decodeHandoffBound_of_multiplyLoweringSemantics :=
+  @Nightstream.Rv64IM.decodeHandoffBound_of_multiplyLoweringSemantics
+abbrev x0WritePreserved_of_multiplyLoweringSemantics :=
+  @Nightstream.Rv64IM.x0WritePreserved_of_multiplyLoweringSemantics
+abbrev nonFinalRdTarget_of_multiplyLoweringSemantics :=
+  @Nightstream.Rv64IM.nonFinalRdTarget_of_multiplyLoweringSemantics
+abbrev frame_row_eq_at_index_of_multiplyLoweringSemantics :=
+  @Nightstream.Rv64IM.frame_row_eq_at_index_of_multiplyLoweringSemantics
+abbrev adjacentStates_of_multiplyLoweringSemantics :=
+  @Nightstream.Rv64IM.adjacentStates_of_multiplyLoweringSemantics
+abbrev preparedStep_matches_row_of_multiplyLoweringSemantics :=
+  @Nightstream.Rv64IM.preparedStep_matches_row_of_multiplyLoweringSemantics
+abbrev successor_matches_rows_of_multiplyLoweringSemantics :=
+  @Nightstream.Rv64IM.successor_matches_rows_of_multiplyLoweringSemantics
+abbrev row_has_opcodeClass_at_index_of_multiplyLoweringSemantics :=
+  @Nightstream.Rv64IM.row_has_opcodeClass_at_index_of_multiplyLoweringSemantics
+abbrev sequenceCorrect_of_multiplyLoweringSemantics :=
+  @Nightstream.Rv64IM.sequenceCorrect_of_multiplyLoweringSemantics
+abbrev sequenceDeterministic_of_multiplyLoweringSemantics :=
+  @Nightstream.Rv64IM.sequenceDeterministic_of_multiplyLoweringSemantics
+
+end MultiplyLoweringSemanticsInterface
+
+end Nightstream.Rv64IM
