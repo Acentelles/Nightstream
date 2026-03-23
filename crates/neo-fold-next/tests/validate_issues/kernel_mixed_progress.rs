@@ -65,3 +65,42 @@ fn simple_kernel_accepts_mixed_ldimm_addimm_trace() {
     assert_eq!(proved_output.prepared_steps.len(), 2);
     assert_eq!(verified_output.prepared_steps.len(), 2);
 }
+
+#[test]
+fn simple_kernel_accepts_padded_mixed_ldimm_addimm_trace() {
+    let program = Chip8Program::from_opcodes(&[
+        0x6001, // LD V0, 0x01
+        0x6102, // LD V1, 0x02
+        0x6203, // LD V2, 0x03
+        0x6304, // LD V3, 0x04
+        0x7001, // ADD V0, 0x01
+        0x7102, // ADD V1, 0x02
+        0x7203, // ADD V2, 0x03
+        0x7304, // ADD V3, 0x04
+        0x6405, // LD V4, 0x05
+        0x7406, // ADD V4, 0x06
+    ]);
+    let initial_state = Chip8State::with_program(&program).expect("initial state");
+    let input = build_kernel_input(
+        &program,
+        &initial_state,
+        10,
+        b"neo.fold.next/tests/mixed_ldimm_addimm_padded",
+    );
+    let params = chip8_root_params();
+    let log = make_ajtai_module(&params);
+
+    let mut prove_transcript = Poseidon2Transcript::new(b"neo.fold.next/tests/mixed_ldimm_addimm_padded");
+    let (proved_output, proof) =
+        prove_simple_kernel(&input, &params, &log, &mut prove_transcript).expect("simple kernel proof");
+
+    let verifier_input = verifier_input_from_public(&input.public);
+    let mut verify_transcript = Poseidon2Transcript::new(b"neo.fold.next/tests/mixed_ldimm_addimm_padded");
+    let verified_output =
+        verify_simple_kernel(&verifier_input, &proof, &params, &log, &mut verify_transcript).expect("verify");
+
+    assert_eq!(proof.meta_pub.semantic_rows, 10);
+    assert_eq!(proof.meta_pub.padded_trace_length, 16);
+    assert_eq!(proved_output.prepared_steps.len(), 10);
+    assert_eq!(verified_output.prepared_steps.len(), 10);
+}

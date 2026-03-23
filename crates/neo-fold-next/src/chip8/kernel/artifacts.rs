@@ -14,6 +14,7 @@ use crate::chip8::spec::{
     COL_IS_MEMOP, COL_I_NEXT, COL_I_REG, COL_MEM_VALUE, COL_PC, COL_PC_NEXT, COL_RAM_ADDR, COL_REG_X, COL_REG_X_NEXT,
     COL_REG_Y, COL_X_IDX, COL_Y_IDX, WITNESS_WIDTH,
 };
+use crate::chip8::stage3::RowBindingClaim;
 use crate::chip8::tables::{
     build_rom_table, decode_to_output, flatten_alu_key, flatten_eq4_key, OperandSelector, RAM_SINK_ADDR, REG_SINK_ADDR,
 };
@@ -23,7 +24,7 @@ use super::evidence::{build_kernel_stage3_digest_surfaces_from_frames, KernelSta
 #[cfg(feature = "chip8-audit")]
 use super::{build_kernel_execution_digest, verify_kernel_execution_digest, KernelCommitments};
 use super::{
-    reconstruct_trace_rows_and_aux, CommitmentId, KernelExecutionDigest, KernelMetaPub, KernelStepAux, RowBindingClaim,
+    reconstruct_trace_rows_and_aux, CommitmentId, KernelExecutionDigest, KernelMetaPub, KernelStepAux,
     SimpleKernelError, SimpleKernelOutput, SimpleKernelProof, SimpleKernelPublicInput,
 };
 
@@ -502,6 +503,8 @@ fn reconstruct_semantic_rows_and_aux(
         proof.meta_pub.cycle_bits,
         pad_pc_word,
         &rom_table,
+        &public.initial_registers,
+        public.initial_i,
         &public.initial_ram,
     )?;
     Ok((

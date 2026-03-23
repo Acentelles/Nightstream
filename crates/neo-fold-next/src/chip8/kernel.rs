@@ -189,6 +189,8 @@ pub fn prove_simple_kernel(
     let (trace_rows, aux_data) = pad_semantic_witness(
         &input.witness.semantic_trace_rows,
         &input.witness.semantic_aux_data,
+        &input.public.initial_registers,
+        input.public.initial_i,
         program_context.pad_pc_word,
     )?;
     let padded_trace_length = trace_rows.len();
@@ -452,6 +454,8 @@ pub fn verify_simple_kernel(
         cycle_bits,
         program_context.pad_pc_word,
         &program_context.rom_table,
+        &input.public.initial_registers,
+        input.public.initial_i,
         &input.public.initial_ram,
     )?;
     if trace_rows[0][COL_PC] != F::from_u64(input.public.initial_pc_word as u64) {

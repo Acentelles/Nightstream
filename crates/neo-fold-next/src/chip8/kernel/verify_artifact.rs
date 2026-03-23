@@ -10,17 +10,19 @@ use crate::chip8::spec::{
     COL_WRITES_NNN_TO_I, COL_X_IDX, COL_Y_IDX, WITNESS_WIDTH,
 };
 use crate::chip8::tables::{
-    decode_to_output, flatten_alu_key, flatten_eq4_key, LookupKind, OperandSelector, RAM_SINK_ADDR, REG_SINK_ADDR,
+    decode_to_output, flatten_alu_key, flatten_eq4_key, LookupKind, OperandSelector, ADDR_REG_BITS, RAM_SINK_ADDR,
+    REG_SINK_ADDR,
+};
+use crate::chip8::{
+    stage1::{DECODE_HANDOFF_POLY_IDS, STAGE1_LANE_OPEN_COLS},
+    stage2::{RAM_TWIST_POLY_IDS, REG_TWIST_POLY_IDS, STAGE2_LANE_OPEN_COLS},
+    stage3::{RowBindingClaim, STAGE3_FINAL_BOUNDARY_COLS, STAGE3_SHIFT_OPEN_COLS, STAGE3_START_BOUNDARY_COLS},
 };
 
 use super::artifacts::build_semantic_row_from_row_binding;
 use super::openings::{bits_point, lane_poly_ids, mle_eval_vec, open_onehot_at_point_be};
 use super::verify_common::{expect_equal_k, expect_equal_k_slice, find_manifest_claim};
-use super::{
-    normalize_opening_pairs, KernelOpeningManifest, KernelStepAux, RowBindingClaim, SimpleKernelError,
-    SimpleKernelProof, DECODE_HANDOFF_POLY_IDS, RAM_TWIST_POLY_IDS, REG_TWIST_POLY_IDS, STAGE1_LANE_OPEN_COLS,
-    STAGE2_LANE_OPEN_COLS, STAGE3_FINAL_BOUNDARY_COLS, STAGE3_SHIFT_OPEN_COLS, STAGE3_START_BOUNDARY_COLS,
-};
+use super::{normalize_opening_pairs, KernelOpeningManifest, KernelStepAux, SimpleKernelError, SimpleKernelProof};
 
 pub(crate) fn build_pad_aux(pad_pc_word: u16) -> KernelStepAux {
     KernelStepAux {
@@ -42,9 +44,43 @@ pub(crate) fn build_pad_aux(pad_pc_word: u16) -> KernelStepAux {
     }
 }
 
+fn final_register_domain(
+    initial_registers: &[u8; 16],
+    initial_i: u16,
+    aux: &[KernelStepAux],
+) -> Result<Vec<F>, SimpleKernelError> {
+    let mut state = vec![F::ZERO; 1usize << ADDR_REG_BITS];
+    for (idx, &value) in initial_registers.iter().enumerate() {
+        state[idx] = F::from_u64(value as u64);
+    }
+    state[16] = F::from_u64(initial_i as u64);
+    for (row_index, step) in aux.iter().enumerate() {
+        if step.reg_wa_addr >= state.len() {
+            return Err(SimpleKernelError::InvalidWitness(format!(
+                "row {row_index} reg_wa_addr {} escapes register domain {}",
+                step.reg_wa_addr,
+                state.len()
+            )));
+        }
+        state[step.reg_wa_addr] += step.reg_inc;
+    }
+    Ok(state)
+}
+
+fn build_kernel_pad_row(pad_pc_word: u16, final_reg_state: &[F]) -> [F; WITNESS_WIDTH] {
+    let mut row = build_pad_row(pad_pc_word);
+    row[COL_REG_X] = final_reg_state[0];
+    row[COL_REG_X_NEXT] = final_reg_state[0];
+    row[COL_I_REG] = final_reg_state[16];
+    row[COL_I_NEXT] = final_reg_state[16];
+    row
+}
+
 pub(crate) fn pad_semantic_witness(
     semantic_trace_rows: &[[F; WITNESS_WIDTH]],
     semantic_aux_data: &[KernelStepAux],
+    initial_registers: &[u8; 16],
+    initial_i: u16,
     pad_pc_word: u16,
 ) -> Result<(Vec<[F; WITNESS_WIDTH]>, Vec<KernelStepAux>), SimpleKernelError> {
     if semantic_trace_rows.is_empty() {
@@ -63,7 +99,8 @@ pub(crate) fn pad_semantic_witness(
     let padded_len = semantic_trace_rows.len().next_power_of_two();
     let mut trace_rows = semantic_trace_rows.to_vec();
     let mut aux_data = semantic_aux_data.to_vec();
-    let pad_row = build_pad_row(pad_pc_word);
+    let final_reg_state = final_register_domain(initial_registers, initial_i, semantic_aux_data)?;
+    let pad_row = build_kernel_pad_row(pad_pc_word, &final_reg_state);
     let pad_aux = build_pad_aux(pad_pc_word);
 
     while trace_rows.len() < padded_len {
@@ -81,6 +118,8 @@ pub(crate) fn reconstruct_trace_rows_and_aux(
     cycle_bits: usize,
     pad_pc_word: u16,
     rom_table: &[F],
+    initial_registers: &[u8; 16],
+    initial_i: u16,
     initial_ram: &[u8],
 ) -> Result<(Vec<[F; WITNESS_WIDTH]>, Vec<KernelStepAux>), SimpleKernelError> {
     if row_bindings.len() != semantic_rows {
@@ -102,11 +141,12 @@ pub(crate) fn reconstruct_trace_rows_and_aux(
         .map(|row_binding| reconstruct_opened_row(row_binding, cycle_bits))
         .collect::<Result<_, _>>()?;
     let semantic_aux = derive_semantic_aux(&semantic_trace_rows, rom_table, initial_ram)?;
+    let final_reg_state = final_register_domain(initial_registers, initial_i, &semantic_aux)?;
 
     let mut trace_rows = semantic_trace_rows;
     let mut aux = semantic_aux;
     while trace_rows.len() < padded_trace_length {
-        trace_rows.push(build_pad_row(pad_pc_word));
+        trace_rows.push(build_kernel_pad_row(pad_pc_word, &final_reg_state));
         aux.push(build_pad_aux(pad_pc_word));
     }
     Ok((trace_rows, aux))
