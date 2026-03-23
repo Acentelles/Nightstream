@@ -86,8 +86,19 @@ def absorbElem (core : Poseidon2Width8Core) (cursor : Cursor) (x : FieldElem) : 
     }
 
 def absorbFields (core : Poseidon2Width8Core) : Cursor → List FieldElem → Cursor
-  | cursor, [] => cursor
-  | cursor, x :: xs => absorbFields core (absorbElem core cursor x) xs
+  | cursor, [] =>
+      if cursor.absorbed = rate then
+        permuteCursor core cursor
+      else
+        cursor
+  | cursor, x :: xs =>
+      let cursor' := absorbElem core cursor x
+      let cursor'' :=
+        if cursor'.absorbed = rate then
+          permuteCursor core cursor'
+        else
+          cursor'
+      absorbFields core cursor'' xs
 
 def appendMessageCursor
     (core : Poseidon2Width8Core)

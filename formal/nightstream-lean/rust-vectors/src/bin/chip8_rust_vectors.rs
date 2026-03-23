@@ -21,10 +21,10 @@ use neo_fold_next::chip8::kernel::{
 use neo_fold_next::chip8::stage1;
 use neo_fold_next::chip8::stage2;
 use neo_fold_next::chip8::stage3;
-use neo_fold_next::chip8::spec::build_pad_row;
+use neo_fold_next::chip8::spec::{build_pad_row, COL_I_NEXT, COL_I_REG, COL_REG_X, COL_REG_X_NEXT, WITNESS_WIDTH};
 use neo_fold_next::chip8::tables::{
     build_alu_table, build_decode_table, build_eq4_table, build_rom_table, flatten_alu_key, flatten_eq4_key,
-    LookupKind, RAM_SINK_ADDR, REG_SINK_ADDR,
+    LookupKind, ADDR_REG_BITS, RAM_SINK_ADDR, REG_SINK_ADDR,
 };
 use neo_fold_next::chip8::trace::Chip8TraceBuilder;
 use neo_fold_next::chip8::{Chip8Program, Chip8State, CHIP8_PROGRAM_START};
@@ -309,6 +309,24 @@ fn chip8_subset_fixtures() -> Vec<KernelFixture> {
             b"chip8-ldimm-skipeq-mix-v1",
             |_| {},
         ),
+        make_fixture(
+            "mixed_ldimm_addimm_10",
+            &[
+                0x6001, // LD V0, 0x01
+                0x6102, // LD V1, 0x02
+                0x6203, // LD V2, 0x03
+                0x6304, // LD V3, 0x04
+                0x7001, // ADD V0, 0x01
+                0x7102, // ADD V1, 0x02
+                0x7203, // ADD V2, 0x03
+                0x7304, // ADD V3, 0x04
+                0x6405, // LD V4, 0x05
+                0x7406, // ADD V4, 0x06
+            ],
+            10,
+            b"chip8-mixed-ldimm-addimm-10-v1",
+            |_| {},
+        ),
     ]
 }
 
@@ -395,12 +413,45 @@ fn build_pad_aux(pad_pc_word: u16) -> KernelStepAux {
     }
 }
 
+fn final_register_domain(
+    initial_registers: &[u8; 16],
+    initial_i: u16,
+    aux: &[KernelStepAux],
+) -> Vec<F> {
+    let mut state = vec![F::ZERO; 1usize << ADDR_REG_BITS];
+    for (idx, &value) in initial_registers.iter().enumerate() {
+        state[idx] = F::from_u64(value as u64);
+    }
+    state[16] = F::from_u64(initial_i as u64);
+    for step in aux {
+        assert!(
+            step.reg_wa_addr < state.len(),
+            "reg_wa_addr {} escapes register domain {}",
+            step.reg_wa_addr,
+            state.len()
+        );
+        state[step.reg_wa_addr] += step.reg_inc;
+    }
+    state
+}
+
+fn build_kernel_pad_row(pad_pc_word: u16, final_reg_state: &[F]) -> [F; WITNESS_WIDTH] {
+    let mut row = build_pad_row(pad_pc_word);
+    row[COL_REG_X] = final_reg_state[0];
+    row[COL_REG_X_NEXT] = final_reg_state[0];
+    row[COL_I_REG] = final_reg_state[16];
+    row[COL_I_NEXT] = final_reg_state[16];
+    row
+}
+
 fn pad_semantic_witness(
-    semantic_trace_rows: &[[F; 24]],
+    semantic_trace_rows: &[[F; WITNESS_WIDTH]],
     semantic_aux_data: &[KernelStepAux],
+    initial_registers: &[u8; 16],
+    initial_i: u16,
     pad_pc_word: u16,
     padded_len: usize,
-) -> (Vec<[F; 24]>, Vec<KernelStepAux>) {
+) -> (Vec<[F; WITNESS_WIDTH]>, Vec<KernelStepAux>) {
     assert_eq!(semantic_trace_rows.len(), semantic_aux_data.len(), "trace/aux mismatch");
     assert!(!semantic_trace_rows.is_empty(), "semantic trace must be non-empty");
     assert!(padded_len.is_power_of_two(), "padded length must be a power of two");
@@ -411,7 +462,8 @@ fn pad_semantic_witness(
         padded_len
     );
 
-    let pad_row = build_pad_row(pad_pc_word);
+    let final_reg_state = final_register_domain(initial_registers, initial_i, semantic_aux_data);
+    let pad_row = build_kernel_pad_row(pad_pc_word, &final_reg_state);
     let pad_aux = build_pad_aux(pad_pc_word);
     let mut trace_rows = semantic_trace_rows.to_vec();
     let mut aux_data = semantic_aux_data.to_vec();
@@ -442,6 +494,8 @@ fn build_case(fixture: &KernelFixture) -> TranscriptVectorCase {
     let (trace_rows, aux_data) = pad_semantic_witness(
         &input.witness.semantic_trace_rows,
         &input.witness.semantic_aux_data,
+        &input.public.initial_registers,
+        input.public.initial_i,
         pad_pc_word,
         proof.meta_pub.padded_trace_length,
     );
@@ -1558,12 +1612,7 @@ fn main() {
     let transcript_cases: Vec<_> = fixtures.iter().map(build_case).collect();
     let artifact_fixtures: Vec<_> = fixtures
         .iter()
-        .filter(|fixture| {
-            matches!(
-                fixture.name,
-                "jump_rows_2_seed_empty" | "jump_rows_3_seed_nonempty"
-            )
-        })
+        .filter(|fixture| matches!(fixture.name, "jump_rows_2_seed_empty" | "jump_rows_3_seed_nonempty"))
         .collect();
     let bundle_cases: Vec<_> = artifact_fixtures.iter().map(|fixture| build_bundle_case(fixture)).collect();
     let release_artifact_cases: Vec<_> = artifact_fixtures
