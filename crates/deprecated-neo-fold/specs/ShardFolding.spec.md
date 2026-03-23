@@ -10,8 +10,8 @@
 
 - **Layer**: paper-core folding integration point
 - **Direct paper theorem owner?** Yes, for the Section 7 folding core. Memory-side, instruction-lookup, and time-opening integration plus Rust-only strengthenings are additional layers composed here.
-- **Consumes lower-layer semantics from**: [MemorySidecar.spec.md](crates/neo-fold/specs/MemorySidecar.spec.md), [InstructionLookup.spec.md](crates/neo-fold/specs/InstructionLookup.spec.md), [TimeOpening.spec.md](crates/neo-fold/specs/TimeOpening.spec.md), lower CCS/CE semantics from `neo-ccs`
-- **Exports semantics to**: [Session.spec.md](crates/neo-fold/specs/Session.spec.md), [Finalize.spec.md](crates/neo-fold/specs/Finalize.spec.md), Rust refinement/export tooling
+- **Consumes lower-layer semantics from**: [MemorySidecar.spec.md](crates/deprecated-neo-fold/specs/MemorySidecar.spec.md), [InstructionLookup.spec.md](crates/deprecated-neo-fold/specs/InstructionLookup.spec.md), [TimeOpening.spec.md](crates/deprecated-neo-fold/specs/TimeOpening.spec.md), lower CCS/CE semantics from `neo-ccs`
+- **Exports semantics to**: [Session.spec.md](crates/deprecated-neo-fold/specs/Session.spec.md), [Finalize.spec.md](crates/deprecated-neo-fold/specs/Finalize.spec.md), Rust refinement/export tooling
 - **Erasure rule**: erasing step linking, output binding, and other Rust-only strengthening metadata must leave the same lower accepted shard artifact and the same projected Section 7 obligation surface.
 
 ## Target Formulas (Paper -> Rust)
@@ -38,7 +38,7 @@
 
 ## Context Anchors
 
-- `crates/neo-fold/specs/Architecture.spec.md`
+- `crates/deprecated-neo-fold/specs/Architecture.spec.md`
 - `docs/twist-and-shout-paper/4_the_shout_piop.md`
 - `docs/twist-and-shout-paper/5_the_twist_piop.md`
 - `docs/architecture/how-superneo-works.md`
@@ -93,7 +93,7 @@
 
 ### Proof-data boundary consumed by sessions and exporters
 
-This spec depends on [ShardProofTypes.spec.md](crates/neo-fold/specs/ShardProofTypes.spec.md), especially:
+This spec depends on [ShardProofTypes.spec.md](crates/deprecated-neo-fold/specs/ShardProofTypes.spec.md), especially:
 - `StepProof`
 - `RlcDecProof`
 - `ShardProof`

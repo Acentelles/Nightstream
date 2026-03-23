@@ -25,7 +25,7 @@ neo-ajtai = { path = "../neo-ajtai" }
 neo-ccs = { path = "../neo-ccs" }
 neo-params = { path = "../neo-params" }
 neo-reductions = { path = "../neo-reductions" }
-neo-fold = { path = "../neo-fold" }
+neo-fold = { path = "../deprecated-neo-fold" }
 neo-transcript = { path = "../neo-transcript" }
 
 # Spartan2 and circuit dependencies

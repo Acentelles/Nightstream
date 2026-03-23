@@ -7,7 +7,7 @@ members = [
   "crates/neo-ajtai",
   "crates/neo-ccs",
   "crates/neo-reductions",
-  "crates/neo-fold",
+  "crates/deprecated-neo-fold",
   "crates/neo-fold-next",
   "crates/neo-fold-ffi",
   "crates/neo-fold-jni",

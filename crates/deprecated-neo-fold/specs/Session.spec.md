@@ -10,7 +10,7 @@
 
 - **Layer**: orchestration
 - **Direct paper theorem owner?** No. This module is a façade over lower theorem-owning layers.
-- **Consumes lower-layer semantics from**: [ShardFolding.spec.md](crates/neo-fold/specs/ShardFolding.spec.md), [InstructionLookup.spec.md](crates/neo-fold/specs/InstructionLookup.spec.md), [MemorySidecar.spec.md](crates/neo-fold/specs/MemorySidecar.spec.md), [TimeOpening.spec.md](crates/neo-fold/specs/TimeOpening.spec.md)
+- **Consumes lower-layer semantics from**: [ShardFolding.spec.md](crates/deprecated-neo-fold/specs/ShardFolding.spec.md), [InstructionLookup.spec.md](crates/deprecated-neo-fold/specs/InstructionLookup.spec.md), [MemorySidecar.spec.md](crates/deprecated-neo-fold/specs/MemorySidecar.spec.md), [TimeOpening.spec.md](crates/deprecated-neo-fold/specs/TimeOpening.spec.md)
 - **Exports semantics to**: trace frontends, integration/session tests, Rust artifact and session exporters
 - **Erasure rule**: removing step-linking/output-binding strengthenings and frontend convenience structure must leave the same lower shard obligations and the same projected paper-core session glue.
 
@@ -33,10 +33,10 @@ This module is not a direct paper-theorem owner. It orchestrates lower theorem-o
 
 ## Context Anchors
 
-- `crates/neo-fold/specs/Architecture.spec.md`
+- `crates/deprecated-neo-fold/specs/Architecture.spec.md`
 - `docs/superneo-paper/07_7_Neo_s_folding_scheme_for_CCS.md`
 - `docs/architecture/how-superneo-works.md`
-- `crates/neo-fold/src/session/README.md`
+- `crates/deprecated-neo-fold/src/session/README.md`
 - `docs/twist-and-shout-paper/2_overview_of_twist_and_shout_and_their_costs.md`
 - `docs/jolt-paper/04-3_An_Overview_of_RISC-V_and_Jolts_Approach.md`
 

@@ -6,7 +6,7 @@ If you want a native iOS build (Swift/Xcode) alongside wasm, see `docs/ios-nativ
 
 This demo supports two input modes:
 
-- **TestExport JSON** (same schema as `crates/neo-fold/poseidon2-tests/*.json`):
+- **TestExport JSON** (same schema as `crates/deprecated-neo-fold/poseidon2-tests/*.json`):
   R1CS A/B/C sparse matrices + per-step witnesses.
 - **RV32 Fibonacci** (pasteable “mini-asm” / words): assembles a small RV32 program, generates a trace,
   and proves it under the RV32 trace-wiring shared-bus circuit.
@@ -123,7 +123,7 @@ Run `./demos/wasm-demo/build_wasm.sh` (or `./demos/wasm-demo/build_wasm.sh --no-
 ## Using a real circuit export
 
 - Use the file picker to load something like:
-  - `crates/neo-fold/poseidon2-tests/poseidon2_ic_circuit_batch_1.json`
+  - `crates/deprecated-neo-fold/poseidon2-tests/poseidon2_ic_circuit_batch_1.json`
 - Or paste the JSON into the textarea.
 
 Then click `Prove + Verify`.
@@ -132,7 +132,7 @@ Then click `Prove + Verify`.
 
 - `toy_square.json` (tiny sanity check)
 - `toy_square_folding_8_steps.json` (same toy circuit, but 8 steps to demonstrate folding)
-- `poseidon2_ic_batch_1.json` (from `crates/neo-fold/poseidon2-tests/poseidon2_ic_circuit_batch_1.json`)
+- `poseidon2_ic_batch_1.json` (from `crates/deprecated-neo-fold/poseidon2-tests/poseidon2_ic_circuit_batch_1.json`)
 - `rv32_fibonacci.asm` (RV32 “mini-asm” Fibonacci program; reads `n` from RAM[0x104], writes fib(n) to RAM[0x100])
 
 ## Deploy (Cloudflare Workers)

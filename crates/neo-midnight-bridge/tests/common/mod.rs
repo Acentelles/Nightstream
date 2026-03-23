@@ -214,7 +214,7 @@ pub fn prove_step1_nc_bundle_poseidon2_batch_40() {
     // using a bundle of small PLONK/KZG proofs, each fitting within Midnight's max-k cap
     // (k=14).
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let json_path = manifest_dir.join("../neo-fold/poseidon2-tests/poseidon2_ic_circuit_batch_40.json");
+    let json_path = manifest_dir.join("../deprecated-neo-fold/poseidon2-tests/poseidon2_ic_circuit_batch_40.json");
     let json = fs::read_to_string(&json_path).expect("read poseidon2 batch-40 json");
     let export = neo_fold::test_export::parse_test_export_json(&json).expect("parse test-export json");
 
@@ -474,7 +474,7 @@ pub fn prove_step1_full_bundle_poseidon2_batch_40() {
     //
     // Goal is a *bundle* total < 50KB under Midnight's max-k cap (k=14).
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let json_path = manifest_dir.join("../neo-fold/poseidon2-tests/poseidon2_ic_circuit_batch_40.json");
+    let json_path = manifest_dir.join("../deprecated-neo-fold/poseidon2-tests/poseidon2_ic_circuit_batch_40.json");
     let json = fs::read_to_string(&json_path).expect("read poseidon2 batch-40 json");
     let export = neo_fold::test_export::parse_test_export_json(&json).expect("parse test-export json");
 

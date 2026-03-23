@@ -10,6 +10,6 @@ From this directory:
 python3 export_rom_rs.py
 ```
 
-This updates `crates/neo-fold/riscv-tests/binaries/rv32_smoke_rom.rs`.
+This updates `crates/deprecated-neo-fold/riscv-tests/binaries/rv32_smoke_rom.rs`.
 
 Prereq: `rustup target add riscv32im-unknown-none-elf`.

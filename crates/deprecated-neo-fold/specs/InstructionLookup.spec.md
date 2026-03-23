@@ -12,7 +12,7 @@
 - **Layer**: extension
 - **Direct paper theorem owner?** No. This is a dedicated Rust protocol owner shaped by the Jolt instruction-lookup and Spartan integration model, not a SuperNeo Section 7 theorem owner.
 - **Consumes lower-layer semantics from**: Jolt-style machine/trace frontends, opcode table semantics from `neo-memory`, and lower transcript/arithmetic crates
-- **Exports semantics to**: [ShardFolding.spec.md](crates/neo-fold/specs/ShardFolding.spec.md), [TimeOpening.spec.md](crates/neo-fold/specs/TimeOpening.spec.md), [ShardProofTypes.spec.md](crates/neo-fold/specs/ShardProofTypes.spec.md), maintained trace frontends
+- **Exports semantics to**: [ShardFolding.spec.md](crates/deprecated-neo-fold/specs/ShardFolding.spec.md), [TimeOpening.spec.md](crates/deprecated-neo-fold/specs/TimeOpening.spec.md), [ShardProofTypes.spec.md](crates/deprecated-neo-fold/specs/ShardProofTypes.spec.md), maintained trace frontends
 - **Erasure rule**: erasing Rust-only exporter metadata must preserve the same instruction-lookup claims, openings, and verifier obligations.
 
 ## Target Formulas (Paper -> Rust)
@@ -35,7 +35,7 @@
 
 ## Context Anchors
 
-- `crates/neo-fold/specs/Architecture.spec.md`
+- `crates/deprecated-neo-fold/specs/Architecture.spec.md`
 - `docs/jolt-paper/04-3_An_Overview_of_RISC-V_and_Jolts_Approach.md`
   - use this for the machine/execution-model context behind maintained opcode lookup
 - `docs/architecture/how-superneo-works.md`

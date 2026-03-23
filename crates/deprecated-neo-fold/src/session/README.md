@@ -36,4 +36,4 @@ shared CPU bus (Route-A sidecar), but the CPU witness is still a CCS/R1CS-style 
 - Execute into a session with `SharedBusR1csProver::execute_into_session(...)`.
 - Prove/verify using `FoldingSession` helpers (including output binding helpers in `neo_fold::output_binding`).
 
-See `crates/neo-fold/tests/twist_shout_fibonacci_cycle_trace.rs` for a complete example.
+See `crates/deprecated-neo-fold/tests/twist_shout_fibonacci_cycle_trace.rs` for a complete example.

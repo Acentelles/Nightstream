@@ -10,8 +10,8 @@
 
 - **Layer**: proof-data boundary
 - **Direct paper theorem owner?** No. This module carries the data boundary between lower theorem surfaces and Rust/session/export consumers.
-- **Consumes lower-layer semantics from**: [ShardFolding.spec.md](crates/neo-fold/specs/ShardFolding.spec.md), [InstructionLookup.spec.md](crates/neo-fold/specs/InstructionLookup.spec.md), [MemorySidecar.spec.md](crates/neo-fold/specs/MemorySidecar.spec.md), [TimeOpening.spec.md](crates/neo-fold/specs/TimeOpening.spec.md)
-- **Exports semantics to**: [Session.spec.md](crates/neo-fold/specs/Session.spec.md), [Finalize.spec.md](crates/neo-fold/specs/Finalize.spec.md), Rust artifact/session exporters, Lean refinement validators
+- **Consumes lower-layer semantics from**: [ShardFolding.spec.md](crates/deprecated-neo-fold/specs/ShardFolding.spec.md), [InstructionLookup.spec.md](crates/deprecated-neo-fold/specs/InstructionLookup.spec.md), [MemorySidecar.spec.md](crates/deprecated-neo-fold/specs/MemorySidecar.spec.md), [TimeOpening.spec.md](crates/deprecated-neo-fold/specs/TimeOpening.spec.md)
+- **Exports semantics to**: [Session.spec.md](crates/deprecated-neo-fold/specs/Session.spec.md), [Finalize.spec.md](crates/deprecated-neo-fold/specs/Finalize.spec.md), Rust artifact/session exporters, Lean refinement validators
 - **Erasure rule**: erasing Rust-only metadata and strengthening fields must preserve the paper-core and extension proof meaning carried by the lower semantic subfields.
 
 ## Target Formulas (Paper -> Rust)
@@ -30,7 +30,7 @@ This module is not a direct paper-theorem owner. It is the Rust proof-data bound
 
 ## Context Anchors
 
-- `crates/neo-fold/specs/Architecture.spec.md`
+- `crates/deprecated-neo-fold/specs/Architecture.spec.md`
 - `formal/superneo-lean/SuperNeo.pdf.md`
   - §7.2: `Π_CCS`
   - §7.3: `Π_RLC`

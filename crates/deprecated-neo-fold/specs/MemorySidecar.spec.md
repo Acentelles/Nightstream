@@ -3,7 +3,7 @@
 ## Purpose
 
 - **What it is**: The Route-A memory sidecar layer that instantiates Twist-derived memory claims, residual generic lookup-side checks, openings, and verifier obligations for shard folding.
-- **What it owns**: Real Twist (RAM/register consistency), virtual decomposition (MUL/DIV multi-limb sequences), Poseidon/precompiles, memory-side claim planning, batched time claims, Route-A memory claim construction, address pre-proofs, transcript binding, and final Route-A memory-step verification. Residual generic Shout compatibility may live here, but dedicated maintained opcode lookup proving belongs to [InstructionLookup.spec.md](crates/neo-fold/specs/InstructionLookup.spec.md).
+- **What it owns**: Real Twist (RAM/register consistency), virtual decomposition (MUL/DIV multi-limb sequences), Poseidon/precompiles, memory-side claim planning, batched time claims, Route-A memory claim construction, address pre-proofs, transcript binding, and final Route-A memory-step verification. Residual generic Shout compatibility may live here, but dedicated maintained opcode lookup proving belongs to [InstructionLookup.spec.md](crates/deprecated-neo-fold/specs/InstructionLookup.spec.md).
 - **What it does not own**: Instruction routing/state-transition glue (main lane), decode/control flag routing (main lane), register-address binding (main lane), branch-conditioned `pc_after` routing (main lane), load/store width routing (main lane), or any fake transport on the supported trace frontends. All routing and glue constraints live in the main-lane CCS as uniform flag-gated constraints following the Jolt model. On the maintained RV64 path this includes register-address packing, branch-conditioned `pc_after`, and `LB/LBU/LH/LHU/LW/LWU/LD/SB/SH/SW/SD`, and Route-A has no decode or control transport stage there.
 - **What it must not do**: Become the owner of shard orchestration or session policy, weaken paper sidecar semantics into implementation-only shortcuts, or re-introduce routing/glue/decode/width ownership that belongs in the main lane.
 
@@ -12,7 +12,7 @@
 - **Layer**: extension
 - **Direct paper theorem owner?** Yes, for the Twist-derived Route-A memory extension semantics and any residual generic lookup semantics that remain under Route-A. It is not the owner of SuperNeo Section 7 reductions, and it is not the maintained hot opcode lookup owner.
 - **Consumes lower-layer semantics from**: Jolt-style machine/trace frontends and lower CCS/sidecar arithmetic crates
-- **Exports semantics to**: [ShardFolding.spec.md](crates/neo-fold/specs/ShardFolding.spec.md), [TimeOpening.spec.md](crates/neo-fold/specs/TimeOpening.spec.md), Rust artifact/session exporters
+- **Exports semantics to**: [ShardFolding.spec.md](crates/deprecated-neo-fold/specs/ShardFolding.spec.md), [TimeOpening.spec.md](crates/deprecated-neo-fold/specs/TimeOpening.spec.md), Rust artifact/session exporters
 - **Erasure rule**: erasing Rust-only exporter metadata must preserve the same Route-A claim, opening, and verifier obligations.
 
 In repo terminology, the "Nightstream extension layer" is the combination of dedicated instruction lookup, memory-side Route-A sidecars, and time-opening/joint-opening obligations. This is an architectural umbrella term, not a paper theorem label.
@@ -33,8 +33,8 @@ In repo terminology, the "Nightstream extension layer" is the combination of ded
 
 ## Context Anchors
 
-- `crates/neo-fold/specs/Architecture.spec.md`
-- `crates/neo-fold/specs/InstructionLookup.spec.md`
+- `crates/deprecated-neo-fold/specs/Architecture.spec.md`
+- `crates/deprecated-neo-fold/specs/InstructionLookup.spec.md`
 - `docs/twist-and-shout-paper/2_overview_of_twist_and_shout_and_their_costs.md`
 - `docs/jolt-paper/13-B_Overview_of_Memory-Checking_Arguments.md`
 - `docs/architecture/how-superneo-works.md`

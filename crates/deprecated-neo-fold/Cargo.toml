@@ -15,7 +15,7 @@ neo-ccs = { path = "../neo-ccs" }
 neo-ajtai = { path = "../neo-ajtai" }
 neo-reductions = { path = "../neo-reductions" }
 neo-transcript = { path = "../neo-transcript" }
-neo-memory = { path = "../neo-memory" } 
+neo-memory = { package = "deprecated-neo-memory", path = "../neo-memory" }
 neo-vm-trace = { path = "../neo-vm-trace" }
 p3-field = { workspace = true }
 p3-matrix = { workspace = true }

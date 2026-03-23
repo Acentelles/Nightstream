@@ -10,7 +10,7 @@
 
 - **Layer**: Rust-only strengthening / discharge hook
 - **Direct paper theorem owner?** No. This module is outside the paper-core theorem surface.
-- **Consumes lower-layer semantics from**: [ShardFolding.spec.md](crates/neo-fold/specs/ShardFolding.spec.md), [Session.spec.md](crates/neo-fold/specs/Session.spec.md), [ShardProofTypes.spec.md](crates/neo-fold/specs/ShardProofTypes.spec.md)
+- **Consumes lower-layer semantics from**: [ShardFolding.spec.md](crates/deprecated-neo-fold/specs/ShardFolding.spec.md), [Session.spec.md](crates/deprecated-neo-fold/specs/Session.spec.md), [ShardProofTypes.spec.md](crates/deprecated-neo-fold/specs/ShardProofTypes.spec.md)
 - **Exports semantics to**: downstream domain-specific finalizer implementations
 - **Erasure rule**: erasing finalization-specific metadata or downstream reports must leave the same lower outgoing obligation surface.
 
@@ -27,7 +27,7 @@ This module is not a direct paper-theorem owner.
 
 ## Context Anchors
 
-- `crates/neo-fold/specs/Architecture.spec.md`
+- `crates/deprecated-neo-fold/specs/Architecture.spec.md`
 - `docs/superneo-paper/07_7_Neo_s_folding_scheme_for_CCS.md`
   - final Section 7 folded obligations
 - `docs/architecture/how-superneo-works.md`

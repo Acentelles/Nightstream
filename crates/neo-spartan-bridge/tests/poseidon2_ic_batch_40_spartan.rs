@@ -106,7 +106,7 @@ fn print_summary_table(title: &str, rows: &[(&str, String)]) {
 #[ignore = "C0 sizing benchmark; run manually with --ignored --nocapture"]
 fn test_poseidon2_ic_batch_40_spartan_proof_size() {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let json_path = manifest_dir.join("../neo-fold/poseidon2-tests/poseidon2_ic_circuit_batch_40.json");
+    let json_path = manifest_dir.join("../deprecated-neo-fold/poseidon2-tests/poseidon2_ic_circuit_batch_40.json");
     let json = fs::read_to_string(&json_path).expect("read poseidon2 batch-40 json");
     let export = neo_fold::test_export::parse_test_export_json(&json).expect("parse test-export json");
 

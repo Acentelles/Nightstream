@@ -1,10 +1,10 @@
 [package]
-name = "neo-memory"
+name = "deprecated-neo-memory"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license = "MIT"
-description = "Memory and Lookup arguments (Twist/Shout) for Neo"
+description = "Deprecated memory and lookup arguments (Twist/Shout) for Neo"
 
 [features]
 default = []

@@ -16,4 +16,4 @@ cargo build --release
 ./export_rom_rs.py
 ```
 
-This writes `crates/neo-fold/riscv-tests/binaries/rv32_fibonacci_rom.rs` in the repo.
+This writes `crates/deprecated-neo-fold/riscv-tests/binaries/rv32_fibonacci_rom.rs` in the repo.

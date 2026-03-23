@@ -23,7 +23,7 @@ ff = "0.13"
 [dev-dependencies]
 rand = "0.8"
 rand_chacha = "0.3"
-neo-fold = { path = "../neo-fold" }
+neo-fold = { path = "../deprecated-neo-fold" }
 neo-ajtai = { path = "../neo-ajtai" }
 neo-ccs = { path = "../neo-ccs" }
 neo-math = { path = "../neo-math" }

@@ -4,14 +4,14 @@
 
 - **What it is**: The maintained product-facing RV64IM trace-wiring path for `neo-fold`.
 - **What it owns**: The maintained ELF/program loading path, RV64 trace preparation, prove/verify execution over that trace, and the result-bundle surface for consumers and exporters.
-- **Routing boundary**: All instruction routing and state-transition glue lives in the main-lane CCS as uniform flag-gated constraints (Jolt model). This includes decode routing, control-flow routing, branch-conditioned `pc_after`, register-address binding, register writeback routing, and all load/store width routing (LB/LBU/LH/LHU/LW/LWU/LD/SB/SH/SW/SD). No frontend decode or width transport exists. No fake transport tables exist. Maintained RV64 schedules no Route-A decode or control stage. Memory-side extension ownership is limited to real Twist and residual sidecar stages; maintained hot opcode lookup ownership belongs to [InstructionLookup.spec.md](crates/neo-fold/specs/InstructionLookup.spec.md).
+- **Routing boundary**: All instruction routing and state-transition glue lives in the main-lane CCS as uniform flag-gated constraints (Jolt model). This includes decode routing, control-flow routing, branch-conditioned `pc_after`, register-address binding, register writeback routing, and all load/store width routing (LB/LBU/LH/LHU/LW/LWU/LD/SB/SH/SW/SD). No frontend decode or width transport exists. No fake transport tables exist. Maintained RV64 schedules no Route-A decode or control stage. Memory-side extension ownership is limited to real Twist and residual sidecar stages; maintained hot opcode lookup ownership belongs to [InstructionLookup.spec.md](crates/deprecated-neo-fold/specs/InstructionLookup.spec.md).
 - **What it must not do**: Become the owner of shard/session theorem semantics or quietly diverge from the maintained lower shard/session contracts.
 
 ## Architectural Position
 
 - **Layer**: frontend
 - **Direct paper theorem owner?** No. This module is a frontend adapter from machine/program traces into the lower session/shard proof system under the Jolt execution model.
-- **Consumes lower-layer semantics from**: [Session.spec.md](crates/neo-fold/specs/Session.spec.md), [ShardFolding.spec.md](crates/neo-fold/specs/ShardFolding.spec.md), [InstructionLookup.spec.md](crates/neo-fold/specs/InstructionLookup.spec.md), [OutputBinding.spec.md](crates/neo-fold/specs/OutputBinding.spec.md)
+- **Consumes lower-layer semantics from**: [Session.spec.md](crates/deprecated-neo-fold/specs/Session.spec.md), [ShardFolding.spec.md](crates/deprecated-neo-fold/specs/ShardFolding.spec.md), [InstructionLookup.spec.md](crates/deprecated-neo-fold/specs/InstructionLookup.spec.md), [OutputBinding.spec.md](crates/deprecated-neo-fold/specs/OutputBinding.spec.md)
 - **Exports semantics to**: integration tests, artifact/session exporters, maintained product-facing consumers
 - **Erasure rule**: projecting away frontend convenience structure must preserve the lower shard/session artifact and proof meaning.
 
@@ -32,7 +32,7 @@ This module is not a direct paper-theorem owner.
 
 ## Context Anchors
 
-- `crates/neo-fold/specs/Architecture.spec.md`
+- `crates/deprecated-neo-fold/specs/Architecture.spec.md`
 - `docs/jolt-paper/04-3_An_Overview_of_RISC-V_and_Jolts_Approach.md`
   - use this for the architecture-level machine/execution model
 - `docs/jolt-paper/13-B_Overview_of_Memory-Checking_Arguments.md`

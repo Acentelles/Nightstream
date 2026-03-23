@@ -16,7 +16,7 @@ crate-type = ["staticlib", "rlib"]
 
 [dependencies]
 bincode = { workspace = true, optional = true }
-neo-fold = { path = "../neo-fold" }
+neo-fold = { path = "../deprecated-neo-fold" }
 neo-spartan-bridge = { path = "../neo-spartan-bridge", optional = true }
 serde_json = { workspace = true }
 

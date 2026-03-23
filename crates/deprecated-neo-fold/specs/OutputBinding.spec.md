@@ -10,7 +10,7 @@
 
 - **Layer**: Rust-only strengthening
 - **Direct paper theorem owner?** No. This module is outside the SuperNeo, Twist, and dedicated instruction-lookup theorem surfaces.
-- **Consumes lower-layer semantics from**: [Session.spec.md](crates/neo-fold/specs/Session.spec.md), [ShardFolding.spec.md](crates/neo-fold/specs/ShardFolding.spec.md), frontend terminal-state data
+- **Consumes lower-layer semantics from**: [Session.spec.md](crates/deprecated-neo-fold/specs/Session.spec.md), [ShardFolding.spec.md](crates/deprecated-neo-fold/specs/ShardFolding.spec.md), frontend terminal-state data
 - **Exports semantics to**: shard/session verification and Rust refinement validators
 - **Erasure rule**: erasing output-binding metadata must leave the same lower accepted shard or session artifact.
 
@@ -28,7 +28,7 @@ This module is not a direct paper-theorem owner.
 
 ## Context Anchors
 
-- `crates/neo-fold/specs/Architecture.spec.md`
+- `crates/deprecated-neo-fold/specs/Architecture.spec.md`
 - `docs/architecture/how-superneo-works.md`
   - use this as the anchor for how output binding fits the Rust proving pipeline
 - `docs/jolt-paper/04-3_An_Overview_of_RISC-V_and_Jolts_Approach.md`

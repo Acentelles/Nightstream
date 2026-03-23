@@ -10,8 +10,8 @@
 
 - **Layer**: extension
 - **Direct paper theorem owner?** Yes, for the extension time-opening and joint-opening reduction semantics over memory-side and instruction-lookup claims. It is not itself a Section 7 theorem owner.
-- **Consumes lower-layer semantics from**: [MemorySidecar.spec.md](crates/neo-fold/specs/MemorySidecar.spec.md), [InstructionLookup.spec.md](crates/neo-fold/specs/InstructionLookup.spec.md), lower transcript/math layers
-- **Exports semantics to**: [ShardFolding.spec.md](crates/neo-fold/specs/ShardFolding.spec.md), [ShardProofTypes.spec.md](crates/neo-fold/specs/ShardProofTypes.spec.md), Rust artifact/refinement tooling
+- **Consumes lower-layer semantics from**: [MemorySidecar.spec.md](crates/deprecated-neo-fold/specs/MemorySidecar.spec.md), [InstructionLookup.spec.md](crates/deprecated-neo-fold/specs/InstructionLookup.spec.md), lower transcript/math layers
+- **Exports semantics to**: [ShardFolding.spec.md](crates/deprecated-neo-fold/specs/ShardFolding.spec.md), [ShardProofTypes.spec.md](crates/deprecated-neo-fold/specs/ShardProofTypes.spec.md), Rust artifact/refinement tooling
 - **Erasure rule**: erasing Rust-only exporter metadata must preserve the same opening manifests, grouped reductions, and joint-lane obligations.
 
 In repo terminology, the "Nightstream extension layer" is the combination of dedicated instruction lookup, memory-side Route-A sidecars, and time-opening/joint-opening obligations. This is an architectural umbrella term, not a paper theorem label.
@@ -38,7 +38,7 @@ In repo terminology, the "Nightstream extension layer" is the combination of ded
 
 ## Context Anchors
 
-- `crates/neo-fold/specs/Architecture.spec.md`
+- `crates/deprecated-neo-fold/specs/Architecture.spec.md`
 - `docs/twist-and-shout-paper/2_overview_of_twist_and_shout_and_their_costs.md`
   - for the two-lane architecture (`main` lane and `val` lane) and why time openings exist
 - `docs/architecture/how-superneo-works.md`

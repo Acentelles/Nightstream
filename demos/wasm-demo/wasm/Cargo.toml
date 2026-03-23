@@ -11,7 +11,7 @@ crate-type = ["cdylib"]
 [workspace]
 
 [dependencies]
-neo-fold = { path = "../../../crates/neo-fold" }
+neo-fold = { path = "../../../crates/deprecated-neo-fold" }
 neo-math = { path = "../../../crates/neo-math" }
 neo-memory = { path = "../../../crates/neo-memory" }
 neo-spartan-bridge = { path = "../../../crates/neo-spartan-bridge" }
