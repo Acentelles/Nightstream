@@ -237,6 +237,8 @@ pub fn decomp_b_row_major_into(z: &[Fq], b: u32, d: usize, style: DecompStyle, o
                 }
             }
             DecompStyle::Balanced => {
+                let one = Fq::ONE;
+                let neg_one = Fq::ZERO - one;
                 for row in 0..d {
                     let mut any_next_nonzero = false;
                     for a in a_vals.iter_mut() {
