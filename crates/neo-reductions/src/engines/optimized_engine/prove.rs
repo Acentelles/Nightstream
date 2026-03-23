@@ -16,8 +16,8 @@ use neo_params::NeoParams;
 use neo_transcript::Poseidon2Transcript;
 use neo_transcript::Transcript;
 use p3_field::PrimeCharacteristicRing;
-use std::sync::Arc;
 
+use super::OptimizedStructureCache;
 use crate::engines::utils;
 
 /// Optimized prove implementation.
@@ -30,6 +30,31 @@ pub fn optimized_prove<L: neo_ccs::traits::SModuleHomomorphism<F, Cmt>>(
     me_inputs: &[CeClaim<Cmt, F, K>],
     me_witnesses: &[Mat<F>],
     log: &L,
+) -> Result<(Vec<CeClaim<Cmt, F, K>>, PiCcsProof), PiCcsError> {
+    let cache = OptimizedStructureCache::build(s)?;
+    optimized_prove_with_cache(
+        tr,
+        params,
+        s,
+        mcs_list,
+        mcs_witnesses,
+        me_inputs,
+        me_witnesses,
+        log,
+        &cache,
+    )
+}
+
+pub fn optimized_prove_with_cache<L: neo_ccs::traits::SModuleHomomorphism<F, Cmt>>(
+    tr: &mut Poseidon2Transcript,
+    params: &NeoParams,
+    s: &CcsStructure<F>,
+    mcs_list: &[CcsClaim<Cmt, F>],
+    mcs_witnesses: &[CcsWitness<F>],
+    me_inputs: &[CeClaim<Cmt, F, K>],
+    me_witnesses: &[Mat<F>],
+    log: &L,
+    cache: &OptimizedStructureCache,
 ) -> Result<(Vec<CeClaim<Cmt, F, K>>, PiCcsProof), PiCcsError> {
     if mcs_list.is_empty() {
         return Err(PiCcsError::InvalidInput("optimized_prove: empty mcs_list".into()));
@@ -109,8 +134,7 @@ pub fn optimized_prove<L: neo_ccs::traits::SModuleHomomorphism<F, Cmt>>(
     }
 
     // Optimized oracles with cached sparse formats and factored algebra
-    let sparse = Arc::new(super::oracle::SparseCache::build(s));
-    let mut oracle = super::oracle::OptimizedOracle::new_with_sparse(
+    let mut oracle = super::oracle::OptimizedOracle::new_with_sparse_and_superneo_cache(
         s,
         params,
         mcs_witnesses,
@@ -120,7 +144,8 @@ pub fn optimized_prove<L: neo_ccs::traits::SModuleHomomorphism<F, Cmt>>(
         dims.ell_n,
         dims.d_sc,
         r_inputs,
-        sparse,
+        cache.sparse_arc(),
+        cache.superneo_arc(),
     );
 
     // ---------------------------------------------------------------------
@@ -212,19 +237,22 @@ pub fn optimized_prove<L: neo_ccs::traits::SModuleHomomorphism<F, Cmt>>(
     let mut sumcheck_chals_nc: Vec<K> = Vec::with_capacity(oracle_nc.num_rounds());
 
     for _round_idx in 0..oracle_nc.num_rounds() {
-        let deg = oracle_nc.degree_bound();
-        let xs: Vec<K> = (0..=deg).map(|t| K::from(F::from_u64(t as u64))).collect();
-        let ys = oracle_nc.evals_at(&xs);
+        let coeffs = if let Some(coeffs) = oracle_nc.optimized_col_phase_round_coeffs() {
+            coeffs
+        } else {
+            let deg = oracle_nc.degree_bound();
+            let xs: Vec<K> = (0..=deg).map(|t| K::from(F::from_u64(t as u64))).collect();
+            let ys = oracle_nc.evals_at(&xs);
+            crate::sumcheck::interpolate_from_evals(&xs, &ys)
+        };
 
-        if ys[0] + ys[1] != running_sum_nc {
+        let p0 = coeffs[0];
+        let p1 = crate::sumcheck::poly_eval_k_base(&coeffs, F::ONE);
+        if p0 + p1 != running_sum_nc {
             return Err(PiCcsError::SumcheckError(
                 "NC sumcheck invariant failed: p(0)+p(1) ≠ running_sum".into(),
             ));
         }
-
-        let coeffs = crate::sumcheck::interpolate_from_evals(&xs, &ys);
-        debug_assert_eq!(crate::sumcheck::poly_eval_k(&coeffs, K::ZERO), ys[0]);
-        debug_assert_eq!(crate::sumcheck::poly_eval_k(&coeffs, K::ONE), ys[1]);
 
         for &c in &coeffs {
             tr.append_fields(b"sumcheck/round/coeff", &c.as_coeffs());

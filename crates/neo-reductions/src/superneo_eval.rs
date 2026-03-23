@@ -342,9 +342,9 @@ impl SuperneoMatrixCache {
         let mut acc_im = F::ZERO;
 
         for rb in &self.row_blocks[row] {
-            acc_re += ct(&rb.bar.mul(&z_blocks.re[rb.blk]));
+            acc_re += coeff_dot(&rb.orig, &z_blocks.re[rb.blk]);
             if !z_blocks.imag_all_zero {
-                acc_im += ct(&rb.bar.mul(&z_blocks.im[rb.blk]));
+                acc_im += coeff_dot(&rb.orig, &z_blocks.im[rb.blk]);
             }
         }
         if z_blocks.imag_all_zero {
@@ -460,9 +460,11 @@ impl SuperneoMatrixCache {
             "SuperneoMatrixCache::eval_mle_ring_with_blocks_split_chi: chi coeff length mismatch"
         );
         let row_cap = min(min(self.rows, n_eff), chi_re.len());
-        let mut out_re = [F::ZERO; D];
-        let mut out_im = [F::ZERO; D];
-        let z_re = &z_blocks.re;
+        let block_count = z_blocks.re.len();
+        let mut agg_re = vec![Rq::zero(); block_count];
+        let mut agg_im = vec![Rq::zero(); block_count];
+        let mut touched = vec![false; block_count];
+        let mut active_blocks = Vec::new();
         for row in 0..row_cap {
             let w_re = chi_re[row];
             let w_im = chi_im[row];
@@ -470,11 +472,29 @@ impl SuperneoMatrixCache {
                 continue;
             }
             for rb in &self.row_blocks[row] {
-                let prod_re = rb.bar.mul(&z_re[rb.blk]);
+                let blk = rb.blk;
+                if !touched[blk] {
+                    touched[blk] = true;
+                    active_blocks.push(blk);
+                }
+                add_scaled_rq(&mut agg_re[blk], &rb.bar, w_re);
+                add_scaled_rq(&mut agg_im[blk], &rb.bar, w_im);
+            }
+        }
+        let mut out_re = [F::ZERO; D];
+        let mut out_im = [F::ZERO; D];
+        let z_re = &z_blocks.re;
+        for blk in active_blocks {
+            if !is_all_zero(&agg_re[blk].0) {
+                let prod_re = agg_re[blk].mul(&z_re[blk]);
                 for i in 0..D {
-                    let v = prod_re.0[i];
-                    out_re[i] += w_re * v;
-                    out_im[i] += w_im * v;
+                    out_re[i] += prod_re.0[i];
+                }
+            }
+            if !is_all_zero(&agg_im[blk].0) {
+                let prod_im = agg_im[blk].mul(&z_re[blk]);
+                for i in 0..D {
+                    out_im[i] += prod_im.0[i];
                 }
             }
         }
@@ -553,6 +573,25 @@ impl SuperneoEvalCache {
 #[inline]
 fn is_all_zero(arr: &[F; D]) -> bool {
     arr.iter().all(|&v| v == F::ZERO)
+}
+
+#[inline]
+fn add_scaled_rq(dst: &mut Rq, src: &Rq, scale: F) {
+    if scale == F::ZERO {
+        return;
+    }
+    for i in 0..D {
+        dst.0[i] += scale * src.0[i];
+    }
+}
+
+#[inline]
+fn coeff_dot(lhs: &Rq, rhs: &Rq) -> F {
+    let mut acc = F::ZERO;
+    for i in 0..D {
+        acc += lhs.0[i] * rhs.0[i];
+    }
+    acc
 }
 
 fn build_matrix_cache<Ff>(mat: &CcsMatrix<Ff>) -> SuperneoMatrixCache

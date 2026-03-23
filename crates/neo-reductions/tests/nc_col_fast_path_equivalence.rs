@@ -6,7 +6,7 @@ use neo_params::NeoParams;
 use neo_reductions::engines::utils::build_dims_and_policy;
 use neo_reductions::optimized_engine::oracle::NcOracle;
 use neo_reductions::optimized_engine::Challenges;
-use neo_reductions::sumcheck::RoundOracle;
+use neo_reductions::sumcheck::{interpolate_from_evals, RoundOracle};
 use p3_field::PrimeCharacteristicRing;
 
 fn identity_left(n: usize, m: usize) -> Mat<F> {
@@ -75,6 +75,60 @@ fn run_fast_vs_generic(b: u32) {
     }
 }
 
+fn run_direct_coeffs_match_interpolated_generic(b: u32) {
+    let n = D;
+    let m = D;
+
+    let mut params = NeoParams::goldilocks_auto_r1cs_ccs(n).expect("params");
+    params.b = b;
+
+    let s = CcsStructure::new(vec![identity_left(n, m)], SparsePoly::new(1, vec![])).expect("ccs");
+    let dims = build_dims_and_policy(&params, &s).expect("dims");
+
+    let packed_cols = m / D;
+    let mut data = Vec::with_capacity(D * packed_cols);
+    for rho in 0..D {
+        for blk in 0..packed_cols {
+            let c = blk * D + rho;
+            data.push(F::from_u64(11 + (rho as u64) * 13 + (c as u64) * 29));
+        }
+    }
+    let Z = Mat::from_row_major(D, packed_cols, data);
+    let mcs_witnesses = vec![CcsWitness { w: vec![F::ZERO; m], Z }];
+
+    let ch = Challenges {
+        alpha: (0..dims.ell_d)
+            .map(|i| K::from(F::from_u64(123 + i as u64)))
+            .collect(),
+        beta_a: (0..dims.ell_d)
+            .map(|i| K::from(F::from_u64(223 + i as u64)))
+            .collect(),
+        beta_r: (0..dims.ell_n)
+            .map(|i| K::from(F::from_u64(323 + i as u64)))
+            .collect(),
+        beta_m: (0..dims.ell_m)
+            .map(|i| K::from(F::from_u64(423 + i as u64)))
+            .collect(),
+        gamma: K::from(F::from_u64(877)),
+    };
+
+    let mut oracle = NcOracle::new(&s, &params, &mcs_witnesses, &[], ch, dims.ell_d, dims.ell_m, dims.d_sc);
+
+    for round in 0..dims.ell_m {
+        let direct = oracle
+            .optimized_col_phase_round_coeffs()
+            .expect("must be in NC column phase");
+        let deg = oracle.degree_bound();
+        let xs: Vec<K> = (0..=deg).map(|t| K::from(F::from_u64(t as u64))).collect();
+        let generic = interpolate_from_evals(&xs, &oracle.evals_at(&xs));
+        assert_eq!(
+            direct, generic,
+            "NcOracle direct col-phase coeff mismatch at b={b}, round={round}"
+        );
+        oracle.fold(K::from(F::from_u64(1700 + round as u64)));
+    }
+}
+
 #[test]
 fn nc_col_phase_fast_path_matches_generic_b2() {
     run_fast_vs_generic(2);
@@ -83,4 +137,14 @@ fn nc_col_phase_fast_path_matches_generic_b2() {
 #[test]
 fn nc_col_phase_fast_path_matches_generic_b3() {
     run_fast_vs_generic(3);
+}
+
+#[test]
+fn nc_col_phase_direct_coeffs_match_interpolated_generic_b2() {
+    run_direct_coeffs_match_interpolated_generic(2);
+}
+
+#[test]
+fn nc_col_phase_direct_coeffs_match_interpolated_generic_b3() {
+    run_direct_coeffs_match_interpolated_generic(3);
 }

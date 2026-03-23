@@ -5,11 +5,17 @@
 
 #![allow(non_snake_case)]
 
+use crate::error::PiCcsError;
+use crate::superneo_eval::{build_superneo_eval_cache, SuperneoEvalCache};
+use neo_ccs::CcsStructure;
+use neo_math::F;
 use neo_math::K;
 use p3_field::PrimeCharacteristicRing;
+use std::sync::Arc;
 
 // Common types and utility functions shared across engines
 mod common;
+mod rlc;
 mod sparse;
 mod terminal_identities;
 
@@ -19,6 +25,7 @@ pub mod verify;
 
 // Re-export commonly used items
 pub use common::Challenges;
+pub use sparse::SparseCache;
 
 /// Proof format variant for Π_CCS.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -48,13 +55,12 @@ pub use common::{
     // Utilities
     recomposed_z_from_Z,
 
-    rlc_reduction_optimized,
-    rlc_reduction_optimized_with_commit_mix,
     // Paper-exact RLC/DEC
     rlc_reduction_paper_exact,
     rlc_reduction_paper_exact_with_commit_mix,
     sum_q_over_hypercube_paper_exact,
 };
+pub use rlc::{rlc_reduction_optimized, rlc_reduction_optimized_with_commit_mix};
 pub use terminal_identities::{
     rhs_terminal_identity_fe, rhs_terminal_identity_fe_with_k_mcs, rhs_terminal_identity_nc,
 };
@@ -127,6 +133,7 @@ impl PiCcsProof {
 
 // Re-export optimized prove/verify entrypoints as the main interface
 pub use prove::optimized_prove as pi_ccs_prove;
+pub use prove::optimized_prove_with_cache;
 pub use verify::optimized_verify as pi_ccs_verify;
 
 /// Wrapper for simple case (k=1, no ME inputs)
@@ -134,3 +141,37 @@ pub use prove::optimized_prove_simple as pi_ccs_prove_simple;
 
 // Re-export the oracle for Route A integration
 pub use oracle::OptimizedOracle as CcsOracle;
+
+#[derive(Clone)]
+pub struct OptimizedStructureCache {
+    sparse: Arc<SparseCache<F>>,
+    superneo: Arc<SuperneoEvalCache>,
+}
+
+impl OptimizedStructureCache {
+    pub fn build(s: &CcsStructure<F>) -> Result<Self, PiCcsError> {
+        let superneo = build_superneo_eval_cache(s).ok_or_else(|| {
+            PiCcsError::InvalidInput(format!(
+                "optimized cache requires SuperNeo-compatible CCS shape (m={}, matrices={})",
+                s.m,
+                s.matrices.len()
+            ))
+        })?;
+        Ok(Self {
+            sparse: Arc::new(SparseCache::build(s)),
+            superneo: Arc::new(superneo),
+        })
+    }
+
+    pub fn sparse(&self) -> &SparseCache<F> {
+        self.sparse.as_ref()
+    }
+
+    pub(crate) fn sparse_arc(&self) -> Arc<SparseCache<F>> {
+        self.sparse.clone()
+    }
+
+    pub(crate) fn superneo_arc(&self) -> Arc<SuperneoEvalCache> {
+        self.superneo.clone()
+    }
+}

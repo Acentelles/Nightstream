@@ -1065,10 +1065,25 @@ where
     let mut rem = to_balanced_i128(val);
     let b_i = b as i128;
     let mut digits_f = [Ff::ZERO; D];
-    for d in digits_f.iter_mut().take(D) {
-        let (r_i, q) = balanced_divrem(rem, b_i);
-        *d = i128_to_field_f(r_i);
-        rem = q;
+    if rem >= i64::MIN as i128 && rem <= i64::MAX as i128 {
+        let mut rem64 = rem as i64;
+        let b_i64 = b as i64;
+        for d in digits_f.iter_mut().take(D) {
+            let (r_i, q) = if b == 2 {
+                balanced_divrem_i64_base2(rem64)
+            } else {
+                balanced_divrem_i64(rem64, b_i64)
+            };
+            *d = i128_to_field_f(r_i as i128);
+            rem64 = q;
+        }
+        rem = rem64 as i128;
+    } else {
+        for d in digits_f.iter_mut().take(D) {
+            let (r_i, q) = balanced_divrem(rem, b_i);
+            *d = i128_to_field_f(r_i);
+            rem = q;
+        }
     }
     if rem != 0 {
         return Err(PiCcsError::InvalidInput(format!(

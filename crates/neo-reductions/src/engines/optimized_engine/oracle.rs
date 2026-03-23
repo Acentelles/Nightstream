@@ -309,12 +309,9 @@ where
         }
     }
 
-    fn evals_col_phase_b2(&self, xs: &[K]) -> Vec<K> {
+    fn col_phase_coeffs_b2(&self) -> [K; 5] {
         debug_assert!(self.cur_len >= 2 && self.cur_len % 2 == 0);
         let tail_len = self.cur_len / 2;
-        if xs.is_empty() {
-            return Vec::new();
-        }
 
         const PAR_THRESHOLD: usize = 1 << 13;
         let three = K::from(F::from_u64(3));
@@ -334,8 +331,19 @@ where
 
                     for rho in 0..D {
                         let w = weights[rho];
+                        if w == K::ZERO {
+                            continue;
+                        }
                         let a = lo[rho];
                         let b = hi[rho] - a;
+                        if a == K::ZERO && b == K::ZERO {
+                            continue;
+                        }
+                        if b == K::ZERO {
+                            let t0 = (a * a * a) - a;
+                            inner[0] += w * t0;
+                            continue;
+                        }
 
                         let a2 = a * a;
                         let a3 = a2 * a;
@@ -365,7 +373,7 @@ where
             coeffs
         };
 
-        let coeffs = if tail_len >= PAR_THRESHOLD {
+        if tail_len >= PAR_THRESHOLD {
             #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-threads"))]
             {
                 (0..tail_len)
@@ -385,8 +393,19 @@ where
 
                                 for rho in 0..D {
                                     let w = weights[rho];
+                                    if w == K::ZERO {
+                                        continue;
+                                    }
                                     let a = lo[rho];
                                     let b = hi[rho] - a;
+                                    if a == K::ZERO && b == K::ZERO {
+                                        continue;
+                                    }
+                                    if b == K::ZERO {
+                                        let t0 = (a * a * a) - a;
+                                        inner[0] += w * t0;
+                                        continue;
+                                    }
 
                                     let a2 = a * a;
                                     let a3 = a2 * a;
@@ -429,8 +448,14 @@ where
             }
         } else {
             coeffs_seq(tail_len)
-        };
+        }
+    }
 
+    fn evals_col_phase_b2(&self, xs: &[K]) -> Vec<K> {
+        if xs.is_empty() {
+            return Vec::new();
+        }
+        let coeffs = self.col_phase_coeffs_b2();
         let xs_are_base = xs.iter().all(|&x| x.imag() == Fq::ZERO);
         if xs_are_base {
             xs.iter()
@@ -443,12 +468,9 @@ where
         }
     }
 
-    fn evals_col_phase_b3(&self, xs: &[K]) -> Vec<K> {
+    fn col_phase_coeffs_b3(&self) -> [K; 7] {
         debug_assert!(self.cur_len >= 2 && self.cur_len % 2 == 0);
         let tail_len = self.cur_len / 2;
-        if xs.is_empty() {
-            return Vec::new();
-        }
 
         const PAR_THRESHOLD: usize = 1 << 13;
         let four = K::from(F::from_u64(4));
@@ -471,8 +493,23 @@ where
 
                     for rho in 0..D {
                         let w = weights[rho];
+                        if w == K::ZERO {
+                            continue;
+                        }
                         let a = lo[rho];
                         let b = hi[rho] - a;
+                        if a == K::ZERO && b == K::ZERO {
+                            continue;
+                        }
+                        if b == K::ZERO {
+                            let a2 = a * a;
+                            let a3 = a2 * a;
+                            let a4 = a2 * a2;
+                            let a5 = a4 * a;
+                            let t0 = a5 - a3.scale_base_k(five) + a.scale_base_k(four);
+                            inner[0] += w * t0;
+                            continue;
+                        }
 
                         let a2 = a * a;
                         let a3 = a2 * a;
@@ -513,7 +550,7 @@ where
             coeffs
         };
 
-        let coeffs = if tail_len >= PAR_THRESHOLD {
+        if tail_len >= PAR_THRESHOLD {
             #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-threads"))]
             {
                 (0..tail_len)
@@ -533,8 +570,23 @@ where
 
                                 for rho in 0..D {
                                     let w = weights[rho];
+                                    if w == K::ZERO {
+                                        continue;
+                                    }
                                     let a = lo[rho];
                                     let b = hi[rho] - a;
+                                    if a == K::ZERO && b == K::ZERO {
+                                        continue;
+                                    }
+                                    if b == K::ZERO {
+                                        let a2 = a * a;
+                                        let a3 = a2 * a;
+                                        let a4 = a2 * a2;
+                                        let a5 = a4 * a;
+                                        let t0 = a5 - a3.scale_base_k(five) + a.scale_base_k(four);
+                                        inner[0] += w * t0;
+                                        continue;
+                                    }
 
                                     let a2 = a * a;
                                     let a3 = a2 * a;
@@ -588,8 +640,14 @@ where
             }
         } else {
             coeffs_seq(tail_len)
-        };
+        }
+    }
 
+    fn evals_col_phase_b3(&self, xs: &[K]) -> Vec<K> {
+        if xs.is_empty() {
+            return Vec::new();
+        }
+        let coeffs = self.col_phase_coeffs_b3();
         let xs_are_base = xs.iter().all(|&x| x.imag() == Fq::ZERO);
         if xs_are_base {
             xs.iter()
@@ -607,6 +665,17 @@ where
             2 => self.evals_col_phase_b2(xs),
             3 => self.evals_col_phase_b3(xs),
             _ => self.evals_col_phase_generic(xs),
+        }
+    }
+
+    pub fn optimized_col_phase_round_coeffs(&self) -> Option<Vec<K>> {
+        if self.round_idx >= self.ell_m {
+            return None;
+        }
+        match self.params.b {
+            2 => Some(self.col_phase_coeffs_b2().to_vec()),
+            3 => Some(self.col_phase_coeffs_b3().to_vec()),
+            _ => None,
         }
     }
 
@@ -2250,6 +2319,9 @@ where
             "ME output builder: expected 2^ell_d >= D (2^{} = {d_pad}, D = {D})",
             self.ell_d
         );
+        let rb = neo_ccs::utils::tensor_point::<K>(&self.row_chals);
+        let row_chals = self.row_chals.clone();
+        let s_col_vec = s_col.to_vec();
 
         let chi_s = if s_col.is_empty() {
             None
@@ -2263,8 +2335,13 @@ where
         for (inst, wit) in mcs_list.iter().zip(self.mcs_witnesses.iter()) {
             let X = crate::common::project_x_from_public_inputs(&inst.x, inst.m_in)
                 .unwrap_or_else(|e| panic!("ME output builder: project_x_from_public_inputs failed: {e}"));
-            let (y_ring, ct) =
-                crate::common::compute_y_from_Z_and_r(self.s, &wit.Z, &self.row_chals, self.ell_d, self.params.b);
+            let (y_ring, ct) = crate::common::compute_y_from_Z_and_rb_with_cache(
+                self.s,
+                &wit.Z,
+                &rb,
+                self.ell_d,
+                Some(self.superneo_cache.as_ref()),
+            );
 
             let y_zcol = if let Some(chi_s) = chi_s.as_ref() {
                 debug_assert!(chi_s.len() >= self.s.m, "chi_s too short for CCS width");
@@ -2280,8 +2357,8 @@ where
                 u_len: 0,
                 c: inst.c.clone(),
                 X,
-                r: self.row_chals.clone(),
-                s_col: s_col.to_vec(),
+                r: row_chals.clone(),
+                s_col: s_col_vec.clone(),
                 y_ring,
                 ct,
                 aux_openings: Vec::new(),
@@ -2294,8 +2371,13 @@ where
         // ME outputs (keep order).
         for (me_idx, inp) in me_inputs.iter().enumerate() {
             let Zi = &self.me_witnesses[me_idx];
-            let (y_ring, ct) =
-                crate::common::compute_y_from_Z_and_r(self.s, Zi, &self.row_chals, self.ell_d, self.params.b);
+            let (y_ring, ct) = crate::common::compute_y_from_Z_and_rb_with_cache(
+                self.s,
+                Zi,
+                &rb,
+                self.ell_d,
+                Some(self.superneo_cache.as_ref()),
+            );
 
             let y_zcol = if let Some(chi_s) = chi_s.as_ref() {
                 debug_assert!(chi_s.len() >= self.s.m, "chi_s too short for CCS width");
@@ -2311,8 +2393,8 @@ where
                 u_len: 0,
                 c: inp.c.clone(),
                 X: inp.X.clone(),
-                r: self.row_chals.clone(),
-                s_col: s_col.to_vec(),
+                r: row_chals.clone(),
+                s_col: s_col_vec.clone(),
                 y_ring,
                 ct,
                 aux_openings: Vec::new(),
