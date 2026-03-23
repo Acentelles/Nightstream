@@ -116,12 +116,6 @@ fn validate_step_metadata(step: &PublicStep, proof: &StepProof) -> Result<(), Pi
             step.label, proof.step.label
         )));
     }
-    if proof.step.deferred_extensions != step.deferred_extensions {
-        return Err(PiCcsError::InvalidInput(format!(
-            "deferred extension mismatch for step '{}'",
-            step.label
-        )));
-    }
     if proof.step.mcs.m_in != step.mcs.m_in || proof.step.mcs.x != step.mcs.x || proof.step.mcs.c != step.mcs.c {
         return Err(PiCcsError::InvalidInput(format!(
             "public MCS mismatch for step '{}'",

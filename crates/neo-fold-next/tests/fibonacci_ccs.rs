@@ -137,7 +137,6 @@ fn fibonacci_step(log: &AjtaiSModule, label: &str, values: &[u64]) -> StepInput 
             m_in,
         },
         witness: CcsWitness { w, Z: z_mat },
-        deferred_extensions: Vec::new(),
     }
 }
 

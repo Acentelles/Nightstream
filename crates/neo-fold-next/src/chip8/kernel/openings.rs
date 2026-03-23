@@ -11,7 +11,7 @@ use super::{
 };
 use crate::chip8::poly::{mle_eval_f_le, open_onehot_at_point_be as poly_open_onehot_at_point_be};
 use crate::chip8::spec::CommitmentId;
-use crate::proof::{OpeningClaim, OpeningDomain, OpeningSource};
+use crate::opening::{OpeningClaim, OpeningDomain, OpeningSource};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum KernelOpeningSource {

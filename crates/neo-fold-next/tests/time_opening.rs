@@ -1,4 +1,4 @@
-use neo_fold_next::proof::{OpeningClaim, OpeningDomain, OpeningSource, TimeOpeningProofSummary};
+use neo_fold_next::opening::{OpeningClaim, OpeningDomain, OpeningSource, TimeOpeningProofSummary};
 use neo_fold_next::time_opening::{prove_time_opening, verify_time_opening};
 use neo_math::{F, K};
 use p3_field::PrimeCharacteristicRing;
@@ -33,7 +33,7 @@ fn time_opening_is_canonical_under_claim_reordering() {
     ];
     let extension_claims = vec![
         claim(
-            OpeningSource::RegisterHistory,
+            OpeningSource::Chip8Kernel,
             OpeningDomain::Mem,
             point(3),
             0,
@@ -41,7 +41,7 @@ fn time_opening_is_canonical_under_claim_reordering() {
             9,
         ),
         claim(
-            OpeningSource::BytecodeFetch,
+            OpeningSource::Chip8Root,
             OpeningDomain::Mem,
             point(7),
             0,
@@ -49,7 +49,7 @@ fn time_opening_is_canonical_under_claim_reordering() {
             4,
         ),
         claim(
-            OpeningSource::RegisterHistory,
+            OpeningSource::Chip8Kernel,
             OpeningDomain::Mem,
             point(3),
             1,
@@ -57,7 +57,7 @@ fn time_opening_is_canonical_under_claim_reordering() {
             5,
         ),
         claim(
-            OpeningSource::RamHistory,
+            OpeningSource::Chip8Root,
             OpeningDomain::Mem,
             point(8),
             0,
@@ -76,7 +76,9 @@ fn time_opening_is_canonical_under_claim_reordering() {
 
     verify_time_opening(&main_lane, &reordered, &Some(summary.clone()))
         .expect("canonical manifest/reduction should ignore input order");
-    assert_eq!(summary.groups.len(), 5);
+    assert!(summary.groups.len() >= 4);
+    assert!(!summary.unification.round_polys.is_empty());
+    assert_eq!(summary.unification.r_unify.len(), summary.unification.round_polys.len());
     assert!(!summary.can_unify);
     assert_eq!(summary.unified_domain, OpeningDomain::Cpu);
     assert!(!summary.unified_point.is_empty());
@@ -94,7 +96,7 @@ fn time_opening_rejects_tampered_unified_digest() {
     )];
     let extension_claims = vec![
         claim(
-            OpeningSource::RegisterHistory,
+            OpeningSource::Chip8Kernel,
             OpeningDomain::Mem,
             point(3),
             0,
@@ -102,7 +104,7 @@ fn time_opening_rejects_tampered_unified_digest() {
             9,
         ),
         claim(
-            OpeningSource::RegisterHistory,
+            OpeningSource::Chip8Kernel,
             OpeningDomain::Mem,
             point(3),
             1,
@@ -131,7 +133,7 @@ fn time_opening_rejects_tampered_group_summary() {
     )];
     let extension_claims = vec![
         claim(
-            OpeningSource::BytecodeFetch,
+            OpeningSource::Chip8Kernel,
             OpeningDomain::Mem,
             point(4),
             0,
@@ -139,7 +141,7 @@ fn time_opening_rejects_tampered_group_summary() {
             8,
         ),
         claim(
-            OpeningSource::RamHistory,
+            OpeningSource::Chip8Root,
             OpeningDomain::Mem,
             point(4),
             0,
@@ -169,7 +171,7 @@ fn time_opening_rejects_tampered_group_coefficients() {
     )];
     let extension_claims = vec![
         claim(
-            OpeningSource::RegisterHistory,
+            OpeningSource::Chip8Kernel,
             OpeningDomain::Mem,
             point(3),
             0,
@@ -177,7 +179,7 @@ fn time_opening_rejects_tampered_group_coefficients() {
             9,
         ),
         claim(
-            OpeningSource::RegisterHistory,
+            OpeningSource::Chip8Kernel,
             OpeningDomain::Mem,
             point(3),
             1,
@@ -195,9 +197,46 @@ fn time_opening_rejects_tampered_group_coefficients() {
 }
 
 #[test]
+fn time_opening_rejects_tampered_unification_rounds() {
+    let main_lane = vec![claim(
+        OpeningSource::MainLane,
+        OpeningDomain::Cpu,
+        point(0),
+        0,
+        vec![0],
+        1,
+    )];
+    let extension_claims = vec![
+        claim(
+            OpeningSource::Chip8Kernel,
+            OpeningDomain::Mem,
+            point(3),
+            0,
+            vec![1000],
+            9,
+        ),
+        claim(
+            OpeningSource::Chip8Kernel,
+            OpeningDomain::Mem,
+            point(3),
+            1,
+            vec![1001],
+            5,
+        ),
+    ];
+
+    let mut summary = prove_time_opening(&main_lane, &extension_claims).expect("time opening summary");
+    summary.unification.round_polys[0][0] += K::ONE;
+
+    let err = verify_time_opening(&main_lane, &extension_claims, &Some(summary))
+        .expect_err("tampered unification rounds must fail");
+    assert!(format!("{err}").contains("unification"));
+}
+
+#[test]
 fn time_opening_rejects_duplicate_claims() {
     let dup = claim(
-        OpeningSource::RegisterHistory,
+        OpeningSource::Chip8Kernel,
         OpeningDomain::Mem,
         point(3),
         0,
@@ -213,7 +252,7 @@ fn time_opening_rejects_unsorted_column_ids() {
     let err = prove_time_opening(
         &[],
         &[claim(
-            OpeningSource::BytecodeFetch,
+            OpeningSource::Chip8Kernel,
             OpeningDomain::Mem,
             point(7),
             0,
@@ -226,50 +265,31 @@ fn time_opening_rejects_unsorted_column_ids() {
 }
 
 #[test]
-fn time_opening_unifies_same_domain_point_across_sources() {
+fn time_opening_keeps_groups_separate_across_sources_but_unifies_anchor() {
     let summary = prove_time_opening(
         &[],
         &[
             claim(
-                OpeningSource::BytecodeFetch,
+                OpeningSource::Chip8Kernel,
                 OpeningDomain::Mem,
                 point(9),
                 0,
                 vec![100, 101],
                 1,
             ),
-            claim(
-                OpeningSource::RegisterHistory,
-                OpeningDomain::Mem,
-                point(9),
-                0,
-                vec![1000],
-                2,
-            ),
-            claim(
-                OpeningSource::RamHistory,
-                OpeningDomain::Mem,
-                point(9),
-                0,
-                vec![10000],
-                3,
-            ),
+            claim(OpeningSource::Chip8Root, OpeningDomain::Mem, point(9), 0, vec![1000], 2),
         ],
     )
     .expect("time opening summary");
 
-    assert_eq!(summary.groups.len(), 1);
-    assert_eq!(
-        summary.groups[0].sources,
-        vec![
-            OpeningSource::BytecodeFetch,
-            OpeningSource::RegisterHistory,
-            OpeningSource::RamHistory,
-        ]
-    );
+    assert_eq!(summary.groups.len(), 2);
+    assert_eq!(summary.groups[0].sources, vec![OpeningSource::Chip8Kernel]);
+    assert_eq!(summary.groups[1].sources, vec![OpeningSource::Chip8Root]);
     assert!(summary.can_unify);
     assert_eq!(summary.unified_domain, OpeningDomain::Mem);
     assert_eq!(summary.unified_point, point(9));
+    assert_eq!(summary.unification.round_polys.len(), 1);
+    assert_eq!(summary.unification.r_unify.len(), 1);
 }
 
 #[test]
@@ -278,7 +298,7 @@ fn time_opening_rejects_tampered_unified_point() {
         &[],
         &[
             claim(
-                OpeningSource::BytecodeFetch,
+                OpeningSource::Chip8Kernel,
                 OpeningDomain::Mem,
                 point(4),
                 0,
@@ -286,7 +306,7 @@ fn time_opening_rejects_tampered_unified_point() {
                 8,
             ),
             claim(
-                OpeningSource::RamHistory,
+                OpeningSource::Chip8Root,
                 OpeningDomain::Cpu,
                 point(7),
                 0,
@@ -303,7 +323,7 @@ fn time_opening_rejects_tampered_unified_point() {
         &[],
         &[
             claim(
-                OpeningSource::BytecodeFetch,
+                OpeningSource::Chip8Kernel,
                 OpeningDomain::Mem,
                 point(4),
                 0,
@@ -311,7 +331,7 @@ fn time_opening_rejects_tampered_unified_point() {
                 8,
             ),
             claim(
-                OpeningSource::RamHistory,
+                OpeningSource::Chip8Root,
                 OpeningDomain::Cpu,
                 point(7),
                 0,

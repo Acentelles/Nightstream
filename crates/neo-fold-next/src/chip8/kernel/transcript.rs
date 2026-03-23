@@ -5,7 +5,7 @@ use neo_math::{KExtensions, K};
 use neo_transcript::{Poseidon2Transcript, Transcript};
 
 use crate::chip8::spec::CommitmentId;
-use crate::proof::TimeOpeningProofSummary;
+use crate::opening::TimeOpeningProofSummary;
 
 use super::joint_opening::{KernelJointOpeningFoldBucketProof, KernelJointOpeningSummary};
 use super::openings::{collect_exact_claim_witnesses, KernelExactOpeningArtifacts, KernelOpeningRefinementSummary};

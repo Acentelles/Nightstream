@@ -7,6 +7,7 @@ use p3_field::PrimeCharacteristicRing;
 use crate::chip8::spec::{Chip8Program, CHIP8_PROGRAM_START, COL_BURST_LAST, COL_IS_MEMOP, COL_PC_NEXT, COL_X_IDX};
 use crate::chip8::tables::{build_alu_table, build_decode_table, build_eq4_table, build_rom_table};
 use crate::chip8::{stage1, stage2};
+use crate::opening::TimeOpeningProofSummary;
 use crate::proof::StepInput;
 
 use super::artifacts::build_prepared_steps_from_frames;
@@ -305,8 +306,6 @@ fn squeeze_k<Tr: Transcript>(tr: &mut Tr, label: &'static [u8]) -> K {
 fn squeeze_point<Tr: Transcript>(tr: &mut Tr, label: &'static [u8], n: usize) -> Vec<K> {
     (0..n).map(|_| squeeze_k(tr, label)).collect()
 }
-
-use crate::proof::TimeOpeningProofSummary;
 
 use super::{
     AddressCorrectnessProof, CycleProductProof, KernelJointOpeningFoldBucketProof, KernelJointOpeningSummary,

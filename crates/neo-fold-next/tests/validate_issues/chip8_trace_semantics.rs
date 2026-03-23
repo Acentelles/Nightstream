@@ -5,9 +5,9 @@ use neo_fold_next::chip8::spec::{
     Chip8Program, Chip8State, Chip8VmSpec, COL_BURST_LAST, COL_NNN_ADDR, COL_NNN_WORD, COL_RAM_ADDR, COL_REG_X,
     COL_REG_X_NEXT, COL_X_IDX,
 };
+use neo_fold_next::chip8::tables::{RAM_SINK_ADDR, REG_SINK_ADDR};
 use neo_fold_next::chip8::trace::{build_row_extension_trace, Chip8TraceBuilder};
-use neo_fold_next::chip8::{RAM_SINK_ADDR, REG_SINK_ADDR};
-use neo_fold_next::proof::StepBuild;
+use neo_fold_next::step_build::StepBuild;
 use neo_math::F;
 use p3_field::PrimeCharacteristicRing;
 

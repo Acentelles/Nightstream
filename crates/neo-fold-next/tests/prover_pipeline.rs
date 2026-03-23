@@ -1,7 +1,7 @@
 use neo_ajtai::Commitment;
 use neo_ccs::traits::SModuleHomomorphism;
 use neo_ccs::{CcsClaim, CcsStructure, CcsWitness, Mat, SparsePoly};
-use neo_fold_next::proof::{ExtensionFamily, StepInput};
+use neo_fold_next::proof::StepInput;
 use neo_fold_next::prover::CommitmentMixers;
 use neo_fold_next::run::{prove_run, verify_run};
 use neo_math::{D, F};
@@ -118,11 +118,6 @@ fn make_step(log: &ToyModule, seed: u64, label: &str) -> StepInput {
             m_in,
         },
         witness: CcsWitness { w, Z: z_mat },
-        deferred_extensions: vec![
-            ExtensionFamily::BytecodeFetch,
-            ExtensionFamily::InstructionSemanticsLookup,
-            ExtensionFamily::RegisterHistory,
-        ],
     }
 }
 
@@ -139,7 +134,6 @@ fn run_uses_the_real_superneo_spine() {
     assert_eq!(proof.steps[0].ccs_outputs.len(), 1);
     assert_eq!(proof.steps[0].dec.children.len(), params.k_rho as usize);
     assert_eq!(proof.steps[1].ccs_outputs.len(), (params.k_rho as usize) + 1);
-    assert_eq!(proof.steps[0].step.deferred_extensions.len(), 3);
     assert_eq!(proof.final_main_claims.len(), params.k_rho as usize);
 
     let public_steps = steps

@@ -1,26 +1,22 @@
-//! Multi-VM proving architecture for `neo-fold-next`.
+//! Owns the active Rust proving path for `neo-fold-next`.
 //!
-//! Ownership map:
-//! - `prover`, `verifier`: real `Π_CCS -> Π_RLC -> Π_DEC` kernel
-//! - `run`: session-level prove/verify driver
-//! - `vm`: static VM architecture contracts
-//! - `frontends`: runtime trace/session builders
-//! - `families`: batch extension-family proving
-//! - `stages`: staged proving skeletons and planner
-//! - `bridge`: staged-to-backend export boundary
-//! - `pipeline`: top-level orchestration
-//! - `proof`: typed proof and frontend artifacts
-//! - `time_opening`, `finalize`: final boundary owners
+//! Ownership:
+//! - `prover`, `verifier`: generic `Π_CCS -> Π_RLC -> Π_DEC`
+//! - `run`: session orchestration
+//! - `proof`: generic session proof boundary
+//! - `opening`: shared opening-claim and time-opening summary boundary
+//! - `step_build`: frontend-produced step packaging and extension records
+//! - `time_opening`, `finalize`: final opening and packaged-proof boundaries
+//! - `vm`: static VM contracts
+//! - `chip8`: current VM frontend and staged kernel
 
-pub mod bridge;
 pub mod chip8;
-pub mod families;
 pub mod finalize;
-pub mod pipeline;
+pub mod opening;
 pub mod proof;
 pub mod prover;
 pub mod run;
-pub mod stages;
+pub mod step_build;
 pub mod time_opening;
 pub mod verifier;
 pub mod vm;

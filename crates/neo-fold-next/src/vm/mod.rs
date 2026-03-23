@@ -59,5 +59,5 @@ pub trait VmTraceBuilder<V: VmSpec> {
         prev: &Self::MachineState,
         next: &Self::MachineState,
         trace: &Self::StepTrace,
-    ) -> Result<crate::proof::StepBuild, Self::Error>;
+    ) -> Result<crate::step_build::StepBuild, Self::Error>;
 }

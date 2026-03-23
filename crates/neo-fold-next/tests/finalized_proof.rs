@@ -1,7 +1,7 @@
 use neo_ajtai::Commitment;
 use neo_ccs::traits::SModuleHomomorphism;
 use neo_ccs::{CcsClaim, CcsStructure, CcsWitness, Mat, SparsePoly};
-use neo_fold_next::proof::{ExtensionFamily, StepInput};
+use neo_fold_next::proof::StepInput;
 use neo_fold_next::prover::CommitmentMixers;
 use neo_fold_next::run::{prove_and_package, verify_packaged};
 use neo_math::{D, F};
@@ -118,10 +118,6 @@ fn make_step(log: &ToyModule, seed: u64, label: &str) -> StepInput {
             m_in,
         },
         witness: CcsWitness { w, Z: z_mat },
-        deferred_extensions: vec![
-            ExtensionFamily::BytecodeFetch,
-            ExtensionFamily::InstructionSemanticsLookup,
-        ],
     }
 }
 

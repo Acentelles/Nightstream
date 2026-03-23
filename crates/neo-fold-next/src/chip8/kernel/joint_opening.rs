@@ -10,7 +10,7 @@ use neo_reductions::sumcheck::verify_sumcheck_rounds;
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::PrimeCharacteristicRing;
 
-use crate::proof::{OpeningDomain, TimeOpeningGroupSummary, TimeOpeningProofSummary};
+use crate::opening::{OpeningClaim, OpeningDomain, TimeOpeningGroupSummary, TimeOpeningProofSummary};
 use crate::time_opening::canonical_claim_cmp;
 
 use super::lane_commitment::encoded_time_width;
@@ -571,7 +571,7 @@ fn verify_unified_fold_summary(
 
 fn build_group_summary(
     params: &NeoParams,
-    canonical_claims: &[(usize, crate::proof::OpeningClaim)],
+    canonical_claims: &[(usize, OpeningClaim)],
     claim_summaries: &[KernelJointOpeningClaimSummary],
     exact_claims: &[KernelExactClaimWitness],
     group: &TimeOpeningGroupSummary,
@@ -662,7 +662,7 @@ fn build_unified_fold_summary(
     }))
 }
 
-fn canonical_time_claims(manifest: &KernelOpeningManifest) -> Vec<(usize, crate::proof::OpeningClaim)> {
+fn canonical_time_claims(manifest: &KernelOpeningManifest) -> Vec<(usize, OpeningClaim)> {
     let mut claims: Vec<_> = manifest
         .claims
         .iter()
@@ -674,7 +674,7 @@ fn canonical_time_claims(manifest: &KernelOpeningManifest) -> Vec<(usize, crate:
 }
 
 fn group_claim_summaries<'a>(
-    canonical_claims: &[(usize, crate::proof::OpeningClaim)],
+    canonical_claims: &[(usize, OpeningClaim)],
     claim_summaries: &'a [KernelJointOpeningClaimSummary],
     exact_claims: &'a [KernelExactClaimWitness],
     group: &TimeOpeningGroupSummary,

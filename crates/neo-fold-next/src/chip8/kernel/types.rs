@@ -8,7 +8,8 @@ use crate::chip8::spec::{
     COL_MEM_VALUE, COL_NNN_ADDR, COL_NNN_WORD, COL_PC, COL_PC_NEXT, COL_PRESERVES_X, COL_RAM_ADDR, COL_REG_X,
     COL_REG_X_NEXT, COL_REG_Y, COL_WRITES_LOOKUP_TO_X, COL_WRITES_MEM_TO_X, COL_WRITES_NNN_TO_I, COL_X_IDX, COL_Y_IDX,
 };
-use crate::proof::{PublicStep, StepInput, TimeOpeningProofSummary};
+use crate::opening::TimeOpeningProofSummary;
+use crate::proof::{PublicStep, StepInput};
 
 use super::bridge::KernelBridgeBindingSummary;
 use super::bridge::KernelRowProjectionSummary;
