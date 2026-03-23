@@ -2,10 +2,11 @@ use neo_math::K;
 use neo_transcript::Poseidon2Transcript;
 use p3_field::PrimeCharacteristicRing;
 
-use crate::chip8::poly::{eq_eval_be, mle_eval_k_be};
+use crate::chip8::poly::{build_eq_table, mle_eval_k_be};
 use crate::chip8::spec::{COL_IS_MEMOP, COL_PC, COL_X_IDX};
+use crate::chip8::stage3::Stage3Proof;
 
-use super::super::{expect_equal_k, SimpleKernelError, Stage3Proof};
+use super::super::{expect_equal_k, SimpleKernelError};
 use super::{sample_k, sample_point};
 
 pub(crate) fn verify_kernel_stage3_sumcheck_terminal(
@@ -29,6 +30,7 @@ pub(crate) fn verify_kernel_stage3_sumcheck_terminal(
         &proof.shift_proof.reduction_rounds,
         "stage3 lane shift",
     )?;
+    let eq_shift = build_eq_table(&proof.shift_proof.source_point);
     let mut shifted_batched_col = Vec::with_capacity(trace_rows.len());
     for row in trace_rows.iter().skip(1) {
         shifted_batched_col.push(
@@ -38,7 +40,6 @@ pub(crate) fn verify_kernel_stage3_sumcheck_terminal(
         );
     }
     shifted_batched_col.push(K::ZERO);
-    let expected_terminal =
-        eq_eval_be(&proof.shift_proof.source_point, &shift_point) * mle_eval_k_be(&shifted_batched_col, &shift_point);
+    let expected_terminal = mle_eval_k_be(&eq_shift, &shift_point) * mle_eval_k_be(&shifted_batched_col, &shift_point);
     expect_equal_k(shift_terminal, expected_terminal, "stage3 lane shift terminal")
 }

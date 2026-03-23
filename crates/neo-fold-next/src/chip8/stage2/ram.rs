@@ -10,10 +10,7 @@ use crate::chip8::poly::build_eq_table;
 use crate::chip8::tables::{build_unmap_ram, ADDR_RAM_BITS};
 
 use crate::chip8::kernel::verify_sumcheck_known;
-use crate::chip8::kernel::{
-    verify_stage2_address_correctness_transcript, AddressCorrectnessProof, KernelStepAux, SimpleKernelError,
-    Stage2TwistProof,
-};
+use crate::chip8::kernel::{KernelStepAux, SimpleKernelError};
 use crate::chip8::spec::COL_RAM_ADDR;
 
 use super::common::{
@@ -21,6 +18,8 @@ use super::common::{
     partial_eval_flat_k_at_addr_be, prove_address_correctness, prove_raf, read_port_claim, squeeze_k, squeeze_point,
     stage2_address_claims, write_port_claim,
 };
+use super::proof::{AddressCorrectnessProof, Stage2TwistProof};
+use super::transcript::verify_stage2_address_correctness_transcript;
 
 pub(crate) struct Stage2RamProofArtifacts {
     pub gamma_ram: K,

@@ -4,14 +4,16 @@ use neo_math::{KExtensions, F, K};
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
 
-use super::{
-    KernelStepAux, SimpleKernelError, Stage1ShoutProof, Stage2TwistProof, Stage3Proof, DECODE_HANDOFF_POLY_IDS,
-    RAM_TWIST_POLY_IDS, REG_TWIST_POLY_IDS, STAGE1_LANE_OPEN_COLS, STAGE2_LANE_OPEN_COLS, STAGE3_FINAL_BOUNDARY_COLS,
-    STAGE3_SHIFT_OPEN_COLS, STAGE3_START_BOUNDARY_COLS,
-};
 use crate::chip8::poly::{mle_eval_f_le, open_onehot_at_point_be as poly_open_onehot_at_point_be};
 use crate::chip8::spec::CommitmentId;
+use crate::chip8::{
+    stage1::{Stage1ShoutProof, DECODE_HANDOFF_POLY_IDS, STAGE1_LANE_OPEN_COLS},
+    stage2::{Stage2TwistProof, RAM_TWIST_POLY_IDS, REG_TWIST_POLY_IDS, STAGE2_LANE_OPEN_COLS},
+    stage3::{Stage3Proof, STAGE3_FINAL_BOUNDARY_COLS, STAGE3_SHIFT_OPEN_COLS, STAGE3_START_BOUNDARY_COLS},
+};
 use crate::opening::{OpeningClaim, OpeningDomain, OpeningSource};
+
+use super::{KernelStepAux, SimpleKernelError};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum KernelOpeningSource {

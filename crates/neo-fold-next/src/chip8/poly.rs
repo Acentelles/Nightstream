@@ -63,13 +63,6 @@ pub(crate) fn eq_eval_le(point_a_le: &[K], point_b_le: &[K]) -> K {
         .fold(K::ONE, |acc, (&a, &b)| acc * ((K::ONE - a) * (K::ONE - b) + a * b))
 }
 
-pub(crate) fn eq_eval_be(point_a_be: &[K], point_b_be: &[K]) -> K {
-    point_a_be
-        .iter()
-        .zip(point_b_be.iter())
-        .fold(K::ONE, |acc, (&a, &b)| acc * ((K::ONE - a) * (K::ONE - b) + a * b))
-}
-
 pub(crate) fn open_onehot_at_point_be(addresses: &[usize], addr_point_be: &[K], cycle_point_le: &[K]) -> K {
     let addr_point_le: Vec<K> = addr_point_be.iter().rev().copied().collect();
     let eq_addr = build_eq_table(&addr_point_le);

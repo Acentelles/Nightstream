@@ -14,7 +14,6 @@ mod transcript;
 mod types;
 mod verify_artifact;
 mod verify_common;
-mod verify_transcript;
 use super::spec::{Chip8Program, CommitmentId, CHIP8_PROGRAM_START, COL_PC};
 use super::tables::{build_alu_table, build_decode_table, build_eq4_table, build_rom_table};
 use super::{stage1, stage2, stage3};
@@ -88,21 +87,20 @@ use stage_terminal::{
     verify_kernel_stage3_sumcheck_terminal,
 };
 use transcript::emit_kernel_opening_artifacts_to_transcript;
+pub use transcript::{
+    KernelExactOpeningTranscriptEntry, KernelJointOpeningTranscriptUnification, KernelOpeningTranscriptSource,
+    KernelOpeningTranscriptSurface, KernelTimeOpeningTranscriptGroup, KernelTimeOpeningTranscriptUnification,
+};
 pub use transcript::{KernelTranscriptEvent, KernelTranscriptSurface};
 pub use types::{
-    AddressCorrectnessProof, CycleProductProof, KernelCommitments, KernelStepAux, LaneShiftProof, RowBindingClaim,
-    ShoutChannelProof, SimpleKernelError, SimpleKernelOutput, SimpleKernelProof, SimpleKernelProverInput,
-    SimpleKernelPublicInput, SimpleKernelVerifierInput, SimpleKernelWitness, Stage1ShoutProof, Stage2LinkClaims,
-    Stage2TwistProof, Stage3Proof, DECODE_HANDOFF_POLY_IDS, RAM_TWIST_POLY_IDS, REG_TWIST_POLY_IDS,
-    STAGE1_LANE_OPEN_COLS, STAGE2_LANE_OPEN_COLS, STAGE3_FINAL_BOUNDARY_COLS, STAGE3_SHIFT_OPEN_COLS,
-    STAGE3_START_BOUNDARY_COLS,
+    KernelCommitments, KernelStepAux, SimpleKernelError, SimpleKernelOutput, SimpleKernelProof,
+    SimpleKernelProverInput, SimpleKernelPublicInput, SimpleKernelVerifierInput, SimpleKernelWitness,
 };
 pub(crate) use verify_artifact::{authenticate_kernel_openings, pad_semantic_witness, reconstruct_trace_rows_and_aux};
 pub(crate) use verify_common::{
     assert_manifest_canonical, assert_root_manifest_canonical, batch_values, expect_digest32, expect_equal_k,
-    expect_equal_k_slice, find_manifest_claim, verify_sumcheck_known,
+    expect_equal_k_slice, find_manifest_claim, replay_sumcheck_unchecked, split_round_groups, verify_sumcheck_known,
 };
-pub(crate) use verify_transcript::{verify_stage1_channel_transcript, verify_stage2_address_correctness_transcript};
 
 struct KernelProgramContext {
     word_count: usize,

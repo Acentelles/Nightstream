@@ -5,13 +5,12 @@ use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::PrimeCharacteristicRing;
 
 use crate::chip8::spec::WITNESS_WIDTH;
+use crate::chip8::stage3::RowBindingClaim;
 use crate::proof::{PublicStep, StepInput};
 
 use super::artifacts::{build_prepared_step_from_row_binding, SimpleKernelRootContext};
 use super::openings::{find_refinement_by_claim_digest, KernelOpeningRefinementSummary};
-use super::{
-    expect_equal_k_slice, find_manifest_claim, CommitmentId, KernelOpeningManifest, RowBindingClaim, SimpleKernelError,
-};
+use super::{expect_equal_k_slice, find_manifest_claim, CommitmentId, KernelOpeningManifest, SimpleKernelError};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct KernelRowProjection {

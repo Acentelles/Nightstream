@@ -6,11 +6,11 @@ use neo_reductions::sumcheck::{run_sumcheck_prover, RoundOracle};
 use neo_transcript::Transcript;
 use p3_field::PrimeCharacteristicRing;
 
-use crate::chip8::kernel::{
-    AddressCorrectnessProof, CycleProductProof, KernelStepAux, SimpleKernelError, STAGE2_LANE_OPEN_COLS,
-};
+use crate::chip8::kernel::{KernelStepAux, SimpleKernelError};
 use crate::chip8::poly::build_eq_table;
 use crate::chip8::tables::{RAM_SINK_ADDR, REG_SINK_ADDR};
+
+use super::proof::{AddressCorrectnessProof, CycleProductProof, STAGE2_LANE_OPEN_COLS};
 
 /// Evaluate MLE of a base-field vector at an extension-field point.
 pub(crate) fn mle_eval_fk(v: &[F], r: &[K]) -> K {

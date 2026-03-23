@@ -80,14 +80,28 @@ crates/neo-fold-next/src/
     ├── builder.rs
     ├── spec.rs
     ├── trace.rs
-    ├── stage1.rs
+    ├── stage1/
+    │   ├── mod.rs
+    │   ├── proof.rs
+    │   ├── prove.rs
+    │   ├── verify.rs
+    │   └── transcript.rs
     ├── stage2/
     │   ├── mod.rs
     │   ├── common.rs
+    │   ├── proof.rs
+    │   ├── prove.rs
+    │   ├── verify.rs
     │   ├── reg.rs
-    │   └── ram.rs
-    ├── stage3.rs
+    │   ├── ram.rs
+    │   └── transcript.rs
+    ├── stage3/
+    │   ├── mod.rs
+    │   ├── proof.rs
+    │   ├── prove.rs
+    │   └── verify.rs
     └── kernel/
+        ├── mod.rs
         ├── types.rs
         ├── public_meta.rs
         ├── transcript.rs
@@ -99,13 +113,11 @@ crates/neo-fold-next/src/
         ├── lane_commitment.rs
         ├── lane_commitment/transport.rs
         ├── soundness_accounting.rs
-        ├── stage_terminal.rs
         ├── stage_terminal/
         │   ├── stage1.rs
         │   ├── stage2.rs
         │   └── stage3.rs
         ├── verify_common.rs
-        ├── verify_transcript.rs
         └── verify_artifact.rs
 ```
 
@@ -145,14 +157,28 @@ crates/neo-fold-next/src/
     ├── execute.rs
     ├── lower.rs
     ├── builder.rs
-    ├── stage1.rs
+    ├── stage1/
+    │   ├── mod.rs
+    │   ├── proof.rs
+    │   ├── prove.rs
+    │   ├── verify.rs
+    │   └── transcript.rs
     ├── stage2/
     │   ├── mod.rs
     │   ├── common.rs
+    │   ├── proof.rs
+    │   ├── prove.rs
+    │   ├── verify.rs
     │   ├── reg.rs
-    │   └── ram.rs
-    ├── stage3.rs
+    │   ├── ram.rs
+    │   └── transcript.rs
+    ├── stage3/
+    │   ├── mod.rs
+    │   ├── proof.rs
+    │   ├── prove.rs
+    │   └── verify.rs
     └── kernel/
+        ├── mod.rs
         ├── types.rs
         ├── public_meta.rs
         ├── transcript.rs
@@ -166,7 +192,6 @@ crates/neo-fold-next/src/
         ├── soundness_accounting.rs
         ├── stage_terminal/
         ├── verify_common.rs
-        ├── verify_transcript.rs
         └── verify_artifact.rs
 ```
 
@@ -202,16 +227,29 @@ crates/neo-fold-next/src/
 | `execute.rs` | concrete CHIP-8 step execution | proof-row lowering |
 | `lower.rs` | execution step -> semantic/kernel row lowering | `StepBuild` packaging |
 | `builder.rs` | row trace -> `StepBuild` packaging | execution semantics |
-| `stage2/mod.rs` | Stage 2 orchestration | register-only or RAM-only Twist logic |
+| `stage1/mod.rs` | shared Stage 1 math, claims, and oracle machinery | Stage 1 proving or verifying entrypoints |
+| `stage1/proof.rs` | Stage 1 proof surface and lane-opening contract | Stage 1 proving logic |
+| `stage1/prove.rs` | Stage 1 proving entrypoint and prove-only channel builders | Stage 1 verification logic |
+| `stage1/verify.rs` | Stage 1 verifier entrypoint | Stage 1 proving logic |
+| `stage1/transcript.rs` | Stage 1 transcript replay | Stage 1 proving logic |
+| `stage2/mod.rs` | Stage 2 module boundary and re-exported entrypoints | register-only or RAM-only Twist logic or proof surface ownership |
 | `stage2/common.rs` | shared Stage 2 math and address machinery | proof orchestration |
+| `stage2/proof.rs` | Stage 2 proof surface and lane-opening contract | Stage 2 proving logic |
+| `stage2/prove.rs` | Stage 2 proving entrypoint and linkage batch construction | Stage 2 verification logic |
+| `stage2/verify.rs` | Stage 2 verifier entrypoint | Stage 2 proving logic |
 | `stage2/reg.rs` | register-side Twist logic | RAM-side Twist logic |
 | `stage2/ram.rs` | RAM-side Twist logic | register-side Twist logic |
+| `stage2/transcript.rs` | Stage 2 transcript replay | Stage 2 proving logic |
+| `stage3/mod.rs` | shared Stage 3 math, shift helpers, and row-binding helpers | Stage 3 proving or verifying entrypoints |
+| `stage3/proof.rs` | Stage 3 proof surface and lane-opening contract | Stage 3 proving logic |
+| `stage3/prove.rs` | Stage 3 proving entrypoint | Stage 3 verification logic |
+| `stage3/verify.rs` | Stage 3 verifier entrypoint | Stage 3 proving logic |
 
 ### CHIP-8 kernel
 
 | File | Owns | Does not own |
 |---|---|---|
-| `kernel.rs` | narrow public kernel API | re-export of every internal owner |
+| `kernel/mod.rs` | narrow public kernel API | re-export of every internal owner |
 | `types.rs` | kernel proof/output surface types | construction logic |
 | `public_meta.rs` | `meta_pub`, `root0`, public-input binding | release artifacts |
 | `transcript.rs` | transcript event schedule | frame reconstruction |

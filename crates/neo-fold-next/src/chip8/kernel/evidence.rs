@@ -6,7 +6,11 @@ use p3_field::PrimeCharacteristicRing;
 
 use crate::chip8::spec::{Chip8Program, CHIP8_PROGRAM_START, COL_BURST_LAST, COL_IS_MEMOP, COL_PC_NEXT, COL_X_IDX};
 use crate::chip8::tables::{build_alu_table, build_decode_table, build_eq4_table, build_rom_table};
-use crate::chip8::{stage1, stage2};
+use crate::chip8::{
+    stage1::{self, ShoutChannelProof, Stage1ShoutProof},
+    stage2::{self, AddressCorrectnessProof, CycleProductProof, Stage2TwistProof},
+    stage3::{LaneShiftProof, RowBindingClaim, Stage3Proof},
+};
 use crate::opening::TimeOpeningProofSummary;
 use crate::proof::StepInput;
 
@@ -14,7 +18,7 @@ use super::artifacts::build_prepared_steps_from_frames;
 use super::bridge::prepared_step_digest;
 use super::public_meta::{absorb_root0, new_simple_kernel_transcript};
 use super::{
-    build_kernel_exact_frames, CommitmentId, KernelExactFrame, RowBindingClaim, SimpleKernelError, SimpleKernelOutput,
+    build_kernel_exact_frames, CommitmentId, KernelExactFrame, SimpleKernelError, SimpleKernelOutput,
     SimpleKernelProof, SimpleKernelPublicInput,
 };
 
@@ -308,11 +312,9 @@ fn squeeze_point<Tr: Transcript>(tr: &mut Tr, label: &'static [u8], n: usize) ->
 }
 
 use super::{
-    AddressCorrectnessProof, CycleProductProof, KernelJointOpeningFoldBucketProof, KernelJointOpeningSummary,
-    KernelOpeningManifest, KernelOpeningRefinementSummary, RootOpeningManifest, ShoutChannelProof, Stage1ShoutProof,
-    Stage2TwistProof, Stage3Proof,
+    KernelBridgeBindingSummary, KernelJointOpeningFoldBucketProof, KernelJointOpeningSummary, KernelOpeningManifest,
+    KernelOpeningRefinementSummary, KernelRowProjectionSummary, RootOpeningManifest,
 };
-use super::{KernelBridgeBindingSummary, KernelRowProjectionSummary, LaneShiftProof};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct KernelSemanticEvidenceSummary {

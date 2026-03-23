@@ -17,6 +17,57 @@ pub struct KernelTranscriptSurface {
     pub events: Vec<KernelTranscriptEvent>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct KernelExactOpeningTranscriptEntry {
+    pub claim_digest: [u8; 32],
+    pub witness_digest: [u8; 32],
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct KernelTimeOpeningTranscriptGroup {
+    pub group_digest: [u8; 32],
+    pub reduced_digest: [u8; 32],
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct KernelTimeOpeningTranscriptUnification {
+    pub claimed_sum: K,
+    pub round_polys: Vec<Vec<K>>,
+    pub r_unify: Vec<K>,
+    pub can_unify: bool,
+    pub unified_point: Vec<K>,
+    pub unified_digest: [u8; 32],
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct KernelJointOpeningTranscriptUnification {
+    pub claimed_sum: K,
+    pub round_polys: Vec<Vec<K>>,
+    pub r_unify: Vec<K>,
+    pub unified_fold_digest: Option<[u8; 32]>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct KernelOpeningTranscriptSource {
+    pub exact_openings: Vec<KernelExactOpeningTranscriptEntry>,
+    pub refinement_digests: Vec<[u8; 32]>,
+    pub time_opening_manifest_digest: [u8; 32],
+    pub time_opening_proof_digest: [u8; 32],
+    pub time_opening_groups: Vec<KernelTimeOpeningTranscriptGroup>,
+    pub time_opening_unification: KernelTimeOpeningTranscriptUnification,
+    pub joint_claim_digests: Vec<[u8; 32]>,
+    pub joint_group_digests: Vec<[u8; 32]>,
+    pub joint_opening_unification: KernelJointOpeningTranscriptUnification,
+    pub fold_bucket_digests: Vec<[u8; 32]>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct KernelOpeningTranscriptSurface {
+    pub kernel_manifest_digest: [u8; 32],
+    pub root_manifest_digest: [u8; 32],
+    pub source: KernelOpeningTranscriptSource,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum KernelTranscriptEvent {
     AbsorbCommitment(CommitmentId),
@@ -81,6 +132,14 @@ impl KernelTranscriptSurface {
     }
 }
 
+impl KernelOpeningTranscriptSurface {
+    pub fn digest32(&self) -> [u8; 32] {
+        let mut tr = Poseidon2Transcript::new(b"neo.fold.next/chip8/kernel_opening_transcript_surface");
+        append_kernel_opening_transcript_surface(&mut tr, self);
+        tr.digest32()
+    }
+}
+
 pub fn build_kernel_transcript_surface(
     proof: &SimpleKernelProof,
 ) -> Result<KernelTranscriptSurface, SimpleKernelError> {
@@ -129,86 +188,106 @@ pub(crate) fn emit_kernel_opening_artifacts_to_transcript(
     joint_opening_fold_bucket_proofs: &[KernelJointOpeningFoldBucketProof],
     artifacts: KernelExactOpeningArtifacts<'_>,
 ) -> Result<(), SimpleKernelError> {
-    transcript.append_message(
-        b"neo.fold.next/chip8/opening_transcript/kernel_manifest",
-        &manifest.digest,
-    );
-    transcript.append_message(
-        b"neo.fold.next/chip8/opening_transcript/root_manifest",
-        &root_manifest.digest,
-    );
-
-    let exact_claims = collect_exact_claim_witnesses(manifest, artifacts)?;
-    transcript.append_u64s(
-        b"neo.fold.next/chip8/opening_transcript/exact_opening_count",
-        &[exact_claims.len() as u64],
-    );
-    for witness in exact_claims {
-        transcript.append_message(
-            b"neo.fold.next/chip8/opening_transcript/exact_opening_claim",
-            &witness.claim.digest,
-        );
-        transcript.append_message(
-            b"neo.fold.next/chip8/opening_transcript/exact_opening_witness",
-            &witness.proof.expected_digest(),
-        );
-    }
-
-    transcript.append_u64s(
-        b"neo.fold.next/chip8/opening_transcript/refinement_count",
-        &[refinement_summary.refinements.len() as u64],
-    );
-    for refinement in &refinement_summary.refinements {
-        transcript.append_message(b"neo.fold.next/chip8/opening_transcript/refinement", &refinement.digest);
-    }
-
-    transcript.append_message(
-        b"neo.fold.next/chip8/opening_transcript/time_opening_manifest",
-        &time_opening_summary.manifest_digest,
-    );
-    transcript.append_message(
-        b"neo.fold.next/chip8/opening_transcript/time_opening_proof",
-        &time_opening_summary.proof_digest,
-    );
-    transcript.append_u64s(
-        b"neo.fold.next/chip8/opening_transcript/time_opening_group_count",
-        &[time_opening_summary.groups.len() as u64],
-    );
-    for group in &time_opening_summary.groups {
-        transcript.append_message(
-            b"neo.fold.next/chip8/opening_transcript/time_opening_group_digest",
-            &group.group_digest,
-        );
-        transcript.append_message(
-            b"neo.fold.next/chip8/opening_transcript/time_opening_group_reduced_digest",
-            &group.reduced_digest,
-        );
-    }
-    append_time_opening_unification(transcript, time_opening_summary);
-
-    transcript.append_u64s(
-        b"neo.fold.next/chip8/opening_transcript/joint_claim_count",
-        &[joint_opening_summary.claims.len() as u64],
-    );
-    for claim in &joint_opening_summary.claims {
-        transcript.append_message(b"neo.fold.next/chip8/opening_transcript/joint_claim", &claim.digest);
-    }
-    transcript.append_u64s(
-        b"neo.fold.next/chip8/opening_transcript/joint_group_count",
-        &[joint_opening_summary.groups.len() as u64],
-    );
-    for group in &joint_opening_summary.groups {
-        transcript.append_message(b"neo.fold.next/chip8/opening_transcript/joint_group", &group.digest);
-    }
-    append_joint_opening_unification(transcript, joint_opening_summary);
-    transcript.append_u64s(
-        b"neo.fold.next/chip8/opening_transcript/fold_bucket_count",
-        &[joint_opening_fold_bucket_proofs.len() as u64],
-    );
-    for proof in joint_opening_fold_bucket_proofs {
-        transcript.append_message(b"neo.fold.next/chip8/opening_transcript/fold_bucket", &proof.digest);
-    }
+    let surface = build_kernel_opening_transcript_surface(
+        manifest,
+        root_manifest,
+        refinement_summary,
+        time_opening_summary,
+        joint_opening_summary,
+        joint_opening_fold_bucket_proofs,
+        artifacts,
+    )?;
+    append_kernel_opening_transcript_surface(transcript, &surface);
     Ok(())
+}
+
+pub(crate) fn build_kernel_opening_transcript_source(
+    manifest: &KernelOpeningManifest,
+    refinement_summary: &KernelOpeningRefinementSummary,
+    time_opening_summary: &TimeOpeningProofSummary,
+    joint_opening_summary: &KernelJointOpeningSummary,
+    joint_opening_fold_bucket_proofs: &[KernelJointOpeningFoldBucketProof],
+    artifacts: KernelExactOpeningArtifacts<'_>,
+) -> Result<KernelOpeningTranscriptSource, SimpleKernelError> {
+    let exact_openings = collect_exact_claim_witnesses(manifest, artifacts)?
+        .into_iter()
+        .map(|witness| KernelExactOpeningTranscriptEntry {
+            claim_digest: witness.claim.digest,
+            witness_digest: witness.proof.expected_digest(),
+        })
+        .collect();
+    Ok(KernelOpeningTranscriptSource {
+        exact_openings,
+        refinement_digests: refinement_summary
+            .refinements
+            .iter()
+            .map(|refinement| refinement.digest)
+            .collect(),
+        time_opening_manifest_digest: time_opening_summary.manifest_digest,
+        time_opening_proof_digest: time_opening_summary.proof_digest,
+        time_opening_groups: time_opening_summary
+            .groups
+            .iter()
+            .map(|group| KernelTimeOpeningTranscriptGroup {
+                group_digest: group.group_digest,
+                reduced_digest: group.reduced_digest,
+            })
+            .collect(),
+        time_opening_unification: KernelTimeOpeningTranscriptUnification {
+            claimed_sum: time_opening_summary.unification.claimed_sum,
+            round_polys: time_opening_summary.unification.round_polys.clone(),
+            r_unify: time_opening_summary.unification.r_unify.clone(),
+            can_unify: time_opening_summary.can_unify,
+            unified_point: time_opening_summary.unified_point.clone(),
+            unified_digest: time_opening_summary.unified_digest,
+        },
+        joint_claim_digests: joint_opening_summary
+            .claims
+            .iter()
+            .map(|claim| claim.digest)
+            .collect(),
+        joint_group_digests: joint_opening_summary
+            .groups
+            .iter()
+            .map(|group| group.digest)
+            .collect(),
+        joint_opening_unification: KernelJointOpeningTranscriptUnification {
+            claimed_sum: joint_opening_summary.unification.claimed_sum,
+            round_polys: joint_opening_summary.unification.round_polys.clone(),
+            r_unify: joint_opening_summary.unification.r_unify.clone(),
+            unified_fold_digest: joint_opening_summary
+                .unified_fold
+                .as_ref()
+                .map(|group| group.digest),
+        },
+        fold_bucket_digests: joint_opening_fold_bucket_proofs
+            .iter()
+            .map(|proof| proof.digest)
+            .collect(),
+    })
+}
+
+pub(crate) fn build_kernel_opening_transcript_surface(
+    manifest: &KernelOpeningManifest,
+    root_manifest: &RootOpeningManifest,
+    refinement_summary: &KernelOpeningRefinementSummary,
+    time_opening_summary: &TimeOpeningProofSummary,
+    joint_opening_summary: &KernelJointOpeningSummary,
+    joint_opening_fold_bucket_proofs: &[KernelJointOpeningFoldBucketProof],
+    artifacts: KernelExactOpeningArtifacts<'_>,
+) -> Result<KernelOpeningTranscriptSurface, SimpleKernelError> {
+    Ok(KernelOpeningTranscriptSurface {
+        kernel_manifest_digest: manifest.digest,
+        root_manifest_digest: root_manifest.digest,
+        source: build_kernel_opening_transcript_source(
+            manifest,
+            refinement_summary,
+            time_opening_summary,
+            joint_opening_summary,
+            joint_opening_fold_bucket_proofs,
+            artifacts,
+        )?,
+    })
 }
 
 fn kernel_transcript_events(semantic_rows: usize) -> Vec<KernelTranscriptEvent> {
@@ -346,21 +425,104 @@ fn append_transcript_event(tr: &mut Poseidon2Transcript, event: &KernelTranscrip
     }
 }
 
-fn append_time_opening_unification(transcript: &mut Poseidon2Transcript, summary: &TimeOpeningProofSummary) {
+fn append_kernel_opening_transcript_surface(
+    transcript: &mut Poseidon2Transcript,
+    surface: &KernelOpeningTranscriptSurface,
+) {
+    transcript.append_message(
+        b"neo.fold.next/chip8/opening_transcript/kernel_manifest",
+        &surface.kernel_manifest_digest,
+    );
+    transcript.append_message(
+        b"neo.fold.next/chip8/opening_transcript/root_manifest",
+        &surface.root_manifest_digest,
+    );
+    transcript.append_u64s(
+        b"neo.fold.next/chip8/opening_transcript/exact_opening_count",
+        &[surface.source.exact_openings.len() as u64],
+    );
+    for witness in &surface.source.exact_openings {
+        transcript.append_message(
+            b"neo.fold.next/chip8/opening_transcript/exact_opening_claim",
+            &witness.claim_digest,
+        );
+        transcript.append_message(
+            b"neo.fold.next/chip8/opening_transcript/exact_opening_witness",
+            &witness.witness_digest,
+        );
+    }
+    transcript.append_u64s(
+        b"neo.fold.next/chip8/opening_transcript/refinement_count",
+        &[surface.source.refinement_digests.len() as u64],
+    );
+    for digest in &surface.source.refinement_digests {
+        transcript.append_message(b"neo.fold.next/chip8/opening_transcript/refinement", digest);
+    }
+    transcript.append_message(
+        b"neo.fold.next/chip8/opening_transcript/time_opening_manifest",
+        &surface.source.time_opening_manifest_digest,
+    );
+    transcript.append_message(
+        b"neo.fold.next/chip8/opening_transcript/time_opening_proof",
+        &surface.source.time_opening_proof_digest,
+    );
+    transcript.append_u64s(
+        b"neo.fold.next/chip8/opening_transcript/time_opening_group_count",
+        &[surface.source.time_opening_groups.len() as u64],
+    );
+    for group in &surface.source.time_opening_groups {
+        transcript.append_message(
+            b"neo.fold.next/chip8/opening_transcript/time_opening_group_digest",
+            &group.group_digest,
+        );
+        transcript.append_message(
+            b"neo.fold.next/chip8/opening_transcript/time_opening_group_reduced_digest",
+            &group.reduced_digest,
+        );
+    }
+    append_time_opening_unification(transcript, &surface.source.time_opening_unification);
+    transcript.append_u64s(
+        b"neo.fold.next/chip8/opening_transcript/joint_claim_count",
+        &[surface.source.joint_claim_digests.len() as u64],
+    );
+    for digest in &surface.source.joint_claim_digests {
+        transcript.append_message(b"neo.fold.next/chip8/opening_transcript/joint_claim", digest);
+    }
+    transcript.append_u64s(
+        b"neo.fold.next/chip8/opening_transcript/joint_group_count",
+        &[surface.source.joint_group_digests.len() as u64],
+    );
+    for digest in &surface.source.joint_group_digests {
+        transcript.append_message(b"neo.fold.next/chip8/opening_transcript/joint_group", digest);
+    }
+    append_joint_opening_unification(transcript, &surface.source.joint_opening_unification);
+    transcript.append_u64s(
+        b"neo.fold.next/chip8/opening_transcript/fold_bucket_count",
+        &[surface.source.fold_bucket_digests.len() as u64],
+    );
+    for digest in &surface.source.fold_bucket_digests {
+        transcript.append_message(b"neo.fold.next/chip8/opening_transcript/fold_bucket", digest);
+    }
+}
+
+fn append_time_opening_unification(
+    transcript: &mut Poseidon2Transcript,
+    summary: &KernelTimeOpeningTranscriptUnification,
+) {
     transcript.append_fields(
         b"neo.fold.next/chip8/opening_transcript/time_opening_unify_claimed_sum",
-        &summary.unification.claimed_sum.as_coeffs(),
+        &summary.claimed_sum.as_coeffs(),
     );
     transcript.append_u64s(
         b"neo.fold.next/chip8/opening_transcript/time_opening_unify_meta",
         &[
-            summary.unification.round_polys.len() as u64,
-            summary.unification.r_unify.len() as u64,
+            summary.round_polys.len() as u64,
+            summary.r_unify.len() as u64,
             summary.can_unify as u64,
             summary.unified_point.len() as u64,
         ],
     );
-    for round in &summary.unification.round_polys {
+    for round in &summary.round_polys {
         append_k_vec(
             transcript,
             b"neo.fold.next/chip8/opening_transcript/time_opening_unify_round",
@@ -370,7 +532,7 @@ fn append_time_opening_unification(transcript: &mut Poseidon2Transcript, summary
     append_k_vec(
         transcript,
         b"neo.fold.next/chip8/opening_transcript/time_opening_unify_point",
-        &summary.unification.r_unify,
+        &summary.r_unify,
     );
     append_k_vec(
         transcript,
@@ -383,20 +545,23 @@ fn append_time_opening_unification(transcript: &mut Poseidon2Transcript, summary
     );
 }
 
-fn append_joint_opening_unification(transcript: &mut Poseidon2Transcript, summary: &KernelJointOpeningSummary) {
+fn append_joint_opening_unification(
+    transcript: &mut Poseidon2Transcript,
+    summary: &KernelJointOpeningTranscriptUnification,
+) {
     transcript.append_fields(
         b"neo.fold.next/chip8/opening_transcript/joint_opening_unify_claimed_sum",
-        &summary.unification.claimed_sum.as_coeffs(),
+        &summary.claimed_sum.as_coeffs(),
     );
     transcript.append_u64s(
         b"neo.fold.next/chip8/opening_transcript/joint_opening_unify_meta",
         &[
-            summary.unification.round_polys.len() as u64,
-            summary.unification.r_unify.len() as u64,
-            summary.unified_fold.is_some() as u64,
+            summary.round_polys.len() as u64,
+            summary.r_unify.len() as u64,
+            summary.unified_fold_digest.is_some() as u64,
         ],
     );
-    for round in &summary.unification.round_polys {
+    for round in &summary.round_polys {
         append_k_vec(
             transcript,
             b"neo.fold.next/chip8/opening_transcript/joint_opening_unify_round",
@@ -406,12 +571,12 @@ fn append_joint_opening_unification(transcript: &mut Poseidon2Transcript, summar
     append_k_vec(
         transcript,
         b"neo.fold.next/chip8/opening_transcript/joint_opening_unify_point",
-        &summary.unification.r_unify,
+        &summary.r_unify,
     );
-    if let Some(unified_fold) = &summary.unified_fold {
+    if let Some(unified_fold_digest) = &summary.unified_fold_digest {
         transcript.append_message(
             b"neo.fold.next/chip8/opening_transcript/joint_opening_unified_fold",
-            &unified_fold.digest,
+            unified_fold_digest,
         );
     }
 }

@@ -2,15 +2,18 @@ use neo_math::{KExtensions, F, K};
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::PrimeCharacteristicRing;
 
-use crate::chip8::poly::{eq_eval_le, mle_eval_f_le, mle_eval_k_le, open_onehot_at_point_be, open_onehot_at_point_le};
+use crate::chip8::poly::{
+    eq_eval_le, mle_eval_f_be, mle_eval_f_le, mle_eval_k_be, open_onehot_at_point_be_be, open_onehot_at_point_le,
+};
 use crate::chip8::spec::{
     COL_I_NEXT, COL_MEM_VALUE, COL_REG_X, COL_REG_X_NEXT, COL_WRITES_LOOKUP_TO_X, COL_WRITES_MEM_TO_X,
     COL_WRITES_NNN_TO_I, COL_X_IDX, COL_Y_IDX, WITNESS_WIDTH,
 };
+use crate::chip8::stage2::{AddressCorrectnessProof, Stage2TwistProof};
 use crate::chip8::tables::{build_unmap_ram, build_unmap_reg, RAM_SINK_ADDR, REG_SINK_ADDR};
 
 use super::super::verify_common::verify_sumcheck_known_with_terminal;
-use super::super::{expect_equal_k, KernelStepAux, SimpleKernelError, Stage2TwistProof};
+use super::super::{expect_equal_k, KernelStepAux, SimpleKernelError};
 use super::{
     build_lt_table, initial_ram_domain, initial_reg_domain, lane_col, lifted_bools, raw_index_mle_le, sample_k,
     sample_point, split_stage2_total_point, value_surface_at_point_le, ADDR_RAM_BITS, ADDR_REG_BITS,
@@ -18,7 +21,7 @@ use super::{
 
 fn verify_stage2_address_terminals<Tr: Transcript>(
     transcript: &mut Tr,
-    proof: &super::super::AddressCorrectnessProof,
+    proof: &AddressCorrectnessProof,
     cycle_bits: usize,
     addr_bits: usize,
     selector_addrs: &[usize],
@@ -187,9 +190,9 @@ pub(crate) fn verify_kernel_stage2_sumcheck_terminals(
         "stage2 register val-from-inc",
     )?;
     let reg_lt = build_lt_table(cycle_bits, &proof.cycle_point);
-    let reg_val_expected = mle_eval_f_le(&reg_inc, &reg_val_point)
-        * open_onehot_at_point_be(&reg_wa_addrs, &proof.reg_addr_point, &reg_val_point)
-        * mle_eval_k_le(&reg_lt, &reg_val_point);
+    let reg_val_expected = mle_eval_f_be(&reg_inc, &reg_val_point)
+        * open_onehot_at_point_be_be(&reg_wa_addrs, &proof.reg_addr_point, &reg_val_point)
+        * mle_eval_k_be(&reg_lt, &reg_val_point);
     expect_equal_k(
         reg_val_terminal,
         reg_val_expected,
@@ -337,9 +340,9 @@ pub(crate) fn verify_kernel_stage2_sumcheck_terminals(
         "stage2 RAM val-from-inc",
     )?;
     let ram_lt = build_lt_table(cycle_bits, &proof.cycle_point);
-    let ram_val_expected = mle_eval_f_le(&ram_inc, &ram_val_point)
-        * open_onehot_at_point_be(&ram_wa_addrs, &proof.ram_addr_point, &ram_val_point)
-        * mle_eval_k_le(&ram_lt, &ram_val_point);
+    let ram_val_expected = mle_eval_f_be(&ram_inc, &ram_val_point)
+        * open_onehot_at_point_be_be(&ram_wa_addrs, &proof.ram_addr_point, &ram_val_point)
+        * mle_eval_k_be(&ram_lt, &ram_val_point);
     expect_equal_k(ram_val_terminal, ram_val_expected, "stage2 RAM val-from-inc terminal")?;
 
     let (ram_raf_read_point, ram_raf_read_terminal) = verify_sumcheck_known_with_terminal(

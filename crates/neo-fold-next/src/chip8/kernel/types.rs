@@ -1,13 +1,9 @@
 //! Owns the CHIP-8 simple-kernel proof, witness, and artifact surface types.
 //! It does not own proving logic, transcript scheduling, or digest construction.
 
-use neo_math::{F, K};
+use neo_math::F;
 
-use crate::chip8::spec::{
-    COL_BURST_LAST, COL_IS_BRANCH, COL_IS_JUMP, COL_IS_MEMOP, COL_I_NEXT, COL_I_REG, COL_KK, COL_LOOKUP_OUTPUT,
-    COL_MEM_VALUE, COL_NNN_ADDR, COL_NNN_WORD, COL_PC, COL_PC_NEXT, COL_PRESERVES_X, COL_RAM_ADDR, COL_REG_X,
-    COL_REG_X_NEXT, COL_REG_Y, COL_WRITES_LOOKUP_TO_X, COL_WRITES_MEM_TO_X, COL_WRITES_NNN_TO_I, COL_X_IDX, COL_Y_IDX,
-};
+use crate::chip8::{stage1::Stage1ShoutProof, stage2::Stage2TwistProof, stage3::Stage3Proof};
 use crate::opening::TimeOpeningProofSummary;
 use crate::proof::{PublicStep, StepInput};
 
@@ -70,146 +66,6 @@ pub struct KernelStepAux {
     pub reads_ram: bool,
     pub writes_ram: bool,
 }
-
-pub struct ShoutChannelProof {
-    pub addr_point: Vec<K>,
-    pub sumcheck_rounds: Vec<Vec<K>>,
-    pub addr_correctness_rounds: Vec<Vec<K>>,
-    pub address_opening_value: K,
-    pub read_values_at_cycle: Vec<K>,
-    pub table_opening_values: Vec<K>,
-}
-
-pub struct Stage1ShoutProof {
-    pub cycle_point: Vec<K>,
-    pub fetch_proof: ShoutChannelProof,
-    pub decode_proof: ShoutChannelProof,
-    pub alu_proof: ShoutChannelProof,
-    pub eq4_proof: ShoutChannelProof,
-    pub decode_handoff_values: Vec<K>,
-    pub lane_values_at_lookup: Vec<K>,
-}
-
-pub struct AddressCorrectnessProof {
-    pub booleanity_rounds: Vec<Vec<K>>,
-    pub hamming_weight_rounds: Vec<Vec<K>>,
-    pub decode_consistency_rounds: Vec<Vec<K>>,
-    pub raw_address_rounds: Vec<Vec<K>>,
-}
-
-pub struct Stage2LinkClaims {
-    pub rv_x: K,
-    pub rv_y: K,
-    pub rv_i: K,
-    pub wv_reg: K,
-    pub rv_ram: K,
-    pub wv_ram: K,
-}
-
-pub struct CycleProductProof {
-    pub claim: K,
-    pub rounds: Vec<Vec<K>>,
-}
-
-pub struct Stage2TwistProof {
-    pub cycle_point: Vec<K>,
-    pub reg_addr_point: Vec<K>,
-    pub reg_val_at_point: K,
-    pub ram_addr_point: Vec<K>,
-    pub ram_val_at_point: K,
-    pub gamma_reg: K,
-    pub reg_rw_batched_rounds: Vec<Vec<K>>,
-    pub reg_val_from_inc_claim: K,
-    pub reg_val_from_inc_rounds: Vec<Vec<K>>,
-    pub reg_addr_correctness: Vec<AddressCorrectnessProof>,
-    pub gamma_ram: K,
-    pub ram_rw_batched_rounds: Vec<Vec<K>>,
-    pub ram_val_from_inc_claim: K,
-    pub ram_val_from_inc_rounds: Vec<Vec<K>>,
-    pub ram_raf_read_claim: K,
-    pub ram_raf_read_rounds: Vec<Vec<K>>,
-    pub ram_raf_write_claim: K,
-    pub ram_raf_write_rounds: Vec<Vec<K>>,
-    pub reg_ra_y_target_proof: CycleProductProof,
-    pub reg_wa_addr_target_proof: CycleProductProof,
-    pub reg_write_x_target_proof: CycleProductProof,
-    pub reg_write_i_target_proof: CycleProductProof,
-    pub ram_read_target_proof: CycleProductProof,
-    pub ram_write_target_proof: CycleProductProof,
-    pub ram_write_matches_x_zero_proof: CycleProductProof,
-    pub ram_idle_mem_zero_proof: CycleProductProof,
-    pub ram_addr_correctness: Vec<AddressCorrectnessProof>,
-    pub link_claims: Stage2LinkClaims,
-    pub gamma_twist_link: K,
-    pub linkage_batch_value: K,
-    pub lane_values_at_twist: Vec<K>,
-    pub handoff_values_at_twist: Vec<K>,
-}
-
-pub struct LaneShiftProof {
-    pub source_point: Vec<K>,
-    pub claimed_shift_values: [K; 3],
-    pub reduction_rounds: Vec<Vec<K>>,
-}
-
-pub struct RowBindingClaim {
-    pub row_index: usize,
-    pub row_bits: Vec<bool>,
-    pub opened_values: Vec<K>,
-}
-
-pub struct Stage3Proof {
-    pub shift_proof: LaneShiftProof,
-    pub shift_opening_values: [K; 5],
-    pub continuity_check_value: K,
-    pub start_boundary_values: [K; 2],
-    pub final_boundary_values: [K; 2],
-    pub row_bindings: Vec<RowBindingClaim>,
-}
-
-pub const STAGE1_LANE_OPEN_COLS: [usize; 17] = [
-    COL_PC,
-    COL_KK,
-    COL_NNN_ADDR,
-    COL_NNN_WORD,
-    COL_REG_X,
-    COL_REG_Y,
-    COL_LOOKUP_OUTPUT,
-    COL_WRITES_LOOKUP_TO_X,
-    COL_WRITES_MEM_TO_X,
-    COL_PRESERVES_X,
-    COL_WRITES_NNN_TO_I,
-    COL_IS_JUMP,
-    COL_IS_BRANCH,
-    COL_IS_MEMOP,
-    COL_X_IDX,
-    COL_Y_IDX,
-    COL_BURST_LAST,
-];
-
-pub const STAGE2_LANE_OPEN_COLS: [usize; 14] = [
-    COL_REG_X,
-    COL_REG_Y,
-    COL_REG_X_NEXT,
-    COL_I_REG,
-    COL_I_NEXT,
-    COL_MEM_VALUE,
-    COL_WRITES_LOOKUP_TO_X,
-    COL_WRITES_MEM_TO_X,
-    COL_PRESERVES_X,
-    COL_WRITES_NNN_TO_I,
-    COL_IS_MEMOP,
-    COL_X_IDX,
-    COL_Y_IDX,
-    COL_RAM_ADDR,
-];
-
-pub const STAGE3_SHIFT_OPEN_COLS: [usize; 5] = [COL_PC, COL_PC_NEXT, COL_X_IDX, COL_IS_MEMOP, COL_BURST_LAST];
-pub const STAGE3_START_BOUNDARY_COLS: [usize; 2] = [COL_IS_MEMOP, COL_X_IDX];
-pub const STAGE3_FINAL_BOUNDARY_COLS: [usize; 2] = [COL_IS_MEMOP, COL_BURST_LAST];
-pub const DECODE_HANDOFF_POLY_IDS: [usize; 3] = [0, 1, 2];
-pub const REG_TWIST_POLY_IDS: [usize; 5] = [0, 1, 2, 3, 4];
-pub const RAM_TWIST_POLY_IDS: [usize; 3] = [0, 1, 2];
 
 pub struct SimpleKernelProof {
     pub commitments: KernelCommitments,

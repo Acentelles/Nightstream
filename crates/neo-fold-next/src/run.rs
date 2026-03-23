@@ -9,6 +9,7 @@ use neo_math::{F, K};
 use neo_params::NeoParams;
 use neo_reductions::api::FoldingMode;
 use neo_reductions::error::PiCcsError;
+use neo_reductions::optimized_engine::OptimizedStructureCache;
 use neo_transcript::{Poseidon2Transcript, Transcript};
 
 use crate::finalize::{package_session_proof, verify_finalized_session};
@@ -32,9 +33,24 @@ where
     let mut tr = Poseidon2Transcript::new(b"neo.fold.next/session");
     let mut main_carry = Carry::default();
     let mut session = RunProof::default();
+    let optimized_cache = if matches!(mode, FoldingMode::Optimized) {
+        Some(OptimizedStructureCache::build(s)?)
+    } else {
+        None
+    };
 
     for step in steps {
-        let proved = ShardProver::prove_step(mode.clone(), &mut tr, params, s, &step, &main_carry, log, mixers)?;
+        let proved = ShardProver::prove_step(
+            mode.clone(),
+            &mut tr,
+            params,
+            s,
+            &step,
+            &main_carry,
+            log,
+            mixers,
+            optimized_cache.as_ref(),
+        )?;
         main_carry = proved.next_main;
         session.steps.push(proved.proof);
         tr.append_message(b"neo.fold.next/step_done", &[1]);

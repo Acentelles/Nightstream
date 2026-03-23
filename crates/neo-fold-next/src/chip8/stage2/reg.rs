@@ -10,10 +10,7 @@ use crate::chip8::poly::build_eq_table;
 use crate::chip8::tables::{build_unmap_reg, ADDR_REG_BITS, REG_SINK_ADDR};
 
 use crate::chip8::kernel::verify_sumcheck_known;
-use crate::chip8::kernel::{
-    verify_stage2_address_correctness_transcript, AddressCorrectnessProof, CycleProductProof, KernelStepAux,
-    SimpleKernelError, Stage2TwistProof,
-};
+use crate::chip8::kernel::{KernelStepAux, SimpleKernelError};
 use crate::chip8::spec::{COL_WRITES_LOOKUP_TO_X, COL_WRITES_MEM_TO_X, COL_X_IDX, COL_Y_IDX};
 
 use super::common::{
@@ -21,6 +18,8 @@ use super::common::{
     mle_eval_flat_k_at_point_be, partial_eval_flat_k_at_addr_be, prove_address_correctness,
     prove_cycle_product_relation, read_port_claim, squeeze_k, squeeze_point, stage2_address_claims, write_port_claim,
 };
+use super::proof::{AddressCorrectnessProof, CycleProductProof, Stage2TwistProof};
+use super::transcript::verify_stage2_address_correctness_transcript;
 
 pub(crate) struct Stage2RegisterProofArtifacts {
     pub gamma_reg: K,

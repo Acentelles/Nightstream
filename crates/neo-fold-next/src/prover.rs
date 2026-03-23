@@ -16,6 +16,8 @@ use neo_reductions::api::{
 };
 use neo_reductions::engines::utils;
 use neo_reductions::error::PiCcsError;
+use neo_reductions::optimized_engine::{optimized_prove_with_cache, OptimizedStructureCache};
+use neo_reductions::pi_rlc_dec::OptimizedRlcDec;
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::PrimeCharacteristicRing;
 
@@ -43,6 +45,7 @@ impl ShardProver {
         incoming_main: &Carry,
         log: &L,
         mixers: CommitmentMixers<MR, MB>,
+        optimized_cache: Option<&OptimizedStructureCache>,
     ) -> Result<StepResult, PiCcsError>
     where
         L: SModuleHomomorphism<F, Commitment> + Sync,
@@ -52,17 +55,34 @@ impl ShardProver {
         validate_main_carry("prove_step", incoming_main)?;
         tr.append_message(b"neo.fold.next/step", step.label.as_bytes());
 
-        let (ccs_outputs, ccs_proof) = prove(
-            mode.clone(),
-            tr,
-            params,
-            s,
-            core::slice::from_ref(&step.mcs),
-            core::slice::from_ref(&step.witness),
-            &incoming_main.claims,
-            &incoming_main.witnesses,
-            log,
-        )?;
+        let (ccs_outputs, ccs_proof) = if matches!(mode, FoldingMode::Optimized) {
+            let cache = optimized_cache.ok_or_else(|| {
+                PiCcsError::InvalidInput("missing optimized structure cache for optimized prove_step".into())
+            })?;
+            optimized_prove_with_cache(
+                tr,
+                params,
+                s,
+                core::slice::from_ref(&step.mcs),
+                core::slice::from_ref(&step.witness),
+                &incoming_main.claims,
+                &incoming_main.witnesses,
+                log,
+                cache,
+            )?
+        } else {
+            prove(
+                mode.clone(),
+                tr,
+                params,
+                s,
+                core::slice::from_ref(&step.mcs),
+                core::slice::from_ref(&step.witness),
+                &incoming_main.claims,
+                &incoming_main.witnesses,
+                log,
+            )?
+        };
         validate_ccs_outputs(step, incoming_main, &ccs_outputs, &ccs_proof)?;
 
         let dims = utils::build_dims_and_policy(params, s)?;
@@ -86,16 +106,32 @@ impl ShardProver {
         let k_dec = params.k_rho as usize;
         let (z_split, digit_nonzero) = split_b_matrix_k_with_nonzero_flags(&z_mix, k_dec, params.b)?;
         let child_commitments = commit_split_children(log, &z_split, &digit_nonzero)?;
-        let (children, ok_y, ok_x, ok_c) = dec_children_with_commit(
-            mode,
-            s,
-            params,
-            &parent,
-            &z_split,
-            dims.ell_d,
-            &child_commitments,
-            mixers.combine_b_pows,
-        );
+        let (children, ok_y, ok_x, ok_c) = if matches!(mode, FoldingMode::Optimized) {
+            let cache = optimized_cache.ok_or_else(|| {
+                PiCcsError::InvalidInput("missing optimized structure cache for optimized DEC".into())
+            })?;
+            OptimizedRlcDec::dec_children_with_commit_cached(
+                s,
+                params,
+                &parent,
+                &z_split,
+                dims.ell_d,
+                &child_commitments,
+                mixers.combine_b_pows,
+                Some(cache.sparse()),
+            )
+        } else {
+            dec_children_with_commit(
+                mode,
+                s,
+                params,
+                &parent,
+                &z_split,
+                dims.ell_d,
+                &child_commitments,
+                mixers.combine_b_pows,
+            )
+        };
         if !(ok_y && ok_x && ok_c) {
             return Err(PiCcsError::ProtocolError(format!(
                 "Π_DEC public checks failed for step '{}': y={}, X={}, c={}",

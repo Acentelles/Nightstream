@@ -3,12 +3,10 @@ use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::PrimeCharacteristicRing;
 
 use crate::chip8::poly::{mle_eval_f_be, mle_eval_f_le, open_onehot_at_point_be, open_onehot_at_point_be_be};
+use crate::chip8::stage1::{ShoutChannelProof, Stage1ShoutProof};
 
 use super::super::verify_common::{split_round_groups, verify_sumcheck_known_with_terminal};
-use super::super::{
-    batch_values, expect_equal_k, expect_equal_k_slice, KernelStepAux, ShoutChannelProof, SimpleKernelError,
-    Stage1ShoutProof,
-};
+use super::super::{batch_values, expect_equal_k, expect_equal_k_slice, KernelStepAux, SimpleKernelError};
 use super::{build_alu_mixed_table, raw_index_mle_be, sample_k, sample_point, ROM_ADDR_BITS};
 
 fn stage1_eq4_claim(lane_values_at_lookup: &[K], decode_values: &[K]) -> K {

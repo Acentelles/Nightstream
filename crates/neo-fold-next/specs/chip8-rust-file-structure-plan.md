@@ -42,15 +42,28 @@ crates/neo-fold-next/src/chip8/
 ├── lower.rs
 ├── builder.rs
 ├── trace.rs
-├── stage1.rs
+├── stage1/
+│   ├── mod.rs
+│   ├── proof.rs
+│   ├── prove.rs
+│   ├── verify.rs
+│   └── transcript.rs
 ├── stage2/
 │   ├── mod.rs
 │   ├── common.rs
+│   ├── proof.rs
+│   ├── prove.rs
+│   ├── verify.rs
 │   ├── reg.rs
-│   └── ram.rs
-├── stage3.rs
-├── kernel.rs
+│   ├── ram.rs
+│   └── transcript.rs
+├── stage3/
+│   ├── mod.rs
+│   ├── proof.rs
+│   ├── prove.rs
+│   └── verify.rs
 └── kernel/
+    ├── mod.rs
     ├── types.rs
     ├── public_meta.rs
     ├── transcript.rs
@@ -63,7 +76,6 @@ crates/neo-fold-next/src/chip8/
     ├── soundness_accounting.rs
     ├── stage_terminal.rs
     ├── verify_common.rs
-    ├── verify_transcript.rs
     └── verify_artifact.rs
 ```
 
@@ -88,19 +100,30 @@ crates/neo-fold-next/src/chip8/
 | `lower.rs` | execution step -> semantic/kernel rows | `StepBuild` packaging |
 | `builder.rs` | row trace -> `StepBuild` packaging | execution semantics |
 | `poly.rs` | pure MLE / one-hot helpers | protocol policy |
-| `stage1.rs` | Stage 1 proving and verification | bundle/export logic |
-| `stage2/mod.rs` | Stage 2 orchestration and linkage batch | subsystem-local replay internals |
+| `stage1/mod.rs` | shared Stage 1 math, claims, and oracle machinery | Stage 1 proving or verifying entrypoints |
+| `stage1/proof.rs` | Stage 1 proof surface and lane-opening contract | Stage 1 proving logic |
+| `stage1/prove.rs` | Stage 1 proving entrypoint and prove-only channel builders | Stage 1 verification logic |
+| `stage1/verify.rs` | Stage 1 verifier entrypoint | Stage 1 proving logic |
+| `stage1/transcript.rs` | Stage 1 transcript replay | Stage 1 proving logic |
+| `stage2/mod.rs` | Stage 2 module boundary and re-exported entrypoints | register-only or RAM-only Twist logic or proof surface ownership |
 | `stage2/common.rs` | shared Stage 2 math and address/oracle machinery | final Stage 2 linkage batch |
+| `stage2/proof.rs` | Stage 2 proof surface and lane-opening contract | Stage 2 proving logic |
+| `stage2/prove.rs` | Stage 2 proving entrypoint and linkage batch construction | Stage 2 verification logic |
+| `stage2/verify.rs` | Stage 2 verifier entrypoint | Stage 2 proving logic |
 | `stage2/reg.rs` | register-side Twist logic | RAM-side logic |
 | `stage2/ram.rs` | RAM-side Twist logic | register-side logic |
-| `stage3.rs` | Stage 3 proving and verification | release artifacts |
-| `kernel.rs` | simple-kernel orchestration and public entrypoints | large local type/helper bags |
+| `stage2/transcript.rs` | Stage 2 transcript replay | Stage 2 proving logic |
+| `stage3/mod.rs` | shared Stage 3 math, shift helpers, and row-binding helpers | Stage 3 proving or verifying entrypoints |
+| `stage3/proof.rs` | Stage 3 proof surface and lane-opening contract | Stage 3 proving logic |
+| `stage3/prove.rs` | Stage 3 proving entrypoint | Stage 3 verification logic |
+| `stage3/verify.rs` | Stage 3 verifier entrypoint | Stage 3 proving logic |
+| `kernel/mod.rs` | simple-kernel orchestration and public entrypoints | large local type/helper bags |
 
 ### `chip8/kernel/` owners
 
 | File | Owns | Does not own |
 |---|---|---|
-| `types.rs` | proof/output surface types | construction logic |
+| `types.rs` | simple-kernel proof/output/witness surface types | stage-local proof surfaces or construction logic |
 | `public_meta.rs` | `meta_pub`, `root0`, public-input binding helpers | joint openings or release artifacts |
 | `transcript.rs` | transcript event surface and replay helpers | proof construction |
 | `openings.rs` | opening claims, manifests, exact-opening refinements | bridge/export summaries |
@@ -112,7 +135,6 @@ crates/neo-fold-next/src/chip8/
 | `soundness_accounting.rs` | exported error/accounting surfaces | transcript or artifact construction |
 | `stage_terminal.rs` | terminal verifier closure per stage | full stage proving logic |
 | `verify_common.rs` | cross-stage verifier utilities | stage-specific replay |
-| `verify_transcript.rs` | transcript replay checks | artifact reconstruction |
 | `verify_artifact.rs` | artifact reconstruction/authentication | transcript event ownership |
 
 ## Structural rules
@@ -129,7 +151,7 @@ crates/neo-fold-next/src/chip8/
 
 The current CHIP-8 refactor should continue in this order:
 
-1. keep `kernel.rs` shrinking toward orchestration only,
+1. keep `kernel/mod.rs` shrinking toward orchestration only,
 2. keep repeated commitment/opening wiring in one owned kernel object instead of
    re-spelling it several times,
 3. keep `spec.rs` and `trace.rs` thin while callers migrate onto the narrower owners,
@@ -143,7 +165,7 @@ The current CHIP-8 refactor should continue in this order:
 The Rust structure is in good shape when a reviewer can understand the CHIP-8
 kernel by reading, in order:
 
-1. `chip8/kernel.rs`
+1. `chip8/kernel/mod.rs`
 2. `chip8/kernel/types.rs`
 3. `chip8/kernel/transcript.rs`
 4. `chip8/kernel/openings.rs`

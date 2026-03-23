@@ -27,6 +27,8 @@ use super::{
     reconstruct_trace_rows_and_aux, CommitmentId, KernelExecutionDigest, KernelMetaPub, KernelStepAux,
     SimpleKernelError, SimpleKernelOutput, SimpleKernelProof, SimpleKernelPublicInput,
 };
+#[cfg(feature = "chip8-audit")]
+use super::{KernelOpeningTranscriptSource, KernelOpeningTranscriptSurface};
 
 const CHIP8_SIMPLE_ROOT_PP_SEED: [u8; 32] = [
     0x09, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -126,6 +128,8 @@ pub struct KernelExternalReleaseArtifact {
     pub trace_digests: KernelTraceDigestSource,
     pub frames: Vec<KernelExactFrame>,
     pub stage3s: Vec<KernelStage3DigestSurface>,
+    pub opening_transcript_source: KernelOpeningTranscriptSource,
+    pub opening_transcript_surface: KernelOpeningTranscriptSurface,
     pub artifact: KernelReleaseArtifact,
 }
 
@@ -450,6 +454,39 @@ pub fn build_kernel_external_release_artifact(
     output: &SimpleKernelOutput,
 ) -> Result<KernelExternalReleaseArtifact, SimpleKernelError> {
     let artifact = build_kernel_release_artifact(public, proof, output)?;
+    let opening_transcript_source = super::transcript::build_kernel_opening_transcript_source(
+        &output.kernel_opening_manifest,
+        &proof.opening_refinement_summary,
+        &proof.time_opening_summary,
+        &proof.joint_opening_summary,
+        &proof.joint_opening_fold_bucket_proofs,
+        super::lane_commitment::proof_exact_opening_artifacts(proof),
+    )?;
+    assert_eq!(
+        opening_transcript_source
+            .exact_openings
+            .iter()
+            .map(|entry| entry.claim_digest)
+            .collect::<Vec<_>>(),
+        artifact
+            .kernel_digest
+            .manifest_surface
+            .kernel_manifest
+            .claims
+            .iter()
+            .map(|claim| claim.digest)
+            .collect::<Vec<_>>(),
+        "opening transcript exact-opening claim digests must follow the kernel manifest order",
+    );
+    let opening_transcript_surface = super::transcript::build_kernel_opening_transcript_surface(
+        &output.kernel_opening_manifest,
+        &output.root_opening_manifest,
+        &proof.opening_refinement_summary,
+        &proof.time_opening_summary,
+        &proof.joint_opening_summary,
+        &proof.joint_opening_fold_bucket_proofs,
+        super::lane_commitment::proof_exact_opening_artifacts(proof),
+    )?;
     let frames = artifact.kernel_digest.trace_surface.frames.clone();
     let stage3s = artifact
         .staged_bundle
@@ -470,6 +507,8 @@ pub fn build_kernel_external_release_artifact(
         },
         frames,
         stage3s,
+        opening_transcript_source,
+        opening_transcript_surface,
         artifact,
     })
 }

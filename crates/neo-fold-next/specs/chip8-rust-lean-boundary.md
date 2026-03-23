@@ -229,14 +229,16 @@ src/
 
   chip8/
     trace.rs
-    stage1.rs
+    stage1/
+      mod.rs
     stage2/
       mod.rs
       model.rs
       reg.rs
       ram.rs
       # or another ownership-based split
-    stage3.rs
+    stage3/
+      mod.rs
     kernel/
       mod.rs
       types.rs
@@ -293,9 +295,9 @@ If generic step or session code must carry VM-owned data through the pipeline,
 it should do so through an opaque frontend-owned attachment boundary, not by
 importing concrete CHIP-8 kernel types into generic proof code.
 
-### `kernel.rs`
+### `kernel/mod.rs`
 
-`kernel.rs` should own:
+`kernel/mod.rs` should own:
 
 - public proof types,
 - the entrypoint orchestration,
