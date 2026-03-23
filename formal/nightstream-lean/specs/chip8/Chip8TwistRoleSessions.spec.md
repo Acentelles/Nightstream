@@ -117,6 +117,7 @@ the extracted row-local object.
 - **Upstream dependencies**:
   - `Chip8EvidenceCoverage`
   - `Chip8WitnessMemoryBinding`
+  - `Chip8RegisterSessionBoundary`
 - **Downstream consumers**:
   - the future trace-global Stage-2 temporal reconstruction theorem
   - any audit/digest owner that needs explicit row-local session witnesses

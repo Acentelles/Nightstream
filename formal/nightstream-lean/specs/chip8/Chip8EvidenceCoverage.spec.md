@@ -96,7 +96,7 @@ For this boundary, the session-key and registry-entry shape is fixed
 positively:
 
 - a register-side session key names one logical register timeline cell
-  `(cycle_index, reg_addr)` over `V[0..15] ∪ {I}`
+  `(cycle_index, reg_addr)` over `V[0..15] ∪ {I} ∪ {⊥_reg}`
 - a RAM-side session key names one logical RAM timeline cell
   `(cycle_index, ram_addr)` over `RAM[0..4095] ∪ {⊥_ram}`
 - one registry entry packages exactly one read claim, one write claim, one
@@ -104,6 +104,12 @@ positively:
   semantic extraction
 - if two CHIP-8 roles on the same row touch the same logical cell, they must
   resolve to the same session key and therefore to the same registry entry
+- sink-routed register roles are therefore part of the closed authenticated
+  register registry rather than a side channel outside `TwistSessionClosed`
+
+The exact theorem-facing register-side key surface is owned by
+`Chip8RegisterSessionBoundary`; this module consumes that keying discipline as
+part of the Stage-2 authenticated bundle rather than re-defining it ad hoc.
 
 The Lean evidence layer therefore exposes separate register-side and RAM-side
 session registries and their corresponding closure witnesses, rather than one
