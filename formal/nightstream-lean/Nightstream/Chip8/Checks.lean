@@ -1,8 +1,8 @@
 import Nightstream.Chip8.Generated.TranscriptVectors
-import Nightstream.Chip8.Generated.StagedExecutionDigestBundleVectors
-import Nightstream.Chip8.Generated.ReleaseArtifactVectors
+import Nightstream.Chip8.Generated.StagedExecutionDigestBundleVectors.Corpus
+import Nightstream.Chip8.Generated.ReleaseArtifactVectors.Corpus
 import Nightstream.Chip8.Generated.ImportedOpeningTranscriptCases
-import Nightstream.Chip8.Generated.ImportedReleaseArtifact
+import Nightstream.Chip8.Generated.ImportedReleaseArtifact.Corpus
 import Nightstream.Chip8.Kernel.ExternalReleaseArtifactAudit
 
 /-!

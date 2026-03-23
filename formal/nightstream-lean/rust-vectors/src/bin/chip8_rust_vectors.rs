@@ -3,21 +3,21 @@ mod render_support;
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use neo_fold_next::chip8::kernel::{
     absorb_root0, build_kernel_exact_frames, build_kernel_stage3_digest_surfaces,
     build_kernel_external_release_artifact, build_kernel_staged_execution_digest_bundle, new_simple_kernel_transcript,
     prepared_step_digest, prove_simple_kernel, KernelBridgeBindingClaim, KernelBridgeBindingSummary, KernelCommitments,
-    KernelExactFrame, KernelExactOpeningTranscriptEntry, KernelExecutionDigest, KernelExternalReleaseArtifact,
+    KernelExactFrame, KernelExactOpeningTranscriptEntry, KernelExternalReleaseArtifact,
     KernelFrameDecodeView, KernelJointOpeningTranscriptUnification, KernelMetaPub, KernelOpeningClaim,
-    KernelOpeningManifest, KernelOpeningSource, KernelOpeningTranscriptSource, KernelOpeningTranscriptSurface,
-    KernelReleaseArtifact, KernelRoot0CommitmentBinding, KernelRowProjection, KernelRowProjectionSummary,
-    KernelStage3CurrentRow, KernelStage3DigestSurface, KernelStage3LaneColumn, KernelStage3RowClaim,
-    KernelStage3ShiftClaim, KernelStage3ShiftWitness, KernelStage3ShiftedColumn, KernelStepAux,
-    KernelStagedExecutionDigestBundle, KernelTimeOpeningTranscriptGroup, KernelTimeOpeningTranscriptUnification,
-    KernelTraceDigestSource, KernelTranscriptEvent, SimpleKernelProverInput, SimpleKernelPublicInput,
-    SimpleKernelWitness, Stage1ShoutChannel, AddressFamily, TwistReadFamily, TwistMemoryFamily, KernelErrorTerm,
+    KernelOpeningSource, KernelOpeningTranscriptSource, KernelOpeningTranscriptSurface,
+    KernelRoot0CommitmentBinding, KernelRowProjection, KernelRowProjectionSummary, KernelStage3CurrentRow,
+    KernelStage3DigestSurface, KernelStage3LaneColumn, KernelStage3RowClaim, KernelStage3ShiftClaim,
+    KernelStage3ShiftWitness, KernelStage3ShiftedColumn, KernelStepAux, KernelStagedExecutionDigestBundle,
+    KernelTimeOpeningTranscriptGroup, KernelTimeOpeningTranscriptUnification, KernelTraceDigestSource,
+    KernelTranscriptEvent, SimpleKernelProverInput, SimpleKernelPublicInput, SimpleKernelWitness,
+    Stage1ShoutChannel, AddressFamily, TwistReadFamily, TwistMemoryFamily, KernelErrorTerm,
 };
 use neo_fold_next::chip8::stage1;
 use neo_fold_next::chip8::stage2;
@@ -840,12 +840,21 @@ fn render_k_rounds(rounds: &[Vec<K>]) -> String {
 }
 
 fn render_machine_state_view(state: &Chip8State) -> String {
+    render_machine_state_view_from_parts(state.pc, state.i, &state.v, &render_u8_list(&state.memory))
+}
+
+fn render_machine_state_view_from_parts(
+    pc: u16,
+    i: u16,
+    registers: &[u8],
+    ram_expr: &str,
+) -> String {
     format!(
         "mkMachineStateView {} {} {} {}",
-        state.pc,
-        state.i,
-        render_u8_list(&state.v),
-        render_u8_list(&state.memory),
+        pc,
+        i,
+        render_u8_list(registers),
+        ram_expr,
     )
 }
 
@@ -868,25 +877,59 @@ fn render_frame_decode_view(dec: &KernelFrameDecodeView) -> String {
 }
 
 fn render_frame_source_view(frame: &KernelExactFrame) -> String {
+    render_frame_source_view_from_parts(
+        frame.step_idx,
+        &frame.dec,
+        &render_machine_state_view(&frame.pre),
+        &render_machine_state_view(&frame.post),
+        &render_f_row(&frame.row),
+    )
+}
+
+fn render_frame_source_view_from_parts(
+    step_idx: usize,
+    dec: &KernelFrameDecodeView,
+    pre_expr: &str,
+    post_expr: &str,
+    row_expr: &str,
+) -> String {
     format!(
         "mkFrameSourceView {} ({}) ({}) ({}) ({})",
-        frame.step_idx,
-        render_frame_decode_view(&frame.dec),
-        render_machine_state_view(&frame.pre),
-        render_machine_state_view(&frame.post),
-        render_f_row(&frame.row),
+        step_idx,
+        render_frame_decode_view(dec),
+        pre_expr,
+        post_expr,
+        row_expr,
     )
 }
 
 fn render_public_input_view(public: &SimpleKernelPublicInput) -> String {
+    render_public_input_view_from_parts(
+        &public.program_image,
+        public.initial_pc_word,
+        &public.initial_registers,
+        public.initial_i,
+        &render_u8_list(&public.initial_ram),
+        &public.transcript_seed,
+    )
+}
+
+fn render_public_input_view_from_parts(
+    program_image: &[u8],
+    initial_pc_word: u16,
+    initial_registers: &[u8],
+    initial_i: u16,
+    initial_ram_expr: &str,
+    transcript_seed: &[u8],
+) -> String {
     format!(
         "mkPublicInputView\n      {}\n      {}\n      {}\n      {}\n      {}\n      {}",
-        render_u8_list(&public.program_image),
-        public.initial_pc_word,
-        render_u8_list(&public.initial_registers),
-        public.initial_i,
-        render_u8_list(&public.initial_ram),
-        render_u8_list(&public.transcript_seed),
+        render_u8_list(program_image),
+        initial_pc_word,
+        render_u8_list(initial_registers),
+        initial_i,
+        initial_ram_expr,
+        render_u8_list(transcript_seed),
     )
 }
 
@@ -957,102 +1000,26 @@ fn render_stage3_view(stage3: &KernelStage3DigestSurface) -> String {
     )
 }
 
-fn render_stage1_view(stage1: &neo_fold_next::chip8::kernel::KernelStage1DigestSurface) -> String {
-    format!(
-        "mkStage1View\n        ({})\n        ({})\n        ({})",
-        render_machine_state_view(&stage1.pre),
-        render_frame_decode_view(&stage1.dec),
-        render_f_row(&stage1.row),
-    )
-}
-
-fn render_stage2_view(stage2: &neo_fold_next::chip8::kernel::KernelStage2DigestSurface) -> String {
-    format!(
-        "mkStage2View\n        ({})\n        ({})\n        ({})\n        ({})",
-        render_machine_state_view(&stage2.pre),
-        render_machine_state_view(&stage2.post),
-        render_frame_decode_view(&stage2.dec),
-        render_f_row(&stage2.row),
-    )
-}
-
-fn render_execution_result_view(
-    result: &neo_fold_next::chip8::kernel::KernelExecutionResultSurface,
-) -> String {
-    format!(
-        "mkExecutionResultView\n        {}\n        ({})\n        ({})\n        ({})",
-        result.step_idx,
-        render_machine_state_view(&result.pre),
-        render_machine_state_view(&result.post),
-        render_frame_decode_view(&result.dec),
-    )
-}
-
-fn render_staged_execution_digest_view(
-    digest: &neo_fold_next::chip8::kernel::KernelStagedExecutionDigest,
+fn render_staged_execution_digest_view_from_parts(
+    stage1_expr: &str,
+    stage2_expr: &str,
+    stage3_expr: &str,
+    result_expr: &str,
 ) -> String {
     format!(
         "mkStagedExecutionDigestView\n      ({})\n      ({})\n      ({})\n      ({})",
-        render_stage1_view(&digest.stage1),
-        render_stage2_view(&digest.stage2),
-        render_stage3_view(&digest.stage3),
-        render_execution_result_view(&digest.result),
+        stage1_expr,
+        stage2_expr,
+        stage3_expr,
+        result_expr,
     )
 }
 
-fn render_bundle_view(bundle: &KernelStagedExecutionDigestBundle, meta_pub_expr: &str) -> String {
-    let mut digests = String::from("[");
-    for (idx, digest) in bundle.digests.iter().enumerate() {
-        if idx > 0 {
-            digests.push_str(", ");
-        }
-        digests.push_str(&format!("({})", render_staged_execution_digest_view(digest)));
-    }
-    digests.push(']');
+fn render_bundle_view_from_parts(public_expr: &str, digests_expr: &str) -> String {
     format!(
         "mkStagedExecutionDigestBundleView\n      ({})\n      {}",
-        render_digest_public_view_with_meta_expr(&bundle.public.public, meta_pub_expr),
-        digests,
-    )
-}
-
-fn render_bundle_case(case: &BundleVectorCase) -> String {
-    let mut frames = String::from("[");
-    for (idx, frame) in case.frames.iter().enumerate() {
-        if idx > 0 {
-            frames.push_str(", ");
-        }
-        frames.push_str(&format!("({})", render_frame_source_view(frame)));
-    }
-    frames.push(']');
-
-    let mut stage3s = String::from("[");
-    for (idx, stage3) in case.stage3s.iter().enumerate() {
-        if idx > 0 {
-            stage3s.push_str(", ");
-        }
-        stage3s.push_str(&format!("({})", render_stage3_view(stage3)));
-    }
-    stage3s.push(']');
-
-    format!(
-        "mkStagedExecutionDigestBundleVectorCase\n      \"{name}\"\n      ({public})\n      {frames}\n      {stage3s}\n      ({expected_bundle})",
-        name = case.name,
-        public = render_digest_public_view_with_meta_expr(
-            &case.public,
-            &bundle_meta_pub_def_name_from_name(case.name),
-        ),
-        frames = frames,
-        stage3s = stage3s,
-        expected_bundle = render_bundle_view(&case.bundle, &bundle_meta_pub_def_name_from_name(case.name)),
-    )
-}
-
-fn render_named_bundle_case_def(case: &BundleVectorCase) -> String {
-    format!(
-        "def {name} : StagedExecutionDigestBundleVectorCase :=\n  {value}\n",
-        name = bundle_case_def_name_from_name(case.name),
-        value = render_bundle_case(case),
+        public_expr,
+        digests_expr,
     )
 }
 
@@ -1098,33 +1065,12 @@ fn render_opening_claim_view(claim: &KernelOpeningClaim) -> String {
     )
 }
 
-fn render_opening_manifest_view_from_parts(
-    claims: &[KernelOpeningClaim],
-    digest: &[u8; 32],
-) -> String {
-    let mut rendered_claims = String::from("[");
-    for (idx, claim) in claims.iter().enumerate() {
-        if idx > 0 {
-            rendered_claims.push_str(", ");
-        }
-        rendered_claims.push_str(&format!("({})", render_opening_claim_view(claim)));
-    }
-    rendered_claims.push(']');
+fn render_opening_manifest_view_from_claims_expr(claims_expr: &str, digest: &[u8; 32]) -> String {
     format!(
         "mkKernelOpeningManifestView\n        {}\n        {}",
-        rendered_claims,
+        claims_expr,
         render_u8_list(digest),
     )
-}
-
-fn render_opening_manifest_view(manifest: &KernelOpeningManifest) -> String {
-    render_opening_manifest_view_from_parts(&manifest.claims, &manifest.digest)
-}
-
-fn render_root_opening_manifest_view(
-    manifest: &neo_fold_next::chip8::kernel::RootOpeningManifest,
-) -> String {
-    render_opening_manifest_view_from_parts(&manifest.claims, &manifest.digest)
 }
 
 fn render_row_projection_view(projection: &KernelRowProjection) -> String {
@@ -1182,20 +1128,13 @@ fn render_bridge_binding_summary_view(summary: &KernelBridgeBindingSummary) -> S
     )
 }
 
-fn render_kernel_trace_surface_view(
+fn render_kernel_trace_surface_view_from_frames_expr(
     trace: &neo_fold_next::chip8::kernel::KernelTraceSurface,
+    frames_expr: &str,
 ) -> String {
-    let mut frames = String::from("[");
-    for (idx, frame) in trace.frames.iter().enumerate() {
-        if idx > 0 {
-            frames.push_str(", ");
-        }
-        frames.push_str(&format!("({})", render_frame_source_view(frame)));
-    }
-    frames.push(']');
     format!(
         "mkKernelTraceSurfaceView\n      {}\n      {}\n      {}\n      {}\n      {}",
-        frames,
+        frames_expr,
         render_u8_list(&trace.stage1_digest),
         render_u8_list(&trace.stage2_digest),
         render_u8_list(&trace.stage3_digest),
@@ -1230,25 +1169,6 @@ fn render_kernel_audit_surface_view(
         "mkKernelAuditSurfaceView\n      ({})\n      ({})",
         render_row_projection_summary_view(&audit.row_projection_summary),
         render_bridge_binding_summary_view(&audit.bridge_binding_summary),
-    )
-}
-
-fn render_kernel_manifest_surface_view(
-    manifest: &neo_fold_next::chip8::kernel::KernelManifestSurface,
-) -> String {
-    let mut root0_ids = String::from("[");
-    for (idx, id) in manifest.root0_commitment_ids.iter().enumerate() {
-        if idx > 0 {
-            root0_ids.push_str(", ");
-        }
-        root0_ids.push_str(&render_commitment_id(*id));
-    }
-    root0_ids.push(']');
-    format!(
-        "mkKernelManifestSurfaceView\n      {}\n      ({})\n      ({})",
-        root0_ids,
-        render_opening_manifest_view(&manifest.kernel_manifest),
-        render_root_opening_manifest_view(&manifest.root_manifest),
     )
 }
 
@@ -1563,75 +1483,11 @@ fn render_kernel_error_surface_view(
     )
 }
 
-fn render_kernel_execution_digest_view(digest: &KernelExecutionDigest) -> String {
-    format!(
-        "mkKernelExecutionDigestView\n    ({})\n    ({})\n    ({})\n    ({})\n    ({})\n    ({})",
-        render_kernel_trace_surface_view(&digest.trace_surface),
-        render_kernel_export_surface_view(&digest.export_surface),
-        render_kernel_audit_surface_view(&digest.audit_surface),
-        render_kernel_manifest_surface_view(&digest.manifest_surface),
-        render_kernel_transcript_surface_view(&digest.transcript_surface),
-        render_kernel_error_surface_view(&digest.error_surface),
-    )
+fn case_module_fragment(name: &str) -> String {
+    format!("Case_{}", lean_ident_fragment(name))
 }
 
-fn render_release_artifact_view(artifact: &KernelReleaseArtifact, meta_pub_expr: &str) -> String {
-    format!(
-        "mkKernelReleaseArtifactView\n      ({})\n      ({})",
-        render_kernel_execution_digest_view(&artifact.kernel_digest),
-        render_bundle_view(&artifact.staged_bundle, meta_pub_expr),
-    )
-}
-
-fn render_release_artifact_case(case: &ReleaseArtifactCase) -> String {
-    let mut bindings = String::from("[");
-    for (idx, binding) in case.imported_artifact.root0_bindings.iter().enumerate() {
-        if idx > 0 {
-            bindings.push_str(", ");
-        }
-        bindings.push_str(&render_root0_binding_view(binding));
-    }
-    bindings.push(']');
-
-    let mut frames = String::from("[");
-    for (idx, frame) in case.imported_artifact.frames.iter().enumerate() {
-        if idx > 0 {
-            frames.push_str(", ");
-        }
-        frames.push_str(&format!("({})", render_frame_source_view(frame)));
-    }
-    frames.push(']');
-
-    let mut stage3s = String::from("[");
-    for (idx, stage3) in case.imported_artifact.stage3s.iter().enumerate() {
-        if idx > 0 {
-            stage3s.push_str(", ");
-        }
-        stage3s.push_str(&format!("({})", render_stage3_view(stage3)));
-    }
-    stage3s.push(']');
-
-    let meta_pub_name = release_artifact_meta_pub_def_name_from_name(case.name);
-    format!(
-        "mkKernelReleaseArtifactVectorCase\n      \"{name}\"\n      {bindings}\n      ({trace_digests})\n      {frames}\n      {stage3s}\n      ({expected_artifact})",
-        name = case.name,
-        bindings = bindings,
-        trace_digests = render_trace_digest_source_view(&case.imported_artifact.trace_digests),
-        frames = frames,
-        stage3s = stage3s,
-        expected_artifact = render_release_artifact_view(&case.imported_artifact.artifact, &meta_pub_name),
-    )
-}
-
-fn render_named_release_artifact_case_def(case: &ReleaseArtifactCase) -> String {
-    format!(
-        "def {name} : KernelReleaseArtifactVectorCase :=\n  {value}\n",
-        name = release_artifact_case_def_name_from_name(case.name),
-        value = render_release_artifact_case(case),
-    )
-}
-
-fn release_artifact_output_path() -> PathBuf {
+fn release_artifact_legacy_output_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../Nightstream/Chip8/Generated/ReleaseArtifactVectors.lean")
 }
@@ -1641,7 +1497,7 @@ fn imported_opening_transcript_output_path() -> PathBuf {
         .join("../Nightstream/Chip8/Generated/ImportedOpeningTranscriptCases.lean")
 }
 
-fn imported_release_artifact_output_path() -> PathBuf {
+fn imported_release_artifact_legacy_output_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../Nightstream/Chip8/Generated/ImportedReleaseArtifact.lean")
 }
@@ -1651,9 +1507,67 @@ fn transcript_output_path() -> PathBuf {
         .join("../Nightstream/Chip8/Generated/TranscriptVectors.lean")
 }
 
-fn bundle_output_path() -> PathBuf {
+fn bundle_legacy_output_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../Nightstream/Chip8/Generated/StagedExecutionDigestBundleVectors.lean")
+}
+
+fn release_artifact_output_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../Nightstream/Chip8/Generated/ReleaseArtifactVectors")
+}
+
+fn release_artifact_corpus_output_path() -> PathBuf {
+    release_artifact_output_dir().join("Corpus.lean")
+}
+
+fn release_artifact_case_output_path(name: &str) -> PathBuf {
+    release_artifact_output_dir().join(format!("{}.lean", case_module_fragment(name)))
+}
+
+fn imported_release_artifact_output_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../Nightstream/Chip8/Generated/ImportedReleaseArtifact")
+}
+
+fn imported_release_artifact_corpus_output_path() -> PathBuf {
+    imported_release_artifact_output_dir().join("Corpus.lean")
+}
+
+fn imported_release_artifact_case_output_path(name: &str) -> PathBuf {
+    imported_release_artifact_output_dir().join(format!("{}.lean", case_module_fragment(name)))
+}
+
+fn bundle_output_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../Nightstream/Chip8/Generated/StagedExecutionDigestBundleVectors")
+}
+
+fn bundle_corpus_output_path() -> PathBuf {
+    bundle_output_dir().join("Corpus.lean")
+}
+
+fn bundle_case_output_path(name: &str) -> PathBuf {
+    bundle_output_dir().join(format!("{}.lean", case_module_fragment(name)))
+}
+
+fn reset_generated_module_dir(path: &Path) {
+    if path.exists() {
+        fs::remove_dir_all(path).expect("remove stale generated module dir");
+    }
+    fs::create_dir_all(path).expect("create generated module dir");
+}
+
+fn remove_generated_path_if_exists(path: &Path) {
+    if !path.exists() {
+        return;
+    }
+    let metadata = fs::metadata(path).expect("read generated path metadata");
+    if metadata.is_dir() {
+        fs::remove_dir_all(path).expect("remove stale generated dir");
+    } else {
+        fs::remove_file(path).expect("remove stale generated file");
+    }
 }
 
 fn fixture_named<'a>(fixtures: &'a [KernelFixture], name: &str) -> &'a KernelFixture {
@@ -1664,7 +1578,10 @@ fn fixture_named<'a>(fixtures: &'a [KernelFixture], name: &str) -> &'a KernelFix
 }
 
 fn is_release_artifact_fixture(name: &str) -> bool {
-    matches!(name, "jump_rows_2_seed_empty" | "jump_rows_3_seed_nonempty")
+    matches!(
+        name,
+        "jump_rows_2_seed_empty" | "jump_rows_3_seed_nonempty" | "mixed_ldimm_addimm_10"
+    )
 }
 
 fn imported_release_artifact_def_name(name: &str) -> String {
@@ -1703,6 +1620,183 @@ fn imported_opening_transcript_case_def_name(name: &str) -> String {
     format!("importedOpeningTranscriptCase_{}", lean_ident_fragment(name))
 }
 
+fn imported_kernel_manifest_view_def_name(name: &str) -> String {
+    format!("importedKernelManifestView_{}", lean_ident_fragment(name))
+}
+
+fn imported_root_manifest_view_def_name(name: &str) -> String {
+    format!("importedRootManifestView_{}", lean_ident_fragment(name))
+}
+
+fn imported_manifest_surface_view_def_name(name: &str) -> String {
+    format!("importedManifestSurfaceView_{}", lean_ident_fragment(name))
+}
+
+fn imported_trace_surface_view_def_name(name: &str) -> String {
+    format!("importedTraceSurfaceView_{}", lean_ident_fragment(name))
+}
+
+fn imported_export_surface_view_def_name(name: &str) -> String {
+    format!("importedExportSurfaceView_{}", lean_ident_fragment(name))
+}
+
+fn imported_audit_surface_view_def_name(name: &str) -> String {
+    format!("importedAuditSurfaceView_{}", lean_ident_fragment(name))
+}
+
+fn imported_transcript_surface_view_def_name(name: &str) -> String {
+    format!("importedTranscriptSurfaceView_{}", lean_ident_fragment(name))
+}
+
+fn imported_error_surface_view_def_name(name: &str) -> String {
+    format!("importedErrorSurfaceView_{}", lean_ident_fragment(name))
+}
+
+fn imported_kernel_digest_view_def_name(name: &str) -> String {
+    format!("importedKernelDigestView_{}", lean_ident_fragment(name))
+}
+
+fn imported_staged_bundle_view_def_name(name: &str) -> String {
+    format!("importedStagedBundleView_{}", lean_ident_fragment(name))
+}
+
+fn release_artifact_bindings_def_name(name: &str) -> String {
+    format!("releaseArtifactBindings_{}", lean_ident_fragment(name))
+}
+
+fn release_artifact_trace_digests_def_name(name: &str) -> String {
+    format!("releaseArtifactTraceDigests_{}", lean_ident_fragment(name))
+}
+
+fn release_artifact_frames_def_name(name: &str) -> String {
+    format!("releaseArtifactFrames_{}", lean_ident_fragment(name))
+}
+
+fn release_artifact_stage3s_def_name(name: &str) -> String {
+    format!("releaseArtifactStage3s_{}", lean_ident_fragment(name))
+}
+
+fn release_artifact_kernel_manifest_view_def_name(name: &str) -> String {
+    format!("releaseArtifactKernelManifestView_{}", lean_ident_fragment(name))
+}
+
+fn release_artifact_root_manifest_view_def_name(name: &str) -> String {
+    format!("releaseArtifactRootManifestView_{}", lean_ident_fragment(name))
+}
+
+fn release_artifact_manifest_surface_view_def_name(name: &str) -> String {
+    format!("releaseArtifactManifestSurfaceView_{}", lean_ident_fragment(name))
+}
+
+fn release_artifact_trace_surface_view_def_name(name: &str) -> String {
+    format!("releaseArtifactTraceSurfaceView_{}", lean_ident_fragment(name))
+}
+
+fn release_artifact_export_surface_view_def_name(name: &str) -> String {
+    format!("releaseArtifactExportSurfaceView_{}", lean_ident_fragment(name))
+}
+
+fn release_artifact_audit_surface_view_def_name(name: &str) -> String {
+    format!("releaseArtifactAuditSurfaceView_{}", lean_ident_fragment(name))
+}
+
+fn release_artifact_transcript_surface_view_def_name(name: &str) -> String {
+    format!("releaseArtifactTranscriptSurfaceView_{}", lean_ident_fragment(name))
+}
+
+fn release_artifact_error_surface_view_def_name(name: &str) -> String {
+    format!("releaseArtifactErrorSurfaceView_{}", lean_ident_fragment(name))
+}
+
+fn release_artifact_kernel_digest_view_def_name(name: &str) -> String {
+    format!("releaseArtifactKernelDigestView_{}", lean_ident_fragment(name))
+}
+
+fn release_artifact_bundle_view_def_name(name: &str) -> String {
+    format!("releaseArtifactBundleView_{}", lean_ident_fragment(name))
+}
+
+fn release_artifact_view_def_name(name: &str) -> String {
+    format!("releaseArtifactView_{}", lean_ident_fragment(name))
+}
+
+fn indexed_def_name(prefix: &str, idx: usize) -> String {
+    format!("{prefix}_{idx}")
+}
+
+fn render_named_reference_list(def_names: &[String]) -> String {
+    let mut out = String::from("[");
+    for (idx, def_name) in def_names.iter().enumerate() {
+        if idx > 0 {
+            out.push_str(", ");
+        }
+        out.push_str(def_name);
+    }
+    out.push(']');
+    out
+}
+
+fn render_named_value_defs(type_name: &str, def_prefix: &str, values: &[String]) -> (String, Vec<String>) {
+    let mut out = String::new();
+    let mut names = Vec::with_capacity(values.len());
+    for (idx, value) in values.iter().enumerate() {
+        let def_name = indexed_def_name(def_prefix, idx);
+        out.push_str(&format!(
+            "def {def_name} : {type_name} :=\n  ({value})\n\n",
+            def_name = def_name,
+            type_name = type_name,
+            value = value,
+        ));
+        names.push(def_name);
+    }
+    (out, names)
+}
+
+fn render_named_list_def(def_name: &str, item_type: &str, item_names: &[String]) -> String {
+    format!(
+        "def {def_name} : List {item_type} :=\n  {items}\n\n",
+        def_name = def_name,
+        item_type = item_type,
+        items = render_named_reference_list(item_names),
+    )
+}
+
+fn render_staged_execution_digest_view_from_refs(frame_def: &str, stage3_def: &str) -> String {
+    render_staged_execution_digest_view_from_parts(
+        &format!(
+            "mkStage1View\n        {frame_def}.pre\n        {frame_def}.dec\n        {frame_def}.row",
+            frame_def = frame_def,
+        ),
+        &format!(
+            "mkStage2View\n        {frame_def}.pre\n        {frame_def}.post\n        {frame_def}.dec\n        {frame_def}.row",
+            frame_def = frame_def,
+        ),
+        stage3_def,
+        &format!(
+            "mkExecutionResultView\n        {frame_def}.stepIdx\n        {frame_def}.pre\n        {frame_def}.post\n        {frame_def}.dec",
+            frame_def = frame_def,
+        ),
+    )
+}
+
+fn render_named_staged_digest_defs_from_refs(
+    def_prefix: &str,
+    frame_names: &[String],
+    stage3_names: &[String],
+) -> (String, Vec<String>) {
+    assert_eq!(
+        frame_names.len(),
+        stage3_names.len(),
+        "frame/stage3 count mismatch when rendering staged digest defs",
+    );
+    let values: Vec<String> = frame_names
+        .iter()
+        .zip(stage3_names.iter())
+        .map(|(frame_name, stage3_name)| render_staged_execution_digest_view_from_refs(frame_name, stage3_name))
+        .collect();
+    render_named_value_defs("StagedExecutionDigestView", def_prefix, &values)
+}
+
 fn render_imported_root0_bindings_list(case: &ReleaseArtifactCase) -> String {
     let mut bindings = String::from("[");
     for (idx, binding) in case.imported_artifact.root0_bindings.iter().enumerate() {
@@ -1713,30 +1807,6 @@ fn render_imported_root0_bindings_list(case: &ReleaseArtifactCase) -> String {
     }
     bindings.push(']');
     bindings
-}
-
-fn render_imported_frames_list(case: &ReleaseArtifactCase) -> String {
-    let mut frames = String::from("[");
-    for (idx, frame) in case.imported_artifact.frames.iter().enumerate() {
-        if idx > 0 {
-            frames.push_str(", ");
-        }
-        frames.push_str(&format!("({})", render_frame_source_view(frame)));
-    }
-    frames.push(']');
-    frames
-}
-
-fn render_imported_stage3s_list(case: &ReleaseArtifactCase) -> String {
-    let mut stage3s = String::from("[");
-    for (idx, stage3) in case.imported_artifact.stage3s.iter().enumerate() {
-        if idx > 0 {
-            stage3s.push_str(", ");
-        }
-        stage3s.push_str(&format!("({})", render_stage3_view(stage3)));
-    }
-    stage3s.push(']');
-    stage3s
 }
 
 fn render_imported_artifact_value(
@@ -1767,7 +1837,19 @@ fn render_imported_artifact_value(
     )
 }
 
-fn render_imported_release_artifact_module(case: &ReleaseArtifactCase) -> String {
+fn render_imported_release_artifact_case_module(case: &ReleaseArtifactCase) -> String {
+    assert_eq!(
+        case.imported_artifact.frames.len(),
+        case.imported_artifact.stage3s.len(),
+        "imported frame/stage3 count mismatch for {}",
+        case.name,
+    );
+    assert_eq!(
+        case.imported_artifact.frames.len(),
+        case.imported_artifact.artifact.staged_bundle.digests.len(),
+        "imported frame/bundle digest count mismatch for {}",
+        case.name,
+    );
     let source_def = imported_opening_transcript_source_def_name(case.name);
     let surface_def = imported_opening_transcript_surface_def_name(case.name);
     let artifact_def = imported_release_artifact_def_name(case.name);
@@ -1777,38 +1859,184 @@ fn render_imported_release_artifact_module(case: &ReleaseArtifactCase) -> String
     let frames_def = imported_frames_def_name(case.name);
     let stage3s_def = imported_stage3s_def_name(case.name);
     let artifact_view_def = imported_artifact_view_def_name(case.name);
+    let kernel_manifest_view_def = imported_kernel_manifest_view_def_name(case.name);
+    let root_manifest_view_def = imported_root_manifest_view_def_name(case.name);
+    let manifest_surface_view_def = imported_manifest_surface_view_def_name(case.name);
+    let trace_surface_view_def = imported_trace_surface_view_def_name(case.name);
+    let export_surface_view_def = imported_export_surface_view_def_name(case.name);
+    let audit_surface_view_def = imported_audit_surface_view_def_name(case.name);
+    let transcript_surface_view_def = imported_transcript_surface_view_def_name(case.name);
+    let error_surface_view_def = imported_error_surface_view_def_name(case.name);
+    let kernel_digest_view_def = imported_kernel_digest_view_def_name(case.name);
+    let staged_bundle_view_def = imported_staged_bundle_view_def_name(case.name);
+    let bundle_public_surface_def = format!("importedBundlePublicSurface_{}", lean_ident_fragment(case.name));
+    let bundle_digests_def = format!("importedBundleDigests_{}", lean_ident_fragment(case.name));
+    let bundle_digest_def_prefix = format!("importedBundleDigest_{}", lean_ident_fragment(case.name));
+    let frame_def_prefix = format!("importedFrame_{}", lean_ident_fragment(case.name));
+    let stage3_def_prefix = format!("importedStage3_{}", lean_ident_fragment(case.name));
+    let kernel_manifest_claims_def = format!("{}_claims", kernel_manifest_view_def);
+    let root_manifest_claims_def = format!("{}_claims", root_manifest_view_def);
+    let kernel_manifest_claim_def_prefix = format!("{}_claim", kernel_manifest_view_def);
+    let root_manifest_claim_def_prefix = format!("{}_claim", root_manifest_view_def);
+    let mut root0_ids = String::from("[");
+    for (idx, id) in case
+        .imported_artifact
+        .artifact
+        .kernel_digest
+        .manifest_surface
+        .root0_commitment_ids
+        .iter()
+        .enumerate()
+    {
+        if idx > 0 {
+            root0_ids.push_str(", ");
+        }
+        root0_ids.push_str(&render_commitment_id(*id));
+    }
+    root0_ids.push(']');
+    let frame_values: Vec<String> = case
+        .imported_artifact
+        .frames
+        .iter()
+        .map(render_frame_source_view)
+        .collect();
+    let stage3_values: Vec<String> = case
+        .imported_artifact
+        .stage3s
+        .iter()
+        .map(render_stage3_view)
+        .collect();
+    let (frame_defs, frame_names) = render_named_value_defs("FrameSourceView", &frame_def_prefix, &frame_values);
+    let (stage3_defs, stage3_names) = render_named_value_defs("Stage3View", &stage3_def_prefix, &stage3_values);
+    let (bundle_digest_defs, bundle_digest_names) =
+        render_named_staged_digest_defs_from_refs(&bundle_digest_def_prefix, &frame_names, &stage3_names);
+    let kernel_manifest_claim_values: Vec<String> = case
+        .imported_artifact
+        .artifact
+        .kernel_digest
+        .manifest_surface
+        .kernel_manifest
+        .claims
+        .iter()
+        .map(render_opening_claim_view)
+        .collect();
+    let (kernel_manifest_claim_defs, kernel_manifest_claim_names) = render_named_value_defs(
+        "KernelOpeningClaimView",
+        &kernel_manifest_claim_def_prefix,
+        &kernel_manifest_claim_values,
+    );
+    let root_manifest_claim_values: Vec<String> = case
+        .imported_artifact
+        .artifact
+        .kernel_digest
+        .manifest_surface
+        .root_manifest
+        .claims
+        .iter()
+        .map(render_opening_claim_view)
+        .collect();
+    let (root_manifest_claim_defs, root_manifest_claim_names) = render_named_value_defs(
+        "KernelOpeningClaimView",
+        &root_manifest_claim_def_prefix,
+        &root_manifest_claim_values,
+    );
 
     let mut out = String::new();
     out.push_str("import Nightstream.Chip8.Kernel.ExternalReleaseArtifact\n\n");
     out.push_str("set_option maxHeartbeats 0\n\n");
-    out.push_str("namespace Nightstream.Chip8.Generated\n\n");
+    out.push_str("namespace Nightstream.Chip8.Generated.ImportedReleaseArtifact\n\n");
     out.push_str("open Nightstream.Chip8.ExternalReleaseArtifact\n\n");
-    out.push_str(&format!("def importedReleaseArtifactName : String := \"{}\"\n\n", case.name));
     out.push_str(&render_named_meta_pub_def(
         &meta_pub_def,
         &case.imported_artifact.artifact.staged_bundle.public.meta_pub,
     ));
     out.push('\n');
+    out.push_str(&frame_defs);
+    out.push_str(&render_named_list_def(&frames_def, "FrameSourceView", &frame_names));
+    out.push_str(&stage3_defs);
+    out.push_str(&render_named_list_def(&stage3s_def, "Stage3View", &stage3_names));
+    out.push_str(&bundle_digest_defs);
+    out.push_str(&render_named_list_def(
+        &bundle_digests_def,
+        "StagedExecutionDigestView",
+        &bundle_digest_names,
+    ));
+    out.push_str(&kernel_manifest_claim_defs);
+    out.push_str(&render_named_list_def(
+        &kernel_manifest_claims_def,
+        "KernelOpeningClaimView",
+        &kernel_manifest_claim_names,
+    ));
+    out.push_str(&root_manifest_claim_defs);
+    out.push_str(&render_named_list_def(
+        &root_manifest_claims_def,
+        "KernelOpeningClaimView",
+        &root_manifest_claim_names,
+    ));
     out.push_str(&format!(
         "def {root0_bindings_def} : List CommitmentBinding :=\n  {root0_bindings}\n\n\
 def {trace_digests_def} : TraceDigestSourceView :=\n  ({trace_digests})\n\n\
-def {frames_def} : List FrameSourceView :=\n  {frames}\n\n\
-def {stage3s_def} : List Stage3View :=\n  {stage3s}\n\n\
-def {artifact_view_def} : KernelReleaseArtifactView :=\n  ({artifact_view})\n\n\
+def {kernel_manifest_view_def} : KernelOpeningManifestView :=\n  ({kernel_manifest_view})\n\n\
+def {root_manifest_view_def} : KernelOpeningManifestView :=\n  ({root_manifest_view})\n\n\
+def {manifest_surface_view_def} : KernelManifestSurfaceView :=\n  mkKernelManifestSurfaceView\n      {root0_ids}\n      {kernel_manifest_view_def}\n      {root_manifest_view_def}\n\n\
+def {trace_surface_view_def} : KernelTraceSurfaceView :=\n  ({trace_surface_view})\n\n\
+def {export_surface_view_def} : KernelExportSurfaceView :=\n  ({export_surface_view})\n\n\
+def {audit_surface_view_def} : KernelAuditSurfaceView :=\n  ({audit_surface_view})\n\n\
+def {transcript_surface_view_def} : KernelTranscriptSurfaceView :=\n  ({transcript_surface_view})\n\n\
+def {error_surface_view_def} : KernelErrorSurfaceView :=\n  ({error_surface_view})\n\n\
+def {kernel_digest_view_def} : KernelExecutionDigestView :=\n  mkKernelExecutionDigestView\n    {trace_surface_view_def}\n    {export_surface_view_def}\n    {audit_surface_view_def}\n    {manifest_surface_view_def}\n    {transcript_surface_view_def}\n    {error_surface_view_def}\n\n\
+def {bundle_public_surface_def} : DigestPublicView :=\n  ({bundle_public_surface})\n\n\
+def {staged_bundle_view_def} : StagedExecutionDigestBundleView :=\n  ({staged_bundle_view})\n\n\
+def {artifact_view_def} : KernelReleaseArtifactView :=\n  mkKernelReleaseArtifactView\n      {kernel_digest_view_def}\n      {staged_bundle_view_def}\n\n\
 def {source_def} : KernelOpeningTranscriptSourceView :=\n  {opening_transcript_source}\n\n\
 def {surface_def} : KernelOpeningTranscriptSurfaceView :=\n  {opening_transcript_surface}\n\n\
 def {artifact_def} : Nightstream.Chip8.ExternalReleaseArtifact.ImportedArtifact :=\n  {artifact_value}\n\n\
-def importedReleaseArtifact : Nightstream.Chip8.ExternalReleaseArtifact.ImportedArtifact :=\n  {artifact_def}\n\n",
+",
         root0_bindings_def = root0_bindings_def,
         root0_bindings = render_imported_root0_bindings_list(case),
         trace_digests_def = trace_digests_def,
         trace_digests = render_trace_digest_source_view(&case.imported_artifact.trace_digests),
-        frames_def = frames_def,
-        frames = render_imported_frames_list(case),
-        stage3s_def = stage3s_def,
-        stage3s = render_imported_stage3s_list(case),
+        kernel_manifest_view_def = kernel_manifest_view_def,
+        kernel_manifest_view =
+            render_opening_manifest_view_from_claims_expr(
+                &kernel_manifest_claims_def,
+                &case.imported_artifact.artifact.kernel_digest.manifest_surface.kernel_manifest.digest,
+            ),
+        root_manifest_view_def = root_manifest_view_def,
+        root_manifest_view =
+            render_opening_manifest_view_from_claims_expr(
+                &root_manifest_claims_def,
+                &case.imported_artifact.artifact.kernel_digest.manifest_surface.root_manifest.digest,
+            ),
+        manifest_surface_view_def = manifest_surface_view_def,
+        root0_ids = root0_ids,
+        trace_surface_view_def = trace_surface_view_def,
+        trace_surface_view =
+            render_kernel_trace_surface_view_from_frames_expr(
+                &case.imported_artifact.artifact.kernel_digest.trace_surface,
+                &frames_def,
+            ),
+        export_surface_view_def = export_surface_view_def,
+        export_surface_view =
+            render_kernel_export_surface_view(&case.imported_artifact.artifact.kernel_digest.export_surface),
+        audit_surface_view_def = audit_surface_view_def,
+        audit_surface_view =
+            render_kernel_audit_surface_view(&case.imported_artifact.artifact.kernel_digest.audit_surface),
+        transcript_surface_view_def = transcript_surface_view_def,
+        transcript_surface_view =
+            render_kernel_transcript_surface_view(&case.imported_artifact.artifact.kernel_digest.transcript_surface),
+        error_surface_view_def = error_surface_view_def,
+        error_surface_view =
+            render_kernel_error_surface_view(&case.imported_artifact.artifact.kernel_digest.error_surface),
+        kernel_digest_view_def = kernel_digest_view_def,
+        bundle_public_surface_def = bundle_public_surface_def,
+        bundle_public_surface = render_digest_public_view_with_meta_expr(
+            &case.imported_artifact.artifact.staged_bundle.public.public,
+            &meta_pub_def,
+        ),
+        staged_bundle_view_def = staged_bundle_view_def,
+        staged_bundle_view = render_bundle_view_from_parts(&bundle_public_surface_def, &bundle_digests_def),
         artifact_view_def = artifact_view_def,
-        artifact_view = render_release_artifact_view(&case.imported_artifact.artifact, &meta_pub_def),
         source_def = source_def,
         surface_def = surface_def,
         artifact_def = artifact_def,
@@ -1826,7 +2054,7 @@ def importedReleaseArtifact : Nightstream.Chip8.ExternalReleaseArtifact.Imported
         opening_transcript_surface =
             render_kernel_opening_transcript_surface_view(&case.imported_artifact.opening_transcript_surface),
     ));
-    out.push_str("end Nightstream.Chip8.Generated\n");
+    out.push_str("end Nightstream.Chip8.Generated.ImportedReleaseArtifact\n");
     out
 }
 
@@ -1895,62 +2123,15 @@ fn render_imported_opening_transcript_corpus_module(cases: &[ReleaseArtifactCase
 
 fn render_imported_release_artifact_corpus_module(cases: &[ReleaseArtifactCase]) -> String {
     let mut out = String::new();
-    out.push_str("import Nightstream.Chip8.Kernel.ExternalReleaseArtifact\n\n");
-    out.push_str("set_option maxHeartbeats 0\n\n");
-    out.push_str("namespace Nightstream.Chip8.Generated\n\n");
-    out.push_str("open Nightstream.Chip8.ExternalReleaseArtifact\n\n");
     for case in cases {
-        let source_def = imported_opening_transcript_source_def_name(case.name);
-        let surface_def = imported_opening_transcript_surface_def_name(case.name);
-        let artifact_def = imported_release_artifact_def_name(case.name);
-        let meta_pub_def = imported_release_artifact_meta_pub_def_name_from_name(case.name);
-        let root0_bindings_def = imported_root0_bindings_def_name(case.name);
-        let trace_digests_def = imported_trace_digests_def_name(case.name);
-        let frames_def = imported_frames_def_name(case.name);
-        let stage3s_def = imported_stage3s_def_name(case.name);
-        let artifact_view_def = imported_artifact_view_def_name(case.name);
-        out.push_str(&render_named_meta_pub_def(
-            &meta_pub_def,
-            &case.imported_artifact.artifact.staged_bundle.public.meta_pub,
-        ));
-        out.push('\n');
         out.push_str(&format!(
-            "def {root0_bindings_def} : List CommitmentBinding :=\n  {root0_bindings}\n\n\
-def {trace_digests_def} : TraceDigestSourceView :=\n  ({trace_digests})\n\n\
-def {frames_def} : List FrameSourceView :=\n  {frames}\n\n\
-def {stage3s_def} : List Stage3View :=\n  {stage3s}\n\n\
-def {artifact_view_def} : KernelReleaseArtifactView :=\n  ({artifact_view})\n\n\
-def {source_def} : KernelOpeningTranscriptSourceView :=\n  {opening_transcript_source}\n\n\
-def {surface_def} : KernelOpeningTranscriptSurfaceView :=\n  {opening_transcript_surface}\n\n\
-def {artifact_def} : Nightstream.Chip8.ExternalReleaseArtifact.ImportedArtifact :=\n  {artifact_value}\n\n",
-            root0_bindings_def = root0_bindings_def,
-            root0_bindings = render_imported_root0_bindings_list(case),
-            trace_digests_def = trace_digests_def,
-            trace_digests = render_trace_digest_source_view(&case.imported_artifact.trace_digests),
-            frames_def = frames_def,
-            frames = render_imported_frames_list(case),
-            stage3s_def = stage3s_def,
-            stage3s = render_imported_stage3s_list(case),
-            artifact_view_def = artifact_view_def,
-            artifact_view = render_release_artifact_view(&case.imported_artifact.artifact, &meta_pub_def),
-            source_def = source_def,
-            surface_def = surface_def,
-            artifact_def = artifact_def,
-            artifact_value = render_imported_artifact_value(
-                &root0_bindings_def,
-                &trace_digests_def,
-                &frames_def,
-                &stage3s_def,
-                &source_def,
-                &surface_def,
-                &artifact_view_def,
-            ),
-            opening_transcript_source =
-                render_kernel_opening_transcript_source_view(&case.imported_artifact.opening_transcript_source),
-            opening_transcript_surface =
-                render_kernel_opening_transcript_surface_view(&case.imported_artifact.opening_transcript_surface),
+            "import Nightstream.Chip8.Generated.ImportedReleaseArtifact.{}\n",
+            case_module_fragment(case.name),
         ));
     }
+    out.push('\n');
+    out.push_str("namespace Nightstream.Chip8.Generated\n\n");
+    out.push_str("open Nightstream.Chip8.Generated.ImportedReleaseArtifact\n\n");
     out.push_str(
         "def importedReleaseArtifacts : List (String × Nightstream.Chip8.ExternalReleaseArtifact.ImportedArtifact) :=\n",
     );
@@ -1978,6 +2159,315 @@ def {artifact_def} : Nightstream.Chip8.ExternalReleaseArtifact.ImportedArtifact 
     out
 }
 
+fn render_bundle_case_module(case: &BundleVectorCase) -> String {
+    assert_eq!(
+        case.frames.len(),
+        case.bundle.digests.len(),
+        "frame/bundle digest count mismatch for {}",
+        case.name,
+    );
+    let frame_def_prefix = format!("bundleFrame_{}", lean_ident_fragment(case.name));
+    let stage3_def_prefix = format!("bundleStage3_{}", lean_ident_fragment(case.name));
+    let digest_def_prefix = format!("bundleDigest_{}", lean_ident_fragment(case.name));
+    let frames_def = format!("bundleFrames_{}", lean_ident_fragment(case.name));
+    let stage3s_def = format!("bundleStage3s_{}", lean_ident_fragment(case.name));
+    let digests_def = format!("bundleDigests_{}", lean_ident_fragment(case.name));
+    let public_surface_def = format!("bundlePublicSurface_{}", lean_ident_fragment(case.name));
+    let expected_bundle_def = format!("bundleExpected_{}", lean_ident_fragment(case.name));
+    let case_def = bundle_case_def_name_from_name(case.name);
+    let frame_values: Vec<String> = case.frames.iter().map(render_frame_source_view).collect();
+    let stage3_values: Vec<String> = case.stage3s.iter().map(render_stage3_view).collect();
+    let (frame_defs, frame_names) = render_named_value_defs("FrameSourceView", &frame_def_prefix, &frame_values);
+    let (stage3_defs, stage3_names) = render_named_value_defs("Stage3View", &stage3_def_prefix, &stage3_values);
+    let (digest_defs, digest_names) =
+        render_named_staged_digest_defs_from_refs(&digest_def_prefix, &frame_names, &stage3_names);
+    let mut out = String::new();
+    out.push_str("import Nightstream.Chip8.Generated.StagedExecutionDigestBundleVectorTypes\n\n");
+    out.push_str("set_option maxHeartbeats 0\n\n");
+    out.push_str("namespace Nightstream.Chip8.Generated.StagedExecutionDigestBundleVectors\n\n");
+    out.push_str(&render_named_meta_pub_def(
+        &bundle_meta_pub_def_name_from_name(case.name),
+        &case.meta_pub,
+    ));
+    out.push('\n');
+    out.push_str(&frame_defs);
+    out.push_str(&render_named_list_def(&frames_def, "FrameSourceView", &frame_names));
+    out.push_str(&stage3_defs);
+    out.push_str(&render_named_list_def(&stage3s_def, "Stage3View", &stage3_names));
+    out.push_str(&digest_defs);
+    out.push_str(&render_named_list_def(&digests_def, "StagedExecutionDigestView", &digest_names));
+    out.push_str(&format!(
+        "def {public_surface_def} : DigestPublicView :=\n  ({public_surface})\n\n\
+def {expected_bundle_def} : StagedExecutionDigestBundleView :=\n  ({expected_bundle})\n\n\
+def {case_def} : StagedExecutionDigestBundleVectorCase :=\n  mkStagedExecutionDigestBundleVectorCase\n      \"{name}\"\n      {public_surface_def}\n      {frames_def}\n      {stage3s_def}\n      {expected_bundle_def}\n",
+        public_surface_def = public_surface_def,
+        public_surface = render_digest_public_view_with_meta_expr(
+            &case.public,
+            &bundle_meta_pub_def_name_from_name(case.name),
+        ),
+        expected_bundle_def = expected_bundle_def,
+        expected_bundle = render_bundle_view_from_parts(&public_surface_def, &digests_def),
+        case_def = case_def,
+        name = case.name,
+        frames_def = frames_def,
+        stage3s_def = stage3s_def,
+    ));
+    out.push('\n');
+    out.push_str("end Nightstream.Chip8.Generated.StagedExecutionDigestBundleVectors\n");
+    out
+}
+
+fn render_bundle_corpus_module(cases: &[BundleVectorCase]) -> String {
+    let mut out = String::new();
+    for case in cases {
+        out.push_str(&format!(
+            "import Nightstream.Chip8.Generated.StagedExecutionDigestBundleVectors.{}\n",
+            case_module_fragment(case.name),
+        ));
+    }
+    out.push('\n');
+    out.push_str("namespace Nightstream.Chip8.Generated\n\n");
+    out.push_str("open Nightstream.Chip8.Generated.StagedExecutionDigestBundleVectors\n\n");
+    out.push_str("def stagedExecutionDigestBundleVectorCases : List StagedExecutionDigestBundleVectorCase :=\n");
+    out.push_str("  [\n");
+    for (idx, case) in cases.iter().enumerate() {
+        out.push_str("    ");
+        out.push_str(&bundle_case_def_name_from_name(case.name));
+        if idx + 1 < cases.len() {
+            out.push(',');
+        }
+        out.push('\n');
+    }
+    out.push_str("  ]\n\n");
+    out.push_str("end Nightstream.Chip8.Generated\n");
+    out
+}
+
+fn render_release_artifact_case_module(case: &ReleaseArtifactCase) -> String {
+    assert_eq!(
+        case.imported_artifact.frames.len(),
+        case.imported_artifact.stage3s.len(),
+        "release-artifact frame/stage3 count mismatch for {}",
+        case.name,
+    );
+    assert_eq!(
+        case.imported_artifact.frames.len(),
+        case.imported_artifact.artifact.staged_bundle.digests.len(),
+        "release-artifact frame/bundle digest count mismatch for {}",
+        case.name,
+    );
+    let bindings_def = release_artifact_bindings_def_name(case.name);
+    let trace_digests_def = release_artifact_trace_digests_def_name(case.name);
+    let frames_def = release_artifact_frames_def_name(case.name);
+    let stage3s_def = release_artifact_stage3s_def_name(case.name);
+    let kernel_manifest_view_def = release_artifact_kernel_manifest_view_def_name(case.name);
+    let root_manifest_view_def = release_artifact_root_manifest_view_def_name(case.name);
+    let manifest_surface_view_def = release_artifact_manifest_surface_view_def_name(case.name);
+    let trace_surface_view_def = release_artifact_trace_surface_view_def_name(case.name);
+    let export_surface_view_def = release_artifact_export_surface_view_def_name(case.name);
+    let audit_surface_view_def = release_artifact_audit_surface_view_def_name(case.name);
+    let transcript_surface_view_def = release_artifact_transcript_surface_view_def_name(case.name);
+    let error_surface_view_def = release_artifact_error_surface_view_def_name(case.name);
+    let kernel_digest_view_def = release_artifact_kernel_digest_view_def_name(case.name);
+    let bundle_public_surface_def = format!("releaseArtifactBundlePublicSurface_{}", lean_ident_fragment(case.name));
+    let bundle_digests_def = format!("releaseArtifactBundleDigests_{}", lean_ident_fragment(case.name));
+    let bundle_digest_def_prefix = format!("releaseArtifactBundleDigest_{}", lean_ident_fragment(case.name));
+    let frame_def_prefix = format!("releaseArtifactFrame_{}", lean_ident_fragment(case.name));
+    let stage3_def_prefix = format!("releaseArtifactStage3_{}", lean_ident_fragment(case.name));
+    let kernel_manifest_claims_def = format!("{}_claims", kernel_manifest_view_def);
+    let root_manifest_claims_def = format!("{}_claims", root_manifest_view_def);
+    let kernel_manifest_claim_def_prefix = format!("{}_claim", kernel_manifest_view_def);
+    let root_manifest_claim_def_prefix = format!("{}_claim", root_manifest_view_def);
+    let bundle_view_def = release_artifact_bundle_view_def_name(case.name);
+    let artifact_view_def = release_artifact_view_def_name(case.name);
+    let mut root0_ids = String::from("[");
+    for (idx, id) in case
+        .imported_artifact
+        .artifact
+        .kernel_digest
+        .manifest_surface
+        .root0_commitment_ids
+        .iter()
+        .enumerate()
+    {
+        if idx > 0 {
+            root0_ids.push_str(", ");
+        }
+        root0_ids.push_str(&render_commitment_id(*id));
+    }
+    root0_ids.push(']');
+    let frame_values: Vec<String> = case
+        .imported_artifact
+        .frames
+        .iter()
+        .map(render_frame_source_view)
+        .collect();
+    let stage3_values: Vec<String> = case
+        .imported_artifact
+        .stage3s
+        .iter()
+        .map(render_stage3_view)
+        .collect();
+    let (frame_defs, frame_names) = render_named_value_defs("FrameSourceView", &frame_def_prefix, &frame_values);
+    let (stage3_defs, stage3_names) = render_named_value_defs("Stage3View", &stage3_def_prefix, &stage3_values);
+    let (bundle_digest_defs, bundle_digest_names) =
+        render_named_staged_digest_defs_from_refs(&bundle_digest_def_prefix, &frame_names, &stage3_names);
+    let kernel_manifest_claim_values: Vec<String> = case
+        .imported_artifact
+        .artifact
+        .kernel_digest
+        .manifest_surface
+        .kernel_manifest
+        .claims
+        .iter()
+        .map(render_opening_claim_view)
+        .collect();
+    let (kernel_manifest_claim_defs, kernel_manifest_claim_names) = render_named_value_defs(
+        "KernelOpeningClaimView",
+        &kernel_manifest_claim_def_prefix,
+        &kernel_manifest_claim_values,
+    );
+    let root_manifest_claim_values: Vec<String> = case
+        .imported_artifact
+        .artifact
+        .kernel_digest
+        .manifest_surface
+        .root_manifest
+        .claims
+        .iter()
+        .map(render_opening_claim_view)
+        .collect();
+    let (root_manifest_claim_defs, root_manifest_claim_names) = render_named_value_defs(
+        "KernelOpeningClaimView",
+        &root_manifest_claim_def_prefix,
+        &root_manifest_claim_values,
+    );
+    let mut out = String::new();
+    out.push_str("import Nightstream.Chip8.Generated.ReleaseArtifactVectorTypes\n\n");
+    out.push_str("set_option maxHeartbeats 0\n\n");
+    out.push_str("namespace Nightstream.Chip8.Generated.ReleaseArtifactVectors\n\n");
+    out.push_str(&render_named_meta_pub_def(
+        &release_artifact_meta_pub_def_name_from_name(case.name),
+        &case.imported_artifact.artifact.staged_bundle.public.meta_pub,
+    ));
+    out.push('\n');
+    out.push_str(&frame_defs);
+    out.push_str(&render_named_list_def(&frames_def, "FrameSourceView", &frame_names));
+    out.push_str(&stage3_defs);
+    out.push_str(&render_named_list_def(&stage3s_def, "Stage3View", &stage3_names));
+    out.push_str(&bundle_digest_defs);
+    out.push_str(&render_named_list_def(
+        &bundle_digests_def,
+        "StagedExecutionDigestView",
+        &bundle_digest_names,
+    ));
+    out.push_str(&kernel_manifest_claim_defs);
+    out.push_str(&render_named_list_def(
+        &kernel_manifest_claims_def,
+        "KernelOpeningClaimView",
+        &kernel_manifest_claim_names,
+    ));
+    out.push_str(&root_manifest_claim_defs);
+    out.push_str(&render_named_list_def(
+        &root_manifest_claims_def,
+        "KernelOpeningClaimView",
+        &root_manifest_claim_names,
+    ));
+    out.push_str(&format!(
+        "def {bindings_def} : List CommitmentBinding :=\n  {bindings}\n\n\
+def {trace_digests_def} : TraceDigestSourceView :=\n  ({trace_digests})\n\n\
+def {kernel_manifest_view_def} : KernelOpeningManifestView :=\n  ({kernel_manifest_view})\n\n\
+def {root_manifest_view_def} : KernelOpeningManifestView :=\n  ({root_manifest_view})\n\n\
+def {manifest_surface_view_def} : KernelManifestSurfaceView :=\n  mkKernelManifestSurfaceView\n      {root0_ids}\n      {kernel_manifest_view_def}\n      {root_manifest_view_def}\n\n\
+def {trace_surface_view_def} : KernelTraceSurfaceView :=\n  ({trace_surface_view})\n\n\
+def {export_surface_view_def} : KernelExportSurfaceView :=\n  ({export_surface_view})\n\n\
+def {audit_surface_view_def} : KernelAuditSurfaceView :=\n  ({audit_surface_view})\n\n\
+def {transcript_surface_view_def} : KernelTranscriptSurfaceView :=\n  ({transcript_surface_view})\n\n\
+def {error_surface_view_def} : KernelErrorSurfaceView :=\n  ({error_surface_view})\n\n\
+def {kernel_digest_view_def} : KernelExecutionDigestView :=\n  mkKernelExecutionDigestView\n    {trace_surface_view_def}\n    {export_surface_view_def}\n    {audit_surface_view_def}\n    {manifest_surface_view_def}\n    {transcript_surface_view_def}\n    {error_surface_view_def}\n\n\
+def {bundle_public_surface_def} : DigestPublicView :=\n  ({bundle_public_surface})\n\n\
+def {bundle_view_def} : StagedExecutionDigestBundleView :=\n  ({bundle_view})\n\n\
+def {artifact_view_def} : KernelReleaseArtifactView :=\n  mkKernelReleaseArtifactView\n      {kernel_digest_view_def}\n      {bundle_view_def}\n\n\
+def {case_def} : KernelReleaseArtifactVectorCase :=\n  mkKernelReleaseArtifactVectorCase\n      \"{name}\"\n      {bindings_def}\n      ({trace_digests_def})\n      {frames_def}\n      {stage3s_def}\n      ({artifact_view_def})\n",
+        bindings_def = bindings_def,
+        bindings = render_imported_root0_bindings_list(case),
+        trace_digests_def = trace_digests_def,
+        trace_digests = render_trace_digest_source_view(&case.imported_artifact.trace_digests),
+        kernel_manifest_view_def = kernel_manifest_view_def,
+        kernel_manifest_view =
+            render_opening_manifest_view_from_claims_expr(
+                &kernel_manifest_claims_def,
+                &case.imported_artifact.artifact.kernel_digest.manifest_surface.kernel_manifest.digest,
+            ),
+        root_manifest_view_def = root_manifest_view_def,
+        root_manifest_view =
+            render_opening_manifest_view_from_claims_expr(
+                &root_manifest_claims_def,
+                &case.imported_artifact.artifact.kernel_digest.manifest_surface.root_manifest.digest,
+            ),
+        manifest_surface_view_def = manifest_surface_view_def,
+        root0_ids = root0_ids,
+        trace_surface_view_def = trace_surface_view_def,
+        trace_surface_view =
+            render_kernel_trace_surface_view_from_frames_expr(
+                &case.imported_artifact.artifact.kernel_digest.trace_surface,
+                &frames_def,
+            ),
+        export_surface_view_def = export_surface_view_def,
+        export_surface_view =
+            render_kernel_export_surface_view(&case.imported_artifact.artifact.kernel_digest.export_surface),
+        audit_surface_view_def = audit_surface_view_def,
+        audit_surface_view =
+            render_kernel_audit_surface_view(&case.imported_artifact.artifact.kernel_digest.audit_surface),
+        transcript_surface_view_def = transcript_surface_view_def,
+        transcript_surface_view =
+            render_kernel_transcript_surface_view(&case.imported_artifact.artifact.kernel_digest.transcript_surface),
+        error_surface_view_def = error_surface_view_def,
+        error_surface_view =
+            render_kernel_error_surface_view(&case.imported_artifact.artifact.kernel_digest.error_surface),
+        kernel_digest_view_def = kernel_digest_view_def,
+        bundle_public_surface_def = bundle_public_surface_def,
+        bundle_public_surface = render_digest_public_view_with_meta_expr(
+            &case.imported_artifact.artifact.staged_bundle.public.public,
+            &release_artifact_meta_pub_def_name_from_name(case.name),
+        ),
+        bundle_view_def = bundle_view_def,
+        bundle_view = render_bundle_view_from_parts(&bundle_public_surface_def, &bundle_digests_def),
+        artifact_view_def = artifact_view_def,
+        case_def = release_artifact_case_def_name_from_name(case.name),
+        name = case.name,
+    ));
+    out.push('\n');
+    out.push_str("end Nightstream.Chip8.Generated.ReleaseArtifactVectors\n");
+    out
+}
+
+fn render_release_artifact_corpus_module(cases: &[ReleaseArtifactCase]) -> String {
+    let mut out = String::new();
+    for case in cases {
+        out.push_str(&format!(
+            "import Nightstream.Chip8.Generated.ReleaseArtifactVectors.{}\n",
+            case_module_fragment(case.name),
+        ));
+    }
+    out.push('\n');
+    out.push_str("namespace Nightstream.Chip8.Generated\n\n");
+    out.push_str("open Nightstream.Chip8.Generated.ReleaseArtifactVectors\n\n");
+    out.push_str("def releaseArtifactVectorCases : List KernelReleaseArtifactVectorCase :=\n");
+    out.push_str("  [\n");
+    for (idx, case) in cases.iter().enumerate() {
+        out.push_str("    ");
+        out.push_str(&release_artifact_case_def_name_from_name(case.name));
+        if idx + 1 < cases.len() {
+            out.push(',');
+        }
+        out.push('\n');
+    }
+    out.push_str("  ]\n\n");
+    out.push_str("end Nightstream.Chip8.Generated\n");
+    out
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let fixtures = chip8_subset_fixtures();
@@ -1993,16 +2483,16 @@ fn main() {
                 .unwrap_or("jump_rows_2_seed_empty");
             if !is_release_artifact_fixture(fixture_name) {
                 panic!(
-                    "fixture '{fixture_name}' is not in the audited release-artifact corpus; supported fixtures: jump_rows_2_seed_empty, jump_rows_3_seed_nonempty"
+                    "fixture '{fixture_name}' is not in the audited release-artifact corpus; supported fixtures: jump_rows_2_seed_empty, jump_rows_3_seed_nonempty, mixed_ldimm_addimm_10"
                 );
             }
             let fixture = fixture_named(&fixtures, fixture_name);
             let case = build_release_artifact_case(fixture);
-            let out = render_imported_release_artifact_module(&case);
+            let out = render_imported_release_artifact_case_module(&case);
             let output_path = args
                 .get(2)
                 .map(PathBuf::from)
-                .unwrap_or_else(imported_release_artifact_output_path);
+                .unwrap_or_else(|| imported_release_artifact_case_output_path(fixture_name));
             fs::create_dir_all(output_path.parent().expect("generated dir"))
                 .expect("create generated dir");
             fs::write(&output_path, out).expect("write imported release artifact");
@@ -2018,7 +2508,7 @@ fn main() {
     let transcript_cases: Vec<_> = fixtures.iter().map(build_case).collect();
     let artifact_fixtures: Vec<_> = fixtures
         .iter()
-        .filter(|fixture| matches!(fixture.name, "jump_rows_2_seed_empty" | "jump_rows_3_seed_nonempty"))
+        .filter(|fixture| is_release_artifact_fixture(fixture.name))
         .collect();
     let bundle_cases: Vec<_> = artifact_fixtures.iter().map(|fixture| build_bundle_case(fixture)).collect();
     let release_artifact_cases: Vec<_> = artifact_fixtures
@@ -2046,58 +2536,8 @@ fn main() {
     transcript_out.push_str("  ]\n\n");
     transcript_out.push_str("end Nightstream.Chip8.Generated\n");
 
-    let mut bundle_out = String::new();
-    bundle_out.push_str("import Nightstream.Chip8.Generated.StagedExecutionDigestBundleVectorTypes\n\n");
-    bundle_out.push_str("set_option maxHeartbeats 0\n\n");
-    bundle_out.push_str("namespace Nightstream.Chip8.Generated\n\n");
-    for case in &bundle_cases {
-        bundle_out.push_str(&render_named_meta_pub_def(
-            &bundle_meta_pub_def_name_from_name(case.name),
-            &case.meta_pub,
-        ));
-        bundle_out.push('\n');
-        bundle_out.push_str(&render_named_bundle_case_def(case));
-        bundle_out.push('\n');
-    }
-    bundle_out.push_str("def stagedExecutionDigestBundleVectorCases : List StagedExecutionDigestBundleVectorCase :=\n");
-    bundle_out.push_str("  [\n");
-    for (idx, case) in bundle_cases.iter().enumerate() {
-        bundle_out.push_str("    ");
-        bundle_out.push_str(&bundle_case_def_name_from_name(case.name));
-        if idx + 1 < bundle_cases.len() {
-            bundle_out.push(',');
-        }
-        bundle_out.push('\n');
-    }
-    bundle_out.push_str("  ]\n\n");
-    bundle_out.push_str("end Nightstream.Chip8.Generated\n");
-
-    let mut release_artifact_out = String::new();
-    release_artifact_out.push_str("import Nightstream.Chip8.Generated.ReleaseArtifactVectorTypes\n\n");
-    release_artifact_out.push_str("set_option maxHeartbeats 0\n\n");
-    release_artifact_out.push_str("namespace Nightstream.Chip8.Generated\n\n");
-    for case in &release_artifact_cases {
-        release_artifact_out.push_str(&render_named_meta_pub_def(
-            &release_artifact_meta_pub_def_name_from_name(case.name),
-            &case.imported_artifact.artifact.staged_bundle.public.meta_pub,
-        ));
-        release_artifact_out.push('\n');
-        release_artifact_out.push_str(&render_named_release_artifact_case_def(case));
-        release_artifact_out.push('\n');
-    }
-    release_artifact_out.push_str("def releaseArtifactVectorCases : List KernelReleaseArtifactVectorCase :=\n");
-    release_artifact_out.push_str("  [\n");
-    for (idx, case) in release_artifact_cases.iter().enumerate() {
-        release_artifact_out.push_str("    ");
-        release_artifact_out.push_str(&release_artifact_case_def_name_from_name(case.name));
-        if idx + 1 < release_artifact_cases.len() {
-            release_artifact_out.push(',');
-        }
-        release_artifact_out.push('\n');
-    }
-    release_artifact_out.push_str("  ]\n\n");
-    release_artifact_out.push_str("end Nightstream.Chip8.Generated\n");
-
+    let bundle_out = render_bundle_corpus_module(&bundle_cases);
+    let release_artifact_out = render_release_artifact_corpus_module(&release_artifact_cases);
     let imported_opening_transcript_out =
         render_imported_opening_transcript_corpus_module(&release_artifact_cases);
     let imported_release_artifact_out = render_imported_release_artifact_corpus_module(&release_artifact_cases);
@@ -2105,22 +2545,48 @@ fn main() {
     let transcript_path = transcript_output_path();
     fs::create_dir_all(transcript_path.parent().expect("generated dir")).expect("create generated dir");
     fs::write(&transcript_path, transcript_out).expect("write transcript vectors");
-    let bundle_path = bundle_output_path();
-    fs::create_dir_all(bundle_path.parent().expect("generated dir")).expect("create generated dir");
-    fs::write(&bundle_path, bundle_out).expect("write bundle vectors");
-    let release_artifact_path = release_artifact_output_path();
-    fs::create_dir_all(release_artifact_path.parent().expect("generated dir")).expect("create generated dir");
-    fs::write(&release_artifact_path, release_artifact_out).expect("write release artifact vectors");
+    remove_generated_path_if_exists(&bundle_legacy_output_path());
+    remove_generated_path_if_exists(&release_artifact_legacy_output_path());
+    remove_generated_path_if_exists(&imported_release_artifact_legacy_output_path());
+
+    let bundle_dir = bundle_output_dir();
+    reset_generated_module_dir(&bundle_dir);
+    for case in &bundle_cases {
+        fs::write(bundle_case_output_path(case.name), render_bundle_case_module(case))
+            .expect("write bundle case module");
+    }
+    let bundle_path = bundle_corpus_output_path();
+    fs::write(&bundle_path, bundle_out).expect("write bundle corpus");
+
+    let release_artifact_dir = release_artifact_output_dir();
+    reset_generated_module_dir(&release_artifact_dir);
+    for case in &release_artifact_cases {
+        fs::write(
+            release_artifact_case_output_path(case.name),
+            render_release_artifact_case_module(case),
+        )
+        .expect("write release artifact case module");
+    }
+    let release_artifact_path = release_artifact_corpus_output_path();
+    fs::write(&release_artifact_path, release_artifact_out).expect("write release artifact corpus");
+
     let imported_opening_transcript_path = imported_opening_transcript_output_path();
     fs::create_dir_all(imported_opening_transcript_path.parent().expect("generated dir"))
         .expect("create generated dir");
     fs::write(&imported_opening_transcript_path, imported_opening_transcript_out)
         .expect("write imported opening transcript cases");
-    let imported_release_artifact_path = imported_release_artifact_output_path();
-    fs::create_dir_all(imported_release_artifact_path.parent().expect("generated dir"))
-        .expect("create generated dir");
+    let imported_release_artifact_dir = imported_release_artifact_output_dir();
+    reset_generated_module_dir(&imported_release_artifact_dir);
+    for case in &release_artifact_cases {
+        fs::write(
+            imported_release_artifact_case_output_path(case.name),
+            render_imported_release_artifact_case_module(case),
+        )
+        .expect("write imported release artifact case module");
+    }
+    let imported_release_artifact_path = imported_release_artifact_corpus_output_path();
     fs::write(&imported_release_artifact_path, imported_release_artifact_out)
-        .expect("write imported release artifact vectors");
+        .expect("write imported release artifact corpus");
     println!("{}", transcript_path.display());
     println!("{}", bundle_path.display());
     println!("{}", release_artifact_path.display());

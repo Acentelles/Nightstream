@@ -362,9 +362,9 @@ Current directory ownership is partially nested:
 - `Nightstream/Chip8/Generated/TranscriptVectorTypes.lean`
 - `Nightstream/Chip8/Generated/TranscriptVectors.lean`
 - `Nightstream/Chip8/Generated/StagedExecutionDigestBundleVectorTypes.lean`
-- `Nightstream/Chip8/Generated/StagedExecutionDigestBundleVectors.lean`
+- `Nightstream/Chip8/Generated/StagedExecutionDigestBundleVectors/Corpus.lean`
 - `Nightstream/Chip8/Generated/ReleaseArtifactVectorTypes.lean`
-- `Nightstream/Chip8/Generated/ReleaseArtifactVectors.lean`
+- `Nightstream/Chip8/Generated/ReleaseArtifactVectors/Corpus.lean`
 - `Nightstream/Chip8/ChecksInterface.lean`
 - `Nightstream/Chip8/Checks.lean`
 - `Nightstream/Chip8/Kernel/Root0PreimageInterface.lean`

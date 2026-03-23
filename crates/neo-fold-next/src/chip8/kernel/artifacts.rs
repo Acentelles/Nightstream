@@ -24,11 +24,10 @@ use super::evidence::{build_kernel_stage3_digest_surfaces_from_frames, KernelSta
 #[cfg(feature = "chip8-audit")]
 use super::{build_kernel_execution_digest, verify_kernel_execution_digest, KernelCommitments};
 use super::{
-    reconstruct_trace_rows_and_aux, CommitmentId, KernelExecutionDigest, KernelMetaPub, KernelStepAux,
-    SimpleKernelError, SimpleKernelOutput, SimpleKernelProof, SimpleKernelPublicInput,
+    reconstruct_trace_rows_and_aux, CommitmentId, KernelExecutionDigest, KernelMetaPub, KernelOpeningTranscriptSource,
+    KernelOpeningTranscriptSurface, KernelStepAux, SimpleKernelError, SimpleKernelOutput, SimpleKernelProof,
+    SimpleKernelPublicInput,
 };
-#[cfg(feature = "chip8-audit")]
-use super::{KernelOpeningTranscriptSource, KernelOpeningTranscriptSurface};
 
 const CHIP8_SIMPLE_ROOT_PP_SEED: [u8; 32] = [
     0x09, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,

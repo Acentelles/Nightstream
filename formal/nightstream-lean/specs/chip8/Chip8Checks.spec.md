@@ -96,9 +96,9 @@ the checker must validate:
 | `Nightstream/Chip8/Generated/TranscriptVectorTypes.lean` | Generated-case types and helpers |
 | `Nightstream/Chip8/Generated/TranscriptVectors.lean` | Rust-exported concrete cases |
 | `Nightstream/Chip8/Generated/StagedExecutionDigestBundleVectorTypes.lean` | Generated chunk-bundle case types and rebuild helpers |
-| `Nightstream/Chip8/Generated/StagedExecutionDigestBundleVectors.lean` | Rust-exported chunk-bundle cases |
+| `Nightstream/Chip8/Generated/StagedExecutionDigestBundleVectors/Corpus.lean` | Rust-exported chunk-bundle corpus index and per-case imports |
 | `Nightstream/Chip8/Generated/ReleaseArtifactVectorTypes.lean` | Generated release-artifact case types and grouped-surface helpers |
-| `Nightstream/Chip8/Generated/ReleaseArtifactVectors.lean` | Rust-exported release-artifact cases |
+| `Nightstream/Chip8/Generated/ReleaseArtifactVectors/Corpus.lean` | Rust-exported release-artifact corpus index and per-case imports |
 | `Nightstream/Chip8/Checks.lean` | Executable parity checks |
 | `Nightstream/Chip8/ChecksInterface.lean` | Thin machine-facing boundary |
 
