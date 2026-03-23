@@ -114,7 +114,6 @@ The module structure mirrors the paper's four main sections.
   conformance lanes, currently outside the maintained default build path
 - `SuperNeo/RustRefinement/`: archived Rust-integration refinement surfaces,
   currently outside the maintained default build path
-- `rust-vectors/`: archived Rust generator crate for the older conformance lane
 
 ## Run Lean checks
 

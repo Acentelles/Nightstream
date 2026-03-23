@@ -46,11 +46,6 @@ jobs:
           curl https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -sSf | sh -s -- -y
         fi
         echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
-
-    - name: Export Lean oracle fixtures
-      run: |
-        cd formal/superneo-lean
-        lake exe export-oracles
       
     - name: Cache dependencies
       uses: actions/cache@v3
@@ -66,7 +61,10 @@ jobs:
     - name: Run tests
       run: NEO_PI_CCS_PREFLIGHT=1 NEO_SELF_VERIFY=1 NEO_STRICT_IO_PARITY=1 cargo test --release --workspace --features "testing,debug-log,fs-guard"
 
-    - name: Run Lean/Rust conformance gates
+    - name: Run CHIP-8 audit-feature tests
+      run: cargo test -p neo-fold-next --release --features chip8-audit
+
+    - name: Run Nightstream Lean/Rust conformance gates
       run: bash ./scripts/check_lean_rust_conformance.sh
 
   # ============================================================================
