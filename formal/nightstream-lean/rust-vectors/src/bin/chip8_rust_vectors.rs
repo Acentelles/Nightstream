@@ -21,12 +21,13 @@ use neo_fold_next::chip8::kernel::{
 use neo_fold_next::chip8::stage1;
 use neo_fold_next::chip8::stage2;
 use neo_fold_next::chip8::stage3;
+use neo_fold_next::chip8::spec::build_pad_row;
 use neo_fold_next::chip8::tables::{
     build_alu_table, build_decode_table, build_eq4_table, build_rom_table, flatten_alu_key, flatten_eq4_key,
     LookupKind, RAM_SINK_ADDR, REG_SINK_ADDR,
 };
 use neo_fold_next::chip8::trace::Chip8TraceBuilder;
-use neo_fold_next::chip8::{build_pad_row, Chip8Program, Chip8State, CHIP8_PROGRAM_START};
+use neo_fold_next::chip8::{Chip8Program, Chip8State, CHIP8_PROGRAM_START};
 use neo_math::{F, KExtensions, K};
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::{PrimeCharacteristicRing, PrimeField64};

@@ -9,13 +9,14 @@ use p3_field::PrimeCharacteristicRing;
 use crate::chip8::poly::build_eq_table;
 use crate::chip8::tables::{build_unmap_reg, ADDR_REG_BITS, REG_SINK_ADDR};
 
-use super::kernel::verify_sumcheck_known;
-use super::kernel::{
+use crate::chip8::kernel::verify_sumcheck_known;
+use crate::chip8::kernel::{
     verify_stage2_address_correctness_transcript, AddressCorrectnessProof, CycleProductProof, KernelStepAux,
     SimpleKernelError, Stage2TwistProof,
 };
-use super::spec::{COL_WRITES_LOOKUP_TO_X, COL_WRITES_MEM_TO_X, COL_X_IDX, COL_Y_IDX};
-use super::stage2::{
+use crate::chip8::spec::{COL_WRITES_LOOKUP_TO_X, COL_WRITES_MEM_TO_X, COL_X_IDX, COL_Y_IDX};
+
+use super::common::{
     bool_values_from_aux, build_onehot, build_val_from_inc_factors, col_values, mle_eval_fk_be,
     mle_eval_flat_k_at_point_be, partial_eval_flat_k_at_addr_be, prove_address_correctness,
     prove_cycle_product_relation, read_port_claim, squeeze_k, squeeze_point, stage2_address_claims, write_port_claim,
