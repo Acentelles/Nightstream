@@ -9,11 +9,12 @@ use neo_fold_next::chip8::spec::{
     COL_IS_MEMOP, COL_LOOKUP_OUTPUT, COL_NNN_ADDR, COL_NNN_WORD, COL_PC, COL_PC_NEXT, COL_PRESERVES_X, COL_REG_X,
     COL_X_IDX, WITNESS_WIDTH,
 };
-use neo_fold_next::chip8::stage1::{prove_stage1, verify_stage1};
+use neo_fold_next::chip8::stage1::{prove_stage1, stage1_alu_expected_claim, verify_stage1};
 use neo_fold_next::chip8::stage3::prove_stage3;
-use neo_fold_next::chip8::tables::{build_alu_table, build_decode_table, build_eq4_table, build_rom_table};
+use neo_fold_next::chip8::tables::{
+    build_alu_table, build_decode_table, build_eq4_table, build_rom_table, RAM_SINK_ADDR, REG_SINK_ADDR,
+};
 use neo_fold_next::chip8::trace::Chip8TraceBuilder;
-use neo_fold_next::chip8::{RAM_SINK_ADDR, REG_SINK_ADDR};
 use neo_math::{F, K};
 use neo_params::NeoParams;
 use neo_transcript::{Poseidon2Transcript, Transcript};
@@ -477,6 +478,10 @@ fn stage1_verifier_rejects_tampered_fetch_decode_consistency_rounds() {
         &alu_table,
         &eq4_table,
         0,
+        Some(stage1_alu_expected_claim(
+            &input.witness.semantic_aux_data,
+            &proof.cycle_point,
+        )),
         &mut verify_transcript,
     )
     .expect_err("tampered fetch decode-consistency rounds must fail");
@@ -522,6 +527,7 @@ fn stage1_verifier_rejects_tampered_alu_decode_consistency_rounds() {
         &alu_table,
         &eq4_table,
         0,
+        Some(stage1_alu_expected_claim(&aux, &proof.cycle_point)),
         &mut verify_transcript,
     )
     .expect_err("tampered ALU decode-consistency rounds must fail");
