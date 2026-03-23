@@ -13,6 +13,21 @@
 ## Design & Architecture
 - When evaluating design or architectural decisions, think from first principles: reduce the problem to its irreducible truths—axioms, physical laws, hard constraints—and derive every conclusion strictly from those, rejecting inherited conventions and unstated assumptions.
 - Before proposing any architectural change: (1) list every assumption you are making, (2) challenge each by asking "is this a necessity or just a convention?", (3) discard any that fails. Only then derive your answer from what remains.
+- Code philosophy north star:
+  - John Ousterhout: prefer deep modules with small, stable interfaces and unambiguous ownership.
+  - Rich Hickey: prefer simplicity over flexibility theater; do not introduce abstractions, layers, or helper systems until a real repeated need exists.
+  - Casey Muratori: prefer explicit data flow, explicit control flow, and mechanically obvious code over cleverness that hides what the machine or proof system is doing.
+- Use those principles as a practical test:
+  - If ownership is blurry, the design is not done.
+  - If a new abstraction mostly moves complexity around instead of removing it, reject it.
+  - If understanding a hot path requires chasing wrappers or indirection, simplify it.
+  - If a module grows by absorbing unrelated responsibilities, split it by responsibility instead of adding more flags or configuration.
+- Rust file/module documentation should optimize for ownership clarity and auditability, not ceremony.
+- Do not add top-level file docs to trivial files whose purpose is obvious from the code.
+- For normal files, prefer a short `//!` ownership header that states what the file owns and what it does not own.
+- For protocol-critical or ABI-critical files, prefer a short contract header that states ownership, inputs/outputs, and invariants.
+- Do not use top-level docs for implementation history, migration progress, aspirations, or Jolt/SuperNeo name-dropping without explaining the local ownership boundary.
+- Do not write large tutorial-style or paper-recap headers in implementation files; keep top-level docs compact and architectural.
 
 ## Testing
 - Never add tests in the same implementation file, always prefer to add them to a file inside tests/ (current or new)
@@ -29,6 +44,11 @@
   - Human spec: `formal/superneo-lean/specs/<Name>.spec.md`
   - Typed Lean interface: `formal/superneo-lean/SuperNeo/<Name>Interface.lean`
   - Lean implementation: `formal/superneo-lean/SuperNeo/<Name>.lean`
+- Lean build discipline:
+  - During iteration, build only the target module(s) you changed and their dependencies, not the whole package.
+  - Prefer narrow commands such as `lake build SuperNeo.<Name>` while working.
+  - If several Lean modules changed, build the narrowest affected theorem-facing targets that cover those edits.
+  - Only once the Lean work is complete, run a full `lake build` to catch package-wide breakage before finishing.
 - Closure standard (mandatory): **Paper-faithful proof-complete**.
   - A module is only considered complete when the exact mathematical construction/claim from
     `./formal/superneo-lean/SuperNeo.pdf.md` is proved in Lean at quantified theorem level.
