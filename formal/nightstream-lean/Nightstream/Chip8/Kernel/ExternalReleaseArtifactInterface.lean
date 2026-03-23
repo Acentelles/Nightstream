@@ -13,6 +13,8 @@ abbrev expectedTraceSurface := Nightstream.Chip8.ExternalReleaseArtifact.expecte
 abbrev expectedExportSurface := Nightstream.Chip8.ExternalReleaseArtifact.expectedExportSurface
 abbrev expectedBundle := Nightstream.Chip8.ExternalReleaseArtifact.expectedBundle
 abbrev expectedTranscriptSurface := Nightstream.Chip8.ExternalReleaseArtifact.expectedTranscriptSurface
+abbrev expectedOpeningTranscriptSurface :=
+  Nightstream.Chip8.ExternalReleaseArtifact.expectedOpeningTranscriptSurface
 abbrev rowWord? := Nightstream.Chip8.ExternalReleaseArtifact.rowWord?
 abbrev claimedShiftValuesMatch := Nightstream.Chip8.ExternalReleaseArtifact.claimedShiftValuesMatch
 abbrev stage3ViewMatchesFrame := Nightstream.Chip8.ExternalReleaseArtifact.stage3ViewMatchesFrame
@@ -33,6 +35,12 @@ abbrev ExportMatchesBundleLength := Nightstream.Chip8.ExternalReleaseArtifact.Ex
 abbrev SemanticRowsMatchBundleLength :=
   Nightstream.Chip8.ExternalReleaseArtifact.SemanticRowsMatchBundleLength
 abbrev TranscriptSurfaceBound := Nightstream.Chip8.ExternalReleaseArtifact.TranscriptSurfaceBound
+abbrev openingTranscriptExactClaimsMatchManifest :=
+  Nightstream.Chip8.ExternalReleaseArtifact.openingTranscriptExactClaimsMatchManifest
+abbrev openingTranscriptRefinementCountMatchesExactOpenings :=
+  Nightstream.Chip8.ExternalReleaseArtifact.openingTranscriptRefinementCountMatchesExactOpenings
+abbrev OpeningTranscriptSurfaceBound :=
+  Nightstream.Chip8.ExternalReleaseArtifact.OpeningTranscriptSurfaceBound
 abbrev ErrorSurfaceListsConform := Nightstream.Chip8.ExternalReleaseArtifact.ErrorSurfaceListsConform
 abbrev Root0IdsMatchBindings := Nightstream.Chip8.ExternalReleaseArtifact.Root0IdsMatchBindings
 abbrev RootManifestEmpty := Nightstream.Chip8.ExternalReleaseArtifact.RootManifestEmpty

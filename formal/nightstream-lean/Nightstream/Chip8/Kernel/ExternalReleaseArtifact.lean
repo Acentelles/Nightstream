@@ -11,11 +11,145 @@ namespace Nightstream.Chip8.ExternalReleaseArtifact
 
 open Nightstream.Chip8.Generated
 
+structure KernelExactOpeningTranscriptEntryView where
+  claimDigest : List Byte
+  witnessDigest : List Byte
+deriving DecidableEq, Repr
+
+structure KernelTimeOpeningTranscriptGroupView where
+  groupDigest : List Byte
+  reducedDigest : List Byte
+deriving DecidableEq, Repr
+
+structure KernelTimeOpeningTranscriptUnificationView where
+  claimedSum : ChallengePairWords
+  roundPolys : List (List ChallengePairWords)
+  rUnify : List ChallengePairWords
+  canUnify : Bool
+  unifiedPoint : List ChallengePairWords
+  unifiedDigest : List Byte
+deriving DecidableEq, Repr
+
+structure KernelJointOpeningTranscriptUnificationView where
+  claimedSum : ChallengePairWords
+  roundPolys : List (List ChallengePairWords)
+  rUnify : List ChallengePairWords
+  unifiedFoldDigest : Option (List Byte)
+deriving DecidableEq, Repr
+
+structure KernelOpeningTranscriptSourceView where
+  exactOpenings : List KernelExactOpeningTranscriptEntryView
+  refinementDigests : List (List Byte)
+  timeOpeningManifestDigest : List Byte
+  timeOpeningProofDigest : List Byte
+  timeOpeningGroups : List KernelTimeOpeningTranscriptGroupView
+  timeOpeningUnification : KernelTimeOpeningTranscriptUnificationView
+  jointClaimDigests : List (List Byte)
+  jointGroupDigests : List (List Byte)
+  jointOpeningUnification : KernelJointOpeningTranscriptUnificationView
+  foldBucketDigests : List (List Byte)
+deriving DecidableEq, Repr
+
+structure KernelOpeningTranscriptSurfaceView where
+  kernelManifestDigest : List Byte
+  rootManifestDigest : List Byte
+  source : KernelOpeningTranscriptSourceView
+deriving DecidableEq, Repr
+
+structure ImportedOpeningTranscriptCase where
+  name : String
+  manifestClaimDigests : List (List Byte)
+  kernelManifestDigest : List Byte
+  rootManifestDigest : List Byte
+  source : KernelOpeningTranscriptSourceView
+  surface : KernelOpeningTranscriptSurfaceView
+deriving DecidableEq, Repr
+
+def mkKernelExactOpeningTranscriptEntryView
+    (claimDigest witnessDigest : List Byte) :
+    KernelExactOpeningTranscriptEntryView :=
+  { claimDigest := claimDigest, witnessDigest := witnessDigest }
+
+def mkKernelTimeOpeningTranscriptGroupView
+    (groupDigest reducedDigest : List Byte) :
+    KernelTimeOpeningTranscriptGroupView :=
+  { groupDigest := groupDigest, reducedDigest := reducedDigest }
+
+def mkKernelTimeOpeningTranscriptUnificationView
+    (claimedSum : ChallengePairWords)
+    (roundPolys : List (List ChallengePairWords))
+    (rUnify unifiedPoint : List ChallengePairWords)
+    (canUnify : Bool)
+    (unifiedDigest : List Byte) :
+    KernelTimeOpeningTranscriptUnificationView :=
+  { claimedSum := claimedSum
+  , roundPolys := roundPolys
+  , rUnify := rUnify
+  , canUnify := canUnify
+  , unifiedPoint := unifiedPoint
+  , unifiedDigest := unifiedDigest }
+
+def mkKernelJointOpeningTranscriptUnificationView
+    (claimedSum : ChallengePairWords)
+    (roundPolys : List (List ChallengePairWords))
+    (rUnify : List ChallengePairWords)
+    (unifiedFoldDigest : Option (List Byte)) :
+    KernelJointOpeningTranscriptUnificationView :=
+  { claimedSum := claimedSum
+  , roundPolys := roundPolys
+  , rUnify := rUnify
+  , unifiedFoldDigest := unifiedFoldDigest }
+
+def mkKernelOpeningTranscriptSourceView
+    (exactOpenings : List KernelExactOpeningTranscriptEntryView)
+    (refinementDigests : List (List Byte))
+    (timeOpeningManifestDigest timeOpeningProofDigest : List Byte)
+    (timeOpeningGroups : List KernelTimeOpeningTranscriptGroupView)
+    (timeOpeningUnification : KernelTimeOpeningTranscriptUnificationView)
+    (jointClaimDigests jointGroupDigests : List (List Byte))
+    (jointOpeningUnification : KernelJointOpeningTranscriptUnificationView)
+    (foldBucketDigests : List (List Byte)) :
+    KernelOpeningTranscriptSourceView :=
+  { exactOpenings := exactOpenings
+  , refinementDigests := refinementDigests
+  , timeOpeningManifestDigest := timeOpeningManifestDigest
+  , timeOpeningProofDigest := timeOpeningProofDigest
+  , timeOpeningGroups := timeOpeningGroups
+  , timeOpeningUnification := timeOpeningUnification
+  , jointClaimDigests := jointClaimDigests
+  , jointGroupDigests := jointGroupDigests
+  , jointOpeningUnification := jointOpeningUnification
+  , foldBucketDigests := foldBucketDigests }
+
+def mkKernelOpeningTranscriptSurfaceView
+    (kernelManifestDigest rootManifestDigest : List Byte)
+    (source : KernelOpeningTranscriptSourceView) :
+    KernelOpeningTranscriptSurfaceView :=
+  { kernelManifestDigest := kernelManifestDigest
+  , rootManifestDigest := rootManifestDigest
+  , source := source }
+
+def mkImportedOpeningTranscriptCase
+    (name : String)
+    (manifestClaimDigests : List (List Byte))
+    (kernelManifestDigest rootManifestDigest : List Byte)
+    (source : KernelOpeningTranscriptSourceView)
+    (surface : KernelOpeningTranscriptSurfaceView) :
+    ImportedOpeningTranscriptCase :=
+  { name := name
+  , manifestClaimDigests := manifestClaimDigests
+  , kernelManifestDigest := kernelManifestDigest
+  , rootManifestDigest := rootManifestDigest
+  , source := source
+  , surface := surface }
+
 structure ImportedArtifact where
   root0Bindings : List CommitmentBinding
   traceDigests : TraceDigestSourceView
   frames : List FrameSourceView
   stage3s : List Stage3View
+  openingTranscriptSource : Option KernelOpeningTranscriptSourceView
+  openingTranscriptSurface : Option KernelOpeningTranscriptSurfaceView
   artifact : KernelReleaseArtifactView
 deriving DecidableEq, Repr
 
@@ -24,6 +158,8 @@ def ofVectorCase (case : KernelReleaseArtifactVectorCase) : ImportedArtifact :=
   , traceDigests := case.traceDigests
   , frames := case.frames
   , stage3s := case.stage3s
+  , openingTranscriptSource := none
+  , openingTranscriptSurface := none
   , artifact := case.expectedArtifact }
 
 def semanticRows (artifact : ImportedArtifact) : Nat :=
@@ -47,6 +183,14 @@ def expectedBundle (artifact : ImportedArtifact) : StagedExecutionDigestBundleVi
 
 def expectedTranscriptSurface (artifact : ImportedArtifact) : KernelTranscriptSurfaceView :=
   kernelTranscriptSurfaceViewOfSources artifact.root0Bindings (semanticRows artifact)
+
+def expectedOpeningTranscriptSurface
+    (artifact : ImportedArtifact) : Option KernelOpeningTranscriptSurfaceView :=
+  artifact.openingTranscriptSource.map fun source =>
+    mkKernelOpeningTranscriptSurfaceView
+      artifact.artifact.kernelDigest.manifestSurface.kernelManifest.digest
+      artifact.artifact.kernelDigest.manifestSurface.rootManifest.digest
+      source
 
 private def rowPcNextIdx : Nat := 2
 private def rowIsMemOpIdx : Nat := 19
@@ -161,6 +305,46 @@ def SemanticRowsMatchBundleLength (artifact : ImportedArtifact) : Bool :=
 def TranscriptSurfaceBound (artifact : ImportedArtifact) : Bool :=
   artifact.artifact.kernelDigest.transcriptSurface == expectedTranscriptSurface artifact
 
+def openingTranscriptExactClaimsMatchManifest
+    (artifact : ImportedArtifact)
+    (source : KernelOpeningTranscriptSourceView) : Bool :=
+  source.exactOpenings.map KernelExactOpeningTranscriptEntryView.claimDigest ==
+    artifact.artifact.kernelDigest.manifestSurface.kernelManifest.claims.map KernelOpeningClaimView.digest
+
+def openingTranscriptRefinementCountMatchesExactOpenings
+    (source : KernelOpeningTranscriptSourceView) : Bool :=
+  source.refinementDigests.length == source.exactOpenings.length
+
+def OpeningTranscriptSurfaceBound (artifact : ImportedArtifact) : Bool :=
+  match artifact.openingTranscriptSource, artifact.openingTranscriptSurface with
+  | none, none => true
+  | some source, some surface =>
+      openingTranscriptExactClaimsMatchManifest artifact source &&
+        openingTranscriptRefinementCountMatchesExactOpenings source &&
+        surface == mkKernelOpeningTranscriptSurfaceView
+          artifact.artifact.kernelDigest.manifestSurface.kernelManifest.digest
+          artifact.artifact.kernelDigest.manifestSurface.rootManifest.digest
+          source
+  | _, _ => false
+
+def importedOpeningTranscriptExpectedSurface
+    (case : ImportedOpeningTranscriptCase) : KernelOpeningTranscriptSurfaceView :=
+  mkKernelOpeningTranscriptSurfaceView
+    case.kernelManifestDigest
+    case.rootManifestDigest
+    case.source
+
+def importedOpeningTranscriptExactClaimsMatchManifest
+    (case : ImportedOpeningTranscriptCase) : Bool :=
+  case.source.exactOpenings.map KernelExactOpeningTranscriptEntryView.claimDigest ==
+    case.manifestClaimDigests
+
+def ImportedOpeningTranscriptCaseBound
+    (case : ImportedOpeningTranscriptCase) : Bool :=
+  importedOpeningTranscriptExactClaimsMatchManifest case &&
+    openingTranscriptRefinementCountMatchesExactOpenings case.source &&
+    case.surface == importedOpeningTranscriptExpectedSurface case
+
 def ErrorSurfaceListsConform (artifact : ImportedArtifact) : Bool :=
   kernelErrorSurfaceListsConform artifact.artifact.kernelDigest.errorSurface
 
@@ -191,24 +375,45 @@ def AuditReuseRowBinding (artifact : ImportedArtifact) : Bool :=
 def AuditPreparedStepsMatchStage3 (artifact : ImportedArtifact) : Bool :=
   auditPreparedStepsMatchStage3 (bridgeClaims artifact) artifact.stage3s
 
+def ImportedReleaseArtifactCoreBound (artifact : ImportedArtifact) : Prop :=
+  TraceSurfaceBound artifact = true ∧
+    ExportSurfaceBound artifact = true ∧
+    BundleSurfaceBound artifact = true ∧
+    Stage3SourceLengthsAgree artifact = true ∧
+    Stage3SourcesMatchFrames artifact = true ∧
+    BundleLengthMatchesFrames artifact = true ∧
+    ExportMatchesBundleLength artifact = true ∧
+    SemanticRowsMatchBundleLength artifact = true ∧
+    TranscriptSurfaceBound artifact = true ∧
+    ErrorSurfaceListsConform artifact = true ∧
+    Root0IdsMatchBindings artifact = true ∧
+    RootManifestEmpty artifact = true ∧
+    KernelManifestSources artifact = true ∧
+    KernelManifestCount artifact = true ∧
+    AuditLengthsConform artifact = true ∧
+    AuditRowsMatchFrames artifact = true ∧
+    AuditReuseRowBinding artifact = true ∧
+    AuditPreparedStepsMatchStage3 artifact = true
+
 def ImportedReleaseArtifactBound (artifact : ImportedArtifact) : Prop :=
-  ((((((((((((((((TraceSurfaceBound artifact = true ∧
-      ExportSurfaceBound artifact = true) ∧
-      BundleSurfaceBound artifact = true) ∧
-      Stage3SourceLengthsAgree artifact = true) ∧
-      Stage3SourcesMatchFrames artifact = true) ∧
-      BundleLengthMatchesFrames artifact = true) ∧
-      ExportMatchesBundleLength artifact = true) ∧
-      SemanticRowsMatchBundleLength artifact = true) ∧
-      TranscriptSurfaceBound artifact = true) ∧
-      ErrorSurfaceListsConform artifact = true) ∧
-      Root0IdsMatchBindings artifact = true) ∧
-      RootManifestEmpty artifact = true) ∧
-      KernelManifestSources artifact = true) ∧
-      KernelManifestCount artifact = true) ∧
-      AuditLengthsConform artifact = true) ∧
-      AuditRowsMatchFrames artifact = true) ∧
-      AuditReuseRowBinding artifact = true) ∧
-      AuditPreparedStepsMatchStage3 artifact = true
+  TraceSurfaceBound artifact = true ∧
+    ExportSurfaceBound artifact = true ∧
+    BundleSurfaceBound artifact = true ∧
+    Stage3SourceLengthsAgree artifact = true ∧
+    Stage3SourcesMatchFrames artifact = true ∧
+    BundleLengthMatchesFrames artifact = true ∧
+    ExportMatchesBundleLength artifact = true ∧
+    SemanticRowsMatchBundleLength artifact = true ∧
+    TranscriptSurfaceBound artifact = true ∧
+    OpeningTranscriptSurfaceBound artifact = true ∧
+    ErrorSurfaceListsConform artifact = true ∧
+    Root0IdsMatchBindings artifact = true ∧
+    RootManifestEmpty artifact = true ∧
+    KernelManifestSources artifact = true ∧
+    KernelManifestCount artifact = true ∧
+    AuditLengthsConform artifact = true ∧
+    AuditRowsMatchFrames artifact = true ∧
+    AuditReuseRowBinding artifact = true ∧
+    AuditPreparedStepsMatchStage3 artifact = true
 
 end Nightstream.Chip8.ExternalReleaseArtifact

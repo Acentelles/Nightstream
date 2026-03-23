@@ -38,6 +38,9 @@ def checkSemanticRowsMatchBundleLength (artifact : ImportedArtifact) : Bool :=
 def checkTranscriptSurface (artifact : ImportedArtifact) : Bool :=
   TranscriptSurfaceBound artifact
 
+def checkOpeningTranscriptSurface (artifact : ImportedArtifact) : Bool :=
+  OpeningTranscriptSurfaceBound artifact
+
 def checkErrorSurfaceLists (artifact : ImportedArtifact) : Bool :=
   ErrorSurfaceListsConform artifact
 
@@ -65,7 +68,7 @@ def checkAuditReuseRowBinding (artifact : ImportedArtifact) : Bool :=
 def checkAuditPreparedSteps (artifact : ImportedArtifact) : Bool :=
   AuditPreparedStepsMatchStage3 artifact
 
-def checkImportedReleaseArtifact (artifact : ImportedArtifact) : Bool :=
+def checkImportedReleaseArtifactCore (artifact : ImportedArtifact) : Bool :=
   checkTraceSurface artifact &&
     checkExportSurface artifact &&
     checkBundleSurface artifact &&
@@ -85,28 +88,79 @@ def checkImportedReleaseArtifact (artifact : ImportedArtifact) : Bool :=
     checkAuditReuseRowBinding artifact &&
     checkAuditPreparedSteps artifact
 
+def checkImportedReleaseArtifact (artifact : ImportedArtifact) : Bool :=
+  checkTraceSurface artifact &&
+    checkExportSurface artifact &&
+    checkBundleSurface artifact &&
+    checkStage3SourceLengths artifact &&
+    checkStage3SourcesMatchFrames artifact &&
+    checkBundleLengthMatchesFrames artifact &&
+    checkExportMatchesBundleLength artifact &&
+    checkSemanticRowsMatchBundleLength artifact &&
+    checkTranscriptSurface artifact &&
+    checkOpeningTranscriptSurface artifact &&
+    checkErrorSurfaceLists artifact &&
+    checkRoot0IdsMatchBindings artifact &&
+    checkRootManifestEmpty artifact &&
+    checkKernelManifestSources artifact &&
+    checkKernelManifestCount artifact &&
+    checkAuditLengths artifact &&
+    checkAuditRowsMatchFrames artifact &&
+    checkAuditReuseRowBinding artifact &&
+    checkAuditPreparedSteps artifact
+
+def ImportedReleaseArtifactCoreAccepted (artifact : ImportedArtifact) : Prop :=
+  checkImportedReleaseArtifactCore artifact = true
+
 def ImportedReleaseArtifactAccepted (artifact : ImportedArtifact) : Prop :=
   checkImportedReleaseArtifact artifact = true
+
+theorem importedReleaseArtifactCoreAccepted_iff_bound
+    {artifact : ImportedArtifact} :
+    ImportedReleaseArtifactCoreAccepted artifact ↔ ImportedReleaseArtifactCoreBound artifact := by
+  unfold ImportedReleaseArtifactCoreAccepted checkImportedReleaseArtifactCore
+    ImportedReleaseArtifactCoreBound checkTraceSurface checkExportSurface
+    checkBundleSurface checkStage3SourceLengths checkStage3SourcesMatchFrames
+    checkBundleLengthMatchesFrames checkExportMatchesBundleLength
+    checkSemanticRowsMatchBundleLength checkTranscriptSurface checkErrorSurfaceLists
+    checkRoot0IdsMatchBindings checkRootManifestEmpty checkKernelManifestSources
+    checkKernelManifestCount checkAuditLengths checkAuditRowsMatchFrames
+    checkAuditReuseRowBinding checkAuditPreparedSteps
+  repeat' rw [Bool.and_eq_true]
+  repeat' rw [and_assoc]
 
 theorem importedReleaseArtifactAccepted_iff_bound
     {artifact : ImportedArtifact} :
     ImportedReleaseArtifactAccepted artifact ↔ ImportedReleaseArtifactBound artifact := by
-  simpa [and_assoc] using
-    (show
-      ImportedReleaseArtifactAccepted artifact ↔ ImportedReleaseArtifactBound artifact from by
-        simp [ImportedReleaseArtifactAccepted, checkImportedReleaseArtifact, ImportedReleaseArtifactBound,
-          checkTraceSurface, checkExportSurface, checkBundleSurface, checkStage3SourceLengths,
-          checkStage3SourcesMatchFrames, checkBundleLengthMatchesFrames, checkExportMatchesBundleLength,
-          checkSemanticRowsMatchBundleLength, checkTranscriptSurface, checkErrorSurfaceLists,
-          checkRoot0IdsMatchBindings, checkRootManifestEmpty, checkKernelManifestSources,
-          checkKernelManifestCount, checkAuditLengths, checkAuditRowsMatchFrames,
-          checkAuditReuseRowBinding, checkAuditPreparedSteps])
+  unfold ImportedReleaseArtifactAccepted checkImportedReleaseArtifact
+    ImportedReleaseArtifactBound checkTraceSurface checkExportSurface
+    checkBundleSurface checkStage3SourceLengths checkStage3SourcesMatchFrames
+    checkBundleLengthMatchesFrames checkExportMatchesBundleLength
+    checkSemanticRowsMatchBundleLength checkTranscriptSurface
+    checkOpeningTranscriptSurface checkErrorSurfaceLists
+    checkRoot0IdsMatchBindings checkRootManifestEmpty checkKernelManifestSources
+    checkKernelManifestCount checkAuditLengths checkAuditRowsMatchFrames
+    checkAuditReuseRowBinding checkAuditPreparedSteps
+  repeat' rw [Bool.and_eq_true]
+  repeat' rw [and_assoc]
 
 theorem importedReleaseArtifactAccepted_of_bound
     {artifact : ImportedArtifact}
     (h : ImportedReleaseArtifactBound artifact) :
     ImportedReleaseArtifactAccepted artifact :=
   importedReleaseArtifactAccepted_iff_bound.mpr h
+
+theorem importedReleaseArtifactCoreAccepted_of_bound
+    {artifact : ImportedArtifact}
+    (h : ImportedReleaseArtifactCoreBound artifact) :
+    ImportedReleaseArtifactCoreAccepted artifact :=
+  importedReleaseArtifactCoreAccepted_iff_bound.mpr h
+
+theorem importedReleaseArtifactCoreAuditSound
+    {artifact : ImportedArtifact}
+    (h : ImportedReleaseArtifactCoreAccepted artifact) :
+    ImportedReleaseArtifactCoreBound artifact :=
+  importedReleaseArtifactCoreAccepted_iff_bound.mp h
 
 theorem importedReleaseArtifactAuditSound
     {artifact : ImportedArtifact}
@@ -121,27 +175,29 @@ private theorem acceptedChecksFlat
       ExportSurfaceBound artifact = true ∧
         BundleSurfaceBound artifact = true ∧
           Stage3SourceLengthsAgree artifact = true ∧
-            Stage3SourcesMatchFrames artifact = true ∧
-              BundleLengthMatchesFrames artifact = true ∧
-                ExportMatchesBundleLength artifact = true ∧
-                  SemanticRowsMatchBundleLength artifact = true ∧
-                    TranscriptSurfaceBound artifact = true ∧
-                      ErrorSurfaceListsConform artifact = true ∧
-                        Root0IdsMatchBindings artifact = true ∧
-                          RootManifestEmpty artifact = true ∧
-                            KernelManifestSources artifact = true ∧
-                              KernelManifestCount artifact = true ∧
-                                AuditLengthsConform artifact = true ∧
-                                  AuditRowsMatchFrames artifact = true ∧
-                                    AuditReuseRowBinding artifact = true ∧
-                                      AuditPreparedStepsMatchStage3 artifact = true := by
+                  Stage3SourcesMatchFrames artifact = true ∧
+                    BundleLengthMatchesFrames artifact = true ∧
+                      ExportMatchesBundleLength artifact = true ∧
+                        SemanticRowsMatchBundleLength artifact = true ∧
+                          TranscriptSurfaceBound artifact = true ∧
+                            OpeningTranscriptSurfaceBound artifact = true ∧
+                              ErrorSurfaceListsConform artifact = true ∧
+                                Root0IdsMatchBindings artifact = true ∧
+                                  RootManifestEmpty artifact = true ∧
+                                    KernelManifestSources artifact = true ∧
+                                      KernelManifestCount artifact = true ∧
+                                        AuditLengthsConform artifact = true ∧
+                                          AuditRowsMatchFrames artifact = true ∧
+                                            AuditReuseRowBinding artifact = true ∧
+                                              AuditPreparedStepsMatchStage3 artifact = true := by
   simpa [ImportedReleaseArtifactBound, and_assoc] using importedReleaseArtifactAuditSound h
 
 theorem importedReleaseArtifactAuditImpliesBundleLength_eq_semanticRows
     {artifact : ImportedArtifact}
     (h : ImportedReleaseArtifactAccepted artifact) :
     artifact.artifact.stagedBundle.digests.length = semanticRows artifact := by
-  have hSemanticRows := (acceptedChecksFlat h).2.2.2.2.2.2.2.1
+  rcases acceptedChecksFlat h with
+    ⟨_, _, _, _, _, _, _, hSemanticRows, _, _, _, _, _, _, _, _, _, _, _⟩
   exact (Nat.eq_of_beq_eq_true (by simpa [SemanticRowsMatchBundleLength] using hSemanticRows)).symm
 
 theorem importedReleaseArtifactAuditImpliesPreparedStepCount_eq_bundleLength
@@ -149,13 +205,16 @@ theorem importedReleaseArtifactAuditImpliesPreparedStepCount_eq_bundleLength
     (h : ImportedReleaseArtifactAccepted artifact) :
     artifact.artifact.kernelDigest.exportSurface.semanticRows =
       artifact.artifact.stagedBundle.digests.length := by
-  have hExportLen := (acceptedChecksFlat h).2.2.2.2.2.2.1
+  rcases acceptedChecksFlat h with
+    ⟨_, _, _, _, _, _, hExportLen, _, _, _, _, _, _, _, _, _, _, _, _⟩
   exact Nat.eq_of_beq_eq_true (by simpa [ExportMatchesBundleLength] using hExportLen)
 
 theorem importedReleaseArtifactAuditImpliesAuditReuseRowBinding
     {artifact : ImportedArtifact}
     (h : ImportedReleaseArtifactAccepted artifact) :
     AuditReuseRowBinding artifact = true := by
-  exact (acceptedChecksFlat h).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+  rcases acceptedChecksFlat h with
+    ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hReuse, _⟩
+  exact hReuse
 
 end Nightstream.Chip8.ExternalReleaseArtifactAudit

@@ -603,20 +603,26 @@ It should **not**:
 - add runtime branches to the default production hot path
 - create two different semantic acceptance rules
 
-The current CHIP-8 audit build now does all three assurance layers for the
-audited release-artifact corpus:
+The current CHIP-8 audit build keeps the maintained Rust-vs-Lean assurance
+lanes small enough to rebuild reliably:
 
-- Rust generates the external release artifact through the `chip8-audit` path
-- Lean imports that generated artifact through
-  `Nightstream.Chip8.Generated.ImportedReleaseArtifact`
-- `lake exe check` runs the Lean-owned imported-artifact checker and reports
-  `chip8_imported_release_artifact_check=true` when the whole audited imported
-  corpus passes, with per-case booleans in
-  `chip8_imported_release_artifact_checks`
+- Rust generates transcript vectors, bundle vectors, release-artifact vectors,
+  imported opening-transcript cases, and imported release-artifact cases
+- Lean recomputes the corresponding theorem-facing boundary objects and checks
+  exact equality on the protocol-binding numbers and digests
+- `lake exe check` gates the maintained audit lanes through:
+  - transcript vector parity
+  - staged bundle parity
+  - generated release-artifact parity
+  - imported release-artifact core parity
+  - imported opening-transcript parity
 
-That closes Layer 3 for the current audit build. The remaining follow-on work
-is wider transcript-call replay, broader audited corpora, and wiring the same
-artifact check into normal release qualification jobs.
+The maintained imported release-artifact check is now the split conjunction of
+the imported core lane and the imported opening-transcript lane. The current
+follow-on work is therefore:
+
+- broader audited corpora
+- wider transcript-call replay
 
 This package therefore aims to support two complementary claims:
 
@@ -639,6 +645,26 @@ This package therefore aims to support two complementary claims:
 | Heavy Rust-vs-Lean dual execution | Run Rust and Lean on many concrete programs and compare stage outputs and final outputs in CI | Medium | Medium | Finite testing only; not a theorem about production acceptance |
 | Dual solution: Lean proofs + heavy dual execution | Prove the spec in Lean and continuously compare Rust vs Lean in heavy testing | High | High practical confidence | Strong practical assurance, but still not a production-path proof |
 | Dual solution: Lean proofs + release artifact audit | Prove the spec in Lean, keep production Rust-only, and require artifact audit over staged execution digests during release qualification | High | High practical confidence with stronger release gating | Best zero-overhead long-term architecture if production must stay Rust-only |
+
+#### Current Rust-vs-Lean Assurance Matrix
+
+| Lane | Rust export | Lean recomputation | Checked equality | Maintained gate |
+|---|---|---|---|---:|
+| Transcript vectors | Transcript snapshots and shared challenges | Recompute `root0` cursor/digest surface and Stage-1/2/3 challenge points | Exact transcript/challenge values | Yes |
+| Bundle vectors | Frames, Stage-3 views, staged bundle | Rebuild staged bundle from frame and Stage-3 sources | Exact bundle/public surface equality | Yes |
+| Generated release-artifact vectors | Full generated kernel release-artifact cases | Recompute full release-artifact boundary from exported source views | Exact trace/export/bundle/transcript/opening/audit equality | Yes |
+| Imported release artifact | Full imported release-artifact cases plus imported opening-transcript cases | Recompute the imported core boundary from source views and the opening-transcript surface from exact openings/refinements | Exact imported full-boundary equality across the maintained split lanes | Yes |
+
+The practical assurance target is to move each protocol-binding surface as far
+down this ladder as possible:
+
+1. Rust exports lower-level boundary inputs.
+2. Lean rebuilds the higher-level boundary object from those inputs.
+3. The resulting numbers and digests match exactly.
+
+That is stronger than merely checking a Rust-precomputed digest, and it is the
+main reason the maintained audit lanes are split by ownership rather than
+hidden inside one oversized generated module.
 
 #### Recommendation
 

@@ -1,6 +1,7 @@
 import Nightstream.Chip8.Generated.TranscriptVectors
 import Nightstream.Chip8.Generated.StagedExecutionDigestBundleVectors
 import Nightstream.Chip8.Generated.ReleaseArtifactVectors
+import Nightstream.Chip8.Generated.ImportedOpeningTranscriptCases
 import Nightstream.Chip8.Generated.ImportedReleaseArtifact
 import Nightstream.Chip8.Kernel.ExternalReleaseArtifactAudit
 
@@ -250,6 +251,29 @@ private def importedReleaseArtifactCheckResults
   , ("exportMatchesBundleLength", ExternalReleaseArtifactAudit.checkExportMatchesBundleLength imported)
   , ("semanticRowsMatchMetaPub", ExternalReleaseArtifactAudit.checkSemanticRowsMatchBundleLength imported)
   , ("transcriptSurface", ExternalReleaseArtifactAudit.checkTranscriptSurface imported)
+  , ("openingTranscriptSurface", ExternalReleaseArtifactAudit.checkOpeningTranscriptSurface imported)
+  , ("errorSurfaceLists", ExternalReleaseArtifactAudit.checkErrorSurfaceLists imported)
+  , ("root0IdsMatchBindings", ExternalReleaseArtifactAudit.checkRoot0IdsMatchBindings imported)
+  , ("rootManifestEmpty", ExternalReleaseArtifactAudit.checkRootManifestEmpty imported)
+  , ("kernelManifestSources", ExternalReleaseArtifactAudit.checkKernelManifestSources imported)
+  , ("kernelManifestCount", ExternalReleaseArtifactAudit.checkKernelManifestCount imported)
+  , ("auditLengths", ExternalReleaseArtifactAudit.checkAuditLengths imported)
+  , ("auditRowsMatchFrames", ExternalReleaseArtifactAudit.checkAuditRowsMatchFrames imported)
+  , ("auditReuseRowBinding", ExternalReleaseArtifactAudit.checkAuditReuseRowBinding imported)
+  , ("auditPreparedSteps", ExternalReleaseArtifactAudit.checkAuditPreparedSteps imported)
+  ]
+
+private def importedReleaseArtifactCoreCheckResults
+    (imported : ExternalReleaseArtifact.ImportedArtifact) : List (String × Bool) :=
+  [ ("traceSurface", ExternalReleaseArtifactAudit.checkTraceSurface imported)
+  , ("exportSurface", ExternalReleaseArtifactAudit.checkExportSurface imported)
+  , ("bundleSurface", ExternalReleaseArtifactAudit.checkBundleSurface imported)
+  , ("stage3SourceLengthsAgree", ExternalReleaseArtifactAudit.checkStage3SourceLengths imported)
+  , ("stage3SourcesMatchFrames", ExternalReleaseArtifactAudit.checkStage3SourcesMatchFrames imported)
+  , ("bundleLengthMatchesFrames", ExternalReleaseArtifactAudit.checkBundleLengthMatchesFrames imported)
+  , ("exportMatchesBundleLength", ExternalReleaseArtifactAudit.checkExportMatchesBundleLength imported)
+  , ("semanticRowsMatchMetaPub", ExternalReleaseArtifactAudit.checkSemanticRowsMatchBundleLength imported)
+  , ("transcriptSurface", ExternalReleaseArtifactAudit.checkTranscriptSurface imported)
   , ("errorSurfaceLists", ExternalReleaseArtifactAudit.checkErrorSurfaceLists imported)
   , ("root0IdsMatchBindings", ExternalReleaseArtifactAudit.checkRoot0IdsMatchBindings imported)
   , ("rootManifestEmpty", ExternalReleaseArtifactAudit.checkRootManifestEmpty imported)
@@ -285,20 +309,85 @@ def releaseArtifactVectorReports : List ReleaseArtifactVectorReport :=
     { name := case.name
     , checks := releaseArtifactCheckResults case }
 
-def importedReleaseArtifactChecks : List (String × Bool) :=
-  importedReleaseArtifactCheckResults Generated.importedReleaseArtifact
+def importedReleaseArtifactCoreChecks : List Bool :=
+  List.map
+    ExternalReleaseArtifactAudit.checkImportedReleaseArtifactCore
+    Generated.importedReleaseArtifactValues
+
+def validImportedReleaseArtifactCore : Bool :=
+  List.all
+    Generated.importedReleaseArtifactValues
+    ExternalReleaseArtifactAudit.checkImportedReleaseArtifactCore
+
+private def importedReleaseArtifactCorporaAligned : Bool :=
+  Generated.importedReleaseArtifacts.map Prod.fst ==
+    Generated.importedOpeningTranscriptCases.map fun case => case.name
+
+def importedReleaseArtifactCoreReports : List ReleaseArtifactVectorReport :=
+  List.map (fun (name, artifact) =>
+    { name := name
+    , checks := importedReleaseArtifactCoreCheckResults artifact })
+    Generated.importedReleaseArtifacts
+
+structure ImportedOpeningTranscriptReport where
+  name : String
+  checks : List (String × Bool)
+deriving Repr
+
+private def importedOpeningTranscriptCheckResults
+    (case : ExternalReleaseArtifact.ImportedOpeningTranscriptCase) : List (String × Bool) :=
+  [ ( "exactClaimsMatchManifest"
+    , ExternalReleaseArtifact.importedOpeningTranscriptExactClaimsMatchManifest case)
+  , ( "refinementCountMatchesExactOpenings"
+    , ExternalReleaseArtifact.openingTranscriptRefinementCountMatchesExactOpenings case.source)
+  , ("openingTranscriptSurface", ExternalReleaseArtifact.ImportedOpeningTranscriptCaseBound case)
+  ]
+
+def importedOpeningTranscriptChecks : List Bool :=
+  Generated.importedOpeningTranscriptCases.map ExternalReleaseArtifact.ImportedOpeningTranscriptCaseBound
+
+def validImportedOpeningTranscriptCases : Bool :=
+  Generated.importedOpeningTranscriptCases.all ExternalReleaseArtifact.ImportedOpeningTranscriptCaseBound
+
+def importedOpeningTranscriptReports : List ImportedOpeningTranscriptReport :=
+  Generated.importedOpeningTranscriptCases.map fun case =>
+    { name := case.name
+    , checks := importedOpeningTranscriptCheckResults case }
+
+private def importedFullReleaseArtifactCheckResults
+    (artifact : ExternalReleaseArtifact.ImportedArtifact)
+    (opening : ExternalReleaseArtifact.ImportedOpeningTranscriptCase) : List (String × Bool) :=
+  importedReleaseArtifactCoreCheckResults artifact ++
+    [ ("openingTranscriptSurface", ExternalReleaseArtifact.ImportedOpeningTranscriptCaseBound opening) ]
+
+def importedReleaseArtifactChecks : List Bool :=
+  List.zipWith (· && ·)
+    importedReleaseArtifactCoreChecks
+    importedOpeningTranscriptChecks
+
+def validImportedReleaseArtifacts : Bool :=
+  importedReleaseArtifactCorporaAligned &&
+    validImportedReleaseArtifactCore &&
+    validImportedOpeningTranscriptCases
 
 def validImportedReleaseArtifact : Bool :=
-  ExternalReleaseArtifactAudit.checkImportedReleaseArtifact Generated.importedReleaseArtifact
+  validImportedReleaseArtifacts
 
-def importedReleaseArtifactReport : ReleaseArtifactVectorReport :=
-  { name := Generated.importedReleaseArtifactName
-  , checks := importedReleaseArtifactChecks }
+def importedReleaseArtifactReports : List ReleaseArtifactVectorReport :=
+  List.zipWith
+    (fun (name, artifact) opening =>
+      { name := name
+      , checks := importedFullReleaseArtifactCheckResults artifact opening })
+    Generated.importedReleaseArtifacts
+    Generated.importedOpeningTranscriptCases
+
+def importedReleaseArtifactReport : List ReleaseArtifactVectorReport :=
+  importedReleaseArtifactReports
 
 def validGeneratedChip8ProtocolCases : Bool :=
   validGeneratedTranscriptVectorCases &&
     validGeneratedBundleVectorCases &&
     validGeneratedReleaseArtifactVectorCases &&
-    validImportedReleaseArtifact
+    validImportedReleaseArtifacts
 
 end Nightstream.Chip8

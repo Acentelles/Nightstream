@@ -17,6 +17,8 @@ abbrev checkExportMatchesBundleLength :=
 abbrev checkSemanticRowsMatchBundleLength :=
   Nightstream.Chip8.ExternalReleaseArtifactAudit.checkSemanticRowsMatchBundleLength
 abbrev checkTranscriptSurface := Nightstream.Chip8.ExternalReleaseArtifactAudit.checkTranscriptSurface
+abbrev checkOpeningTranscriptSurface :=
+  Nightstream.Chip8.ExternalReleaseArtifactAudit.checkOpeningTranscriptSurface
 abbrev checkErrorSurfaceLists := Nightstream.Chip8.ExternalReleaseArtifactAudit.checkErrorSurfaceLists
 abbrev checkRoot0IdsMatchBindings := Nightstream.Chip8.ExternalReleaseArtifactAudit.checkRoot0IdsMatchBindings
 abbrev checkRootManifestEmpty := Nightstream.Chip8.ExternalReleaseArtifactAudit.checkRootManifestEmpty
