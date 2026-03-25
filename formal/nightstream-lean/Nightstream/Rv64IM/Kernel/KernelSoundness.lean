@@ -812,6 +812,116 @@ theorem adjacentStateClosed_of_kernelSoundness
     kernel.authenticatedTrace.stage2Closure.semanticRows :=
   authenticatedChunkTrace_adjacentStateClosed kernel.authenticatedTrace
 
+theorem registerTimelineBound_of_kernelSoundness
+  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
+    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
+    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
+    PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
+    BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
+    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding :
+    Type _} [OfNat Limb 0]
+  (kernel :
+    KernelSoundnessConclusion
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep
+      ProgramImage
+      LoweringVersion
+      RomTable
+      BytecodeTable
+      RomCommit
+      BytecodeCommit
+      Source
+      CommitmentId
+      Point
+      PolynomialId
+      Value
+      Digest
+      ExactOpeningWitness
+      OpeningRefinement
+      RowProjectionWitness
+      BridgeBinding) :
+  RegisterTimelineBound
+    kernel.authenticatedTrace.temporal.registers.timeline
+    kernel.authenticatedTrace.temporal.registers.preState
+    kernel.authenticatedTrace.temporal.registers.postState
+    kernel.authenticatedTrace.temporal.registers.semanticRows :=
+  registerTimelineBound_of_stage2AuthenticatedHistorySemantics
+    (stage2AuthenticatedHistorySemantics_of_authenticatedChunkTrace
+      kernel.authenticatedTrace)
+
+theorem ramTimelineBound_of_kernelSoundness
+  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
+    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
+    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
+    PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
+    BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
+    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding :
+    Type _} [OfNat Limb 0]
+  (kernel :
+    KernelSoundnessConclusion
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep
+      ProgramImage
+      LoweringVersion
+      RomTable
+      BytecodeTable
+      RomCommit
+      BytecodeCommit
+      Source
+      CommitmentId
+      Point
+      PolynomialId
+      Value
+      Digest
+      ExactOpeningWitness
+      OpeningRefinement
+      RowProjectionWitness
+      BridgeBinding) :
+  RamTimelineBound
+    kernel.authenticatedTrace.temporal.ram.timeline
+    kernel.authenticatedTrace.temporal.ram.preState
+    kernel.authenticatedTrace.temporal.ram.postState
+    kernel.authenticatedTrace.temporal.ram.semanticRows :=
+  ramTimelineBound_of_stage2AuthenticatedHistorySemantics
+    (stage2AuthenticatedHistorySemantics_of_authenticatedChunkTrace
+      kernel.authenticatedTrace)
+
 theorem fullHaltedExecutionClaim_of_kernelSoundness
   {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
     RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
@@ -861,8 +971,108 @@ theorem fullHaltedExecutionClaim_of_kernelSoundness
   FullHaltedExecutionClaim
     kernel.authenticatedTrace.stage3Refinement.finalBoundary.sequence
     kernel.authenticatedTrace.stage3Refinement.finalBoundary.terminatingRow :=
-  fullHaltedExecutionClaim_of_stage3Refinement
-    kernel.authenticatedTrace.stage3Refinement
+  fullHaltedExecutionClaim_of_stage3ExportSemantics
+    (stage3ExportSemantics_of_authenticatedChunkTrace
+      kernel.authenticatedTrace)
+
+theorem stage3ExportSemantics_of_kernelSoundness
+  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
+    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
+    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
+    PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
+    BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
+    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding :
+    Type _} [OfNat Limb 0]
+  (kernel :
+    KernelSoundnessConclusion
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep
+      ProgramImage
+      LoweringVersion
+      RomTable
+      BytecodeTable
+      RomCommit
+      BytecodeCommit
+      Source
+      CommitmentId
+      Point
+      PolynomialId
+      Value
+      Digest
+      ExactOpeningWitness
+      OpeningRefinement
+      RowProjectionWitness
+      BridgeBinding) :
+  Stage3ExportSemantics kernel.authenticatedTrace.stage3Refinement :=
+  stage3ExportSemantics_of_authenticatedChunkTrace kernel.authenticatedTrace
+
+theorem stage3ContinuitySemantics_of_kernelSoundness
+  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
+    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
+    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
+    PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
+    BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
+    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding :
+    Type _} [OfNat Limb 0]
+  (kernel :
+    KernelSoundnessConclusion
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep
+      ProgramImage
+      LoweringVersion
+      RomTable
+      BytecodeTable
+      RomCommit
+      BytecodeCommit
+      Source
+      CommitmentId
+      Point
+      PolynomialId
+      Value
+      Digest
+      ExactOpeningWitness
+      OpeningRefinement
+      RowProjectionWitness
+      BridgeBinding) :
+  Stage3ContinuitySemantics
+    kernel.authenticatedTrace.stage3Refinement :=
+  (stage3ExportSemantics_of_kernelSoundness kernel).1
 
 def pcAdjacentBridgeProofPackage_of_kernelSoundness
   {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
@@ -967,6 +1177,59 @@ theorem pcAdjacentBridge_of_kernelSoundness
     kernel.authenticatedTrace.temporal.pcBridge.semanticRows :=
   pcAdjacentBridge_of_authenticatedChunkTrace
     kernel.authenticatedTrace
+
+theorem activePrefixContinuity_of_kernelSoundness
+  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
+    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
+    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
+    PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
+    BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
+    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding :
+    Type _} [OfNat Limb 0]
+  (kernel :
+    KernelSoundnessConclusion
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep
+      ProgramImage
+      LoweringVersion
+      RomTable
+      BytecodeTable
+      RomCommit
+      BytecodeCommit
+      Source
+      CommitmentId
+      Point
+      PolynomialId
+      Value
+      Digest
+      ExactOpeningWitness
+      OpeningRefinement
+      RowProjectionWitness
+      BridgeBinding) :
+  ActivePrefixContinuity
+    kernel.authenticatedTrace.stage3Refinement.stage3.postPc
+    kernel.authenticatedTrace.stage3Refinement.stage3.prePc
+    kernel.authenticatedTrace.stage3Refinement.stage3.semanticRows :=
+  activePrefixContinuity_of_stage3ContinuitySemantics
+    (stage3ContinuitySemantics_of_kernelSoundness kernel)
 
 theorem preparedStepExportBound_of_kernelSoundness
   {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
@@ -1332,6 +1595,57 @@ theorem stage2LinkageBound_of_kernelSoundness
     kernel.authenticatedTrace.stepComposition.twistBinding.ramLane
     kernel.authenticatedTrace.stepComposition.twistBinding.ramTwist :=
   stage2LinkageBound_of_authenticatedChunkTrace kernel.authenticatedTrace
+
+theorem stage2AuthenticatedHistorySemantics_of_kernelSoundness
+  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
+    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
+    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
+    PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
+    BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
+    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding :
+    Type _} [OfNat Limb 0]
+  (kernel :
+    KernelSoundnessConclusion
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep
+      ProgramImage
+      LoweringVersion
+      RomTable
+      BytecodeTable
+      RomCommit
+      BytecodeCommit
+      Source
+      CommitmentId
+      Point
+      PolynomialId
+      Value
+      Digest
+      ExactOpeningWitness
+      OpeningRefinement
+      RowProjectionWitness
+      BridgeBinding) :
+  Stage2AuthenticatedHistorySemantics
+    kernel.authenticatedTrace.temporal
+    (twistConcreteBinding_of_authenticatedChunkTrace kernel.authenticatedTrace) :=
+  stage2AuthenticatedHistorySemantics_of_authenticatedChunkTrace kernel.authenticatedTrace
 
 theorem registerLinkageBound_of_kernelSoundness
   {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind

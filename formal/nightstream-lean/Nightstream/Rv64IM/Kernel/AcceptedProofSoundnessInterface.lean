@@ -1,0 +1,38 @@
+import Nightstream.Rv64IM.Kernel.AcceptedProofSoundness
+
+namespace Nightstream.Rv64IM.AcceptedProofSoundnessInterface
+
+abbrev AcceptedProofSoundness := @Nightstream.Rv64IM.AcceptedProofSoundness
+abbrev AcceptedProofConclusion := @Nightstream.Rv64IM.AcceptedProofConclusion
+abbrev acceptedProofSoundness_of_exactKernelBoundaries :=
+  @Nightstream.Rv64IM.acceptedProofSoundness_of_exactKernelBoundaries
+abbrev acceptedProofConclusion_of_acceptedProofSoundness :=
+  @Nightstream.Rv64IM.acceptedProofConclusion_of_acceptedProofSoundness
+abbrev acceptedProofConclusion_of_exactKernelBoundaries :=
+  @Nightstream.Rv64IM.acceptedProofConclusion_of_exactKernelBoundaries
+abbrev exactKernelBoundaries_of_acceptedProofSoundness :=
+  @Nightstream.Rv64IM.exactKernelBoundaries_of_acceptedProofSoundness
+abbrev topLevelSoundness_of_acceptedProofSoundness :=
+  @Nightstream.Rv64IM.topLevelSoundness_of_acceptedProofSoundness
+abbrev kernelSoundnessConclusion_of_acceptedProofSoundness :=
+  @Nightstream.Rv64IM.kernelSoundnessConclusion_of_acceptedProofSoundness
+abbrev kernelSemanticClosure_of_acceptedProofSoundness :=
+  @Nightstream.Rv64IM.kernelSemanticClosure_of_acceptedProofSoundness
+abbrev executionCorrect_of_acceptedProofSoundness :=
+  @Nightstream.Rv64IM.executionCorrect_of_acceptedProofSoundness
+abbrev preparedStepExportBound_of_acceptedProofSoundness :=
+  @Nightstream.Rv64IM.preparedStepExportBound_of_acceptedProofSoundness
+abbrev fullHaltedExecutionClaim_of_acceptedProofSoundness :=
+  @Nightstream.Rv64IM.fullHaltedExecutionClaim_of_acceptedProofSoundness
+abbrev acceptedProofImpliesKernelSoundnessConclusion :=
+  @Nightstream.Rv64IM.acceptedProofImpliesKernelSoundnessConclusion
+abbrev acceptedProofImpliesKernelSemanticClosure :=
+  @Nightstream.Rv64IM.acceptedProofImpliesKernelSemanticClosure
+abbrev acceptedProofImpliesExecutionCorrect :=
+  @Nightstream.Rv64IM.acceptedProofImpliesExecutionCorrect
+abbrev acceptedProofImpliesPreparedStepExportBound :=
+  @Nightstream.Rv64IM.acceptedProofImpliesPreparedStepExportBound
+abbrev acceptedProofImpliesFullHaltedExecutionClaim :=
+  @Nightstream.Rv64IM.acceptedProofImpliesFullHaltedExecutionClaim
+
+end Nightstream.Rv64IM.AcceptedProofSoundnessInterface

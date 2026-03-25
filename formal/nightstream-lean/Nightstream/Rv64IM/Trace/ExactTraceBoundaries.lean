@@ -219,6 +219,207 @@ theorem executionCorrect_on_exactPrefix_of_exactBoundaries
   authenticatedChunkTrace_executionCorrect_on_chunkInput
     (authenticatedChunkTrace_of_exactBoundaries boundaries)
 
+theorem stage2AuthenticatedHistorySemantics_of_exactBoundaries
+  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
+    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
+    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
+    PreparedStep : Type _} [OfNat Limb 0]
+  (boundaries :
+    ExactTraceBoundaries
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep) :
+  Stage2AuthenticatedHistorySemantics
+    (authenticatedChunkTrace_of_exactBoundaries boundaries).temporal
+    (twistConcreteBinding_of_authenticatedChunkTrace
+      (authenticatedChunkTrace_of_exactBoundaries boundaries)) :=
+  stage2AuthenticatedHistorySemantics_of_authenticatedChunkTrace
+    (authenticatedChunkTrace_of_exactBoundaries boundaries)
+
+theorem registerTimelineBound_of_exactBoundaries
+  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
+    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
+    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
+    PreparedStep : Type _} [OfNat Limb 0]
+  (boundaries :
+    ExactTraceBoundaries
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep) :
+  RegisterTimelineBound
+    boundaries.temporal.registers.timeline
+    boundaries.temporal.registers.preState
+    boundaries.temporal.registers.postState
+    boundaries.temporal.registers.semanticRows :=
+  registerTimelineBound_of_stage2AuthenticatedHistorySemantics
+    (stage2AuthenticatedHistorySemantics_of_exactBoundaries boundaries)
+
+theorem ramTimelineBound_of_exactBoundaries
+  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
+    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
+    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
+    PreparedStep : Type _} [OfNat Limb 0]
+  (boundaries :
+    ExactTraceBoundaries
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep) :
+  RamTimelineBound
+    boundaries.temporal.ram.timeline
+    boundaries.temporal.ram.preState
+    boundaries.temporal.ram.postState
+    boundaries.temporal.ram.semanticRows :=
+  ramTimelineBound_of_stage2AuthenticatedHistorySemantics
+    (stage2AuthenticatedHistorySemantics_of_exactBoundaries boundaries)
+
+theorem stage3ExportSemantics_of_exactBoundaries
+  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
+    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
+    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
+    PreparedStep : Type _} [OfNat Limb 0]
+  (boundaries :
+    ExactTraceBoundaries
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep) :
+  Stage3ExportSemantics
+    (authenticatedChunkTrace_of_exactBoundaries boundaries).stage3Refinement :=
+  stage3ExportSemantics_of_authenticatedChunkTrace
+    (authenticatedChunkTrace_of_exactBoundaries boundaries)
+
+theorem stage3ContinuitySemantics_of_exactBoundaries
+  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
+    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
+    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
+    PreparedStep : Type _} [OfNat Limb 0]
+  (boundaries :
+    ExactTraceBoundaries
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep) :
+  Stage3ContinuitySemantics
+    (authenticatedChunkTrace_of_exactBoundaries boundaries).stage3Refinement :=
+  (stage3ExportSemantics_of_exactBoundaries boundaries).1
+
+theorem activePrefixContinuity_of_exactBoundaries
+  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
+    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
+    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
+    PreparedStep : Type _} [OfNat Limb 0]
+  (boundaries :
+    ExactTraceBoundaries
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep) :
+  ActivePrefixContinuity
+    boundaries.stage3Refinement.stage3.postPc
+    boundaries.stage3Refinement.stage3.prePc
+    boundaries.stage3Refinement.stage3.semanticRows :=
+  activePrefixContinuity_of_stage3ContinuitySemantics
+    (stage3ContinuitySemantics_of_exactBoundaries boundaries)
+
 theorem traceLinkBoundary_of_exactBoundaries
   {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
     RamAddr Word StateLocation RegisterTimeline RamTimeline Limb

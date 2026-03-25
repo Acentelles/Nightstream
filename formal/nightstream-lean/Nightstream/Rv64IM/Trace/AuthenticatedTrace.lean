@@ -5,7 +5,9 @@ import Nightstream.Rv64IM.Trace.RegisterTimeline
 import Nightstream.Rv64IM.Trace.RamTimeline
 import Nightstream.Rv64IM.Trace.TemporalConsistency
 import Nightstream.Rv64IM.Trace.TraceLinkBoundary
+import Nightstream.Rv64IM.Stage2.AuthenticatedHistorySemantics
 import Nightstream.Rv64IM.Stage3.Stage3Refinement
+import Nightstream.Rv64IM.Stage3.ExportSemantics
 import Nightstream.Rv64IM.Execution.OpcodeClassExtractors
 
 namespace Nightstream.Rv64IM
@@ -701,6 +703,40 @@ def twistConcreteBinding_of_authenticatedChunkTrace
   TwistConcreteBindingProofPackage Limb :=
   twistConcreteBinding_of_stepComposition trace.stepComposition
 
+theorem stage2AuthenticatedHistorySemantics_of_authenticatedChunkTrace
+  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
+    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
+    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
+    PreparedStep : Type _} [OfNat Limb 0]
+  (trace :
+    AuthenticatedChunkTrace
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep) :
+  Stage2AuthenticatedHistorySemantics
+    trace.temporal
+    (twistConcreteBinding_of_authenticatedChunkTrace trace) :=
+  stage2AuthenticatedHistorySemantics_of_temporalConsistency_and_twistConcreteBinding
+    trace.temporal
+    (twistConcreteBinding_of_authenticatedChunkTrace trace)
+
 theorem stage2LinkageBound_of_authenticatedChunkTrace
   {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
     RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
@@ -798,6 +834,36 @@ theorem ramLinkageBound_of_authenticatedChunkTrace
     trace.stepComposition.twistBinding.ramLane
     trace.stepComposition.twistBinding.ramTwist :=
   ramLinkageBound_of_stepComposition trace.stepComposition
+
+theorem stage3ExportSemantics_of_authenticatedChunkTrace
+  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
+    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
+    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
+    PreparedStep : Type _} [OfNat Limb 0]
+  (trace :
+    AuthenticatedChunkTrace
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep) :
+  Stage3ExportSemantics trace.stage3Refinement :=
+  stage3ExportSemantics_of_stage3Refinement trace.stage3Refinement
 
 theorem registerWriteValue_of_authenticatedChunkTrace
   {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
