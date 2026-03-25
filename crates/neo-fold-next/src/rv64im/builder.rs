@@ -39,7 +39,13 @@ pub fn build_program(
         )));
     }
 
-    let rows = executed_steps.iter().map(lower_step).collect();
+    let mut trace_index = 0usize;
+    let mut rows = Vec::new();
+    for step in &executed_steps {
+        let lowered = lower_step(step, trace_index);
+        trace_index += lowered.len();
+        rows.extend(lowered);
+    }
     Ok(Rv64ProgramBuild {
         executed_steps,
         rows,

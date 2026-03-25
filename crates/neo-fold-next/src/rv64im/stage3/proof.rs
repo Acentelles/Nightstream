@@ -21,12 +21,13 @@ pub struct Stage3Summary {
 }
 
 pub fn build_stage3_summary(rows: &[Rv64ExpandedRow]) -> Stage3Summary {
-    let continuity = rows
+    let real_rows = rows.iter().filter(|row| row.is_real).collect::<Vec<_>>();
+    let continuity = real_rows
         .iter()
         .enumerate()
         .map(|(idx, row)| {
-            let successor_pc = rows.get(idx + 1).map(|next| next.pc);
-            let final_step = idx + 1 == rows.len();
+            let successor_pc = real_rows.get(idx + 1).map(|next| next.pc);
+            let final_step = idx + 1 == real_rows.len();
             let continuity_holds = successor_pc.is_none_or(|pc| row.next_pc == pc);
             ContinuityEvent {
                 step_index: row.step_index,
@@ -40,7 +41,7 @@ pub fn build_stage3_summary(rows: &[Rv64ExpandedRow]) -> Stage3Summary {
         .collect::<Vec<_>>();
 
     Stage3Summary {
-        halted: rows.last().is_some_and(|row| row.halted),
+        halted: real_rows.last().is_some_and(|row| row.halted),
         continuity,
     }
 }

@@ -11,8 +11,25 @@ opcode surface:
 
 - `vertical_add_sd_ld_ecall`
 - `native_add_chain_x0_ecall`
+- `native_logic_compare_chain_ecall`
+- `native_shift_chain_ecall`
+- `native_sub_lui_auipc_fence_ecall`
+- `narrow_memory_load_extract_extend_ecall`
+- `narrow_memory_store_blend_ecall`
+- `multiply_low_mul_mulw_ecall`
+- `multiply_high_mulh_mulhu_mulhsu_ecall`
+- `unsigned_divrem_chain_ecall`
+- `signed_divrem_chain_ecall`
 - `aligned_negative_offset_roundtrip`
 - `control_flow_ecall_only`
+- `control_flow_jal_skip_ecall`
+- `control_flow_jalr_skip_ecall`
+- `control_flow_beq_taken_skip_ecall`
+- `control_flow_bne_taken_skip_ecall`
+- `control_flow_blt_taken_skip_ecall`
+- `control_flow_bge_taken_skip_ecall`
+- `control_flow_bltu_taken_skip_ecall`
+- `control_flow_bgeu_taken_skip_ecall`
 
 Each case is represented by one authoritative Rust source artifact and one
 Rust-derived comparison artifact.
@@ -74,10 +91,26 @@ Rust must export, and Lean must exactly match:
 
 Equality is required checkpoint by checkpoint, not just at the final digest.
 
+## Hard-Opcode Expansion Parity
+
+Hard opcode composition is represented only through the expanded execution
+trace.
+
+For the current corpus:
+
+- multiply helper instructions are trace-integrated and must match through
+  `executionRows`, `stage1`, and `stage2`, including helper rows and
+  scratch-register traffic
+- signed/unsigned div/rem helper instructions are also trace-integrated and
+  must match through the same expanded-row and staged-summary surfaces
+
+There is no separate sidecar virtual-sequence artifact in the parity boundary.
+
 ## Acceptance Rule
 
 The slice is accepted only if Lean recomputation yields exact equality for:
 
+- expanded execution rows, including trace-integrated helper rows
 - Stage 1 summaries
 - Stage 2 summaries
 - Stage 3 summaries
