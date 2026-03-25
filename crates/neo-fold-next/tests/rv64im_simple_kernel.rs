@@ -2,8 +2,8 @@
 
 use neo_fold_next::rv64im::{
     parity_source_cases, prepared_step_digest, prove_packaged_simple_kernel, prove_simple_kernel,
-    verify_packaged_simple_kernel, verify_simple_kernel, SimpleKernelProverInput, SimpleKernelPublicInput,
-    SimpleKernelVerifierInput,
+    verify_packaged_simple_kernel, verify_simple_kernel, OpeningPointLabel, SimpleKernelProverInput,
+    SimpleKernelPublicInput, SimpleKernelVerifierInput,
 };
 use p3_field::PrimeCharacteristicRing;
 
@@ -42,11 +42,13 @@ fn simple_kernel_roundtrip_exports_one_prepared_step_per_execution_row() {
     assert_eq!(proof.stages, output.stages);
     assert_eq!(proof.stage_claims, output.stage_claims);
     assert_eq!(proof.stage_packages.digest, output.stage_packages.digest);
+    assert_eq!(proof.kernel_opening.digest, output.kernel_opening.digest);
     assert_eq!(proof.kernel_claims, output.kernel_claims);
     assert_eq!(verified.trace, output.trace);
     assert_eq!(verified.stages, output.stages);
     assert_eq!(verified.stage_claims, output.stage_claims);
     assert_eq!(verified.stage_packages.digest, output.stage_packages.digest);
+    assert_eq!(verified.kernel_opening.digest, output.kernel_opening.digest);
     assert_eq!(verified.kernel_claims, output.kernel_claims);
     assert_eq!(output.prepared_steps.len(), output.trace.execution_rows.len());
     assert_eq!(output.public_steps.len(), output.prepared_steps.len());
@@ -117,9 +119,58 @@ fn simple_kernel_roundtrip_exports_one_prepared_step_per_execution_row() {
     assert_ne!(output.stage_claims.stage3.opening_proof.digest, [0; 32]);
     assert_ne!(output.stage_claims.digest, [0; 32]);
     assert_ne!(output.stage_packages.stage1.digest, [0; 32]);
+    assert_ne!(output.stage_packages.stage1.claim.digest(), [0; 32]);
+    assert_eq!(
+        output.stage_packages.stage1.claim.labels(),
+        vec![
+            OpeningPointLabel::Stage1First,
+            OpeningPointLabel::Stage1Effect,
+            OpeningPointLabel::Stage1Commit,
+            OpeningPointLabel::Stage1Last,
+        ]
+    );
     assert_ne!(output.stage_packages.stage2.digest, [0; 32]);
+    assert_ne!(output.stage_packages.stage2.claim.digest(), [0; 32]);
     assert_ne!(output.stage_packages.stage3.digest, [0; 32]);
+    assert_ne!(output.stage_packages.stage3.claim.digest(), [0; 32]);
     assert_ne!(output.stage_packages.digest, [0; 32]);
+    assert_eq!(
+        output
+            .kernel_opening
+            .claim
+            .bindings
+            .stage_claim_bundle_digest,
+        output.stage_claims.digest
+    );
+    assert_eq!(
+        output
+            .kernel_opening
+            .claim
+            .bindings
+            .stage_package_bundle_digest,
+        output.stage_packages.digest
+    );
+    assert_eq!(
+        output
+            .kernel_opening
+            .claim
+            .prepared_steps
+            .prepared_step_count as usize,
+        output.prepared_steps.len()
+    );
+    assert_ne!(output.kernel_opening.claim.digest(), [0; 32]);
+    assert_ne!(output.kernel_opening.bindings.digest, [0; 32]);
+    assert_ne!(output.kernel_opening.prepared_steps.digest, [0; 32]);
+    assert_eq!(
+        output.kernel_opening.claim.labels(),
+        vec![
+            OpeningPointLabel::KernelFirstBinding,
+            OpeningPointLabel::KernelLastBinding,
+            OpeningPointLabel::KernelFirstPreparedStep,
+            OpeningPointLabel::KernelLastPreparedStep,
+        ]
+    );
+    assert_ne!(output.kernel_opening.digest, [0; 32]);
 }
 
 #[test]
@@ -135,6 +186,7 @@ fn simple_kernel_packaged_roundtrip_matches_exported_public_steps() {
     assert_eq!(verified.stages, output.stages);
     assert_eq!(verified.stage_claims, output.stage_claims);
     assert_eq!(verified.stage_packages.digest, output.stage_packages.digest);
+    assert_eq!(verified.kernel_opening.digest, output.kernel_opening.digest);
     assert_eq!(verified.kernel_claims, output.kernel_claims);
     assert_eq!(packaged.main_lane.statement.steps.len(), output.public_steps.len());
     assert!(packaged
@@ -181,8 +233,25 @@ fn simple_kernel_rejects_tampered_kernel_and_packaged_boundaries() {
     tampered_stage_package
         .stage_packages
         .stage1
-        .exact_opening_proof_digest[0] ^= 1;
+        .claim
+        .first_digest_mut()[0] ^= 1;
     assert!(verify_simple_kernel(&verifier, &tampered_stage_package).is_err());
+
+    let mut tampered_kernel_opening = proof.clone();
+    tampered_kernel_opening
+        .kernel_opening
+        .claim
+        .first_digest_mut()[0] ^= 1;
+    assert!(verify_simple_kernel(&verifier, &tampered_kernel_opening).is_err());
+
+    let mut tampered_kernel_opening_package = proof.clone();
+    tampered_kernel_opening_package
+        .kernel_opening
+        .bindings
+        .packaged
+        .proof
+        .proof_digest[0] ^= 1;
+    assert!(verify_simple_kernel(&verifier, &tampered_kernel_opening_package).is_err());
 
     let (_output, packaged) = prove_packaged_simple_kernel(&prover).expect("prove packaged simple kernel");
     let mut tampered_packaged = packaged.clone();

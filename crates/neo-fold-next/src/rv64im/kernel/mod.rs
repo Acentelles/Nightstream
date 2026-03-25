@@ -1,7 +1,10 @@
 //! Owns the RV64IM parity-slice kernel artifacts and transcript logging.
 
 mod artifacts;
+mod proof_api;
 mod simple;
+mod simple_openings;
+mod simple_stage;
 mod transcript;
 
 pub use artifacts::{
@@ -22,15 +25,32 @@ pub use artifacts::{
     unsigned_divrem_manifest, vertical_slice_manifest, Rv64imKernelSummary, Rv64imParityCaseManifest,
     Rv64imParityDerivedCase, Rv64imParitySourceCase,
 };
+pub use proof_api::{
+    build_rv64im_proof_witness, prove_rv64im_proof, verify_rv64im_proof, Rv64imAcceptedProofClaim,
+    Rv64imJointOpeningClaim, Rv64imJointOpeningProofBundle, Rv64imKernelClaimBundle, Rv64imKernelClaimProofBundle,
+    Rv64imKernelOpeningClaim, Rv64imKernelOpeningProofBundle, Rv64imKernelProofBundle, Rv64imMainLaneClaim,
+    Rv64imMainLaneProofBundle, Rv64imProof, Rv64imProofInput, Rv64imProofStatement, Rv64imProofWitnessBundle,
+    Rv64imRoot0Claim, Rv64imRoot0CommitmentBundle, Rv64imStageClaimProofBundle, Rv64imStagePackageProofBundle,
+};
 pub use simple::{
     build_simple_kernel_witness, prepared_step_digest, prove_packaged_simple_kernel, prove_simple_kernel,
     rv64im_ajtai_mixers, rv64im_simple_root_context_id, rv64im_simple_root_params, verify_packaged_simple_kernel,
-    verify_simple_kernel, ExactCommitmentArtifact, ExactOpeningArtifact, ExactOpeningClaim, ExactOpeningManifest,
-    ExactOpeningProof, PreparedStepBinding, PreparedStepBindingSummary, SimpleKernelError,
-    SimpleKernelKernelClaimBundle, SimpleKernelOutput, SimpleKernelPackagedProof, SimpleKernelProof,
-    SimpleKernelProverInput, SimpleKernelPublicInput, SimpleKernelStageClaimBundle, SimpleKernelStagePackageBundle,
-    SimpleKernelStageWitnessBundle, SimpleKernelTraceWitness, SimpleKernelVerifierInput, Stage1ArtifactSurface,
+    verify_simple_kernel, ExactCommitmentArtifact, ExactOpeningArtifact, PreparedStepBinding,
+    PreparedStepBindingSummary, SimpleKernelError, SimpleKernelKernelClaimBundle, SimpleKernelOutput,
+    SimpleKernelPackagedProof, SimpleKernelProof, SimpleKernelProverInput, SimpleKernelPublicInput,
+    SimpleKernelStageWitnessBundle, SimpleKernelTraceWitness, SimpleKernelVerifierInput,
+};
+pub use simple_openings::{
+    DigestPoint, KernelBindingOpeningClaim, KernelBindingOpeningPoints, KernelBindingPackagedOpeningProof,
+    KernelPreparedStepOpeningClaim, KernelPreparedStepOpeningPoints, KernelPreparedStepPackagedOpeningProof,
+    OpeningPointLabel, SimpleKernelOpeningBundle, SimpleKernelOpeningClaim, SimpleKernelStagePackageBundle,
+    Stage1OpeningPoints, Stage1PackagedOpeningProof, Stage1SelectedOpeningClaim, Stage2OpeningPoints,
+    Stage2PackagedOpeningProof, Stage2SelectedOpeningClaim, Stage3OpeningPoints, Stage3PackagedOpeningProof,
+    Stage3SelectedOpeningClaim,
+};
+pub use simple_stage::{
+    ExactOpeningClaim, ExactOpeningManifest, ExactOpeningProof, SimpleKernelStageClaimBundle, Stage1ArtifactSurface,
     Stage1ClaimSurface, Stage2ArtifactSurface, Stage2ClaimSurface, Stage3ArtifactSurface, Stage3ClaimSurface,
-    StageDigestCommitment, StagePackagedOpeningProof, TranscriptArtifactSurface, TranscriptClaimSurface,
+    StageDigestCommitment, TranscriptArtifactSurface, TranscriptClaimSurface,
 };
 pub use transcript::{TranscriptCursorSnapshot, TranscriptEventKind, TranscriptEventRecord, TranscriptRecord};
