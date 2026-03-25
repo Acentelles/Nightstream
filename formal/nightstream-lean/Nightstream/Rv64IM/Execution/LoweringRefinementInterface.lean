@@ -11,6 +11,17 @@ abbrev isInlineScratchRegister := @Nightstream.Rv64IM.isInlineScratchRegister
 abbrev rowSequenceMetadataBound := @Nightstream.Rv64IM.rowSequenceMetadataBound
 abbrev isInlineScratchCleanupRow := @Nightstream.Rv64IM.isInlineScratchCleanupRow
 abbrev uniqueRealRowAt := @Nightstream.Rv64IM.uniqueRealRowAt
+abbrev SingleRowReferenceSpec := @Nightstream.Rv64IM.SingleRowReferenceSpec
+abbrev singleRowReferenceLowering := @Nightstream.Rv64IM.singleRowReferenceLowering
+abbrev nativeAluWriteRdSingleRowSpec := @Nightstream.Rv64IM.nativeAluWriteRdSingleRowSpec
+abbrev nativeAluNoWriteSingleRowSpec := @Nightstream.Rv64IM.nativeAluNoWriteSingleRowSpec
+abbrev alignedMemoryLoadSingleRowSpec := @Nightstream.Rv64IM.alignedMemoryLoadSingleRowSpec
+abbrev alignedMemoryStoreSingleRowSpec := @Nightstream.Rv64IM.alignedMemoryStoreSingleRowSpec
+abbrev narrowMemoryLoadSingleRowSpec := @Nightstream.Rv64IM.narrowMemoryLoadSingleRowSpec
+abbrev narrowMemoryStoreSingleRowSpec := @Nightstream.Rv64IM.narrowMemoryStoreSingleRowSpec
+abbrev controlFlowWriteRdSingleRowSpec := @Nightstream.Rv64IM.controlFlowWriteRdSingleRowSpec
+abbrev controlFlowNoWriteSingleRowSpec := @Nightstream.Rv64IM.controlFlowNoWriteSingleRowSpec
+abbrev multiplyWriteRdSingleRowSpec := @Nightstream.Rv64IM.multiplyWriteRdSingleRowSpec
 
 abbrev MulReferenceStep := @Nightstream.Rv64IM.MulReferenceStep
 abbrev MulhuReferenceStep := @Nightstream.Rv64IM.MulhuReferenceStep
@@ -82,7 +93,9 @@ abbrev divConcreteCoreShape := @Nightstream.Rv64IM.divConcreteCoreShape
 abbrev remConcreteCoreShape := @Nightstream.Rv64IM.remConcreteCoreShape
 abbrev divwConcreteCoreShape := @Nightstream.Rv64IM.divwConcreteCoreShape
 abbrev remwConcreteCoreShape := @Nightstream.Rv64IM.remwConcreteCoreShape
+abbrev singleRowConcreteShape := @Nightstream.Rv64IM.singleRowConcreteShape
 
+abbrev normalizeSingleRowConcreteCore? := @Nightstream.Rv64IM.normalizeSingleRowConcreteCore?
 abbrev normalizeMulConcreteCore? := @Nightstream.Rv64IM.normalizeMulConcreteCore?
 abbrev normalizeMulhuConcreteCore? := @Nightstream.Rv64IM.normalizeMulhuConcreteCore?
 abbrev normalizeMulwConcreteCore? := @Nightstream.Rv64IM.normalizeMulwConcreteCore?
@@ -97,6 +110,7 @@ abbrev normalizeRemConcreteCore? := @Nightstream.Rv64IM.normalizeRemConcreteCore
 abbrev normalizeDivwConcreteCore? := @Nightstream.Rv64IM.normalizeDivwConcreteCore?
 abbrev normalizeRemwConcreteCore? := @Nightstream.Rv64IM.normalizeRemwConcreteCore?
 
+abbrev SingleRowConcreteLoweringRefinesReference := @Nightstream.Rv64IM.SingleRowConcreteLoweringRefinesReference
 abbrev MulConcreteLoweringRefinesReference := @Nightstream.Rv64IM.MulConcreteLoweringRefinesReference
 abbrev MulhuConcreteLoweringRefinesReference := @Nightstream.Rv64IM.MulhuConcreteLoweringRefinesReference
 abbrev MulwConcreteLoweringRefinesReference := @Nightstream.Rv64IM.MulwConcreteLoweringRefinesReference
@@ -110,6 +124,17 @@ abbrev DivConcreteLoweringRefinesReference := @Nightstream.Rv64IM.DivConcreteLow
 abbrev RemConcreteLoweringRefinesReference := @Nightstream.Rv64IM.RemConcreteLoweringRefinesReference
 abbrev DivwConcreteLoweringRefinesReference := @Nightstream.Rv64IM.DivwConcreteLoweringRefinesReference
 abbrev RemwConcreteLoweringRefinesReference := @Nightstream.Rv64IM.RemwConcreteLoweringRefinesReference
+
+abbrev normalizedReference_of_singleRowConcreteLoweringRefinesReference :=
+  @Nightstream.Rv64IM.normalizedReference_of_singleRowConcreteLoweringRefinesReference
+abbrev sequenceMetadataBound_of_singleRowConcreteLoweringRefinesReference :=
+  @Nightstream.Rv64IM.sequenceMetadataBound_of_singleRowConcreteLoweringRefinesReference
+abbrev uniqueEffectRow_of_singleRowConcreteLoweringRefinesReference :=
+  @Nightstream.Rv64IM.uniqueEffectRow_of_singleRowConcreteLoweringRefinesReference
+abbrev uniqueCommitRow_of_singleRowConcreteLoweringRefinesReference :=
+  @Nightstream.Rv64IM.uniqueCommitRow_of_singleRowConcreteLoweringRefinesReference
+abbrev uniqueRealRow_of_singleRowConcreteLoweringRefinesReference :=
+  @Nightstream.Rv64IM.uniqueRealRow_of_singleRowConcreteLoweringRefinesReference
 
 abbrev normalizedReference_of_mulhConcreteLoweringRefinesReference :=
   @Nightstream.Rv64IM.normalizedReference_of_mulhConcreteLoweringRefinesReference

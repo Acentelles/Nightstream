@@ -21,6 +21,41 @@ private def isInlineScratchRegisterB (reg : Nat) : Bool :=
 def isInlineScratchRegister (reg : Nat) : Prop :=
   isInlineScratchRegisterB reg = true
 
+structure SingleRowReferenceSpec where
+  family : FamilyTag
+  writesRd : Bool
+  writesRam : Bool
+deriving DecidableEq, Repr
+
+def singleRowReferenceLowering (opcode : Opcode) : List Opcode := [opcode]
+
+def nativeAluWriteRdSingleRowSpec : SingleRowReferenceSpec :=
+  { family := .nativeAlu, writesRd := true, writesRam := false }
+
+def nativeAluNoWriteSingleRowSpec : SingleRowReferenceSpec :=
+  { family := .nativeAlu, writesRd := false, writesRam := false }
+
+def alignedMemoryLoadSingleRowSpec : SingleRowReferenceSpec :=
+  { family := .alignedMemory, writesRd := true, writesRam := false }
+
+def alignedMemoryStoreSingleRowSpec : SingleRowReferenceSpec :=
+  { family := .alignedMemory, writesRd := false, writesRam := true }
+
+def narrowMemoryLoadSingleRowSpec : SingleRowReferenceSpec :=
+  { family := .narrowMemory, writesRd := true, writesRam := false }
+
+def narrowMemoryStoreSingleRowSpec : SingleRowReferenceSpec :=
+  { family := .narrowMemory, writesRd := false, writesRam := true }
+
+def controlFlowWriteRdSingleRowSpec : SingleRowReferenceSpec :=
+  { family := .controlFlow, writesRd := true, writesRam := false }
+
+def controlFlowNoWriteSingleRowSpec : SingleRowReferenceSpec :=
+  { family := .controlFlow, writesRd := false, writesRam := false }
+
+def multiplyWriteRdSingleRowSpec : SingleRowReferenceSpec :=
+  { family := .multiply, writesRd := true, writesRam := false }
+
 inductive MulReferenceStep where
   | mul
 deriving DecidableEq, Repr
@@ -297,35 +332,69 @@ private def uniqueCommitRowAtB (rows : List ImportedLoweringRow) (idx : Nat) : B
 def uniqueCommitRowAt (rows : List ImportedLoweringRow) (idx : Nat) : Prop :=
   uniqueCommitRowAtB rows idx = true
 
-private def singleRowConcreteShapeB (opcode traceOpcode : Opcode) : List ImportedLoweringRow → Bool
+private def singleRowConcreteShapeWithSpecB
+    (opcode : Opcode)
+    (spec : SingleRowReferenceSpec) : List ImportedLoweringRow → Bool
   | [row] =>
+      let expectedWritesRd := spec.writesRd && decide (row.rd ≠ 0)
       decide (row.opcode = opcode) &&
-        decide (row.traceOpcode = some traceOpcode) &&
+        decide (row.traceOpcode = some opcode) &&
         decide (row.traceVirtualOpcode = none) &&
+        decide (row.family = spec.family) &&
         decide (row.rd < 32) &&
         decide (row.rs1 < 32) &&
         decide (row.rs2 < 32) &&
-        decide (row.writesRd = true) &&
-        decide (row.writesRam = false) &&
+        decide (row.writesRd = expectedWritesRd) &&
+        decide (row.writesRam = spec.writesRam) &&
+        decide (row.isEffectRow = true) &&
+        decide (row.isCommitRow = true) &&
         decide (row.isReal = true)
   | _ => false
 
+def singleRowConcreteShape
+    (opcode : Opcode)
+    (spec : SingleRowReferenceSpec)
+    (rows : List ImportedLoweringRow) : Prop :=
+  singleRowConcreteShapeWithSpecB opcode spec rows = true
+
+def normalizeSingleRowConcreteCore?
+    (opcode : Opcode)
+    (spec : SingleRowReferenceSpec)
+    (rows : List ImportedLoweringRow) : Option (List Opcode) :=
+  if singleRowConcreteShapeWithSpecB opcode spec rows then
+    some (singleRowReferenceLowering opcode)
+  else
+    none
+
+def SingleRowConcreteLoweringRefinesReference
+    (opcode : Opcode)
+    (spec : SingleRowReferenceSpec)
+    (rows : List ImportedLoweringRow) : Prop :=
+  normalizeSingleRowConcreteCore? opcode spec rows = some (singleRowReferenceLowering opcode) ∧
+    rowSequenceMetadataBound rows ∧
+    uniqueEffectRowAt rows 0 ∧
+    uniqueCommitRowAt rows 0 ∧
+    uniqueRealRowAt rows 0
+
+private def singleRowConcreteShapeB (opcode : Opcode) : List ImportedLoweringRow → Bool :=
+  singleRowConcreteShapeWithSpecB opcode multiplyWriteRdSingleRowSpec
+
 def mulConcreteCoreShape (rows : List ImportedLoweringRow) : Prop :=
-  singleRowConcreteShapeB .mul .mul rows = true
+  singleRowConcreteShapeB .mul rows = true
 
 def mulhuConcreteCoreShape (rows : List ImportedLoweringRow) : Prop :=
-  singleRowConcreteShapeB .mulhu .mulhu rows = true
+  singleRowConcreteShapeB .mulhu rows = true
 
 def normalizeMulConcreteCore? (rows : List ImportedLoweringRow) :
     Option (List MulReferenceStep) :=
-  if singleRowConcreteShapeB .mul .mul rows then
+  if singleRowConcreteShapeB .mul rows then
     some mulReferenceLowering
   else
     none
 
 def normalizeMulhuConcreteCore? (rows : List ImportedLoweringRow) :
     Option (List MulhuReferenceStep) :=
-  if singleRowConcreteShapeB .mulhu .mulhu rows then
+  if singleRowConcreteShapeB .mulhu rows then
     some mulhuReferenceLowering
   else
     none
@@ -1110,6 +1179,14 @@ instance instDecidableRemwConcreteLoweringRefinesReference (rows : List Imported
   unfold RemwConcreteLoweringRefinesReference rowSequenceMetadataBound uniqueEffectRowAt remwClosureSuffixScratchOnly uniqueCommitRowAt uniqueRealRowAt
   infer_instance
 
+instance instDecidableSingleRowConcreteLoweringRefinesReference
+    (opcode : Opcode)
+    (spec : SingleRowReferenceSpec)
+    (rows : List ImportedLoweringRow) :
+    Decidable (SingleRowConcreteLoweringRefinesReference opcode spec rows) := by
+  unfold SingleRowConcreteLoweringRefinesReference rowSequenceMetadataBound uniqueEffectRowAt uniqueCommitRowAt uniqueRealRowAt
+  infer_instance
+
 private theorem effectRowIndex_lt_length_of_lengthGt
   {rows : List ImportedLoweringRow}
   {effectIdx : Nat}
@@ -1123,6 +1200,46 @@ private theorem effectRow_precedesCommitRow_of_lengthGt
   (hLen : rows.length > effectIdx) :
   effectIdx ≤ rows.length - 1 := by
   omega
+
+theorem normalizedReference_of_singleRowConcreteLoweringRefinesReference
+  {opcode : Opcode}
+  {spec : SingleRowReferenceSpec}
+  {rows : List ImportedLoweringRow}
+  (h : SingleRowConcreteLoweringRefinesReference opcode spec rows) :
+  normalizeSingleRowConcreteCore? opcode spec rows = some (singleRowReferenceLowering opcode) :=
+  h.1
+
+theorem sequenceMetadataBound_of_singleRowConcreteLoweringRefinesReference
+  {opcode : Opcode}
+  {spec : SingleRowReferenceSpec}
+  {rows : List ImportedLoweringRow}
+  (h : SingleRowConcreteLoweringRefinesReference opcode spec rows) :
+  rowSequenceMetadataBound rows :=
+  h.2.1
+
+theorem uniqueEffectRow_of_singleRowConcreteLoweringRefinesReference
+  {opcode : Opcode}
+  {spec : SingleRowReferenceSpec}
+  {rows : List ImportedLoweringRow}
+  (h : SingleRowConcreteLoweringRefinesReference opcode spec rows) :
+  uniqueEffectRowAt rows 0 :=
+  h.2.2.1
+
+theorem uniqueCommitRow_of_singleRowConcreteLoweringRefinesReference
+  {opcode : Opcode}
+  {spec : SingleRowReferenceSpec}
+  {rows : List ImportedLoweringRow}
+  (h : SingleRowConcreteLoweringRefinesReference opcode spec rows) :
+  uniqueCommitRowAt rows 0 :=
+  h.2.2.2.1
+
+theorem uniqueRealRow_of_singleRowConcreteLoweringRefinesReference
+  {opcode : Opcode}
+  {spec : SingleRowReferenceSpec}
+  {rows : List ImportedLoweringRow}
+  (h : SingleRowConcreteLoweringRefinesReference opcode spec rows) :
+  uniqueRealRowAt rows 0 :=
+  h.2.2.2.2
 
 theorem normalizedReference_of_mulConcreteLoweringRefinesReference
   {rows : List ImportedLoweringRow}

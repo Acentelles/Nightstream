@@ -36,6 +36,51 @@ private def allRowsForOpcodeRefine
   (stepIndicesForOpcode rows opcode).all fun stepIndex =>
     refines (rowsForOpcodeStep rows opcode stepIndex)
 
+private def allOpcodesWithSingleRowSpecRefine
+    (rows : List ExpandedRowView)
+    (opcodes : List Opcode)
+    (spec : SingleRowReferenceSpec) : Bool :=
+  opcodes.all fun opcode =>
+    allRowsForOpcodeRefine rows opcode (fun slice =>
+      decide (SingleRowConcreteLoweringRefinesReference opcode spec slice))
+
+private def nativeAluWriteRdSingleRowOpcodes : List Opcode :=
+  [ .addi, .add, .sub, .addiw, .addw, .subw
+  , .andi, .and, .ori, .or, .xori, .xor
+  , .slti, .slt, .sltiu, .sltu
+  , .slli, .sll, .srli, .srl, .srai, .sra
+  , .slliw, .sllw, .srliw, .srlw, .sraiw, .sraw
+  , .lui, .auipc
+  ]
+
+private def alignedMemoryLoadSingleRowOpcodes : List Opcode :=
+  [.ld]
+
+private def alignedMemoryStoreSingleRowOpcodes : List Opcode :=
+  [.sd]
+
+private def narrowMemoryLoadSingleRowOpcodes : List Opcode :=
+  [.lb, .lbu, .lh, .lhu, .lw, .lwu]
+
+private def narrowMemoryStoreSingleRowOpcodes : List Opcode :=
+  [.sb, .sh, .sw]
+
+private def controlFlowWriteRdSingleRowOpcodes : List Opcode :=
+  [.jal, .jalr]
+
+private def controlFlowNoWriteSingleRowOpcodes : List Opcode :=
+  [.beq, .bne, .blt, .bge, .bltu, .bgeu, .ecall]
+
+def singleRowLoweringRefinementCheck (rows : List ExpandedRowView) : Bool :=
+  allOpcodesWithSingleRowSpecRefine rows nativeAluWriteRdSingleRowOpcodes nativeAluWriteRdSingleRowSpec &&
+    allOpcodesWithSingleRowSpecRefine rows [.fence] nativeAluNoWriteSingleRowSpec &&
+    allOpcodesWithSingleRowSpecRefine rows alignedMemoryLoadSingleRowOpcodes alignedMemoryLoadSingleRowSpec &&
+    allOpcodesWithSingleRowSpecRefine rows alignedMemoryStoreSingleRowOpcodes alignedMemoryStoreSingleRowSpec &&
+    allOpcodesWithSingleRowSpecRefine rows narrowMemoryLoadSingleRowOpcodes narrowMemoryLoadSingleRowSpec &&
+    allOpcodesWithSingleRowSpecRefine rows narrowMemoryStoreSingleRowOpcodes narrowMemoryStoreSingleRowSpec &&
+    allOpcodesWithSingleRowSpecRefine rows controlFlowWriteRdSingleRowOpcodes controlFlowWriteRdSingleRowSpec &&
+    allOpcodesWithSingleRowSpecRefine rows controlFlowNoWriteSingleRowOpcodes controlFlowNoWriteSingleRowSpec
+
 def multiplyLoweringRefinementCheck (rows : List ExpandedRowView) : Bool :=
   allRowsForOpcodeRefine rows .mul (fun slice => decide (MulConcreteLoweringRefinesReference slice)) &&
     allRowsForOpcodeRefine rows .mulhu (fun slice => decide (MulhuConcreteLoweringRefinesReference slice)) &&
@@ -73,6 +118,26 @@ theorem unsignedDivRemCase_refinesReference :
 theorem signedDivRemCase_refinesReference :
   signedDivRemLoweringRefinementCheck
     Nightstream.Rv64IM.Generated.Cases.Case_signed_divrem_chain_ecall.derivedCase.executionRows = true := by
+  native_decide
+
+theorem nativeSingleRowCase_refinesReference :
+  singleRowLoweringRefinementCheck
+    Nightstream.Rv64IM.Generated.Cases.Case_native_sub_lui_auipc_fence_ecall.derivedCase.executionRows = true := by
+  native_decide
+
+theorem alignedMemorySingleRowCase_refinesReference :
+  singleRowLoweringRefinementCheck
+    Nightstream.Rv64IM.Generated.Cases.Case_aligned_negative_offset_roundtrip.derivedCase.executionRows = true := by
+  native_decide
+
+theorem narrowMemorySingleRowCase_refinesReference :
+  singleRowLoweringRefinementCheck
+    Nightstream.Rv64IM.Generated.Cases.Case_narrow_memory_load_extract_extend_ecall.derivedCase.executionRows = true := by
+  native_decide
+
+theorem controlFlowSingleRowCase_refinesReference :
+  singleRowLoweringRefinementCheck
+    Nightstream.Rv64IM.Generated.Cases.Case_control_flow_jalr_skip_ecall.derivedCase.executionRows = true := by
   native_decide
 
 end Nightstream.Rv64IM
