@@ -1,5 +1,6 @@
 import Nightstream.Rv64IM.Trace.ExactTraceBoundaries
 import Nightstream.Rv64IM.Trace.OpcodeFamilySemantics
+import Nightstream.Rv64IM.Execution.HardOpLoweringRefinementSemanticsInterface
 import Nightstream.Rv64IM.Trace.WordArithmeticSemantics
 import Nightstream.Rv64IM.Trace.AlignedMemoryOpcodeSemantics
 import Nightstream.Rv64IM.Trace.NarrowMemoryHelperResultSemantics

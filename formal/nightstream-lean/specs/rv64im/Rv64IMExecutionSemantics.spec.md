@@ -33,6 +33,14 @@ The row-backed execution-trace object is:
 
 carrying one semantic row together with its pre-state and post-state.
 
+The execution owner also fixes two sequence-local roles:
+
+- `EffectRowIndex`
+- `CommitRowIndex`
+
+where the effect row realizes the architectural opcode meaning and the commit
+row exports the sequence boundary to later rows/stages. They may coincide.
+
 ## Core Predicates
 
 `PreparedStepExportBound(rows, preparedSteps)` means:
@@ -133,6 +141,8 @@ From `ExecutionTraceCorrect` one must be able to extract:
 - `ExecutionTraceCorrect`
 - `ExecutionCorrect`
 - `ExecutionSemanticsProofPackage`
+- `EffectRowIndex`
+- `CommitRowIndex`
 
 ## Proof Obligations
 
@@ -140,6 +150,7 @@ From `ExecutionTraceCorrect` one must be able to extract:
 - The active semantic prefix is exact, not padded or approximate.
 - Execution semantics owns row-backed pre/post-state linkage on the exact active prefix.
 - Full halted execution means the final active row is terminating and the boundary is terminating.
+- Every committed lowered sequence has a theorem-visible effect row and commit row, with the effect row at or before the commit row.
 
 ## Out of Scope
 

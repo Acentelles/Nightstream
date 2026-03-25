@@ -8,11 +8,15 @@ def derivedCase : ParityDerivedCase :=
   {
   manifest := { name := "vertical_add_sd_ld_ecall", fixtureId := "vertical_add_sd_ld_ecall_v1", protocolVersionId := 1, loweringVersionId := 1, familyTags := [.nativeAlu, .alignedMemory, .controlFlow] }
   , executionRows := [{
-  stepIndex := 0
+  traceIndex := 0
+  , stepIndex := 0
+  , sequenceIndex := 0
   , pc := 0
   , nextPc := 4
   , word := 5243027
   , opcode := .addi
+  , traceOpcode := (some .addi)
+  , traceVirtualOpcode := none
   , family := .nativeAlu
   , rs1 := 0
   , rs1Value := 0
@@ -29,12 +33,21 @@ def derivedCase : ParityDerivedCase :=
   , writesRd := true
   , writesRam := false
   , halted := false
+  , isFirstInSequence := true
+  , virtualSequenceRemaining := none
+  , isEffectRow := true
+  , isCommitRow := true
+  , isReal := true
 }, {
-  stepIndex := 1
+  traceIndex := 1
+  , stepIndex := 1
+  , sequenceIndex := 0
   , pc := 4
   , nextPc := 8
   , word := 1081651
   , opcode := .add
+  , traceOpcode := (some .add)
+  , traceVirtualOpcode := none
   , family := .nativeAlu
   , rs1 := 1
   , rs1Value := 5
@@ -51,12 +64,21 @@ def derivedCase : ParityDerivedCase :=
   , writesRd := true
   , writesRam := false
   , halted := false
+  , isFirstInSequence := true
+  , virtualSequenceRemaining := none
+  , isEffectRow := true
+  , isCommitRow := true
+  , isReal := true
 }, {
-  stepIndex := 2
+  traceIndex := 2
+  , stepIndex := 2
+  , sequenceIndex := 0
   , pc := 8
   , nextPc := 12
   , word := 2437155
   , opcode := .sd
+  , traceOpcode := (some .sd)
+  , traceVirtualOpcode := none
   , family := .alignedMemory
   , rs1 := 10
   , rs1Value := 4096
@@ -73,12 +95,21 @@ def derivedCase : ParityDerivedCase :=
   , writesRd := false
   , writesRam := true
   , halted := false
+  , isFirstInSequence := true
+  , virtualSequenceRemaining := none
+  , isEffectRow := true
+  , isCommitRow := true
+  , isReal := true
 }, {
-  stepIndex := 3
+  traceIndex := 3
+  , stepIndex := 3
+  , sequenceIndex := 0
   , pc := 12
   , nextPc := 16
   , word := 340355
   , opcode := .ld
+  , traceOpcode := (some .ld)
+  , traceVirtualOpcode := none
   , family := .alignedMemory
   , rs1 := 10
   , rs1Value := 4096
@@ -95,12 +126,21 @@ def derivedCase : ParityDerivedCase :=
   , writesRd := true
   , writesRam := false
   , halted := false
+  , isFirstInSequence := true
+  , virtualSequenceRemaining := none
+  , isEffectRow := true
+  , isCommitRow := true
+  , isReal := true
 }, {
-  stepIndex := 4
+  traceIndex := 4
+  , stepIndex := 4
+  , sequenceIndex := 0
   , pc := 16
   , nextPc := 20
   , word := 115
   , opcode := .ecall
+  , traceOpcode := (some .ecall)
+  , traceVirtualOpcode := none
   , family := .controlFlow
   , rs1 := 0
   , rs1Value := 0
@@ -117,13 +157,18 @@ def derivedCase : ParityDerivedCase :=
   , writesRd := false
   , writesRam := false
   , halted := true
+  , isFirstInSequence := true
+  , virtualSequenceRemaining := none
+  , isEffectRow := true
+  , isCommitRow := true
+  , isReal := true
 }]
-  , stage1 := { rows := [{ stepIndex := 0, fetchPc := 0, fetchedWord := 5243027, opcode := .addi, family := .nativeAlu, nextPc := 4, aluResult := 5, effectiveAddr := none, writesRd := true, rd := 1, rdAfter := 5, preservesX0 := false }, { stepIndex := 1, fetchPc := 4, fetchedWord := 1081651, opcode := .add, family := .nativeAlu, nextPc := 8, aluResult := 10, effectiveAddr := none, writesRd := true, rd := 2, rdAfter := 10, preservesX0 := false }, { stepIndex := 2, fetchPc := 8, fetchedWord := 2437155, opcode := .sd, family := .alignedMemory, nextPc := 12, aluResult := 10, effectiveAddr := (some 4096), writesRd := false, rd := 0, rdAfter := 0, preservesX0 := true }, { stepIndex := 3, fetchPc := 12, fetchedWord := 340355, opcode := .ld, family := .alignedMemory, nextPc := 16, aluResult := 10, effectiveAddr := (some 4096), writesRd := true, rd := 3, rdAfter := 10, preservesX0 := false }, { stepIndex := 4, fetchPc := 16, fetchedWord := 115, opcode := .ecall, family := .controlFlow, nextPc := 20, aluResult := 0, effectiveAddr := none, writesRd := false, rd := 0, rdAfter := 0, preservesX0 := true }] }
+  , stage1 := { rows := [{ traceIndex := 0, stepIndex := 0, sequenceIndex := 0, fetchPc := 0, fetchedWord := 5243027, opcode := .addi, traceOpcode := (some .addi), traceVirtualOpcode := none, family := .nativeAlu, nextPc := 4, aluResult := 5, effectiveAddr := none, writesRd := true, rd := 1, rdAfter := 5, isFirstInSequence := true, virtualSequenceRemaining := none, isEffectRow := true, isCommitRow := true, isReal := true, preservesX0 := false }, { traceIndex := 1, stepIndex := 1, sequenceIndex := 0, fetchPc := 4, fetchedWord := 1081651, opcode := .add, traceOpcode := (some .add), traceVirtualOpcode := none, family := .nativeAlu, nextPc := 8, aluResult := 10, effectiveAddr := none, writesRd := true, rd := 2, rdAfter := 10, isFirstInSequence := true, virtualSequenceRemaining := none, isEffectRow := true, isCommitRow := true, isReal := true, preservesX0 := false }, { traceIndex := 2, stepIndex := 2, sequenceIndex := 0, fetchPc := 8, fetchedWord := 2437155, opcode := .sd, traceOpcode := (some .sd), traceVirtualOpcode := none, family := .alignedMemory, nextPc := 12, aluResult := 10, effectiveAddr := (some 4096), writesRd := false, rd := 0, rdAfter := 0, isFirstInSequence := true, virtualSequenceRemaining := none, isEffectRow := true, isCommitRow := true, isReal := true, preservesX0 := true }, { traceIndex := 3, stepIndex := 3, sequenceIndex := 0, fetchPc := 12, fetchedWord := 340355, opcode := .ld, traceOpcode := (some .ld), traceVirtualOpcode := none, family := .alignedMemory, nextPc := 16, aluResult := 10, effectiveAddr := (some 4096), writesRd := true, rd := 3, rdAfter := 10, isFirstInSequence := true, virtualSequenceRemaining := none, isEffectRow := true, isCommitRow := true, isReal := true, preservesX0 := false }, { traceIndex := 4, stepIndex := 4, sequenceIndex := 0, fetchPc := 16, fetchedWord := 115, opcode := .ecall, traceOpcode := (some .ecall), traceVirtualOpcode := none, family := .controlFlow, nextPc := 20, aluResult := 0, effectiveAddr := none, writesRd := false, rd := 0, rdAfter := 0, isFirstInSequence := true, virtualSequenceRemaining := none, isEffectRow := true, isCommitRow := true, isReal := true, preservesX0 := true }] }
   , stage2 := {
-  registerReads := [{ stepIndex := 0, role := .rs1, reg := 0, value := 0 }, { stepIndex := 1, role := .rs1, reg := 1, value := 5 }, { stepIndex := 1, role := .rs2, reg := 1, value := 5 }, { stepIndex := 2, role := .rs1, reg := 10, value := 4096 }, { stepIndex := 3, role := .rs1, reg := 10, value := 4096 }]
-  , registerWrites := [{ stepIndex := 0, reg := 1, previous := 0, next := 5 }, { stepIndex := 1, reg := 2, previous := 0, next := 10 }, { stepIndex := 3, reg := 3, previous := 0, next := 10 }]
-  , ramEvents := [{ stepIndex := 2, kind := .write, addr := 4096, previous := 0, next := 10 }, { stepIndex := 3, kind := .read, addr := 4096, previous := 10, next := 10 }]
-  , twistLinks := [{ stepIndex := 0, family := .nativeAlu, routedWriteValue := (some 5), routedMemoryBefore := none, routedMemoryAfter := none }, { stepIndex := 1, family := .nativeAlu, routedWriteValue := (some 10), routedMemoryBefore := none, routedMemoryAfter := none }, { stepIndex := 2, family := .alignedMemory, routedWriteValue := none, routedMemoryBefore := (some 0), routedMemoryAfter := (some 10) }, { stepIndex := 3, family := .alignedMemory, routedWriteValue := (some 10), routedMemoryBefore := (some 10), routedMemoryAfter := (some 10) }, { stepIndex := 4, family := .controlFlow, routedWriteValue := none, routedMemoryBefore := none, routedMemoryAfter := none }]
+  registerReads := [{ traceIndex := 0, stepIndex := 0, role := .rs1, reg := 0, value := 0 }, { traceIndex := 1, stepIndex := 1, role := .rs1, reg := 1, value := 5 }, { traceIndex := 1, stepIndex := 1, role := .rs2, reg := 1, value := 5 }, { traceIndex := 2, stepIndex := 2, role := .rs1, reg := 10, value := 4096 }, { traceIndex := 2, stepIndex := 2, role := .rs2, reg := 2, value := 10 }, { traceIndex := 3, stepIndex := 3, role := .rs1, reg := 10, value := 4096 }]
+  , registerWrites := [{ traceIndex := 0, stepIndex := 0, reg := 1, previous := 0, next := 5 }, { traceIndex := 1, stepIndex := 1, reg := 2, previous := 0, next := 10 }, { traceIndex := 3, stepIndex := 3, reg := 3, previous := 0, next := 10 }]
+  , ramEvents := [{ traceIndex := 2, stepIndex := 2, kind := .write, addr := 4096, previous := 0, next := 10 }, { traceIndex := 3, stepIndex := 3, kind := .read, addr := 4096, previous := 10, next := 10 }]
+  , twistLinks := [{ traceIndex := 0, stepIndex := 0, family := .nativeAlu, routedWriteValue := (some 5), routedMemoryBefore := none, routedMemoryAfter := none }, { traceIndex := 1, stepIndex := 1, family := .nativeAlu, routedWriteValue := (some 10), routedMemoryBefore := none, routedMemoryAfter := none }, { traceIndex := 2, stepIndex := 2, family := .alignedMemory, routedWriteValue := none, routedMemoryBefore := (some 0), routedMemoryAfter := (some 10) }, { traceIndex := 3, stepIndex := 3, family := .alignedMemory, routedWriteValue := (some 10), routedMemoryBefore := (some 10), routedMemoryAfter := (some 10) }, { traceIndex := 4, stepIndex := 4, family := .controlFlow, routedWriteValue := none, routedMemoryBefore := none, routedMemoryAfter := none }]
 }
   , stage3 := {
   continuity := [{ stepIndex := 0, pc := 0, nextPc := 4, successorPc := (some 4), finalStep := false, continuityHolds := true }, { stepIndex := 1, pc := 4, nextPc := 8, successorPc := (some 8), finalStep := false, continuityHolds := true }, { stepIndex := 2, pc := 8, nextPc := 12, successorPc := (some 12), finalStep := false, continuityHolds := true }, { stepIndex := 3, pc := 12, nextPc := 16, successorPc := (some 16), finalStep := false, continuityHolds := true }, { stepIndex := 4, pc := 16, nextPc := 20, successorPc := none, finalStep := true, continuityHolds := true }]
@@ -197,10 +242,10 @@ def derivedCase : ParityDerivedCase :=
 }, {
   kind := .appendMessage
   , label := (bytes [114, 118, 54, 52, 105, 109, 47, 107, 101, 114, 110, 101, 108, 47, 115, 116, 97, 103, 101, 49, 95, 100, 105, 103, 101, 115, 116])
-  , message := (bytes [141, 60, 222, 110, 72, 134, 144, 255, 30, 29, 143, 27, 33, 27, 155, 77, 186, 43, 202, 153, 208, 77, 69, 79, 227, 135, 205, 228, 232, 125, 128, 73])
+  , message := (bytes [118, 214, 69, 122, 148, 32, 162, 213, 7, 210, 132, 135, 161, 66, 31, 34, 29, 43, 130, 6, 112, 109, 4, 180, 166, 164, 136, 198, 238, 212, 121, 51])
   , u64s := []
   , cursorBefore := { stateWords := [13284789833745455176, 18407140607795037480, 16967674421196279763, 4545908446571655201, 18016966309568418852, 2424598137269674032, 9015475748579855208, 15300083809532465609], absorbed := 0 }
-  , cursorAfter := { stateWords := [58715888751889819, 64402278207931725, 1233157608, 14377241659299474688, 4989901967043415790, 14693409989382355077, 3818688867547531949, 4463197993533255067], absorbed := 3 }
+  , cursorAfter := { stateWords := [31532353530438175, 55882286141539437, 863622382, 9300256442076830145, 10775531560532263673, 11886855752661631686, 17060914118038258756, 1728735011302141113], absorbed := 3 }
   , challengeOutput := none
   , digestOutput := none
 }, {
@@ -208,26 +253,26 @@ def derivedCase : ParityDerivedCase :=
   , label := (bytes [114, 118, 54, 52, 105, 109, 47, 115, 116, 97, 103, 101, 50, 47, 114, 101, 103, 95, 109, 105, 120])
   , message := (bytes [])
   , u64s := []
-  , cursorBefore := { stateWords := [58715888751889819, 64402278207931725, 1233157608, 14377241659299474688, 4989901967043415790, 14693409989382355077, 3818688867547531949, 4463197993533255067], absorbed := 3 }
-  , cursorAfter := { stateWords := [3271685352293115224, 1809944022706024298, 4869239437444832545, 13522655261471072268, 17897824799257747025, 2219191128963985366, 12935467767798407264, 2823047734300996580], absorbed := 0 }
-  , challengeOutput := (some 3271685352293115224)
+  , cursorBefore := { stateWords := [31532353530438175, 55882286141539437, 863622382, 9300256442076830145, 10775531560532263673, 11886855752661631686, 17060914118038258756, 1728735011302141113], absorbed := 3 }
+  , cursorAfter := { stateWords := [14969386806236800168, 9526483599296979969, 9427235808014444820, 18437061806071803652, 14902340541135625123, 6222171314369942080, 641337122378220848, 17503721582488447846], absorbed := 0 }
+  , challengeOutput := (some 14969386806236800168)
   , digestOutput := none
 }, {
   kind := .challengeField
   , label := (bytes [114, 118, 54, 52, 105, 109, 47, 115, 116, 97, 103, 101, 50, 47, 114, 97, 109, 95, 109, 105, 120])
   , message := (bytes [])
   , u64s := []
-  , cursorBefore := { stateWords := [3271685352293115224, 1809944022706024298, 4869239437444832545, 13522655261471072268, 17897824799257747025, 2219191128963985366, 12935467767798407264, 2823047734300996580], absorbed := 0 }
-  , cursorAfter := { stateWords := [9218866771718727688, 13109997995152223479, 9829307680778826472, 7965284470240856609, 12491745418835085191, 10279103266569047589, 3142160263433565842, 12596041497774200422], absorbed := 0 }
-  , challengeOutput := (some 9218866771718727688)
+  , cursorBefore := { stateWords := [14969386806236800168, 9526483599296979969, 9427235808014444820, 18437061806071803652, 14902340541135625123, 6222171314369942080, 641337122378220848, 17503721582488447846], absorbed := 0 }
+  , cursorAfter := { stateWords := [15095568061922680811, 6010514779189441894, 15480870243256086855, 18051190785129709915, 1882229306063730483, 11538497958393097227, 2475627159873160021, 15682995408760966558], absorbed := 0 }
+  , challengeOutput := (some 15095568061922680811)
   , digestOutput := none
 }, {
   kind := .appendMessage
   , label := (bytes [114, 118, 54, 52, 105, 109, 47, 107, 101, 114, 110, 101, 108, 47, 115, 116, 97, 103, 101, 50, 95, 100, 105, 103, 101, 115, 116])
-  , message := (bytes [223, 239, 255, 28, 146, 192, 6, 116, 198, 27, 15, 79, 49, 195, 136, 199, 1, 166, 27, 219, 44, 172, 41, 12, 58, 56, 204, 203, 30, 230, 135, 4])
+  , message := (bytes [251, 200, 2, 73, 106, 203, 134, 119, 197, 122, 57, 39, 230, 167, 35, 170, 238, 99, 170, 82, 101, 116, 253, 216, 228, 173, 71, 39, 172, 50, 146, 14])
   , u64s := []
-  , cursorBefore := { stateWords := [9218866771718727688, 13109997995152223479, 9829307680778826472, 7965284470240856609, 12491745418835085191, 10279103266569047589, 3142160263433565842, 12596041497774200422], absorbed := 0 }
-  , cursorAfter := { stateWords := [12625810771003272, 57363962136373676, 76015134, 658990330382324414, 5505691856059335622, 6892212685702928604, 8414454523880207699, 11758051443809347878], absorbed := 3 }
+  , cursorBefore := { stateWords := [15095568061922680811, 6010514779189441894, 15480870243256086855, 18051190785129709915, 1882229306063730483, 11538497958393097227, 2475627159873160021, 15682995408760966558], absorbed := 0 }
+  , cursorAfter := { stateWords := [28519864422279715, 11056336286055796, 244462252, 5554638233071607975, 16770043516943633411, 6249926511978657610, 8687332252309969280, 1565247429972999365], absorbed := 3 }
   , challengeOutput := none
   , digestOutput := none
 }, {
@@ -235,26 +280,26 @@ def derivedCase : ParityDerivedCase :=
   , label := (bytes [114, 118, 54, 52, 105, 109, 47, 115, 116, 97, 103, 101, 51, 47, 99, 111, 110, 116, 105, 110, 117, 105, 116, 121, 95, 109, 105, 120])
   , message := (bytes [])
   , u64s := []
-  , cursorBefore := { stateWords := [12625810771003272, 57363962136373676, 76015134, 658990330382324414, 5505691856059335622, 6892212685702928604, 8414454523880207699, 11758051443809347878], absorbed := 3 }
-  , cursorAfter := { stateWords := [15394704039026863757, 1394823330894368654, 16630938165649606139, 3941037561964915537, 8730646407226150473, 16811055434466578420, 7948332472488679106, 11457091133282816067], absorbed := 0 }
-  , challengeOutput := (some 15394704039026863757)
+  , cursorBefore := { stateWords := [28519864422279715, 11056336286055796, 244462252, 5554638233071607975, 16770043516943633411, 6249926511978657610, 8687332252309969280, 1565247429972999365], absorbed := 3 }
+  , cursorAfter := { stateWords := [13169674182515960671, 2620955626701444129, 17721918655771029112, 14695182443956093624, 9490491841612102634, 4925892213990733004, 14165316712564429088, 10644095749004086830], absorbed := 0 }
+  , challengeOutput := (some 13169674182515960671)
   , digestOutput := none
 }, {
   kind := .appendMessage
   , label := (bytes [114, 118, 54, 52, 105, 109, 47, 107, 101, 114, 110, 101, 108, 47, 115, 116, 97, 103, 101, 51, 95, 100, 105, 103, 101, 115, 116])
   , message := (bytes [2, 183, 132, 95, 231, 115, 83, 2, 8, 179, 51, 169, 210, 224, 230, 178, 60, 35, 73, 58, 195, 121, 109, 163, 86, 206, 95, 244, 250, 18, 169, 79])
   , u64s := []
-  , cursorBefore := { stateWords := [15394704039026863757, 1394823330894368654, 16630938165649606139, 3941037561964915537, 8730646407226150473, 16811055434466578420, 7948332472488679106, 11457091133282816067], absorbed := 0 }
-  , cursorAfter := { stateWords := [54951706256782054, 68785234138852729, 1336480506, 6091142444155521179, 714139807984783389, 18404415564636979016, 6983580963615186070, 11638188602759427353], absorbed := 3 }
+  , cursorBefore := { stateWords := [13169674182515960671, 2620955626701444129, 17721918655771029112, 14695182443956093624, 9490491841612102634, 4925892213990733004, 14165316712564429088, 10644095749004086830], absorbed := 0 }
+  , cursorAfter := { stateWords := [54951706256782054, 68785234138852729, 1336480506, 12968568912559367984, 11074068904078670971, 18417503360126432392, 4431800965549209855, 13352521822309759286], absorbed := 3 }
   , challengeOutput := none
   , digestOutput := none
 }, {
   kind := .appendMessage
   , label := (bytes [114, 118, 54, 52, 105, 109, 47, 107, 101, 114, 110, 101, 108, 47, 101, 120, 101, 99, 117, 116, 105, 111, 110, 95, 100, 105, 103, 101, 115, 116])
-  , message := (bytes [201, 164, 221, 125, 109, 222, 37, 62, 147, 92, 84, 169, 55, 144, 33, 41, 50, 90, 63, 149, 113, 201, 51, 95, 194, 1, 232, 102, 233, 121, 198, 233])
+  , message := (bytes [254, 167, 237, 35, 229, 145, 124, 131, 169, 247, 185, 244, 68, 31, 227, 147, 217, 37, 96, 244, 224, 23, 123, 54, 206, 154, 166, 72, 40, 193, 48, 159])
   , u64s := []
-  , cursorBefore := { stateWords := [54951706256782054, 68785234138852729, 1336480506, 6091142444155521179, 714139807984783389, 18404415564636979016, 6983580963615186070, 11638188602759427353], absorbed := 3 }
-  , cursorAfter := { stateWords := [31970771697019169, 28965541878117321, 3922098665, 13488886464747868322, 2693774648152640598, 10958848604694780033, 3685411586920218821, 17742351956826345716], absorbed := 3 }
+  , cursorBefore := { stateWords := [54951706256782054, 68785234138852729, 1336480506, 12968568912559367984, 11074068904078670971, 18417503360126432392, 4431800965549209855, 13352521822309759286], absorbed := 3 }
+  , cursorAfter := { stateWords := [63319088572240867, 20449382138018583, 2670772520, 16292564500766371404, 5554945612843821460, 8815939437090424068, 15713632082077964399, 11463752261624317501], absorbed := 3 }
   , challengeOutput := none
   , digestOutput := none
 }, {
@@ -262,8 +307,8 @@ def derivedCase : ParityDerivedCase :=
   , label := (bytes [114, 118, 54, 52, 105, 109, 47, 107, 101, 114, 110, 101, 108, 47, 102, 105, 110, 97, 108, 95, 115, 116, 97, 116, 101, 95, 100, 105, 103, 101, 115, 116])
   , message := (bytes [40, 203, 41, 62, 45, 52, 38, 20, 4, 174, 242, 202, 246, 67, 233, 128, 197, 240, 97, 4, 68, 33, 142, 222, 96, 232, 104, 62, 196, 10, 224, 135])
   , u64s := []
-  , cursorBefore := { stateWords := [31970771697019169, 28965541878117321, 3922098665, 13488886464747868322, 2693774648152640598, 10958848604694780033, 3685411586920218821, 17742351956826345716], absorbed := 3 }
-  , cursorAfter := { stateWords := [19145117114138857, 17566795822960161, 2279606980, 4164349308777004802, 16293406047596688505, 2321762257387163045, 5265428952262799829, 1660736174867803745], absorbed := 3 }
+  , cursorBefore := { stateWords := [63319088572240867, 20449382138018583, 2670772520, 16292564500766371404, 5554945612843821460, 8815939437090424068, 15713632082077964399, 11463752261624317501], absorbed := 3 }
+  , cursorAfter := { stateWords := [19145117114138857, 17566795822960161, 2279606980, 14923286099470022341, 4046499787932842240, 2688434062734964839, 13509419680391707383, 8823521324133878410], absorbed := 3 }
   , challengeOutput := none
   , digestOutput := none
 }, {
@@ -271,34 +316,34 @@ def derivedCase : ParityDerivedCase :=
   , label := (bytes [114, 118, 54, 52, 105, 109, 47, 107, 101, 114, 110, 101, 108, 47, 102, 105, 110, 97, 108, 95, 109, 105, 120])
   , message := (bytes [])
   , u64s := []
-  , cursorBefore := { stateWords := [19145117114138857, 17566795822960161, 2279606980, 4164349308777004802, 16293406047596688505, 2321762257387163045, 5265428952262799829, 1660736174867803745], absorbed := 3 }
-  , cursorAfter := { stateWords := [4074194980095530359, 16018322859894848766, 16978167734426648606, 10141121826579587349, 6287995167082662773, 11453392136283081043, 7747834270715057250, 2068958726031090031], absorbed := 0 }
-  , challengeOutput := (some 4074194980095530359)
+  , cursorBefore := { stateWords := [19145117114138857, 17566795822960161, 2279606980, 14923286099470022341, 4046499787932842240, 2688434062734964839, 13509419680391707383, 8823521324133878410], absorbed := 3 }
+  , cursorAfter := { stateWords := [14716619926376516618, 17537159774187038019, 11348214874926457665, 8014613978832793681, 13306143600242734710, 6682435814947818059, 12790647131617082676, 11626473410328314772], absorbed := 0 }
+  , challengeOutput := (some 14716619926376516618)
   , digestOutput := none
 }, {
   kind := .digest32
   , label := (bytes [])
   , message := (bytes [])
   , u64s := []
-  , cursorBefore := { stateWords := [4074194980095530359, 16018322859894848766, 16978167734426648606, 10141121826579587349, 6287995167082662773, 11453392136283081043, 7747834270715057250, 2068958726031090031], absorbed := 0 }
-  , cursorAfter := { stateWords := [593195542347662015, 16943457376105610954, 1912585542118184234, 8506393287541568248, 15059549659121664523, 13809046069210185339, 7998069989490838832, 6686271977506892650], absorbed := 0 }
+  , cursorBefore := { stateWords := [14716619926376516618, 17537159774187038019, 11348214874926457665, 8014613978832793681, 13306143600242734710, 6682435814947818059, 12790647131617082676, 11626473410328314772], absorbed := 0 }
+  , cursorAfter := { stateWords := [3034602953248393749, 7511704329109967520, 4884577229284093310, 11934513655341686515, 13914406895756991245, 16591503739278178274, 2732730744334366993, 5872474801572026057], absorbed := 0 }
   , challengeOutput := none
-  , digestOutput := (some (bytes [191, 66, 250, 239, 51, 116, 59, 8, 202, 62, 191, 153, 182, 64, 35, 235, 42, 149, 128, 208, 106, 222, 138, 26, 248, 178, 174, 79, 160, 199, 12, 118]))
+  , digestOutput := (some (bytes [21, 202, 184, 214, 78, 19, 29, 42, 160, 18, 93, 226, 73, 239, 62, 104, 126, 173, 112, 69, 28, 129, 201, 67, 243, 158, 176, 17, 240, 232, 159, 165]))
 }]
 }
   , kernel := {
   root0Digest := (bytes [135, 54, 179, 58, 175, 8, 113, 89, 77, 53, 240, 243, 127, 62, 36, 4, 249, 145, 43, 195, 231, 83, 112, 77, 131, 50, 114, 62, 167, 230, 250, 199])
-  , stage1Digest := (bytes [141, 60, 222, 110, 72, 134, 144, 255, 30, 29, 143, 27, 33, 27, 155, 77, 186, 43, 202, 153, 208, 77, 69, 79, 227, 135, 205, 228, 232, 125, 128, 73])
-  , stage2Digest := (bytes [223, 239, 255, 28, 146, 192, 6, 116, 198, 27, 15, 79, 49, 195, 136, 199, 1, 166, 27, 219, 44, 172, 41, 12, 58, 56, 204, 203, 30, 230, 135, 4])
+  , stage1Digest := (bytes [118, 214, 69, 122, 148, 32, 162, 213, 7, 210, 132, 135, 161, 66, 31, 34, 29, 43, 130, 6, 112, 109, 4, 180, 166, 164, 136, 198, 238, 212, 121, 51])
+  , stage2Digest := (bytes [251, 200, 2, 73, 106, 203, 134, 119, 197, 122, 57, 39, 230, 167, 35, 170, 238, 99, 170, 82, 101, 116, 253, 216, 228, 173, 71, 39, 172, 50, 146, 14])
   , stage3Digest := (bytes [2, 183, 132, 95, 231, 115, 83, 2, 8, 179, 51, 169, 210, 224, 230, 178, 60, 35, 73, 58, 195, 121, 109, 163, 86, 206, 95, 244, 250, 18, 169, 79])
-  , executionDigest := (bytes [201, 164, 221, 125, 109, 222, 37, 62, 147, 92, 84, 169, 55, 144, 33, 41, 50, 90, 63, 149, 113, 201, 51, 95, 194, 1, 232, 102, 233, 121, 198, 233])
+  , executionDigest := (bytes [254, 167, 237, 35, 229, 145, 124, 131, 169, 247, 185, 244, 68, 31, 227, 147, 217, 37, 96, 244, 224, 23, 123, 54, 206, 154, 166, 72, 40, 193, 48, 159])
   , finalStateDigest := (bytes [40, 203, 41, 62, 45, 52, 38, 20, 4, 174, 242, 202, 246, 67, 233, 128, 197, 240, 97, 4, 68, 33, 142, 222, 96, 232, 104, 62, 196, 10, 224, 135])
   , stage1Mix := 13284789833745455176
-  , stage2RegMix := 3271685352293115224
-  , stage2RamMix := 9218866771718727688
-  , stage3ContinuityMix := 15394704039026863757
-  , kernelFinalMix := 4074194980095530359
-  , transcriptFinalDigest := (bytes [191, 66, 250, 239, 51, 116, 59, 8, 202, 62, 191, 153, 182, 64, 35, 235, 42, 149, 128, 208, 106, 222, 138, 26, 248, 178, 174, 79, 160, 199, 12, 118])
+  , stage2RegMix := 14969386806236800168
+  , stage2RamMix := 15095568061922680811
+  , stage3ContinuityMix := 13169674182515960671
+  , kernelFinalMix := 14716619926376516618
+  , transcriptFinalDigest := (bytes [21, 202, 184, 214, 78, 19, 29, 42, 160, 18, 93, 226, 73, 239, 62, 104, 126, 173, 112, 69, 28, 129, 201, 67, 243, 158, 176, 17, 240, 232, 159, 165])
   , finalPc := 20
   , finalRegisters := [0, 5, 10, 10, 0, 0, 0, 0, 0, 0, 4096, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
   , finalMemory := [{ addr := 4096, value := 10 }]

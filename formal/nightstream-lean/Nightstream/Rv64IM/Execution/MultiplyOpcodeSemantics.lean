@@ -878,6 +878,120 @@ theorem sequenceDeterministic_of_multiplyOpcodeSemantics
   have _ := hOpcode
   exact sequenceDeterministic_of_multiplyLoweringSemantics facts
 
+theorem normalizedReference_of_mulRefinedMultiplyOpcodeSemantics
+  {rows : List ImportedLoweringRow}
+  (h : MulConcreteLoweringRefinesReference rows) :
+  normalizeMulConcreteCore? rows = some mulReferenceLowering :=
+  normalizedReference_of_mulRefinedMultiplyLowering h
+
+theorem sequenceMetadataBound_of_mulRefinedMultiplyOpcodeSemantics
+  {rows : List ImportedLoweringRow}
+  (h : MulConcreteLoweringRefinesReference rows) :
+  rowSequenceMetadataBound rows :=
+  sequenceMetadataBound_of_mulRefinedMultiplyLowering h
+
+theorem uniqueCommitRow_of_mulRefinedMultiplyOpcodeSemantics
+  {rows : List ImportedLoweringRow}
+  (h : MulConcreteLoweringRefinesReference rows) :
+  uniqueRealRowAt rows mulEffectRowIndex :=
+  uniqueCommitRow_of_mulRefinedMultiplyLowering h
+
+theorem normalizedReference_of_mulhuRefinedMultiplyOpcodeSemantics
+  {rows : List ImportedLoweringRow}
+  (h : MulhuConcreteLoweringRefinesReference rows) :
+  normalizeMulhuConcreteCore? rows = some mulhuReferenceLowering :=
+  normalizedReference_of_mulhuRefinedMultiplyLowering h
+
+theorem sequenceMetadataBound_of_mulhuRefinedMultiplyOpcodeSemantics
+  {rows : List ImportedLoweringRow}
+  (h : MulhuConcreteLoweringRefinesReference rows) :
+  rowSequenceMetadataBound rows :=
+  sequenceMetadataBound_of_mulhuRefinedMultiplyLowering h
+
+theorem uniqueCommitRow_of_mulhuRefinedMultiplyOpcodeSemantics
+  {rows : List ImportedLoweringRow}
+  (h : MulhuConcreteLoweringRefinesReference rows) :
+  uniqueRealRowAt rows mulhuEffectRowIndex :=
+  uniqueCommitRow_of_mulhuRefinedMultiplyLowering h
+
+theorem normalizedReference_of_mulwRefinedMultiplyOpcodeSemantics
+  {rows : List ImportedLoweringRow}
+  (h : MulwConcreteLoweringRefinesReference rows) :
+  normalizeMulwConcreteCore? rows = some mulwReferenceLowering :=
+  normalizedReference_of_mulwRefinedMultiplyLowering h
+
+theorem sequenceMetadataBound_of_mulwRefinedMultiplyOpcodeSemantics
+  {rows : List ImportedLoweringRow}
+  (h : MulwConcreteLoweringRefinesReference rows) :
+  rowSequenceMetadataBound rows :=
+  sequenceMetadataBound_of_mulwRefinedMultiplyLowering h
+
+theorem uniqueCommitRow_of_mulwRefinedMultiplyOpcodeSemantics
+  {rows : List ImportedLoweringRow}
+  (h : MulwConcreteLoweringRefinesReference rows) :
+  uniqueRealRowAt rows mulwEffectRowIndex :=
+  uniqueCommitRow_of_mulwRefinedMultiplyLowering h
+
+theorem normalizedReference_of_mulhRefinedMultiplyOpcodeSemantics
+  {rows : List ImportedLoweringRow}
+  (h : MulhConcreteLoweringRefinesReference rows) :
+  normalizeMulhConcreteCore? rows = some mulhReferenceLowering :=
+  normalizedReference_of_mulhRefinedMultiplyLowering h
+
+theorem sequenceMetadataBound_of_mulhRefinedMultiplyOpcodeSemantics
+  {rows : List ImportedLoweringRow}
+  (h : MulhConcreteLoweringRefinesReference rows) :
+  rowSequenceMetadataBound rows :=
+  sequenceMetadataBound_of_mulhRefinedMultiplyLowering h
+
+theorem closureSuffixScratchOnly_of_mulhRefinedMultiplyOpcodeSemantics
+  {rows : List ImportedLoweringRow}
+  (h : MulhConcreteLoweringRefinesReference rows) :
+  mulhClosureSuffixScratchOnly rows :=
+  closureSuffixScratchOnly_of_mulhRefinedMultiplyLowering h
+
+theorem uniqueCommitRow_of_mulhRefinedMultiplyOpcodeSemantics
+  {rows : List ImportedLoweringRow}
+  (h : MulhConcreteLoweringRefinesReference rows) :
+  uniqueRealRowAt rows mulhEffectRowIndex :=
+  uniqueCommitRow_of_mulhRefinedMultiplyLowering h
+
+theorem effectRowPrecedesCommitRow_of_mulhRefinedMultiplyOpcodeSemantics
+  {rows : List ImportedLoweringRow}
+  (h : MulhConcreteLoweringRefinesReference rows) :
+  mulhEffectRowIndex ≤ rows.length - 1 :=
+  effectRowPrecedesCommitRow_of_mulhRefinedMultiplyLowering h
+
+theorem normalizedReference_of_mulhsuRefinedMultiplyOpcodeSemantics
+  {rows : List ImportedLoweringRow}
+  (h : MulhsuConcreteLoweringRefinesReference rows) :
+  normalizeMulhsuConcreteCore? rows = some mulhsuReferenceLowering :=
+  normalizedReference_of_mulhsuRefinedMultiplyLowering h
+
+theorem sequenceMetadataBound_of_mulhsuRefinedMultiplyOpcodeSemantics
+  {rows : List ImportedLoweringRow}
+  (h : MulhsuConcreteLoweringRefinesReference rows) :
+  rowSequenceMetadataBound rows :=
+  sequenceMetadataBound_of_mulhsuRefinedMultiplyLowering h
+
+theorem closureSuffixScratchOnly_of_mulhsuRefinedMultiplyOpcodeSemantics
+  {rows : List ImportedLoweringRow}
+  (h : MulhsuConcreteLoweringRefinesReference rows) :
+  mulhsuClosureSuffixScratchOnly rows :=
+  closureSuffixScratchOnly_of_mulhsuRefinedMultiplyLowering h
+
+theorem uniqueCommitRow_of_mulhsuRefinedMultiplyOpcodeSemantics
+  {rows : List ImportedLoweringRow}
+  (h : MulhsuConcreteLoweringRefinesReference rows) :
+  uniqueRealRowAt rows mulhsuEffectRowIndex :=
+  uniqueCommitRow_of_mulhsuRefinedMultiplyLowering h
+
+theorem effectRowPrecedesCommitRow_of_mulhsuRefinedMultiplyOpcodeSemantics
+  {rows : List ImportedLoweringRow}
+  (h : MulhsuConcreteLoweringRefinesReference rows) :
+  mulhsuEffectRowIndex ≤ rows.length - 1 :=
+  effectRowPrecedesCommitRow_of_mulhsuRefinedMultiplyLowering h
+
 end
 
 end Nightstream.Rv64IM

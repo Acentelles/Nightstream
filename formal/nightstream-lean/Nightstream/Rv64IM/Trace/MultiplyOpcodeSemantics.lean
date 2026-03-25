@@ -1,5 +1,5 @@
 import Nightstream.Rv64IM.Trace.OpcodeFamilySemantics
-import Nightstream.Rv64IM.Execution.MultiplyOpcodeSemantics
+import Nightstream.Rv64IM.Execution.HardOpLoweringRefinementSemantics
 
 /-!
 Owns lifting of exact multiply opcode consequences through the authenticated

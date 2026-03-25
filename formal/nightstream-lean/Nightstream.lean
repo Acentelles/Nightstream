@@ -21,6 +21,7 @@ import Nightstream.Rv64IM.Execution.Stage2TemporalClosureInterface
 import Nightstream.Rv64IM.Execution.PcAdjacentBridgeInterface
 import Nightstream.Rv64IM.Execution.TemporaryRegisterHygieneInterface
 import Nightstream.Rv64IM.Execution.StepCompositionInterface
+import Nightstream.Rv64IM.Execution.LoweringRefinementInterface
 import Nightstream.Rv64IM.Execution.OpcodeClassExtractorsInterface
 import Nightstream.Rv64IM.Execution.ExactOpcodeClassSemanticsInterface
 import Nightstream.Rv64IM.Execution.NativeAluSemanticsInterface
@@ -55,6 +56,7 @@ import Nightstream.Rv64IM.Execution.SignedDivRemSemanticsInterface
 import Nightstream.Rv64IM.Execution.SignedDivRemLoweringSemanticsInterface
 import Nightstream.Rv64IM.Execution.SignedDivRemOpcodeSemanticsInterface
 import Nightstream.Rv64IM.Execution.ExactOpcodeFamilySemanticsInterface
+import Nightstream.Rv64IM.Execution.HardOpLoweringRefinementSemanticsInterface
 import Nightstream.Rv64IM.Execution.ExactWordArithmeticSemanticsInterface
 import Nightstream.Rv64IM.Execution.UnsignedDivRemSoundnessInterface
 import Nightstream.Rv64IM.Execution.SignedDivRemSoundnessInterface

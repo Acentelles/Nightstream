@@ -3,7 +3,8 @@ use std::path::{Path, PathBuf};
 
 use neo_fold_next::rv64im::{
     build_all_parity_cases, MemoryWord, Rv64imKernelSummary, Rv64imParityCaseManifest, Rv64imParityDerivedCase,
-    Rv64imParitySourceCase, TranscriptCursorSnapshot, TranscriptEventKind, TranscriptEventRecord, TranscriptRecord,
+    Rv64imParitySourceCase, Rv64TraceVirtualOpcode, TranscriptCursorSnapshot, TranscriptEventKind,
+    TranscriptEventRecord, TranscriptRecord,
 };
 
 fn render_u8_list(values: &[u8]) -> String {
@@ -61,6 +62,10 @@ fn render_family_tag(tag: neo_fold_next::rv64im::tables::Rv64FamilyTag) -> &'sta
     match tag {
         neo_fold_next::rv64im::tables::Rv64FamilyTag::NativeAlu => ".nativeAlu",
         neo_fold_next::rv64im::tables::Rv64FamilyTag::AlignedMemory => ".alignedMemory",
+        neo_fold_next::rv64im::tables::Rv64FamilyTag::NarrowMemory => ".narrowMemory",
+        neo_fold_next::rv64im::tables::Rv64FamilyTag::Multiply => ".multiply",
+        neo_fold_next::rv64im::tables::Rv64FamilyTag::UnsignedDivRem => ".unsignedDivRem",
+        neo_fold_next::rv64im::tables::Rv64FamilyTag::SignedDivRem => ".signedDivRem",
         neo_fold_next::rv64im::tables::Rv64FamilyTag::ControlFlow => ".controlFlow",
     }
 }
@@ -69,6 +74,10 @@ fn family_module_name(tag: neo_fold_next::rv64im::tables::Rv64FamilyTag) -> &'st
     match tag {
         neo_fold_next::rv64im::tables::Rv64FamilyTag::NativeAlu => "NativeAlu",
         neo_fold_next::rv64im::tables::Rv64FamilyTag::AlignedMemory => "AlignedMemory",
+        neo_fold_next::rv64im::tables::Rv64FamilyTag::NarrowMemory => "NarrowMemory",
+        neo_fold_next::rv64im::tables::Rv64FamilyTag::Multiply => "Multiply",
+        neo_fold_next::rv64im::tables::Rv64FamilyTag::UnsignedDivRem => "UnsignedDivRem",
+        neo_fold_next::rv64im::tables::Rv64FamilyTag::SignedDivRem => "SignedDivRem",
         neo_fold_next::rv64im::tables::Rv64FamilyTag::ControlFlow => "ControlFlow",
     }
 }
@@ -77,8 +86,67 @@ fn render_opcode(opcode: neo_fold_next::rv64im::Rv64Opcode) -> &'static str {
     match opcode {
         neo_fold_next::rv64im::Rv64Opcode::Addi => ".addi",
         neo_fold_next::rv64im::Rv64Opcode::Add => ".add",
+        neo_fold_next::rv64im::Rv64Opcode::Sub => ".sub",
+        neo_fold_next::rv64im::Rv64Opcode::Addiw => ".addiw",
+        neo_fold_next::rv64im::Rv64Opcode::Addw => ".addw",
+        neo_fold_next::rv64im::Rv64Opcode::Subw => ".subw",
+        neo_fold_next::rv64im::Rv64Opcode::Andi => ".andi",
+        neo_fold_next::rv64im::Rv64Opcode::And => ".and",
+        neo_fold_next::rv64im::Rv64Opcode::Ori => ".ori",
+        neo_fold_next::rv64im::Rv64Opcode::Or => ".or",
+        neo_fold_next::rv64im::Rv64Opcode::Xori => ".xori",
+        neo_fold_next::rv64im::Rv64Opcode::Xor => ".xor",
+        neo_fold_next::rv64im::Rv64Opcode::Slti => ".slti",
+        neo_fold_next::rv64im::Rv64Opcode::Slt => ".slt",
+        neo_fold_next::rv64im::Rv64Opcode::Sltiu => ".sltiu",
+        neo_fold_next::rv64im::Rv64Opcode::Sltu => ".sltu",
+        neo_fold_next::rv64im::Rv64Opcode::Slli => ".slli",
+        neo_fold_next::rv64im::Rv64Opcode::Sll => ".sll",
+        neo_fold_next::rv64im::Rv64Opcode::Srli => ".srli",
+        neo_fold_next::rv64im::Rv64Opcode::Srl => ".srl",
+        neo_fold_next::rv64im::Rv64Opcode::Srai => ".srai",
+        neo_fold_next::rv64im::Rv64Opcode::Sra => ".sra",
+        neo_fold_next::rv64im::Rv64Opcode::Slliw => ".slliw",
+        neo_fold_next::rv64im::Rv64Opcode::Sllw => ".sllw",
+        neo_fold_next::rv64im::Rv64Opcode::Srliw => ".srliw",
+        neo_fold_next::rv64im::Rv64Opcode::Srlw => ".srlw",
+        neo_fold_next::rv64im::Rv64Opcode::Sraiw => ".sraiw",
+        neo_fold_next::rv64im::Rv64Opcode::Sraw => ".sraw",
+        neo_fold_next::rv64im::Rv64Opcode::Lui => ".lui",
+        neo_fold_next::rv64im::Rv64Opcode::Auipc => ".auipc",
+        neo_fold_next::rv64im::Rv64Opcode::Fence => ".fence",
+        neo_fold_next::rv64im::Rv64Opcode::Mul => ".mul",
+        neo_fold_next::rv64im::Rv64Opcode::Mulh => ".mulh",
+        neo_fold_next::rv64im::Rv64Opcode::Mulhsu => ".mulhsu",
+        neo_fold_next::rv64im::Rv64Opcode::Mulhu => ".mulhu",
+        neo_fold_next::rv64im::Rv64Opcode::Mulw => ".mulw",
+        neo_fold_next::rv64im::Rv64Opcode::Div => ".div",
+        neo_fold_next::rv64im::Rv64Opcode::Divu => ".divu",
+        neo_fold_next::rv64im::Rv64Opcode::Rem => ".rem",
+        neo_fold_next::rv64im::Rv64Opcode::Remu => ".remu",
+        neo_fold_next::rv64im::Rv64Opcode::Divw => ".divw",
+        neo_fold_next::rv64im::Rv64Opcode::Divuw => ".divuw",
+        neo_fold_next::rv64im::Rv64Opcode::Remw => ".remw",
+        neo_fold_next::rv64im::Rv64Opcode::Remuw => ".remuw",
+        neo_fold_next::rv64im::Rv64Opcode::Lb => ".lb",
+        neo_fold_next::rv64im::Rv64Opcode::Lbu => ".lbu",
+        neo_fold_next::rv64im::Rv64Opcode::Lh => ".lh",
+        neo_fold_next::rv64im::Rv64Opcode::Lhu => ".lhu",
+        neo_fold_next::rv64im::Rv64Opcode::Lw => ".lw",
+        neo_fold_next::rv64im::Rv64Opcode::Lwu => ".lwu",
         neo_fold_next::rv64im::Rv64Opcode::Ld => ".ld",
+        neo_fold_next::rv64im::Rv64Opcode::Sb => ".sb",
+        neo_fold_next::rv64im::Rv64Opcode::Sh => ".sh",
+        neo_fold_next::rv64im::Rv64Opcode::Sw => ".sw",
         neo_fold_next::rv64im::Rv64Opcode::Sd => ".sd",
+        neo_fold_next::rv64im::Rv64Opcode::Jal => ".jal",
+        neo_fold_next::rv64im::Rv64Opcode::Jalr => ".jalr",
+        neo_fold_next::rv64im::Rv64Opcode::Beq => ".beq",
+        neo_fold_next::rv64im::Rv64Opcode::Bne => ".bne",
+        neo_fold_next::rv64im::Rv64Opcode::Blt => ".blt",
+        neo_fold_next::rv64im::Rv64Opcode::Bge => ".bge",
+        neo_fold_next::rv64im::Rv64Opcode::Bltu => ".bltu",
+        neo_fold_next::rv64im::Rv64Opcode::Bgeu => ".bgeu",
         neo_fold_next::rv64im::Rv64Opcode::Ecall => ".ecall",
     }
 }
@@ -103,6 +171,22 @@ fn render_transcript_event_kind(kind: TranscriptEventKind) -> &'static str {
         TranscriptEventKind::AppendU64s => ".appendU64s",
         TranscriptEventKind::ChallengeField => ".challengeField",
         TranscriptEventKind::Digest32 => ".digest32",
+    }
+}
+
+fn render_trace_virtual_opcode(opcode: Rv64TraceVirtualOpcode) -> &'static str {
+    match opcode {
+        Rv64TraceVirtualOpcode::Movsign => ".movsign",
+        Rv64TraceVirtualOpcode::Advice => ".advice",
+        Rv64TraceVirtualOpcode::ChangeDivisor => ".changeDivisor",
+        Rv64TraceVirtualOpcode::AssertValidDiv0 => ".assertValidDiv0",
+        Rv64TraceVirtualOpcode::AssertMulNoOverflow => ".assertMulNoOverflow",
+        Rv64TraceVirtualOpcode::AssertLte => ".assertLte",
+        Rv64TraceVirtualOpcode::AssertValidUnsignedRemainder => ".assertValidUnsignedRemainder",
+        Rv64TraceVirtualOpcode::AssertSignedDivIdentity => ".assertSignedDivIdentity",
+        Rv64TraceVirtualOpcode::AssertSignedRemainderBounds => ".assertSignedRemainderBounds",
+        Rv64TraceVirtualOpcode::Move => ".move",
+        Rv64TraceVirtualOpcode::SignExtendWord => ".signExtendWord",
     }
 }
 
@@ -169,12 +253,20 @@ fn render_source_case(case: &Rv64imParitySourceCase) -> String {
 
 fn render_expanded_row(row: &neo_fold_next::rv64im::lower::Rv64ExpandedRow) -> String {
     format!(
-        "{{\n  stepIndex := {}\n  , pc := {}\n  , nextPc := {}\n  , word := {}\n  , opcode := {}\n  , family := {}\n  , rs1 := {}\n  , rs1Value := {}\n  , rs2 := {}\n  , rs2Value := {}\n  , rd := {}\n  , rdBefore := {}\n  , rdAfter := {}\n  , imm := {}\n  , aluResult := {}\n  , effectiveAddr := {}\n  , memoryBefore := {}\n  , memoryAfter := {}\n  , writesRd := {}\n  , writesRam := {}\n  , halted := {}\n}}",
+        "{{\n  traceIndex := {}\n  , stepIndex := {}\n  , sequenceIndex := {}\n  , pc := {}\n  , nextPc := {}\n  , word := {}\n  , opcode := {}\n  , traceOpcode := {}\n  , traceVirtualOpcode := {}\n  , family := {}\n  , rs1 := {}\n  , rs1Value := {}\n  , rs2 := {}\n  , rs2Value := {}\n  , rd := {}\n  , rdBefore := {}\n  , rdAfter := {}\n  , imm := {}\n  , aluResult := {}\n  , effectiveAddr := {}\n  , memoryBefore := {}\n  , memoryAfter := {}\n  , writesRd := {}\n  , writesRam := {}\n  , halted := {}\n  , isFirstInSequence := {}\n  , virtualSequenceRemaining := {}\n  , isEffectRow := {}\n  , isCommitRow := {}\n  , isReal := {}\n}}",
+        row.trace_index,
         row.step_index,
+        row.sequence_index,
         row.pc,
         row.next_pc,
         row.word,
         render_opcode(row.opcode),
+        row.trace_opcode
+            .map(|opcode| format!("(some {})", render_opcode(opcode)))
+            .unwrap_or_else(|| "none".into()),
+        row.trace_virtual_opcode
+            .map(|opcode| format!("(some {})", render_trace_virtual_opcode(opcode)))
+            .unwrap_or_else(|| "none".into()),
         render_family_tag(row.family),
         row.rs1,
         row.rs1_value,
@@ -191,6 +283,13 @@ fn render_expanded_row(row: &neo_fold_next::rv64im::lower::Rv64ExpandedRow) -> S
         if row.writes_rd { "true" } else { "false" },
         if row.writes_ram { "true" } else { "false" },
         if row.halted { "true" } else { "false" },
+        if row.is_first_in_sequence { "true" } else { "false" },
+        row.virtual_sequence_remaining
+            .map(|remaining| format!("(some {remaining})"))
+            .unwrap_or_else(|| "none".into()),
+        if row.is_effect_row { "true" } else { "false" },
+        if row.is_commit_row { "true" } else { "false" },
+        if row.is_real { "true" } else { "false" },
     )
 }
 
@@ -201,11 +300,19 @@ fn render_stage1_summary(stage1: &neo_fold_next::rv64im::stage1::Stage1Summary) 
             rows.push_str(", ");
         }
         rows.push_str(&format!(
-            "{{ stepIndex := {}, fetchPc := {}, fetchedWord := {}, opcode := {}, family := {}, nextPc := {}, aluResult := {}, effectiveAddr := {}, writesRd := {}, rd := {}, rdAfter := {}, preservesX0 := {} }}",
+            "{{ traceIndex := {}, stepIndex := {}, sequenceIndex := {}, fetchPc := {}, fetchedWord := {}, opcode := {}, traceOpcode := {}, traceVirtualOpcode := {}, family := {}, nextPc := {}, aluResult := {}, effectiveAddr := {}, writesRd := {}, rd := {}, rdAfter := {}, isFirstInSequence := {}, virtualSequenceRemaining := {}, isEffectRow := {}, isCommitRow := {}, isReal := {}, preservesX0 := {} }}",
+            row.trace_index,
             row.step_index,
+            row.sequence_index,
             row.fetch_pc,
             row.fetched_word,
             render_opcode(row.opcode),
+            row.trace_opcode
+                .map(|opcode| format!("(some {})", render_opcode(opcode)))
+                .unwrap_or_else(|| "none".into()),
+            row.trace_virtual_opcode
+                .map(|opcode| format!("(some {})", render_trace_virtual_opcode(opcode)))
+                .unwrap_or_else(|| "none".into()),
             render_family_tag(row.family),
             row.next_pc,
             row.alu_result,
@@ -213,6 +320,13 @@ fn render_stage1_summary(stage1: &neo_fold_next::rv64im::stage1::Stage1Summary) 
             if row.writes_rd { "true" } else { "false" },
             row.rd,
             row.rd_after,
+            if row.is_first_in_sequence { "true" } else { "false" },
+            row.virtual_sequence_remaining
+                .map(|remaining| format!("(some {remaining})"))
+                .unwrap_or_else(|| "none".into()),
+            if row.is_effect_row { "true" } else { "false" },
+            if row.is_commit_row { "true" } else { "false" },
+            if row.is_real { "true" } else { "false" },
             if row.preserves_x0 { "true" } else { "false" },
         ));
     }
@@ -227,7 +341,8 @@ fn render_stage2_summary(stage2: &neo_fold_next::rv64im::stage2::Stage2Summary) 
             register_reads.push_str(", ");
         }
         register_reads.push_str(&format!(
-            "{{ stepIndex := {}, role := {}, reg := {}, value := {} }}",
+            "{{ traceIndex := {}, stepIndex := {}, role := {}, reg := {}, value := {} }}",
+            event.trace_index,
             event.step_index,
             render_register_read_role(event.role),
             event.reg,
@@ -242,7 +357,8 @@ fn render_stage2_summary(stage2: &neo_fold_next::rv64im::stage2::Stage2Summary) 
             register_writes.push_str(", ");
         }
         register_writes.push_str(&format!(
-            "{{ stepIndex := {}, reg := {}, previous := {}, next := {} }}",
+            "{{ traceIndex := {}, stepIndex := {}, reg := {}, previous := {}, next := {} }}",
+            event.trace_index,
             event.step_index,
             event.reg,
             event.previous,
@@ -257,7 +373,8 @@ fn render_stage2_summary(stage2: &neo_fold_next::rv64im::stage2::Stage2Summary) 
             ram_events.push_str(", ");
         }
         ram_events.push_str(&format!(
-            "{{ stepIndex := {}, kind := {}, addr := {}, previous := {}, next := {} }}",
+            "{{ traceIndex := {}, stepIndex := {}, kind := {}, addr := {}, previous := {}, next := {} }}",
+            event.trace_index,
             event.step_index,
             render_ram_access_kind(event.kind),
             event.addr,
@@ -273,7 +390,8 @@ fn render_stage2_summary(stage2: &neo_fold_next::rv64im::stage2::Stage2Summary) 
             twist_links.push_str(", ");
         }
         twist_links.push_str(&format!(
-            "{{ stepIndex := {}, family := {}, routedWriteValue := {}, routedMemoryBefore := {}, routedMemoryAfter := {} }}",
+            "{{ traceIndex := {}, stepIndex := {}, family := {}, routedWriteValue := {}, routedMemoryBefore := {}, routedMemoryAfter := {} }}",
+            event.trace_index,
             event.step_index,
             render_family_tag(event.family),
             render_option_nat(event.routed_write_value),
@@ -449,7 +567,7 @@ fn render_index_module(module_name: &str, cases: &[(Rv64imParitySourceCase, Rv64
 }
 
 fn render_corpus_module() -> String {
-    "import Nightstream.Rv64IM.Generated.Index.AllCases\nimport Nightstream.Rv64IM.Generated.Index.AlignedMemory\nimport Nightstream.Rv64IM.Generated.Index.ControlFlow\nimport Nightstream.Rv64IM.Generated.Index.NativeAlu\n\nnamespace Nightstream.Rv64IM.Generated\n\ndef nativeAluParityCases : List (ParitySourceCase × ParityDerivedCase) :=\n  Nightstream.Rv64IM.Generated.Index.NativeAlu.parityCases\n\ndef alignedMemoryParityCases : List (ParitySourceCase × ParityDerivedCase) :=\n  Nightstream.Rv64IM.Generated.Index.AlignedMemory.parityCases\n\ndef controlFlowParityCases : List (ParitySourceCase × ParityDerivedCase) :=\n  Nightstream.Rv64IM.Generated.Index.ControlFlow.parityCases\n\ndef parityCases : List (ParitySourceCase × ParityDerivedCase) :=\n  Nightstream.Rv64IM.Generated.Index.AllCases.parityCases\n\nend Nightstream.Rv64IM.Generated\n".into()
+    "import Nightstream.Rv64IM.Generated.Index.AllCases\nimport Nightstream.Rv64IM.Generated.Index.AlignedMemory\nimport Nightstream.Rv64IM.Generated.Index.ControlFlow\nimport Nightstream.Rv64IM.Generated.Index.Multiply\nimport Nightstream.Rv64IM.Generated.Index.NarrowMemory\nimport Nightstream.Rv64IM.Generated.Index.NativeAlu\nimport Nightstream.Rv64IM.Generated.Index.SignedDivRem\nimport Nightstream.Rv64IM.Generated.Index.UnsignedDivRem\n\nnamespace Nightstream.Rv64IM.Generated\n\ndef nativeAluParityCases : List (ParitySourceCase × ParityDerivedCase) :=\n  Nightstream.Rv64IM.Generated.Index.NativeAlu.parityCases\n\ndef alignedMemoryParityCases : List (ParitySourceCase × ParityDerivedCase) :=\n  Nightstream.Rv64IM.Generated.Index.AlignedMemory.parityCases\n\ndef narrowMemoryParityCases : List (ParitySourceCase × ParityDerivedCase) :=\n  Nightstream.Rv64IM.Generated.Index.NarrowMemory.parityCases\n\ndef multiplyParityCases : List (ParitySourceCase × ParityDerivedCase) :=\n  Nightstream.Rv64IM.Generated.Index.Multiply.parityCases\n\ndef unsignedDivRemParityCases : List (ParitySourceCase × ParityDerivedCase) :=\n  Nightstream.Rv64IM.Generated.Index.UnsignedDivRem.parityCases\n\ndef signedDivRemParityCases : List (ParitySourceCase × ParityDerivedCase) :=\n  Nightstream.Rv64IM.Generated.Index.SignedDivRem.parityCases\n\ndef controlFlowParityCases : List (ParitySourceCase × ParityDerivedCase) :=\n  Nightstream.Rv64IM.Generated.Index.ControlFlow.parityCases\n\ndef parityCases : List (ParitySourceCase × ParityDerivedCase) :=\n  Nightstream.Rv64IM.Generated.Index.AllCases.parityCases\n\nend Nightstream.Rv64IM.Generated\n".into()
 }
 
 fn write_file(path: &Path, contents: String) {
@@ -497,6 +615,46 @@ fn main() {
         })
         .cloned()
         .collect::<Vec<_>>();
+    let narrow_memory_cases = cases
+        .iter()
+        .filter(|(source, _)| {
+            source
+                .manifest
+                .family_tags
+                .contains(&neo_fold_next::rv64im::tables::Rv64FamilyTag::NarrowMemory)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let multiply_cases = cases
+        .iter()
+        .filter(|(source, _)| {
+            source
+                .manifest
+                .family_tags
+                .contains(&neo_fold_next::rv64im::tables::Rv64FamilyTag::Multiply)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let unsigned_divrem_cases = cases
+        .iter()
+        .filter(|(source, _)| {
+            source
+                .manifest
+                .family_tags
+                .contains(&neo_fold_next::rv64im::tables::Rv64FamilyTag::UnsignedDivRem)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let signed_divrem_cases = cases
+        .iter()
+        .filter(|(source, _)| {
+            source
+                .manifest
+                .family_tags
+                .contains(&neo_fold_next::rv64im::tables::Rv64FamilyTag::SignedDivRem)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
     let control_flow_cases = cases
         .iter()
         .filter(|(source, _)| {
@@ -517,6 +675,34 @@ fn main() {
         render_index_module(
             family_module_name(neo_fold_next::rv64im::tables::Rv64FamilyTag::AlignedMemory),
             &aligned_memory_cases,
+        ),
+    );
+    write_file(
+        &generated_dir().join("Index").join("NarrowMemory.lean"),
+        render_index_module(
+            family_module_name(neo_fold_next::rv64im::tables::Rv64FamilyTag::NarrowMemory),
+            &narrow_memory_cases,
+        ),
+    );
+    write_file(
+        &generated_dir().join("Index").join("Multiply.lean"),
+        render_index_module(
+            family_module_name(neo_fold_next::rv64im::tables::Rv64FamilyTag::Multiply),
+            &multiply_cases,
+        ),
+    );
+    write_file(
+        &generated_dir().join("Index").join("UnsignedDivRem.lean"),
+        render_index_module(
+            family_module_name(neo_fold_next::rv64im::tables::Rv64FamilyTag::UnsignedDivRem),
+            &unsigned_divrem_cases,
+        ),
+    );
+    write_file(
+        &generated_dir().join("Index").join("SignedDivRem.lean"),
+        render_index_module(
+            family_module_name(neo_fold_next::rv64im::tables::Rv64FamilyTag::SignedDivRem),
+            &signed_divrem_cases,
         ),
     );
     write_file(

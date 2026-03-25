@@ -12,14 +12,77 @@ abbrev Byte := UInt8
 inductive FamilyTag where
   | nativeAlu
   | alignedMemory
+  | narrowMemory
+  | multiply
+  | unsignedDivRem
+  | signedDivRem
   | controlFlow
 deriving DecidableEq, Repr
 
 inductive Opcode where
   | addi
   | add
+  | sub
+  | addiw
+  | addw
+  | subw
+  | andi
+  | and
+  | ori
+  | or
+  | xori
+  | xor
+  | slti
+  | slt
+  | sltiu
+  | sltu
+  | slli
+  | sll
+  | srli
+  | srl
+  | srai
+  | sra
+  | slliw
+  | sllw
+  | srliw
+  | srlw
+  | sraiw
+  | sraw
+  | lui
+  | auipc
+  | fence
+  | mul
+  | mulh
+  | mulhsu
+  | mulhu
+  | mulw
+  | div
+  | divu
+  | rem
+  | remu
+  | divw
+  | divuw
+  | remw
+  | remuw
+  | lb
+  | lbu
+  | lh
+  | lhu
+  | lw
+  | lwu
   | ld
+  | sb
+  | sh
+  | sw
   | sd
+  | jal
+  | jalr
+  | beq
+  | bne
+  | blt
+  | bge
+  | bltu
+  | bgeu
   | ecall
 deriving DecidableEq, Repr
 
@@ -39,6 +102,20 @@ inductive TranscriptEventKind where
   | challengeField
   | digest32
 deriving DecidableEq, Repr
+
+inductive TraceVirtualOpcode where
+  | movsign
+  | advice
+  | changeDivisor
+  | assertValidDiv0
+  | assertMulNoOverflow
+  | assertLte
+  | assertValidUnsignedRemainder
+  | assertSignedDivIdentity
+  | assertSignedRemainderBounds
+  | move
+  | signExtendWord
+deriving DecidableEq, Repr, Inhabited
 
 structure MemoryWordView where
   addr : Nat
@@ -63,11 +140,15 @@ structure ParitySourceCase where
 deriving DecidableEq, Repr
 
 structure ExpandedRowView where
+  traceIndex : Nat
   stepIndex : Nat
+  sequenceIndex : Nat
   pc : Nat
   nextPc : Nat
   word : Nat
   opcode : Opcode
+  traceOpcode : Option Opcode
+  traceVirtualOpcode : Option TraceVirtualOpcode
   family : FamilyTag
   rs1 : Nat
   rs1Value : Nat
@@ -84,13 +165,22 @@ structure ExpandedRowView where
   writesRd : Bool
   writesRam : Bool
   halted : Bool
+  isFirstInSequence : Bool
+  virtualSequenceRemaining : Option Nat
+  isEffectRow : Bool
+  isCommitRow : Bool
+  isReal : Bool
 deriving DecidableEq, Repr
 
 structure Stage1RowBindingView where
+  traceIndex : Nat
   stepIndex : Nat
+  sequenceIndex : Nat
   fetchPc : Nat
   fetchedWord : Nat
   opcode : Opcode
+  traceOpcode : Option Opcode
+  traceVirtualOpcode : Option TraceVirtualOpcode
   family : FamilyTag
   nextPc : Nat
   aluResult : Nat
@@ -98,6 +188,11 @@ structure Stage1RowBindingView where
   writesRd : Bool
   rd : Nat
   rdAfter : Nat
+  isFirstInSequence : Bool
+  virtualSequenceRemaining : Option Nat
+  isEffectRow : Bool
+  isCommitRow : Bool
+  isReal : Bool
   preservesX0 : Bool
 deriving DecidableEq, Repr
 
@@ -106,6 +201,7 @@ structure Stage1SummaryView where
 deriving DecidableEq, Repr
 
 structure RegisterReadEventView where
+  traceIndex : Nat
   stepIndex : Nat
   role : RegisterReadRole
   reg : Nat
@@ -113,6 +209,7 @@ structure RegisterReadEventView where
 deriving DecidableEq, Repr
 
 structure RegisterWriteEventView where
+  traceIndex : Nat
   stepIndex : Nat
   reg : Nat
   previous : Nat
@@ -120,6 +217,7 @@ structure RegisterWriteEventView where
 deriving DecidableEq, Repr
 
 structure RamEventView where
+  traceIndex : Nat
   stepIndex : Nat
   kind : RamAccessKind
   addr : Nat
@@ -128,6 +226,7 @@ structure RamEventView where
 deriving DecidableEq, Repr
 
 structure TwistLinkEventView where
+  traceIndex : Nat
   stepIndex : Nat
   family : FamilyTag
   routedWriteValue : Option Nat

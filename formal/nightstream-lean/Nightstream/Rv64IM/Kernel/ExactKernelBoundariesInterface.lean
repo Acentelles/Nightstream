@@ -1,4 +1,5 @@
 import Nightstream.Rv64IM.Kernel.ExactKernelBoundaries
+import Nightstream.Rv64IM.Execution.HardOpLoweringRefinementSemanticsInterface
 import Nightstream.Rv64IM.Kernel.AlignedMemoryOpcodeSemantics
 import Nightstream.Rv64IM.Kernel.NarrowMemoryHelperResultSemantics
 import Nightstream.Rv64IM.Kernel.NarrowMemoryPayloadSemantics

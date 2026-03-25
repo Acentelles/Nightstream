@@ -46,6 +46,7 @@ Execution.ExecutionSemantics
   + Execution.UnsignedDivRemSoundness
   + Execution.SignedDivRemSoundness
   + Execution.StepComposition
+  + Execution.LoweringRefinement
     ↓
 Stage2.RegisterHistoryProjection
   + Stage2.RamHistoryProjection
@@ -96,6 +97,7 @@ Kernel.ProgramBinding
 
 - `ExecutionSemantics.lean`: semantic objects such as `ArchitecturalState`, `ExpandedRow`, `PreparedStepView`, and `ExecutionCorrect`.
 - `StepComposition.lean`: opcode-class proof owner that composes stage-local facts into committed-sequence execution correctness.
+- `LoweringRefinement.lean`: theorem owner that relates a concrete committed lowering to the reference lowering catalog via effect-row identification, commit-row export, and closure-suffix inertness.
 - `ExactOpcodeClassSemantics.lean`: exact semantic consequences for the canonical opcode-class proof package.
 - `ExactOpcodeFamilySemantics.lean`: exact family-level semantic consequences above opcode-class closure, including control-flow alignment, unsigned no-overflow/determinism, signed divisor/remainder facts, and temporary-register hygiene.
 - `ExactWordArithmeticSemantics.lean`: one canonical execution-level bundle for exact native-ALU, word/shift, and multiply word-arithmetic consequences above exact family closure.

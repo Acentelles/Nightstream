@@ -377,12 +377,21 @@ Normative row meaning:
 - `ALU_OUT` carries the primary result of that lowered virtual instruction.
 - `RD_IDX`, `RS1_IDX`, and `RS2_IDX` range over the full register domain,
   including virtual registers.
-- Rows that are not final in their lowered sequence must satisfy
+- Every lowered sequence has one unique **effect row** whose row-local result
+  and authenticated write/RAM action realizes the architectural opcode meaning.
+- Rows strictly before the **commit row** of their lowered sequence must satisfy
   `PC_NEXT = PC` with `AdvanceArchPc = 0`.
-- Only sequence-final rows may set `AdvanceArchPc = 1`, in which case `PC_NEXT`
-  advances to the architectural fallthrough address or control-flow target.
-- Architectural writes are a subset of register writes: a final row may target
-  an architectural `rd`, while intermediate rows may target virtual registers.
+- Every lowered sequence has one unique **commit row** at or after the effect
+  row. Only the commit row may set `AdvanceArchPc = 1`, in which case
+  `PC_NEXT` advances to the architectural fallthrough address or control-flow
+  target.
+- Architectural writes are a subset of register writes: the effect row may
+  target an architectural `rd` or perform the architectural RAM action, while
+  non-effect rows may target only virtual registers.
+- If the commit row strictly follows the effect row, the intervening
+  **closure-suffix rows** may touch only scratch virtual registers, may not
+  introduce any additional architectural or RAM effect, and must be justified
+  by a lowering-refinement theorem package.
 
 Normative JUMP_TARGET meaning:
 
@@ -841,6 +850,19 @@ This is now the normative execution model:
 collapsed in-row replay surface and no padded descriptor that stands in for
 uncommitted substeps.
 
+Reference and concrete lowering are distinct notions in this kernel:
+
+- the tables in §5.3.4 define the **reference lowering**, which fixes the
+  human-readable semantic core of each architectural opcode lowering,
+- a concrete implementation may commit a different but deterministic lowered
+  sequence if it is selected by `lowering_version_id`, absorbed into `root0`,
+  and accompanied by a theorem package proving that the committed sequence
+  refines the reference lowering at the exact kernel boundary,
+- that refinement package must identify the unique effect row, prove
+  correctness and determinism for the full committed sequence, and prove that
+  any extra closure-suffix rows are semantically inert outside the scratch
+  virtual-register domain.
+
 ### 5.3.1 Subtable and relation substrate
 
 The primitive execution substrate remains byte-level Shout subtables. Word-width
@@ -1134,10 +1156,12 @@ These advice obligations are theorem obligations, not implementation notes. An
 integration may discharge them with Lean, SMT, or an equivalent machine-
 checkable proof system; hand inspection or prose argument is non-conforming.
 
-### 5.3.4 Per-instruction virtual sequences
+### 5.3.4 Reference per-instruction virtual sequences
 
 The expanded bytecode table selects one fixed lowered sequence for each
-architectural instruction class. Single-row sequences are allowed; those rows
+architectural instruction class. The sequences below define the **reference**
+lowering. A conforming concrete lowering may refine these sequences under the
+admissibility contract of §5.3.5. Single-row sequences are allowed; those rows
 carry `is_virtual_instruction = 0` and execute the architectural opcode
 directly. Multi-row sequences use helper virtual instructions with
 `is_virtual_instruction = 1`. Below, `op1 = RS1` and `op2 = RS2` (R-type) or
@@ -1464,6 +1488,45 @@ v_last: VSignExtend32(result32)      → ALU_OUT
 ```text
 (no ALU virtual instructions; termination signal)
 ```
+
+### 5.3.5 Admissible concrete lowerings and refinement
+
+A concrete lowered sequence chosen by `lowering_version_id` is conforming if
+and only if it satisfies all of the following:
+
+1. It is a deterministic function of the authenticated architectural row and
+   the declared lowering version, not of prover-chosen witness values.
+2. Every committed row in the concrete sequence is authenticated from
+   `C_bytecode_table`; there is no uncommitted replay layer.
+3. The sequence has one unique **effect row** whose row-local result and
+   authenticated write/RAM action realizes the reference lowering’s semantic
+   architectural effect.
+4. The sequence has one unique **commit row** at or after the effect row. Only
+   the commit row may export architectural `PC_NEXT`, `AdvanceArchPc`, and the
+   terminating bit to later rows/stages.
+5. Any rows strictly between the effect row and the commit row form a
+   **closure suffix**. Closure-suffix rows may:
+   - read and write only scratch virtual registers from the declared temporary
+     lowering range,
+   - reset or normalize that scratch state,
+   - not write architectural registers,
+   - not perform RAM reads or writes,
+   - not introduce fresh advice beyond what the effect row and preceding helper
+     rows already justified.
+6. The net pre/post architectural state, RAM effect, and exported prepared-step
+   boundary of the concrete sequence equal those of the reference lowering.
+7. Stage 1, Stage 2, and Stage 3 are interpreted over the full committed
+   concrete sequence, not over a normalized or collapsed projection.
+8. The implementation ships one machine-checkable refinement theorem package
+   proving:
+   - deterministic normalization from concrete sequence to reference lowering,
+   - exact effect-row identification,
+   - effect-row correctness,
+   - closure-suffix inertness outside scratch virtual registers,
+   - preservation of the exact execution, trace, and kernel theorem surfaces.
+
+The refinement package is the normative bridge between an optimized
+Jolt-inspired concrete lowering and the reference lowering catalog above.
 
 **FENCE:**
 

@@ -1,5 +1,5 @@
 import Nightstream.Rv64IM.Kernel.OpcodeFamilySemantics
-import Nightstream.Rv64IM.Execution.MultiplyOpcodeSemantics
+import Nightstream.Rv64IM.Execution.HardOpLoweringRefinementSemantics
 
 /-!
 Owns lifting of exact multiply opcode consequences through RV64IM kernel

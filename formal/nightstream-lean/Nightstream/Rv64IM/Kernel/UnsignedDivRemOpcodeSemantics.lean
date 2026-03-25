@@ -1,5 +1,5 @@
 import Nightstream.Rv64IM.Kernel.OpcodeFamilySemantics
-import Nightstream.Rv64IM.Execution.UnsignedDivRemOpcodeSemantics
+import Nightstream.Rv64IM.Execution.HardOpLoweringRefinementSemantics
 
 /-!
 Owns lifting of exact unsigned DIV/REM opcode consequences through RV64IM

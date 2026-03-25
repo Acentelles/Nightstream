@@ -267,6 +267,126 @@ theorem spec_of_signedRemOpcodeSemantics
     facts.signedDivRem.soundness.remainderSigned :=
   signedDivRemSpec_of_signedDivRemLoweringSemantics facts
 
+theorem normalizedReference_of_divRefinedSignedDivRemOpcodeSemantics
+  {rows : List ImportedLoweringRow}
+  (h : DivConcreteLoweringRefinesReference rows) :
+  normalizeDivConcreteCore? rows = some divReferenceLowering :=
+  normalizedReference_of_divRefinedSignedDivRemLowering h
+
+theorem sequenceMetadataBound_of_divRefinedSignedDivRemOpcodeSemantics
+  {rows : List ImportedLoweringRow}
+  (h : DivConcreteLoweringRefinesReference rows) :
+  rowSequenceMetadataBound rows :=
+  sequenceMetadataBound_of_divRefinedSignedDivRemLowering h
+
+theorem closureSuffixScratchOnly_of_divRefinedSignedDivRemOpcodeSemantics
+  {rows : List ImportedLoweringRow}
+  (h : DivConcreteLoweringRefinesReference rows) :
+  divClosureSuffixScratchOnly rows :=
+  closureSuffixScratchOnly_of_divRefinedSignedDivRemLowering h
+
+theorem uniqueCommitRow_of_divRefinedSignedDivRemOpcodeSemantics
+  {rows : List ImportedLoweringRow}
+  (h : DivConcreteLoweringRefinesReference rows) :
+  uniqueRealRowAt rows divEffectRowIndex :=
+  uniqueCommitRow_of_divRefinedSignedDivRemLowering h
+
+theorem effectRowPrecedesCommitRow_of_divRefinedSignedDivRemOpcodeSemantics
+  {rows : List ImportedLoweringRow}
+  (h : DivConcreteLoweringRefinesReference rows) :
+  divEffectRowIndex ≤ rows.length - 1 :=
+  effectRowPrecedesCommitRow_of_divRefinedSignedDivRemLowering h
+
+theorem normalizedReference_of_remRefinedSignedDivRemOpcodeSemantics
+  {rows : List ImportedLoweringRow}
+  (h : RemConcreteLoweringRefinesReference rows) :
+  normalizeRemConcreteCore? rows = some remReferenceLowering :=
+  normalizedReference_of_remRefinedSignedDivRemLowering h
+
+theorem sequenceMetadataBound_of_remRefinedSignedDivRemOpcodeSemantics
+  {rows : List ImportedLoweringRow}
+  (h : RemConcreteLoweringRefinesReference rows) :
+  rowSequenceMetadataBound rows :=
+  sequenceMetadataBound_of_remRefinedSignedDivRemLowering h
+
+theorem closureSuffixScratchOnly_of_remRefinedSignedDivRemOpcodeSemantics
+  {rows : List ImportedLoweringRow}
+  (h : RemConcreteLoweringRefinesReference rows) :
+  remClosureSuffixScratchOnly rows :=
+  closureSuffixScratchOnly_of_remRefinedSignedDivRemLowering h
+
+theorem uniqueCommitRow_of_remRefinedSignedDivRemOpcodeSemantics
+  {rows : List ImportedLoweringRow}
+  (h : RemConcreteLoweringRefinesReference rows) :
+  uniqueRealRowAt rows remEffectRowIndex :=
+  uniqueCommitRow_of_remRefinedSignedDivRemLowering h
+
+theorem effectRowPrecedesCommitRow_of_remRefinedSignedDivRemOpcodeSemantics
+  {rows : List ImportedLoweringRow}
+  (h : RemConcreteLoweringRefinesReference rows) :
+  remEffectRowIndex ≤ rows.length - 1 :=
+  effectRowPrecedesCommitRow_of_remRefinedSignedDivRemLowering h
+
+theorem normalizedReference_of_divwRefinedSignedDivRemOpcodeSemantics
+  {rows : List ImportedLoweringRow}
+  (h : DivwConcreteLoweringRefinesReference rows) :
+  normalizeDivwConcreteCore? rows = some divwReferenceLowering :=
+  normalizedReference_of_divwRefinedSignedDivRemLowering h
+
+theorem sequenceMetadataBound_of_divwRefinedSignedDivRemOpcodeSemantics
+  {rows : List ImportedLoweringRow}
+  (h : DivwConcreteLoweringRefinesReference rows) :
+  rowSequenceMetadataBound rows :=
+  sequenceMetadataBound_of_divwRefinedSignedDivRemLowering h
+
+theorem closureSuffixScratchOnly_of_divwRefinedSignedDivRemOpcodeSemantics
+  {rows : List ImportedLoweringRow}
+  (h : DivwConcreteLoweringRefinesReference rows) :
+  divwClosureSuffixScratchOnly rows :=
+  closureSuffixScratchOnly_of_divwRefinedSignedDivRemLowering h
+
+theorem uniqueCommitRow_of_divwRefinedSignedDivRemOpcodeSemantics
+  {rows : List ImportedLoweringRow}
+  (h : DivwConcreteLoweringRefinesReference rows) :
+  uniqueRealRowAt rows divwEffectRowIndex :=
+  uniqueCommitRow_of_divwRefinedSignedDivRemLowering h
+
+theorem effectRowPrecedesCommitRow_of_divwRefinedSignedDivRemOpcodeSemantics
+  {rows : List ImportedLoweringRow}
+  (h : DivwConcreteLoweringRefinesReference rows) :
+  divwEffectRowIndex ≤ rows.length - 1 :=
+  effectRowPrecedesCommitRow_of_divwRefinedSignedDivRemLowering h
+
+theorem normalizedReference_of_remwRefinedSignedDivRemOpcodeSemantics
+  {rows : List ImportedLoweringRow}
+  (h : RemwConcreteLoweringRefinesReference rows) :
+  normalizeRemwConcreteCore? rows = some remwReferenceLowering :=
+  normalizedReference_of_remwRefinedSignedDivRemLowering h
+
+theorem sequenceMetadataBound_of_remwRefinedSignedDivRemOpcodeSemantics
+  {rows : List ImportedLoweringRow}
+  (h : RemwConcreteLoweringRefinesReference rows) :
+  rowSequenceMetadataBound rows :=
+  sequenceMetadataBound_of_remwRefinedSignedDivRemLowering h
+
+theorem closureSuffixScratchOnly_of_remwRefinedSignedDivRemOpcodeSemantics
+  {rows : List ImportedLoweringRow}
+  (h : RemwConcreteLoweringRefinesReference rows) :
+  remwClosureSuffixScratchOnly rows :=
+  closureSuffixScratchOnly_of_remwRefinedSignedDivRemLowering h
+
+theorem uniqueCommitRow_of_remwRefinedSignedDivRemOpcodeSemantics
+  {rows : List ImportedLoweringRow}
+  (h : RemwConcreteLoweringRefinesReference rows) :
+  uniqueRealRowAt rows remwEffectRowIndex :=
+  uniqueCommitRow_of_remwRefinedSignedDivRemLowering h
+
+theorem effectRowPrecedesCommitRow_of_remwRefinedSignedDivRemOpcodeSemantics
+  {rows : List ImportedLoweringRow}
+  (h : RemwConcreteLoweringRefinesReference rows) :
+  remwEffectRowIndex ≤ rows.length - 1 :=
+  effectRowPrecedesCommitRow_of_remwRefinedSignedDivRemLowering h
+
 end
 
 end Nightstream.Rv64IM
