@@ -18,3 +18,6 @@ formal/superneo-lean/bundles
 formal/superneo-lean/handoffs
 formal/superneo-lean/SuperNeo/Generated
 formal/nightstream-lean/.tmp_tv_test*
+.bundle_tmp/
+.tmp/
+tmp/
