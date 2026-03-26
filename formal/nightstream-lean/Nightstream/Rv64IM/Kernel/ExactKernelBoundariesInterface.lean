@@ -1,5 +1,7 @@
 import Nightstream.Rv64IM.Kernel.ExactKernelBoundaries
 import Nightstream.Rv64IM.Kernel.AcceptedProofSoundnessInterface
+import Nightstream.Rv64IM.Kernel.AcceptedProofExecutionResultInterface
+import Nightstream.Rv64IM.Kernel.PublicProofBoundaryInterface
 import Nightstream.Rv64IM.Kernel.SemanticClosureInterface
 import Nightstream.Rv64IM.Kernel.TopLevelSoundnessInterface
 import Nightstream.Rv64IM.Execution.ImportedSequenceSemanticsInterface
@@ -30,6 +32,12 @@ namespace ExactKernelBoundariesInterface
 abbrev ExactKernelBoundaries := @Nightstream.Rv64IM.ExactKernelBoundaries
 abbrev AcceptedProofSoundness := @Nightstream.Rv64IM.AcceptedProofSoundness
 abbrev AcceptedProofConclusion := @Nightstream.Rv64IM.AcceptedProofConclusion
+abbrev AcceptedProofExecutionResult := @Nightstream.Rv64IM.AcceptedProofExecutionResult
+abbrev PublicProofBoundary := @Nightstream.Rv64IM.PublicProofBoundary
+abbrev PublicProofBoundaryExecutionResult := @Nightstream.Rv64IM.PublicProofBoundaryExecutionResult
+abbrev Rv64imPublicProofBoundary := @Nightstream.Rv64IM.Rv64imPublicProofBoundary
+abbrev Rv64imPublicProofBoundaryExecutionResult :=
+  @Nightstream.Rv64IM.Rv64imPublicProofBoundaryExecutionResult
 abbrev KernelSemanticClosure := @Nightstream.Rv64IM.KernelSemanticClosure
 abbrev TopLevelSoundness := @Nightstream.Rv64IM.TopLevelSoundness
 abbrev kernelSoundnessAccepted_of_exactBoundaries :=
@@ -44,8 +52,41 @@ abbrev acceptedProofSoundness_of_exactKernelBoundaries :=
   @Nightstream.Rv64IM.acceptedProofSoundness_of_exactKernelBoundaries
 abbrev acceptedProofConclusion_of_acceptedProofSoundness :=
   @Nightstream.Rv64IM.acceptedProofConclusion_of_acceptedProofSoundness
+abbrev acceptedProofImpliesConclusion := @Nightstream.Rv64IM.acceptedProofImpliesConclusion
+abbrev acceptedProofExecutionResult_of_acceptedProofConclusion :=
+  @Nightstream.Rv64IM.acceptedProofExecutionResult_of_acceptedProofConclusion
+abbrev acceptedProofExecutionResult_of_acceptedProofSoundness :=
+  @Nightstream.Rv64IM.acceptedProofExecutionResult_of_acceptedProofSoundness
+abbrev acceptedProofImpliesExecutionAndPublicResult :=
+  @Nightstream.Rv64IM.acceptedProofImpliesExecutionAndPublicResult
 abbrev acceptedProofConclusion_of_exactKernelBoundaries :=
   @Nightstream.Rv64IM.acceptedProofConclusion_of_exactKernelBoundaries
+abbrev exactKernelBoundariesImplyAcceptedProofConclusion :=
+  @Nightstream.Rv64IM.exactKernelBoundariesImplyAcceptedProofConclusion
+abbrev acceptedProofExecutionResult_of_exactKernelBoundaries :=
+  @Nightstream.Rv64IM.acceptedProofExecutionResult_of_exactKernelBoundaries
+abbrev exactKernelBoundariesImplyExecutionAndPublicResult :=
+  @Nightstream.Rv64IM.exactKernelBoundariesImplyExecutionAndPublicResult
+abbrev publicProofBoundary_of_exactKernelBoundaries :=
+  @Nightstream.Rv64IM.publicProofBoundary_of_exactKernelBoundaries
+abbrev publicProofBoundaryExecutionResult_of_boundary :=
+  @Nightstream.Rv64IM.publicProofBoundaryExecutionResult_of_boundary
+abbrev publicProofBoundaryImpliesExecutionAndPublicResult :=
+  @Nightstream.Rv64IM.publicProofBoundaryImpliesExecutionAndPublicResult
+abbrev publicProofBoundaryExecutionResult_of_exactKernelBoundaries :=
+  @Nightstream.Rv64IM.publicProofBoundaryExecutionResult_of_exactKernelBoundaries
+abbrev exactKernelBoundariesImplyPublicProofExecutionAndPublicResult :=
+  @Nightstream.Rv64IM.exactKernelBoundariesImplyPublicProofExecutionAndPublicResult
+abbrev rv64imPublicProofBoundary_of_exactKernelBoundaries :=
+  @Nightstream.Rv64IM.rv64imPublicProofBoundary_of_exactKernelBoundaries
+abbrev rv64imPublicProofBoundaryExecutionResult_of_boundary :=
+  @Nightstream.Rv64IM.rv64imPublicProofBoundaryExecutionResult_of_boundary
+abbrev rv64imPublicProofBoundaryImpliesExecutionAndPublicResult :=
+  @Nightstream.Rv64IM.rv64imPublicProofBoundaryImpliesExecutionAndPublicResult
+abbrev rv64imPublicProofBoundaryExecutionResult_of_exactKernelBoundaries :=
+  @Nightstream.Rv64IM.rv64imPublicProofBoundaryExecutionResult_of_exactKernelBoundaries
+abbrev exactKernelBoundariesImplyRv64imPublicProofExecutionAndPublicResult :=
+  @Nightstream.Rv64IM.exactKernelBoundariesImplyRv64imPublicProofExecutionAndPublicResult
 abbrev topLevelSoundness_of_acceptedProofSoundness :=
   @Nightstream.Rv64IM.topLevelSoundness_of_acceptedProofSoundness
 abbrev kernelSoundnessConclusion_of_acceptedProofSoundness :=

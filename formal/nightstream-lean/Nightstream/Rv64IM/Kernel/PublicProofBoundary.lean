@@ -1,62 +1,28 @@
-import Nightstream.Rv64IM.Kernel.TopLevelSoundness
+import Nightstream.Rv64IM.Kernel.AcceptedProofExecutionResult
 
 /-!
-Owns the final accepted-proof implication surface for RV64IM. This file
-packages an exact accepted kernel-boundary witness together with the derived
-top-level soundness conclusion; it does not re-own the exact-boundary or
-top-level constructions themselves.
+Owns the theorem-facing RV64IM boundary that mirrors the public Rust proof API:
+a statement, a claim bundle, a kernel proof bundle, and the accepted-proof
+soundness witness that discharges that boundary. This file does not re-own
+accepted-proof soundness or the derived execution/public-result consequences.
 -/
 
 namespace Nightstream.Rv64IM
 
-structure AcceptedProofSoundness
+structure PublicProofBoundary
   (BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
     RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
     ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
     PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
     BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
-    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding :
+    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding
+    Statement ClaimBundle KernelProofBundle :
     Type _) [OfNat Limb 0] where
-  exactBoundaries :
-    ExactKernelBoundaries
-      BytecodeAddr
-      Pc
-      RegIdx
-      VirtualOpcode
-      AluOp
-      BranchOp
-      MemWidth
-      DivRemKind
-      RamAddr
-      Word
-      StateLocation
-      RegisterTimeline
-      RamTimeline
-      Limb
-      ArchitecturalInputs
-      AuthenticatedReads
-      WitnessAssignment
-      Output
-      StateEffect
-      PreparedStep
-      ProgramImage
-      LoweringVersion
-      RomTable
-      BytecodeTable
-      RomCommit
-      BytecodeCommit
-      Source
-      CommitmentId
-      Point
-      PolynomialId
-      Value
-      Digest
-      ExactOpeningWitness
-      OpeningRefinement
-      RowProjectionWitness
-      BridgeBinding
-  topLevel :
-    TopLevelSoundness
+  statement : Statement
+  claims : ClaimBundle
+  kernelProof : KernelProofBundle
+  accepted :
+    AcceptedProofSoundness
       BytecodeAddr
       Pc
       RegIdx
@@ -94,54 +60,17 @@ structure AcceptedProofSoundness
       RowProjectionWitness
       BridgeBinding
 
-structure AcceptedProofConclusion
+structure PublicProofBoundaryExecutionResult
   (BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
     RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
     ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
     PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
     BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
-    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding :
+    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding
+    Statement ClaimBundle KernelProofBundle :
     Type _) [OfNat Limb 0]
-  (accepted :
-    AcceptedProofSoundness
-      BytecodeAddr
-      Pc
-      RegIdx
-      VirtualOpcode
-      AluOp
-      BranchOp
-      MemWidth
-      DivRemKind
-      RamAddr
-      Word
-      StateLocation
-      RegisterTimeline
-      RamTimeline
-      Limb
-      ArchitecturalInputs
-      AuthenticatedReads
-      WitnessAssignment
-      Output
-      StateEffect
-      PreparedStep
-      ProgramImage
-      LoweringVersion
-      RomTable
-      BytecodeTable
-      RomCommit
-      BytecodeCommit
-      Source
-      CommitmentId
-      Point
-      PolynomialId
-      Value
-      Digest
-      ExactOpeningWitness
-      OpeningRefinement
-      RowProjectionWitness
-      BridgeBinding) where
-  kernel :
-    KernelSoundnessConclusion
+  (boundary :
+    PublicProofBoundary
       BytecodeAddr
       Pc
       RegIdx
@@ -178,8 +107,11 @@ structure AcceptedProofConclusion
       OpeningRefinement
       RowProjectionWitness
       BridgeBinding
-  semanticClosure :
-    KernelSemanticClosure
+      Statement
+      ClaimBundle
+      KernelProofBundle) where
+  acceptedResult :
+    AcceptedProofExecutionResult
       BytecodeAddr
       Pc
       RegIdx
@@ -216,33 +148,20 @@ structure AcceptedProofConclusion
       OpeningRefinement
       RowProjectionWitness
       BridgeBinding
-      kernel
-  executionCorrect :
-    ExecutionCorrect
-      kernel.authenticatedTrace.stepComposition.execution.initialState
-      kernel.authenticatedTrace.stepComposition.execution.finalState
-      kernel.authenticatedTrace.stepComposition.execution.rows
-      kernel.authenticatedTrace.stepComposition.execution.preparedSteps
-      kernel.authenticatedTrace.stepComposition.execution.boundary
-      kernel.authenticatedTrace.stepComposition.execution.entrypoint
-      kernel.authenticatedTrace.stepComposition.execution.successors
-  preparedStepExportBound :
-    PreparedStepExportBound
-      kernel.authenticatedTrace.chunkInput.rows
-      kernel.authenticatedTrace.mainLane.preparedSteps
-  fullHaltedExecutionClaim :
-    FullHaltedExecutionClaim
-      kernel.authenticatedTrace.stage3Refinement.finalBoundary.sequence
-      kernel.authenticatedTrace.stage3Refinement.finalBoundary.terminatingRow
+      boundary.accepted
 
-def acceptedProofSoundness_of_exactKernelBoundaries
+def publicProofBoundary_of_exactKernelBoundaries
   {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
     RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
     ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
     PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
     BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
-    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding :
+    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding
+    Statement ClaimBundle KernelProofBundle :
     Type _} [OfNat Limb 0]
+  (statement : Statement)
+  (claims : ClaimBundle)
+  (kernelProof : KernelProofBundle)
   (boundaries :
     ExactKernelBoundaries
       BytecodeAddr
@@ -281,348 +200,7 @@ def acceptedProofSoundness_of_exactKernelBoundaries
       OpeningRefinement
       RowProjectionWitness
       BridgeBinding) :
-  AcceptedProofSoundness
-    BytecodeAddr
-    Pc
-    RegIdx
-    VirtualOpcode
-    AluOp
-    BranchOp
-    MemWidth
-    DivRemKind
-    RamAddr
-    Word
-    StateLocation
-    RegisterTimeline
-    RamTimeline
-    Limb
-    ArchitecturalInputs
-    AuthenticatedReads
-    WitnessAssignment
-    Output
-    StateEffect
-    PreparedStep
-    ProgramImage
-    LoweringVersion
-    RomTable
-    BytecodeTable
-    RomCommit
-    BytecodeCommit
-    Source
-    CommitmentId
-    Point
-    PolynomialId
-    Value
-    Digest
-    ExactOpeningWitness
-    OpeningRefinement
-    RowProjectionWitness
-    BridgeBinding :=
-  { exactBoundaries := boundaries
-    topLevel := topLevelSoundness_of_exactKernelBoundaries boundaries }
-
-def exactKernelBoundaries_of_acceptedProofSoundness
-  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
-    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
-    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
-    PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
-    BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
-    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding :
-    Type _} [OfNat Limb 0]
-  (accepted :
-    AcceptedProofSoundness
-      BytecodeAddr
-      Pc
-      RegIdx
-      VirtualOpcode
-      AluOp
-      BranchOp
-      MemWidth
-      DivRemKind
-      RamAddr
-      Word
-      StateLocation
-      RegisterTimeline
-      RamTimeline
-      Limb
-      ArchitecturalInputs
-      AuthenticatedReads
-      WitnessAssignment
-      Output
-      StateEffect
-      PreparedStep
-      ProgramImage
-      LoweringVersion
-      RomTable
-      BytecodeTable
-      RomCommit
-      BytecodeCommit
-      Source
-      CommitmentId
-      Point
-      PolynomialId
-      Value
-      Digest
-      ExactOpeningWitness
-      OpeningRefinement
-      RowProjectionWitness
-      BridgeBinding) :
-  ExactKernelBoundaries
-    BytecodeAddr
-    Pc
-    RegIdx
-    VirtualOpcode
-    AluOp
-    BranchOp
-    MemWidth
-    DivRemKind
-    RamAddr
-    Word
-    StateLocation
-    RegisterTimeline
-    RamTimeline
-    Limb
-    ArchitecturalInputs
-    AuthenticatedReads
-    WitnessAssignment
-    Output
-    StateEffect
-    PreparedStep
-    ProgramImage
-    LoweringVersion
-    RomTable
-    BytecodeTable
-    RomCommit
-    BytecodeCommit
-    Source
-    CommitmentId
-    Point
-    PolynomialId
-    Value
-    Digest
-    ExactOpeningWitness
-    OpeningRefinement
-    RowProjectionWitness
-    BridgeBinding :=
-  accepted.exactBoundaries
-
-def topLevelSoundness_of_acceptedProofSoundness
-  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
-    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
-    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
-    PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
-    BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
-    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding :
-    Type _} [OfNat Limb 0]
-  (accepted :
-    AcceptedProofSoundness
-      BytecodeAddr
-      Pc
-      RegIdx
-      VirtualOpcode
-      AluOp
-      BranchOp
-      MemWidth
-      DivRemKind
-      RamAddr
-      Word
-      StateLocation
-      RegisterTimeline
-      RamTimeline
-      Limb
-      ArchitecturalInputs
-      AuthenticatedReads
-      WitnessAssignment
-      Output
-      StateEffect
-      PreparedStep
-      ProgramImage
-      LoweringVersion
-      RomTable
-      BytecodeTable
-      RomCommit
-      BytecodeCommit
-      Source
-      CommitmentId
-      Point
-      PolynomialId
-      Value
-      Digest
-      ExactOpeningWitness
-      OpeningRefinement
-      RowProjectionWitness
-      BridgeBinding) :
-  TopLevelSoundness
-    BytecodeAddr
-    Pc
-    RegIdx
-    VirtualOpcode
-    AluOp
-    BranchOp
-    MemWidth
-    DivRemKind
-    RamAddr
-    Word
-    StateLocation
-    RegisterTimeline
-    RamTimeline
-    Limb
-    ArchitecturalInputs
-    AuthenticatedReads
-    WitnessAssignment
-    Output
-    StateEffect
-    PreparedStep
-    ProgramImage
-    LoweringVersion
-    RomTable
-    BytecodeTable
-    RomCommit
-    BytecodeCommit
-    Source
-    CommitmentId
-    Point
-    PolynomialId
-    Value
-    Digest
-    ExactOpeningWitness
-    OpeningRefinement
-    RowProjectionWitness
-    BridgeBinding :=
-  accepted.topLevel
-
-def kernelSoundnessConclusion_of_acceptedProofSoundness
-  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
-    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
-    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
-    PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
-    BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
-    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding :
-    Type _} [OfNat Limb 0]
-  (accepted :
-    AcceptedProofSoundness
-      BytecodeAddr
-      Pc
-      RegIdx
-      VirtualOpcode
-      AluOp
-      BranchOp
-      MemWidth
-      DivRemKind
-      RamAddr
-      Word
-      StateLocation
-      RegisterTimeline
-      RamTimeline
-      Limb
-      ArchitecturalInputs
-      AuthenticatedReads
-      WitnessAssignment
-      Output
-      StateEffect
-      PreparedStep
-      ProgramImage
-      LoweringVersion
-      RomTable
-      BytecodeTable
-      RomCommit
-      BytecodeCommit
-      Source
-      CommitmentId
-      Point
-      PolynomialId
-      Value
-      Digest
-      ExactOpeningWitness
-      OpeningRefinement
-      RowProjectionWitness
-      BridgeBinding) :
-  KernelSoundnessConclusion
-    BytecodeAddr
-    Pc
-    RegIdx
-    VirtualOpcode
-    AluOp
-    BranchOp
-    MemWidth
-    DivRemKind
-    RamAddr
-    Word
-    StateLocation
-    RegisterTimeline
-    RamTimeline
-    Limb
-    ArchitecturalInputs
-    AuthenticatedReads
-    WitnessAssignment
-    Output
-    StateEffect
-    PreparedStep
-    ProgramImage
-    LoweringVersion
-    RomTable
-    BytecodeTable
-    RomCommit
-    BytecodeCommit
-    Source
-    CommitmentId
-    Point
-    PolynomialId
-    Value
-    Digest
-    ExactOpeningWitness
-    OpeningRefinement
-    RowProjectionWitness
-    BridgeBinding :=
-  accepted.topLevel.kernel
-
-def kernelSemanticClosure_of_acceptedProofSoundness
-  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
-    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
-    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
-    PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
-    BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
-    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding :
-    Type _} [OfNat Limb 0]
-  (accepted :
-    AcceptedProofSoundness
-      BytecodeAddr
-      Pc
-      RegIdx
-      VirtualOpcode
-      AluOp
-      BranchOp
-      MemWidth
-      DivRemKind
-      RamAddr
-      Word
-      StateLocation
-      RegisterTimeline
-      RamTimeline
-      Limb
-      ArchitecturalInputs
-      AuthenticatedReads
-      WitnessAssignment
-      Output
-      StateEffect
-      PreparedStep
-      ProgramImage
-      LoweringVersion
-      RomTable
-      BytecodeTable
-      RomCommit
-      BytecodeCommit
-      Source
-      CommitmentId
-      Point
-      PolynomialId
-      Value
-      Digest
-      ExactOpeningWitness
-      OpeningRefinement
-      RowProjectionWitness
-      BridgeBinding) :
-  KernelSemanticClosure
+  PublicProofBoundary
     BytecodeAddr
     Pc
     RegIdx
@@ -659,19 +237,25 @@ def kernelSemanticClosure_of_acceptedProofSoundness
     OpeningRefinement
     RowProjectionWitness
     BridgeBinding
-    accepted.topLevel.kernel :=
-  accepted.topLevel.semanticClosure
+    Statement
+    ClaimBundle
+    KernelProofBundle :=
+  { statement := statement
+    claims := claims
+    kernelProof := kernelProof
+    accepted := acceptedProofSoundness_of_exactKernelBoundaries boundaries }
 
-def acceptedProofConclusion_of_acceptedProofSoundness
+def publicProofBoundaryExecutionResult_of_boundary
   {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
     RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
     ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
     PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
     BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
-    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding :
+    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding
+    Statement ClaimBundle KernelProofBundle :
     Type _} [OfNat Limb 0]
-  (accepted :
-    AcceptedProofSoundness
+  (boundary :
+    PublicProofBoundary
       BytecodeAddr
       Pc
       RegIdx
@@ -707,8 +291,11 @@ def acceptedProofConclusion_of_acceptedProofSoundness
       ExactOpeningWitness
       OpeningRefinement
       RowProjectionWitness
-      BridgeBinding) :
-  AcceptedProofConclusion
+      BridgeBinding
+      Statement
+      ClaimBundle
+      KernelProofBundle) :
+  PublicProofBoundaryExecutionResult
     BytecodeAddr
     Pc
     RegIdx
@@ -745,23 +332,23 @@ def acceptedProofConclusion_of_acceptedProofSoundness
     OpeningRefinement
     RowProjectionWitness
     BridgeBinding
-    accepted :=
-  { kernel := kernelSoundnessConclusion_of_acceptedProofSoundness accepted
-    semanticClosure := kernelSemanticClosure_of_acceptedProofSoundness accepted
-    executionCorrect := executionCorrect_of_topLevelSoundness accepted.topLevel
-    preparedStepExportBound := preparedStepExportBound_of_topLevelSoundness accepted.topLevel
-    fullHaltedExecutionClaim := fullHaltedExecutionClaim_of_topLevelSoundness accepted.topLevel }
+    Statement
+    ClaimBundle
+    KernelProofBundle
+    boundary :=
+  { acceptedResult := acceptedProofImpliesExecutionAndPublicResult boundary.accepted }
 
-def acceptedProofImpliesConclusion
+def publicProofBoundaryImpliesExecutionAndPublicResult
   {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
     RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
     ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
     PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
     BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
-    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding :
+    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding
+    Statement ClaimBundle KernelProofBundle :
     Type _} [OfNat Limb 0]
-  (accepted :
-    AcceptedProofSoundness
+  (boundary :
+    PublicProofBoundary
       BytecodeAddr
       Pc
       RegIdx
@@ -797,8 +384,11 @@ def acceptedProofImpliesConclusion
       ExactOpeningWitness
       OpeningRefinement
       RowProjectionWitness
-      BridgeBinding) :
-  AcceptedProofConclusion
+      BridgeBinding
+      Statement
+      ClaimBundle
+      KernelProofBundle) :
+  PublicProofBoundaryExecutionResult
     BytecodeAddr
     Pc
     RegIdx
@@ -835,17 +425,24 @@ def acceptedProofImpliesConclusion
     OpeningRefinement
     RowProjectionWitness
     BridgeBinding
-    accepted :=
-  acceptedProofConclusion_of_acceptedProofSoundness accepted
+    Statement
+    ClaimBundle
+    KernelProofBundle
+    boundary :=
+  publicProofBoundaryExecutionResult_of_boundary boundary
 
-def acceptedProofConclusion_of_exactKernelBoundaries
+def publicProofBoundaryExecutionResult_of_exactKernelBoundaries
   {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
     RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
     ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
     PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
     BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
-    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding :
+    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding
+    Statement ClaimBundle KernelProofBundle :
     Type _} [OfNat Limb 0]
+  (statement : Statement)
+  (claims : ClaimBundle)
+  (kernelProof : KernelProofBundle)
   (boundaries :
     ExactKernelBoundaries
       BytecodeAddr
@@ -884,7 +481,7 @@ def acceptedProofConclusion_of_exactKernelBoundaries
       OpeningRefinement
       RowProjectionWitness
       BridgeBinding) :
-  AcceptedProofConclusion
+  PublicProofBoundaryExecutionResult
     BytecodeAddr
     Pc
     RegIdx
@@ -921,18 +518,25 @@ def acceptedProofConclusion_of_exactKernelBoundaries
     OpeningRefinement
     RowProjectionWitness
     BridgeBinding
-    (acceptedProofSoundness_of_exactKernelBoundaries boundaries) :=
-  acceptedProofConclusion_of_acceptedProofSoundness
-    (acceptedProofSoundness_of_exactKernelBoundaries boundaries)
+    Statement
+    ClaimBundle
+    KernelProofBundle
+    (publicProofBoundary_of_exactKernelBoundaries statement claims kernelProof boundaries) :=
+  publicProofBoundaryExecutionResult_of_boundary
+    (publicProofBoundary_of_exactKernelBoundaries statement claims kernelProof boundaries)
 
-def exactKernelBoundariesImplyAcceptedProofConclusion
+def exactKernelBoundariesImplyPublicProofExecutionAndPublicResult
   {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
     RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
     ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
     PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
     BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
-    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding :
+    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding
+    Statement ClaimBundle KernelProofBundle :
     Type _} [OfNat Limb 0]
+  (statement : Statement)
+  (claims : ClaimBundle)
+  (kernelProof : KernelProofBundle)
   (boundaries :
     ExactKernelBoundaries
       BytecodeAddr
@@ -971,7 +575,7 @@ def exactKernelBoundariesImplyAcceptedProofConclusion
       OpeningRefinement
       RowProjectionWitness
       BridgeBinding) :
-  AcceptedProofConclusion
+  PublicProofBoundaryExecutionResult
     BytecodeAddr
     Pc
     RegIdx
@@ -1008,299 +612,26 @@ def exactKernelBoundariesImplyAcceptedProofConclusion
     OpeningRefinement
     RowProjectionWitness
     BridgeBinding
-    (acceptedProofSoundness_of_exactKernelBoundaries boundaries) :=
-  acceptedProofConclusion_of_exactKernelBoundaries boundaries
+    Statement
+    ClaimBundle
+    KernelProofBundle
+    (publicProofBoundary_of_exactKernelBoundaries statement claims kernelProof boundaries) :=
+  publicProofBoundaryExecutionResult_of_exactKernelBoundaries
+    statement
+    claims
+    kernelProof
+    boundaries
 
-def executionCorrect_of_acceptedProofSoundness
-  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
+abbrev Rv64imPublicProofBoundary
+  (BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
     RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
     ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
     PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
     BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
-    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding :
-    Type _} [OfNat Limb 0]
-  (accepted :
-    AcceptedProofSoundness
-      BytecodeAddr
-      Pc
-      RegIdx
-      VirtualOpcode
-      AluOp
-      BranchOp
-      MemWidth
-      DivRemKind
-      RamAddr
-      Word
-      StateLocation
-      RegisterTimeline
-      RamTimeline
-      Limb
-      ArchitecturalInputs
-      AuthenticatedReads
-      WitnessAssignment
-      Output
-      StateEffect
-      PreparedStep
-      ProgramImage
-      LoweringVersion
-      RomTable
-      BytecodeTable
-      RomCommit
-      BytecodeCommit
-      Source
-      CommitmentId
-      Point
-      PolynomialId
-      Value
-      Digest
-      ExactOpeningWitness
-      OpeningRefinement
-      RowProjectionWitness
-      BridgeBinding) :
-  ExecutionCorrect
-    accepted.topLevel.kernel.authenticatedTrace.stepComposition.execution.initialState
-    accepted.topLevel.kernel.authenticatedTrace.stepComposition.execution.finalState
-    accepted.topLevel.kernel.authenticatedTrace.stepComposition.execution.rows
-    accepted.topLevel.kernel.authenticatedTrace.stepComposition.execution.preparedSteps
-    accepted.topLevel.kernel.authenticatedTrace.stepComposition.execution.boundary
-    accepted.topLevel.kernel.authenticatedTrace.stepComposition.execution.entrypoint
-    accepted.topLevel.kernel.authenticatedTrace.stepComposition.execution.successors :=
-  executionCorrect_of_topLevelSoundness accepted.topLevel
-
-def preparedStepExportBound_of_acceptedProofSoundness
-  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
-    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
-    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
-    PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
-    BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
-    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding :
-    Type _} [OfNat Limb 0]
-  (accepted :
-    AcceptedProofSoundness
-      BytecodeAddr
-      Pc
-      RegIdx
-      VirtualOpcode
-      AluOp
-      BranchOp
-      MemWidth
-      DivRemKind
-      RamAddr
-      Word
-      StateLocation
-      RegisterTimeline
-      RamTimeline
-      Limb
-      ArchitecturalInputs
-      AuthenticatedReads
-      WitnessAssignment
-      Output
-      StateEffect
-      PreparedStep
-      ProgramImage
-      LoweringVersion
-      RomTable
-      BytecodeTable
-      RomCommit
-      BytecodeCommit
-      Source
-      CommitmentId
-      Point
-      PolynomialId
-      Value
-      Digest
-      ExactOpeningWitness
-      OpeningRefinement
-      RowProjectionWitness
-      BridgeBinding) :
-  PreparedStepExportBound
-    accepted.topLevel.kernel.authenticatedTrace.chunkInput.rows
-    accepted.topLevel.kernel.authenticatedTrace.mainLane.preparedSteps :=
-  preparedStepExportBound_of_topLevelSoundness accepted.topLevel
-
-def fullHaltedExecutionClaim_of_acceptedProofSoundness
-  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
-    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
-    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
-    PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
-    BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
-    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding :
-    Type _} [OfNat Limb 0]
-  (accepted :
-    AcceptedProofSoundness
-      BytecodeAddr
-      Pc
-      RegIdx
-      VirtualOpcode
-      AluOp
-      BranchOp
-      MemWidth
-      DivRemKind
-      RamAddr
-      Word
-      StateLocation
-      RegisterTimeline
-      RamTimeline
-      Limb
-      ArchitecturalInputs
-      AuthenticatedReads
-      WitnessAssignment
-      Output
-      StateEffect
-      PreparedStep
-      ProgramImage
-      LoweringVersion
-      RomTable
-      BytecodeTable
-      RomCommit
-      BytecodeCommit
-      Source
-      CommitmentId
-      Point
-      PolynomialId
-      Value
-      Digest
-      ExactOpeningWitness
-      OpeningRefinement
-      RowProjectionWitness
-      BridgeBinding) :
-  FullHaltedExecutionClaim
-    accepted.topLevel.kernel.authenticatedTrace.stage3Refinement.finalBoundary.sequence
-    accepted.topLevel.kernel.authenticatedTrace.stage3Refinement.finalBoundary.terminatingRow :=
-  fullHaltedExecutionClaim_of_topLevelSoundness accepted.topLevel
-
-def acceptedProofImpliesKernelSoundnessConclusion
-  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
-    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
-    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
-    PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
-    BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
-    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding :
-    Type _} [OfNat Limb 0]
-  (accepted :
-    AcceptedProofSoundness
-      BytecodeAddr
-      Pc
-      RegIdx
-      VirtualOpcode
-      AluOp
-      BranchOp
-      MemWidth
-      DivRemKind
-      RamAddr
-      Word
-      StateLocation
-      RegisterTimeline
-      RamTimeline
-      Limb
-      ArchitecturalInputs
-      AuthenticatedReads
-      WitnessAssignment
-      Output
-      StateEffect
-      PreparedStep
-      ProgramImage
-      LoweringVersion
-      RomTable
-      BytecodeTable
-      RomCommit
-      BytecodeCommit
-      Source
-      CommitmentId
-      Point
-      PolynomialId
-      Value
-      Digest
-      ExactOpeningWitness
-      OpeningRefinement
-      RowProjectionWitness
-      BridgeBinding) :
-  KernelSoundnessConclusion
-    BytecodeAddr
-    Pc
-    RegIdx
-    VirtualOpcode
-    AluOp
-    BranchOp
-    MemWidth
-    DivRemKind
-    RamAddr
-    Word
-    StateLocation
-    RegisterTimeline
-    RamTimeline
-    Limb
-    ArchitecturalInputs
-    AuthenticatedReads
-    WitnessAssignment
-    Output
-    StateEffect
-    PreparedStep
-    ProgramImage
-    LoweringVersion
-    RomTable
-    BytecodeTable
-    RomCommit
-    BytecodeCommit
-    Source
-    CommitmentId
-    Point
-    PolynomialId
-    Value
-    Digest
-    ExactOpeningWitness
-    OpeningRefinement
-    RowProjectionWitness
-    BridgeBinding :=
-  kernelSoundnessConclusion_of_acceptedProofSoundness accepted
-
-def acceptedProofImpliesKernelSemanticClosure
-  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
-    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
-    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
-    PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
-    BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
-    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding :
-    Type _} [OfNat Limb 0]
-  (accepted :
-    AcceptedProofSoundness
-      BytecodeAddr
-      Pc
-      RegIdx
-      VirtualOpcode
-      AluOp
-      BranchOp
-      MemWidth
-      DivRemKind
-      RamAddr
-      Word
-      StateLocation
-      RegisterTimeline
-      RamTimeline
-      Limb
-      ArchitecturalInputs
-      AuthenticatedReads
-      WitnessAssignment
-      Output
-      StateEffect
-      PreparedStep
-      ProgramImage
-      LoweringVersion
-      RomTable
-      BytecodeTable
-      RomCommit
-      BytecodeCommit
-      Source
-      CommitmentId
-      Point
-      PolynomialId
-      Value
-      Digest
-      ExactOpeningWitness
-      OpeningRefinement
-      RowProjectionWitness
-      BridgeBinding) :
-  KernelSemanticClosure
+    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding
+    Rv64imProofStatement Rv64imKernelClaimBundle Rv64imKernelProofBundle :
+    Type _) [OfNat Limb 0] :=
+  PublicProofBoundary
     BytecodeAddr
     Pc
     RegIdx
@@ -1337,19 +668,116 @@ def acceptedProofImpliesKernelSemanticClosure
     OpeningRefinement
     RowProjectionWitness
     BridgeBinding
-    accepted.topLevel.kernel :=
-  kernelSemanticClosure_of_acceptedProofSoundness accepted
+    Rv64imProofStatement
+    Rv64imKernelClaimBundle
+    Rv64imKernelProofBundle
 
-def acceptedProofImpliesExecutionCorrect
+abbrev Rv64imPublicProofBoundaryExecutionResult
+  (BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
+    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
+    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
+    PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
+    BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
+    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding
+    Rv64imProofStatement Rv64imKernelClaimBundle Rv64imKernelProofBundle :
+    Type _) [OfNat Limb 0]
+  (boundary :
+    Rv64imPublicProofBoundary
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep
+      ProgramImage
+      LoweringVersion
+      RomTable
+      BytecodeTable
+      RomCommit
+      BytecodeCommit
+      Source
+      CommitmentId
+      Point
+      PolynomialId
+      Value
+      Digest
+      ExactOpeningWitness
+      OpeningRefinement
+      RowProjectionWitness
+      BridgeBinding
+      Rv64imProofStatement
+      Rv64imKernelClaimBundle
+      Rv64imKernelProofBundle) :=
+  PublicProofBoundaryExecutionResult
+    BytecodeAddr
+    Pc
+    RegIdx
+    VirtualOpcode
+    AluOp
+    BranchOp
+    MemWidth
+    DivRemKind
+    RamAddr
+    Word
+    StateLocation
+    RegisterTimeline
+    RamTimeline
+    Limb
+    ArchitecturalInputs
+    AuthenticatedReads
+    WitnessAssignment
+    Output
+    StateEffect
+    PreparedStep
+    ProgramImage
+    LoweringVersion
+    RomTable
+    BytecodeTable
+    RomCommit
+    BytecodeCommit
+    Source
+    CommitmentId
+    Point
+    PolynomialId
+    Value
+    Digest
+    ExactOpeningWitness
+    OpeningRefinement
+    RowProjectionWitness
+    BridgeBinding
+    Rv64imProofStatement
+    Rv64imKernelClaimBundle
+    Rv64imKernelProofBundle
+    boundary
+
+def rv64imPublicProofBoundary_of_exactKernelBoundaries
   {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
     RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
     ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
     PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
     BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
-    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding :
+    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding
+    Rv64imProofStatement Rv64imKernelClaimBundle Rv64imKernelProofBundle :
     Type _} [OfNat Limb 0]
-  (accepted :
-    AcceptedProofSoundness
+  (statement : Rv64imProofStatement)
+  (claims : Rv64imKernelClaimBundle)
+  (kernelProof : Rv64imKernelProofBundle)
+  (boundaries :
+    ExactKernelBoundaries
       BytecodeAddr
       Pc
       RegIdx
@@ -1386,26 +814,248 @@ def acceptedProofImpliesExecutionCorrect
       OpeningRefinement
       RowProjectionWitness
       BridgeBinding) :
-  ExecutionCorrect
-    accepted.topLevel.kernel.authenticatedTrace.stepComposition.execution.initialState
-    accepted.topLevel.kernel.authenticatedTrace.stepComposition.execution.finalState
-    accepted.topLevel.kernel.authenticatedTrace.stepComposition.execution.rows
-    accepted.topLevel.kernel.authenticatedTrace.stepComposition.execution.preparedSteps
-    accepted.topLevel.kernel.authenticatedTrace.stepComposition.execution.boundary
-    accepted.topLevel.kernel.authenticatedTrace.stepComposition.execution.entrypoint
-    accepted.topLevel.kernel.authenticatedTrace.stepComposition.execution.successors :=
-  executionCorrect_of_acceptedProofSoundness accepted
+  Rv64imPublicProofBoundary
+    BytecodeAddr
+    Pc
+    RegIdx
+    VirtualOpcode
+    AluOp
+    BranchOp
+    MemWidth
+    DivRemKind
+    RamAddr
+    Word
+    StateLocation
+    RegisterTimeline
+    RamTimeline
+    Limb
+    ArchitecturalInputs
+    AuthenticatedReads
+    WitnessAssignment
+    Output
+    StateEffect
+    PreparedStep
+    ProgramImage
+    LoweringVersion
+    RomTable
+    BytecodeTable
+    RomCommit
+    BytecodeCommit
+    Source
+    CommitmentId
+    Point
+    PolynomialId
+    Value
+    Digest
+    ExactOpeningWitness
+    OpeningRefinement
+    RowProjectionWitness
+    BridgeBinding
+    Rv64imProofStatement
+    Rv64imKernelClaimBundle
+    Rv64imKernelProofBundle :=
+  publicProofBoundary_of_exactKernelBoundaries statement claims kernelProof boundaries
 
-def acceptedProofImpliesPreparedStepExportBound
+def rv64imPublicProofBoundaryExecutionResult_of_boundary
   {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
     RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
     ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
     PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
     BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
-    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding :
+    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding
+    Rv64imProofStatement Rv64imKernelClaimBundle Rv64imKernelProofBundle :
     Type _} [OfNat Limb 0]
-  (accepted :
-    AcceptedProofSoundness
+  (boundary :
+    Rv64imPublicProofBoundary
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep
+      ProgramImage
+      LoweringVersion
+      RomTable
+      BytecodeTable
+      RomCommit
+      BytecodeCommit
+      Source
+      CommitmentId
+      Point
+      PolynomialId
+      Value
+      Digest
+      ExactOpeningWitness
+      OpeningRefinement
+      RowProjectionWitness
+      BridgeBinding
+      Rv64imProofStatement
+      Rv64imKernelClaimBundle
+      Rv64imKernelProofBundle) :
+  Rv64imPublicProofBoundaryExecutionResult
+    BytecodeAddr
+    Pc
+    RegIdx
+    VirtualOpcode
+    AluOp
+    BranchOp
+    MemWidth
+    DivRemKind
+    RamAddr
+    Word
+    StateLocation
+    RegisterTimeline
+    RamTimeline
+    Limb
+    ArchitecturalInputs
+    AuthenticatedReads
+    WitnessAssignment
+    Output
+    StateEffect
+    PreparedStep
+    ProgramImage
+    LoweringVersion
+    RomTable
+    BytecodeTable
+    RomCommit
+    BytecodeCommit
+    Source
+    CommitmentId
+    Point
+    PolynomialId
+    Value
+    Digest
+    ExactOpeningWitness
+    OpeningRefinement
+    RowProjectionWitness
+    BridgeBinding
+    Rv64imProofStatement
+    Rv64imKernelClaimBundle
+    Rv64imKernelProofBundle
+    boundary :=
+  publicProofBoundaryExecutionResult_of_boundary boundary
+
+def rv64imPublicProofBoundaryImpliesExecutionAndPublicResult
+  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
+    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
+    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
+    PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
+    BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
+    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding
+    Rv64imProofStatement Rv64imKernelClaimBundle Rv64imKernelProofBundle :
+    Type _} [OfNat Limb 0]
+  (boundary :
+    Rv64imPublicProofBoundary
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep
+      ProgramImage
+      LoweringVersion
+      RomTable
+      BytecodeTable
+      RomCommit
+      BytecodeCommit
+      Source
+      CommitmentId
+      Point
+      PolynomialId
+      Value
+      Digest
+      ExactOpeningWitness
+      OpeningRefinement
+      RowProjectionWitness
+      BridgeBinding
+      Rv64imProofStatement
+      Rv64imKernelClaimBundle
+      Rv64imKernelProofBundle) :
+  Rv64imPublicProofBoundaryExecutionResult
+    BytecodeAddr
+    Pc
+    RegIdx
+    VirtualOpcode
+    AluOp
+    BranchOp
+    MemWidth
+    DivRemKind
+    RamAddr
+    Word
+    StateLocation
+    RegisterTimeline
+    RamTimeline
+    Limb
+    ArchitecturalInputs
+    AuthenticatedReads
+    WitnessAssignment
+    Output
+    StateEffect
+    PreparedStep
+    ProgramImage
+    LoweringVersion
+    RomTable
+    BytecodeTable
+    RomCommit
+    BytecodeCommit
+    Source
+    CommitmentId
+    Point
+    PolynomialId
+    Value
+    Digest
+    ExactOpeningWitness
+    OpeningRefinement
+    RowProjectionWitness
+    BridgeBinding
+    Rv64imProofStatement
+    Rv64imKernelClaimBundle
+    Rv64imKernelProofBundle
+    boundary :=
+  publicProofBoundaryImpliesExecutionAndPublicResult boundary
+
+def rv64imPublicProofBoundaryExecutionResult_of_exactKernelBoundaries
+  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
+    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
+    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
+    PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
+    BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
+    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding
+    Rv64imProofStatement Rv64imKernelClaimBundle Rv64imKernelProofBundle :
+    Type _} [OfNat Limb 0]
+  (statement : Rv64imProofStatement)
+  (claims : Rv64imKernelClaimBundle)
+  (kernelProof : Rv64imKernelProofBundle)
+  (boundaries :
+    ExactKernelBoundaries
       BytecodeAddr
       Pc
       RegIdx
@@ -1442,21 +1092,67 @@ def acceptedProofImpliesPreparedStepExportBound
       OpeningRefinement
       RowProjectionWitness
       BridgeBinding) :
-  PreparedStepExportBound
-    accepted.topLevel.kernel.authenticatedTrace.chunkInput.rows
-    accepted.topLevel.kernel.authenticatedTrace.mainLane.preparedSteps :=
-  preparedStepExportBound_of_acceptedProofSoundness accepted
+  Rv64imPublicProofBoundaryExecutionResult
+    BytecodeAddr
+    Pc
+    RegIdx
+    VirtualOpcode
+    AluOp
+    BranchOp
+    MemWidth
+    DivRemKind
+    RamAddr
+    Word
+    StateLocation
+    RegisterTimeline
+    RamTimeline
+    Limb
+    ArchitecturalInputs
+    AuthenticatedReads
+    WitnessAssignment
+    Output
+    StateEffect
+    PreparedStep
+    ProgramImage
+    LoweringVersion
+    RomTable
+    BytecodeTable
+    RomCommit
+    BytecodeCommit
+    Source
+    CommitmentId
+    Point
+    PolynomialId
+    Value
+    Digest
+    ExactOpeningWitness
+    OpeningRefinement
+    RowProjectionWitness
+    BridgeBinding
+    Rv64imProofStatement
+    Rv64imKernelClaimBundle
+    Rv64imKernelProofBundle
+    (rv64imPublicProofBoundary_of_exactKernelBoundaries statement claims kernelProof boundaries) :=
+  publicProofBoundaryExecutionResult_of_exactKernelBoundaries
+    statement
+    claims
+    kernelProof
+    boundaries
 
-def acceptedProofImpliesFullHaltedExecutionClaim
+def exactKernelBoundariesImplyRv64imPublicProofExecutionAndPublicResult
   {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
     RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
     ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
     PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
     BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
-    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding :
+    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding
+    Rv64imProofStatement Rv64imKernelClaimBundle Rv64imKernelProofBundle :
     Type _} [OfNat Limb 0]
-  (accepted :
-    AcceptedProofSoundness
+  (statement : Rv64imProofStatement)
+  (claims : Rv64imKernelClaimBundle)
+  (kernelProof : Rv64imKernelProofBundle)
+  (boundaries :
+    ExactKernelBoundaries
       BytecodeAddr
       Pc
       RegIdx
@@ -1493,9 +1189,51 @@ def acceptedProofImpliesFullHaltedExecutionClaim
       OpeningRefinement
       RowProjectionWitness
       BridgeBinding) :
-  FullHaltedExecutionClaim
-    accepted.topLevel.kernel.authenticatedTrace.stage3Refinement.finalBoundary.sequence
-    accepted.topLevel.kernel.authenticatedTrace.stage3Refinement.finalBoundary.terminatingRow :=
-  fullHaltedExecutionClaim_of_acceptedProofSoundness accepted
+  Rv64imPublicProofBoundaryExecutionResult
+    BytecodeAddr
+    Pc
+    RegIdx
+    VirtualOpcode
+    AluOp
+    BranchOp
+    MemWidth
+    DivRemKind
+    RamAddr
+    Word
+    StateLocation
+    RegisterTimeline
+    RamTimeline
+    Limb
+    ArchitecturalInputs
+    AuthenticatedReads
+    WitnessAssignment
+    Output
+    StateEffect
+    PreparedStep
+    ProgramImage
+    LoweringVersion
+    RomTable
+    BytecodeTable
+    RomCommit
+    BytecodeCommit
+    Source
+    CommitmentId
+    Point
+    PolynomialId
+    Value
+    Digest
+    ExactOpeningWitness
+    OpeningRefinement
+    RowProjectionWitness
+    BridgeBinding
+    Rv64imProofStatement
+    Rv64imKernelClaimBundle
+    Rv64imKernelProofBundle
+    (rv64imPublicProofBoundary_of_exactKernelBoundaries statement claims kernelProof boundaries) :=
+  rv64imPublicProofBoundaryExecutionResult_of_exactKernelBoundaries
+    statement
+    claims
+    kernelProof
+    boundaries
 
 end Nightstream.Rv64IM

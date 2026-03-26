@@ -1,0 +1,17 @@
+import Nightstream.Rv64IM.Kernel.AcceptedProofExecutionResult
+
+namespace Nightstream.Rv64IM.AcceptedProofExecutionResultInterface
+
+abbrev AcceptedProofExecutionResult := @Nightstream.Rv64IM.AcceptedProofExecutionResult
+abbrev acceptedProofExecutionResult_of_acceptedProofConclusion :=
+  @Nightstream.Rv64IM.acceptedProofExecutionResult_of_acceptedProofConclusion
+abbrev acceptedProofExecutionResult_of_acceptedProofSoundness :=
+  @Nightstream.Rv64IM.acceptedProofExecutionResult_of_acceptedProofSoundness
+abbrev acceptedProofImpliesExecutionAndPublicResult :=
+  @Nightstream.Rv64IM.acceptedProofImpliesExecutionAndPublicResult
+abbrev acceptedProofExecutionResult_of_exactKernelBoundaries :=
+  @Nightstream.Rv64IM.acceptedProofExecutionResult_of_exactKernelBoundaries
+abbrev exactKernelBoundariesImplyExecutionAndPublicResult :=
+  @Nightstream.Rv64IM.exactKernelBoundariesImplyExecutionAndPublicResult
+
+end Nightstream.Rv64IM.AcceptedProofExecutionResultInterface
