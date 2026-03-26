@@ -9,7 +9,7 @@ use super::proof_bridge::{
 use super::proof_verify::verify_kernel_output_from_public_proof;
 use super::proof_witness::{
     proof_witness_bundle_from_kernel_output, Rv64imKernelClaimProofBundle, Rv64imKernelClaimSummaryBundle,
-    Rv64imKernelOpeningBindingBundle, Rv64imKernelOpeningProofBundle, Rv64imProofWitnessBundle,
+    Rv64imKernelOpeningProofBundle, Rv64imKernelOpeningSummaryBundle, Rv64imProofWitnessBundle,
     Rv64imStageClaimDigestBundle, Rv64imStageClaimProofBundle, Rv64imStagePackageDigestBundle,
     Rv64imStagePackageProofBundle, Rv64imStageWitnessProofBundle, Rv64imTraceProofBundle,
 };
@@ -177,72 +177,26 @@ pub struct Rv64imMainLaneProofBundle {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Rv64imJointOpeningMainLaneBinding {
-    pub bundle_digest: [u8; 32],
-    pub proof: Rv64imMainLaneProofBinding,
-    pub digest: [u8; 32],
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Rv64imJointOpeningKernelBinding {
-    pub bundle_digest: [u8; 32],
-    pub opening: Rv64imKernelOpeningBindingBundle,
-    pub digest: [u8; 32],
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Rv64imJointOpeningStatementBinding {
-    pub statement_digest: [u8; 32],
-    pub public_step_count: u64,
-    pub digest: [u8; 32],
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Rv64imJointOpeningProofBindingBundle {
-    pub statement: Rv64imJointOpeningStatementBinding,
-    pub main_lane: Rv64imJointOpeningMainLaneBinding,
-    pub kernel_opening: Rv64imJointOpeningKernelBinding,
+pub struct Rv64imMainLaneProofSummaryBundle {
+    pub binding: Rv64imMainLaneProofBinding,
     pub digest: [u8; 32],
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Rv64imJointOpeningProofBundle {
-    pub claim: Rv64imJointOpeningClaim,
-    pub bindings: Rv64imJointOpeningProofBindingBundle,
-    pub digest: [u8; 32],
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Rv64imRoot0StageBinding {
-    pub claims: Rv64imStageClaimDigestBundle,
-    pub packages: Rv64imStagePackageDigestBundle,
-    pub digest: [u8; 32],
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Rv64imRoot0KernelBundleBinding {
-    pub opening: Rv64imKernelOpeningBindingBundle,
-    pub claims: Rv64imKernelClaimSummaryBundle,
-    pub digest: [u8; 32],
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Rv64imRoot0KernelBinding {
-    pub bundles: Rv64imRoot0KernelBundleBinding,
-    pub digest: [u8; 32],
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Rv64imRoot0CommitmentBindingBundle {
-    pub stages: Rv64imRoot0StageBinding,
-    pub kernel: Rv64imRoot0KernelBinding,
+    pub proof_statement_digest: [u8; 32],
+    pub public_step_count: u64,
+    pub main_lane: Rv64imMainLaneProofSummaryBundle,
+    pub kernel_opening: Rv64imKernelOpeningSummaryBundle,
     pub digest: [u8; 32],
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Rv64imRoot0CommitmentBundle {
-    pub claim: Rv64imRoot0Claim,
-    pub bindings: Rv64imRoot0CommitmentBindingBundle,
+    pub stage_claims: Rv64imStageClaimDigestBundle,
+    pub stage_packages: Rv64imStagePackageDigestBundle,
+    pub kernel_opening: Rv64imKernelOpeningSummaryBundle,
+    pub kernel_claims: Rv64imKernelClaimSummaryBundle,
     pub digest: [u8; 32],
 }
 
@@ -545,67 +499,25 @@ impl Rv64imMainLaneProofBundle {
     pub fn public_step_count(&self) -> u64 {
         self.binding.public_step_count
     }
-}
 
-impl Rv64imJointOpeningMainLaneBinding {
-    pub(super) fn expected_digest(&self) -> [u8; 32] {
-        let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/joint_opening_main_lane_binding");
-        tr.append_message(
-            b"rv64im/joint_opening_main_lane_binding/bundle_digest",
-            &self.bundle_digest,
-        );
-        tr.append_message(
-            b"rv64im/joint_opening_main_lane_binding/proof_binding_digest",
-            &self.proof.digest,
-        );
-        tr.digest32()
+    pub fn summary(&self) -> Rv64imMainLaneProofSummaryBundle {
+        let summary = Rv64imMainLaneProofSummaryBundle {
+            binding: self.binding.clone(),
+            digest: [0; 32],
+        };
+        Rv64imMainLaneProofSummaryBundle {
+            digest: summary.expected_digest(),
+            ..summary
+        }
     }
 }
 
-impl Rv64imJointOpeningKernelBinding {
+impl Rv64imMainLaneProofSummaryBundle {
     pub(super) fn expected_digest(&self) -> [u8; 32] {
-        let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/joint_opening_kernel_binding");
+        let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/main_lane_proof_summary_bundle");
         tr.append_message(
-            b"rv64im/joint_opening_kernel_binding/bundle_digest",
-            &self.bundle_digest,
-        );
-        tr.append_message(
-            b"rv64im/joint_opening_kernel_binding/opening_binding_digest",
-            &self.opening.digest,
-        );
-        tr.digest32()
-    }
-}
-
-impl Rv64imJointOpeningStatementBinding {
-    pub(super) fn expected_digest(&self) -> [u8; 32] {
-        let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/joint_opening_statement_binding");
-        tr.append_message(
-            b"rv64im/joint_opening_statement_binding/statement_digest",
-            &self.statement_digest,
-        );
-        tr.append_u64s(
-            b"rv64im/joint_opening_statement_binding/meta",
-            &[self.public_step_count],
-        );
-        tr.digest32()
-    }
-}
-
-impl Rv64imJointOpeningProofBindingBundle {
-    pub(super) fn expected_digest(&self) -> [u8; 32] {
-        let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/joint_opening_proof_binding_bundle");
-        tr.append_message(
-            b"rv64im/joint_opening_proof_binding_bundle/statement_digest",
-            &self.statement.digest,
-        );
-        tr.append_message(
-            b"rv64im/joint_opening_proof_binding_bundle/main_lane_digest",
-            &self.main_lane.digest,
-        );
-        tr.append_message(
-            b"rv64im/joint_opening_proof_binding_bundle/kernel_opening_digest",
-            &self.kernel_opening.digest,
+            b"rv64im/main_lane_proof_summary_bundle/binding_digest",
+            &self.binding.digest,
         );
         tr.digest32()
     }
@@ -614,57 +526,18 @@ impl Rv64imJointOpeningProofBindingBundle {
 impl Rv64imJointOpeningProofBundle {
     pub(super) fn expected_digest(&self) -> [u8; 32] {
         let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/joint_opening_proof_bundle");
-        tr.append_message(b"rv64im/joint_opening_proof_bundle/claim_digest", &self.claim.digest);
         tr.append_message(
-            b"rv64im/joint_opening_proof_bundle/bindings_digest",
-            &self.bindings.digest,
+            b"rv64im/joint_opening_proof_bundle/proof_statement_digest",
+            &self.proof_statement_digest,
         );
-        tr.digest32()
-    }
-}
-
-impl Rv64imRoot0StageBinding {
-    pub(super) fn expected_digest(&self) -> [u8; 32] {
-        let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/root0_stage_binding");
-        tr.append_message(b"rv64im/root0_stage_binding/claim_summary_digest", &self.claims.digest);
+        tr.append_u64s(b"rv64im/joint_opening_proof_bundle/meta", &[self.public_step_count]);
         tr.append_message(
-            b"rv64im/root0_stage_binding/package_summary_digest",
-            &self.packages.digest,
-        );
-        tr.digest32()
-    }
-}
-
-impl Rv64imRoot0KernelBundleBinding {
-    pub(super) fn expected_digest(&self) -> [u8; 32] {
-        let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/root0_kernel_bundle_binding");
-        tr.append_message(
-            b"rv64im/root0_kernel_bundle_binding/opening_digest",
-            &self.opening.digest,
-        );
-        tr.append_message(b"rv64im/root0_kernel_bundle_binding/claims_digest", &self.claims.digest);
-        tr.digest32()
-    }
-}
-
-impl Rv64imRoot0KernelBinding {
-    pub(super) fn expected_digest(&self) -> [u8; 32] {
-        let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/root0_kernel_binding");
-        tr.append_message(b"rv64im/root0_kernel_binding/bundles_digest", &self.bundles.digest);
-        tr.digest32()
-    }
-}
-
-impl Rv64imRoot0CommitmentBindingBundle {
-    pub(super) fn expected_digest(&self) -> [u8; 32] {
-        let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/root0_commitment_binding_bundle");
-        tr.append_message(
-            b"rv64im/root0_commitment_binding_bundle/stages_digest",
-            &self.stages.digest,
+            b"rv64im/joint_opening_proof_bundle/main_lane_digest",
+            &self.main_lane.digest,
         );
         tr.append_message(
-            b"rv64im/root0_commitment_binding_bundle/kernel_digest",
-            &self.kernel.digest,
+            b"rv64im/joint_opening_proof_bundle/kernel_opening_digest",
+            &self.kernel_opening.digest,
         );
         tr.digest32()
     }
@@ -673,8 +546,22 @@ impl Rv64imRoot0CommitmentBindingBundle {
 impl Rv64imRoot0CommitmentBundle {
     pub(super) fn expected_digest(&self) -> [u8; 32] {
         let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/root0_commitment_bundle");
-        tr.append_message(b"rv64im/root0_commitment_bundle/claim_digest", &self.claim.digest);
-        tr.append_message(b"rv64im/root0_commitment_bundle/bindings_digest", &self.bindings.digest);
+        tr.append_message(
+            b"rv64im/root0_commitment_bundle/stage_claims_digest",
+            &self.stage_claims.digest,
+        );
+        tr.append_message(
+            b"rv64im/root0_commitment_bundle/stage_packages_digest",
+            &self.stage_packages.digest,
+        );
+        tr.append_message(
+            b"rv64im/root0_commitment_bundle/kernel_opening_digest",
+            &self.kernel_opening.digest,
+        );
+        tr.append_message(
+            b"rv64im/root0_commitment_bundle/kernel_claims_digest",
+            &self.kernel_claims.digest,
+        );
         tr.digest32()
     }
 }

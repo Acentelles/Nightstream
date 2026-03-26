@@ -83,36 +83,28 @@ fn rv64im_proof_roundtrip_matches_kernel_export() {
         witness.kernel_claims.root0_digest()
     );
     assert_eq!(
-        proof.kernel.joint_opening.bindings.main_lane.bundle_digest,
-        proof.kernel.main_lane.digest
+        proof.kernel.joint_opening.main_lane.digest,
+        proof.kernel.main_lane.summary().digest
     );
     assert_eq!(
         proof
             .kernel
             .joint_opening
-            .bindings
             .main_lane
-            .proof
+            .binding
             .statement_digest,
         proof.kernel.main_lane.statement_digest()
     );
     assert_eq!(
-        proof
-            .kernel
-            .joint_opening
-            .bindings
-            .main_lane
-            .proof
-            .proof_digest,
+        proof.kernel.joint_opening.main_lane.binding.proof_digest,
         proof.kernel.main_lane.proof_digest()
     );
     assert_eq!(
         proof
             .kernel
             .joint_opening
-            .bindings
             .kernel_opening
-            .opening
+            .bindings
             .claim_digest,
         proof.kernel.kernel_opening.claim_digest()
     );
@@ -120,9 +112,8 @@ fn rv64im_proof_roundtrip_matches_kernel_export() {
         proof
             .kernel
             .joint_opening
-            .bindings
             .kernel_opening
-            .opening
+            .bindings
             .bindings_digest,
         proof.kernel.kernel_opening.bindings_digest()
     );
@@ -130,65 +121,36 @@ fn rv64im_proof_roundtrip_matches_kernel_export() {
         proof
             .kernel
             .joint_opening
-            .bindings
             .kernel_opening
-            .opening
+            .bindings
             .prepared_steps_digest,
         proof.kernel.kernel_opening.prepared_steps_digest()
     );
     assert_eq!(
-        proof
-            .kernel
-            .joint_opening
-            .bindings
-            .kernel_opening
-            .bundle_digest,
-        proof.kernel.kernel_opening.digest
+        proof.kernel.joint_opening.kernel_opening.digest,
+        proof.kernel.kernel_opening.summary().digest
     );
     assert_eq!(
-        proof
-            .kernel
-            .root0_commitment
-            .bindings
-            .kernel
-            .bundles
-            .opening
-            .digest,
-        proof.kernel.kernel_opening.bindings.digest
+        proof.kernel.root0_commitment.kernel_opening.digest,
+        proof.kernel.kernel_opening.summary().digest
     );
     assert_eq!(
-        proof
-            .kernel
-            .root0_commitment
-            .bindings
-            .kernel
-            .bundles
-            .claims
-            .digest,
+        proof.kernel.root0_commitment.kernel_claims.digest,
         proof.kernel.kernel_claims.summary.digest
     );
     assert_eq!(
-        proof.kernel.root0_commitment.bindings.stages.claims.digest,
+        proof.kernel.root0_commitment.stage_claims.digest,
         proof.kernel.stage_claims.summary.digest
     );
     assert_eq!(
-        proof
-            .kernel
-            .root0_commitment
-            .bindings
-            .stages
-            .packages
-            .digest,
+        proof.kernel.root0_commitment.stage_packages.digest,
         proof.kernel.stage_packages.summary.digest
     );
     assert_eq!(
         proof
             .kernel
             .root0_commitment
-            .bindings
-            .kernel
-            .bundles
-            .claims
+            .kernel_claims
             .terminal
             .root0_digest,
         proof.kernel.kernel_claims.root0_digest()
@@ -197,10 +159,7 @@ fn rv64im_proof_roundtrip_matches_kernel_export() {
         proof
             .kernel
             .root0_commitment
-            .bindings
-            .kernel
-            .bundles
-            .claims
+            .kernel_claims
             .terminal
             .final_state_digest,
         proof.kernel.kernel_claims.final_state_digest()
@@ -390,26 +349,23 @@ fn rv64im_proof_rejects_tampered_kernel_and_main_lane_surfaces() {
     tampered_joint_opening_binding_bundle
         .kernel
         .joint_opening
-        .bindings
-        .digest[0] ^= 1;
+        .public_step_count ^= 1;
     assert!(verify_rv64im_proof(&input, &tampered_joint_opening_binding_bundle).is_err());
 
     let mut tampered_joint_opening_binding = proof.clone();
     tampered_joint_opening_binding
         .kernel
         .joint_opening
-        .bindings
         .main_lane
-        .bundle_digest[0] ^= 1;
+        .digest[0] ^= 1;
     assert!(verify_rv64im_proof(&input, &tampered_joint_opening_binding).is_err());
 
     let mut tampered_joint_opening_main_lane_surface = proof.clone();
     tampered_joint_opening_main_lane_surface
         .kernel
         .joint_opening
-        .bindings
         .main_lane
-        .proof
+        .binding
         .statement_digest[0] ^= 1;
     assert!(verify_rv64im_proof(&input, &tampered_joint_opening_main_lane_surface).is_err());
 
@@ -417,9 +373,7 @@ fn rv64im_proof_rejects_tampered_kernel_and_main_lane_surfaces() {
     tampered_joint_opening_main_lane_binding_digest
         .kernel
         .joint_opening
-        .bindings
         .main_lane
-        .proof
         .digest[0] ^= 1;
     assert!(verify_rv64im_proof(&input, &tampered_joint_opening_main_lane_binding_digest).is_err());
 
@@ -427,18 +381,14 @@ fn rv64im_proof_rejects_tampered_kernel_and_main_lane_surfaces() {
     tampered_joint_opening_statement_binding
         .kernel
         .joint_opening
-        .bindings
-        .statement
-        .digest[0] ^= 1;
+        .proof_statement_digest[0] ^= 1;
     assert!(verify_rv64im_proof(&input, &tampered_joint_opening_statement_binding).is_err());
 
     let mut tampered_joint_opening_kernel_opening_binding = proof.clone();
     tampered_joint_opening_kernel_opening_binding
         .kernel
         .joint_opening
-        .bindings
         .kernel_opening
-        .opening
         .digest[0] ^= 1;
     assert!(verify_rv64im_proof(&input, &tampered_joint_opening_kernel_opening_binding).is_err());
 
@@ -450,7 +400,7 @@ fn rv64im_proof_rejects_tampered_kernel_and_main_lane_surfaces() {
     tampered_root0_binding_bundle
         .kernel
         .root0_commitment
-        .bindings
+        .kernel_claims
         .digest[0] ^= 1;
     assert!(verify_rv64im_proof(&input, &tampered_root0_binding_bundle).is_err());
 
@@ -458,9 +408,7 @@ fn rv64im_proof_rejects_tampered_kernel_and_main_lane_surfaces() {
     tampered_root0_binding
         .kernel
         .root0_commitment
-        .bindings
-        .stages
-        .claims
+        .stage_claims
         .digest[0] ^= 1;
     assert!(verify_rv64im_proof(&input, &tampered_root0_binding).is_err());
 
@@ -468,10 +416,7 @@ fn rv64im_proof_rejects_tampered_kernel_and_main_lane_surfaces() {
     tampered_root0_surface
         .kernel
         .root0_commitment
-        .bindings
-        .kernel
-        .bundles
-        .claims
+        .kernel_claims
         .terminal
         .final_state_digest[0] ^= 1;
     assert!(verify_rv64im_proof(&input, &tampered_root0_surface).is_err());
@@ -480,10 +425,7 @@ fn rv64im_proof_rejects_tampered_kernel_and_main_lane_surfaces() {
     tampered_root0_terminal_binding
         .kernel
         .root0_commitment
-        .bindings
-        .kernel
-        .bundles
-        .claims
+        .kernel_claims
         .digest[0] ^= 1;
     assert!(verify_rv64im_proof(&input, &tampered_root0_terminal_binding).is_err());
 

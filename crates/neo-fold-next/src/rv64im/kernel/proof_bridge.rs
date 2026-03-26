@@ -3,18 +3,16 @@
 use super::proof_api::{
     Rv64imAcceptedProofClaim, Rv64imAcceptedProofMainLaneBinding, Rv64imAcceptedProofStatementBinding,
     Rv64imAcceptedProofTerminalBinding, Rv64imJointOpeningClaim, Rv64imJointOpeningClaimBinding,
-    Rv64imJointOpeningKernelBinding, Rv64imJointOpeningMainLaneBinding, Rv64imJointOpeningProofBindingBundle,
-    Rv64imJointOpeningProofBundle, Rv64imJointOpeningStatementBinding, Rv64imKernelClaimBundle,
-    Rv64imKernelOpeningClaim, Rv64imKernelOpeningStageClaimBinding, Rv64imKernelOpeningTerminalClaimBinding,
-    Rv64imKernelProofBundle, Rv64imMainLaneClaim, Rv64imMainLaneClaimBinding, Rv64imMainLaneProofBinding,
-    Rv64imMainLaneProofBundle, Rv64imProofStatement, Rv64imRoot0Claim, Rv64imRoot0CommitmentBindingBundle,
-    Rv64imRoot0CommitmentBundle, Rv64imRoot0KernelBinding, Rv64imRoot0KernelBundleBinding, Rv64imRoot0StageBinding,
+    Rv64imJointOpeningProofBundle, Rv64imKernelClaimBundle, Rv64imKernelOpeningClaim,
+    Rv64imKernelOpeningStageClaimBinding, Rv64imKernelOpeningTerminalClaimBinding, Rv64imKernelProofBundle,
+    Rv64imMainLaneClaim, Rv64imMainLaneClaimBinding, Rv64imMainLaneProofBinding, Rv64imMainLaneProofBundle,
+    Rv64imMainLaneProofSummaryBundle, Rv64imProofStatement, Rv64imRoot0Claim, Rv64imRoot0CommitmentBundle,
     Rv64imRoot0StageClaimBinding, Rv64imRoot0TerminalClaimBinding,
 };
 use super::proof_witness::{
     kernel_claim_proof_bundle_from_claims, kernel_opening_proof_bundle_from_opening,
     stage_claim_proof_bundle_from_claims, stage_package_proof_bundle_from_packages,
-    stage_witness_proof_bundle_from_stages, trace_proof_bundle_from_trace,
+    stage_witness_proof_bundle_from_stages, trace_proof_bundle_from_trace, Rv64imKernelOpeningSummaryBundle,
 };
 use super::{SimpleKernelOutput, SimpleKernelPackagedProof, SimpleKernelProof};
 
@@ -236,52 +234,26 @@ fn main_lane_proof_bundle_from_packaged(packaged: &SimpleKernelPackagedProof) ->
     }
 }
 
+fn main_lane_proof_summary_from_bundle(bundle: &Rv64imMainLaneProofBundle) -> Rv64imMainLaneProofSummaryBundle {
+    bundle.summary()
+}
+
+fn kernel_opening_summary_from_bundle(
+    bundle: &super::proof_witness::Rv64imKernelOpeningProofBundle,
+) -> Rv64imKernelOpeningSummaryBundle {
+    bundle.summary()
+}
+
 fn joint_opening_proof_bundle_from_components(
     statement: &Rv64imProofStatement,
-    claim: &Rv64imJointOpeningClaim,
     main_lane: &Rv64imMainLaneProofBundle,
     kernel_opening: &super::proof_witness::Rv64imKernelOpeningProofBundle,
 ) -> Rv64imJointOpeningProofBundle {
-    let statement = Rv64imJointOpeningStatementBinding {
-        statement_digest: statement.digest,
-        public_step_count: main_lane.public_step_count(),
-        digest: [0; 32],
-    };
-    let statement = Rv64imJointOpeningStatementBinding {
-        digest: statement.expected_digest(),
-        ..statement
-    };
-    let main_lane = Rv64imJointOpeningMainLaneBinding {
-        bundle_digest: main_lane.digest,
-        proof: main_lane.binding.clone(),
-        digest: [0; 32],
-    };
-    let main_lane = Rv64imJointOpeningMainLaneBinding {
-        digest: main_lane.expected_digest(),
-        ..main_lane
-    };
-    let kernel_opening = Rv64imJointOpeningKernelBinding {
-        bundle_digest: kernel_opening.digest,
-        opening: kernel_opening.bindings.clone(),
-        digest: [0; 32],
-    };
-    let kernel_opening = Rv64imJointOpeningKernelBinding {
-        digest: kernel_opening.expected_digest(),
-        ..kernel_opening
-    };
-    let bindings = Rv64imJointOpeningProofBindingBundle {
-        statement,
-        main_lane,
-        kernel_opening,
-        digest: [0; 32],
-    };
-    let bindings = Rv64imJointOpeningProofBindingBundle {
-        digest: bindings.expected_digest(),
-        ..bindings
-    };
     let bundle = Rv64imJointOpeningProofBundle {
-        claim: claim.clone(),
-        bindings,
+        proof_statement_digest: statement.digest,
+        public_step_count: main_lane.public_step_count(),
+        main_lane: main_lane_proof_summary_from_bundle(main_lane),
+        kernel_opening: kernel_opening_summary_from_bundle(kernel_opening),
         digest: [0; 32],
     };
     Rv64imJointOpeningProofBundle {
@@ -291,50 +263,16 @@ fn joint_opening_proof_bundle_from_components(
 }
 
 fn root0_commitment_bundle_from_components(
-    claim: &Rv64imRoot0Claim,
     stage_claims: &super::proof_witness::Rv64imStageClaimProofBundle,
     stage_packages: &super::proof_witness::Rv64imStagePackageProofBundle,
     kernel_opening: &super::proof_witness::Rv64imKernelOpeningProofBundle,
     kernel_claims: &super::proof_witness::Rv64imKernelClaimProofBundle,
 ) -> Rv64imRoot0CommitmentBundle {
-    let stages = Rv64imRoot0StageBinding {
-        claims: stage_claims.summary.clone(),
-        packages: stage_packages.summary.clone(),
-        digest: [0; 32],
-    };
-    let stages = Rv64imRoot0StageBinding {
-        digest: stages.expected_digest(),
-        ..stages
-    };
-    let bundles = Rv64imRoot0KernelBundleBinding {
-        opening: kernel_opening.bindings.clone(),
-        claims: kernel_claims.summary.clone(),
-        digest: [0; 32],
-    };
-    let bundles = Rv64imRoot0KernelBundleBinding {
-        digest: bundles.expected_digest(),
-        ..bundles
-    };
-    let kernel = Rv64imRoot0KernelBinding {
-        bundles,
-        digest: [0; 32],
-    };
-    let kernel = Rv64imRoot0KernelBinding {
-        digest: kernel.expected_digest(),
-        ..kernel
-    };
-    let bindings = Rv64imRoot0CommitmentBindingBundle {
-        stages,
-        kernel,
-        digest: [0; 32],
-    };
-    let bindings = Rv64imRoot0CommitmentBindingBundle {
-        digest: bindings.expected_digest(),
-        ..bindings
-    };
     let bundle = Rv64imRoot0CommitmentBundle {
-        claim: claim.clone(),
-        bindings,
+        stage_claims: stage_claims.summary.clone(),
+        stage_packages: stage_packages.summary.clone(),
+        kernel_opening: kernel_opening_summary_from_bundle(kernel_opening),
+        kernel_claims: kernel_claims.summary.clone(),
         digest: [0; 32],
     };
     Rv64imRoot0CommitmentBundle {
@@ -388,10 +326,6 @@ pub(super) fn kernel_proof_bundle_from_packaged(packaged: &SimpleKernelPackagedP
     let stage_packages = stage_package_proof_bundle_from_packages(&packaged.kernel.stage_packages);
     let kernel_opening = kernel_opening_proof_bundle_from_opening(&packaged.kernel.kernel_opening);
     let kernel_claims = kernel_claim_proof_bundle_from_claims(&packaged.kernel.kernel_claims);
-    let main_lane_claim = main_lane_claim_from_kernel(&statement, packaged);
-    let opening_claim = kernel_opening_claim_from_kernel(&statement, packaged);
-    let joint_opening_claim = joint_opening_claim_from_claims(&statement, packaged, &main_lane_claim, &opening_claim);
-    let root0_claim = root0_claim_from_kernel(packaged);
     let main_lane = main_lane_proof_bundle_from_packaged(packaged);
     let trace = trace_proof_bundle_from_trace(&packaged.kernel.trace, kernel_claims.execution_digest());
     let stages = stage_witness_proof_bundle_from_stages(&packaged.kernel.stages);
@@ -404,14 +338,8 @@ pub(super) fn kernel_proof_bundle_from_packaged(packaged: &SimpleKernelPackagedP
         kernel_opening: kernel_opening.clone(),
         kernel_claims: kernel_claims.clone(),
         main_lane: main_lane.clone(),
-        joint_opening: joint_opening_proof_bundle_from_components(
-            &statement,
-            &joint_opening_claim,
-            &main_lane,
-            &kernel_opening,
-        ),
+        joint_opening: joint_opening_proof_bundle_from_components(&statement, &main_lane, &kernel_opening),
         root0_commitment: root0_commitment_bundle_from_components(
-            &root0_claim,
             &stage_claims,
             &stage_packages,
             &kernel_opening,

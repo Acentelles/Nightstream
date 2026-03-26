@@ -42,6 +42,13 @@ pub struct Rv64imKernelOpeningProofBundle {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Rv64imKernelOpeningSummaryBundle {
+    pub opening_digest: [u8; 32],
+    pub bindings: Rv64imKernelOpeningBindingBundle,
+    pub digest: [u8; 32],
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Rv64imKernelClaimTerminalBundle {
     pub root0_digest: [u8; 32],
     pub execution_digest: [u8; 32],
@@ -209,6 +216,33 @@ impl Rv64imKernelOpeningProofBundle {
 
     pub fn prepared_steps_digest(&self) -> [u8; 32] {
         self.bindings.prepared_steps_digest
+    }
+
+    pub fn summary(&self) -> Rv64imKernelOpeningSummaryBundle {
+        let summary = Rv64imKernelOpeningSummaryBundle {
+            opening_digest: self.opening_digest,
+            bindings: self.bindings.clone(),
+            digest: [0; 32],
+        };
+        Rv64imKernelOpeningSummaryBundle {
+            digest: summary.expected_digest(),
+            ..summary
+        }
+    }
+}
+
+impl Rv64imKernelOpeningSummaryBundle {
+    pub(crate) fn expected_digest(&self) -> [u8; 32] {
+        let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/kernel_opening_summary_bundle");
+        tr.append_message(
+            b"rv64im/kernel_opening_summary_bundle/opening_digest",
+            &self.opening_digest,
+        );
+        tr.append_message(
+            b"rv64im/kernel_opening_summary_bundle/bindings_digest",
+            &self.bindings.digest,
+        );
+        tr.digest32()
     }
 }
 

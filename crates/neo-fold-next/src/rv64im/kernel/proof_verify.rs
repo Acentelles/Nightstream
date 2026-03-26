@@ -153,101 +153,14 @@ fn validate_public_bundle_digests(proof: &Rv64imProof) -> Result<(), SimpleKerne
             "RV64IM main-lane proof bundle digest mismatch".into(),
         ));
     }
-    if proof.kernel.joint_opening.claim.digest != proof.kernel.joint_opening.claim.expected_digest() {
+    if proof.kernel.joint_opening.main_lane.digest != proof.kernel.joint_opening.main_lane.expected_digest() {
         return Err(SimpleKernelError::Bridge(
-            "RV64IM joint-opening proof claim digest mismatch".into(),
+            "RV64IM joint-opening main-lane proof summary digest mismatch".into(),
         ));
     }
-    if proof.kernel.joint_opening.bindings.digest != proof.kernel.joint_opening.bindings.expected_digest() {
+    if proof.kernel.joint_opening.kernel_opening.digest != proof.kernel.joint_opening.kernel_opening.expected_digest() {
         return Err(SimpleKernelError::Bridge(
-            "RV64IM joint-opening binding bundle digest mismatch".into(),
-        ));
-    }
-    if proof.kernel.joint_opening.bindings.main_lane.digest
-        != proof
-            .kernel
-            .joint_opening
-            .bindings
-            .main_lane
-            .expected_digest()
-    {
-        return Err(SimpleKernelError::Bridge(
-            "RV64IM joint-opening main-lane binding digest mismatch".into(),
-        ));
-    }
-    if proof.kernel.joint_opening.bindings.main_lane.proof.digest
-        != proof
-            .kernel
-            .joint_opening
-            .bindings
-            .main_lane
-            .proof
-            .expected_digest()
-    {
-        return Err(SimpleKernelError::Bridge(
-            "RV64IM joint-opening nested main-lane proof binding digest mismatch".into(),
-        ));
-    }
-    if proof
-        .kernel
-        .joint_opening
-        .bindings
-        .kernel_opening
-        .opening
-        .digest
-        != proof
-            .kernel
-            .joint_opening
-            .bindings
-            .kernel_opening
-            .opening
-            .expected_digest()
-    {
-        return Err(SimpleKernelError::Bridge(
-            "RV64IM joint-opening kernel-opening bundle digest mismatch".into(),
-        ));
-    }
-    if proof.kernel.joint_opening.bindings.statement.digest
-        != proof
-            .kernel
-            .joint_opening
-            .bindings
-            .statement
-            .expected_digest()
-    {
-        return Err(SimpleKernelError::Bridge(
-            "RV64IM joint-opening statement binding digest mismatch".into(),
-        ));
-    }
-    if proof.kernel.joint_opening.bindings.kernel_opening.digest
-        != proof
-            .kernel
-            .joint_opening
-            .bindings
-            .kernel_opening
-            .expected_digest()
-    {
-        return Err(SimpleKernelError::Bridge(
-            "RV64IM joint-opening kernel-opening binding digest mismatch".into(),
-        ));
-    }
-    if proof
-        .kernel
-        .joint_opening
-        .bindings
-        .kernel_opening
-        .opening
-        .digest
-        != proof
-            .kernel
-            .joint_opening
-            .bindings
-            .kernel_opening
-            .opening
-            .expected_digest()
-    {
-        return Err(SimpleKernelError::Bridge(
-            "RV64IM joint-opening nested kernel-opening binding digest mismatch".into(),
+            "RV64IM joint-opening kernel-opening summary digest mismatch".into(),
         ));
     }
     if proof.kernel.joint_opening.digest != proof.kernel.joint_opening.expected_digest() {
@@ -255,148 +168,55 @@ fn validate_public_bundle_digests(proof: &Rv64imProof) -> Result<(), SimpleKerne
             "RV64IM joint-opening proof bundle digest mismatch".into(),
         ));
     }
-    if proof.kernel.root0_commitment.claim.digest != proof.kernel.root0_commitment.claim.expected_digest() {
-        return Err(SimpleKernelError::Bridge(
-            "RV64IM root0 commitment claim digest mismatch".into(),
-        ));
-    }
-    if proof.kernel.root0_commitment.bindings.digest != proof.kernel.root0_commitment.bindings.expected_digest() {
-        return Err(SimpleKernelError::Bridge(
-            "RV64IM root0 commitment binding bundle digest mismatch".into(),
-        ));
-    }
-    if proof.kernel.root0_commitment.bindings.stages.claims.digest
-        != proof
-            .kernel
-            .root0_commitment
-            .bindings
-            .stages
-            .claims
-            .expected_digest()
+    if proof.kernel.root0_commitment.stage_claims.digest != proof.kernel.root0_commitment.stage_claims.expected_digest()
     {
         return Err(SimpleKernelError::Bridge(
             "RV64IM root0 stage-claim summary digest mismatch".into(),
         ));
     }
-    if proof
-        .kernel
-        .root0_commitment
-        .bindings
-        .stages
-        .packages
-        .digest
+    if proof.kernel.root0_commitment.stage_packages.digest
         != proof
             .kernel
             .root0_commitment
-            .bindings
-            .stages
-            .packages
+            .stage_packages
             .expected_digest()
     {
         return Err(SimpleKernelError::Bridge(
             "RV64IM root0 stage-package summary digest mismatch".into(),
         ));
     }
-    if proof.kernel.root0_commitment.bindings.stages.digest
+    if proof.kernel.root0_commitment.kernel_opening.digest
         != proof
             .kernel
             .root0_commitment
-            .bindings
-            .stages
+            .kernel_opening
             .expected_digest()
     {
         return Err(SimpleKernelError::Bridge(
-            "RV64IM root0 stage binding digest mismatch".into(),
+            "RV64IM root0 kernel opening summary digest mismatch".into(),
         ));
     }
-    if proof.kernel.root0_commitment.bindings.kernel.bundles.digest
+    if proof.kernel.root0_commitment.kernel_claims.digest
         != proof
             .kernel
             .root0_commitment
-            .bindings
-            .kernel
-            .bundles
-            .expected_digest()
-    {
-        return Err(SimpleKernelError::Bridge(
-            "RV64IM root0 kernel bundle binding digest mismatch".into(),
-        ));
-    }
-    if proof
-        .kernel
-        .root0_commitment
-        .bindings
-        .kernel
-        .bundles
-        .opening
-        .digest
-        != proof
-            .kernel
-            .root0_commitment
-            .bindings
-            .kernel
-            .bundles
-            .opening
-            .expected_digest()
-    {
-        return Err(SimpleKernelError::Bridge(
-            "RV64IM root0 kernel opening binding digest mismatch".into(),
-        ));
-    }
-    if proof
-        .kernel
-        .root0_commitment
-        .bindings
-        .kernel
-        .bundles
-        .claims
-        .digest
-        != proof
-            .kernel
-            .root0_commitment
-            .bindings
-            .kernel
-            .bundles
-            .claims
+            .kernel_claims
             .expected_digest()
     {
         return Err(SimpleKernelError::Bridge(
             "RV64IM root0 kernel claim summary digest mismatch".into(),
         ));
     }
-    if proof
-        .kernel
-        .root0_commitment
-        .bindings
-        .kernel
-        .bundles
-        .claims
-        .terminal
-        .digest
+    if proof.kernel.root0_commitment.kernel_claims.terminal.digest
         != proof
             .kernel
             .root0_commitment
-            .bindings
-            .kernel
-            .bundles
-            .claims
+            .kernel_claims
             .terminal
             .expected_digest()
     {
         return Err(SimpleKernelError::Bridge(
             "RV64IM root0 kernel terminal digest mismatch".into(),
-        ));
-    }
-    if proof.kernel.root0_commitment.bindings.kernel.digest
-        != proof
-            .kernel
-            .root0_commitment
-            .bindings
-            .kernel
-            .expected_digest()
-    {
-        return Err(SimpleKernelError::Bridge(
-            "RV64IM root0 kernel binding digest mismatch".into(),
         ));
     }
     if proof.kernel.root0_commitment.digest != proof.kernel.root0_commitment.expected_digest() {
@@ -586,98 +406,62 @@ fn validate_public_bundle_bindings(proof: &Rv64imProof) -> Result<(), SimpleKern
             "RV64IM root0 claim does not bind the expected stage and kernel terminal digests".into(),
         ));
     }
-    if proof
-        .kernel
-        .joint_opening
-        .bindings
-        .statement
-        .statement_digest
-        != proof.statement.digest
+    if proof.kernel.joint_opening.proof_statement_digest != proof.statement.digest
+        || proof.kernel.joint_opening.public_step_count != proof.kernel.main_lane.public_step_count()
+        || proof.kernel.joint_opening.main_lane.digest != proof.kernel.main_lane.summary().digest
         || proof
             .kernel
             .joint_opening
-            .bindings
-            .statement
-            .public_step_count
-            != proof.kernel.main_lane.public_step_count()
-        || proof.kernel.joint_opening.bindings.main_lane.bundle_digest != proof.kernel.main_lane.digest
-        || proof
-            .kernel
-            .joint_opening
-            .bindings
             .main_lane
-            .proof
+            .binding
             .statement_digest
             != proof.kernel.main_lane.statement_digest()
+        || proof.kernel.joint_opening.main_lane.binding.proof_digest != proof.kernel.main_lane.proof_digest()
         || proof
             .kernel
             .joint_opening
-            .bindings
             .main_lane
-            .proof
-            .proof_digest
-            != proof.kernel.main_lane.proof_digest()
-        || proof
-            .kernel
-            .joint_opening
-            .bindings
-            .main_lane
-            .proof
+            .binding
             .public_step_count
             != proof.kernel.main_lane.public_step_count()
+        || proof.kernel.joint_opening.kernel_opening.digest != proof.kernel.kernel_opening.summary().digest
+        || proof.kernel.joint_opening.kernel_opening.opening_digest != proof.kernel.kernel_opening.opening_digest()
         || proof
             .kernel
             .joint_opening
-            .bindings
             .kernel_opening
-            .bundle_digest
-            != proof.kernel.kernel_opening.digest
+            .bindings
+            .claim_digest
+            != proof.kernel.kernel_opening.claim_digest()
         || proof
             .kernel
             .joint_opening
-            .bindings
             .kernel_opening
-            .opening
-            .digest
-            != proof.kernel.kernel_opening.bindings.digest
+            .bindings
+            .bindings_digest
+            != proof.kernel.kernel_opening.bindings_digest()
+        || proof
+            .kernel
+            .joint_opening
+            .kernel_opening
+            .bindings
+            .prepared_steps_digest
+            != proof.kernel.kernel_opening.prepared_steps_digest()
     {
         return Err(SimpleKernelError::Bridge(
             "RV64IM joint-opening proof bundle fields do not match the proof statement and bound proof bundles".into(),
         ));
     }
-    if proof.kernel.root0_commitment.bindings.stages.claims.digest != proof.kernel.stage_claims.summary.digest
-        || proof
-            .kernel
-            .root0_commitment
-            .bindings
-            .stages
-            .packages
-            .digest
-            != proof.kernel.stage_packages.summary.digest
-        || proof
-            .kernel
-            .root0_commitment
-            .bindings
-            .kernel
-            .bundles
-            .opening
-            .digest
-            != proof.kernel.kernel_opening.bindings.digest
-        || proof
-            .kernel
-            .root0_commitment
-            .bindings
-            .kernel
-            .bundles
-            .claims
-            .digest
-            != proof.kernel.kernel_claims.summary.digest
+    if proof.kernel.root0_commitment.stage_claims.digest != proof.kernel.stage_claims.summary.digest
+        || proof.kernel.root0_commitment.stage_packages.digest != proof.kernel.stage_packages.summary.digest
+        || proof.kernel.root0_commitment.kernel_opening.digest != proof.kernel.kernel_opening.summary().digest
+        || proof.kernel.root0_commitment.kernel_claims.digest != proof.kernel.kernel_claims.summary.digest
     {
         return Err(SimpleKernelError::Bridge(
             "RV64IM root0 commitment bundle does not bind the expected proof bundles".into(),
         ));
     }
-    if proof.kernel.root0_commitment.claim.terminal.root0_digest != proof.kernel.kernel_claims.root0_digest() {
+    if proof.claim.root0.terminal.root0_digest != proof.kernel.kernel_claims.root0_digest() {
         return Err(SimpleKernelError::Bridge(
             "RV64IM root0 commitment claim does not match the kernel-claim proof bundle".into(),
         ));
