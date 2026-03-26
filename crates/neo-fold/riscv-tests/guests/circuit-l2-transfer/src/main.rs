@@ -60,20 +60,27 @@ impl RamReader {
         Self { addr }
     }
 
+    #[inline]
     fn read_u32(&mut self) -> u32 {
         let val = unsafe { core::ptr::read_volatile(self.addr as *const u32) };
         self.addr += 4;
         val
     }
 
+    #[inline]
     fn read_u64(&mut self) -> u64 {
         let lo = self.read_u32() as u64;
         let hi = self.read_u32() as u64;
         lo | (hi << 32)
     }
 
+    #[inline]
     fn read_digest(&mut self) -> GlDigest {
-        [self.read_u64(), self.read_u64(), self.read_u64(), self.read_u64()]
+        let a0 = self.read_u64();
+        let a1 = self.read_u64();
+        let a2 = self.read_u64();
+        let a3 = self.read_u64();
+        [a0, a1, a2, a3]
     }
 }
 
@@ -86,20 +93,24 @@ impl RamWriter {
         Self { addr }
     }
 
+    #[inline]
     fn write_u32(&mut self, val: u32) {
         unsafe { core::ptr::write_volatile(self.addr as *mut u32, val) };
         self.addr += 4;
     }
 
+    #[inline]
     fn write_u64(&mut self, val: u64) {
         self.write_u32(val as u32);
         self.write_u32((val >> 32) as u32);
     }
 
+    #[inline]
     fn write_digest(&mut self, d: &GlDigest) {
-        for &elem in d {
-            self.write_u64(elem);
-        }
+        self.write_u64(d[0]);
+        self.write_u64(d[1]);
+        self.write_u64(d[2]);
+        self.write_u64(d[3]);
     }
 }
 
@@ -153,6 +164,7 @@ fn derive_nullifier(domain: &GlDigest, nf_key: &GlDigest, rho: &GlDigest) -> GlD
     poseidon2_hash(&input)
 }
 
+#[inline(always)]
 fn mt_node(level: u64, left: &GlDigest, right: &GlDigest) -> GlDigest {
     let mut input = [0u64; 10];
     input[0] = TAG_MT_NODE;
@@ -162,6 +174,7 @@ fn mt_node(level: u64, left: &GlDigest, right: &GlDigest) -> GlDigest {
     poseidon2_hash(&input)
 }
 
+#[inline(always)]
 fn merkle_root(leaf: &GlDigest, pos: u32, reader: &mut RamReader, depth: u32) -> GlDigest {
     let mut cur = *leaf;
     let mut p = pos;
@@ -169,19 +182,11 @@ fn merkle_root(leaf: &GlDigest, pos: u32, reader: &mut RamReader, depth: u32) ->
     let mut lvl = 0u32;
     while lvl < depth {
         let sib = reader.read_digest();
-        let bit = (p & 1) as u64;
-
-        let mut left = [0u64; 4];
-        let mut right = [0u64; 4];
-        let mut i = 0usize;
-        while i < 4 {
-            let delta = gl_mul(bit, gl_sub(sib[i], cur[i]));
-            left[i] = gl_add(cur[i], delta);
-            right[i] = gl_sub(sib[i], delta);
-            i += 1;
-        }
-
-        cur = mt_node(lvl as u64, &left, &right);
+        cur = if (p & 1) == 0 {
+            mt_node(lvl as u64, &cur, &sib)
+        } else {
+            mt_node(lvl as u64, &sib, &cur)
+        };
         p >>= 1;
         lvl += 1;
     }
@@ -189,6 +194,7 @@ fn merkle_root(leaf: &GlDigest, pos: u32, reader: &mut RamReader, depth: u32) ->
     cur
 }
 
+#[inline(always)]
 fn enforce_prod_digest_diff(acc: u64, a: &GlDigest, b: &GlDigest) -> u64 {
     let mut result = acc;
     let mut i = 0usize;
@@ -200,6 +206,7 @@ fn enforce_prod_digest_diff(acc: u64, a: &GlDigest, b: &GlDigest) -> u64 {
     result
 }
 
+#[inline(always)]
 fn bl_bucket_leaf(entries: &[GlDigest; BL_BUCKET_SIZE]) -> GlDigest {
     let mut input = [0u64; 1 + BL_BUCKET_SIZE * 4];
     input[0] = TAG_BL_BUCKET;
@@ -220,7 +227,6 @@ fn assert_not_blacklisted(id: &GlDigest, blacklist_root: &GlDigest, reader: &mut
         *e = reader.read_digest();
     }
     let bucket_inv = reader.read_u64();
-
     let mut prod: u64 = GL_ONE;
     for entry in &entries {
         prod = enforce_prod_digest_diff(prod, id, entry);
@@ -241,38 +247,8 @@ const TAG_VIEW_STREAM: u64 = 102;
 const TAG_CT_HASH: u64 = 103;
 const TAG_VIEW_MAC: u64 = 104;
 
-fn digest_to_bytes(d: &GlDigest) -> [u8; 32] {
-    let mut out = [0u8; 32];
-    let mut i = 0usize;
-    while i < 4 {
-        let b = d[i].to_le_bytes();
-        out[i * 8..(i + 1) * 8].copy_from_slice(&b);
-        i += 1;
-    }
-    out
-}
-
-fn u64_to_le_bytes(v: u64) -> [u8; 8] {
-    v.to_le_bytes()
-}
-
-fn pack_bytes_to_felts(bytes: &[u8], len: usize, out: &mut [u64]) -> usize {
-    let n_elems = (len + 7) / 8;
-    let mut i = 0;
-    while i < n_elems {
-        let off = i * 8;
-        let mut buf = [0u8; 8];
-        let take = if off + 8 <= len { 8 } else { len - off };
-        let mut j = 0;
-        while j < take {
-            buf[j] = bytes[off + j];
-            j += 1;
-        }
-        out[i] = u64::from_le_bytes(buf);
-        i += 1;
-    }
-    n_elems
-}
+/// Number of u64 words in the note plaintext (272 bytes / 8 = 34 words).
+const NOTE_PLAIN_WORDS: usize = NOTE_PLAIN_LEN / 8; // 34
 
 /// FVK commitment: H(TAG_FVK_COMMIT, fvk[0..4])
 fn view_fvk_commitment(fvk: &GlDigest) -> GlDigest {
@@ -300,15 +276,6 @@ fn view_stream_block(k: &GlDigest, ctr: u32) -> GlDigest {
     poseidon2_hash(&input)
 }
 
-/// Ciphertext hash: H(TAG_CT_HASH, packed_ct_bytes..., byte_len)
-fn view_ct_hash(ct: &[u8; NOTE_PLAIN_LEN]) -> GlDigest {
-    let mut felts = [0u64; 1 + 34 + 1]; // tag + ceil(272/8) + length
-    felts[0] = TAG_CT_HASH;
-    let n = pack_bytes_to_felts(ct, NOTE_PLAIN_LEN, &mut felts[1..]);
-    felts[1 + n] = NOTE_PLAIN_LEN as u64;
-    poseidon2_hash(&felts[..1 + n + 1])
-}
-
 /// View MAC: H(TAG_VIEW_MAC, k[0..4], cm[0..4], ct_h[0..4])
 fn view_mac(k: &GlDigest, cm: &GlDigest, ct_h: &GlDigest) -> GlDigest {
     let mut input = [0u64; 13];
@@ -319,30 +286,18 @@ fn view_mac(k: &GlDigest, cm: &GlDigest, ct_h: &GlDigest) -> GlDigest {
     poseidon2_hash(&input)
 }
 
-fn view_stream_xor_encrypt(k: &GlDigest, pt: &[u8; NOTE_PLAIN_LEN]) -> [u8; NOTE_PLAIN_LEN] {
-    let mut ct = [0u8; NOTE_PLAIN_LEN];
-    let mut ctr: u32 = 0;
-    let mut off: usize = 0;
-    while off < NOTE_PLAIN_LEN {
-        let ks = view_stream_block(k, ctr);
-        let ks_bytes = digest_to_bytes(&ks);
-        ctr += 1;
-        let take = if off + 32 <= NOTE_PLAIN_LEN {
-            32
-        } else {
-            NOTE_PLAIN_LEN - off
-        };
-        let mut j = 0usize;
-        while j < take {
-            ct[off + j] = pt[off + j] ^ ks_bytes[j];
-            j += 1;
-        }
-        off += take;
-    }
-    ct
-}
-
-fn encode_note_plain(
+/// Encode note plaintext as u64 words (word-level, no byte conversion).
+///
+/// Layout (34 words):
+///   [0..4]   domain
+///   [4]      value
+///   [5]      0 (padding)
+///   [6..10]  rho
+///   [10..14] recipient
+///   [14..18] sender_id
+///   [18..34] cm_ins[0..MAX_INS] (4 words each)
+#[inline(always)]
+fn encode_note_plain_words(
     domain: &GlDigest,
     value: u64,
     rho: &GlDigest,
@@ -350,23 +305,55 @@ fn encode_note_plain(
     sender_id: &GlDigest,
     cm_ins: &[GlDigest; MAX_INS],
     n_in: u32,
-) -> [u8; NOTE_PLAIN_LEN] {
-    let mut pt = [0u8; NOTE_PLAIN_LEN];
-    let dom = digest_to_bytes(domain);
-    pt[..32].copy_from_slice(&dom);
-    pt[32..40].copy_from_slice(&u64_to_le_bytes(value));
-    pt[48..80].copy_from_slice(&digest_to_bytes(rho));
-    pt[80..112].copy_from_slice(&digest_to_bytes(recipient));
-    pt[112..144].copy_from_slice(&digest_to_bytes(sender_id));
+) -> [u64; NOTE_PLAIN_WORDS] {
+    let mut pt = [0u64; NOTE_PLAIN_WORDS];
+    pt[0..4].copy_from_slice(domain);
+    pt[4] = value;
+    // pt[5] = 0 (padding, already zero)
+    pt[6..10].copy_from_slice(rho);
+    pt[10..14].copy_from_slice(recipient);
+    pt[14..18].copy_from_slice(sender_id);
     let mut i = 0usize;
     while i < MAX_INS {
-        let off = 144 + i * 32;
         if (i as u32) < n_in {
-            pt[off..off + 32].copy_from_slice(&digest_to_bytes(&cm_ins[i]));
+            let off = 18 + i * 4;
+            pt[off..off + 4].copy_from_slice(&cm_ins[i]);
         }
         i += 1;
     }
     pt
+}
+
+/// Fused encrypt-then-hash: XOR plaintext words with keystream words and hash
+/// the ciphertext inline, without materializing the full ciphertext array.
+///
+/// XOR at u64 word level is equivalent to byte-level XOR because
+/// (a ^ b).to_le_bytes() == a.to_le_bytes() ^ b.to_le_bytes().
+#[inline(always)]
+fn view_encrypt_and_ct_hash(k: &GlDigest, pt_words: &[u64; NOTE_PLAIN_WORDS]) -> GlDigest {
+    // Build the hash input: [TAG_CT_HASH, ct_word_0..ct_word_33, NOTE_PLAIN_LEN]
+    let mut felts = [0u64; 1 + NOTE_PLAIN_WORDS + 1]; // 36 elements
+    felts[0] = TAG_CT_HASH;
+
+    let mut word_idx = 0usize;
+    let mut ctr: u32 = 0;
+    // Each keystream block produces 4 u64 words (32 bytes).
+    // 34 words = 8 full blocks (32 words) + 1 partial block (2 words).
+    while word_idx < NOTE_PLAIN_WORDS {
+        let ks = view_stream_block(k, ctr);
+        ctr += 1;
+        let remaining = NOTE_PLAIN_WORDS - word_idx;
+        let take = if remaining >= 4 { 4 } else { remaining };
+        let mut j = 0usize;
+        while j < take {
+            felts[1 + word_idx + j] = pt_words[word_idx + j] ^ ks[j];
+            j += 1;
+        }
+        word_idx += take;
+    }
+
+    felts[1 + NOTE_PLAIN_WORDS] = NOTE_PLAIN_LEN as u64;
+    poseidon2_hash(&felts)
 }
 
 #[nightstream_sdk::provable]
@@ -462,11 +449,9 @@ fn note_spend() -> ! {
         output_rcps[j] = rcp;
     }
 
-    let mut cm_outs_pub: [GlDigest; MAX_OUTS] = [ZERO_DIGEST; MAX_OUTS];
     for j in 0..n_out as usize {
         let cm_pub = r.read_digest();
         assert!(digest_eq(&output_cms[j], &cm_pub));
-        cm_outs_pub[j] = cm_pub;
     }
 
     let rhs = gl_add(withdraw_amount, out_sum);
@@ -498,7 +483,6 @@ fn note_spend() -> ! {
     if withdraw_amount == 0 {
         assert_not_blacklisted(&output_rcps[0], &blacklist_root, &mut r);
     }
-
     let n_viewers = r.read_u32();
 
     w.write_digest(&anchor);
@@ -510,7 +494,7 @@ fn note_spend() -> ! {
     w.write_digest(&withdraw_to);
     w.write_u32(n_out);
     for j in 0..n_out as usize {
-        w.write_digest(&cm_outs_pub[j]);
+        w.write_digest(&output_cms[j]);
     }
     w.write_digest(&blacklist_root);
 
@@ -528,8 +512,7 @@ fn note_spend() -> ! {
             let mac_pub = r.read_digest();
 
             let k = view_kdf(&fvk, &output_cms[j]);
-
-            let pt = encode_note_plain(
+            let pt_words = encode_note_plain_words(
                 &domain,
                 output_values[j],
                 &output_rhos[j],
@@ -539,8 +522,7 @@ fn note_spend() -> ! {
                 n_in,
             );
 
-            let ct = view_stream_xor_encrypt(&k, &pt);
-            let ct_h = view_ct_hash(&ct);
+            let ct_h = view_encrypt_and_ct_hash(&k, &pt_words);
             assert!(digest_eq(&ct_h, &ct_hash_pub));
 
             let mac = view_mac(&k, &output_cms[j], &ct_h);
