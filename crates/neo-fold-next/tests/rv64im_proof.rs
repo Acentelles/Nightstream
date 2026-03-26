@@ -1,6 +1,11 @@
 //! Focused tests for the final public RV64IM proof API.
 
 use neo_fold_next::rv64im::{parity_source_cases, prove_rv64im_proof, verify_rv64im_proof, Rv64imProofInput};
+use neo_fold_next::rv64im::{
+    Rv64imKernelProofBundle, Rv64imStageClaimDigestBundle, Rv64imStageClaimProofBundle, Rv64imStageWitnessProofBundle,
+    Rv64imStageWitnessSummaryBundle,
+};
+use neo_transcript::{Poseidon2Transcript, Transcript};
 
 fn source_case(name: &str) -> neo_fold_next::rv64im::Rv64imParitySourceCase {
     parity_source_cases()
@@ -15,6 +20,128 @@ fn proof_input(name: &str) -> Rv64imProofInput {
     Rv64imProofInput { source, max_steps }
 }
 
+fn stage_witness_summary_digest(summary: &Rv64imStageWitnessSummaryBundle) -> [u8; 32] {
+    let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/stage_witness_summary_bundle");
+    tr.append_u64s(
+        b"rv64im/stage_witness_summary_bundle/meta",
+        &[
+            summary.stage1_row_count,
+            summary.stage2_register_read_count,
+            summary.stage2_register_write_count,
+            summary.stage2_ram_event_count,
+            summary.stage2_twist_link_count,
+            summary.stage3_continuity_count,
+            summary.stage3_halted as u64,
+            summary.transcript_event_count,
+        ],
+    );
+    tr.digest32()
+}
+
+fn stage_witness_proof_digest(bundle: &Rv64imStageWitnessProofBundle) -> [u8; 32] {
+    let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/stage_witness_proof_bundle");
+    tr.append_message(b"rv64im/stage_witness_proof_bundle/summary", &bundle.summary.digest);
+    tr.digest32()
+}
+
+fn stage_claim_digest_bundle_digest(summary: &Rv64imStageClaimDigestBundle) -> [u8; 32] {
+    let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/stage_claim_digest_bundle");
+    tr.append_message(
+        b"rv64im/stage_claim_digest_bundle/claim_bundle_digest",
+        &summary.claim_bundle_digest,
+    );
+    tr.append_message(
+        b"rv64im/stage_claim_digest_bundle/stage1_digest",
+        &summary.stage1_digest,
+    );
+    tr.append_message(
+        b"rv64im/stage_claim_digest_bundle/stage2_digest",
+        &summary.stage2_digest,
+    );
+    tr.append_message(
+        b"rv64im/stage_claim_digest_bundle/stage3_digest",
+        &summary.stage3_digest,
+    );
+    tr.append_message(
+        b"rv64im/stage_claim_digest_bundle/transcript_digest",
+        &summary.transcript_digest,
+    );
+    tr.append_message(
+        b"rv64im/stage_claim_digest_bundle/execution_digest",
+        &summary.execution_digest,
+    );
+    tr.digest32()
+}
+
+fn stage_claim_proof_digest(bundle: &Rv64imStageClaimProofBundle) -> [u8; 32] {
+    let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/stage_claim_proof_bundle");
+    tr.append_message(b"rv64im/stage_claim_proof_bundle/summary", &bundle.summary.digest);
+    tr.digest32()
+}
+
+fn joint_opening_bundle_digest(bundle: &Rv64imKernelProofBundle) -> [u8; 32] {
+    let main_lane = bundle.main_lane.summary();
+    let kernel_opening = bundle.kernel_opening.summary();
+    let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/joint_opening_proof_bundle");
+    tr.append_message(b"rv64im/joint_opening_proof_bundle/main_lane_digest", &main_lane.digest);
+    tr.append_message(
+        b"rv64im/joint_opening_proof_bundle/kernel_opening_digest",
+        &kernel_opening.digest,
+    );
+    tr.digest32()
+}
+
+fn root0_commitment_bundle_digest(bundle: &Rv64imKernelProofBundle) -> [u8; 32] {
+    let kernel_opening = bundle.kernel_opening.summary();
+    let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/root0_commitment_bundle");
+    tr.append_message(
+        b"rv64im/root0_commitment_bundle/kernel_opening_digest",
+        &kernel_opening.digest,
+    );
+    tr.append_message(
+        b"rv64im/root0_commitment_bundle/kernel_claims_digest",
+        &bundle.kernel_claims.summary.digest,
+    );
+    tr.digest32()
+}
+
+fn kernel_proof_bundle_digest(bundle: &Rv64imKernelProofBundle) -> [u8; 32] {
+    let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/kernel_proof_bundle");
+    tr.append_message(b"rv64im/kernel_proof_bundle/root_params_id", &bundle.root_params_id);
+    tr.append_message(b"rv64im/kernel_proof_bundle/trace_digest", &bundle.trace.digest);
+    tr.append_message(b"rv64im/kernel_proof_bundle/stages_digest", &bundle.stages.digest);
+    tr.append_message(
+        b"rv64im/kernel_proof_bundle/stage_claims_digest",
+        &bundle.stage_claims.digest,
+    );
+    tr.append_message(
+        b"rv64im/kernel_proof_bundle/stage_packages_digest",
+        &bundle.stage_packages.digest,
+    );
+    tr.append_message(
+        b"rv64im/kernel_proof_bundle/kernel_opening_digest",
+        &bundle.kernel_opening.digest,
+    );
+    tr.append_message(
+        b"rv64im/kernel_proof_bundle/root0_digest",
+        &bundle.kernel_claims.root0_digest(),
+    );
+    tr.append_message(
+        b"rv64im/kernel_proof_bundle/prepared_step_bindings_digest",
+        &bundle.kernel_claims.prepared_step_bindings_digest(),
+    );
+    tr.append_message(b"rv64im/kernel_proof_bundle/main_lane_digest", &bundle.main_lane.digest);
+    tr.append_message(
+        b"rv64im/kernel_proof_bundle/joint_opening_bundle_digest",
+        &joint_opening_bundle_digest(bundle),
+    );
+    tr.append_message(
+        b"rv64im/kernel_proof_bundle/root0_commitment_bundle_digest",
+        &root0_commitment_bundle_digest(bundle),
+    );
+    tr.digest32()
+}
+
 #[test]
 fn rv64im_proof_roundtrip_matches_kernel_export() {
     let input = proof_input("control_flow_jal_skip_ecall");
@@ -27,8 +154,8 @@ fn rv64im_proof_roundtrip_matches_kernel_export() {
     assert_ne!(proof.claim.opening.digest, [0; 32]);
     assert_ne!(proof.claim.joint_opening.digest, [0; 32]);
     assert_ne!(proof.claim.root0.digest, [0; 32]);
-    assert_ne!(proof.kernel.joint_opening.digest, [0; 32]);
-    assert_ne!(proof.kernel.root0_commitment.digest, [0; 32]);
+    assert_ne!(joint_opening_bundle_digest(&proof.kernel), [0; 32]);
+    assert_ne!(root0_commitment_bundle_digest(&proof.kernel), [0; 32]);
     assert_ne!(proof.statement.digest, [0; 32]);
     assert_eq!(verified.digest, witness.digest);
     assert_eq!(verified.trace.digest, witness.trace.digest);
@@ -82,88 +209,7 @@ fn rv64im_proof_roundtrip_matches_kernel_export() {
         proof.claim.root0.terminal.root0_digest,
         witness.kernel_claims.root0_digest()
     );
-    assert_eq!(
-        proof.kernel.joint_opening.main_lane.digest,
-        proof.kernel.main_lane.summary().digest
-    );
-    assert_eq!(
-        proof
-            .kernel
-            .joint_opening
-            .main_lane
-            .binding
-            .statement_digest,
-        proof.kernel.main_lane.statement_digest()
-    );
-    assert_eq!(
-        proof.kernel.joint_opening.main_lane.binding.proof_digest,
-        proof.kernel.main_lane.proof_digest()
-    );
-    assert_eq!(
-        proof
-            .kernel
-            .joint_opening
-            .kernel_opening
-            .bindings
-            .claim_digest,
-        proof.kernel.kernel_opening.claim_digest()
-    );
-    assert_eq!(
-        proof
-            .kernel
-            .joint_opening
-            .kernel_opening
-            .bindings
-            .bindings_digest,
-        proof.kernel.kernel_opening.bindings_digest()
-    );
-    assert_eq!(
-        proof
-            .kernel
-            .joint_opening
-            .kernel_opening
-            .bindings
-            .prepared_steps_digest,
-        proof.kernel.kernel_opening.prepared_steps_digest()
-    );
-    assert_eq!(
-        proof.kernel.joint_opening.kernel_opening.digest,
-        proof.kernel.kernel_opening.summary().digest
-    );
-    assert_eq!(
-        proof.kernel.root0_commitment.kernel_opening.digest,
-        proof.kernel.kernel_opening.summary().digest
-    );
-    assert_eq!(
-        proof.kernel.root0_commitment.kernel_claims.digest,
-        proof.kernel.kernel_claims.summary.digest
-    );
-    assert_eq!(
-        proof.kernel.root0_commitment.stage_claims.digest,
-        proof.kernel.stage_claims.summary.digest
-    );
-    assert_eq!(
-        proof.kernel.root0_commitment.stage_packages.digest,
-        proof.kernel.stage_packages.summary.digest
-    );
-    assert_eq!(
-        proof
-            .kernel
-            .root0_commitment
-            .kernel_claims
-            .terminal
-            .root0_digest,
-        proof.kernel.kernel_claims.root0_digest()
-    );
-    assert_eq!(
-        proof
-            .kernel
-            .root0_commitment
-            .kernel_claims
-            .terminal
-            .final_state_digest,
-        proof.kernel.kernel_claims.final_state_digest()
-    );
+    assert_eq!(proof.kernel.digest, kernel_proof_bundle_digest(&proof.kernel));
     assert_eq!(
         proof.statement.kernel_opening_digest,
         witness.kernel_opening.opening_digest
@@ -341,94 +387,6 @@ fn rv64im_proof_rejects_tampered_kernel_and_main_lane_surfaces() {
     tampered_main_lane_binding.kernel.main_lane.binding.digest[0] ^= 1;
     assert!(verify_rv64im_proof(&input, &tampered_main_lane_binding).is_err());
 
-    let mut tampered_joint_opening_bundle = proof.clone();
-    tampered_joint_opening_bundle.kernel.joint_opening.digest[0] ^= 1;
-    assert!(verify_rv64im_proof(&input, &tampered_joint_opening_bundle).is_err());
-
-    let mut tampered_joint_opening_binding_bundle = proof.clone();
-    tampered_joint_opening_binding_bundle
-        .kernel
-        .joint_opening
-        .public_step_count ^= 1;
-    assert!(verify_rv64im_proof(&input, &tampered_joint_opening_binding_bundle).is_err());
-
-    let mut tampered_joint_opening_binding = proof.clone();
-    tampered_joint_opening_binding
-        .kernel
-        .joint_opening
-        .main_lane
-        .digest[0] ^= 1;
-    assert!(verify_rv64im_proof(&input, &tampered_joint_opening_binding).is_err());
-
-    let mut tampered_joint_opening_main_lane_surface = proof.clone();
-    tampered_joint_opening_main_lane_surface
-        .kernel
-        .joint_opening
-        .main_lane
-        .binding
-        .statement_digest[0] ^= 1;
-    assert!(verify_rv64im_proof(&input, &tampered_joint_opening_main_lane_surface).is_err());
-
-    let mut tampered_joint_opening_main_lane_binding_digest = proof.clone();
-    tampered_joint_opening_main_lane_binding_digest
-        .kernel
-        .joint_opening
-        .main_lane
-        .digest[0] ^= 1;
-    assert!(verify_rv64im_proof(&input, &tampered_joint_opening_main_lane_binding_digest).is_err());
-
-    let mut tampered_joint_opening_statement_binding = proof.clone();
-    tampered_joint_opening_statement_binding
-        .kernel
-        .joint_opening
-        .proof_statement_digest[0] ^= 1;
-    assert!(verify_rv64im_proof(&input, &tampered_joint_opening_statement_binding).is_err());
-
-    let mut tampered_joint_opening_kernel_opening_binding = proof.clone();
-    tampered_joint_opening_kernel_opening_binding
-        .kernel
-        .joint_opening
-        .kernel_opening
-        .digest[0] ^= 1;
-    assert!(verify_rv64im_proof(&input, &tampered_joint_opening_kernel_opening_binding).is_err());
-
-    let mut tampered_root0_bundle = proof.clone();
-    tampered_root0_bundle.kernel.root0_commitment.digest[0] ^= 1;
-    assert!(verify_rv64im_proof(&input, &tampered_root0_bundle).is_err());
-
-    let mut tampered_root0_binding_bundle = proof.clone();
-    tampered_root0_binding_bundle
-        .kernel
-        .root0_commitment
-        .kernel_claims
-        .digest[0] ^= 1;
-    assert!(verify_rv64im_proof(&input, &tampered_root0_binding_bundle).is_err());
-
-    let mut tampered_root0_binding = proof.clone();
-    tampered_root0_binding
-        .kernel
-        .root0_commitment
-        .stage_claims
-        .digest[0] ^= 1;
-    assert!(verify_rv64im_proof(&input, &tampered_root0_binding).is_err());
-
-    let mut tampered_root0_surface = proof.clone();
-    tampered_root0_surface
-        .kernel
-        .root0_commitment
-        .kernel_claims
-        .terminal
-        .final_state_digest[0] ^= 1;
-    assert!(verify_rv64im_proof(&input, &tampered_root0_surface).is_err());
-
-    let mut tampered_root0_terminal_binding = proof.clone();
-    tampered_root0_terminal_binding
-        .kernel
-        .root0_commitment
-        .kernel_claims
-        .digest[0] ^= 1;
-    assert!(verify_rv64im_proof(&input, &tampered_root0_terminal_binding).is_err());
-
     let mut tampered_kernel_claim_bundle = proof.clone();
     tampered_kernel_claim_bundle
         .kernel
@@ -437,4 +395,39 @@ fn rv64im_proof_rejects_tampered_kernel_and_main_lane_surfaces() {
         .terminal
         .final_state_digest[0] ^= 1;
     assert!(verify_rv64im_proof(&input, &tampered_kernel_claim_bundle).is_err());
+}
+
+#[test]
+fn rv64im_proof_rejects_export_surface_mismatches_with_recomputed_digests() {
+    let input = proof_input("native_logic_compare_chain_ecall");
+
+    let (_witness, proof) = prove_rv64im_proof(&input).expect("prove rv64im proof");
+
+    let mut tampered_stage_summary = proof.clone();
+    tampered_stage_summary
+        .kernel
+        .stages
+        .summary
+        .stage2_register_read_count += 1;
+    tampered_stage_summary.kernel.stages.summary.digest =
+        stage_witness_summary_digest(&tampered_stage_summary.kernel.stages.summary);
+    tampered_stage_summary.kernel.stages.digest = stage_witness_proof_digest(&tampered_stage_summary.kernel.stages);
+    tampered_stage_summary.kernel.digest = kernel_proof_bundle_digest(&tampered_stage_summary.kernel);
+    assert!(verify_rv64im_proof(&input, &tampered_stage_summary).is_err());
+
+    let mut tampered_stage_claim_summary = proof.clone();
+    tampered_stage_claim_summary
+        .kernel
+        .stage_claims
+        .summary
+        .stage2_digest[0] ^= 1;
+    tampered_stage_claim_summary
+        .kernel
+        .stage_claims
+        .summary
+        .digest = stage_claim_digest_bundle_digest(&tampered_stage_claim_summary.kernel.stage_claims.summary);
+    tampered_stage_claim_summary.kernel.stage_claims.digest =
+        stage_claim_proof_digest(&tampered_stage_claim_summary.kernel.stage_claims);
+    tampered_stage_claim_summary.kernel.digest = kernel_proof_bundle_digest(&tampered_stage_claim_summary.kernel);
+    assert!(verify_rv64im_proof(&input, &tampered_stage_claim_summary).is_err());
 }

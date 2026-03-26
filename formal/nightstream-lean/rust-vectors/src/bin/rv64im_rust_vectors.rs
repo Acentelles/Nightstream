@@ -690,14 +690,6 @@ fn render_main_lane_proof_bundle(bundle: &rv64::Rv64imMainLaneProofBundle) -> St
     )
 }
 
-fn render_main_lane_proof_summary_bundle(bundle: &rv64::Rv64imMainLaneProofSummaryBundle) -> String {
-    format!(
-        "{{ binding := {}, digest := {} }}",
-        render_main_lane_proof_binding(&bundle.binding),
-        render_u8_list(&bundle.digest),
-    )
-}
-
 fn render_trace_shape_bundle(bundle: &rv64::Rv64imTraceShapeBundle) -> String {
     format!(
         "{{ executionRowCount := {}, realRowCount := {}, effectRowCount := {}, commitRowCount := {}, digest := {} }}",
@@ -801,15 +793,6 @@ fn render_kernel_opening_proof_bundle(bundle: &rv64::Rv64imKernelOpeningProofBun
     )
 }
 
-fn render_kernel_opening_summary_bundle(bundle: &rv64::Rv64imKernelOpeningSummaryBundle) -> String {
-    format!(
-        "{{ openingDigest := {}, bindings := {}, digest := {} }}",
-        render_u8_list(&bundle.opening_digest),
-        render_kernel_opening_binding_bundle(&bundle.bindings),
-        render_u8_list(&bundle.digest),
-    )
-}
-
 fn render_kernel_claim_terminal_bundle(bundle: &rv64::Rv64imKernelClaimTerminalBundle) -> String {
     format!(
         "{{ root0Digest := {}, executionDigest := {}, finalStateDigest := {}, transcriptFinalDigest := {}, finalPc := {}, halted := {}, digest := {} }}",
@@ -840,31 +823,9 @@ fn render_kernel_claim_proof_bundle(bundle: &rv64::Rv64imKernelClaimProofBundle)
     )
 }
 
-fn render_joint_opening_proof_bundle(bundle: &rv64::Rv64imJointOpeningProofBundle) -> String {
-    format!(
-        "{{ proofStatementDigest := {}, publicStepCount := {}, mainLane := {}, kernelOpening := {}, digest := {} }}",
-        render_u8_list(&bundle.proof_statement_digest),
-        bundle.public_step_count,
-        render_main_lane_proof_summary_bundle(&bundle.main_lane),
-        render_kernel_opening_summary_bundle(&bundle.kernel_opening),
-        render_u8_list(&bundle.digest),
-    )
-}
-
-fn render_root0_commitment_bundle(bundle: &rv64::Rv64imRoot0CommitmentBundle) -> String {
-    format!(
-        "{{ stageClaims := {}, stagePackages := {}, kernelOpening := {}, kernelClaims := {}, digest := {} }}",
-        render_stage_claim_digest_bundle(&bundle.stage_claims),
-        render_stage_package_digest_bundle(&bundle.stage_packages),
-        render_kernel_opening_summary_bundle(&bundle.kernel_opening),
-        render_kernel_claim_summary_bundle(&bundle.kernel_claims),
-        render_u8_list(&bundle.digest),
-    )
-}
-
 fn render_kernel_proof_bundle(bundle: &rv64::Rv64imKernelProofBundle) -> String {
     format!(
-        "{{\n  rootParamsId := {}\n  , trace := {}\n  , stages := {}\n  , stageClaims := {}\n  , stagePackages := {}\n  , kernelOpening := {}\n  , kernelClaims := {}\n  , mainLane := {}\n  , jointOpening := {}\n  , root0Commitment := {}\n  , digest := {}\n}}",
+        "{{\n  rootParamsId := {}\n  , trace := {}\n  , stages := {}\n  , stageClaims := {}\n  , stagePackages := {}\n  , kernelOpening := {}\n  , kernelClaims := {}\n  , mainLane := {}\n  , digest := {}\n}}",
         render_u8_list(&bundle.root_params_id),
         render_trace_proof_bundle(&bundle.trace),
         render_stage_witness_proof_bundle(&bundle.stages),
@@ -873,16 +834,24 @@ fn render_kernel_proof_bundle(bundle: &rv64::Rv64imKernelProofBundle) -> String 
         render_kernel_opening_proof_bundle(&bundle.kernel_opening),
         render_kernel_claim_proof_bundle(&bundle.kernel_claims),
         render_main_lane_proof_bundle(&bundle.main_lane),
-        render_joint_opening_proof_bundle(&bundle.joint_opening),
-        render_root0_commitment_bundle(&bundle.root0_commitment),
         render_u8_list(&bundle.digest),
+    )
+}
+
+fn render_proof_view(proof: &rv64::Rv64imProof) -> String {
+    format!(
+        "{{\n  claim := {}\n  , statement := {}\n  , kernel := {}\n}}",
+        render_kernel_claim_bundle(&proof.claim),
+        render_proof_statement(&proof.statement),
+        render_kernel_proof_bundle(&proof.kernel),
     )
 }
 
 fn render_public_proof_vector_case(case: &PublicProofVectorCase) -> String {
     format!(
-        "{{\n  name := {}\n  , statement := {}\n  , claims := {}\n  , kernelProof := {}\n}}",
+        "{{\n  name := {}\n  , proof := {}\n  , statement := {}\n  , claims := {}\n  , kernelProof := {}\n}}",
         render_string(&case.name),
+        render_proof_view(&case.proof),
         render_proof_statement(&case.proof.statement),
         render_kernel_claim_bundle(&case.proof.claim),
         render_kernel_proof_bundle(&case.proof.kernel),

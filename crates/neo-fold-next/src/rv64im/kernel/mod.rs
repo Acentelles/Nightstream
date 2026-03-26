@@ -31,10 +31,9 @@ pub use artifacts::{
 pub use proof_api::{
     build_rv64im_proof_witness, prove_rv64im_proof, verify_rv64im_proof, Rv64imAcceptedProofClaim,
     Rv64imAcceptedProofMainLaneBinding, Rv64imAcceptedProofStatementBinding, Rv64imAcceptedProofTerminalBinding,
-    Rv64imJointOpeningClaim, Rv64imJointOpeningProofBundle, Rv64imKernelClaimBundle, Rv64imKernelOpeningClaim,
-    Rv64imKernelProofBundle, Rv64imMainLaneClaim, Rv64imMainLaneClaimBinding, Rv64imMainLaneProofBinding,
-    Rv64imMainLaneProofBundle, Rv64imMainLaneProofSummaryBundle, Rv64imProof, Rv64imProofInput, Rv64imProofStatement,
-    Rv64imRoot0Claim, Rv64imRoot0CommitmentBundle,
+    Rv64imJointOpeningClaim, Rv64imKernelClaimBundle, Rv64imKernelOpeningClaim, Rv64imKernelProofBundle,
+    Rv64imMainLaneClaim, Rv64imMainLaneClaimBinding, Rv64imMainLaneProofBinding, Rv64imMainLaneProofBundle,
+    Rv64imMainLaneProofSummaryBundle, Rv64imProof, Rv64imProofInput, Rv64imProofStatement, Rv64imRoot0Claim,
 };
 pub use proof_witness::{
     Rv64imKernelClaimProofBundle, Rv64imKernelClaimSummaryBundle, Rv64imKernelClaimTerminalBundle,

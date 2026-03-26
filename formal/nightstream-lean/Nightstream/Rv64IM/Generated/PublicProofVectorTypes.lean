@@ -249,22 +249,6 @@ structure KernelClaimProofBundleView where
   digest : List Byte
 deriving DecidableEq, Repr
 
-structure JointOpeningProofBundleView where
-  proofStatementDigest : List Byte
-  publicStepCount : Nat
-  mainLane : MainLaneProofSummaryBundleView
-  kernelOpening : KernelOpeningSummaryBundleView
-  digest : List Byte
-deriving DecidableEq, Repr
-
-structure Root0CommitmentBundleView where
-  stageClaims : StageClaimDigestBundleView
-  stagePackages : StagePackageDigestBundleView
-  kernelOpening : KernelOpeningSummaryBundleView
-  kernelClaims : KernelClaimSummaryBundleView
-  digest : List Byte
-deriving DecidableEq, Repr
-
 structure KernelProofBundleView where
   rootParamsId : List Byte
   trace : TraceProofBundleView
@@ -274,13 +258,18 @@ structure KernelProofBundleView where
   kernelOpening : KernelOpeningProofBundleView
   kernelClaims : KernelClaimProofBundleView
   mainLane : MainLaneProofBundleView
-  jointOpening : JointOpeningProofBundleView
-  root0Commitment : Root0CommitmentBundleView
   digest : List Byte
+deriving DecidableEq, Repr
+
+structure ProofView where
+  claim : KernelClaimBundleView
+  statement : ProofStatementView
+  kernel : KernelProofBundleView
 deriving DecidableEq, Repr
 
 structure PublicProofVectorCase where
   name : String
+  proof : ProofView
   statement : ProofStatementView
   claims : KernelClaimBundleView
   kernelProof : KernelProofBundleView

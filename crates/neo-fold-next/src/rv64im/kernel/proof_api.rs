@@ -3,15 +3,12 @@
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use serde::{Deserialize, Serialize};
 
-use super::proof_bridge::{
-    kernel_claim_bundle_from_statement_and_kernel, kernel_proof_bundle_from_packaged, proof_statement_from_kernel,
-};
+use super::proof_bridge::proof_from_kernel_and_packaged;
 use super::proof_verify::verify_kernel_output_from_public_proof;
 use super::proof_witness::{
     proof_witness_bundle_from_kernel_output, Rv64imKernelClaimProofBundle, Rv64imKernelClaimSummaryBundle,
     Rv64imKernelOpeningProofBundle, Rv64imKernelOpeningSummaryBundle, Rv64imProofWitnessBundle,
-    Rv64imStageClaimDigestBundle, Rv64imStageClaimProofBundle, Rv64imStagePackageDigestBundle,
-    Rv64imStagePackageProofBundle, Rv64imStageWitnessProofBundle, Rv64imTraceProofBundle,
+    Rv64imStageClaimProofBundle, Rv64imStagePackageProofBundle, Rv64imStageWitnessProofBundle, Rv64imTraceProofBundle,
 };
 use super::{
     build_simple_kernel_witness, prove_packaged_simple_kernel, SimpleKernelError, SimpleKernelProverInput,
@@ -161,7 +158,7 @@ pub struct Rv64imKernelClaimBundle {
     pub digest: [u8; 32],
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Rv64imMainLaneProofBinding {
     pub statement_digest: [u8; 32],
     pub proof_digest: [u8; 32],
@@ -176,27 +173,9 @@ pub struct Rv64imMainLaneProofBundle {
     pub(super) packaged: PackagedProof,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Rv64imMainLaneProofSummaryBundle {
     pub binding: Rv64imMainLaneProofBinding,
-    pub digest: [u8; 32],
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Rv64imJointOpeningProofBundle {
-    pub proof_statement_digest: [u8; 32],
-    pub public_step_count: u64,
-    pub main_lane: Rv64imMainLaneProofSummaryBundle,
-    pub kernel_opening: Rv64imKernelOpeningSummaryBundle,
-    pub digest: [u8; 32],
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Rv64imRoot0CommitmentBundle {
-    pub stage_claims: Rv64imStageClaimDigestBundle,
-    pub stage_packages: Rv64imStagePackageDigestBundle,
-    pub kernel_opening: Rv64imKernelOpeningSummaryBundle,
-    pub kernel_claims: Rv64imKernelClaimSummaryBundle,
     pub digest: [u8; 32],
 }
 
@@ -210,8 +189,6 @@ pub struct Rv64imKernelProofBundle {
     pub kernel_opening: Rv64imKernelOpeningProofBundle,
     pub kernel_claims: Rv64imKernelClaimProofBundle,
     pub main_lane: Rv64imMainLaneProofBundle,
-    pub joint_opening: Rv64imJointOpeningProofBundle,
-    pub root0_commitment: Rv64imRoot0CommitmentBundle,
     pub digest: [u8; 32],
 }
 
@@ -523,51 +500,50 @@ impl Rv64imMainLaneProofSummaryBundle {
     }
 }
 
-impl Rv64imJointOpeningProofBundle {
-    pub(super) fn expected_digest(&self) -> [u8; 32] {
-        let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/joint_opening_proof_bundle");
-        tr.append_message(
-            b"rv64im/joint_opening_proof_bundle/proof_statement_digest",
-            &self.proof_statement_digest,
-        );
-        tr.append_u64s(b"rv64im/joint_opening_proof_bundle/meta", &[self.public_step_count]);
-        tr.append_message(
-            b"rv64im/joint_opening_proof_bundle/main_lane_digest",
-            &self.main_lane.digest,
-        );
-        tr.append_message(
-            b"rv64im/joint_opening_proof_bundle/kernel_opening_digest",
-            &self.kernel_opening.digest,
-        );
-        tr.digest32()
-    }
+fn joint_opening_bundle_digest(
+    main_lane: &Rv64imMainLaneProofSummaryBundle,
+    kernel_opening: &Rv64imKernelOpeningSummaryBundle,
+) -> [u8; 32] {
+    let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/joint_opening_proof_bundle");
+    tr.append_message(b"rv64im/joint_opening_proof_bundle/main_lane_digest", &main_lane.digest);
+    tr.append_message(
+        b"rv64im/joint_opening_proof_bundle/kernel_opening_digest",
+        &kernel_opening.digest,
+    );
+    tr.digest32()
 }
 
-impl Rv64imRoot0CommitmentBundle {
-    pub(super) fn expected_digest(&self) -> [u8; 32] {
-        let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/root0_commitment_bundle");
-        tr.append_message(
-            b"rv64im/root0_commitment_bundle/stage_claims_digest",
-            &self.stage_claims.digest,
-        );
-        tr.append_message(
-            b"rv64im/root0_commitment_bundle/stage_packages_digest",
-            &self.stage_packages.digest,
-        );
-        tr.append_message(
-            b"rv64im/root0_commitment_bundle/kernel_opening_digest",
-            &self.kernel_opening.digest,
-        );
-        tr.append_message(
-            b"rv64im/root0_commitment_bundle/kernel_claims_digest",
-            &self.kernel_claims.digest,
-        );
-        tr.digest32()
-    }
+fn root0_commitment_bundle_digest(
+    kernel_opening: &Rv64imKernelOpeningSummaryBundle,
+    kernel_claims: &Rv64imKernelClaimSummaryBundle,
+) -> [u8; 32] {
+    let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/root0_commitment_bundle");
+    tr.append_message(
+        b"rv64im/root0_commitment_bundle/kernel_opening_digest",
+        &kernel_opening.digest,
+    );
+    tr.append_message(
+        b"rv64im/root0_commitment_bundle/kernel_claims_digest",
+        &kernel_claims.digest,
+    );
+    tr.digest32()
 }
 
 impl Rv64imKernelProofBundle {
+    pub(crate) fn joint_opening_digest(&self) -> [u8; 32] {
+        let main_lane = self.main_lane.summary();
+        let kernel_opening = self.kernel_opening.summary();
+        joint_opening_bundle_digest(&main_lane, &kernel_opening)
+    }
+
+    pub(crate) fn root0_commitment_digest(&self) -> [u8; 32] {
+        let kernel_opening = self.kernel_opening.summary();
+        root0_commitment_bundle_digest(&kernel_opening, &self.kernel_claims.summary)
+    }
+
     pub(super) fn expected_digest(&self) -> [u8; 32] {
+        let joint_opening_digest = self.joint_opening_digest();
+        let root0_commitment_digest = self.root0_commitment_digest();
         let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/kernel_proof_bundle");
         tr.append_message(b"rv64im/kernel_proof_bundle/root_params_id", &self.root_params_id);
         tr.append_message(b"rv64im/kernel_proof_bundle/trace_digest", &self.trace.digest);
@@ -595,11 +571,11 @@ impl Rv64imKernelProofBundle {
         tr.append_message(b"rv64im/kernel_proof_bundle/main_lane_digest", &self.main_lane.digest);
         tr.append_message(
             b"rv64im/kernel_proof_bundle/joint_opening_bundle_digest",
-            &self.joint_opening.digest,
+            &joint_opening_digest,
         );
         tr.append_message(
             b"rv64im/kernel_proof_bundle/root0_commitment_bundle_digest",
-            &self.root0_commitment.digest,
+            &root0_commitment_digest,
         );
         tr.digest32()
     }
@@ -616,15 +592,9 @@ pub fn prove_rv64im_proof(
 ) -> Result<(Rv64imProofWitnessBundle, Rv64imProof), SimpleKernelError> {
     let prover = SimpleKernelProverInput { public: input.clone() };
     let (kernel, packaged) = prove_packaged_simple_kernel(&prover)?;
-    let statement = proof_statement_from_kernel(&kernel, &packaged);
-    let claim = kernel_claim_bundle_from_statement_and_kernel(&statement, &packaged);
     Ok((
         proof_witness_bundle_from_kernel_output(&kernel),
-        Rv64imProof {
-            claim,
-            statement,
-            kernel: kernel_proof_bundle_from_packaged(&packaged),
-        },
+        proof_from_kernel_and_packaged(&kernel, &packaged),
     ))
 }
 

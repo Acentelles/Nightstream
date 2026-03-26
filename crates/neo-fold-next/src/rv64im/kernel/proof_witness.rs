@@ -25,7 +25,7 @@ pub struct Rv64imProofWitnessBundle {
     pub digest: [u8; 32],
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Rv64imKernelOpeningBindingBundle {
     pub claim_digest: [u8; 32],
     pub bindings_digest: [u8; 32],
@@ -41,14 +41,14 @@ pub struct Rv64imKernelOpeningProofBundle {
     pub(crate) opening: SimpleKernelOpeningBundle,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Rv64imKernelOpeningSummaryBundle {
     pub opening_digest: [u8; 32],
     pub bindings: Rv64imKernelOpeningBindingBundle,
     pub digest: [u8; 32],
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Rv64imKernelClaimTerminalBundle {
     pub root0_digest: [u8; 32],
     pub execution_digest: [u8; 32],
@@ -59,7 +59,7 @@ pub struct Rv64imKernelClaimTerminalBundle {
     pub digest: [u8; 32],
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Rv64imKernelClaimSummaryBundle {
     pub prepared_step_bindings_digest: [u8; 32],
     pub terminal: Rv64imKernelClaimTerminalBundle,
@@ -73,7 +73,7 @@ pub struct Rv64imKernelClaimProofBundle {
     pub(crate) claims: SimpleKernelKernelClaimBundle,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Rv64imStageClaimDigestBundle {
     pub claim_bundle_digest: [u8; 32],
     pub stage1_digest: [u8; 32],
@@ -91,7 +91,7 @@ pub struct Rv64imStageClaimProofBundle {
     pub(crate) claims: SimpleKernelStageClaimBundle,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Rv64imStagePackageDigestBundle {
     pub package_bundle_digest: [u8; 32],
     pub stage1_digest: [u8; 32],
@@ -107,7 +107,7 @@ pub struct Rv64imStagePackageProofBundle {
     pub(crate) packages: SimpleKernelStagePackageBundle,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Rv64imTraceShapeBundle {
     pub execution_row_count: u64,
     pub real_row_count: u64,
@@ -125,7 +125,7 @@ pub struct Rv64imTraceProofBundle {
     pub(crate) trace: SimpleKernelTraceWitness,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Rv64imStageWitnessSummaryBundle {
     pub stage1_row_count: u64,
     pub stage2_register_read_count: u64,

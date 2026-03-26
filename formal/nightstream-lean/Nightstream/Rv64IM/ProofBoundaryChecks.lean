@@ -1,5 +1,6 @@
 import Nightstream.Rv64IM.Generated.ImportedParityCorpus
 import Nightstream.Rv64IM.Generated.PublicProofVectors.Corpus
+import Nightstream.Rv64IM.Kernel.AcceptedPublicProof
 import Nightstream.Rv64IM.Kernel.PublicProofSchema
 import Nightstream.Chip8.Kernel.Poseidon2Transcript
 import Nightstream.Chip8.Kernel.Root0Digest
@@ -44,12 +45,43 @@ private abbrev Rv64imRustPublicProofSchemaView :=
     KernelClaimBundleView
     KernelProofBundleView
 
+private abbrev Rv64imRustExportedProofView :=
+  ProofView
+
+private structure Rv64imRustAcceptedPublicProofView where
+  statement : ProofStatementView
+  claims : KernelClaimBundleView
+  kernelProof : KernelProofBundleView
+  accepted : Unit
+
 private def publicProofSchemaOfCase
     (proofCase : PublicProofVectorCase) :
     Rv64imRustPublicProofSchemaView :=
-  { statement := proofCase.statement
-  , claims := proofCase.claims
-  , kernelProof := proofCase.kernelProof }
+  { statement := proofCase.proof.statement
+  , claims := proofCase.proof.claim
+  , kernelProof := proofCase.proof.kernel }
+
+private def exportedProofApiLockstep
+    (proofCase : PublicProofVectorCase) : Bool :=
+  let proof : Rv64imRustExportedProofView := proofCase.proof
+  proof.statement = proofCase.statement &&
+    proof.claim = proofCase.claims &&
+    proof.kernel = proofCase.kernelProof
+
+private def acceptedPublicProofOfCase
+    (proofCase : PublicProofVectorCase) :
+    Rv64imRustAcceptedPublicProofView :=
+  { statement := proofCase.proof.statement
+  , claims := proofCase.proof.claim
+  , kernelProof := proofCase.proof.kernel
+  , accepted := () }
+
+private def acceptedPublicProofLockstep
+    (proofCase : PublicProofVectorCase) : Bool :=
+  let accepted := acceptedPublicProofOfCase proofCase
+  accepted.statement = proofCase.proof.statement &&
+    accepted.claims = proofCase.proof.claim &&
+    accepted.kernelProof = proofCase.proof.kernel
 
 private def proofStatementDigest (statement : ProofStatementView) : List Byte :=
   transcriptDigest "neo.fold.next/rv64im/proof_statement"
@@ -346,37 +378,46 @@ private def kernelClaimProofBundleDigest (bundle : KernelClaimProofBundleView) :
   transcriptDigest "neo.fold.next/rv64im/kernel_claim_proof_bundle"
     [ .appendMessage "rv64im/kernel_claim_proof_bundle/summary" bundle.summary.digest ]
 
-private def jointOpeningProofBundleDigest (bundle : JointOpeningProofBundleView) : List Byte :=
+private def mainLaneProofSummaryOfBundle (bundle : MainLaneProofBundleView) :
+    MainLaneProofSummaryBundleView :=
+  { binding := bundle.binding
+  , digest := mainLaneProofSummaryBundleDigest { binding := bundle.binding, digest := [] } }
+
+private def kernelOpeningSummaryOfProof (bundle : KernelOpeningProofBundleView) :
+    KernelOpeningSummaryBundleView :=
+  { openingDigest := bundle.openingDigest
+  , bindings := bundle.bindings
+  , digest :=
+      kernelOpeningSummaryBundleDigest
+        { openingDigest := bundle.openingDigest, bindings := bundle.bindings, digest := [] } }
+
+private def jointOpeningBundleDigest
+    (mainLane : MainLaneProofSummaryBundleView)
+    (kernelOpening : KernelOpeningSummaryBundleView) : List Byte :=
   transcriptDigest "neo.fold.next/rv64im/joint_opening_proof_bundle"
     [ .appendMessage
-        "rv64im/joint_opening_proof_bundle/proof_statement_digest"
-        bundle.proofStatementDigest
-    , .appendU64s "rv64im/joint_opening_proof_bundle/meta" [bundle.publicStepCount]
-    , .appendMessage
         "rv64im/joint_opening_proof_bundle/main_lane_digest"
-        bundle.mainLane.digest
+        mainLane.digest
     , .appendMessage
         "rv64im/joint_opening_proof_bundle/kernel_opening_digest"
-        bundle.kernelOpening.digest
+        kernelOpening.digest
     ]
 
-private def root0CommitmentBundleDigest (bundle : Root0CommitmentBundleView) : List Byte :=
+private def root0CommitmentBundleDigest
+    (kernelOpening : KernelOpeningSummaryBundleView)
+    (kernelClaims : KernelClaimSummaryBundleView) : List Byte :=
   transcriptDigest "neo.fold.next/rv64im/root0_commitment_bundle"
     [ .appendMessage
-        "rv64im/root0_commitment_bundle/stage_claims_digest"
-        bundle.stageClaims.digest
-    , .appendMessage
-        "rv64im/root0_commitment_bundle/stage_packages_digest"
-        bundle.stagePackages.digest
-    , .appendMessage
         "rv64im/root0_commitment_bundle/kernel_opening_digest"
-        bundle.kernelOpening.digest
+        kernelOpening.digest
     , .appendMessage
         "rv64im/root0_commitment_bundle/kernel_claims_digest"
-        bundle.kernelClaims.digest
+        kernelClaims.digest
     ]
 
 private def kernelProofBundleDigest (bundle : KernelProofBundleView) : List Byte :=
+  let mainLaneSummary := mainLaneProofSummaryOfBundle bundle.mainLane
+  let kernelOpeningSummary := kernelOpeningSummaryOfProof bundle.kernelOpening
   transcriptDigest "neo.fold.next/rv64im/kernel_proof_bundle"
     [ .appendMessage "rv64im/kernel_proof_bundle/root_params_id" bundle.rootParamsId
     , .appendMessage "rv64im/kernel_proof_bundle/trace_digest" bundle.trace.digest
@@ -399,24 +440,11 @@ private def kernelProofBundleDigest (bundle : KernelProofBundleView) : List Byte
     , .appendMessage "rv64im/kernel_proof_bundle/main_lane_digest" bundle.mainLane.digest
     , .appendMessage
         "rv64im/kernel_proof_bundle/joint_opening_bundle_digest"
-        bundle.jointOpening.digest
+        (jointOpeningBundleDigest mainLaneSummary kernelOpeningSummary)
     , .appendMessage
         "rv64im/kernel_proof_bundle/root0_commitment_bundle_digest"
-        bundle.root0Commitment.digest
+        (root0CommitmentBundleDigest kernelOpeningSummary bundle.kernelClaims.summary)
     ]
-
-private def mainLaneProofSummaryOfBundle (bundle : MainLaneProofBundleView) :
-    MainLaneProofSummaryBundleView :=
-  { binding := bundle.binding
-  , digest := mainLaneProofSummaryBundleDigest { binding := bundle.binding, digest := [] } }
-
-private def kernelOpeningSummaryOfProof (bundle : KernelOpeningProofBundleView) :
-    KernelOpeningSummaryBundleView :=
-  { openingDigest := bundle.openingDigest
-  , bindings := bundle.bindings
-  , digest :=
-      kernelOpeningSummaryBundleDigest
-        { openingDigest := bundle.openingDigest, bindings := bundle.bindings, digest := [] } }
 
 private def parityCaseByName? (name : String) : Option (ParitySourceCase × ParityDerivedCase) :=
   Generated.parityCases.find? (fun (source, _) => source.manifest.name = name)
@@ -442,6 +470,8 @@ private def validClaimDigests (claims : KernelClaimBundleView) : Bool :=
     kernelClaimBundleDigest claims = claims.digest
 
 private def validKernelProofDigests (kernel : KernelProofBundleView) : Bool :=
+  let mainLaneSummary := mainLaneProofSummaryOfBundle kernel.mainLane
+  let kernelOpeningSummary := kernelOpeningSummaryOfProof kernel.kernelOpening
   traceShapeBundleDigest kernel.trace.shape = kernel.trace.shape.digest &&
     traceProofBundleDigest kernel.trace = kernel.trace.digest &&
     stageWitnessSummaryBundleDigest kernel.stages.summary = kernel.stages.summary.digest &&
@@ -452,18 +482,14 @@ private def validKernelProofDigests (kernel : KernelProofBundleView) : Bool :=
     stagePackageProofBundleDigest kernel.stagePackages = kernel.stagePackages.digest &&
     kernelOpeningBindingBundleDigest kernel.kernelOpening.bindings = kernel.kernelOpening.bindings.digest &&
     kernelOpeningProofBundleDigest kernel.kernelOpening = kernel.kernelOpening.digest &&
-    kernelOpeningSummaryBundleDigest (kernelOpeningSummaryOfProof kernel.kernelOpening) =
-      (kernelOpeningSummaryOfProof kernel.kernelOpening).digest &&
+    kernelOpeningSummaryBundleDigest kernelOpeningSummary = kernelOpeningSummary.digest &&
     kernelClaimTerminalBundleDigest kernel.kernelClaims.summary.terminal =
       kernel.kernelClaims.summary.terminal.digest &&
     kernelClaimSummaryBundleDigest kernel.kernelClaims.summary = kernel.kernelClaims.summary.digest &&
     kernelClaimProofBundleDigest kernel.kernelClaims = kernel.kernelClaims.digest &&
     mainLaneProofBindingDigest kernel.mainLane.binding = kernel.mainLane.binding.digest &&
     mainLaneProofBundleDigest kernel.mainLane = kernel.mainLane.digest &&
-    mainLaneProofSummaryBundleDigest (mainLaneProofSummaryOfBundle kernel.mainLane) =
-      (mainLaneProofSummaryOfBundle kernel.mainLane).digest &&
-    jointOpeningProofBundleDigest kernel.jointOpening = kernel.jointOpening.digest &&
-    root0CommitmentBundleDigest kernel.root0Commitment = kernel.root0Commitment.digest &&
+    mainLaneProofSummaryBundleDigest mainLaneSummary = mainLaneSummary.digest &&
     kernelProofBundleDigest kernel = kernel.digest
 
 private def statementMatchesKernelAndDerived
@@ -534,7 +560,6 @@ private def claimsMatchStatementAndKernel
     claims.root0.terminal.transcriptFinalDigest = statement.transcriptFinalDigest
 
 private def kernelProofMatchesDerivedAndClaims
-    (claims : KernelClaimBundleView)
     (kernel : KernelProofBundleView)
     (derived : ParityDerivedCase) : Bool :=
   kernel.trace.manifest = derived.manifest &&
@@ -556,15 +581,7 @@ private def kernelProofMatchesDerivedAndClaims
     kernel.kernelClaims.summary.terminal.finalStateDigest = derived.kernel.finalStateDigest &&
     kernel.kernelClaims.summary.terminal.transcriptFinalDigest = derived.kernel.transcriptFinalDigest &&
     kernel.kernelClaims.summary.terminal.finalPc = derived.kernel.finalPc &&
-    kernel.kernelClaims.summary.terminal.halted = derived.kernel.halted &&
-    kernel.jointOpening.proofStatementDigest = claims.accepted.statement.proofStatementDigest &&
-    kernel.jointOpening.publicStepCount = claims.jointOpening.publicStepCount &&
-    kernel.jointOpening.mainLane = mainLaneProofSummaryOfBundle kernel.mainLane &&
-    kernel.jointOpening.kernelOpening = kernelOpeningSummaryOfProof kernel.kernelOpening &&
-    kernel.root0Commitment.stageClaims = kernel.stageClaims.summary &&
-    kernel.root0Commitment.stagePackages = kernel.stagePackages.summary &&
-    kernel.root0Commitment.kernelOpening = kernelOpeningSummaryOfProof kernel.kernelOpening &&
-    kernel.root0Commitment.kernelClaims = kernel.kernelClaims.summary
+    kernel.kernelClaims.summary.terminal.halted = derived.kernel.halted
 
 private def caseCheckResults (proofCase : PublicProofVectorCase) : List (String × Bool) :=
   let schema := publicProofSchemaOfCase proofCase
@@ -572,10 +589,12 @@ private def caseCheckResults (proofCase : PublicProofVectorCase) : List (String 
   | none => [("parityCasePresent", false)]
   | some (_, derived) =>
       [ ("parityCasePresent", true)
+      , ("exportedProofApiLockstep", exportedProofApiLockstep proofCase)
       , ( "publicProofSchemaLockstep"
         , schema.statement = proofCase.statement &&
             schema.claims = proofCase.claims &&
             schema.kernelProof = proofCase.kernelProof)
+      , ("acceptedPublicProofLockstep", acceptedPublicProofLockstep proofCase)
       , ("statementDigest", validStatementDigest schema.statement)
       , ("claimDigests", validClaimDigests schema.claims)
       , ("kernelProofDigests", validKernelProofDigests schema.kernelProof)
@@ -588,7 +607,7 @@ private def caseCheckResults (proofCase : PublicProofVectorCase) : List (String 
             schema.kernelProof
             derived)
       , ( "kernelProofMatchesDerivedAndClaims"
-        , kernelProofMatchesDerivedAndClaims schema.claims schema.kernelProof derived)
+        , kernelProofMatchesDerivedAndClaims schema.kernelProof derived)
       ]
 
 structure Rv64imPublicProofBoundaryReport where
