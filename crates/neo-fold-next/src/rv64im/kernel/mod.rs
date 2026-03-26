@@ -2,6 +2,9 @@
 
 mod artifacts;
 mod proof_api;
+mod proof_bridge;
+mod proof_verify;
+mod proof_witness;
 mod simple;
 mod simple_openings;
 mod simple_stage;
@@ -27,10 +30,20 @@ pub use artifacts::{
 };
 pub use proof_api::{
     build_rv64im_proof_witness, prove_rv64im_proof, verify_rv64im_proof, Rv64imAcceptedProofClaim,
-    Rv64imJointOpeningClaim, Rv64imJointOpeningProofBundle, Rv64imKernelClaimBundle, Rv64imKernelClaimProofBundle,
-    Rv64imKernelOpeningClaim, Rv64imKernelOpeningProofBundle, Rv64imKernelProofBundle, Rv64imMainLaneClaim,
-    Rv64imMainLaneProofBundle, Rv64imProof, Rv64imProofInput, Rv64imProofStatement, Rv64imProofWitnessBundle,
-    Rv64imRoot0Claim, Rv64imRoot0CommitmentBundle, Rv64imStageClaimProofBundle, Rv64imStagePackageProofBundle,
+    Rv64imAcceptedProofMainLaneBinding, Rv64imAcceptedProofStatementBinding, Rv64imAcceptedProofTerminalBinding,
+    Rv64imJointOpeningClaim, Rv64imJointOpeningKernelBinding, Rv64imJointOpeningMainLaneBinding,
+    Rv64imJointOpeningProofBindingBundle, Rv64imJointOpeningProofBundle, Rv64imJointOpeningStatementBinding,
+    Rv64imKernelClaimBundle, Rv64imKernelOpeningClaim, Rv64imKernelProofBundle, Rv64imMainLaneClaim,
+    Rv64imMainLaneClaimBinding, Rv64imMainLaneProofBinding, Rv64imMainLaneProofBundle, Rv64imProof, Rv64imProofInput,
+    Rv64imProofStatement, Rv64imRoot0Claim, Rv64imRoot0CommitmentBindingBundle, Rv64imRoot0CommitmentBundle,
+    Rv64imRoot0KernelBinding, Rv64imRoot0KernelBundleBinding, Rv64imRoot0StageBinding,
+};
+pub use proof_witness::{
+    Rv64imKernelClaimProofBundle, Rv64imKernelClaimSummaryBundle, Rv64imKernelClaimTerminalBundle,
+    Rv64imKernelOpeningBindingBundle, Rv64imKernelOpeningProofBundle, Rv64imProofWitnessBundle,
+    Rv64imStageClaimDigestBundle, Rv64imStageClaimProofBundle, Rv64imStagePackageDigestBundle,
+    Rv64imStagePackageProofBundle, Rv64imStageWitnessProofBundle, Rv64imStageWitnessSummaryBundle,
+    Rv64imTraceProofBundle, Rv64imTraceShapeBundle,
 };
 pub use simple::{
     build_simple_kernel_witness, prepared_step_digest, prove_packaged_simple_kernel, prove_simple_kernel,
