@@ -26,7 +26,12 @@ private def checkProofImportWall : IO Bool := do
 private def runNightstreamProtocolParity : IO Bool := do
   let buildOut ← IO.Process.output {
     cmd := "lake"
-    args := #["build", "Nightstream.Chip8.Checks", "Nightstream.Rv64IM.Checks"]
+    args := #[
+      "build",
+      "Nightstream.Chip8.Checks",
+      "Nightstream.Rv64IM.Checks",
+      "Nightstream.Rv64IM.ProofBoundaryChecks"
+    ]
   }
   let buildStdout := buildOut.stdout.trimAscii.toString
   let buildStderr := buildOut.stderr.trimAscii.toString

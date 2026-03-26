@@ -1,6 +1,7 @@
 import Init
 import Nightstream.Chip8.Checks
 import Nightstream.Rv64IM.Checks
+import Nightstream.Rv64IM.ProofBoundaryChecks
 
 def main : IO UInt32 := do
   IO.println s!"chip8_transcript_vector_checks={Nightstream.Chip8.transcriptVectorChecks}"
@@ -19,8 +20,11 @@ def main : IO UInt32 := do
   IO.println s!"chip8_imported_release_artifact_report={reprStr Nightstream.Chip8.importedReleaseArtifactReport}"
   IO.println s!"rv64im_parity_checks={Nightstream.Rv64IM.rv64imParityChecks}"
   IO.println s!"rv64im_parity_reports={reprStr Nightstream.Rv64IM.rv64imParityReports}"
+  IO.println s!"rv64im_public_proof_boundary_checks={Nightstream.Rv64IM.rv64imPublicProofBoundaryChecks}"
+  IO.println s!"rv64im_public_proof_boundary_reports={reprStr Nightstream.Rv64IM.rv64imPublicProofBoundaryReports}"
   if Nightstream.Chip8.validGeneratedChip8ProtocolCases &&
-      Nightstream.Rv64IM.validGeneratedRv64imParityCases then
+      Nightstream.Rv64IM.validGeneratedRv64imParityCases &&
+      Nightstream.Rv64IM.validGeneratedRv64imPublicProofCases then
     pure 0
   else
     pure 1

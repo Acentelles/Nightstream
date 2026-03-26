@@ -30,7 +30,8 @@ artifact_status="$(git status --porcelain --untracked-files=all -- \
   "$FORMAL_DIR/Nightstream/Chip8/Generated/ImportedReleaseArtifact" \
   "$FORMAL_DIR/Nightstream/Rv64IM/Generated/Cases" \
   "$FORMAL_DIR/Nightstream/Rv64IM/Generated/Index" \
-  "$FORMAL_DIR/Nightstream/Rv64IM/Generated/ImportedParityCorpus.lean")"
+  "$FORMAL_DIR/Nightstream/Rv64IM/Generated/ImportedParityCorpus.lean" \
+  "$FORMAL_DIR/Nightstream/Rv64IM/Generated/PublicProofVectors")"
 if [[ -n "$artifact_status" ]]; then
   echo "[conformance] generated Nightstream artifacts are dirty:" >&2
   echo "$artifact_status" >&2

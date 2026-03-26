@@ -1,11 +1,18 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use neo_fold_next::rv64im as rv64;
 use neo_fold_next::rv64im::{
-    build_all_parity_cases, MemoryWord, Rv64imKernelSummary, Rv64imParityCaseManifest, Rv64imParityDerivedCase,
-    Rv64imParitySourceCase, Rv64TraceVirtualOpcode, TranscriptCursorSnapshot, TranscriptEventKind,
-    TranscriptEventRecord, TranscriptRecord,
+    build_all_parity_cases, prove_rv64im_proof, verify_rv64im_proof, MemoryWord, Rv64imKernelSummary,
+    Rv64imParityCaseManifest, Rv64imParityDerivedCase, Rv64imParitySourceCase, Rv64TraceVirtualOpcode,
+    TranscriptCursorSnapshot, TranscriptEventKind, TranscriptEventRecord, TranscriptRecord,
 };
+
+#[derive(Clone)]
+struct PublicProofVectorCase {
+    name: String,
+    proof: rv64::Rv64imProof,
+}
 
 fn render_u8_list(values: &[u8]) -> String {
     if !values.is_empty() && values.iter().all(|&value| value == 0) {
@@ -48,10 +55,18 @@ fn generated_dir() -> PathBuf {
         .join("Generated")
 }
 
+fn public_proof_vector_dir() -> PathBuf {
+    generated_dir().join("PublicProofVectors")
+}
+
 fn case_dir(case_name: &str) -> PathBuf {
     generated_dir()
         .join("Cases")
         .join(format!("Case_{}", lean_ident_fragment(case_name)))
+}
+
+fn public_proof_case_path(case_name: &str) -> PathBuf {
+    public_proof_vector_dir().join(format!("Case_{}.lean", lean_ident_fragment(case_name)))
 }
 
 fn render_string(value: &str) -> String {
@@ -202,6 +217,10 @@ fn render_option_bytes(value: Option<&[u8]>) -> String {
         Some(bytes) => format!("(some {})", render_u8_list(bytes)),
         None => "none".into(),
     }
+}
+
+fn render_bool(value: bool) -> &'static str {
+    if value { "true" } else { "false" }
 }
 
 fn render_memory_word(word: &MemoryWord) -> String {
@@ -516,6 +535,360 @@ fn render_derived_case(case: &Rv64imParityDerivedCase) -> String {
     )
 }
 
+fn render_proof_statement(statement: &rv64::Rv64imProofStatement) -> String {
+    format!(
+        "{{\n  rootParamsId := {}\n  , stageClaimsDigest := {}\n  , stagePackagesDigest := {}\n  , kernelOpeningDigest := {}\n  , preparedStepBindingsDigest := {}\n  , executionDigest := {}\n  , finalStateDigest := {}\n  , transcriptFinalDigest := {}\n  , mainLaneStatementDigest := {}\n  , publicStepCount := {}\n  , finalPc := {}\n  , halted := {}\n  , digest := {}\n}}",
+        render_u8_list(&statement.root_params_id),
+        render_u8_list(&statement.stage_claims_digest),
+        render_u8_list(&statement.stage_packages_digest),
+        render_u8_list(&statement.kernel_opening_digest),
+        render_u8_list(&statement.prepared_step_bindings_digest),
+        render_u8_list(&statement.execution_digest),
+        render_u8_list(&statement.final_state_digest),
+        render_u8_list(&statement.transcript_final_digest),
+        render_u8_list(&statement.main_lane_statement_digest),
+        statement.public_step_count,
+        statement.final_pc,
+        render_bool(statement.halted),
+        render_u8_list(&statement.digest),
+    )
+}
+
+fn render_accepted_proof_statement_binding(binding: &rv64::Rv64imAcceptedProofStatementBinding) -> String {
+    format!(
+        "{{ proofStatementDigest := {}, kernelOpeningDigest := {}, digest := {} }}",
+        render_u8_list(&binding.proof_statement_digest),
+        render_u8_list(&binding.kernel_opening_digest),
+        render_u8_list(&binding.digest),
+    )
+}
+
+fn render_accepted_proof_main_lane_binding(binding: &rv64::Rv64imAcceptedProofMainLaneBinding) -> String {
+    format!(
+        "{{ mainLaneStatementDigest := {}, mainLaneProofDigest := {}, digest := {} }}",
+        render_u8_list(&binding.main_lane_statement_digest),
+        render_u8_list(&binding.main_lane_proof_digest),
+        render_u8_list(&binding.digest),
+    )
+}
+
+fn render_accepted_proof_terminal_binding(binding: &rv64::Rv64imAcceptedProofTerminalBinding) -> String {
+    format!(
+        "{{ finalStateDigest := {}, publicStepCount := {}, finalPc := {}, halted := {}, digest := {} }}",
+        render_u8_list(&binding.final_state_digest),
+        binding.public_step_count,
+        binding.final_pc,
+        render_bool(binding.halted),
+        render_u8_list(&binding.digest),
+    )
+}
+
+fn render_accepted_proof_claim(claim: &rv64::Rv64imAcceptedProofClaim) -> String {
+    format!(
+        "{{\n  rootParamsId := {}\n  , statement := {}\n  , mainLane := {}\n  , terminal := {}\n  , digest := {}\n}}",
+        render_u8_list(&claim.root_params_id),
+        render_accepted_proof_statement_binding(&claim.statement),
+        render_accepted_proof_main_lane_binding(&claim.main_lane),
+        render_accepted_proof_terminal_binding(&claim.terminal),
+        render_u8_list(&claim.digest),
+    )
+}
+
+fn render_main_lane_claim_binding(binding: &rv64::Rv64imMainLaneClaimBinding) -> String {
+    format!(
+        "{{ statementDigest := {}, proofDigest := {}, publicStepCount := {}, digest := {} }}",
+        render_u8_list(&binding.statement_digest),
+        render_u8_list(&binding.proof_digest),
+        binding.public_step_count,
+        render_u8_list(&binding.digest),
+    )
+}
+
+fn render_main_lane_claim(claim: &rv64::Rv64imMainLaneClaim) -> String {
+    format!(
+        "{{ rootParamsId := {}, binding := {}, digest := {} }}",
+        render_u8_list(&claim.root_params_id),
+        render_main_lane_claim_binding(&claim.binding),
+        render_u8_list(&claim.digest),
+    )
+}
+
+fn render_kernel_opening_claim(claim: &rv64::Rv64imKernelOpeningClaim) -> String {
+    format!(
+        "{{\n  rootParamsId := {}\n  , stages := {{ stageClaimsDigest := {}, stagePackagesDigest := {}, kernelOpeningDigest := {}, digest := {} }}\n  , terminal := {{ preparedStepBindingsDigest := {}, executionDigest := {}, transcriptFinalDigest := {}, digest := {} }}\n  , publicStepCount := {}\n  , digest := {}\n}}",
+        render_u8_list(&claim.root_params_id),
+        render_u8_list(&claim.stages.stage_claims_digest),
+        render_u8_list(&claim.stages.stage_packages_digest),
+        render_u8_list(&claim.stages.kernel_opening_digest),
+        render_u8_list(&claim.stages.digest),
+        render_u8_list(&claim.terminal.prepared_step_bindings_digest),
+        render_u8_list(&claim.terminal.execution_digest),
+        render_u8_list(&claim.terminal.transcript_final_digest),
+        render_u8_list(&claim.terminal.digest),
+        claim.public_step_count,
+        render_u8_list(&claim.digest),
+    )
+}
+
+fn render_joint_opening_claim(claim: &rv64::Rv64imJointOpeningClaim) -> String {
+    format!(
+        "{{ rootParamsId := {}, binding := {{ proofStatementDigest := {}, mainLaneClaimDigest := {}, kernelOpeningClaimDigest := {}, digest := {} }}, publicStepCount := {}, digest := {} }}",
+        render_u8_list(&claim.root_params_id),
+        render_u8_list(&claim.binding.proof_statement_digest),
+        render_u8_list(&claim.binding.main_lane_claim_digest),
+        render_u8_list(&claim.binding.kernel_opening_claim_digest),
+        render_u8_list(&claim.binding.digest),
+        claim.public_step_count,
+        render_u8_list(&claim.digest),
+    )
+}
+
+fn render_root0_claim(claim: &rv64::Rv64imRoot0Claim) -> String {
+    format!(
+        "{{ rootParamsId := {}, stages := {{ stage1Digest := {}, stage2Digest := {}, stage3Digest := {}, digest := {} }}, terminal := {{ root0Digest := {}, executionDigest := {}, finalStateDigest := {}, transcriptFinalDigest := {}, digest := {} }}, digest := {} }}",
+        render_u8_list(&claim.root_params_id),
+        render_u8_list(&claim.stages.stage1_digest),
+        render_u8_list(&claim.stages.stage2_digest),
+        render_u8_list(&claim.stages.stage3_digest),
+        render_u8_list(&claim.stages.digest),
+        render_u8_list(&claim.terminal.root0_digest),
+        render_u8_list(&claim.terminal.execution_digest),
+        render_u8_list(&claim.terminal.final_state_digest),
+        render_u8_list(&claim.terminal.transcript_final_digest),
+        render_u8_list(&claim.terminal.digest),
+        render_u8_list(&claim.digest),
+    )
+}
+
+fn render_kernel_claim_bundle(bundle: &rv64::Rv64imKernelClaimBundle) -> String {
+    format!(
+        "{{\n  accepted := {}\n  , mainLane := {}\n  , opening := {}\n  , jointOpening := {}\n  , root0 := {}\n  , digest := {}\n}}",
+        render_accepted_proof_claim(&bundle.accepted),
+        render_main_lane_claim(&bundle.main_lane),
+        render_kernel_opening_claim(&bundle.opening),
+        render_joint_opening_claim(&bundle.joint_opening),
+        render_root0_claim(&bundle.root0),
+        render_u8_list(&bundle.digest),
+    )
+}
+
+fn render_main_lane_proof_binding(binding: &rv64::Rv64imMainLaneProofBinding) -> String {
+    format!(
+        "{{ statementDigest := {}, proofDigest := {}, publicStepCount := {}, digest := {} }}",
+        render_u8_list(&binding.statement_digest),
+        render_u8_list(&binding.proof_digest),
+        binding.public_step_count,
+        render_u8_list(&binding.digest),
+    )
+}
+
+fn render_main_lane_proof_bundle(bundle: &rv64::Rv64imMainLaneProofBundle) -> String {
+    format!(
+        "{{ binding := {}, digest := {} }}",
+        render_main_lane_proof_binding(&bundle.binding),
+        render_u8_list(&bundle.digest),
+    )
+}
+
+fn render_main_lane_proof_summary_bundle(bundle: &rv64::Rv64imMainLaneProofSummaryBundle) -> String {
+    format!(
+        "{{ binding := {}, digest := {} }}",
+        render_main_lane_proof_binding(&bundle.binding),
+        render_u8_list(&bundle.digest),
+    )
+}
+
+fn render_trace_shape_bundle(bundle: &rv64::Rv64imTraceShapeBundle) -> String {
+    format!(
+        "{{ executionRowCount := {}, realRowCount := {}, effectRowCount := {}, commitRowCount := {}, digest := {} }}",
+        bundle.execution_row_count,
+        bundle.real_row_count,
+        bundle.effect_row_count,
+        bundle.commit_row_count,
+        render_u8_list(&bundle.digest),
+    )
+}
+
+fn render_trace_proof_bundle(bundle: &rv64::Rv64imTraceProofBundle) -> String {
+    format!(
+        "{{\n  manifest := {}\n  , executionDigest := {}\n  , shape := {}\n  , digest := {}\n}}",
+        render_manifest(&bundle.manifest),
+        render_u8_list(&bundle.execution_digest),
+        render_trace_shape_bundle(&bundle.shape),
+        render_u8_list(&bundle.digest),
+    )
+}
+
+fn render_stage_witness_summary_bundle(bundle: &rv64::Rv64imStageWitnessSummaryBundle) -> String {
+    format!(
+        "{{ stage1RowCount := {}, stage2RegisterReadCount := {}, stage2RegisterWriteCount := {}, stage2RamEventCount := {}, stage2TwistLinkCount := {}, stage3ContinuityCount := {}, stage3Halted := {}, transcriptEventCount := {}, digest := {} }}",
+        bundle.stage1_row_count,
+        bundle.stage2_register_read_count,
+        bundle.stage2_register_write_count,
+        bundle.stage2_ram_event_count,
+        bundle.stage2_twist_link_count,
+        bundle.stage3_continuity_count,
+        render_bool(bundle.stage3_halted),
+        bundle.transcript_event_count,
+        render_u8_list(&bundle.digest),
+    )
+}
+
+fn render_stage_witness_proof_bundle(bundle: &rv64::Rv64imStageWitnessProofBundle) -> String {
+    format!(
+        "{{ summary := {}, digest := {} }}",
+        render_stage_witness_summary_bundle(&bundle.summary),
+        render_u8_list(&bundle.digest),
+    )
+}
+
+fn render_stage_claim_digest_bundle(bundle: &rv64::Rv64imStageClaimDigestBundle) -> String {
+    format!(
+        "{{ claimBundleDigest := {}, stage1Digest := {}, stage2Digest := {}, stage3Digest := {}, transcriptDigest := {}, executionDigest := {}, digest := {} }}",
+        render_u8_list(&bundle.claim_bundle_digest),
+        render_u8_list(&bundle.stage1_digest),
+        render_u8_list(&bundle.stage2_digest),
+        render_u8_list(&bundle.stage3_digest),
+        render_u8_list(&bundle.transcript_digest),
+        render_u8_list(&bundle.execution_digest),
+        render_u8_list(&bundle.digest),
+    )
+}
+
+fn render_stage_claim_proof_bundle(bundle: &rv64::Rv64imStageClaimProofBundle) -> String {
+    format!(
+        "{{ summary := {}, digest := {} }}",
+        render_stage_claim_digest_bundle(&bundle.summary),
+        render_u8_list(&bundle.digest),
+    )
+}
+
+fn render_stage_package_digest_bundle(bundle: &rv64::Rv64imStagePackageDigestBundle) -> String {
+    format!(
+        "{{ packageBundleDigest := {}, stage1Digest := {}, stage2Digest := {}, stage3Digest := {}, digest := {} }}",
+        render_u8_list(&bundle.package_bundle_digest),
+        render_u8_list(&bundle.stage1_digest),
+        render_u8_list(&bundle.stage2_digest),
+        render_u8_list(&bundle.stage3_digest),
+        render_u8_list(&bundle.digest),
+    )
+}
+
+fn render_stage_package_proof_bundle(bundle: &rv64::Rv64imStagePackageProofBundle) -> String {
+    format!(
+        "{{ summary := {}, digest := {} }}",
+        render_stage_package_digest_bundle(&bundle.summary),
+        render_u8_list(&bundle.digest),
+    )
+}
+
+fn render_kernel_opening_binding_bundle(bundle: &rv64::Rv64imKernelOpeningBindingBundle) -> String {
+    format!(
+        "{{ claimDigest := {}, bindingsDigest := {}, preparedStepsDigest := {}, digest := {} }}",
+        render_u8_list(&bundle.claim_digest),
+        render_u8_list(&bundle.bindings_digest),
+        render_u8_list(&bundle.prepared_steps_digest),
+        render_u8_list(&bundle.digest),
+    )
+}
+
+fn render_kernel_opening_proof_bundle(bundle: &rv64::Rv64imKernelOpeningProofBundle) -> String {
+    format!(
+        "{{ openingDigest := {}, bindings := {}, digest := {} }}",
+        render_u8_list(&bundle.opening_digest),
+        render_kernel_opening_binding_bundle(&bundle.bindings),
+        render_u8_list(&bundle.digest),
+    )
+}
+
+fn render_kernel_opening_summary_bundle(bundle: &rv64::Rv64imKernelOpeningSummaryBundle) -> String {
+    format!(
+        "{{ openingDigest := {}, bindings := {}, digest := {} }}",
+        render_u8_list(&bundle.opening_digest),
+        render_kernel_opening_binding_bundle(&bundle.bindings),
+        render_u8_list(&bundle.digest),
+    )
+}
+
+fn render_kernel_claim_terminal_bundle(bundle: &rv64::Rv64imKernelClaimTerminalBundle) -> String {
+    format!(
+        "{{ root0Digest := {}, executionDigest := {}, finalStateDigest := {}, transcriptFinalDigest := {}, finalPc := {}, halted := {}, digest := {} }}",
+        render_u8_list(&bundle.root0_digest),
+        render_u8_list(&bundle.execution_digest),
+        render_u8_list(&bundle.final_state_digest),
+        render_u8_list(&bundle.transcript_final_digest),
+        bundle.final_pc,
+        render_bool(bundle.halted),
+        render_u8_list(&bundle.digest),
+    )
+}
+
+fn render_kernel_claim_summary_bundle(bundle: &rv64::Rv64imKernelClaimSummaryBundle) -> String {
+    format!(
+        "{{ preparedStepBindingsDigest := {}, terminal := {}, digest := {} }}",
+        render_u8_list(&bundle.prepared_step_bindings_digest),
+        render_kernel_claim_terminal_bundle(&bundle.terminal),
+        render_u8_list(&bundle.digest),
+    )
+}
+
+fn render_kernel_claim_proof_bundle(bundle: &rv64::Rv64imKernelClaimProofBundle) -> String {
+    format!(
+        "{{ summary := {}, digest := {} }}",
+        render_kernel_claim_summary_bundle(&bundle.summary),
+        render_u8_list(&bundle.digest),
+    )
+}
+
+fn render_joint_opening_proof_bundle(bundle: &rv64::Rv64imJointOpeningProofBundle) -> String {
+    format!(
+        "{{ proofStatementDigest := {}, publicStepCount := {}, mainLane := {}, kernelOpening := {}, digest := {} }}",
+        render_u8_list(&bundle.proof_statement_digest),
+        bundle.public_step_count,
+        render_main_lane_proof_summary_bundle(&bundle.main_lane),
+        render_kernel_opening_summary_bundle(&bundle.kernel_opening),
+        render_u8_list(&bundle.digest),
+    )
+}
+
+fn render_root0_commitment_bundle(bundle: &rv64::Rv64imRoot0CommitmentBundle) -> String {
+    format!(
+        "{{ stageClaims := {}, stagePackages := {}, kernelOpening := {}, kernelClaims := {}, digest := {} }}",
+        render_stage_claim_digest_bundle(&bundle.stage_claims),
+        render_stage_package_digest_bundle(&bundle.stage_packages),
+        render_kernel_opening_summary_bundle(&bundle.kernel_opening),
+        render_kernel_claim_summary_bundle(&bundle.kernel_claims),
+        render_u8_list(&bundle.digest),
+    )
+}
+
+fn render_kernel_proof_bundle(bundle: &rv64::Rv64imKernelProofBundle) -> String {
+    format!(
+        "{{\n  rootParamsId := {}\n  , trace := {}\n  , stages := {}\n  , stageClaims := {}\n  , stagePackages := {}\n  , kernelOpening := {}\n  , kernelClaims := {}\n  , mainLane := {}\n  , jointOpening := {}\n  , root0Commitment := {}\n  , digest := {}\n}}",
+        render_u8_list(&bundle.root_params_id),
+        render_trace_proof_bundle(&bundle.trace),
+        render_stage_witness_proof_bundle(&bundle.stages),
+        render_stage_claim_proof_bundle(&bundle.stage_claims),
+        render_stage_package_proof_bundle(&bundle.stage_packages),
+        render_kernel_opening_proof_bundle(&bundle.kernel_opening),
+        render_kernel_claim_proof_bundle(&bundle.kernel_claims),
+        render_main_lane_proof_bundle(&bundle.main_lane),
+        render_joint_opening_proof_bundle(&bundle.joint_opening),
+        render_root0_commitment_bundle(&bundle.root0_commitment),
+        render_u8_list(&bundle.digest),
+    )
+}
+
+fn render_public_proof_vector_case(case: &PublicProofVectorCase) -> String {
+    format!(
+        "{{\n  name := {}\n  , statement := {}\n  , claims := {}\n  , kernelProof := {}\n}}",
+        render_string(&case.name),
+        render_proof_statement(&case.proof.statement),
+        render_kernel_claim_bundle(&case.proof.claim),
+        render_kernel_proof_bundle(&case.proof.kernel),
+    )
+}
+
 fn render_source_module(case: &Rv64imParitySourceCase) -> String {
     format!(
         "import Nightstream.Rv64IM.Generated.ParityTypes\n\nnamespace Nightstream.Rv64IM.Generated.Cases.Case_{}\n\nopen Nightstream.Rv64IM.Generated\n\ndef sourceCase : ParitySourceCase :=\n  {}\n\nend Nightstream.Rv64IM.Generated.Cases.Case_{}\n",
@@ -570,6 +943,82 @@ fn render_corpus_module() -> String {
     "import Nightstream.Rv64IM.Generated.Index.AllCases\nimport Nightstream.Rv64IM.Generated.Index.AlignedMemory\nimport Nightstream.Rv64IM.Generated.Index.ControlFlow\nimport Nightstream.Rv64IM.Generated.Index.Multiply\nimport Nightstream.Rv64IM.Generated.Index.NarrowMemory\nimport Nightstream.Rv64IM.Generated.Index.NativeAlu\nimport Nightstream.Rv64IM.Generated.Index.SignedDivRem\nimport Nightstream.Rv64IM.Generated.Index.UnsignedDivRem\n\nnamespace Nightstream.Rv64IM.Generated\n\ndef nativeAluParityCases : List (ParitySourceCase × ParityDerivedCase) :=\n  Nightstream.Rv64IM.Generated.Index.NativeAlu.parityCases\n\ndef alignedMemoryParityCases : List (ParitySourceCase × ParityDerivedCase) :=\n  Nightstream.Rv64IM.Generated.Index.AlignedMemory.parityCases\n\ndef narrowMemoryParityCases : List (ParitySourceCase × ParityDerivedCase) :=\n  Nightstream.Rv64IM.Generated.Index.NarrowMemory.parityCases\n\ndef multiplyParityCases : List (ParitySourceCase × ParityDerivedCase) :=\n  Nightstream.Rv64IM.Generated.Index.Multiply.parityCases\n\ndef unsignedDivRemParityCases : List (ParitySourceCase × ParityDerivedCase) :=\n  Nightstream.Rv64IM.Generated.Index.UnsignedDivRem.parityCases\n\ndef signedDivRemParityCases : List (ParitySourceCase × ParityDerivedCase) :=\n  Nightstream.Rv64IM.Generated.Index.SignedDivRem.parityCases\n\ndef controlFlowParityCases : List (ParitySourceCase × ParityDerivedCase) :=\n  Nightstream.Rv64IM.Generated.Index.ControlFlow.parityCases\n\ndef parityCases : List (ParitySourceCase × ParityDerivedCase) :=\n  Nightstream.Rv64IM.Generated.Index.AllCases.parityCases\n\nend Nightstream.Rv64IM.Generated\n".into()
 }
 
+fn render_public_proof_case_module(case: &PublicProofVectorCase) -> String {
+    format!(
+        "import Nightstream.Rv64IM.Generated.PublicProofVectorTypes\n\nset_option maxHeartbeats 0\n\nnamespace Nightstream.Rv64IM.Generated.PublicProofVectors.Case_{}\n\nopen Nightstream.Rv64IM.Generated\n\ndef proofCase : PublicProofVectorCase :=\n  {}\n\nend Nightstream.Rv64IM.Generated.PublicProofVectors.Case_{}\n",
+        lean_ident_fragment(&case.name),
+        render_public_proof_vector_case(case),
+        lean_ident_fragment(&case.name),
+    )
+}
+
+fn render_public_proof_corpus_module(cases: &[PublicProofVectorCase]) -> String {
+    let mut imports = String::new();
+    let mut proof_cases = String::from("[");
+
+    for (idx, case) in cases.iter().enumerate() {
+        let ident = lean_ident_fragment(&case.name);
+        imports.push_str(&format!(
+            "import Nightstream.Rv64IM.Generated.PublicProofVectors.Case_{ident}\n"
+        ));
+        if idx > 0 {
+            proof_cases.push_str(", ");
+        }
+        proof_cases.push_str(&format!(
+            "Nightstream.Rv64IM.Generated.PublicProofVectors.Case_{ident}.proofCase"
+        ));
+    }
+
+    proof_cases.push(']');
+
+    format!(
+        "{imports}\nnamespace Nightstream.Rv64IM.Generated.PublicProofVectors\n\nopen Nightstream.Rv64IM.Generated\n\ndef cases : List PublicProofVectorCase :=\n  {proof_cases}\n\nend Nightstream.Rv64IM.Generated.PublicProofVectors\n"
+    )
+}
+
+fn public_proof_input(source: &Rv64imParitySourceCase) -> rv64::Rv64imProofInput {
+    rv64::Rv64imProofInput {
+        source: source.clone(),
+        max_steps: source.program_words.len(),
+    }
+}
+
+fn build_public_proof_cases(
+    cases: &[(Rv64imParitySourceCase, Rv64imParityDerivedCase)],
+) -> Vec<PublicProofVectorCase> {
+    cases
+        .iter()
+        .map(|(source, derived)| {
+            let name = source.manifest.name.as_str();
+            let input = public_proof_input(source);
+            let (witness, proof) = prove_rv64im_proof(&input)
+                .unwrap_or_else(|err| panic!("prove RV64IM public proof vector {name}: {err}"));
+            let verified = verify_rv64im_proof(&input, &proof)
+                .unwrap_or_else(|err| panic!("verify RV64IM public proof vector {name}: {err}"));
+            assert_eq!(verified.digest, witness.digest, "proof witness digest roundtrip for {name}");
+            assert_eq!(
+                proof.statement.execution_digest,
+                derived.kernel.execution_digest,
+                "statement execution digest matches derived kernel for {name}"
+            );
+            assert_eq!(
+                proof.statement.final_state_digest,
+                derived.kernel.final_state_digest,
+                "statement final-state digest matches derived kernel for {name}"
+            );
+            assert_eq!(
+                proof.statement.transcript_final_digest,
+                derived.kernel.transcript_final_digest,
+                "statement transcript digest matches derived kernel for {name}"
+            );
+            PublicProofVectorCase {
+                name: source.manifest.name.clone(),
+                proof,
+            }
+        })
+        .collect()
+}
+
 fn write_file(path: &Path, contents: String) {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).expect("create output directory");
@@ -578,7 +1027,11 @@ fn write_file(path: &Path, contents: String) {
 }
 
 fn reset_generated_dirs() {
-    for path in [generated_dir().join("Cases"), generated_dir().join("Index")] {
+    for path in [
+        generated_dir().join("Cases"),
+        generated_dir().join("Index"),
+        public_proof_vector_dir(),
+    ] {
         if path.exists() {
             fs::remove_dir_all(&path).expect("remove stale generated directory");
         }
@@ -587,6 +1040,7 @@ fn reset_generated_dirs() {
 
 fn main() {
     let cases = build_all_parity_cases().expect("build RV64IM parity cases");
+    let public_proof_cases = build_public_proof_cases(&cases);
     reset_generated_dirs();
 
     for (source, derived) in &cases {
@@ -720,10 +1174,21 @@ fn main() {
         &generated_dir().join("ImportedParityCorpus.lean"),
         render_corpus_module(),
     );
+    for case in &public_proof_cases {
+        write_file(
+            &public_proof_case_path(&case.name),
+            render_public_proof_case_module(case),
+        );
+    }
+    write_file(
+        &public_proof_vector_dir().join("Corpus.lean"),
+        render_public_proof_corpus_module(&public_proof_cases),
+    );
 
     println!(
-        "wrote RV64IM parity artifacts for {} cases to {}",
+        "wrote RV64IM parity artifacts for {} cases and {} public proof vectors to {}",
         cases.len(),
+        public_proof_cases.len(),
         generated_dir().display()
     );
 }
