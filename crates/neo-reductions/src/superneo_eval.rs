@@ -106,6 +106,21 @@ pub struct SuperneoMatrixCache {
     row_blocks: Vec<Vec<RowBlock>>,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct WeightedRowBlock {
+    blk: usize,
+    re_form: Rq,
+    im_form: Rq,
+}
+
+/// Fixed weighted projection of one matrix's row-ring outputs.
+#[derive(Clone, Debug)]
+pub struct SuperneoWeightedMatrixCache {
+    rows: usize,
+    cols: usize,
+    row_blocks: Vec<Vec<WeightedRowBlock>>,
+}
+
 /// Precomputed linear form `v = M^T · χ_r` in sparse `(col, value)` form.
 ///
 /// This lets callers evaluate `\tilde{(M z)}(r)` as a single sparse dot product
@@ -286,6 +301,43 @@ impl SuperneoZBlocks {
 }
 
 impl SuperneoMatrixCache {
+    #[inline]
+    pub fn compile_weighted_rows(&self, weights: &[K; D]) -> SuperneoWeightedMatrixCache {
+        let mut weight_re = [F::ZERO; D];
+        let mut weight_im = [F::ZERO; D];
+        for (i, weight) in weights.iter().enumerate() {
+            let [re, im] = weight.as_coeffs();
+            weight_re[i] = re;
+            weight_im[i] = im;
+        }
+        let weight_re = Rq(weight_re);
+        let weight_im = Rq(weight_im);
+
+        let mut row_blocks = Vec::with_capacity(self.row_blocks.len());
+        for src_row in &self.row_blocks {
+            let mut dst_row = Vec::with_capacity(src_row.len());
+            for rb in src_row {
+                let re_form = weighted_projection_form(&rb.bar, &weight_re);
+                let im_form = weighted_projection_form(&rb.bar, &weight_im);
+                if is_all_zero(&re_form.0) && is_all_zero(&im_form.0) {
+                    continue;
+                }
+                dst_row.push(WeightedRowBlock {
+                    blk: rb.blk,
+                    re_form,
+                    im_form,
+                });
+            }
+            row_blocks.push(dst_row);
+        }
+
+        SuperneoWeightedMatrixCache {
+            rows: self.rows,
+            cols: self.cols,
+            row_blocks,
+        }
+    }
+
     /// Evaluate one matrix row against packed witness blocks and return all `D` ring coefficients.
     #[inline]
     pub fn row_dot_ring_with_blocks(&self, row: usize, z_blocks: &SuperneoZBlocks) -> [K; D] {
@@ -580,6 +632,33 @@ impl SuperneoMatrixCache {
     }
 }
 
+impl SuperneoWeightedMatrixCache {
+    #[inline]
+    pub fn row_dot_real_with_blocks(&self, row: usize, z_blocks: &SuperneoZBlocks) -> K {
+        debug_assert_eq!(
+            self.cols.div_ceil(D),
+            z_blocks.re.len(),
+            "SuperneoWeightedMatrixCache::row_dot_real_with_blocks: block count mismatch"
+        );
+        debug_assert!(
+            z_blocks.imag_all_zero,
+            "SuperneoWeightedMatrixCache::row_dot_real_with_blocks expects real-only witness blocks"
+        );
+        if row >= self.rows {
+            return K::ZERO;
+        }
+
+        let mut acc_re = F::ZERO;
+        let mut acc_im = F::ZERO;
+        for rb in &self.row_blocks[row] {
+            let z_re = &z_blocks.re[rb.blk];
+            acc_re += coeff_dot(&rb.re_form, z_re);
+            acc_im += coeff_dot(&rb.im_form, z_re);
+        }
+        K::from_coeffs([acc_re, acc_im])
+    }
+}
+
 /// Cached SuperNeo row-lifted representation for all CCS matrices.
 #[derive(Clone, Debug)]
 pub struct SuperneoEvalCache {
@@ -602,6 +681,14 @@ impl SuperneoEvalCache {
         self.mats
             .iter()
             .map(|m| m.build_linear_form(chi_r, n_eff))
+            .collect()
+    }
+
+    #[inline]
+    pub fn build_weighted_matrix_caches(&self, weights: &[K; D]) -> Vec<SuperneoWeightedMatrixCache> {
+        self.mats
+            .iter()
+            .map(|m| m.compile_weighted_rows(weights))
             .collect()
     }
 }
@@ -641,6 +728,15 @@ fn coeff_dot(lhs: &Rq, rhs: &Rq) -> F {
         acc += lhs.0[i] * rhs.0[i];
     }
     acc
+}
+
+#[inline]
+fn weighted_projection_form(lhs: &Rq, weights: &Rq) -> Rq {
+    let mut out = [F::ZERO; D];
+    for (basis, out_cell) in out.iter_mut().enumerate() {
+        *out_cell = coeff_dot(weights, &lhs.mul_by_monomial(basis));
+    }
+    Rq(out)
 }
 
 fn build_matrix_cache<Ff>(mat: &CcsMatrix<Ff>) -> SuperneoMatrixCache

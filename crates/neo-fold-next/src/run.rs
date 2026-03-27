@@ -64,7 +64,7 @@ pub fn verify_steps<MR, MB>(
     mode: FoldingMode,
     params: &NeoParams,
     s: &CcsStructure<F>,
-    steps: impl IntoIterator<Item = PublicStep>,
+    steps: &[PublicStep],
     proof: &RunProof,
     mixers: CommitmentMixers<MR, MB>,
 ) -> Result<Vec<CeClaim<Commitment, F, K>>, PiCcsError>
@@ -73,28 +73,27 @@ where
     MB: Fn(&[Commitment], u32) -> Commitment + Clone + Copy,
 {
     let mut tr = Poseidon2Transcript::new(b"neo.fold.next/session");
-    let mut main_carry: Vec<CeClaim<Commitment, F, K>> = Vec::new();
-    let mut steps_iter = steps.into_iter();
+    let mut main_carry: &[CeClaim<Commitment, F, K>] = &[];
 
     for (idx, step_proof) in proof.steps.iter().enumerate() {
-        let step = steps_iter
-            .next()
+        let step = steps
+            .get(idx)
             .ok_or_else(|| PiCcsError::InvalidInput(format!("missing public step {idx} during verification")))?;
         main_carry =
             ShardVerifier::verify_step(mode.clone(), &mut tr, params, s, &step, &main_carry, step_proof, mixers)?;
         tr.append_message(b"neo.fold.next/step_done", &[1]);
     }
-    if steps_iter.next().is_some() {
+    if steps.len() != proof.steps.len() {
         return Err(PiCcsError::InvalidInput(
             "public step list is longer than proof step list".into(),
         ));
     }
-    if main_carry != proof.final_main_claims {
+    if main_carry != proof.final_main_claims.as_slice() {
         return Err(PiCcsError::ProtocolError(
             "final carried main claims do not match proof footer".into(),
         ));
     }
-    Ok(main_carry)
+    Ok(proof.final_main_claims.clone())
 }
 
 pub fn prove_finalized_steps<L, MR, MB>(

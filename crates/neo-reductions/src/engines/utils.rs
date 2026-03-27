@@ -162,81 +162,74 @@ pub fn bind_header_and_instances_with_digest(
 }
 
 /// Bind ME inputs to transcript
+#[inline]
+fn extend_packed_bytes_as_fields(dst: &mut Vec<F>, bytes: &[u8]) {
+    const BYTES_PER_LIMB: usize = 7;
+    dst.push(F::from_u64(bytes.len() as u64));
+    for chunk in bytes.chunks(BYTES_PER_LIMB) {
+        let mut limb = [0u8; 8];
+        limb[..chunk.len()].copy_from_slice(chunk);
+        dst.push(F::from_u64(u64::from_le_bytes(limb)));
+    }
+}
+
+fn extend_f_slice(dst: &mut Vec<F>, vals: &[F]) {
+    dst.push(F::from_u64(vals.len() as u64));
+    dst.extend_from_slice(vals);
+}
+
+#[inline]
+fn extend_k_slice(dst: &mut Vec<F>, vals: &[K]) {
+    dst.push(F::from_u64(vals.len() as u64));
+    let coeffs_len = vals.first().map(|v| v.as_coeffs().len()).unwrap_or(0);
+    dst.push(F::from_u64(coeffs_len as u64));
+    for v in vals {
+        let coeffs = v.as_coeffs();
+        debug_assert_eq!(
+            coeffs.len(),
+            coeffs_len,
+            "non-uniform K coeff length in ME digest encoding"
+        );
+        dst.extend(coeffs.iter().copied());
+    }
+}
+
+fn poseidon_digest_fields(input: &[F]) -> [F; 4] {
+    neo_ccs::crypto::poseidon2_goldilocks::poseidon2_hash(input)
+}
+
+pub fn me_digest_poseidon(me: &CeClaim<Cmt, F, K>) -> [F; 4] {
+    let mut digest_input = Vec::<F>::with_capacity(2048);
+    extend_packed_bytes_as_fields(&mut digest_input, b"neo/ccs/me_input_digest_poseidon/v2");
+
+    extend_f_slice(&mut digest_input, &me.c.data);
+    extend_f_slice(&mut digest_input, me.X.as_slice());
+    extend_k_slice(&mut digest_input, &me.r);
+    extend_k_slice(&mut digest_input, &me.s_col);
+    extend_k_slice(&mut digest_input, &me.y_zcol);
+
+    digest_input.push(F::from_u64(me.y_ring.len() as u64));
+    for row in &me.y_ring {
+        extend_k_slice(&mut digest_input, row);
+    }
+
+    extend_k_slice(&mut digest_input, &me.ct);
+    extend_k_slice(&mut digest_input, &me.aux_openings);
+    extend_f_slice(&mut digest_input, &me.c_step_coords);
+    digest_input.push(F::from_u64(me.m_in as u64));
+    digest_input.push(F::from_u64(me.u_offset as u64));
+    digest_input.push(F::from_u64(me.u_len as u64));
+    extend_packed_bytes_as_fields(&mut digest_input, &me.fold_digest);
+
+    poseidon_digest_fields(&digest_input)
+}
+
 pub fn bind_me_inputs(tr: &mut Poseidon2Transcript, me_inputs: &[CeClaim<Cmt, F, K>]) -> Result<(), PiCcsError> {
-    // v5: bind each ME input via a compact domain-separated Poseidon2 digest.
+    // v6: bind each ME input via a compact domain-separated Poseidon2 digest, then stream the
+    // fixed-width digest field limbs into the transcript in one batch.
     // Encoding update: K-coefficient width is encoded once per K-slice (not per K element).
-    tr.append_message(b"neo/ccs/me_inputs/v5", b"");
+    tr.append_message(b"neo/ccs/me_inputs/v6", b"");
     tr.append_u64s(b"me_count", &[me_inputs.len() as u64]);
-
-    #[inline]
-    fn extend_packed_bytes_as_fields(dst: &mut Vec<F>, bytes: &[u8]) {
-        const BYTES_PER_LIMB: usize = 7;
-        dst.push(F::from_u64(bytes.len() as u64));
-        for chunk in bytes.chunks(BYTES_PER_LIMB) {
-            let mut limb = [0u8; 8];
-            limb[..chunk.len()].copy_from_slice(chunk);
-            dst.push(F::from_u64(u64::from_le_bytes(limb)));
-        }
-    }
-
-    #[inline]
-    fn extend_f_slice(dst: &mut Vec<F>, vals: &[F]) {
-        dst.push(F::from_u64(vals.len() as u64));
-        dst.extend_from_slice(vals);
-    }
-
-    #[inline]
-    fn extend_k_slice(dst: &mut Vec<F>, vals: &[K]) {
-        dst.push(F::from_u64(vals.len() as u64));
-        let coeffs_len = vals.first().map(|v| v.as_coeffs().len()).unwrap_or(0);
-        dst.push(F::from_u64(coeffs_len as u64));
-        for v in vals {
-            let coeffs = v.as_coeffs();
-            debug_assert_eq!(
-                coeffs.len(),
-                coeffs_len,
-                "non-uniform K coeff length in ME digest encoding"
-            );
-            dst.extend(coeffs.iter().copied());
-        }
-    }
-
-    #[inline]
-    fn poseidon_digest32_fields(input: &[F]) -> [u8; 32] {
-        let digest = neo_ccs::crypto::poseidon2_goldilocks::poseidon2_hash(input);
-        let mut out = [0u8; 32];
-        for (i, limb) in digest.iter().enumerate() {
-            out[i * 8..(i + 1) * 8].copy_from_slice(&limb.as_canonical_u64().to_le_bytes());
-        }
-        out
-    }
-
-    #[inline]
-    fn me_digest_poseidon(me: &CeClaim<Cmt, F, K>) -> [u8; 32] {
-        let mut digest_input = Vec::<F>::with_capacity(2048);
-        extend_packed_bytes_as_fields(&mut digest_input, b"neo/ccs/me_input_digest_poseidon/v2");
-
-        extend_f_slice(&mut digest_input, &me.c.data);
-        extend_f_slice(&mut digest_input, me.X.as_slice());
-        extend_k_slice(&mut digest_input, &me.r);
-        extend_k_slice(&mut digest_input, &me.s_col);
-        extend_k_slice(&mut digest_input, &me.y_zcol);
-
-        digest_input.push(F::from_u64(me.y_ring.len() as u64));
-        for row in &me.y_ring {
-            extend_k_slice(&mut digest_input, row);
-        }
-
-        extend_k_slice(&mut digest_input, &me.ct);
-        extend_k_slice(&mut digest_input, &me.aux_openings);
-        extend_f_slice(&mut digest_input, &me.c_step_coords);
-        digest_input.push(F::from_u64(me.m_in as u64));
-        digest_input.push(F::from_u64(me.u_offset as u64));
-        digest_input.push(F::from_u64(me.u_len as u64));
-        extend_packed_bytes_as_fields(&mut digest_input, &me.fold_digest);
-
-        poseidon_digest32_fields(&digest_input)
-    }
 
     #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-threads"))]
     let allow_parallel = rayon::current_num_threads() > 1 && rayon::current_thread_index().is_none();
@@ -244,18 +237,20 @@ pub fn bind_me_inputs(tr: &mut Poseidon2Transcript, me_inputs: &[CeClaim<Cmt, F,
     let _allow_parallel = false;
 
     #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-threads"))]
-    let digests: Vec<[u8; 32]> = if allow_parallel && me_inputs.len() >= 8 {
+    let digests: Vec<[F; 4]> = if allow_parallel && me_inputs.len() >= 8 {
         use rayon::prelude::*;
         me_inputs.par_iter().map(me_digest_poseidon).collect()
     } else {
         me_inputs.iter().map(me_digest_poseidon).collect()
     };
     #[cfg(not(any(not(target_arch = "wasm32"), feature = "wasm-threads")))]
-    let digests: Vec<[u8; 32]> = me_inputs.iter().map(me_digest_poseidon).collect();
+    let digests: Vec<[F; 4]> = me_inputs.iter().map(me_digest_poseidon).collect();
 
-    for digest in digests {
-        tr.append_bytes_packed(b"me_digest", &digest);
-    }
+    tr.append_fields_iter(
+        b"me_digest",
+        digests.len() * 4,
+        digests.iter().flat_map(|digest| digest.iter().copied()),
+    );
 
     Ok(())
 }

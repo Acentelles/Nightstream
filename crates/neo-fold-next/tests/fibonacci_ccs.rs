@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use neo_ajtai::{s_lincomb, s_mul, setup as ajtai_setup, AjtaiSModule, Commitment};
+use neo_ajtai::{s_mul_add, scale_commitment_add_inplace, setup as ajtai_setup, AjtaiSModule, Commitment};
 use neo_ccs::{poly::SparsePoly, poly::Term, CcsClaim, CcsStructure, CcsWitness, Mat};
 use neo_fold_next::finalize::package_proof;
 use neo_fold_next::proof::StepInput;
@@ -85,18 +85,21 @@ fn rot_matrix_to_rq(mat: &Mat<F>) -> RqEl {
 fn ajtai_mixers() -> CommitmentMixers<fn(&[Mat<F>], &[Commitment]) -> Commitment, fn(&[Commitment], u32) -> Commitment>
 {
     fn mix_rhos_commits(rhos: &[Mat<F>], cs: &[Commitment]) -> Commitment {
-        let rq_els: Vec<RqEl> = rhos.iter().map(rot_matrix_to_rq).collect();
-        s_lincomb(&rq_els, cs).expect("Ajtai S-linear combination should succeed")
+        let mut acc = Commitment::zeros(cs[0].d, cs[0].kappa);
+        for (rho, c) in rhos.iter().zip(cs.iter()) {
+            let rq = rot_matrix_to_rq(rho);
+            s_mul_add(&mut acc, &rq, c);
+        }
+        acc
     }
 
     fn combine_b_pows(cs: &[Commitment], b: u32) -> Commitment {
-        let mut acc = cs[0].clone();
-        let mut pow = F::from_u64(b as u64);
-        for c in cs.iter().skip(1) {
-            let rq_pow = RqEl::from_field_scalar(pow);
-            let term = s_mul(&rq_pow, c);
-            acc.add_inplace(&term);
-            pow *= F::from_u64(b as u64);
+        let mut acc = Commitment::zeros(cs[0].d, cs[0].kappa);
+        let base = F::from_u64(b as u64);
+        let mut pow = F::ONE;
+        for c in cs {
+            scale_commitment_add_inplace(&mut acc, pow, c);
+            pow *= base;
         }
         acc
     }
@@ -177,7 +180,7 @@ fn fibonacci_traces_fold_through_the_real_superneo_spine() {
         FoldingMode::Optimized,
         &params,
         &ccs,
-        public_steps,
+        &public_steps,
         &proof,
         ajtai_mixers(),
     )
@@ -254,7 +257,7 @@ fn fibonacci_traces_fold_through_ten_steps() {
         FoldingMode::Optimized,
         &params,
         &ccs,
-        public_steps,
+        &public_steps,
         &proof,
         ajtai_mixers(),
     )
@@ -305,7 +308,7 @@ fn fibonacci_traces_fold_five_ten_transition_chunks() {
         FoldingMode::Optimized,
         &params,
         &ccs,
-        public_steps,
+        &public_steps,
         &proof,
         ajtai_mixers(),
     )
@@ -375,7 +378,7 @@ fn fibonacci_fold_metrics_five_ten_transition_chunks() {
         FoldingMode::Optimized,
         &params,
         &ccs,
-        public_steps.clone(),
+        &public_steps,
         &proof,
         ajtai_mixers(),
     )

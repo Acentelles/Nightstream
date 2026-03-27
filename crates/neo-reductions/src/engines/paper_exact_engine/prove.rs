@@ -175,12 +175,9 @@ pub fn paper_exact_prove<L: neo_ccs::traits::SModuleHomomorphism<F, Cmt>>(
         debug_assert_eq!(crate::sumcheck::poly_eval_k(&coeffs, K::ZERO), ys[0]);
         debug_assert_eq!(crate::sumcheck::poly_eval_k(&coeffs, K::ONE), ys[1]);
 
-        for &c in &coeffs {
-            tr.append_fields(b"sumcheck/round/coeff", &c.as_coeffs());
-        }
-        let c0 = tr.challenge_field(b"sumcheck/challenge/0");
-        let c1 = tr.challenge_field(b"sumcheck/challenge/1");
-        let r_i = neo_math::from_complex(c0, c1);
+        crate::sumcheck::append_round_coeffs(tr, &coeffs);
+        let c = tr.challenge_fields(b"sumcheck/challenge", 2);
+        let r_i = neo_math::from_complex(c[0], c[1]);
         sumcheck_chals.push(r_i);
 
         // Evaluate at challenge using poly_eval_k (low→high) for consistency.
@@ -227,12 +224,9 @@ pub fn paper_exact_prove<L: neo_ccs::traits::SModuleHomomorphism<F, Cmt>>(
         debug_assert_eq!(crate::sumcheck::poly_eval_k(&coeffs, K::ZERO), ys[0]);
         debug_assert_eq!(crate::sumcheck::poly_eval_k(&coeffs, K::ONE), ys[1]);
 
-        for &c in &coeffs {
-            tr.append_fields(b"sumcheck/round/coeff", &c.as_coeffs());
-        }
-        let c0 = tr.challenge_field(b"sumcheck/challenge/0");
-        let c1 = tr.challenge_field(b"sumcheck/challenge/1");
-        let r_i = neo_math::from_complex(c0, c1);
+        crate::sumcheck::append_round_coeffs(tr, &coeffs);
+        let c = tr.challenge_fields(b"sumcheck/challenge", 2);
+        let r_i = neo_math::from_complex(c[0], c[1]);
         sumcheck_chals_nc.push(r_i);
 
         running_sum_nc = crate::sumcheck::poly_eval_k(&coeffs, r_i);

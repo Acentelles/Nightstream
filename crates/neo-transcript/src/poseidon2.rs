@@ -213,6 +213,25 @@ impl Transcript for Poseidon2Transcript {
         out
     }
 
+    fn challenge_fields(&mut self, label: &'static [u8], n: usize) -> Vec<F> {
+        self.append_message(b"chal/label", label);
+        let mut out = Vec::with_capacity(n);
+        while out.len() < n {
+            self.absorb_elem(Goldilocks::ONE);
+            self.permute();
+            for i in 0..p2::DIGEST_LEN.min(n - out.len()) {
+                out.push(F::from_u64(self.st[i].as_canonical_u64()));
+            }
+        }
+        #[cfg(feature = "debug-log")]
+        if std::env::var("NEO_TRANSCRIPT_DUMP").ok().as_deref() == Some("1") {
+            self.dump_and_clear("challenge_fields");
+        }
+        #[cfg(feature = "fs-guard")]
+        crate::fs_guard::record(crate::debug::Event::new("challenge_fields", label, n, &self.st));
+        out
+    }
+
     fn fork(&self, scope: &'static [u8]) -> Self {
         let mut child = self.clone();
         child.append_message(b"fork", scope);
@@ -334,23 +353,6 @@ impl Poseidon2Transcript {
             &self.st,
         ));
     }
-    pub fn challenge_fields(&mut self, label: &'static [u8], n: usize) -> Vec<F> {
-        self.append_message(b"chal/label", label);
-        let mut out = Vec::with_capacity(n);
-        while out.len() < n {
-            self.absorb_elem(Goldilocks::ONE);
-            self.permute();
-            for i in 0..p2::DIGEST_LEN.min(n - out.len()) {
-                out.push(F::from_u64(self.st[i].as_canonical_u64()));
-            }
-        }
-        #[cfg(feature = "debug-log")]
-        if std::env::var("NEO_TRANSCRIPT_DUMP").ok().as_deref() == Some("1") {
-            self.dump_and_clear("challenge_fields");
-        }
-        out
-    }
-
     #[cfg(feature = "debug-log")]
     pub fn dump_and_clear(&mut self, ctx: &str) {
         let tag = std::env::var("NEO_TRANSCRIPT_TAG").ok();

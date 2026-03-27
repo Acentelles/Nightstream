@@ -11,7 +11,6 @@ use rayon::prelude::*;
 
 /// Bring in ring & S-action APIs from neo-math.
 use neo_math::ring::{cf, cf_inv as cf_unmap, Rq as RqEl, D, ETA};
-use neo_math::s_action::SAction;
 
 // Compile-time guards: this file's rot_step assumes Φ₈₁ (η=81 ⇒ D=54)
 const _: () = assert!(ETA == 81, "rot_step is specialized for η=81 (D=54)");
@@ -833,19 +832,68 @@ pub fn verify_split_open(pp: &PP<RqEl>, c: &Commitment, b: u32, c_is: &[Commitme
 }
 
 /// S-homomorphism: ρ·L(Z) = L(ρ·Z).  We expose helpers for left-multiplying commitments.
-/// Since we don't have direct access to SMatrix, we use SAction to operate on the commitment data.
+pub fn s_mul_add(acc: &mut Commitment, rho_ring: &RqEl, c: &Commitment) {
+    let d = c.d;
+    let kappa = c.kappa;
+    debug_assert_eq!(d, D, "Ajtai commitment columns must have D rows");
+    debug_assert_eq!(acc.d, d);
+    debug_assert_eq!(acc.kappa, kappa);
+
+    let mut rot_col = cf(*rho_ring);
+    let mut nxt = [Fq::ZERO; D];
+    for t in 0..D {
+        for col in 0..kappa {
+            let scalar = c.data[col * d + t];
+            let dst: &mut [Fq; D] = acc
+                .col_mut(col)
+                .try_into()
+                .expect("commitment column length should be d");
+            acc_mul_add_inplace(dst, &rot_col, scalar);
+        }
+        rot_step(&rot_col, &mut nxt);
+        rot_col = nxt;
+    }
+}
+
+/// Add a field-scalar multiple of a commitment into an accumulator.
+///
+/// This is the constant-ring-element `S`-action specialized to the common verifier-side case
+/// where the multiplier is just a base-field scalar instead of a full rotation element.
+pub fn scale_commitment_add_inplace(acc: &mut Commitment, scalar: Fq, c: &Commitment) {
+    debug_assert_eq!(acc.d, c.d);
+    debug_assert_eq!(acc.kappa, c.kappa);
+
+    if scalar == Fq::ZERO {
+        return;
+    }
+    if scalar == Fq::ONE {
+        acc.add_inplace(c);
+        return;
+    }
+    let neg_one = Fq::ZERO - Fq::ONE;
+    if scalar == neg_one {
+        for (dst, src) in acc.data.iter_mut().zip(c.data.iter()) {
+            *dst -= *src;
+        }
+        return;
+    }
+
+    for (dst, src) in acc.data.iter_mut().zip(c.data.iter()) {
+        *dst += *src * scalar;
+    }
+}
+
+pub fn scale_commitment(scalar: Fq, c: &Commitment) -> Commitment {
+    let mut out = Commitment::zeros(c.d, c.kappa);
+    scale_commitment_add_inplace(&mut out, scalar, c);
+    out
+}
+
 pub fn s_mul(rho_ring: &RqEl, c: &Commitment) -> Commitment {
     let d = c.d;
     let kappa = c.kappa;
     let mut out = Commitment::zeros(d, kappa);
-    let s_action = SAction::from_ring(*rho_ring);
-
-    for col in 0..kappa {
-        let src: [Fq; neo_math::ring::D] = c.col(col).try_into().expect("column length should be d");
-        let dst_result = s_action.apply_vec(&src);
-        let dst = out.col_mut(col);
-        dst.copy_from_slice(&dst_result);
-    }
+    s_mul_add(&mut out, rho_ring, c);
     out
 }
 
@@ -865,8 +913,7 @@ pub fn s_lincomb(rhos: &[RqEl], cs: &[Commitment]) -> AjtaiResult<Commitment> {
 
     let mut acc = Commitment::zeros(cs[0].d, cs[0].kappa);
     for (rho, c) in rhos.iter().zip(cs) {
-        let term = s_mul(rho, c);
-        acc.add_inplace(&term);
+        s_mul_add(&mut acc, rho, c);
     }
     Ok(acc)
 }

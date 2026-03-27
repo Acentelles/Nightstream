@@ -6,7 +6,9 @@ use neo_ajtai::Commitment;
 use neo_ccs::CcsStructure;
 use neo_math::{F, K};
 use neo_params::NeoParams;
-use neo_reductions::api::{rlc_public, sample_rot_rhos_n_typed, verify, verify_dec_public, FoldingMode, RotRing};
+use neo_reductions::api::{
+    rlc_public_matches, sample_rot_rhos_n_typed, verify, verify_dec_public, FoldingMode, RotRing,
+};
 use neo_reductions::engines::utils;
 use neo_reductions::error::PiCcsError;
 use neo_transcript::{Poseidon2Transcript, Transcript};
@@ -17,16 +19,16 @@ use crate::prover::CommitmentMixers;
 pub struct ShardVerifier;
 
 impl ShardVerifier {
-    pub fn verify_step<MR, MB>(
+    pub fn verify_step<'a, MR, MB>(
         mode: FoldingMode,
         tr: &mut Poseidon2Transcript,
         params: &NeoParams,
         s: &CcsStructure<F>,
         step: &PublicStep,
         incoming_main: &[neo_ccs::CeClaim<Commitment, F, K>],
-        proof: &StepProof,
+        proof: &'a StepProof,
         mixers: CommitmentMixers<MR, MB>,
-    ) -> Result<Vec<neo_ccs::CeClaim<Commitment, F, K>>, PiCcsError>
+    ) -> Result<&'a [neo_ccs::CeClaim<Commitment, F, K>], PiCcsError>
     where
         MR: Fn(&[neo_ccs::Mat<F>], &[Commitment]) -> Commitment + Clone + Copy,
         MB: Fn(&[Commitment], u32) -> Commitment + Clone + Copy,
@@ -76,15 +78,16 @@ impl ShardVerifier {
             )));
         }
 
-        let parent_pub = rlc_public(
+        let parent_matches = rlc_public_matches(
             s,
             params,
             &proof.rlc.rhos,
             &proof.ccs_outputs,
+            &proof.rlc.parent,
             mixers.mix_rhos_commits,
             dims.ell_d,
         )?;
-        if parent_pub != proof.rlc.parent {
+        if !parent_matches {
             return Err(PiCcsError::ProtocolError(format!(
                 "Π_RLC public recompute mismatch for step '{}'",
                 step.label
@@ -105,7 +108,7 @@ impl ShardVerifier {
             )));
         }
 
-        Ok(proof.dec.children.clone())
+        Ok(&proof.dec.children)
     }
 }
 

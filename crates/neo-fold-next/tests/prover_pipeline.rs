@@ -141,7 +141,7 @@ fn run_uses_the_real_superneo_spine() {
         .map(|step| step.public())
         .collect::<Vec<_>>();
     let verified =
-        verify_run(FoldingMode::Optimized, &params, &ccs, public_steps, &proof, mixers()).expect("run verify");
+        verify_run(FoldingMode::Optimized, &params, &ccs, &public_steps, &proof, mixers()).expect("run verify");
     assert_eq!(verified, proof.final_main_claims);
 }
 
@@ -159,7 +159,7 @@ fn verifier_rejects_tampered_rlc_parent() {
         .into_iter()
         .map(|step| step.public())
         .collect::<Vec<_>>();
-    let err = verify_run(FoldingMode::Optimized, &params, &ccs, public_steps, &proof, mixers())
+    let err = verify_run(FoldingMode::Optimized, &params, &ccs, &public_steps, &proof, mixers())
         .expect_err("tampered proof must fail");
     assert!(format!("{err}").contains("Π_RLC"));
 }

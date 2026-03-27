@@ -1007,6 +1007,7 @@ impl RowStreamState {
             for (rho, slot) in w_alpha.iter_mut().enumerate() {
                 *slot = eq_points_bool_mask(rho, &ch.alpha);
             }
+            let weighted_mats = superneo_cache.build_weighted_matrix_caches(&w_alpha);
 
             let mut gamma_pow_i = vec![K::ONE; k_total];
             for i in 1..k_total {
@@ -1033,11 +1034,11 @@ impl RowStreamState {
                     if coeff == K::ZERO {
                         continue;
                     }
-                    let mat_cache = superneo_cache
-                        .matrix(j)
-                        .unwrap_or_else(|| panic!("superneo cache missing matrix j={j}"));
+                    let mat_cache = weighted_mats
+                        .get(j)
+                        .unwrap_or_else(|| panic!("weighted superneo cache missing matrix j={j}"));
                     for (r, out_r) in eval_tbl.iter_mut().take(n_eff).enumerate() {
-                        let y_alpha = mat_cache.row_dot_ring_weighted_with_blocks(r, &z_blocks, &w_alpha);
+                        let y_alpha = mat_cache.row_dot_real_with_blocks(r, &z_blocks);
                         if y_alpha != K::ZERO {
                             *out_r += coeff * y_alpha;
                         }
@@ -1872,6 +1873,19 @@ struct RPrecomp {
     eq_r_inputs: K,
 }
 
+#[inline]
+fn materialize_y_ring_from_precomputed_digits(y_by_mat: &[[K; D]], d_pad: usize) -> (Vec<Vec<K>>, Vec<K>) {
+    let mut y_ring = Vec::with_capacity(y_by_mat.len());
+    let mut ct = Vec::with_capacity(y_by_mat.len());
+    for digits in y_by_mat {
+        let mut row = vec![K::ZERO; d_pad];
+        row[..D].copy_from_slice(digits);
+        ct.push(digits[0]);
+        y_ring.push(row);
+    }
+    (y_ring, ct)
+}
+
 /// Helper: compute eq for a boolean mask against a field vector
 #[inline]
 fn eq_points_bool_mask(mask: usize, points: &[K]) -> K {
@@ -2321,9 +2335,17 @@ where
             "ME output builder: expected 2^ell_d >= D (2^{} = {d_pad}, D = {D})",
             self.ell_d
         );
-        let rb = neo_ccs::utils::tensor_point::<K>(&self.row_chals);
         let row_chals = self.row_chals.clone();
         let s_col_vec = s_col.to_vec();
+        let k_mcs = self.mcs_witnesses.len();
+
+        if self.ajtai_precomp.is_none() {
+            self.ajtai_precomp = Some(self.precompute_for_r(&row_chals));
+        }
+        let pre = self
+            .ajtai_precomp
+            .as_ref()
+            .expect("ajtai_precomp just populated for ME output builder");
 
         let chi_s = if s_col.is_empty() {
             None
@@ -2334,16 +2356,10 @@ where
         let mut out = Vec::with_capacity(self.mcs_witnesses.len() + self.me_witnesses.len());
 
         // MCS outputs (keep order).
-        for (inst, wit) in mcs_list.iter().zip(self.mcs_witnesses.iter()) {
+        for (mcs_idx, (inst, wit)) in mcs_list.iter().zip(self.mcs_witnesses.iter()).enumerate() {
             let X = crate::common::project_x_from_public_inputs(&inst.x, inst.m_in)
                 .unwrap_or_else(|e| panic!("ME output builder: project_x_from_public_inputs failed: {e}"));
-            let (y_ring, ct) = crate::common::compute_y_from_Z_and_rb_with_cache(
-                self.s,
-                &wit.Z,
-                &rb,
-                self.ell_d,
-                Some(self.superneo_cache.as_ref()),
-            );
+            let (y_ring, ct) = materialize_y_ring_from_precomputed_digits(&pre.y_eval[mcs_idx], d_pad);
 
             let y_zcol = if let Some(chi_s) = chi_s.as_ref() {
                 debug_assert!(chi_s.len() >= self.s.m, "chi_s too short for CCS width");
@@ -2373,13 +2389,7 @@ where
         // ME outputs (keep order).
         for (me_idx, inp) in me_inputs.iter().enumerate() {
             let Zi = &self.me_witnesses[me_idx];
-            let (y_ring, ct) = crate::common::compute_y_from_Z_and_rb_with_cache(
-                self.s,
-                Zi,
-                &rb,
-                self.ell_d,
-                Some(self.superneo_cache.as_ref()),
-            );
+            let (y_ring, ct) = materialize_y_ring_from_precomputed_digits(&pre.y_eval[k_mcs + me_idx], d_pad);
 
             let y_zcol = if let Some(chi_s) = chi_s.as_ref() {
                 debug_assert!(chi_s.len() >= self.s.m, "chi_s too short for CCS width");

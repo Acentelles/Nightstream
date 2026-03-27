@@ -801,6 +801,221 @@ where
     })
 }
 
+/// Witness-free RLC verification without materializing the recomputed parent claim.
+///
+/// This checks the exact same public relation as `rlc_public(...)? == *expected`, but avoids
+/// allocating the full mixed claim on the verifier path.
+pub fn rlc_public_matches<MR>(
+    s: &CcsStructure<F>,
+    params: &NeoParams,
+    rhos: &[RotRho],
+    inputs: &[CeClaim<Cmt, F, K>],
+    expected: &CeClaim<Cmt, F, K>,
+    mix_rhos_commits: MR,
+    ell_d: usize,
+) -> Result<bool, PiCcsError>
+where
+    MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt,
+{
+    ensure_superneo_width(s)?;
+    if inputs.is_empty() {
+        return Err(PiCcsError::InvalidInput("rlc_public_matches: empty inputs".into()));
+    }
+    if rhos.len() != inputs.len() {
+        return Err(PiCcsError::InvalidInput(format!(
+            "rlc_public_matches: |rhos| mismatch (expected {}, got {})",
+            inputs.len(),
+            rhos.len()
+        )));
+    }
+
+    let rho_mats = crate::common::rot_rhos_to_mats(rhos);
+    for (idx, inst) in inputs.iter().enumerate() {
+        if inst.m_in > s.m {
+            return Err(PiCcsError::InvalidInput(format!(
+                "rlc_public_matches: inputs[{idx}].m_in={} exceeds CCS width m={}",
+                inst.m_in, s.m
+            )));
+        }
+    }
+    crate::engines::utils::validate_ct_constant_term(s, params, inputs)?;
+    let _ = crate::engines::utils::shared_me_input_r(inputs, inputs[0].r.len())?;
+
+    let m_in = inputs[0].m_in;
+    let d_pad = 1usize
+        .checked_shl(ell_d as u32)
+        .ok_or_else(|| PiCcsError::InvalidInput("rlc_public_matches: 2^ell_d overflow".into()))?;
+    let t = inputs[0].y_ring.len();
+    let aux_len = inputs[0].aux_openings.len();
+    if t < s.t() {
+        return Err(PiCcsError::InvalidInput(format!(
+            "rlc_public_matches: ME input y.len() must be >= s.t() (got {}, s.t()={})",
+            t,
+            s.t()
+        )));
+    }
+    for (idx, inst) in inputs.iter().enumerate() {
+        if inst.m_in != m_in {
+            return Err(PiCcsError::InvalidInput(format!(
+                "rlc_public_matches: m_in mismatch at input {idx} (expected {m_in}, got {})",
+                inst.m_in
+            )));
+        }
+        if inst.X.rows() != D || inst.X.cols() != m_in {
+            return Err(PiCcsError::InvalidInput(format!(
+                "rlc_public_matches: X shape mismatch at input {idx} (got {}x{}, expected {}x{})",
+                inst.X.rows(),
+                inst.X.cols(),
+                D,
+                m_in
+            )));
+        }
+        if inst.y_ring.len() != t {
+            return Err(PiCcsError::InvalidInput(format!(
+                "rlc_public_matches: y.len mismatch at input {idx} (expected {t}, got {})",
+                inst.y_ring.len()
+            )));
+        }
+        if inst.aux_openings.len() != aux_len {
+            return Err(PiCcsError::InvalidInput(format!(
+                "rlc_public_matches: aux_openings.len mismatch at input {idx} (expected {aux_len}, got {})",
+                inst.aux_openings.len()
+            )));
+        }
+        for (j, row) in inst.y_ring.iter().enumerate() {
+            if row.len() < D || row.len() > d_pad {
+                return Err(PiCcsError::InvalidInput(format!(
+                    "rlc_public_matches: y[{j}].len()={} at input {idx}, expected in [{}, {}]",
+                    row.len(),
+                    D,
+                    d_pad
+                )));
+            }
+        }
+    }
+
+    if !expected.c_step_coords.is_empty()
+        || expected.u_offset != 0
+        || expected.u_len != 0
+        || expected.m_in != m_in
+        || expected.fold_digest != inputs[0].fold_digest
+        || expected.r != inputs[0].r
+        || expected.s_col != inputs[0].s_col
+        || expected.X.rows() != D
+        || expected.X.cols() != m_in
+        || expected.y_ring.len() != t
+        || expected.ct.len() != t
+        || expected.aux_openings.len() != aux_len
+    {
+        return Ok(false);
+    }
+
+    for rho in 0..D {
+        for c in 0..m_in {
+            let mut want = F::ZERO;
+            for (rho_mat, inst) in rho_mats.iter().zip(inputs.iter()) {
+                for k in 0..D {
+                    want += rho_mat[(rho, k)] * inst.X[(k, c)];
+                }
+            }
+            if expected.X[(rho, c)] != want {
+                return Ok(false);
+            }
+        }
+    }
+
+    let rho_k_mats: Vec<[K; D * D]> = rho_mats
+        .iter()
+        .map(|rho| {
+            let mut flat = [K::ZERO; D * D];
+            for k in 0..D {
+                for r in 0..D {
+                    flat[k * D + r] = K::from(rho[(r, k)]);
+                }
+            }
+            flat
+        })
+        .collect();
+
+    let mut y_row = vec![K::ZERO; d_pad];
+    for (j, expected_row) in expected.y_ring.iter().enumerate() {
+        if expected_row.len() != d_pad {
+            return Ok(false);
+        }
+        y_row.fill(K::ZERO);
+        for (rho_k, inst) in rho_k_mats.iter().zip(inputs.iter()) {
+            let src = &inst.y_ring[j];
+            for k in 0..D {
+                let yk = src[k];
+                if yk == K::ZERO {
+                    continue;
+                }
+                let col = &rho_k[k * D..k * D + D];
+                for r in 0..D {
+                    y_row[r] += col[r] * yk;
+                }
+            }
+        }
+        if expected_row != y_row.as_slice() {
+            return Ok(false);
+        }
+        if expected.ct[j] != crate::common::ct_from_y_digits(&y_row) {
+            return Ok(false);
+        }
+    }
+
+    let wants_nc_channel = inputs
+        .iter()
+        .any(|m| !(m.s_col.is_empty() && m.y_zcol.is_empty()));
+    if wants_nc_channel {
+        if expected.y_zcol.len() != d_pad {
+            return Ok(false);
+        }
+        for (idx, inst) in inputs.iter().enumerate() {
+            if inst.s_col.is_empty() || inst.y_zcol.is_empty() {
+                return Err(PiCcsError::InvalidInput(format!(
+                    "rlc_public_matches: incomplete NC channel at input {idx} (expected both s_col and y_zcol)"
+                )));
+            }
+            if inst.s_col != inputs[0].s_col || inst.y_zcol.len() != d_pad {
+                return Ok(false);
+            }
+        }
+        y_row.fill(K::ZERO);
+        for (rho_k, inst) in rho_k_mats.iter().zip(inputs.iter()) {
+            for k in 0..D {
+                let yk = inst.y_zcol[k];
+                if yk == K::ZERO {
+                    continue;
+                }
+                let col = &rho_k[k * D..k * D + D];
+                for r in 0..D {
+                    y_row[r] += col[r] * yk;
+                }
+            }
+        }
+        if expected.y_zcol != y_row {
+            return Ok(false);
+        }
+    } else if !(expected.s_col.is_empty() && expected.y_zcol.is_empty()) {
+        return Ok(false);
+    }
+
+    let mut aux_openings = vec![K::ZERO; aux_len];
+    for (rho, inst) in rho_mats.iter().zip(inputs.iter()) {
+        let w = K::from(rho[(0, 0)]);
+        for (dst, src) in aux_openings.iter_mut().zip(inst.aux_openings.iter()) {
+            *dst += w * *src;
+        }
+    }
+    if expected.aux_openings != aux_openings {
+        return Ok(false);
+    }
+
+    let commitments: Vec<_> = inputs.iter().map(|m| m.c.clone()).collect();
+    Ok(mix_rhos_commits(&rho_mats, &commitments) == expected.c)
+}
+
 /// DEC public verification: Check that parent ?= Σ b^i · child_i (X, y, c).
 ///
 /// Returns true if the decomposition is valid.
@@ -947,15 +1162,23 @@ where
     };
     let bF = F::from_u64(params.b as u64);
     let bK = K::from(F::from_u64(params.b as u64));
+    let mut b_pows_f = Vec::with_capacity(k);
+    let mut b_pows_k = Vec::with_capacity(k);
+    let mut p_f = F::ONE;
+    let mut p_k = K::ONE;
+    for _ in 0..k {
+        b_pows_f.push(p_f);
+        b_pows_k.push(p_k);
+        p_f *= bF;
+        p_k *= bK;
+    }
 
     // X
     for rho in 0..D {
         for c in 0..parent.m_in {
             let mut lhs = F::ZERO;
-            let mut p = F::ONE;
-            for child in children.iter().take(k) {
-                lhs += p * child.X[(rho, c)];
-                p *= bF;
+            for (pow, child) in b_pows_f.iter().zip(children.iter()) {
+                lhs += *pow * child.X[(rho, c)];
             }
             if lhs != parent.X[(rho, c)] {
                 eprintln!("verify_dec_public failed: X check mismatch at ({rho}, {c})");
@@ -990,24 +1213,23 @@ where
         }
     }
 
+    let mut y_lhs = vec![K::ZERO; d_pad];
     for j in 0..t {
-        let mut lhs = vec![K::ZERO; d_pad];
-        let mut p = K::ONE;
-        for i in 0..k {
-            if children[i].y_ring[j].len() != d_pad {
-                eprintln!("verify_dec_public failed: child y[{}] len mismatch at j={}", i, j);
+        y_lhs.fill(K::ZERO);
+        for (idx, (pow, child)) in b_pows_k.iter().zip(children.iter()).enumerate() {
+            if child.y_ring[j].len() != d_pad {
+                eprintln!("verify_dec_public failed: child y[{}] len mismatch at j={}", idx, j);
                 return false;
             }
             for t in 0..d_pad {
-                lhs[t] += p * children[i].y_ring[j][t];
+                y_lhs[t] += *pow * child.y_ring[j][t];
             }
-            p *= bK;
         }
         if parent.y_ring[j].len() != d_pad {
             eprintln!("verify_dec_public failed: parent y[j] len mismatch at j={j}");
             return false;
         }
-        if lhs != parent.y_ring[j] {
+        if y_lhs != parent.y_ring[j] {
             eprintln!("verify_dec_public failed: y check mismatch at j={}", j);
             return false;
         }
@@ -1016,10 +1238,8 @@ where
     // ct_j: scalar decomposition must also hold (covers any extra appended openings).
     for j in 0..t {
         let mut lhs = K::ZERO;
-        let mut p = K::ONE;
-        for i in 0..k {
-            lhs += p * children[i].ct[j];
-            p *= bK;
+        for (pow, child) in b_pows_k.iter().zip(children.iter()) {
+            lhs += *pow * child.ct[j];
         }
         if lhs != parent.ct[j] {
             eprintln!("verify_dec_public failed: ct check mismatch at j={j}");
@@ -1032,10 +1252,8 @@ where
     // aux_openings: field-linear decomposition must hold as well.
     for j in 0..parent.aux_openings.len() {
         let mut lhs = K::ZERO;
-        let mut p = K::ONE;
-        for child in children.iter().take(k) {
-            lhs += p * child.aux_openings[j];
-            p *= bK;
+        for (pow, child) in b_pows_k.iter().zip(children.iter()) {
+            lhs += *pow * child.aux_openings[j];
         }
         if lhs != parent.aux_openings[j] {
             eprintln!("verify_dec_public failed: aux_openings check mismatch at j={j}");
