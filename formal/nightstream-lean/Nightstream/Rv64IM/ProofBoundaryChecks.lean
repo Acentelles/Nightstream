@@ -583,37 +583,46 @@ private def kernelProofMatchesDerivedAndClaims
     kernel.kernelClaims.summary.terminal.finalPc = derived.kernel.finalPc &&
     kernel.kernelClaims.summary.terminal.halted = derived.kernel.halted
 
-private def caseCheckResults (proofCase : PublicProofVectorCase) : List (String × Bool) :=
+private def caseCheckResultsAgainstDerived
+    (proofCase : PublicProofVectorCase)
+    (derived : ParityDerivedCase) : List (String × Bool) :=
   let schema := publicProofSchemaOfCase proofCase
+  [ ("exportedProofApiLockstep", exportedProofApiLockstep proofCase)
+  , ( "publicProofSchemaLockstep"
+    , schema.statement = proofCase.statement &&
+        schema.claims = proofCase.claims &&
+        schema.kernelProof = proofCase.kernelProof)
+  , ("acceptedPublicProofLockstep", acceptedPublicProofLockstep proofCase)
+  , ("statementDigest", validStatementDigest schema.statement)
+  , ("claimDigests", validClaimDigests schema.claims)
+  , ("kernelProofDigests", validKernelProofDigests schema.kernelProof)
+  , ( "statementMatchesKernelAndDerived"
+    , statementMatchesKernelAndDerived schema.statement schema.kernelProof derived)
+  , ( "claimsMatchStatementAndKernel"
+    , claimsMatchStatementAndKernel
+        schema.statement
+        schema.claims
+        schema.kernelProof
+        derived)
+  , ( "kernelProofMatchesDerivedAndClaims"
+    , kernelProofMatchesDerivedAndClaims schema.kernelProof derived)
+  ]
+
+private def caseCheckResults (proofCase : PublicProofVectorCase) : List (String × Bool) :=
   match parityCaseByName? proofCase.name with
   | none => [("parityCasePresent", false)]
   | some (_, derived) =>
-      [ ("parityCasePresent", true)
-      , ("exportedProofApiLockstep", exportedProofApiLockstep proofCase)
-      , ( "publicProofSchemaLockstep"
-        , schema.statement = proofCase.statement &&
-            schema.claims = proofCase.claims &&
-            schema.kernelProof = proofCase.kernelProof)
-      , ("acceptedPublicProofLockstep", acceptedPublicProofLockstep proofCase)
-      , ("statementDigest", validStatementDigest schema.statement)
-      , ("claimDigests", validClaimDigests schema.claims)
-      , ("kernelProofDigests", validKernelProofDigests schema.kernelProof)
-      , ( "statementMatchesKernelAndDerived"
-        , statementMatchesKernelAndDerived schema.statement schema.kernelProof derived)
-      , ( "claimsMatchStatementAndKernel"
-        , claimsMatchStatementAndKernel
-            schema.statement
-            schema.claims
-            schema.kernelProof
-            derived)
-      , ( "kernelProofMatchesDerivedAndClaims"
-        , kernelProofMatchesDerivedAndClaims schema.kernelProof derived)
-      ]
+      ("parityCasePresent", true) :: caseCheckResultsAgainstDerived proofCase derived
 
 structure Rv64imPublicProofBoundaryReport where
   name : String
   checks : List (String × Bool)
 deriving Repr
+
+def checkPublicProofVectorCaseAgainstDerived
+    (proofCase : PublicProofVectorCase)
+    (derived : ParityDerivedCase) : Bool :=
+  (caseCheckResultsAgainstDerived proofCase derived).all Prod.snd
 
 def checkPublicProofVectorCase (proofCase : PublicProofVectorCase) : Bool :=
   (caseCheckResults proofCase).all Prod.snd

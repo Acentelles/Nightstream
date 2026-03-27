@@ -9,7 +9,7 @@ use neo_fold_next::rv64im::{
 };
 
 #[derive(Clone)]
-struct PublicProofVectorCase {
+pub(crate) struct PublicProofVectorCase {
     name: String,
     proof: rv64::Rv64imProof,
 }
@@ -258,7 +258,7 @@ fn render_manifest(manifest: &Rv64imParityCaseManifest) -> String {
     )
 }
 
-fn render_source_case(case: &Rv64imParitySourceCase) -> String {
+pub(crate) fn render_source_case(case: &Rv64imParitySourceCase) -> String {
     format!(
         "{{\n  manifest := {}\n  , startPc := {}\n  , programWords := {}\n  , initialRegisters := {}\n  , initialMemory := {}\n  , transcriptSeed := {}\n}}",
         render_manifest(&case.manifest),
@@ -513,7 +513,7 @@ fn render_kernel_summary(summary: &Rv64imKernelSummary) -> String {
     )
 }
 
-fn render_derived_case(case: &Rv64imParityDerivedCase) -> String {
+pub(crate) fn render_derived_case(case: &Rv64imParityDerivedCase) -> String {
     let mut rows = String::from("[");
     for (idx, row) in case.execution_rows.iter().enumerate() {
         if idx > 0 {
@@ -847,7 +847,7 @@ fn render_proof_view(proof: &rv64::Rv64imProof) -> String {
     )
 }
 
-fn render_public_proof_vector_case(case: &PublicProofVectorCase) -> String {
+pub(crate) fn render_public_proof_vector_case(case: &PublicProofVectorCase) -> String {
     format!(
         "{{\n  name := {}\n  , proof := {}\n  , statement := {}\n  , claims := {}\n  , kernelProof := {}\n}}",
         render_string(&case.name),
@@ -952,7 +952,7 @@ fn public_proof_input(source: &Rv64imParitySourceCase) -> rv64::Rv64imProofInput
     }
 }
 
-fn build_public_proof_cases(
+pub(crate) fn build_public_proof_cases(
     cases: &[(Rv64imParitySourceCase, Rv64imParityDerivedCase)],
 ) -> Vec<PublicProofVectorCase> {
     cases
