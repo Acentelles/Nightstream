@@ -140,48 +140,6 @@ impl InlineInstrAssembler {
         self.push_virtual(Rv64TraceVirtualOpcode::Advice, rd, rs1, rs2, Some(hint));
     }
 
-    fn assert_lte(&mut self, rd: u8, rs1: u8, rs2: u8, hint: u64) {
-        self.push_virtual(Rv64TraceVirtualOpcode::AssertLte, rd, rs1, rs2, Some(hint));
-    }
-
-    fn assert_mul_no_overflow(&mut self, rd: u8, rs1: u8, rs2: u8, hint: u64) {
-        self.push_virtual(Rv64TraceVirtualOpcode::AssertMulNoOverflow, rd, rs1, rs2, Some(hint));
-    }
-
-    fn assert_signed_div_identity(&mut self, rd: u8, rs1: u8, rs2: u8, hint: u64) {
-        self.push_virtual(
-            Rv64TraceVirtualOpcode::AssertSignedDivIdentity,
-            rd,
-            rs1,
-            rs2,
-            Some(hint),
-        );
-    }
-
-    fn assert_signed_remainder_bounds(&mut self, rd: u8, rs1: u8, rs2: u8, hint: u64) {
-        self.push_virtual(
-            Rv64TraceVirtualOpcode::AssertSignedRemainderBounds,
-            rd,
-            rs1,
-            rs2,
-            Some(hint),
-        );
-    }
-
-    fn assert_valid_div0(&mut self, rd: u8, rs1: u8, rs2: u8, hint: u64) {
-        self.push_virtual(Rv64TraceVirtualOpcode::AssertValidDiv0, rd, rs1, rs2, Some(hint));
-    }
-
-    fn assert_valid_unsigned_remainder(&mut self, rd: u8, rs1: u8, rs2: u8, hint: u64) {
-        self.push_virtual(
-            Rv64TraceVirtualOpcode::AssertValidUnsignedRemainder,
-            rd,
-            rs1,
-            rs2,
-            Some(hint),
-        );
-    }
-
     fn change_divisor(&mut self, rd: u8, rs1: u8, rs2: u8, hint: u64) {
         self.push_virtual(Rv64TraceVirtualOpcode::ChangeDivisor, rd, rs1, rs2, Some(hint));
     }
@@ -190,8 +148,8 @@ impl InlineInstrAssembler {
         self.push_virtual(Rv64TraceVirtualOpcode::Movsign, rd, rs1, 0, None);
     }
 
-    fn move_result(&mut self, rd: u8, rs1: u8, hint: u64) {
-        self.push_virtual(Rv64TraceVirtualOpcode::Move, rd, rs1, 0, Some(hint));
+    fn move_result(&mut self, rd: u8, rs1: u8) {
+        self.push_virtual(Rv64TraceVirtualOpcode::Move, rd, rs1, 0, None);
     }
 
     fn sign_extend_word(&mut self, rd: u8, rs1: u8, hint: Option<u64>) {
@@ -268,9 +226,9 @@ fn execute_trace_instruction(spec: TraceInstructionSpec, regs: &mut TraceRegiste
             | Rv64TraceVirtualOpcode::AssertLte
             | Rv64TraceVirtualOpcode::AssertValidUnsignedRemainder
             | Rv64TraceVirtualOpcode::AssertSignedDivIdentity
-            | Rv64TraceVirtualOpcode::AssertSignedRemainderBounds
-            | Rv64TraceVirtualOpcode::Move,
+            | Rv64TraceVirtualOpcode::AssertSignedRemainderBounds,
         ) => (spec.hint.expect("trace virtual hint"), true),
+        Rv64TraceOpcode::Virtual(Rv64TraceVirtualOpcode::Move) => (rs1_value, true),
         Rv64TraceOpcode::Virtual(Rv64TraceVirtualOpcode::SignExtendWord) => (sign_extend_word32(rs1_value), true),
         other => panic!("unsupported RV64 trace instruction lowering for {other:?}"),
     };

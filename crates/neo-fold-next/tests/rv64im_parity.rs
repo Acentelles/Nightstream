@@ -242,11 +242,17 @@ fn parity_cases_reach_expected_halted_states() {
                     .execution_rows
                     .iter()
                     .any(|row| row.trace_virtual_opcode.is_some()));
-                assert!(derived
-                    .execution_rows
-                    .iter()
-                    .any(|row| row.trace_virtual_opcode
-                        == Some(neo_fold_next::rv64im::Rv64TraceVirtualOpcode::AssertValidUnsignedRemainder)));
+                assert!(
+                    derived
+                        .execution_rows
+                        .iter()
+                        .any(|row| row.trace_virtual_opcode
+                            == Some(neo_fold_next::rv64im::Rv64TraceVirtualOpcode::Advice))
+                );
+                assert!(!derived.execution_rows.iter().any(|row| {
+                    row.trace_virtual_opcode
+                        == Some(neo_fold_next::rv64im::Rv64TraceVirtualOpcode::AssertValidUnsignedRemainder)
+                }));
                 assert!(derived
                     .stage2
                     .register_writes
@@ -283,7 +289,11 @@ fn parity_cases_reach_expected_halted_states() {
                     .execution_rows
                     .iter()
                     .any(|row| row.trace_virtual_opcode
-                        == Some(neo_fold_next::rv64im::Rv64TraceVirtualOpcode::AssertSignedDivIdentity)));
+                        == Some(neo_fold_next::rv64im::Rv64TraceVirtualOpcode::ChangeDivisor)));
+                assert!(!derived.execution_rows.iter().any(|row| {
+                    row.trace_virtual_opcode
+                        == Some(neo_fold_next::rv64im::Rv64TraceVirtualOpcode::AssertSignedDivIdentity)
+                }));
                 assert!(derived
                     .stage2
                     .register_writes

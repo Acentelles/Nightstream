@@ -14,6 +14,10 @@ use crate::rv64im::isa::Rv64Opcode;
 
 use super::{InlineTracePlan, WORD_MASK32};
 
+fn rd_aliases_inputs(rd: u8, rs1: u8, rs2: u8) -> bool {
+    rd == rs1 || rd == rs2
+}
+
 fn divrem_unsigned_values(lhs: u64, rhs: u64, word_op: bool, remainder_result: bool) -> (u64, u64, u64, u64, u64) {
     let dividend = if word_op { lhs & WORD_MASK32 } else { lhs };
     let divisor = if word_op { rhs & WORD_MASK32 } else { rhs };
