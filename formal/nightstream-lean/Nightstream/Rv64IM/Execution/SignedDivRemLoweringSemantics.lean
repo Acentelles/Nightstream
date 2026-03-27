@@ -554,7 +554,7 @@ theorem closureSuffixScratchOnly_of_divRefinedSignedDivRemLowering
 theorem uniqueCommitRow_of_divRefinedSignedDivRemLowering
   {rows : List ImportedLoweringRow}
   (h : DivConcreteLoweringRefinesReference rows) :
-  uniqueRealRowAt rows divEffectRowIndex :=
+  uniqueRealRowAt rows divCommitRowIndex :=
   uniqueCommitRow_of_divConcreteLoweringRefinesReference h
 
 theorem effectRowPrecedesCommitRow_of_divRefinedSignedDivRemLowering

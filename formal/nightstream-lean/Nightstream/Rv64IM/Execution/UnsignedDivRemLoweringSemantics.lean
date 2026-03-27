@@ -589,7 +589,7 @@ theorem closureSuffixScratchOnly_of_divuRefinedUnsignedDivRemLowering
 theorem uniqueCommitRow_of_divuRefinedUnsignedDivRemLowering
   {rows : List ImportedLoweringRow}
   (h : DivuConcreteLoweringRefinesReference rows) :
-  uniqueRealRowAt rows divuEffectRowIndex :=
+  uniqueRealRowAt rows divuCommitRowIndex :=
   uniqueCommitRow_of_divuConcreteLoweringRefinesReference h
 
 theorem effectRowPrecedesCommitRow_of_divuRefinedUnsignedDivRemLowering

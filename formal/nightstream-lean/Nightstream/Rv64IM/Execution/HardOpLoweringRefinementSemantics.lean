@@ -147,7 +147,7 @@ theorem closureSuffixScratchOnly_of_divuRefinedUnsignedDivRemOpcodeSemantics_of_
 theorem uniqueCommitRow_of_divuRefinedUnsignedDivRemOpcodeSemantics_of_hardOpLoweringRefinementSemantics
   {rows : List ImportedLoweringRow}
   (h : DivuConcreteLoweringRefinesReference rows) :
-  uniqueRealRowAt rows divuEffectRowIndex :=
+  uniqueRealRowAt rows divuCommitRowIndex :=
   uniqueCommitRow_of_divuRefinedUnsignedDivRemOpcodeSemantics h
 
 theorem effectRowPrecedesCommitRow_of_divuRefinedUnsignedDivRemOpcodeSemantics_of_hardOpLoweringRefinementSemantics
@@ -267,7 +267,7 @@ theorem closureSuffixScratchOnly_of_divRefinedSignedDivRemOpcodeSemantics_of_har
 theorem uniqueCommitRow_of_divRefinedSignedDivRemOpcodeSemantics_of_hardOpLoweringRefinementSemantics
   {rows : List ImportedLoweringRow}
   (h : DivConcreteLoweringRefinesReference rows) :
-  uniqueRealRowAt rows divEffectRowIndex :=
+  uniqueRealRowAt rows divCommitRowIndex :=
   uniqueCommitRow_of_divRefinedSignedDivRemOpcodeSemantics h
 
 theorem effectRowPrecedesCommitRow_of_divRefinedSignedDivRemOpcodeSemantics_of_hardOpLoweringRefinementSemantics

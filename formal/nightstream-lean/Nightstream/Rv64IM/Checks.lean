@@ -1424,6 +1424,9 @@ private def traceWrite (regs : Array Nat) (idx value : Nat) : Array Nat :=
   let regs' := if idx = 0 then regs else regs.set! idx (mod64 value)
   regs'.set! 0 0
 
+private def rdAliasesInputs (rd rs1 rs2 : Nat) : Bool :=
+  rd = rs1 || rd = rs2
+
 private def signMask (value : Nat) : Nat :=
   if signedWord value < 0 then u64Modulus - 1 else 0
 
@@ -1451,8 +1454,8 @@ private def executeTraceInstruction
     | .virtual .assertLte
     | .virtual .assertValidUnsignedRemainder
     | .virtual .assertSignedDivIdentity
-    | .virtual .assertSignedRemainderBounds
-    | .virtual .move => spec.hint.getD 0
+    | .virtual .assertSignedRemainderBounds => spec.hint.getD 0
+    | .virtual .move => rs1Value
     | .virtual .signExtendWord => signExtendWord32 rs1Value
     | _ => 0
   let regs' := traceWrite regs spec.rd result
@@ -1523,9 +1526,6 @@ private def divremSequence? (step : ExecutedStep) : Option InlineTracePlan := do
   let rs2 := step.decoded.rs2
   let rd := step.decoded.rd
   let v0 := inlineScratchRegisterBase
-  let v1 := inlineScratchRegisterBase + 1
-  let v2 := inlineScratchRegisterBase + 2
-  let v3 := inlineScratchRegisterBase + 3
   match step.decoded.opcode with
   | .divu | .remu | .divuw | .remuw =>
       let wordOp := step.decoded.opcode = .divuw || step.decoded.opcode = .remuw
@@ -1534,24 +1534,42 @@ private def divremSequence? (step : ExecutedStep) : Option InlineTracePlan := do
       let divisor := if wordOp then step.rs2Value % pow2 32 else step.rs2Value
       let maxQuotient := if wordOp then pow2 32 - 1 else u64Modulus - 1
       let quotient := if divisor = 0 then maxQuotient else dividend / divisor
-      let product := mod64 (quotient * divisor)
-      let remainder := if divisor = 0 then dividend else dividend - product
-      let rawResult := if useRemainder then remainder else quotient
+      let rawResult := if useRemainder then (if divisor = 0 then dividend else dividend - mod64 (quotient * divisor)) else quotient
       let finalResult := if wordOp then signExtendWord32 rawResult else rawResult
-      let base :=
-        [ { opcode := .virtual .advice, rd := v0, rs1 := rs1, rs2 := rs2, imm := 0, hint := some quotient }
-        , { opcode := .virtual .assertValidDiv0, rd := v0, rs1 := rs2, rs2 := v0, imm := 0, hint := some quotient }
-        , { opcode := .virtual .assertMulNoOverflow, rd := v1, rs1 := v0, rs2 := rs2, imm := 0, hint := some product }
-        , { opcode := .real .mul, rd := v1, rs1 := v0, rs2 := rs2, imm := 0, hint := none }
-        , { opcode := .virtual .assertLte, rd := v1, rs1 := v1, rs2 := rs1, imm := 0, hint := some product }
-        , { opcode := .real .sub, rd := v2, rs1 := rs1, rs2 := v1, imm := 0, hint := none }
-        , { opcode := .virtual .assertValidUnsignedRemainder, rd := v2, rs1 := v2, rs2 := rs2, imm := 0, hint := some remainder }
-        , { opcode := .virtual .move, rd := rd, rs1 := if useRemainder then v2 else v0, rs2 := 0, imm := 0, hint := some rawResult } ]
-      if step.decoded.opcode = .divuw || step.decoded.opcode = .remuw then
-        some <| finalizeInlinePlan
-          (base ++ [{ opcode := .virtual .signExtendWord, rd := rd, rs1 := rd, rs2 := 0, imm := 0, hint := some finalResult }])
+      let finalizeWord (base : List TraceInstructionSpec) (effectIndex : Nat) :=
+        if wordOp then
+          { sequence := base ++ [{ opcode := .virtual .signExtendWord, rd := rd, rs1 := rd, rs2 := 0, imm := 0, hint := some finalResult }]
+          , effectIndex := effectIndex }
+        else
+          { sequence := base, effectIndex := effectIndex }
+      if useRemainder then
+        let v1 := inlineScratchRegisterBase + 1
+        let base :=
+          [ { opcode := .virtual .advice, rd := v0, rs1 := rs1, rs2 := rs2, imm := 0, hint := some quotient }
+          , { opcode := .real .mul, rd := v1, rs1 := v0, rs2 := rs2, imm := 0, hint := none }
+          , { opcode := .real .sub, rd := rd, rs1 := rs1, rs2 := v1, imm := 0, hint := none } ]
+        some <| finalizeWord base (if wordOp then 3 else 2)
+      else if rdAliasesInputs rd rs1 rs2 then
+        let v1 := inlineScratchRegisterBase + 1
+        let v2 := inlineScratchRegisterBase + 2
+        let base :=
+          [ { opcode := .virtual .advice, rd := v0, rs1 := rs1, rs2 := rs2, imm := 0, hint := some quotient }
+          , { opcode := .real .mul, rd := v1, rs1 := v0, rs2 := rs2, imm := 0, hint := none }
+          , { opcode := .real .sub, rd := v2, rs1 := rs1, rs2 := v1, imm := 0, hint := none }
+          , { opcode := .virtual .move, rd := rd, rs1 := v0, rs2 := 0, imm := 0, hint := some rawResult } ]
+        some <| finalizeInlinePlan <|
+          if wordOp then
+            base ++ [{ opcode := .virtual .signExtendWord, rd := rd, rs1 := rd, rs2 := 0, imm := 0, hint := some finalResult }]
+          else
+            base
       else
-        some <| finalizeInlinePlan base
+        let v1 := inlineScratchRegisterBase
+        let v2 := inlineScratchRegisterBase + 1
+        let base :=
+          [ { opcode := .virtual .advice, rd := rd, rs1 := rs1, rs2 := rs2, imm := 0, hint := some quotient }
+          , { opcode := .real .mul, rd := v1, rs1 := rd, rs2 := rs2, imm := 0, hint := none }
+          , { opcode := .real .sub, rd := v2, rs1 := rs1, rs2 := v1, imm := 0, hint := none } ]
+        some <| finalizeWord base (if wordOp then 3 else 0)
   | .div | .rem =>
       let useRemainder := step.decoded.opcode = .rem
       let dividend := signedWord step.rs1Value
@@ -1576,14 +1594,34 @@ private def divremSequence? (step : ExecutedStep) : Option InlineTracePlan := do
       let quotientNat := mod64Int quotient
       let remainderNat := mod64Int remainder
       let finalResult := if useRemainder then remainderNat else quotientNat
-      some <| finalizeInlinePlan
-        [ { opcode := .virtual .changeDivisor, rd := v0, rs1 := rs1, rs2 := rs2, imm := 0, hint := some effectiveDivisorNat }
-        , { opcode := .virtual .advice, rd := v1, rs1 := rs1, rs2 := rs2, imm := 0, hint := some quotientNat }
-        , { opcode := .real .mul, rd := v2, rs1 := v1, rs2 := v0, imm := 0, hint := none }
-        , { opcode := .real .sub, rd := v3, rs1 := rs1, rs2 := v2, imm := 0, hint := none }
-        , { opcode := .virtual .assertSignedDivIdentity, rd := v1, rs1 := rs1, rs2 := v0, imm := 0, hint := some quotientNat }
-        , { opcode := .virtual .assertSignedRemainderBounds, rd := v3, rs1 := v3, rs2 := v0, imm := 0, hint := some remainderNat }
-        , { opcode := .virtual .move, rd := rd, rs1 := if useRemainder then v3 else v1, rs2 := 0, imm := 0, hint := some finalResult } ]
+      if useRemainder then
+        let v1 := inlineScratchRegisterBase + 1
+        let v2 := inlineScratchRegisterBase + 2
+        some <| finalizeInlinePlan
+          [ { opcode := .virtual .changeDivisor, rd := v0, rs1 := rs1, rs2 := rs2, imm := 0, hint := some effectiveDivisorNat }
+          , { opcode := .virtual .advice, rd := v1, rs1 := rs1, rs2 := rs2, imm := 0, hint := some quotientNat }
+          , { opcode := .real .mul, rd := v2, rs1 := v1, rs2 := v0, imm := 0, hint := none }
+          , { opcode := .real .sub, rd := rd, rs1 := rs1, rs2 := v2, imm := 0, hint := some remainderNat } ]
+      else if rdAliasesInputs rd rs1 rs2 then
+        let v2 := inlineScratchRegisterBase + 1
+        let v3 := inlineScratchRegisterBase + 2
+        let v1 := inlineScratchRegisterBase + 3
+        some <| finalizeInlinePlan
+          [ { opcode := .virtual .changeDivisor, rd := v0, rs1 := rs1, rs2 := rs2, imm := 0, hint := some effectiveDivisorNat }
+          , { opcode := .virtual .advice, rd := v1, rs1 := rs1, rs2 := rs2, imm := 0, hint := some quotientNat }
+          , { opcode := .real .mul, rd := v2, rs1 := v1, rs2 := v0, imm := 0, hint := none }
+          , { opcode := .real .sub, rd := v3, rs1 := rs1, rs2 := v2, imm := 0, hint := some remainderNat }
+          , { opcode := .virtual .move, rd := rd, rs1 := v1, rs2 := 0, imm := 0, hint := some finalResult } ]
+      else
+        let v2 := inlineScratchRegisterBase + 1
+        let v3 := inlineScratchRegisterBase + 2
+        some
+          { sequence :=
+              [ { opcode := .virtual .changeDivisor, rd := v0, rs1 := rs1, rs2 := rs2, imm := 0, hint := some effectiveDivisorNat }
+              , { opcode := .virtual .advice, rd := rd, rs1 := rs1, rs2 := rs2, imm := 0, hint := some quotientNat }
+              , { opcode := .real .mul, rd := v2, rs1 := rd, rs2 := v0, imm := 0, hint := none }
+              , { opcode := .real .sub, rd := v3, rs1 := rs1, rs2 := v2, imm := 0, hint := some remainderNat } ]
+          , effectIndex := 1 }
   | .divw | .remw =>
       let useRemainder := step.decoded.opcode = .remw
       let dividend := signedWord32 step.rs1Value
@@ -1609,15 +1647,37 @@ private def divremSequence? (step : ExecutedStep) : Option InlineTracePlan := do
       let remainderNat := mod64Int remainder
       let rawResult := if useRemainder then mod32Int remainder else mod32Int quotient
       let finalResult := signExtendWord32 rawResult
-      some <| finalizeInlinePlan
-        [ { opcode := .virtual .changeDivisor, rd := v0, rs1 := rs1, rs2 := rs2, imm := 0, hint := some effectiveDivisorNat }
-        , { opcode := .virtual .advice, rd := v1, rs1 := rs1, rs2 := rs2, imm := 0, hint := some quotientNat }
-        , { opcode := .real .mul, rd := v2, rs1 := v1, rs2 := v0, imm := 0, hint := none }
-        , { opcode := .real .sub, rd := v3, rs1 := rs1, rs2 := v2, imm := 0, hint := none }
-        , { opcode := .virtual .assertSignedDivIdentity, rd := v1, rs1 := rs1, rs2 := v0, imm := 0, hint := some quotientNat }
-        , { opcode := .virtual .assertSignedRemainderBounds, rd := v3, rs1 := v3, rs2 := v0, imm := 0, hint := some remainderNat }
-        , { opcode := .virtual .move, rd := rd, rs1 := if useRemainder then v3 else v1, rs2 := 0, imm := 0, hint := some rawResult }
-        , { opcode := .virtual .signExtendWord, rd := rd, rs1 := rd, rs2 := 0, imm := 0, hint := some finalResult } ]
+      if useRemainder then
+        let v1 := inlineScratchRegisterBase + 1
+        let v2 := inlineScratchRegisterBase + 2
+        some <| finalizeInlinePlan
+          [ { opcode := .virtual .changeDivisor, rd := v0, rs1 := rs1, rs2 := rs2, imm := 0, hint := some effectiveDivisorNat }
+          , { opcode := .virtual .advice, rd := v1, rs1 := rs1, rs2 := rs2, imm := 0, hint := some quotientNat }
+          , { opcode := .real .mul, rd := v2, rs1 := v1, rs2 := v0, imm := 0, hint := none }
+          , { opcode := .real .sub, rd := rd, rs1 := rs1, rs2 := v2, imm := 0, hint := some remainderNat }
+          , { opcode := .virtual .signExtendWord, rd := rd, rs1 := rd, rs2 := 0, imm := 0, hint := some finalResult } ]
+      else if rdAliasesInputs rd rs1 rs2 then
+        let v2 := inlineScratchRegisterBase + 1
+        let v3 := inlineScratchRegisterBase + 2
+        let v1 := inlineScratchRegisterBase + 3
+        some <| finalizeInlinePlan
+          [ { opcode := .virtual .changeDivisor, rd := v0, rs1 := rs1, rs2 := rs2, imm := 0, hint := some effectiveDivisorNat }
+          , { opcode := .virtual .advice, rd := v1, rs1 := rs1, rs2 := rs2, imm := 0, hint := some quotientNat }
+          , { opcode := .real .mul, rd := v2, rs1 := v1, rs2 := v0, imm := 0, hint := none }
+          , { opcode := .real .sub, rd := v3, rs1 := rs1, rs2 := v2, imm := 0, hint := some remainderNat }
+          , { opcode := .virtual .move, rd := rd, rs1 := v1, rs2 := 0, imm := 0, hint := some rawResult }
+          , { opcode := .virtual .signExtendWord, rd := rd, rs1 := rd, rs2 := 0, imm := 0, hint := some finalResult } ]
+      else
+        let v2 := inlineScratchRegisterBase + 1
+        let v3 := inlineScratchRegisterBase + 2
+        some
+          { sequence :=
+              [ { opcode := .virtual .changeDivisor, rd := v0, rs1 := rs1, rs2 := rs2, imm := 0, hint := some effectiveDivisorNat }
+              , { opcode := .virtual .advice, rd := rd, rs1 := rs1, rs2 := rs2, imm := 0, hint := some quotientNat }
+              , { opcode := .real .mul, rd := v2, rs1 := rd, rs2 := v0, imm := 0, hint := none }
+              , { opcode := .real .sub, rd := v3, rs1 := rs1, rs2 := v2, imm := 0, hint := some remainderNat }
+              , { opcode := .virtual .signExtendWord, rd := rd, rs1 := rd, rs2 := 0, imm := 0, hint := some finalResult } ]
+          , effectIndex := 4 }
   | _ => none
 
 private def expandedRowOfStep (traceIndex : Nat) (step : ExecutedStep) : ExpandedRowView :=

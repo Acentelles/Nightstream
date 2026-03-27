@@ -95,13 +95,8 @@ deriving DecidableEq, Repr
 
 inductive UnsignedDivRemReferenceStep where
   | adviceQuotient
-  | assertValidDiv0
-  | assertMulNoOverflow
   | mulProduct
-  | assertProductLteDividend
   | subRemainder
-  | assertValidUnsignedRemainder
-  | moveArchitectural
   | signExtendWord
 deriving DecidableEq, Repr
 
@@ -110,9 +105,6 @@ inductive SignedDivRemReferenceStep where
   | adviceQuotient
   | mulProduct
   | subRemainder
-  | assertSignedDivIdentity
-  | assertSignedRemainderBounds
-  | moveArchitectural
   | signExtendWord
 deriving DecidableEq, Repr
 
@@ -146,13 +138,8 @@ def mulhsuReferenceLowering : List MulhsuReferenceStep :=
 
 def divuReferenceLowering : List UnsignedDivRemReferenceStep :=
   [ .adviceQuotient
-  , .assertValidDiv0
-  , .assertMulNoOverflow
   , .mulProduct
-  , .assertProductLteDividend
   , .subRemainder
-  , .assertValidUnsignedRemainder
-  , .moveArchitectural
   ]
 
 def remuReferenceLowering : List UnsignedDivRemReferenceStep :=
@@ -169,9 +156,6 @@ def divReferenceLowering : List SignedDivRemReferenceStep :=
   , .adviceQuotient
   , .mulProduct
   , .subRemainder
-  , .assertSignedDivIdentity
-  , .assertSignedRemainderBounds
-  , .moveArchitectural
   ]
 
 def remReferenceLowering : List SignedDivRemReferenceStep :=
@@ -188,14 +172,16 @@ def mulhuEffectRowIndex : Nat := 0
 def mulwEffectRowIndex : Nat := 1
 def mulhEffectRowIndex : Nat := 6
 def mulhsuEffectRowIndex : Nat := 10
-def divuEffectRowIndex : Nat := 7
-def remuEffectRowIndex : Nat := 7
-def divuwEffectRowIndex : Nat := 8
-def remuwEffectRowIndex : Nat := 8
-def divEffectRowIndex : Nat := 6
-def remEffectRowIndex : Nat := 6
-def divwEffectRowIndex : Nat := 7
-def remwEffectRowIndex : Nat := 7
+def divuEffectRowIndex : Nat := 0
+def divuCommitRowIndex : Nat := 2
+def remuEffectRowIndex : Nat := 2
+def divuwEffectRowIndex : Nat := 3
+def remuwEffectRowIndex : Nat := 3
+def divEffectRowIndex : Nat := 1
+def divCommitRowIndex : Nat := 3
+def remEffectRowIndex : Nat := 3
+def divwEffectRowIndex : Nat := 4
+def remwEffectRowIndex : Nat := 4
 
 private def expectedVirtualSequenceRemaining (rows : List ImportedLoweringRow) (idx : Nat) :
     Option Nat :=
@@ -247,7 +233,7 @@ def mulhsuClosureSuffixRows (rows : List ImportedLoweringRow) : List ImportedLow
   closureSuffixRowsAfter mulhsuEffectRowIndex rows
 
 def divuClosureSuffixRows (rows : List ImportedLoweringRow) : List ImportedLoweringRow :=
-  closureSuffixRowsAfter divuEffectRowIndex rows
+  closureSuffixRowsAfter divuCommitRowIndex rows
 
 def remuClosureSuffixRows (rows : List ImportedLoweringRow) : List ImportedLoweringRow :=
   closureSuffixRowsAfter remuEffectRowIndex rows
@@ -259,7 +245,7 @@ def remuwClosureSuffixRows (rows : List ImportedLoweringRow) : List ImportedLowe
   closureSuffixRowsAfter remuwEffectRowIndex rows
 
 def divClosureSuffixRows (rows : List ImportedLoweringRow) : List ImportedLoweringRow :=
-  closureSuffixRowsAfter divEffectRowIndex rows
+  closureSuffixRowsAfter divCommitRowIndex rows
 
 def remClosureSuffixRows (rows : List ImportedLoweringRow) : List ImportedLoweringRow :=
   closureSuffixRowsAfter remEffectRowIndex rows
@@ -277,7 +263,7 @@ def mulhsuClosureSuffixScratchOnly (rows : List ImportedLoweringRow) : Prop :=
   closureSuffixScratchOnlyAfterB mulhsuEffectRowIndex rows = true
 
 def divuClosureSuffixScratchOnly (rows : List ImportedLoweringRow) : Prop :=
-  closureSuffixScratchOnlyAfterB divuEffectRowIndex rows = true
+  closureSuffixScratchOnlyAfterB divuCommitRowIndex rows = true
 
 def remuClosureSuffixScratchOnly (rows : List ImportedLoweringRow) : Prop :=
   closureSuffixScratchOnlyAfterB remuEffectRowIndex rows = true
@@ -289,7 +275,7 @@ def remuwClosureSuffixScratchOnly (rows : List ImportedLoweringRow) : Prop :=
   closureSuffixScratchOnlyAfterB remuwEffectRowIndex rows = true
 
 def divClosureSuffixScratchOnly (rows : List ImportedLoweringRow) : Prop :=
-  closureSuffixScratchOnlyAfterB divEffectRowIndex rows = true
+  closureSuffixScratchOnlyAfterB divCommitRowIndex rows = true
 
 def remClosureSuffixScratchOnly (rows : List ImportedLoweringRow) : Prop :=
   closureSuffixScratchOnlyAfterB remEffectRowIndex rows = true
@@ -611,156 +597,190 @@ private def unsignedDivRemCoreShapeB
     (opcode : Opcode)
     (moveSourceIsRemainder : Bool)
     (wordOp : Bool) : List ImportedLoweringRow → Bool
-  | [r0, r1, r2, r3, r4, r5, r6, r7] =>
+  | [r0, r1, r2] =>
       if wordOp then
         false
       else
-        let archRs1 := r0.rs1
-        let archRs2 := r0.rs2
-        let v0 := r0.rd
-        let v1 := r2.rd
-        let v2 := r5.rd
-        let archRd := r7.rd
-        let moveSource := if moveSourceIsRemainder then v2 else v0
-        decide (r0.opcode = opcode) &&
-          decide (r1.opcode = opcode) &&
-          decide (r2.opcode = opcode) &&
-          decide (r3.opcode = opcode) &&
-          decide (r4.opcode = opcode) &&
-          decide (r5.opcode = opcode) &&
-          decide (r6.opcode = opcode) &&
-          decide (r7.opcode = opcode) &&
-          decide (archRs1 < 32) &&
-          decide (archRs2 < 32) &&
-          decide (archRd < 32) &&
-          isInlineScratchRegisterB v0 &&
-          isInlineScratchRegisterB v1 &&
-          isInlineScratchRegisterB v2 &&
-          decide (v0 ≠ v1) &&
-          decide (v0 ≠ v2) &&
-          decide (v1 ≠ v2) &&
-          decide (r0.traceOpcode = none) &&
-          decide (r0.traceVirtualOpcode = some .advice) &&
-          decide (r0.rs2 = archRs2) &&
-          decide (r1.traceOpcode = none) &&
-          decide (r1.traceVirtualOpcode = some .assertValidDiv0) &&
-          decide (r1.rd = v0) &&
-          decide (r1.rs1 = archRs2) &&
-          decide (r1.rs2 = v0) &&
-          decide (r2.traceOpcode = none) &&
-          decide (r2.traceVirtualOpcode = some .assertMulNoOverflow) &&
-          decide (r2.rd = v1) &&
-          decide (r2.rs1 = v0) &&
-          decide (r2.rs2 = archRs2) &&
-          decide (r3.traceOpcode = some .mul) &&
-          decide (r3.traceVirtualOpcode = none) &&
-          decide (r3.rd = v1) &&
-          decide (r3.rs1 = v0) &&
-          decide (r3.rs2 = archRs2) &&
-          decide (r4.traceOpcode = none) &&
-          decide (r4.traceVirtualOpcode = some .assertLte) &&
-          decide (r4.rd = v1) &&
-          decide (r4.rs1 = v1) &&
-          decide (r4.rs2 = archRs1) &&
-          decide (r5.traceOpcode = some .sub) &&
-          decide (r5.traceVirtualOpcode = none) &&
-          decide (r5.rd = v2) &&
-          decide (r5.rs1 = archRs1) &&
-          decide (r5.rs2 = v1) &&
-          decide (r6.traceOpcode = none) &&
-          decide (r6.traceVirtualOpcode = some .assertValidUnsignedRemainder) &&
-          decide (r6.rd = v2) &&
-          decide (r6.rs1 = v2) &&
-          decide (r6.rs2 = archRs2) &&
-          decide (r7.traceOpcode = none) &&
-          decide (r7.traceVirtualOpcode = some .move) &&
-          decide (r7.rd = archRd) &&
-          decide (r7.rs1 = moveSource) &&
-          decide (r7.rs2 = 0) &&
-          decide (r7.imm = 0) &&
-          decide (r7.writesRd = true) &&
-          decide (r7.writesRam = false) &&
-          decide (r7.isReal = true)
-  | [r0, r1, r2, r3, r4, r5, r6, r7, r8] =>
+        if moveSourceIsRemainder then
+          let archRs1 := r0.rs1
+          let archRs2 := r0.rs2
+          let v0 := r0.rd
+          let v1 := r1.rd
+          let archRd := r2.rd
+          decide (r0.opcode = opcode) &&
+            decide (r1.opcode = opcode) &&
+            decide (r2.opcode = opcode) &&
+            decide (archRs1 < 32) &&
+            decide (archRs2 < 32) &&
+            decide (archRd < 32) &&
+            isInlineScratchRegisterB v0 &&
+            isInlineScratchRegisterB v1 &&
+            decide (v0 ≠ v1) &&
+            decide (r0.traceOpcode = none) &&
+            decide (r0.traceVirtualOpcode = some .advice) &&
+            decide (r0.rs1 = archRs1) &&
+            decide (r0.rs2 = archRs2) &&
+            decide (r0.imm = 0) &&
+            decide (r0.writesRd = true) &&
+            decide (r0.writesRam = false) &&
+            decide (r0.isReal = false) &&
+            decide (r1.traceOpcode = some .mul) &&
+            decide (r1.traceVirtualOpcode = none) &&
+            decide (r1.rd = v1) &&
+            decide (r1.rs1 = v0) &&
+            decide (r1.rs2 = archRs2) &&
+            decide (r1.writesRd = true) &&
+            decide (r1.writesRam = false) &&
+            decide (r1.isReal = false) &&
+            decide (r2.traceOpcode = some .sub) &&
+            decide (r2.traceVirtualOpcode = none) &&
+            decide (r2.rd = archRd) &&
+            decide (r2.rs1 = archRs1) &&
+            decide (r2.rs2 = v1) &&
+            decide (r2.writesRd = true) &&
+            decide (r2.writesRam = false) &&
+            decide (r2.isReal = true)
+        else
+          let archRs1 := r0.rs1
+          let archRs2 := r0.rs2
+          let archRd := r0.rd
+          let v1 := r1.rd
+          let v2 := r2.rd
+          decide (r0.opcode = opcode) &&
+            decide (r1.opcode = opcode) &&
+            decide (r2.opcode = opcode) &&
+            decide (archRs1 < 32) &&
+            decide (archRs2 < 32) &&
+            decide (archRd < 32) &&
+            isInlineScratchRegisterB v1 &&
+            isInlineScratchRegisterB v2 &&
+            decide (v1 ≠ v2) &&
+            decide (r0.traceOpcode = none) &&
+            decide (r0.traceVirtualOpcode = some .advice) &&
+            decide (r0.rs1 = archRs1) &&
+            decide (r0.rs2 = archRs2) &&
+            decide (r0.imm = 0) &&
+            decide (r0.writesRd = true) &&
+            decide (r0.writesRam = false) &&
+            decide (r0.isReal = false) &&
+            decide (r1.traceOpcode = some .mul) &&
+            decide (r1.traceVirtualOpcode = none) &&
+            decide (r1.rd = v1) &&
+            decide (r1.rs1 = archRd) &&
+            decide (r1.rs2 = archRs2) &&
+            decide (r1.writesRd = true) &&
+            decide (r1.writesRam = false) &&
+            decide (r1.isReal = false) &&
+            decide (r2.traceOpcode = some .sub) &&
+            decide (r2.traceVirtualOpcode = none) &&
+            decide (r2.rd = v2) &&
+            decide (r2.rs1 = archRs1) &&
+            decide (r2.rs2 = v1) &&
+            decide (r2.writesRd = true) &&
+            decide (r2.writesRam = false) &&
+            decide (r2.isReal = true)
+  | [r0, r1, r2, r3] =>
       if !wordOp then
         false
       else
-        let archRs1 := r0.rs1
-        let archRs2 := r0.rs2
-        let v0 := r0.rd
-        let v1 := r2.rd
-        let v2 := r5.rd
-        let archRd := r7.rd
-        let moveSource := if moveSourceIsRemainder then v2 else v0
-        decide (r0.opcode = opcode) &&
-          decide (r1.opcode = opcode) &&
-          decide (r2.opcode = opcode) &&
-          decide (r3.opcode = opcode) &&
-          decide (r4.opcode = opcode) &&
-          decide (r5.opcode = opcode) &&
-          decide (r6.opcode = opcode) &&
-          decide (r7.opcode = opcode) &&
-          decide (r8.opcode = opcode) &&
-          decide (archRs1 < 32) &&
-          decide (archRs2 < 32) &&
-          decide (archRd < 32) &&
-          isInlineScratchRegisterB v0 &&
-          isInlineScratchRegisterB v1 &&
-          isInlineScratchRegisterB v2 &&
-          decide (v0 ≠ v1) &&
-          decide (v0 ≠ v2) &&
-          decide (v1 ≠ v2) &&
-          decide (r0.traceOpcode = none) &&
-          decide (r0.traceVirtualOpcode = some .advice) &&
-          decide (r0.rs2 = archRs2) &&
-          decide (r1.traceOpcode = none) &&
-          decide (r1.traceVirtualOpcode = some .assertValidDiv0) &&
-          decide (r1.rd = v0) &&
-          decide (r1.rs1 = archRs2) &&
-          decide (r1.rs2 = v0) &&
-          decide (r2.traceOpcode = none) &&
-          decide (r2.traceVirtualOpcode = some .assertMulNoOverflow) &&
-          decide (r2.rd = v1) &&
-          decide (r2.rs1 = v0) &&
-          decide (r2.rs2 = archRs2) &&
-          decide (r3.traceOpcode = some .mul) &&
-          decide (r3.traceVirtualOpcode = none) &&
-          decide (r3.rd = v1) &&
-          decide (r3.rs1 = v0) &&
-          decide (r3.rs2 = archRs2) &&
-          decide (r4.traceOpcode = none) &&
-          decide (r4.traceVirtualOpcode = some .assertLte) &&
-          decide (r4.rd = v1) &&
-          decide (r4.rs1 = v1) &&
-          decide (r4.rs2 = archRs1) &&
-          decide (r5.traceOpcode = some .sub) &&
-          decide (r5.traceVirtualOpcode = none) &&
-          decide (r5.rd = v2) &&
-          decide (r5.rs1 = archRs1) &&
-          decide (r5.rs2 = v1) &&
-          decide (r6.traceOpcode = none) &&
-          decide (r6.traceVirtualOpcode = some .assertValidUnsignedRemainder) &&
-          decide (r6.rd = v2) &&
-          decide (r6.rs1 = v2) &&
-          decide (r6.rs2 = archRs2) &&
-          decide (r7.traceOpcode = none) &&
-          decide (r7.traceVirtualOpcode = some .move) &&
-          decide (r7.rd = archRd) &&
-          decide (r7.rs1 = moveSource) &&
-          decide (r7.rs2 = 0) &&
-          decide (r7.imm = 0) &&
-          decide (r7.writesRd = true) &&
-          decide (r7.writesRam = false) &&
-          decide (r7.isReal = false) &&
-          decide (r8.traceOpcode = none) &&
-          decide (r8.traceVirtualOpcode = some .signExtendWord) &&
-          decide (r8.rd = archRd) &&
-          decide (r8.rs1 = archRd) &&
-          decide (r8.rs2 = 0) &&
-          decide (r8.imm = 0) &&
-          decide (r8.writesRd = true) &&
-          decide (r8.writesRam = false) &&
-          decide (r8.isReal = true)
+        if moveSourceIsRemainder then
+          let archRs1 := r0.rs1
+          let archRs2 := r0.rs2
+          let v0 := r0.rd
+          let v1 := r1.rd
+          let archRd := r2.rd
+          decide (r0.opcode = opcode) &&
+            decide (r1.opcode = opcode) &&
+            decide (r2.opcode = opcode) &&
+            decide (r3.opcode = opcode) &&
+            decide (archRs1 < 32) &&
+            decide (archRs2 < 32) &&
+            decide (archRd < 32) &&
+            isInlineScratchRegisterB v0 &&
+            isInlineScratchRegisterB v1 &&
+            decide (v0 ≠ v1) &&
+            decide (r0.traceOpcode = none) &&
+            decide (r0.traceVirtualOpcode = some .advice) &&
+            decide (r0.rs1 = archRs1) &&
+            decide (r0.rs2 = archRs2) &&
+            decide (r0.imm = 0) &&
+            decide (r0.writesRd = true) &&
+            decide (r0.writesRam = false) &&
+            decide (r0.isReal = false) &&
+            decide (r1.traceOpcode = some .mul) &&
+            decide (r1.traceVirtualOpcode = none) &&
+            decide (r1.rd = v1) &&
+            decide (r1.rs1 = v0) &&
+            decide (r1.rs2 = archRs2) &&
+            decide (r1.writesRd = true) &&
+            decide (r1.writesRam = false) &&
+            decide (r1.isReal = false) &&
+            decide (r2.traceOpcode = some .sub) &&
+            decide (r2.traceVirtualOpcode = none) &&
+            decide (r2.rd = archRd) &&
+            decide (r2.rs1 = archRs1) &&
+            decide (r2.rs2 = v1) &&
+            decide (r2.writesRd = true) &&
+            decide (r2.writesRam = false) &&
+            decide (r2.isReal = false) &&
+            decide (r3.traceOpcode = none) &&
+            decide (r3.traceVirtualOpcode = some .signExtendWord) &&
+            decide (r3.rd = archRd) &&
+            decide (r3.rs1 = archRd) &&
+            decide (r3.rs2 = 0) &&
+            decide (r3.imm = 0) &&
+            decide (r3.writesRd = true) &&
+            decide (r3.writesRam = false) &&
+            decide (r3.isReal = true)
+        else
+          let archRs1 := r0.rs1
+          let archRs2 := r0.rs2
+          let archRd := r0.rd
+          let v1 := r1.rd
+          let v2 := r2.rd
+          decide (r0.opcode = opcode) &&
+            decide (r1.opcode = opcode) &&
+            decide (r2.opcode = opcode) &&
+            decide (r3.opcode = opcode) &&
+            decide (archRs1 < 32) &&
+            decide (archRs2 < 32) &&
+            decide (archRd < 32) &&
+            isInlineScratchRegisterB v1 &&
+            isInlineScratchRegisterB v2 &&
+            decide (v1 ≠ v2) &&
+            decide (r0.traceOpcode = none) &&
+            decide (r0.traceVirtualOpcode = some .advice) &&
+            decide (r0.rs1 = archRs1) &&
+            decide (r0.rs2 = archRs2) &&
+            decide (r0.imm = 0) &&
+            decide (r0.writesRd = true) &&
+            decide (r0.writesRam = false) &&
+            decide (r0.isReal = false) &&
+            decide (r1.traceOpcode = some .mul) &&
+            decide (r1.traceVirtualOpcode = none) &&
+            decide (r1.rd = v1) &&
+            decide (r1.rs1 = archRd) &&
+            decide (r1.rs2 = archRs2) &&
+            decide (r1.writesRd = true) &&
+            decide (r1.writesRam = false) &&
+            decide (r1.isReal = false) &&
+            decide (r2.traceOpcode = some .sub) &&
+            decide (r2.traceVirtualOpcode = none) &&
+            decide (r2.rd = v2) &&
+            decide (r2.rs1 = archRs1) &&
+            decide (r2.rs2 = v1) &&
+            decide (r2.writesRd = true) &&
+            decide (r2.writesRam = false) &&
+            decide (r2.isReal = false) &&
+            decide (r3.traceOpcode = none) &&
+            decide (r3.traceVirtualOpcode = some .signExtendWord) &&
+            decide (r3.rd = archRd) &&
+            decide (r3.rs1 = archRd) &&
+            decide (r3.rs2 = 0) &&
+            decide (r3.imm = 0) &&
+            decide (r3.writesRd = true) &&
+            decide (r3.writesRam = false) &&
+            decide (r3.isReal = true)
   | _ => false
 
 def divuConcreteCoreShape (rows : List ImportedLoweringRow) : Prop :=
@@ -807,160 +827,242 @@ private def signedDivRemCoreShapeB
     (opcode : Opcode)
     (moveSourceIsRemainder : Bool)
     (wordOp : Bool) : List ImportedLoweringRow → Bool
-  | [r0, r1, r2, r3, r4, r5, r6] =>
+  | [r0, r1, r2, r3] =>
       if wordOp then
         false
       else
-        let archRs1 := r0.rs1
-        let archRs2 := r0.rs2
-        let v0 := r0.rd
-        let v1 := r1.rd
-        let v2 := r2.rd
-        let v3 := r3.rd
-        let archRd := r6.rd
-        let moveSource := if moveSourceIsRemainder then v3 else v1
-        decide (r0.opcode = opcode) &&
-          decide (r1.opcode = opcode) &&
-          decide (r2.opcode = opcode) &&
-          decide (r3.opcode = opcode) &&
-          decide (r4.opcode = opcode) &&
-          decide (r5.opcode = opcode) &&
-          decide (r6.opcode = opcode) &&
-          decide (archRs1 < 32) &&
-          decide (archRs2 < 32) &&
-          decide (archRd < 32) &&
-          isInlineScratchRegisterB v0 &&
-          isInlineScratchRegisterB v1 &&
-          isInlineScratchRegisterB v2 &&
-          isInlineScratchRegisterB v3 &&
-          decide (v0 ≠ v1) &&
-          decide (v0 ≠ v2) &&
-          decide (v0 ≠ v3) &&
-          decide (v1 ≠ v2) &&
-          decide (v1 ≠ v3) &&
-          decide (v2 ≠ v3) &&
-          decide (r0.traceOpcode = none) &&
-          decide (r0.traceVirtualOpcode = some .changeDivisor) &&
-          decide (r0.rs2 = archRs2) &&
-          decide (r0.imm = 0) &&
-          decide (r1.traceOpcode = none) &&
-          decide (r1.traceVirtualOpcode = some .advice) &&
-          decide (r1.rs1 = archRs1) &&
-          decide (r1.rs2 = archRs2) &&
-          decide (r1.imm = 0) &&
-          decide (r2.traceOpcode = some .mul) &&
-          decide (r2.traceVirtualOpcode = none) &&
-          decide (r2.rd = v2) &&
-          decide (r2.rs1 = v1) &&
-          decide (r2.rs2 = v0) &&
-          decide (r3.traceOpcode = some .sub) &&
-          decide (r3.traceVirtualOpcode = none) &&
-          decide (r3.rd = v3) &&
-          decide (r3.rs1 = archRs1) &&
-          decide (r3.rs2 = v2) &&
-          decide (r4.traceOpcode = none) &&
-          decide (r4.traceVirtualOpcode = some .assertSignedDivIdentity) &&
-          decide (r4.rd = v1) &&
-          decide (r4.rs1 = archRs1) &&
-          decide (r4.rs2 = v0) &&
-          decide (r4.imm = 0) &&
-          decide (r5.traceOpcode = none) &&
-          decide (r5.traceVirtualOpcode = some .assertSignedRemainderBounds) &&
-          decide (r5.rd = v3) &&
-          decide (r5.rs1 = v3) &&
-          decide (r5.rs2 = v0) &&
-          decide (r5.imm = 0) &&
-          decide (r6.traceOpcode = none) &&
-          decide (r6.traceVirtualOpcode = some .move) &&
-          decide (r6.rd = archRd) &&
-          decide (r6.rs1 = moveSource) &&
-          decide (r6.rs2 = 0) &&
-          decide (r6.imm = 0) &&
-          decide (r6.writesRd = true) &&
-          decide (r6.writesRam = false) &&
-          decide (r6.isReal = true)
-  | [r0, r1, r2, r3, r4, r5, r6, r7] =>
+        if moveSourceIsRemainder then
+          let archRs1 := r0.rs1
+          let archRs2 := r0.rs2
+          let v0 := r0.rd
+          let v1 := r1.rd
+          let v2 := r2.rd
+          let archRd := r3.rd
+          decide (r0.opcode = opcode) &&
+            decide (r1.opcode = opcode) &&
+            decide (r2.opcode = opcode) &&
+            decide (r3.opcode = opcode) &&
+            decide (archRs1 < 32) &&
+            decide (archRs2 < 32) &&
+            decide (archRd < 32) &&
+            isInlineScratchRegisterB v0 &&
+            isInlineScratchRegisterB v1 &&
+            isInlineScratchRegisterB v2 &&
+            decide (v0 ≠ v1) &&
+            decide (v0 ≠ v2) &&
+            decide (v1 ≠ v2) &&
+            decide (r0.traceOpcode = none) &&
+            decide (r0.traceVirtualOpcode = some .changeDivisor) &&
+            decide (r0.rs1 = archRs1) &&
+            decide (r0.rs2 = archRs2) &&
+            decide (r0.imm = 0) &&
+            decide (r0.writesRd = true) &&
+            decide (r0.writesRam = false) &&
+            decide (r0.isReal = false) &&
+            decide (r1.traceOpcode = none) &&
+            decide (r1.traceVirtualOpcode = some .advice) &&
+            decide (r1.rs1 = archRs1) &&
+            decide (r1.rs2 = archRs2) &&
+            decide (r1.imm = 0) &&
+            decide (r1.writesRd = true) &&
+            decide (r1.writesRam = false) &&
+            decide (r1.isReal = false) &&
+            decide (r2.traceOpcode = some .mul) &&
+            decide (r2.traceVirtualOpcode = none) &&
+            decide (r2.rd = v2) &&
+            decide (r2.rs1 = v1) &&
+            decide (r2.rs2 = v0) &&
+            decide (r2.writesRd = true) &&
+            decide (r2.writesRam = false) &&
+            decide (r2.isReal = false) &&
+            decide (r3.traceOpcode = some .sub) &&
+            decide (r3.traceVirtualOpcode = none) &&
+            decide (r3.rd = archRd) &&
+            decide (r3.rs1 = archRs1) &&
+            decide (r3.rs2 = v2) &&
+            decide (r3.writesRd = true) &&
+            decide (r3.writesRam = false) &&
+            decide (r3.isReal = true)
+        else
+          let archRs1 := r0.rs1
+          let archRs2 := r0.rs2
+          let v0 := r0.rd
+          let archRd := r1.rd
+          let v2 := r2.rd
+          let v3 := r3.rd
+          decide (r0.opcode = opcode) &&
+            decide (r1.opcode = opcode) &&
+            decide (r2.opcode = opcode) &&
+            decide (r3.opcode = opcode) &&
+            decide (archRs1 < 32) &&
+            decide (archRs2 < 32) &&
+            decide (archRd < 32) &&
+            isInlineScratchRegisterB v0 &&
+            isInlineScratchRegisterB v2 &&
+            isInlineScratchRegisterB v3 &&
+            decide (v0 ≠ v2) &&
+            decide (v0 ≠ v3) &&
+            decide (v2 ≠ v3) &&
+            decide (r0.traceOpcode = none) &&
+            decide (r0.traceVirtualOpcode = some .changeDivisor) &&
+            decide (r0.rs1 = archRs1) &&
+            decide (r0.rs2 = archRs2) &&
+            decide (r0.imm = 0) &&
+            decide (r0.writesRd = true) &&
+            decide (r0.writesRam = false) &&
+            decide (r0.isReal = false) &&
+            decide (r1.traceOpcode = none) &&
+            decide (r1.traceVirtualOpcode = some .advice) &&
+            decide (r1.rs1 = archRs1) &&
+            decide (r1.rs2 = archRs2) &&
+            decide (r1.imm = 0) &&
+            decide (r1.writesRd = true) &&
+            decide (r1.writesRam = false) &&
+            decide (r1.isReal = false) &&
+            decide (r2.traceOpcode = some .mul) &&
+            decide (r2.traceVirtualOpcode = none) &&
+            decide (r2.rd = v2) &&
+            decide (r2.rs1 = archRd) &&
+            decide (r2.rs2 = v0) &&
+            decide (r2.writesRd = true) &&
+            decide (r2.writesRam = false) &&
+            decide (r2.isReal = false) &&
+            decide (r3.traceOpcode = some .sub) &&
+            decide (r3.traceVirtualOpcode = none) &&
+            decide (r3.rd = v3) &&
+            decide (r3.rs1 = archRs1) &&
+            decide (r3.rs2 = v2) &&
+            decide (r3.writesRd = true) &&
+            decide (r3.writesRam = false) &&
+            decide (r3.isReal = true)
+  | [r0, r1, r2, r3, r4] =>
       if !wordOp then
         false
       else
-        let archRs1 := r0.rs1
-        let archRs2 := r0.rs2
-        let v0 := r0.rd
-        let v1 := r1.rd
-        let v2 := r2.rd
-        let v3 := r3.rd
-        let archRd := r6.rd
-        let moveSource := if moveSourceIsRemainder then v3 else v1
-        decide (r0.opcode = opcode) &&
-          decide (r1.opcode = opcode) &&
-          decide (r2.opcode = opcode) &&
-          decide (r3.opcode = opcode) &&
-          decide (r4.opcode = opcode) &&
-          decide (r5.opcode = opcode) &&
-          decide (r6.opcode = opcode) &&
-          decide (r7.opcode = opcode) &&
-          decide (archRs1 < 32) &&
-          decide (archRs2 < 32) &&
-          decide (archRd < 32) &&
-          isInlineScratchRegisterB v0 &&
-          isInlineScratchRegisterB v1 &&
-          isInlineScratchRegisterB v2 &&
-          isInlineScratchRegisterB v3 &&
-          decide (v0 ≠ v1) &&
-          decide (v0 ≠ v2) &&
-          decide (v0 ≠ v3) &&
-          decide (v1 ≠ v2) &&
-          decide (v1 ≠ v3) &&
-          decide (v2 ≠ v3) &&
-          decide (r0.traceOpcode = none) &&
-          decide (r0.traceVirtualOpcode = some .changeDivisor) &&
-          decide (r0.rs2 = archRs2) &&
-          decide (r0.imm = 0) &&
-          decide (r1.traceOpcode = none) &&
-          decide (r1.traceVirtualOpcode = some .advice) &&
-          decide (r1.rs1 = archRs1) &&
-          decide (r1.rs2 = archRs2) &&
-          decide (r1.imm = 0) &&
-          decide (r2.traceOpcode = some .mul) &&
-          decide (r2.traceVirtualOpcode = none) &&
-          decide (r2.rd = v2) &&
-          decide (r2.rs1 = v1) &&
-          decide (r2.rs2 = v0) &&
-          decide (r3.traceOpcode = some .sub) &&
-          decide (r3.traceVirtualOpcode = none) &&
-          decide (r3.rd = v3) &&
-          decide (r3.rs1 = archRs1) &&
-          decide (r3.rs2 = v2) &&
-          decide (r4.traceOpcode = none) &&
-          decide (r4.traceVirtualOpcode = some .assertSignedDivIdentity) &&
-          decide (r4.rd = v1) &&
-          decide (r4.rs1 = archRs1) &&
-          decide (r4.rs2 = v0) &&
-          decide (r4.imm = 0) &&
-          decide (r5.traceOpcode = none) &&
-          decide (r5.traceVirtualOpcode = some .assertSignedRemainderBounds) &&
-          decide (r5.rd = v3) &&
-          decide (r5.rs1 = v3) &&
-          decide (r5.rs2 = v0) &&
-          decide (r5.imm = 0) &&
-          decide (r6.traceOpcode = none) &&
-          decide (r6.traceVirtualOpcode = some .move) &&
-          decide (r6.rd = archRd) &&
-          decide (r6.rs1 = moveSource) &&
-          decide (r6.rs2 = 0) &&
-          decide (r6.imm = 0) &&
-          decide (r6.writesRd = true) &&
-          decide (r6.writesRam = false) &&
-          decide (r6.isReal = false) &&
-          decide (r7.traceOpcode = none) &&
-          decide (r7.traceVirtualOpcode = some .signExtendWord) &&
-          decide (r7.rd = archRd) &&
-          decide (r7.rs1 = archRd) &&
-          decide (r7.rs2 = 0) &&
-          decide (r7.imm = 0) &&
-          decide (r7.writesRd = true) &&
-          decide (r7.writesRam = false) &&
-          decide (r7.isReal = true)
+        if moveSourceIsRemainder then
+          let archRs1 := r0.rs1
+          let archRs2 := r0.rs2
+          let v0 := r0.rd
+          let v1 := r1.rd
+          let v2 := r2.rd
+          let archRd := r3.rd
+          decide (r0.opcode = opcode) &&
+            decide (r1.opcode = opcode) &&
+            decide (r2.opcode = opcode) &&
+            decide (r3.opcode = opcode) &&
+            decide (r4.opcode = opcode) &&
+            decide (archRs1 < 32) &&
+            decide (archRs2 < 32) &&
+            decide (archRd < 32) &&
+            isInlineScratchRegisterB v0 &&
+            isInlineScratchRegisterB v1 &&
+            isInlineScratchRegisterB v2 &&
+            decide (v0 ≠ v1) &&
+            decide (v0 ≠ v2) &&
+            decide (v1 ≠ v2) &&
+            decide (r0.traceOpcode = none) &&
+            decide (r0.traceVirtualOpcode = some .changeDivisor) &&
+            decide (r0.rs1 = archRs1) &&
+            decide (r0.rs2 = archRs2) &&
+            decide (r0.imm = 0) &&
+            decide (r0.writesRd = true) &&
+            decide (r0.writesRam = false) &&
+            decide (r0.isReal = false) &&
+            decide (r1.traceOpcode = none) &&
+            decide (r1.traceVirtualOpcode = some .advice) &&
+            decide (r1.rs1 = archRs1) &&
+            decide (r1.rs2 = archRs2) &&
+            decide (r1.imm = 0) &&
+            decide (r1.writesRd = true) &&
+            decide (r1.writesRam = false) &&
+            decide (r1.isReal = false) &&
+            decide (r2.traceOpcode = some .mul) &&
+            decide (r2.traceVirtualOpcode = none) &&
+            decide (r2.rd = v2) &&
+            decide (r2.rs1 = v1) &&
+            decide (r2.rs2 = v0) &&
+            decide (r2.writesRd = true) &&
+            decide (r2.writesRam = false) &&
+            decide (r2.isReal = false) &&
+            decide (r3.traceOpcode = some .sub) &&
+            decide (r3.traceVirtualOpcode = none) &&
+            decide (r3.rd = archRd) &&
+            decide (r3.rs1 = archRs1) &&
+            decide (r3.rs2 = v2) &&
+            decide (r3.writesRd = true) &&
+            decide (r3.writesRam = false) &&
+            decide (r3.isReal = false) &&
+            decide (r4.traceOpcode = none) &&
+            decide (r4.traceVirtualOpcode = some .signExtendWord) &&
+            decide (r4.rd = archRd) &&
+            decide (r4.rs1 = archRd) &&
+            decide (r4.rs2 = 0) &&
+            decide (r4.imm = 0) &&
+            decide (r4.writesRd = true) &&
+            decide (r4.writesRam = false) &&
+            decide (r4.isReal = true)
+        else
+          let archRs1 := r0.rs1
+          let archRs2 := r0.rs2
+          let v0 := r0.rd
+          let archRd := r1.rd
+          let v2 := r2.rd
+          let v3 := r3.rd
+          decide (r0.opcode = opcode) &&
+            decide (r1.opcode = opcode) &&
+            decide (r2.opcode = opcode) &&
+            decide (r3.opcode = opcode) &&
+            decide (r4.opcode = opcode) &&
+            decide (archRs1 < 32) &&
+            decide (archRs2 < 32) &&
+            decide (archRd < 32) &&
+            isInlineScratchRegisterB v0 &&
+            isInlineScratchRegisterB v2 &&
+            isInlineScratchRegisterB v3 &&
+            decide (v0 ≠ v2) &&
+            decide (v0 ≠ v3) &&
+            decide (v2 ≠ v3) &&
+            decide (r0.traceOpcode = none) &&
+            decide (r0.traceVirtualOpcode = some .changeDivisor) &&
+            decide (r0.rs1 = archRs1) &&
+            decide (r0.rs2 = archRs2) &&
+            decide (r0.imm = 0) &&
+            decide (r0.writesRd = true) &&
+            decide (r0.writesRam = false) &&
+            decide (r0.isReal = false) &&
+            decide (r1.traceOpcode = none) &&
+            decide (r1.traceVirtualOpcode = some .advice) &&
+            decide (r1.rs1 = archRs1) &&
+            decide (r1.rs2 = archRs2) &&
+            decide (r1.imm = 0) &&
+            decide (r1.writesRd = true) &&
+            decide (r1.writesRam = false) &&
+            decide (r1.isReal = false) &&
+            decide (r2.traceOpcode = some .mul) &&
+            decide (r2.traceVirtualOpcode = none) &&
+            decide (r2.rd = v2) &&
+            decide (r2.rs1 = archRd) &&
+            decide (r2.rs2 = v0) &&
+            decide (r2.writesRd = true) &&
+            decide (r2.writesRam = false) &&
+            decide (r2.isReal = false) &&
+            decide (r3.traceOpcode = some .sub) &&
+            decide (r3.traceVirtualOpcode = none) &&
+            decide (r3.rd = v3) &&
+            decide (r3.rs1 = archRs1) &&
+            decide (r3.rs2 = v2) &&
+            decide (r3.writesRd = true) &&
+            decide (r3.writesRam = false) &&
+            decide (r3.isReal = false) &&
+            decide (r4.traceOpcode = none) &&
+            decide (r4.traceVirtualOpcode = some .signExtendWord) &&
+            decide (r4.rd = archRd) &&
+            decide (r4.rs1 = archRd) &&
+            decide (r4.rs2 = 0) &&
+            decide (r4.imm = 0) &&
+            decide (r4.writesRd = true) &&
+            decide (r4.writesRam = false) &&
+            decide (r4.isReal = true)
   | _ => false
 
 def divConcreteCoreShape (rows : List ImportedLoweringRow) : Prop :=
@@ -1045,11 +1147,11 @@ def MulhsuConcreteLoweringRefinesReference (rows : List ImportedLoweringRow) : P
 def DivuConcreteLoweringRefinesReference (rows : List ImportedLoweringRow) : Prop :=
   normalizeDivuConcreteCore? rows = some divuReferenceLowering ∧
     rowSequenceMetadataBound rows ∧
-    rows.length > divuEffectRowIndex ∧
+    rows.length > divuCommitRowIndex ∧
     uniqueEffectRowAt rows divuEffectRowIndex ∧
     divuClosureSuffixScratchOnly rows ∧
-    uniqueCommitRowAt rows divuEffectRowIndex ∧
-    uniqueRealRowAt rows divuEffectRowIndex
+    uniqueCommitRowAt rows divuCommitRowIndex ∧
+    uniqueRealRowAt rows divuCommitRowIndex
 
 def RemuConcreteLoweringRefinesReference (rows : List ImportedLoweringRow) : Prop :=
   normalizeRemuConcreteCore? rows = some remuReferenceLowering ∧
@@ -1081,11 +1183,11 @@ def RemuwConcreteLoweringRefinesReference (rows : List ImportedLoweringRow) : Pr
 def DivConcreteLoweringRefinesReference (rows : List ImportedLoweringRow) : Prop :=
   normalizeDivConcreteCore? rows = some divReferenceLowering ∧
     rowSequenceMetadataBound rows ∧
-    rows.length > divEffectRowIndex ∧
+    rows.length > divCommitRowIndex ∧
     uniqueEffectRowAt rows divEffectRowIndex ∧
     divClosureSuffixScratchOnly rows ∧
-    uniqueCommitRowAt rows divEffectRowIndex ∧
-    uniqueRealRowAt rows divEffectRowIndex
+    uniqueCommitRowAt rows divCommitRowIndex ∧
+    uniqueRealRowAt rows divCommitRowIndex
 
 def RemConcreteLoweringRefinesReference (rows : List ImportedLoweringRow) : Prop :=
   normalizeRemConcreteCore? rows = some remReferenceLowering ∧
@@ -1387,8 +1489,12 @@ theorem effectRowIndex_lt_length_of_divuConcreteLoweringRefinesReference
   {rows : List ImportedLoweringRow}
   (h : DivuConcreteLoweringRefinesReference rows) :
   divuEffectRowIndex < rows.length := by
-  have hLen : rows.length > divuEffectRowIndex := h.2.2.1
-  exact effectRowIndex_lt_length_of_lengthGt hLen
+  have hLen : rows.length > divuCommitRowIndex := h.2.2.1
+  have hCommit : divuCommitRowIndex < rows.length :=
+    effectRowIndex_lt_length_of_lengthGt hLen
+  have hEffectCommit : divuEffectRowIndex ≤ divuCommitRowIndex := by
+    native_decide
+  omega
 
 theorem closureSuffixScratchOnly_of_divuConcreteLoweringRefinesReference
   {rows : List ImportedLoweringRow}
@@ -1399,15 +1505,19 @@ theorem closureSuffixScratchOnly_of_divuConcreteLoweringRefinesReference
 theorem uniqueCommitRow_of_divuConcreteLoweringRefinesReference
   {rows : List ImportedLoweringRow}
   (h : DivuConcreteLoweringRefinesReference rows) :
-  uniqueRealRowAt rows divuEffectRowIndex :=
+  uniqueRealRowAt rows divuCommitRowIndex :=
   h.2.2.2.2.2.2
 
 theorem effectRow_precedesCommitRow_of_divuConcreteLoweringRefinesReference
   {rows : List ImportedLoweringRow}
   (h : DivuConcreteLoweringRefinesReference rows) :
   divuEffectRowIndex ≤ rows.length - 1 := by
-  have hLen : rows.length > divuEffectRowIndex := h.2.2.1
-  exact effectRow_precedesCommitRow_of_lengthGt hLen
+  have hLen : rows.length > divuCommitRowIndex := h.2.2.1
+  have hCommit : divuCommitRowIndex ≤ rows.length - 1 :=
+    effectRow_precedesCommitRow_of_lengthGt hLen
+  have hEffectCommit : divuEffectRowIndex ≤ divuCommitRowIndex := by
+    native_decide
+  omega
 
 theorem normalizedReference_of_remuConcreteLoweringRefinesReference
   {rows : List ImportedLoweringRow}
@@ -1539,8 +1649,12 @@ theorem effectRowIndex_lt_length_of_divConcreteLoweringRefinesReference
   {rows : List ImportedLoweringRow}
   (h : DivConcreteLoweringRefinesReference rows) :
   divEffectRowIndex < rows.length := by
-  have hLen : rows.length > divEffectRowIndex := h.2.2.1
-  exact effectRowIndex_lt_length_of_lengthGt hLen
+  have hLen : rows.length > divCommitRowIndex := h.2.2.1
+  have hCommit : divCommitRowIndex < rows.length :=
+    effectRowIndex_lt_length_of_lengthGt hLen
+  have hEffectCommit : divEffectRowIndex ≤ divCommitRowIndex := by
+    native_decide
+  omega
 
 theorem closureSuffixScratchOnly_of_divConcreteLoweringRefinesReference
   {rows : List ImportedLoweringRow}
@@ -1551,15 +1665,19 @@ theorem closureSuffixScratchOnly_of_divConcreteLoweringRefinesReference
 theorem uniqueCommitRow_of_divConcreteLoweringRefinesReference
   {rows : List ImportedLoweringRow}
   (h : DivConcreteLoweringRefinesReference rows) :
-  uniqueRealRowAt rows divEffectRowIndex :=
+  uniqueRealRowAt rows divCommitRowIndex :=
   h.2.2.2.2.2.2
 
 theorem effectRow_precedesCommitRow_of_divConcreteLoweringRefinesReference
   {rows : List ImportedLoweringRow}
   (h : DivConcreteLoweringRefinesReference rows) :
   divEffectRowIndex ≤ rows.length - 1 := by
-  have hLen : rows.length > divEffectRowIndex := h.2.2.1
-  exact effectRow_precedesCommitRow_of_lengthGt hLen
+  have hLen : rows.length > divCommitRowIndex := h.2.2.1
+  have hCommit : divCommitRowIndex ≤ rows.length - 1 :=
+    effectRow_precedesCommitRow_of_lengthGt hLen
+  have hEffectCommit : divEffectRowIndex ≤ divCommitRowIndex := by
+    native_decide
+  omega
 
 theorem normalizedReference_of_remConcreteLoweringRefinesReference
   {rows : List ImportedLoweringRow}

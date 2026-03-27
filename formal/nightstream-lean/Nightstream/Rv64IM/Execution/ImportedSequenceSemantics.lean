@@ -11,11 +11,10 @@ open Nightstream.Rv64IM.Generated
 
 private def importedRowSequenceFlagsCheck (row : ExpandedRowView) : Bool :=
   decide (row.isFirstInSequence = (row.sequenceIndex = 0)) &&
-    decide (row.isEffectRow =
+    decide (row.isCommitRow =
       match row.virtualSequenceRemaining with
       | none => true
       | some remaining => remaining = 0) &&
-    decide (row.isCommitRow = row.isEffectRow) &&
     decide (row.isReal = row.isCommitRow) &&
     decide (row.halted = true → row.isCommitRow = true)
 

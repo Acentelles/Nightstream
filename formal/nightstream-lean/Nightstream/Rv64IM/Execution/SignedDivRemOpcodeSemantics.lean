@@ -288,7 +288,7 @@ theorem closureSuffixScratchOnly_of_divRefinedSignedDivRemOpcodeSemantics
 theorem uniqueCommitRow_of_divRefinedSignedDivRemOpcodeSemantics
   {rows : List ImportedLoweringRow}
   (h : DivConcreteLoweringRefinesReference rows) :
-  uniqueRealRowAt rows divEffectRowIndex :=
+  uniqueRealRowAt rows divCommitRowIndex :=
   uniqueCommitRow_of_divRefinedSignedDivRemLowering h
 
 theorem effectRowPrecedesCommitRow_of_divRefinedSignedDivRemOpcodeSemantics

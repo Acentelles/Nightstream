@@ -323,7 +323,7 @@ theorem closureSuffixScratchOnly_of_divuRefinedUnsignedDivRemOpcodeSemantics
 theorem uniqueCommitRow_of_divuRefinedUnsignedDivRemOpcodeSemantics
   {rows : List ImportedLoweringRow}
   (h : DivuConcreteLoweringRefinesReference rows) :
-  uniqueRealRowAt rows divuEffectRowIndex :=
+  uniqueRealRowAt rows divuCommitRowIndex :=
   uniqueCommitRow_of_divuRefinedUnsignedDivRemLowering h
 
 theorem effectRowPrecedesCommitRow_of_divuRefinedUnsignedDivRemOpcodeSemantics
