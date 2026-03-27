@@ -958,13 +958,15 @@ impl RowStreamState {
                     s.m
                 )
             });
-            #[cfg(feature = "debug-logs")]
+            z_mcs.push(z_i);
+        }
+        #[cfg(feature = "debug-logs")]
+        for (mcs_idx, z_i) in z_mcs.iter().enumerate() {
             eprintln!(
                 "RowStreamState::build: mcs[{mcs_idx}] decoded coeff len={}, s.m={}",
                 z_i.len(),
                 s.m
             );
-            z_mcs.push(z_i);
         }
 
         let mut gamma_pow_mcs = vec![K::ONE; k_mcs];
@@ -1001,9 +1003,10 @@ impl RowStreamState {
         }
 
         let eval_tbl = if k_total > k_mcs && eq_r_inputs_tbl.is_some() {
-            let w_alpha: Vec<K> = (0..D)
-                .map(|rho| eq_points_bool_mask(rho, &ch.alpha))
-                .collect();
+            let mut w_alpha = [K::ZERO; D];
+            for (rho, slot) in w_alpha.iter_mut().enumerate() {
+                *slot = eq_points_bool_mask(rho, &ch.alpha);
+            }
 
             let mut gamma_pow_i = vec![K::ONE; k_total];
             for i in 1..k_total {
@@ -1016,15 +1019,11 @@ impl RowStreamState {
 
             let mut eval_tbl = vec![K::ZERO; n_pad];
             for i_abs in k_mcs..k_total {
-                let Zi = all_witnesses[i_abs];
                 let coeff_i = gamma_pow_i[i_abs];
                 if coeff_i == K::ZERO {
                     continue;
                 }
-
-                // SuperNeo full-coefficient path:
-                // 1) evaluate per-row ring coefficients y_row[ρ] from cached transformed rows
-                // 2) apply χ_α weighting over ρ explicitly.
+                let Zi = all_witnesses[i_abs];
                 let z_coeffs = crate::common::decode_superneo_coeffs_from_witness_mat(Zi, s.m).unwrap_or_else(|e| {
                     panic!("RowStreamState::new/eval_tbl: invalid packed witness at slot {i_abs}: {e}")
                 });
@@ -1038,15 +1037,7 @@ impl RowStreamState {
                         .matrix(j)
                         .unwrap_or_else(|| panic!("superneo cache missing matrix j={j}"));
                     for (r, out_r) in eval_tbl.iter_mut().take(n_eff).enumerate() {
-                        let y_row = mat_cache.row_dot_ring_with_blocks(r, &z_blocks);
-                        let mut y_alpha = K::ZERO;
-                        for rho in 0..D {
-                            let w = w_alpha[rho];
-                            let yr = y_row[rho];
-                            if w != K::ZERO && yr != K::ZERO {
-                                y_alpha += w * yr;
-                            }
-                        }
+                        let y_alpha = mat_cache.row_dot_ring_weighted_with_blocks(r, &z_blocks, &w_alpha);
                         if y_alpha != K::ZERO {
                             *out_r += coeff * y_alpha;
                         }
@@ -2059,7 +2050,6 @@ where
             .map(|w| &w.Z)
             .chain(self.me_witnesses.iter())
             .collect();
-
         // Compute F' and Y_eval using the canonical SuperNeo row-lifted path.
         let superneo_cache = &self.superneo_cache;
         let linear_forms = superneo_cache.build_linear_forms(&chi_r, n_eff);
@@ -2094,28 +2084,32 @@ where
 
         // Precompute Y_eval[i][j][ρ] as ring coefficients from cached SuperNeo rows.
         let y_eval = {
-            let all_coeffs: Vec<Vec<K>> = all_witnesses
-                .iter()
-                .enumerate()
-                .map(|(idx, Zi)| {
-                    crate::common::decode_superneo_coeffs_from_witness_mat(Zi, self.s.m).unwrap_or_else(|e| {
-                        panic!(
-                            "OptimizedOracle::precompute_for_r: invalid packed witness[{idx}] for m={}: {e}",
-                            self.s.m
-                        )
-                    })
-                })
-                .collect();
+            let row_cap = core::cmp::min(n_eff, chi_r.len());
+            let mut chi_re = Vec::with_capacity(row_cap);
+            let mut chi_im = Vec::with_capacity(row_cap);
+            for &w in chi_r.iter().take(row_cap) {
+                let [re, im] = w.as_coeffs();
+                chi_re.push(re);
+                chi_im.push(im);
+            }
             #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-threads"))]
             {
-                all_coeffs
+                all_witnesses
                     .par_iter()
-                    .map(|z_coeffs| {
-                        let z_blocks = crate::superneo_eval::SuperneoZBlocks::from_z(z_coeffs);
-                        crate::superneo_eval::eval_all_mats_ring_cached_with_blocks(
+                    .map(|Zi| {
+                        let z_coeffs = crate::common::decode_superneo_coeffs_from_witness_mat(Zi, self.s.m)
+                            .unwrap_or_else(|e| {
+                                panic!(
+                                    "OptimizedOracle::precompute_for_r: invalid packed witness for m={}: {e}",
+                                    self.s.m
+                                )
+                            });
+                        let z_blocks = crate::superneo_eval::SuperneoZBlocks::from_z(&z_coeffs);
+                        crate::superneo_eval::eval_all_mats_ring_cached_with_split_chi(
                             superneo_cache,
                             &z_blocks,
-                            &chi_r,
+                            &chi_re,
+                            &chi_im,
                             n_eff,
                         )
                     })
@@ -2123,14 +2117,22 @@ where
             }
             #[cfg(all(target_arch = "wasm32", not(feature = "wasm-threads")))]
             {
-                all_coeffs
+                all_witnesses
                     .iter()
-                    .map(|z_coeffs| {
-                        let z_blocks = crate::superneo_eval::SuperneoZBlocks::from_z(z_coeffs);
-                        crate::superneo_eval::eval_all_mats_ring_cached_with_blocks(
+                    .map(|Zi| {
+                        let z_coeffs = crate::common::decode_superneo_coeffs_from_witness_mat(Zi, self.s.m)
+                            .unwrap_or_else(|e| {
+                                panic!(
+                                    "OptimizedOracle::precompute_for_r: invalid packed witness for m={}: {e}",
+                                    self.s.m
+                                )
+                            });
+                        let z_blocks = crate::superneo_eval::SuperneoZBlocks::from_z(&z_coeffs);
+                        crate::superneo_eval::eval_all_mats_ring_cached_with_split_chi(
                             superneo_cache,
                             &z_blocks,
-                            &chi_r,
+                            &chi_re,
+                            &chi_im,
                             n_eff,
                         )
                     })

@@ -1269,6 +1269,36 @@ where
 ///
 /// This variant enables callers to amortize the tensor-point and SuperNeo matrix-cache
 /// construction across many ME claims that share `(s, r)`.
+pub fn compute_y_from_z_blocks_and_rb_with_cache<Ff>(
+    s: &CcsStructure<Ff>,
+    z_blocks: &crate::superneo_eval::SuperneoZBlocks,
+    rb: &[K],
+    ell_d: usize,
+    superneo_cache: &crate::superneo_eval::SuperneoEvalCache,
+) -> (Vec<Vec<K>>, Vec<K>)
+where
+    Ff: Field + PrimeCharacteristicRing + Copy + Send + Sync,
+    K: From<Ff>,
+{
+    let d_pad = 1usize << ell_d;
+    let n_eff = core::cmp::min(s.n, rb.len());
+    let mut y_new: Vec<Vec<K>> = Vec::with_capacity(s.t());
+    let y_ring = crate::superneo_eval::eval_all_mats_ring_cached_with_blocks(superneo_cache, z_blocks, rb, n_eff);
+    for coeffs in y_ring.into_iter().take(s.t()) {
+        let mut yj_pad = coeffs.to_vec();
+        if d_pad > yj_pad.len() {
+            yj_pad.resize(d_pad, K::ZERO);
+        }
+        y_new.push(yj_pad);
+    }
+    let y_scalars = ct_from_y_ring(&y_new);
+    (y_new, y_scalars)
+}
+
+/// Compute y from Z and a precomputed row tensor point `r^b`.
+///
+/// This variant enables callers to amortize the tensor-point and SuperNeo matrix-cache
+/// construction across many ME claims that share `(s, r)`.
 pub fn compute_y_from_Z_and_rb_with_cache<Ff>(
     s: &CcsStructure<Ff>,
     Z: &Mat<Ff>,
@@ -1286,19 +1316,10 @@ where
     let z_layout = witness_mat_layout(Z, s.m)
         .unwrap_or_else(|e| panic!("compute_y_from_Z_and_r: invalid witness shape for m={}: {e}", s.m));
     if let Some(cache) = superneo_cache {
-        // SuperNeo fast path: evaluate cached transformed rows against decoded packed witness.
-        let n_eff = core::cmp::min(s.n, rb.len());
         let z_vec = decode_superneo_coeffs_from_witness_mat(Z, s.m)
             .unwrap_or_else(|e| panic!("compute_y_from_Z_and_r: failed to decode packed witness coefficients: {e}"));
         let z_blocks = crate::superneo_eval::SuperneoZBlocks::from_z(&z_vec);
-        let y_ring = crate::superneo_eval::eval_all_mats_ring_cached_with_blocks(cache, &z_blocks, rb, n_eff);
-        for coeffs in y_ring.into_iter().take(s.t()) {
-            let mut yj_pad = coeffs.to_vec();
-            if d_pad > yj_pad.len() {
-                yj_pad.resize(d_pad, K::ZERO);
-            }
-            y_new.push(yj_pad);
-        }
+        return compute_y_from_z_blocks_and_rb_with_cache(s, &z_blocks, rb, ell_d, cache);
     } else {
         // Fallback path: explicitly assemble v_j = M_j^T · r^b and then y_j = Z · v_j.
         let mut vjs: Vec<Vec<K>> = Vec::with_capacity(s.t());

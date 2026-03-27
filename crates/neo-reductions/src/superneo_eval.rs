@@ -328,6 +328,42 @@ impl SuperneoMatrixCache {
     }
 
     #[inline]
+    pub fn row_dot_ring_weighted_with_blocks(&self, row: usize, z_blocks: &SuperneoZBlocks, weights: &[K; D]) -> K {
+        debug_assert_eq!(
+            self.cols.div_ceil(D),
+            z_blocks.re.len(),
+            "SuperneoMatrixCache::row_dot_ring_weighted_with_blocks: block count mismatch"
+        );
+        if row >= self.rows {
+            return K::ZERO;
+        }
+
+        if z_blocks.imag_all_zero {
+            let mut acc = K::ZERO;
+            for rb in &self.row_blocks[row] {
+                let prod_re = rb.bar.mul(&z_blocks.re[rb.blk]);
+                for i in 0..D {
+                    let v = prod_re.0[i];
+                    if v != F::ZERO {
+                        acc += weights[i].scale_base(v);
+                    }
+                }
+            }
+            return acc;
+        }
+
+        let row_coeffs = self.row_dot_ring_with_blocks(row, z_blocks);
+        let mut acc = K::ZERO;
+        for i in 0..D {
+            let coeff = row_coeffs[i];
+            if weights[i] != K::ZERO && coeff != K::ZERO {
+                acc += weights[i] * coeff;
+            }
+        }
+        acc
+    }
+
+    #[inline]
     pub fn row_dot_with_blocks(&self, row: usize, z_blocks: &SuperneoZBlocks) -> K {
         debug_assert_eq!(
             self.cols.div_ceil(D),
@@ -576,6 +612,19 @@ fn is_all_zero(arr: &[F; D]) -> bool {
 }
 
 #[inline]
+fn split_chi_coeffs(chi_r: &[K], n_eff: usize) -> (Vec<F>, Vec<F>) {
+    let row_cap = min(n_eff, chi_r.len());
+    let mut chi_re = Vec::with_capacity(row_cap);
+    let mut chi_im = Vec::with_capacity(row_cap);
+    for &w in chi_r.iter().take(row_cap) {
+        let [re, im] = w.as_coeffs();
+        chi_re.push(re);
+        chi_im.push(im);
+    }
+    (chi_re, chi_im)
+}
+
+#[inline]
 fn add_scaled_rq(dst: &mut Rq, src: &Rq, scale: F) {
     if scale == F::ZERO {
         return;
@@ -706,24 +755,27 @@ pub fn eval_all_mats_ring_cached_with_blocks(
     n_eff: usize,
 ) -> Vec<[K; D]> {
     if z_blocks.imag_all_zero {
-        let row_cap = min(n_eff, chi_r.len());
-        let mut chi_re = Vec::with_capacity(row_cap);
-        let mut chi_im = Vec::with_capacity(row_cap);
-        for &w in chi_r.iter().take(row_cap) {
-            let [re, im] = w.as_coeffs();
-            chi_re.push(re);
-            chi_im.push(im);
-        }
-        let mut out = Vec::with_capacity(cache.mats.len());
-        for m in &cache.mats {
-            out.push(m.eval_mle_ring_with_blocks_split_chi(z_blocks, &chi_re, &chi_im, n_eff));
-        }
-        return out;
+        let (chi_re, chi_im) = split_chi_coeffs(chi_r, n_eff);
+        return eval_all_mats_ring_cached_with_split_chi(cache, z_blocks, &chi_re, &chi_im, n_eff);
     }
 
     let mut out = Vec::with_capacity(cache.mats.len());
     for m in &cache.mats {
         out.push(m.eval_mle_ring_with_blocks(z_blocks, chi_r, n_eff));
+    }
+    out
+}
+
+pub fn eval_all_mats_ring_cached_with_split_chi(
+    cache: &SuperneoEvalCache,
+    z_blocks: &SuperneoZBlocks,
+    chi_re: &[F],
+    chi_im: &[F],
+    n_eff: usize,
+) -> Vec<[K; D]> {
+    let mut out = Vec::with_capacity(cache.mats.len());
+    for m in &cache.mats {
+        out.push(m.eval_mle_ring_with_blocks_split_chi(z_blocks, chi_re, chi_im, n_eff));
     }
     out
 }
