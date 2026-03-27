@@ -1,6 +1,6 @@
 //! Owns the RV64IM simple-kernel proof/output boundary and the live root main-lane prove/verify path.
 
-use neo_ajtai::{s_lincomb, s_mul, set_global_pp_seeded, AjtaiSModule, Commitment};
+use neo_ajtai::{s_mul_add, scale_commitment_add_inplace, set_global_pp_seeded, AjtaiSModule, Commitment};
 use neo_ccs::{traits::SModuleHomomorphism, Mat};
 use neo_math::ring::{cf_inv, Rq as RqEl};
 use neo_math::{D, F};
@@ -10,6 +10,7 @@ use neo_reductions::{api::FoldingMode, error::PiCcsError};
 use neo_transcript::{Poseidon2Transcript, Transcript, TranscriptProtocol};
 use p3_field::PrimeCharacteristicRing;
 use serde::{Deserialize, Serialize};
+use std::time::Instant;
 
 use crate::proof::{PackagedProof, PublicStep, StepInput};
 use crate::prover::CommitmentMixers;
@@ -23,14 +24,22 @@ use crate::rv64im::stage3::Stage3Summary;
 
 use super::{
     build_parity_case_from_source,
+    perf_diagnostics::{
+        PackagedSimpleKernelVerifyPerf, Rv64imProofProvePerf, SimpleKernelBuildPerf, SimpleKernelVerifyPerf,
+    },
     simple_openings::{SimpleKernelOpeningBundle, SimpleKernelStagePackageBundle},
-    simple_stage::{
-        build_kernel_opening_bundle, build_stage_claim_bundle_from_parts, build_stage_package_bundle,
-        verify_kernel_opening_bundle, verify_stage_claim_surfaces, verify_stage_package_bundle,
+    stage_artifacts::{
+        build_kernel_opening_bundle_with_perf, build_stage_claim_bundle_from_parts,
+        build_stage_claim_bundle_from_parts_with_perf, verify_kernel_opening_bundle_with_perf,
         SimpleKernelStageClaimBundle,
     },
+    stage_package_perf::{build_stage_package_bundle_with_perf, verify_stage_package_bundle_with_perf},
     Rv64imKernelSummary, Rv64imParityCaseManifest, Rv64imParityDerivedCase, Rv64imParitySourceCase, TranscriptRecord,
 };
+
+fn millis_since(started: Instant) -> f64 {
+    started.elapsed().as_secs_f64() * 1_000.0
+}
 
 pub(super) const SIMPLE_KERNEL_PP_SEED: [u8; 32] = [
     0x40, 0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -175,6 +184,15 @@ struct SimpleKernelRootContext {
     params: NeoParams,
     log: AjtaiSModule,
     ccs: neo_ccs::CcsStructure<F>,
+}
+
+struct SimpleKernelExpectedCore {
+    trace: SimpleKernelTraceWitness,
+    stages: SimpleKernelStageWitnessBundle,
+    stage_claims: SimpleKernelStageClaimBundle,
+    kernel_claims: SimpleKernelKernelClaimBundle,
+    prepared_steps: Vec<StepInput>,
+    public_steps: Vec<PublicStep>,
 }
 
 impl PreparedStepBinding {
@@ -440,7 +458,9 @@ fn kernel_claim_bundle_from_parts(
     }
 }
 
-pub fn build_simple_kernel_witness(public: &SimpleKernelPublicInput) -> Result<SimpleKernelOutput, SimpleKernelError> {
+fn build_simple_kernel_expected_core(
+    public: &SimpleKernelPublicInput,
+) -> Result<SimpleKernelExpectedCore, SimpleKernelError> {
     let (_, derived) = build_parity_case_from_source(public.source.clone(), public.max_steps)?;
     let root_context = SimpleKernelRootContext::new()?;
     let prepared_steps = derived
@@ -462,19 +482,99 @@ pub fn build_simple_kernel_witness(public: &SimpleKernelPublicInput) -> Result<S
         &stages.transcript,
         &derived.kernel,
     )?;
-    let stage_packages = build_stage_package_bundle(&stages.stage1, &stages.stage2, &stages.stage3, &stage_claims)?;
     let kernel_claims = kernel_claim_bundle_from_parts(&derived, prepared_step_bindings);
-    let kernel_opening = build_kernel_opening_bundle(&stage_claims, &stage_packages, &kernel_claims, &prepared_steps)?;
-    Ok(SimpleKernelOutput {
+    Ok(SimpleKernelExpectedCore {
         trace,
         stages,
         stage_claims,
-        stage_packages,
-        kernel_opening,
         kernel_claims,
         prepared_steps,
         public_steps,
     })
+}
+
+pub fn build_simple_kernel_witness(public: &SimpleKernelPublicInput) -> Result<SimpleKernelOutput, SimpleKernelError> {
+    Ok(build_simple_kernel_witness_with_perf(public)?.0)
+}
+
+pub fn build_simple_kernel_witness_with_perf(
+    public: &SimpleKernelPublicInput,
+) -> Result<(SimpleKernelOutput, SimpleKernelBuildPerf), SimpleKernelError> {
+    let total_started = Instant::now();
+    let (_, derived) = build_parity_case_from_source(public.source.clone(), public.max_steps)?;
+    let root_context = SimpleKernelRootContext::new()?;
+
+    let prepared_steps_started = Instant::now();
+    let prepared_steps = derived
+        .execution_rows
+        .iter()
+        .map(|row| build_prepared_step_from_execution_row(&root_context, row))
+        .collect::<Result<Vec<_>, _>>()?;
+    let prepared_steps_ms = millis_since(prepared_steps_started);
+
+    let public_steps_started = Instant::now();
+    let public_steps = prepared_steps
+        .iter()
+        .map(StepInput::instance)
+        .collect::<Vec<_>>();
+    let public_steps_ms = millis_since(public_steps_started);
+
+    let bindings_started = Instant::now();
+    let prepared_step_bindings = build_prepared_step_binding_summary(&derived.execution_rows, &prepared_steps)?;
+    let prepared_step_bindings_ms = millis_since(bindings_started);
+
+    let trace = trace_witness_from_derived(&derived);
+    let stages = stage_witness_bundle_from_derived(&derived);
+    let (stage_claims, stage_claim_bundle) = build_stage_claim_bundle_from_parts_with_perf(
+        &stages.stage1,
+        &stages.stage2,
+        &stages.stage3,
+        &stages.transcript,
+        &derived.kernel,
+    )?;
+    let kernel_claims = kernel_claim_bundle_from_parts(&derived, prepared_step_bindings);
+    let core = SimpleKernelExpectedCore {
+        trace,
+        stages,
+        stage_claims,
+        kernel_claims,
+        prepared_steps,
+        public_steps,
+    };
+
+    let (stage_packages, stage_package_bundle) = build_stage_package_bundle_with_perf(
+        &core.stages.stage1,
+        &core.stages.stage2,
+        &core.stages.stage3,
+        &core.stage_claims,
+    )?;
+    let (kernel_opening, kernel_opening_bundle) = build_kernel_opening_bundle_with_perf(
+        &core.stage_claims,
+        &stage_packages,
+        &core.kernel_claims,
+        &core.prepared_steps,
+    )?;
+    Ok((
+        SimpleKernelOutput {
+            trace: core.trace,
+            stages: core.stages,
+            stage_claims: core.stage_claims,
+            stage_packages,
+            kernel_opening,
+            kernel_claims: core.kernel_claims,
+            prepared_steps: core.prepared_steps,
+            public_steps: core.public_steps,
+        },
+        SimpleKernelBuildPerf {
+            prepared_steps_ms,
+            public_steps_ms,
+            prepared_step_bindings_ms,
+            stage_claim_bundle,
+            stage_package_bundle,
+            kernel_opening_bundle,
+            total_ms: millis_since(total_started),
+        },
+    ))
 }
 
 pub fn prove_simple_kernel(
@@ -497,48 +597,77 @@ pub fn verify_simple_kernel(
     input: &SimpleKernelVerifierInput,
     proof: &SimpleKernelProof,
 ) -> Result<SimpleKernelOutput, SimpleKernelError> {
+    Ok(verify_simple_kernel_with_perf(input, proof)?.0)
+}
+
+pub fn verify_simple_kernel_with_perf(
+    input: &SimpleKernelVerifierInput,
+    proof: &SimpleKernelProof,
+) -> Result<(SimpleKernelOutput, SimpleKernelVerifyPerf), SimpleKernelError> {
+    let total_started = Instant::now();
     let expected_root = rv64im_simple_root_context_id();
     if proof.root_params_id != expected_root {
         return Err(SimpleKernelError::Bridge("RV64IM root context id mismatch".into()));
     }
-    verify_stage_claim_surfaces(&proof.stage_claims)?;
-    verify_stage_package_bundle(
-        &proof.stages.stage1,
-        &proof.stages.stage2,
-        &proof.stages.stage3,
-        &proof.stage_packages,
-        &proof.stage_claims,
-    )?;
-
-    let output = build_simple_kernel_witness(&input.public)?;
-    verify_kernel_opening_bundle(
-        &proof.kernel_opening,
-        &proof.stage_claims,
-        &proof.stage_packages,
-        &proof.kernel_claims,
-        &output.prepared_steps,
-    )?;
-    if proof.trace != output.trace {
+    let expected_started = Instant::now();
+    let expected = build_simple_kernel_expected_core(&input.public)?;
+    let expected_core_ms = millis_since(expected_started);
+    let trace_match_started = Instant::now();
+    if proof.trace != expected.trace {
         return Err(SimpleKernelError::Bridge("RV64IM kernel trace witness mismatch".into()));
     }
-    if proof.stages != output.stages {
+    let trace_match_ms = millis_since(trace_match_started);
+    let stages_match_started = Instant::now();
+    if proof.stages != expected.stages {
         return Err(SimpleKernelError::Bridge("RV64IM stage witness bundle mismatch".into()));
     }
-    if proof.stage_claims != output.stage_claims {
+    let stages_match_ms = millis_since(stages_match_started);
+    let stage_claims_match_started = Instant::now();
+    if proof.stage_claims != expected.stage_claims {
         return Err(SimpleKernelError::Bridge("RV64IM stage claim bundle mismatch".into()));
     }
-    if proof.stage_packages.digest != output.stage_packages.digest {
-        return Err(SimpleKernelError::Bridge("RV64IM stage package bundle mismatch".into()));
-    }
-    if proof.kernel_opening.digest != output.kernel_opening.digest {
-        return Err(SimpleKernelError::Bridge(
-            "RV64IM kernel opening bundle mismatch".into(),
-        ));
-    }
-    if proof.kernel_claims != output.kernel_claims {
+    let stage_claims_match_ms = millis_since(stage_claims_match_started);
+    let kernel_claims_match_started = Instant::now();
+    if proof.kernel_claims != expected.kernel_claims {
         return Err(SimpleKernelError::Bridge("RV64IM kernel claim bundle mismatch".into()));
     }
-    Ok(output)
+    let kernel_claims_match_ms = millis_since(kernel_claims_match_started);
+    let stage_package_bundle = verify_stage_package_bundle_with_perf(
+        &expected.stages.stage1,
+        &expected.stages.stage2,
+        &expected.stages.stage3,
+        &proof.stage_packages,
+        &expected.stage_claims,
+    )?;
+    let kernel_opening_bundle = verify_kernel_opening_bundle_with_perf(
+        &proof.kernel_opening,
+        &expected.stage_claims,
+        &proof.stage_packages,
+        &expected.kernel_claims,
+        &expected.prepared_steps,
+    )?;
+    Ok((
+        SimpleKernelOutput {
+            trace: expected.trace,
+            stages: expected.stages,
+            stage_claims: expected.stage_claims,
+            stage_packages: proof.stage_packages.clone(),
+            kernel_opening: proof.kernel_opening.clone(),
+            kernel_claims: expected.kernel_claims,
+            prepared_steps: expected.prepared_steps,
+            public_steps: expected.public_steps,
+        },
+        SimpleKernelVerifyPerf {
+            expected_core_ms,
+            trace_match_ms,
+            stages_match_ms,
+            stage_claims_match_ms,
+            kernel_claims_match_ms,
+            stage_package_bundle,
+            kernel_opening_bundle,
+            total_ms: millis_since(total_started),
+        },
+    ))
 }
 
 fn rot_matrix_to_rq(mat: &Mat<F>) -> RqEl {
@@ -550,18 +679,21 @@ fn rot_matrix_to_rq(mat: &Mat<F>) -> RqEl {
 }
 
 fn mix_rhos_commits(rhos: &[Mat<F>], cs: &[Commitment]) -> Commitment {
-    let rq_els: Vec<RqEl> = rhos.iter().map(rot_matrix_to_rq).collect();
-    s_lincomb(&rq_els, cs).expect("Ajtai S-linear combination should succeed")
+    let mut acc = Commitment::zeros(cs[0].d, cs[0].kappa);
+    for (rho, c) in rhos.iter().zip(cs.iter()) {
+        let rq = rot_matrix_to_rq(rho);
+        s_mul_add(&mut acc, &rq, c);
+    }
+    acc
 }
 
 fn combine_b_pows(cs: &[Commitment], b: u32) -> Commitment {
-    let mut acc = cs[0].clone();
-    let mut pow = F::from_u64(b as u64);
-    for c in cs.iter().skip(1) {
-        let rq_pow = RqEl::from_field_scalar(pow);
-        let term = s_mul(&rq_pow, c);
-        acc.add_inplace(&term);
-        pow *= F::from_u64(b as u64);
+    let mut acc = Commitment::zeros(cs[0].d, cs[0].kappa);
+    let base = F::from_u64(b as u64);
+    let mut pow = F::ONE;
+    for c in cs {
+        scale_commitment_add_inplace(&mut acc, pow, c);
+        pow *= base;
     }
     acc
 }
@@ -577,8 +709,25 @@ pub fn rv64im_ajtai_mixers(
 pub fn prove_packaged_simple_kernel(
     input: &SimpleKernelProverInput,
 ) -> Result<(SimpleKernelOutput, SimpleKernelPackagedProof), SimpleKernelError> {
-    let (output, kernel) = prove_simple_kernel(input)?;
+    Ok(prove_packaged_simple_kernel_with_perf(input)?.0)
+}
+
+pub fn prove_packaged_simple_kernel_with_perf(
+    input: &SimpleKernelProverInput,
+) -> Result<((SimpleKernelOutput, SimpleKernelPackagedProof), Rv64imProofProvePerf), SimpleKernelError> {
+    let total_started = Instant::now();
+    let (output, simple_kernel) = build_simple_kernel_witness_with_perf(&input.public)?;
+    let kernel = SimpleKernelProof {
+        root_params_id: rv64im_simple_root_context_id(),
+        trace: output.trace.clone(),
+        stages: output.stages.clone(),
+        stage_claims: output.stage_claims.clone(),
+        stage_packages: output.stage_packages.clone(),
+        kernel_opening: output.kernel_opening.clone(),
+        kernel_claims: output.kernel_claims.clone(),
+    };
     let root_context = SimpleKernelRootContext::new()?;
+    let main_lane_started = Instant::now();
     let main_lane = prove_and_package(
         FoldingMode::Optimized,
         root_context.params(),
@@ -587,14 +736,31 @@ pub fn prove_packaged_simple_kernel(
         root_context.log(),
         rv64im_ajtai_mixers(),
     )?;
-    Ok((output, SimpleKernelPackagedProof { kernel, main_lane }))
+    Ok((
+        (output, SimpleKernelPackagedProof { kernel, main_lane }),
+        Rv64imProofProvePerf {
+            simple_kernel,
+            packaged_main_lane_ms: millis_since(main_lane_started),
+            public_export_ms: 0.0,
+            total_ms: millis_since(total_started),
+        },
+    ))
 }
 
 pub fn verify_packaged_simple_kernel(
     input: &SimpleKernelVerifierInput,
     packaged: &SimpleKernelPackagedProof,
 ) -> Result<SimpleKernelOutput, SimpleKernelError> {
-    let output = verify_simple_kernel(input, &packaged.kernel)?;
+    Ok(verify_packaged_simple_kernel_with_perf(input, packaged)?.0)
+}
+
+pub fn verify_packaged_simple_kernel_with_perf(
+    input: &SimpleKernelVerifierInput,
+    packaged: &SimpleKernelPackagedProof,
+) -> Result<(SimpleKernelOutput, PackagedSimpleKernelVerifyPerf), SimpleKernelError> {
+    let total_started = Instant::now();
+    let (output, simple_kernel) = verify_simple_kernel_with_perf(input, &packaged.kernel)?;
+    let public_step_match_started = Instant::now();
     if packaged.main_lane.statement.steps.len() != output.public_steps.len()
         || packaged
             .main_lane
@@ -608,7 +774,9 @@ pub fn verify_packaged_simple_kernel(
             "RV64IM packaged public steps do not match kernel export".into(),
         ));
     }
+    let public_step_match_ms = millis_since(public_step_match_started);
     let root_context = SimpleKernelRootContext::new()?;
+    let main_lane_verify_started = Instant::now();
     verify_packaged(
         FoldingMode::Optimized,
         root_context.params(),
@@ -616,5 +784,13 @@ pub fn verify_packaged_simple_kernel(
         &packaged.main_lane,
         rv64im_ajtai_mixers(),
     )?;
-    Ok(output)
+    Ok((
+        output,
+        PackagedSimpleKernelVerifyPerf {
+            simple_kernel,
+            public_step_match_ms,
+            main_lane_verify_ms: millis_since(main_lane_verify_started),
+            total_ms: millis_since(total_started),
+        },
+    ))
 }

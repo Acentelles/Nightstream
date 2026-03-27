@@ -1,11 +1,17 @@
 //! Owns verifier-side bridge checks between the public RV64IM proof API and the private simple-kernel export.
 
+use super::perf_diagnostics::Rv64imPublicProofVerifyPerf;
 use super::proof_api::Rv64imProof;
 use super::proof_bridge::{packaged_from_kernel_proof_bundle, proof_from_kernel_and_packaged};
 use super::{
-    verify_packaged_simple_kernel, SimpleKernelError, SimpleKernelOutput, SimpleKernelPackagedProof,
+    verify_packaged_simple_kernel_with_perf, SimpleKernelError, SimpleKernelOutput, SimpleKernelPackagedProof,
     SimpleKernelPublicInput, SimpleKernelVerifierInput,
 };
+use std::time::Instant;
+
+fn millis_since(started: Instant) -> f64 {
+    started.elapsed().as_secs_f64() * 1_000.0
+}
 
 fn validate_public_claim_digests(proof: &Rv64imProof) -> Result<(), SimpleKernelError> {
     if proof.claim.accepted.statement.digest != proof.claim.accepted.statement.expected_digest() {
@@ -398,17 +404,44 @@ fn validate_export_match(
     Ok(())
 }
 
-pub(super) fn verify_kernel_output_from_public_proof(
+pub(super) fn verify_kernel_output_from_public_proof_with_perf(
     input: &SimpleKernelPublicInput,
     proof: &Rv64imProof,
-) -> Result<SimpleKernelOutput, SimpleKernelError> {
+) -> Result<(SimpleKernelOutput, Rv64imPublicProofVerifyPerf), SimpleKernelError> {
+    let total_started = Instant::now();
+    let claim_digests_started = Instant::now();
     validate_public_claim_digests(proof)?;
-    validate_public_bundle_digests(proof)?;
-    validate_public_bundle_bindings(proof)?;
+    let public_claim_digests_ms = millis_since(claim_digests_started);
 
+    let bundle_digests_started = Instant::now();
+    validate_public_bundle_digests(proof)?;
+    let public_bundle_digests_ms = millis_since(bundle_digests_started);
+
+    let bundle_bindings_started = Instant::now();
+    validate_public_bundle_bindings(proof)?;
+    let public_bundle_bindings_ms = millis_since(bundle_bindings_started);
+
+    let packaged_started = Instant::now();
     let packaged = packaged_from_kernel_proof_bundle(&proof.kernel);
+    let packaged_rebuild_ms = millis_since(packaged_started);
+
     let verifier = SimpleKernelVerifierInput { public: input.clone() };
-    let kernel = verify_packaged_simple_kernel(&verifier, &packaged)?;
+    let (kernel, packaged_verify) = verify_packaged_simple_kernel_with_perf(&verifier, &packaged)?;
+
+    let export_match_started = Instant::now();
     validate_export_match(proof, &kernel, &packaged)?;
-    Ok(kernel)
+    let export_match_ms = millis_since(export_match_started);
+
+    Ok((
+        kernel,
+        Rv64imPublicProofVerifyPerf {
+            public_claim_digests_ms,
+            public_bundle_digests_ms,
+            public_bundle_bindings_ms,
+            packaged_rebuild_ms,
+            packaged_verify,
+            export_match_ms,
+            total_ms: millis_since(total_started),
+        },
+    ))
 }

@@ -12,6 +12,7 @@ use neo_reductions::api::FoldingMode;
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::PrimeCharacteristicRing;
 use serde::{Deserialize, Serialize};
+use std::time::Instant;
 
 use crate::proof::{PackagedProof, PublicStep, StepInput};
 use crate::run::{prove_and_package, verify_packaged};
@@ -24,6 +25,10 @@ use crate::vm::r1cs_builder::R1csBuilder;
 
 use super::{
     artifacts::{flatten_stage1, flatten_stage2, flatten_stage3, Rv64imKernelSummary},
+    perf_diagnostics::{
+        ExactStageVectorBuildPerf, KernelOpeningBundleBuildPerf, KernelOpeningBundleVerifyPerf,
+        PackagedOpeningBuildPerf, StageClaimBundleBuildPerf,
+    },
     simple::{
         prepared_step_digest, rv64im_ajtai_mixers, ExactCommitmentArtifact, ExactOpeningArtifact, SimpleKernelError,
         SimpleKernelKernelClaimBundle, EXACT_STAGE_PP_SEED, SIMPLE_KERNEL_B, SIMPLE_KERNEL_K_RHO,
@@ -37,6 +42,10 @@ use super::{
     },
     transcript::TranscriptRecord,
 };
+
+fn millis_since(started: Instant) -> f64 {
+    started.elapsed().as_secs_f64() * 1_000.0
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ExactOpeningClaim {
@@ -494,15 +503,35 @@ impl ExactVectorPackageContext {
     }
 }
 
-fn build_exact_stage_vector_artifacts(
+fn build_exact_stage_vector_artifacts_with_perf(
     label: &str,
     values: &[u64],
     seed: [u8; 32],
-) -> Result<(ExactCommitmentArtifact, ExactOpeningArtifact), SimpleKernelError> {
+) -> Result<
+    (
+        (ExactCommitmentArtifact, ExactOpeningArtifact),
+        ExactStageVectorBuildPerf,
+    ),
+    SimpleKernelError,
+> {
+    let mut perf = ExactStageVectorBuildPerf {
+        flatten_u64_words: values.len(),
+        ..ExactStageVectorBuildPerf::default()
+    };
+
+    let limb_started = Instant::now();
     let logical_values = u64_vector_to_field_limbs(values);
+    perf.limb_encode_ms = millis_since(limb_started);
+
+    let context_started = Instant::now();
     let context = ExactVectorCommitmentContext::new(logical_values.len(), seed, label)?;
+    perf.context_setup_ms = millis_since(context_started);
+
+    let ccs_started = Instant::now();
     let packed_witness = encode_vector_for_ccs_m(context.params(), logical_values.len(), &logical_values)
         .map_err(|err| SimpleKernelError::Bridge(format!("{label} exact opening encoding failed: {err}")))?;
+    perf.ccs_encode_ms = millis_since(ccs_started);
+
     let opening = ExactOpeningArtifact {
         label: label.into(),
         logical_values,
@@ -513,6 +542,8 @@ fn build_exact_stage_vector_artifacts(
         digest: opening.expected_digest(),
         ..opening
     };
+
+    let commit_started = Instant::now();
     let commitment = ExactCommitmentArtifact {
         label: label.into(),
         logical_width: opening.logical_values.len(),
@@ -520,11 +551,16 @@ fn build_exact_stage_vector_artifacts(
         commitment: context.log().commit(&opening.packed_witness),
         digest: [0; 32],
     };
+    perf.ajtai_commit_ms = millis_since(commit_started);
+    perf.field_limb_width = opening.logical_values.len();
+    perf.packed_rows = opening.packed_witness.rows();
+    perf.packed_cols = opening.packed_witness.cols();
+
     let commitment = ExactCommitmentArtifact {
         digest: commitment.expected_digest(),
         ..commitment
     };
-    Ok((commitment, opening))
+    Ok(((commitment, opening), perf))
 }
 
 fn build_exact_opening_manifest(
@@ -573,6 +609,29 @@ fn build_exact_opening_proof(
     })
 }
 
+fn build_exact_stage_surface_with_perf(
+    label: &str,
+    values: &[u64],
+    seed: [u8; 32],
+) -> Result<
+    (
+        ExactCommitmentArtifact,
+        ExactOpeningManifest,
+        ExactOpeningProof,
+        ExactStageVectorBuildPerf,
+    ),
+    SimpleKernelError,
+> {
+    let ((commitment, opening), mut perf) = build_exact_stage_vector_artifacts_with_perf(label, values, seed)?;
+    let manifest_started = Instant::now();
+    let manifest = build_exact_opening_manifest(label, &commitment, &opening);
+    perf.opening_manifest_ms = millis_since(manifest_started);
+    let proof_started = Instant::now();
+    let proof = build_exact_opening_proof(&manifest, opening)?;
+    perf.opening_prove_ms = millis_since(proof_started);
+    Ok((commitment, manifest, proof, perf))
+}
+
 fn build_exact_vector_package_step(label: &str, logical_values: &[F]) -> Result<StepInput, SimpleKernelError> {
     let context = ExactVectorPackageContext::new(logical_values.len(), EXACT_STAGE_PP_SEED, label)?;
     let mut full_vector = Vec::with_capacity(logical_values.len() + 1);
@@ -592,99 +651,6 @@ fn build_exact_vector_package_step(label: &str, logical_values: &[F]) -> Result<
             Z: packed,
         },
     })
-}
-
-fn verify_exact_stage_vector_artifact(
-    label: &str,
-    commitment: &ExactCommitmentArtifact,
-    opening_manifest: &ExactOpeningManifest,
-    opening_proof: &ExactOpeningProof,
-    seed: [u8; 32],
-) -> Result<(), SimpleKernelError> {
-    if commitment.digest != commitment.expected_digest() {
-        return Err(SimpleKernelError::Bridge(format!(
-            "{label} exact commitment digest mismatch"
-        )));
-    }
-    if opening_manifest.digest != opening_manifest.expected_digest() {
-        return Err(SimpleKernelError::Bridge(format!(
-            "{label} exact opening manifest digest mismatch"
-        )));
-    }
-    if opening_proof.digest != opening_proof.expected_digest() {
-        return Err(SimpleKernelError::Bridge(format!(
-            "{label} exact opening proof digest mismatch"
-        )));
-    }
-    if opening_manifest.claims.len() != 1 {
-        return Err(SimpleKernelError::Bridge(format!(
-            "{label} exact opening manifest claim count {} != 1",
-            opening_manifest.claims.len()
-        )));
-    }
-    let claim = &opening_manifest.claims[0];
-    if claim.digest != claim.expected_digest() {
-        return Err(SimpleKernelError::Bridge(format!(
-            "{label} exact opening claim digest mismatch"
-        )));
-    }
-    if opening_proof.claim_digest != claim.digest {
-        return Err(SimpleKernelError::Bridge(format!(
-            "{label} exact opening proof claim binding mismatch"
-        )));
-    }
-    let opening = &opening_proof.opening;
-    if opening.digest != opening.expected_digest() {
-        return Err(SimpleKernelError::Bridge(format!(
-            "{label} exact opening digest mismatch"
-        )));
-    }
-    if commitment.label != label || opening.label != label || claim.label != label {
-        return Err(SimpleKernelError::Bridge(format!(
-            "{label} exact artifact label mismatch"
-        )));
-    }
-    if commitment.logical_width != opening.logical_values.len() || claim.logical_width != opening.logical_values.len() {
-        return Err(SimpleKernelError::Bridge(format!(
-            "{label} exact logical width mismatch"
-        )));
-    }
-    if claim.commitment_digest != commitment.digest {
-        return Err(SimpleKernelError::Bridge(format!(
-            "{label} exact opening claim commitment binding mismatch"
-        )));
-    }
-
-    let context = ExactVectorCommitmentContext::new(opening.logical_values.len(), seed, label)?;
-    let expected_witness =
-        encode_vector_for_ccs_m(context.params(), opening.logical_values.len(), &opening.logical_values)
-            .map_err(|err| SimpleKernelError::Bridge(format!("{label} exact opening encoding failed: {err}")))?;
-    if expected_witness.rows() != opening.packed_witness.rows()
-        || expected_witness.cols() != opening.packed_witness.cols()
-        || expected_witness.as_slice() != opening.packed_witness.as_slice()
-    {
-        return Err(SimpleKernelError::Bridge(format!(
-            "{label} exact opening witness mismatch"
-        )));
-    }
-    if commitment.packed_cols != expected_witness.cols() {
-        return Err(SimpleKernelError::Bridge(format!(
-            "{label} packed column count {} != expected {}",
-            commitment.packed_cols,
-            expected_witness.cols()
-        )));
-    }
-    if claim.packed_rows != expected_witness.rows() || claim.packed_cols != expected_witness.cols() {
-        return Err(SimpleKernelError::Bridge(format!(
-            "{label} exact opening claim witness shape mismatch"
-        )));
-    }
-    if context.log().commit(&expected_witness) != commitment.commitment {
-        return Err(SimpleKernelError::Bridge(format!(
-            "{label} exact commitment/opening mismatch"
-        )));
-    }
-    Ok(())
 }
 
 fn stage1_row_digest(row: &Stage1RowBinding) -> [u8; 32] {
@@ -768,7 +734,7 @@ fn first_last_digests<T>(items: &[T], digest_fn: impl Fn(&T) -> [u8; 32]) -> ([u
     (digest_fn(first), digest_fn(last))
 }
 
-fn build_stage1_selected_opening_claim(
+pub(super) fn build_stage1_selected_opening_claim(
     stage1: &Stage1Summary,
     surface: &Stage1ArtifactSurface,
 ) -> Result<Stage1SelectedOpeningClaim, SimpleKernelError> {
@@ -838,7 +804,7 @@ fn build_stage1_selected_opening_claim(
     })
 }
 
-fn build_stage2_selected_opening_claim(
+pub(super) fn build_stage2_selected_opening_claim(
     stage2: &Stage2Summary,
     surface: &Stage2ArtifactSurface,
 ) -> Stage2SelectedOpeningClaim {
@@ -876,7 +842,7 @@ fn build_stage2_selected_opening_claim(
     }
 }
 
-fn build_stage3_selected_opening_claim(
+pub(super) fn build_stage3_selected_opening_claim(
     stage3: &Stage3Summary,
     surface: &Stage3ArtifactSurface,
 ) -> Stage3SelectedOpeningClaim {
@@ -927,7 +893,7 @@ fn build_kernel_prepared_step_opening_package_step(
     build_exact_vector_package_step("rv64im/kernel_opening_bundle/prepared_steps", &logical_values)
 }
 
-fn build_claim_packaged_proof(label: &str, words: &[u64]) -> Result<PackagedProof, SimpleKernelError> {
+pub(super) fn build_claim_packaged_proof(label: &str, words: &[u64]) -> Result<PackagedProof, SimpleKernelError> {
     let step = build_claim_package_step(label, words)?;
     let context = ExactVectorPackageContext::new(
         step.witness.w.len(),
@@ -967,52 +933,7 @@ fn verify_claim_packaged_proof(label: &str, words: &[u64], packaged: &PackagedPr
     Ok(())
 }
 
-fn build_stage1_packaged_opening_proof(
-    claim: Stage1SelectedOpeningClaim,
-) -> Result<Stage1PackagedOpeningProof, SimpleKernelError> {
-    let packaged = build_claim_packaged_proof("rv64im/stage1", &claim.claim_words())?;
-    let proof = Stage1PackagedOpeningProof {
-        claim,
-        packaged,
-        digest: [0; 32],
-    };
-    Ok(Stage1PackagedOpeningProof {
-        digest: proof.expected_digest(),
-        ..proof
-    })
-}
-
-fn build_stage2_packaged_opening_proof(
-    claim: Stage2SelectedOpeningClaim,
-) -> Result<Stage2PackagedOpeningProof, SimpleKernelError> {
-    let packaged = build_claim_packaged_proof("rv64im/stage2", &claim.claim_words())?;
-    let proof = Stage2PackagedOpeningProof {
-        claim,
-        packaged,
-        digest: [0; 32],
-    };
-    Ok(Stage2PackagedOpeningProof {
-        digest: proof.expected_digest(),
-        ..proof
-    })
-}
-
-fn build_stage3_packaged_opening_proof(
-    claim: Stage3SelectedOpeningClaim,
-) -> Result<Stage3PackagedOpeningProof, SimpleKernelError> {
-    let packaged = build_claim_packaged_proof("rv64im/stage3", &claim.claim_words())?;
-    let proof = Stage3PackagedOpeningProof {
-        claim,
-        packaged,
-        digest: [0; 32],
-    };
-    Ok(Stage3PackagedOpeningProof {
-        digest: proof.expected_digest(),
-        ..proof
-    })
-}
-
-fn verify_stage1_packaged_opening_proof(
+pub(super) fn verify_stage1_packaged_opening_proof(
     stage_package: &Stage1PackagedOpeningProof,
     expected_claim: &Stage1SelectedOpeningClaim,
 ) -> Result<(), SimpleKernelError> {
@@ -1029,7 +950,7 @@ fn verify_stage1_packaged_opening_proof(
     verify_claim_packaged_proof("rv64im/stage1", &expected_claim.claim_words(), &stage_package.packaged)
 }
 
-fn verify_stage2_packaged_opening_proof(
+pub(super) fn verify_stage2_packaged_opening_proof(
     stage_package: &Stage2PackagedOpeningProof,
     expected_claim: &Stage2SelectedOpeningClaim,
 ) -> Result<(), SimpleKernelError> {
@@ -1046,7 +967,7 @@ fn verify_stage2_packaged_opening_proof(
     verify_claim_packaged_proof("rv64im/stage2", &expected_claim.claim_words(), &stage_package.packaged)
 }
 
-fn verify_stage3_packaged_opening_proof(
+pub(super) fn verify_stage3_packaged_opening_proof(
     stage_package: &Stage3PackagedOpeningProof,
     expected_claim: &Stage3SelectedOpeningClaim,
 ) -> Result<(), SimpleKernelError> {
@@ -1063,246 +984,12 @@ fn verify_stage3_packaged_opening_proof(
     verify_claim_packaged_proof("rv64im/stage3", &expected_claim.claim_words(), &stage_package.packaged)
 }
 
-pub(super) fn verify_stage_claim_surfaces(
-    stage_claims: &SimpleKernelStageClaimBundle,
-) -> Result<(), SimpleKernelError> {
-    verify_exact_stage_vector_artifact(
-        "rv64im/stage1",
-        &stage_claims.stage1.commitment,
-        &stage_claims.stage1.opening_manifest,
-        &stage_claims.stage1.opening_proof,
-        EXACT_STAGE_PP_SEED,
-    )?;
-    verify_exact_stage_vector_artifact(
-        "rv64im/stage2",
-        &stage_claims.stage2.commitment,
-        &stage_claims.stage2.opening_manifest,
-        &stage_claims.stage2.opening_proof,
-        EXACT_STAGE_PP_SEED,
-    )?;
-    verify_exact_stage_vector_artifact(
-        "rv64im/stage3",
-        &stage_claims.stage3.commitment,
-        &stage_claims.stage3.opening_manifest,
-        &stage_claims.stage3.opening_proof,
-        EXACT_STAGE_PP_SEED,
-    )?;
-    if stage_claims.stage1.claim.expected_digest() == [0; 32]
-        || stage_claims.stage2.claim.expected_digest() == [0; 32]
-        || stage_claims.stage3.claim.expected_digest() == [0; 32]
-        || stage_claims.transcript.claim.expected_digest() == [0; 32]
-    {
-        return Err(SimpleKernelError::Bridge(
-            "RV64IM stage claim surface digest unexpectedly zero".into(),
-        ));
-    }
-    if stage_claims.digest != stage_claims.expected_digest() {
-        return Err(SimpleKernelError::Bridge(
-            "RV64IM stage claim bundle digest mismatch".into(),
-        ));
-    }
-    Ok(())
-}
-
-fn build_kernel_opening_proof(claim: SimpleKernelOpeningClaim) -> Result<SimpleKernelOpeningBundle, SimpleKernelError> {
-    let bindings_step = build_kernel_binding_opening_package_step(&claim.bindings)?;
-    let bindings_context = ExactVectorPackageContext::new(
-        bindings_step.witness.w.len(),
-        EXACT_STAGE_PP_SEED,
-        "rv64im/kernel_opening_bundle/bindings",
-    )?;
-    let bindings_packaged = prove_and_package(
-        FoldingMode::Optimized,
-        bindings_context.params(),
-        bindings_context.ccs(),
-        [bindings_step],
-        bindings_context.log(),
-        rv64im_ajtai_mixers(),
-    )?;
-    let bindings = KernelBindingPackagedOpeningProof {
-        claim: claim.bindings.clone(),
-        packaged: bindings_packaged,
-        digest: [0; 32],
-    };
-    let bindings = KernelBindingPackagedOpeningProof {
-        digest: bindings.expected_digest(),
-        ..bindings
-    };
-
-    let prepared_steps_step = build_kernel_prepared_step_opening_package_step(&claim.prepared_steps)?;
-    let prepared_steps_context = ExactVectorPackageContext::new(
-        prepared_steps_step.witness.w.len(),
-        EXACT_STAGE_PP_SEED,
-        "rv64im/kernel_opening_bundle/prepared_steps",
-    )?;
-    let prepared_steps_packaged = prove_and_package(
-        FoldingMode::Optimized,
-        prepared_steps_context.params(),
-        prepared_steps_context.ccs(),
-        [prepared_steps_step],
-        prepared_steps_context.log(),
-        rv64im_ajtai_mixers(),
-    )?;
-    let prepared_steps = KernelPreparedStepPackagedOpeningProof {
-        claim: claim.prepared_steps.clone(),
-        packaged: prepared_steps_packaged,
-        digest: [0; 32],
-    };
-    let prepared_steps = KernelPreparedStepPackagedOpeningProof {
-        digest: prepared_steps.expected_digest(),
-        ..prepared_steps
-    };
-
-    let bundle = SimpleKernelOpeningBundle {
-        claim,
-        bindings,
-        prepared_steps,
-        digest: [0; 32],
-    };
-    Ok(SimpleKernelOpeningBundle {
-        digest: bundle.expected_digest(),
-        ..bundle
-    })
-}
-
-fn verify_kernel_opening_proof(bundle: &SimpleKernelOpeningBundle) -> Result<(), SimpleKernelError> {
-    if bundle.claim.digest != bundle.claim.expected_digest() {
-        return Err(SimpleKernelError::Bridge(
-            "RV64IM kernel opening claim digest mismatch".into(),
-        ));
-    }
-    if bundle.digest != bundle.expected_digest() {
-        return Err(SimpleKernelError::Bridge(
-            "RV64IM kernel opening bundle digest mismatch".into(),
-        ));
-    }
-    if bundle.bindings.digest != bundle.bindings.expected_digest() {
-        return Err(SimpleKernelError::Bridge(
-            "RV64IM kernel binding opening package digest mismatch".into(),
-        ));
-    }
-    if bundle.bindings.claim != bundle.claim.bindings {
-        return Err(SimpleKernelError::Bridge(
-            "RV64IM kernel binding opening claim mismatch".into(),
-        ));
-    }
-    let expected_bindings_step = build_kernel_binding_opening_package_step(&bundle.claim.bindings)?;
-    if bundle.bindings.packaged.statement.steps.len() != 1
-        || !same_public_step(
-            &bundle.bindings.packaged.statement.steps[0],
-            &expected_bindings_step.instance(),
-        )
-    {
-        return Err(SimpleKernelError::Bridge(
-            "RV64IM kernel binding opening package public step mismatch".into(),
-        ));
-    }
-    let bindings_context = ExactVectorPackageContext::new(
-        expected_bindings_step.witness.w.len(),
-        EXACT_STAGE_PP_SEED,
-        "rv64im/kernel_opening_bundle/bindings",
-    )?;
-    verify_packaged(
-        FoldingMode::Optimized,
-        bindings_context.params(),
-        bindings_context.ccs(),
-        &bundle.bindings.packaged,
-        rv64im_ajtai_mixers(),
-    )?;
-
-    if bundle.prepared_steps.digest != bundle.prepared_steps.expected_digest() {
-        return Err(SimpleKernelError::Bridge(
-            "RV64IM kernel prepared-step opening package digest mismatch".into(),
-        ));
-    }
-    if bundle.prepared_steps.claim != bundle.claim.prepared_steps {
-        return Err(SimpleKernelError::Bridge(
-            "RV64IM kernel prepared-step opening claim mismatch".into(),
-        ));
-    }
-    let expected_prepared_steps_step = build_kernel_prepared_step_opening_package_step(&bundle.claim.prepared_steps)?;
-    if bundle.prepared_steps.packaged.statement.steps.len() != 1
-        || !same_public_step(
-            &bundle.prepared_steps.packaged.statement.steps[0],
-            &expected_prepared_steps_step.instance(),
-        )
-    {
-        return Err(SimpleKernelError::Bridge(
-            "RV64IM kernel prepared-step opening package public step mismatch".into(),
-        ));
-    }
-    let prepared_steps_context = ExactVectorPackageContext::new(
-        expected_prepared_steps_step.witness.w.len(),
-        EXACT_STAGE_PP_SEED,
-        "rv64im/kernel_opening_bundle/prepared_steps",
-    )?;
-    verify_packaged(
-        FoldingMode::Optimized,
-        prepared_steps_context.params(),
-        prepared_steps_context.ccs(),
-        &bundle.prepared_steps.packaged,
-        rv64im_ajtai_mixers(),
-    )?;
-    Ok(())
-}
-
-pub(super) fn build_stage_package_bundle(
-    stage1: &Stage1Summary,
-    stage2: &Stage2Summary,
-    stage3: &Stage3Summary,
-    stage_claims: &SimpleKernelStageClaimBundle,
-) -> Result<SimpleKernelStagePackageBundle, SimpleKernelError> {
-    let stage1 =
-        build_stage1_packaged_opening_proof(build_stage1_selected_opening_claim(stage1, &stage_claims.stage1)?)?;
-    let stage2 =
-        build_stage2_packaged_opening_proof(build_stage2_selected_opening_claim(stage2, &stage_claims.stage2))?;
-    let stage3 =
-        build_stage3_packaged_opening_proof(build_stage3_selected_opening_claim(stage3, &stage_claims.stage3))?;
-    let bundle = SimpleKernelStagePackageBundle {
-        stage1,
-        stage2,
-        stage3,
-        digest: [0; 32],
-    };
-    Ok(SimpleKernelStagePackageBundle {
-        digest: bundle.expected_digest(),
-        ..bundle
-    })
-}
-
-pub(super) fn verify_stage_package_bundle(
-    stage1: &Stage1Summary,
-    stage2: &Stage2Summary,
-    stage3: &Stage3Summary,
-    stage_packages: &SimpleKernelStagePackageBundle,
-    stage_claims: &SimpleKernelStageClaimBundle,
-) -> Result<(), SimpleKernelError> {
-    verify_stage1_packaged_opening_proof(
-        &stage_packages.stage1,
-        &build_stage1_selected_opening_claim(stage1, &stage_claims.stage1)?,
-    )?;
-    verify_stage2_packaged_opening_proof(
-        &stage_packages.stage2,
-        &build_stage2_selected_opening_claim(stage2, &stage_claims.stage2),
-    )?;
-    verify_stage3_packaged_opening_proof(
-        &stage_packages.stage3,
-        &build_stage3_selected_opening_claim(stage3, &stage_claims.stage3),
-    )?;
-    if stage_packages.digest != stage_packages.expected_digest() {
-        return Err(SimpleKernelError::Bridge(
-            "RV64IM stage package bundle digest mismatch".into(),
-        ));
-    }
-    Ok(())
-}
-
-pub(super) fn build_kernel_opening_bundle(
+fn build_kernel_opening_claim(
     stage_claims: &SimpleKernelStageClaimBundle,
     stage_packages: &SimpleKernelStagePackageBundle,
     kernel_claims: &SimpleKernelKernelClaimBundle,
     prepared_steps: &[StepInput],
-) -> Result<SimpleKernelOpeningBundle, SimpleKernelError> {
+) -> SimpleKernelOpeningClaim {
     let first_prepared = prepared_steps
         .first()
         .map(prepared_step_digest)
@@ -1366,25 +1053,218 @@ pub(super) fn build_kernel_opening_bundle(
         },
         digest: [0; 32],
     };
-    build_kernel_opening_proof(SimpleKernelOpeningClaim {
+    SimpleKernelOpeningClaim {
         digest: claim.expected_digest(),
         ..claim
+    }
+}
+
+fn build_kernel_opening_proof_with_perf(
+    claim: SimpleKernelOpeningClaim,
+) -> Result<(SimpleKernelOpeningBundle, KernelOpeningBundleBuildPerf), SimpleKernelError> {
+    let total_started = Instant::now();
+    let bindings_step = build_kernel_binding_opening_package_step(&claim.bindings)?;
+    let bindings_claim_words = bindings_step.witness.w.len();
+    let bindings_context = ExactVectorPackageContext::new(
+        bindings_step.witness.w.len(),
+        EXACT_STAGE_PP_SEED,
+        "rv64im/kernel_opening_bundle/bindings",
+    )?;
+    let bindings_started = Instant::now();
+    let bindings_packaged = prove_and_package(
+        FoldingMode::Optimized,
+        bindings_context.params(),
+        bindings_context.ccs(),
+        [bindings_step],
+        bindings_context.log(),
+        rv64im_ajtai_mixers(),
+    )?;
+    let bindings = KernelBindingPackagedOpeningProof {
+        claim: claim.bindings.clone(),
+        packaged: bindings_packaged,
+        digest: [0; 32],
+    };
+    let bindings = KernelBindingPackagedOpeningProof {
+        digest: bindings.expected_digest(),
+        ..bindings
+    };
+
+    let prepared_steps_step = build_kernel_prepared_step_opening_package_step(&claim.prepared_steps)?;
+    let prepared_steps_claim_words = prepared_steps_step.witness.w.len();
+    let prepared_steps_context = ExactVectorPackageContext::new(
+        prepared_steps_step.witness.w.len(),
+        EXACT_STAGE_PP_SEED,
+        "rv64im/kernel_opening_bundle/prepared_steps",
+    )?;
+    let prepared_steps_started = Instant::now();
+    let prepared_steps_packaged = prove_and_package(
+        FoldingMode::Optimized,
+        prepared_steps_context.params(),
+        prepared_steps_context.ccs(),
+        [prepared_steps_step],
+        prepared_steps_context.log(),
+        rv64im_ajtai_mixers(),
+    )?;
+    let prepared_steps = KernelPreparedStepPackagedOpeningProof {
+        claim: claim.prepared_steps.clone(),
+        packaged: prepared_steps_packaged,
+        digest: [0; 32],
+    };
+    let prepared_steps = KernelPreparedStepPackagedOpeningProof {
+        digest: prepared_steps.expected_digest(),
+        ..prepared_steps
+    };
+
+    let bundle = SimpleKernelOpeningBundle {
+        claim,
+        bindings,
+        prepared_steps,
+        digest: [0; 32],
+    };
+    let bundle = SimpleKernelOpeningBundle {
+        digest: bundle.expected_digest(),
+        ..bundle
+    };
+    Ok((
+        bundle,
+        KernelOpeningBundleBuildPerf {
+            bindings: PackagedOpeningBuildPerf {
+                selected_labels: 2,
+                claim_words: bindings_claim_words,
+                package_ms: millis_since(bindings_started),
+            },
+            prepared_steps: PackagedOpeningBuildPerf {
+                selected_labels: 2,
+                claim_words: prepared_steps_claim_words,
+                package_ms: millis_since(prepared_steps_started),
+            },
+            total_ms: millis_since(total_started),
+        },
+    ))
+}
+
+fn verify_kernel_opening_proof_with_perf(
+    bundle: &SimpleKernelOpeningBundle,
+) -> Result<KernelOpeningBundleVerifyPerf, SimpleKernelError> {
+    let total_started = Instant::now();
+    if bundle.claim.digest != bundle.claim.expected_digest() {
+        return Err(SimpleKernelError::Bridge(
+            "RV64IM kernel opening claim digest mismatch".into(),
+        ));
+    }
+    if bundle.digest != bundle.expected_digest() {
+        return Err(SimpleKernelError::Bridge(
+            "RV64IM kernel opening bundle digest mismatch".into(),
+        ));
+    }
+    if bundle.bindings.digest != bundle.bindings.expected_digest() {
+        return Err(SimpleKernelError::Bridge(
+            "RV64IM kernel binding opening package digest mismatch".into(),
+        ));
+    }
+    if bundle.bindings.claim != bundle.claim.bindings {
+        return Err(SimpleKernelError::Bridge(
+            "RV64IM kernel binding opening claim mismatch".into(),
+        ));
+    }
+    let expected_bindings_step = build_kernel_binding_opening_package_step(&bundle.claim.bindings)?;
+    if bundle.bindings.packaged.statement.steps.len() != 1
+        || !same_public_step(
+            &bundle.bindings.packaged.statement.steps[0],
+            &expected_bindings_step.instance(),
+        )
+    {
+        return Err(SimpleKernelError::Bridge(
+            "RV64IM kernel binding opening package public step mismatch".into(),
+        ));
+    }
+    let bindings_context = ExactVectorPackageContext::new(
+        expected_bindings_step.witness.w.len(),
+        EXACT_STAGE_PP_SEED,
+        "rv64im/kernel_opening_bundle/bindings",
+    )?;
+    let bindings_started = Instant::now();
+    verify_packaged(
+        FoldingMode::Optimized,
+        bindings_context.params(),
+        bindings_context.ccs(),
+        &bundle.bindings.packaged,
+        rv64im_ajtai_mixers(),
+    )?;
+
+    if bundle.prepared_steps.digest != bundle.prepared_steps.expected_digest() {
+        return Err(SimpleKernelError::Bridge(
+            "RV64IM kernel prepared-step opening package digest mismatch".into(),
+        ));
+    }
+    if bundle.prepared_steps.claim != bundle.claim.prepared_steps {
+        return Err(SimpleKernelError::Bridge(
+            "RV64IM kernel prepared-step opening claim mismatch".into(),
+        ));
+    }
+    let expected_prepared_steps_step = build_kernel_prepared_step_opening_package_step(&bundle.claim.prepared_steps)?;
+    if bundle.prepared_steps.packaged.statement.steps.len() != 1
+        || !same_public_step(
+            &bundle.prepared_steps.packaged.statement.steps[0],
+            &expected_prepared_steps_step.instance(),
+        )
+    {
+        return Err(SimpleKernelError::Bridge(
+            "RV64IM kernel prepared-step opening package public step mismatch".into(),
+        ));
+    }
+    let prepared_steps_context = ExactVectorPackageContext::new(
+        expected_prepared_steps_step.witness.w.len(),
+        EXACT_STAGE_PP_SEED,
+        "rv64im/kernel_opening_bundle/prepared_steps",
+    )?;
+    let prepared_steps_started = Instant::now();
+    verify_packaged(
+        FoldingMode::Optimized,
+        prepared_steps_context.params(),
+        prepared_steps_context.ccs(),
+        &bundle.prepared_steps.packaged,
+        rv64im_ajtai_mixers(),
+    )?;
+    Ok(KernelOpeningBundleVerifyPerf {
+        claim_rebuild_ms: 0.0,
+        bindings_ms: millis_since(bindings_started),
+        prepared_steps_ms: millis_since(prepared_steps_started),
+        total_ms: millis_since(total_started),
     })
 }
 
-pub(super) fn verify_kernel_opening_bundle(
+pub(super) fn build_kernel_opening_bundle_with_perf(
+    stage_claims: &SimpleKernelStageClaimBundle,
+    stage_packages: &SimpleKernelStagePackageBundle,
+    kernel_claims: &SimpleKernelKernelClaimBundle,
+    prepared_steps: &[StepInput],
+) -> Result<(SimpleKernelOpeningBundle, KernelOpeningBundleBuildPerf), SimpleKernelError> {
+    build_kernel_opening_proof_with_perf(build_kernel_opening_claim(
+        stage_claims,
+        stage_packages,
+        kernel_claims,
+        prepared_steps,
+    ))
+}
+
+pub(super) fn verify_kernel_opening_bundle_with_perf(
     bundle: &SimpleKernelOpeningBundle,
     stage_claims: &SimpleKernelStageClaimBundle,
     stage_packages: &SimpleKernelStagePackageBundle,
     kernel_claims: &SimpleKernelKernelClaimBundle,
     prepared_steps: &[StepInput],
-) -> Result<(), SimpleKernelError> {
-    let expected = build_kernel_opening_bundle(stage_claims, stage_packages, kernel_claims, prepared_steps)?;
-    if bundle.claim != expected.claim {
+) -> Result<KernelOpeningBundleVerifyPerf, SimpleKernelError> {
+    let claim_started = Instant::now();
+    let expected_claim = build_kernel_opening_claim(stage_claims, stage_packages, kernel_claims, prepared_steps);
+    let claim_rebuild_ms = millis_since(claim_started);
+    if bundle.claim != expected_claim {
         return Err(SimpleKernelError::Bridge("RV64IM kernel opening claim mismatch".into()));
     }
-    verify_kernel_opening_proof(bundle)?;
-    Ok(())
+    let mut perf = verify_kernel_opening_proof_with_perf(bundle)?;
+    perf.claim_rebuild_ms = claim_rebuild_ms;
+    perf.total_ms += claim_rebuild_ms;
+    Ok(perf)
 }
 
 pub(super) fn build_stage_claim_bundle_from_parts(
@@ -1394,11 +1274,31 @@ pub(super) fn build_stage_claim_bundle_from_parts(
     transcript: &TranscriptRecord,
     kernel: &Rv64imKernelSummary,
 ) -> Result<SimpleKernelStageClaimBundle, SimpleKernelError> {
+    Ok(build_stage_claim_bundle_from_parts_with_perf(
+        stage1_summary,
+        stage2_summary,
+        stage3_summary,
+        transcript,
+        kernel,
+    )?
+    .0)
+}
+
+pub(super) fn build_stage_claim_bundle_from_parts_with_perf(
+    stage1_summary: &Stage1Summary,
+    stage2_summary: &Stage2Summary,
+    stage3_summary: &Stage3Summary,
+    transcript: &TranscriptRecord,
+    kernel: &Rv64imKernelSummary,
+) -> Result<(SimpleKernelStageClaimBundle, StageClaimBundleBuildPerf), SimpleKernelError> {
+    let total_started = Instant::now();
+
+    let stage1_flat_started = Instant::now();
     let stage1_flat = flatten_stage1(stage1_summary);
-    let (stage1_commitment, stage1_opening) =
-        build_exact_stage_vector_artifacts("rv64im/stage1", &stage1_flat, EXACT_STAGE_PP_SEED)?;
-    let stage1_opening_manifest = build_exact_opening_manifest("rv64im/stage1", &stage1_commitment, &stage1_opening);
-    let stage1_opening_proof = build_exact_opening_proof(&stage1_opening_manifest, stage1_opening)?;
+    let stage1_flat_ms = millis_since(stage1_flat_started);
+    let (stage1_commitment, stage1_opening_manifest, stage1_opening_proof, mut stage1_perf) =
+        build_exact_stage_surface_with_perf("rv64im/stage1", &stage1_flat, EXACT_STAGE_PP_SEED)?;
+    stage1_perf.flatten_ms = stage1_flat_ms;
     let stage1 = Stage1ArtifactSurface {
         commitment: stage1_commitment,
         opening_manifest: stage1_opening_manifest,
@@ -1425,11 +1325,12 @@ pub(super) fn build_stage_claim_bundle_from_parts(
         },
     };
 
+    let stage2_flat_started = Instant::now();
     let stage2_flat = flatten_stage2(stage2_summary);
-    let (stage2_commitment, stage2_opening) =
-        build_exact_stage_vector_artifacts("rv64im/stage2", &stage2_flat, EXACT_STAGE_PP_SEED)?;
-    let stage2_opening_manifest = build_exact_opening_manifest("rv64im/stage2", &stage2_commitment, &stage2_opening);
-    let stage2_opening_proof = build_exact_opening_proof(&stage2_opening_manifest, stage2_opening)?;
+    let stage2_flat_ms = millis_since(stage2_flat_started);
+    let (stage2_commitment, stage2_opening_manifest, stage2_opening_proof, mut stage2_perf) =
+        build_exact_stage_surface_with_perf("rv64im/stage2", &stage2_flat, EXACT_STAGE_PP_SEED)?;
+    stage2_perf.flatten_ms = stage2_flat_ms;
     let stage2 = Stage2ArtifactSurface {
         commitment: stage2_commitment,
         opening_manifest: stage2_opening_manifest,
@@ -1454,11 +1355,12 @@ pub(super) fn build_stage_claim_bundle_from_parts(
         },
     };
 
+    let stage3_flat_started = Instant::now();
     let stage3_flat = flatten_stage3(stage3_summary);
-    let (stage3_commitment, stage3_opening) =
-        build_exact_stage_vector_artifacts("rv64im/stage3", &stage3_flat, EXACT_STAGE_PP_SEED)?;
-    let stage3_opening_manifest = build_exact_opening_manifest("rv64im/stage3", &stage3_commitment, &stage3_opening);
-    let stage3_opening_proof = build_exact_opening_proof(&stage3_opening_manifest, stage3_opening)?;
+    let stage3_flat_ms = millis_since(stage3_flat_started);
+    let (stage3_commitment, stage3_opening_manifest, stage3_opening_proof, mut stage3_perf) =
+        build_exact_stage_surface_with_perf("rv64im/stage3", &stage3_flat, EXACT_STAGE_PP_SEED)?;
+    stage3_perf.flatten_ms = stage3_flat_ms;
     let stage3 = Stage3ArtifactSurface {
         commitment: stage3_commitment,
         opening_manifest: stage3_opening_manifest,
@@ -1498,8 +1400,17 @@ pub(super) fn build_stage_claim_bundle_from_parts(
         execution_digest: kernel.execution_digest,
         digest: [0; 32],
     };
-    Ok(SimpleKernelStageClaimBundle {
+    let claims = SimpleKernelStageClaimBundle {
         digest: claims.expected_digest(),
         ..claims
-    })
+    };
+    Ok((
+        claims,
+        StageClaimBundleBuildPerf {
+            stage1: stage1_perf,
+            stage2: stage2_perf,
+            stage3: stage3_perf,
+            total_ms: millis_since(total_started),
+        },
+    ))
 }

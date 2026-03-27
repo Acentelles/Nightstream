@@ -227,7 +227,9 @@ fn simple_kernel_rejects_tampered_kernel_and_packaged_boundaries() {
         .opening
         .logical_values[0] += neo_math::F::ONE;
     let opening_error = verify_simple_kernel(&verifier, &tampered_stage_opening).expect_err("tampered stage opening");
-    assert!(opening_error.to_string().contains("stage1 exact opening"));
+    assert!(opening_error
+        .to_string()
+        .contains("stage claim bundle mismatch"));
 
     let mut tampered_stage_package = proof.clone();
     tampered_stage_package

@@ -2,17 +2,18 @@
 
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use serde::{Deserialize, Serialize};
+use std::time::Instant;
 
 use super::proof_bridge::proof_from_kernel_and_packaged;
-use super::proof_verify::verify_kernel_output_from_public_proof;
+use super::proof_verify::verify_kernel_output_from_public_proof_with_perf;
 use super::proof_witness::{
     proof_witness_bundle_from_kernel_output, Rv64imKernelClaimProofBundle, Rv64imKernelClaimSummaryBundle,
     Rv64imKernelOpeningProofBundle, Rv64imKernelOpeningSummaryBundle, Rv64imProofWitnessBundle,
     Rv64imStageClaimProofBundle, Rv64imStagePackageProofBundle, Rv64imStageWitnessProofBundle, Rv64imTraceProofBundle,
 };
 use super::{
-    build_simple_kernel_witness, prove_packaged_simple_kernel, SimpleKernelError, SimpleKernelProverInput,
-    SimpleKernelPublicInput,
+    build_simple_kernel_witness, prove_packaged_simple_kernel_with_perf, Rv64imProofProvePerf,
+    Rv64imPublicProofVerifyPerf, SimpleKernelError, SimpleKernelProverInput, SimpleKernelPublicInput,
 };
 use crate::proof::PackagedProof;
 
@@ -590,18 +591,35 @@ pub fn build_rv64im_proof_witness(input: &Rv64imProofInput) -> Result<Rv64imProo
 pub fn prove_rv64im_proof(
     input: &Rv64imProofInput,
 ) -> Result<(Rv64imProofWitnessBundle, Rv64imProof), SimpleKernelError> {
+    let (witness, proof, _) = prove_rv64im_proof_with_perf(input)?;
+    Ok((witness, proof))
+}
+
+pub fn prove_rv64im_proof_with_perf(
+    input: &Rv64imProofInput,
+) -> Result<(Rv64imProofWitnessBundle, Rv64imProof, Rv64imProofProvePerf), SimpleKernelError> {
+    let total_started = Instant::now();
     let prover = SimpleKernelProverInput { public: input.clone() };
-    let (kernel, packaged) = prove_packaged_simple_kernel(&prover)?;
-    Ok((
-        proof_witness_bundle_from_kernel_output(&kernel),
-        proof_from_kernel_and_packaged(&kernel, &packaged),
-    ))
+    let ((kernel, packaged), mut perf) = prove_packaged_simple_kernel_with_perf(&prover)?;
+    let export_started = Instant::now();
+    let proof = proof_from_kernel_and_packaged(&kernel, &packaged);
+    perf.public_export_ms = export_started.elapsed().as_secs_f64() * 1_000.0;
+    perf.total_ms = total_started.elapsed().as_secs_f64() * 1_000.0;
+    Ok((proof_witness_bundle_from_kernel_output(&kernel), proof, perf))
 }
 
 pub fn verify_rv64im_proof(
     input: &Rv64imProofInput,
     proof: &Rv64imProof,
 ) -> Result<Rv64imProofWitnessBundle, SimpleKernelError> {
-    let kernel = verify_kernel_output_from_public_proof(input, proof)?;
-    Ok(proof_witness_bundle_from_kernel_output(&kernel))
+    let (witness, _) = verify_rv64im_proof_with_perf(input, proof)?;
+    Ok(witness)
+}
+
+pub fn verify_rv64im_proof_with_perf(
+    input: &Rv64imProofInput,
+    proof: &Rv64imProof,
+) -> Result<(Rv64imProofWitnessBundle, Rv64imPublicProofVerifyPerf), SimpleKernelError> {
+    let (kernel, perf) = verify_kernel_output_from_public_proof_with_perf(input, proof)?;
+    Ok((proof_witness_bundle_from_kernel_output(&kernel), perf))
 }

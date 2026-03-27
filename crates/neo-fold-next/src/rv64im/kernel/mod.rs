@@ -1,13 +1,15 @@
 //! Owns the RV64IM parity-slice kernel artifacts and transcript logging.
 
 mod artifacts;
+mod perf_diagnostics;
 mod proof_api;
 mod proof_bridge;
 mod proof_verify;
 mod proof_witness;
 mod simple;
 mod simple_openings;
-mod simple_stage;
+mod stage_artifacts;
+mod stage_package_perf;
 mod transcript;
 
 pub use artifacts::{
@@ -28,11 +30,17 @@ pub use artifacts::{
     unsigned_divrem_manifest, vertical_slice_manifest, Rv64imKernelSummary, Rv64imParityCaseManifest,
     Rv64imParityDerivedCase, Rv64imParitySourceCase,
 };
+pub use perf_diagnostics::{
+    ExactStageVectorBuildPerf, KernelOpeningBundleBuildPerf, KernelOpeningBundleVerifyPerf, PackagedOpeningBuildPerf,
+    PackagedSimpleKernelVerifyPerf, Rv64imProofProvePerf, Rv64imPublicProofVerifyPerf, SimpleKernelBuildPerf,
+    SimpleKernelVerifyPerf, StageClaimBundleBuildPerf, StagePackageBundleBuildPerf, StagePackageBundleVerifyPerf,
+};
 pub use proof_api::{
-    build_rv64im_proof_witness, prove_rv64im_proof, verify_rv64im_proof, Rv64imAcceptedProofClaim,
-    Rv64imAcceptedProofMainLaneBinding, Rv64imAcceptedProofStatementBinding, Rv64imAcceptedProofTerminalBinding,
-    Rv64imJointOpeningClaim, Rv64imKernelClaimBundle, Rv64imKernelOpeningClaim, Rv64imKernelProofBundle,
-    Rv64imMainLaneClaim, Rv64imMainLaneClaimBinding, Rv64imMainLaneProofBinding, Rv64imMainLaneProofBundle,
+    build_rv64im_proof_witness, prove_rv64im_proof, prove_rv64im_proof_with_perf, verify_rv64im_proof,
+    verify_rv64im_proof_with_perf, Rv64imAcceptedProofClaim, Rv64imAcceptedProofMainLaneBinding,
+    Rv64imAcceptedProofStatementBinding, Rv64imAcceptedProofTerminalBinding, Rv64imJointOpeningClaim,
+    Rv64imKernelClaimBundle, Rv64imKernelOpeningClaim, Rv64imKernelProofBundle, Rv64imMainLaneClaim,
+    Rv64imMainLaneClaimBinding, Rv64imMainLaneProofBinding, Rv64imMainLaneProofBundle,
     Rv64imMainLaneProofSummaryBundle, Rv64imProof, Rv64imProofInput, Rv64imProofStatement, Rv64imRoot0Claim,
 };
 pub use proof_witness::{
@@ -43,12 +51,14 @@ pub use proof_witness::{
     Rv64imStageWitnessSummaryBundle, Rv64imTraceProofBundle, Rv64imTraceShapeBundle,
 };
 pub use simple::{
-    build_simple_kernel_witness, prepared_step_digest, prove_packaged_simple_kernel, prove_simple_kernel,
-    rv64im_ajtai_mixers, rv64im_simple_root_context_id, rv64im_simple_root_params, verify_packaged_simple_kernel,
-    verify_simple_kernel, ExactCommitmentArtifact, ExactOpeningArtifact, PreparedStepBinding,
-    PreparedStepBindingSummary, SimpleKernelError, SimpleKernelKernelClaimBundle, SimpleKernelOutput,
-    SimpleKernelPackagedProof, SimpleKernelProof, SimpleKernelProverInput, SimpleKernelPublicInput,
-    SimpleKernelStageWitnessBundle, SimpleKernelTraceWitness, SimpleKernelVerifierInput,
+    build_simple_kernel_witness, build_simple_kernel_witness_with_perf, prepared_step_digest,
+    prove_packaged_simple_kernel, prove_packaged_simple_kernel_with_perf, prove_simple_kernel, rv64im_ajtai_mixers,
+    rv64im_simple_root_context_id, rv64im_simple_root_params, verify_packaged_simple_kernel,
+    verify_packaged_simple_kernel_with_perf, verify_simple_kernel, verify_simple_kernel_with_perf,
+    ExactCommitmentArtifact, ExactOpeningArtifact, PreparedStepBinding, PreparedStepBindingSummary, SimpleKernelError,
+    SimpleKernelKernelClaimBundle, SimpleKernelOutput, SimpleKernelPackagedProof, SimpleKernelProof,
+    SimpleKernelProverInput, SimpleKernelPublicInput, SimpleKernelStageWitnessBundle, SimpleKernelTraceWitness,
+    SimpleKernelVerifierInput,
 };
 pub use simple_openings::{
     DigestPoint, KernelBindingOpeningClaim, KernelBindingOpeningPoints, KernelBindingPackagedOpeningProof,
@@ -58,7 +68,7 @@ pub use simple_openings::{
     Stage2PackagedOpeningProof, Stage2SelectedOpeningClaim, Stage3OpeningPoints, Stage3PackagedOpeningProof,
     Stage3SelectedOpeningClaim,
 };
-pub use simple_stage::{
+pub use stage_artifacts::{
     ExactOpeningClaim, ExactOpeningManifest, ExactOpeningProof, SimpleKernelStageClaimBundle, Stage1ArtifactSurface,
     Stage1ClaimSurface, Stage2ArtifactSurface, Stage2ClaimSurface, Stage3ArtifactSurface, Stage3ClaimSurface,
     StageDigestCommitment, TranscriptArtifactSurface, TranscriptClaimSurface,

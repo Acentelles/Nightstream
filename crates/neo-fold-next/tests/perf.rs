@@ -4,25 +4,21 @@ use std::collections::BTreeSet;
 use std::env;
 use std::time::Instant;
 
+use neo_fold_next::proof::PackagedProof;
 use neo_fold_next::rv64im::ccs::{rv64im_root_main_lane_ccs, RV64IM_ROOT_PUBLIC_INPUTS, RV64IM_ROOT_ROW_WIDTH};
-use neo_fold_next::rv64im::layout::{
-    RV64IM_PARITY_LOWERING_VERSION_ID, RV64IM_PARITY_PROTOCOL_VERSION_ID, RV64_REGISTER_COUNT,
-};
+use neo_fold_next::rv64im::layout::RV64_REGISTER_COUNT;
 use neo_fold_next::rv64im::stage1::build_stage1_summary;
 use neo_fold_next::rv64im::stage2::{build_stage2_summary, RamAccessKind, RegisterReadRole};
 use neo_fold_next::rv64im::stage3::build_stage3_summary;
 use neo_fold_next::rv64im::tables::Rv64FamilyTag;
 use neo_fold_next::rv64im::{
-    build_parity_case_from_source, build_program, build_simple_kernel_witness, encode_add, encode_addi, encode_addiw,
-    encode_and, encode_beq, encode_divu, encode_ecall, encode_ld, encode_mul, encode_remu, encode_sd, encode_slli,
-    encode_xor, prove_rv64im_proof, rv64im_simple_root_params, verify_rv64im_proof, MemoryWord, Rv64Program, Rv64State,
-    Rv64imParityCaseManifest, Rv64imParitySourceCase, Rv64imProofInput,
+    build_mixed_opcode_perf_source_case, build_parity_case_from_source, build_program,
+    build_simple_kernel_witness_with_perf, mixed_opcode_perf_expected_x1, prove_rv64im_proof_with_perf,
+    rv64im_simple_root_params, verify_rv64im_proof_with_perf, ExactOpeningClaim, OpeningPointLabel, Rv64Program,
+    Rv64State, Rv64imProofInput, SimpleKernelBuildPerf, RV64IM_MIXED_OPCODE_PERF_BLOCK_LEN,
+    RV64IM_MIXED_OPCODE_PERF_DEFAULT_N,
 };
 
-const DEFAULT_DEBUG_N: usize = 100;
-const START_PC: u64 = 0x1000;
-const PERF_MEMORY_ADDR: u64 = 0x100;
-const MIXED_BLOCK_LEN: usize = 13;
 const FAMILY_ORDER: [Rv64FamilyTag; 7] = [
     Rv64FamilyTag::NativeAlu,
     Rv64FamilyTag::AlignedMemory,
@@ -59,10 +55,71 @@ struct LookupSummary {
     twist_memory_after_routes: usize,
 }
 
+#[derive(Clone, Copy, Default)]
+struct ExactOpeningClaimStats {
+    claims: usize,
+    logical_width: usize,
+    packed_rows: usize,
+    packed_cols: usize,
+}
+
+#[derive(Clone, Copy, Default)]
+struct PackagedProofStats {
+    public_steps: usize,
+    proof_steps: usize,
+    final_main_claims: usize,
+    ccs_outputs: usize,
+    dec_children: usize,
+}
+
+#[derive(Clone, Copy, Default)]
+struct OpeningSurfaceTotals {
+    exact_claims: usize,
+    flatten_u64_words: usize,
+    logical_width: usize,
+    packed_rows: usize,
+    packed_cols: usize,
+    selected_labels: usize,
+    selected_claim_words: usize,
+    packaged_public_steps: usize,
+    packaged_proof_steps: usize,
+    packaged_final_main_claims: usize,
+    packaged_ccs_outputs: usize,
+    packaged_dec_children: usize,
+}
+
+#[derive(Clone, Copy, Default)]
+struct OpeningLabelBuckets {
+    stage1: usize,
+    stage2: usize,
+    stage3: usize,
+    kernel_binding: usize,
+    kernel_prepared_steps: usize,
+}
+
+#[derive(Clone, Copy)]
+struct ExactStagePerfRow<'a> {
+    label: &'a str,
+    records: usize,
+    selected_labels: usize,
+    selected_claim_words: usize,
+    flatten_u64_words: usize,
+    field_limb_width: usize,
+    packed_rows: usize,
+    packed_cols: usize,
+    flatten_ms: f64,
+    limb_encode_ms: f64,
+    context_setup_ms: f64,
+    ccs_encode_ms: f64,
+    ajtai_commit_ms: f64,
+    opening_manifest_ms: f64,
+    opening_prove_ms: f64,
+}
+
 fn perf_opcode_count_from_env() -> usize {
     match env::var("NS_DEBUG_N") {
         Ok(raw) => raw.parse().expect("NS_DEBUG_N must parse as usize"),
-        Err(_) => DEFAULT_DEBUG_N,
+        Err(_) => RV64IM_MIXED_OPCODE_PERF_DEFAULT_N,
     }
 }
 
@@ -88,69 +145,6 @@ fn family_index(family: Rv64FamilyTag) -> usize {
         Rv64FamilyTag::SignedDivRem => 5,
         Rv64FamilyTag::ControlFlow => 6,
     }
-}
-
-fn mixed_opcode_perf_source_case(opcode_count: usize) -> (Rv64imParitySourceCase, usize) {
-    let mixed_block = [
-        encode_addi(1, 1, 1),
-        encode_addi(2, 2, 3),
-        encode_add(3, 1, 2),
-        encode_slli(4, 3, 1),
-        encode_xor(5, 4, 2),
-        encode_mul(6, 5, 1),
-        encode_divu(7, 6, 1),
-        encode_remu(8, 6, 1),
-        encode_beq(1, 0, 8),
-        encode_sd(7, 0, PERF_MEMORY_ADDR as i16),
-        encode_ld(9, 0, PERF_MEMORY_ADDR as i16),
-        encode_and(11, 9, 5),
-        encode_addiw(12, 11, 7),
-    ];
-
-    let mut x1_increment_count = 0usize;
-    let mut program_words = Vec::with_capacity(opcode_count + 1);
-    while program_words.len() < opcode_count {
-        for (idx, word) in mixed_block.iter().copied().enumerate() {
-            if program_words.len() == opcode_count {
-                break;
-            }
-            if idx == 0 {
-                x1_increment_count += 1;
-            }
-            program_words.push(word);
-        }
-    }
-    program_words.push(encode_ecall());
-
-    let mut transcript_seed = b"rv64im-mixed-opcode-perf-snapshot-v1".to_vec();
-    transcript_seed.extend_from_slice(&(opcode_count as u64).to_le_bytes());
-
-    (
-        Rv64imParitySourceCase {
-            manifest: Rv64imParityCaseManifest {
-                name: "mixed_opcode_perf_snapshot".into(),
-                fixture_id: "mixed_opcode_perf_snapshot_v1".into(),
-                protocol_version_id: RV64IM_PARITY_PROTOCOL_VERSION_ID,
-                lowering_version_id: RV64IM_PARITY_LOWERING_VERSION_ID,
-                family_tags: vec![
-                    Rv64FamilyTag::NativeAlu,
-                    Rv64FamilyTag::Multiply,
-                    Rv64FamilyTag::UnsignedDivRem,
-                    Rv64FamilyTag::AlignedMemory,
-                    Rv64FamilyTag::ControlFlow,
-                ],
-            },
-            start_pc: START_PC,
-            program_words,
-            initial_registers: [0; RV64_REGISTER_COUNT],
-            initial_memory: vec![MemoryWord {
-                addr: PERF_MEMORY_ADDR,
-                value: 0,
-            }],
-            transcript_seed,
-        },
-        x1_increment_count,
-    )
 }
 
 fn millis_since(started: Instant) -> f64 {
@@ -283,6 +277,569 @@ fn print_lookup_summary(summary: LookupSummary, opcode_count: usize, twist_famil
     }
 }
 
+fn print_lookup_group_density(
+    summary: LookupSummary,
+    opcode_count: usize,
+    twist_family_counts: &[usize],
+    active_twist_family_count: usize,
+) {
+    print_section("Lookup Group Density");
+    println!(
+        "  {:20} {:>12} {:>10} {:>14} {:>16}",
+        "group_kind", "active_groups", "events", "events/group", "inactive_slots"
+    );
+    println!(
+        "  {:20} {:>12} {:>10} {:>14.4} {:>16}",
+        "read_regs",
+        summary.unique_read_regs,
+        summary.register_reads,
+        per_unit(summary.register_reads as f64, summary.unique_read_regs),
+        RV64_REGISTER_COUNT.saturating_sub(summary.unique_read_regs)
+    );
+    println!(
+        "  {:20} {:>12} {:>10} {:>14.4} {:>16}",
+        "write_regs",
+        summary.unique_write_regs,
+        summary.register_writes,
+        per_unit(summary.register_writes as f64, summary.unique_write_regs),
+        RV64_REGISTER_COUNT.saturating_sub(summary.unique_write_regs)
+    );
+    println!(
+        "  {:20} {:>12} {:>10} {:>14.4} {:>16}",
+        "ram_addrs",
+        summary.unique_ram_addrs,
+        summary.ram_events,
+        per_unit(summary.ram_events as f64, summary.unique_ram_addrs),
+        "n/a"
+    );
+    println!(
+        "  {:20} {:>12} {:>10} {:>14.4} {:>16}",
+        "twist_families",
+        active_twist_family_count,
+        summary.twist_links,
+        per_unit(summary.twist_links as f64, active_twist_family_count),
+        FAMILY_ORDER.len().saturating_sub(active_twist_family_count)
+    );
+    print_kv(
+        "used_lookup_groups (current proxy)",
+        format!(
+            "read_regs={} write_regs={} ram_addrs={} twist_families={}",
+            summary.unique_read_regs, summary.unique_write_regs, summary.unique_ram_addrs, active_twist_family_count
+        ),
+    );
+    print_kv(
+        "avg_lookup_events_per_non-halt_opcode",
+        format!(
+            "reads={:.4} writes={:.4} ram={:.4} twist={:.4}",
+            per_unit(summary.register_reads as f64, opcode_count),
+            per_unit(summary.register_writes as f64, opcode_count),
+            per_unit(summary.ram_events as f64, opcode_count),
+            per_unit(summary.twist_links as f64, opcode_count),
+        ),
+    );
+    print_kv(
+        "active_twist_families",
+        twist_family_counts
+            .iter()
+            .enumerate()
+            .filter(|(_, count)| **count > 0)
+            .map(|(idx, _)| family_label(FAMILY_ORDER[idx]))
+            .collect::<Vec<_>>()
+            .join(", "),
+    );
+}
+
+fn exact_stage_perf_rows(
+    output: &neo_fold_next::rv64im::SimpleKernelOutput,
+    perf: &SimpleKernelBuildPerf,
+) -> [ExactStagePerfRow<'static>; 3] {
+    [
+        ExactStagePerfRow {
+            label: "stage1",
+            records: output.stages.stage1.rows.len(),
+            selected_labels: perf.stage_package_bundle.stage1.selected_labels,
+            selected_claim_words: perf.stage_package_bundle.stage1.claim_words,
+            flatten_u64_words: perf.stage_claim_bundle.stage1.flatten_u64_words,
+            field_limb_width: perf.stage_claim_bundle.stage1.field_limb_width,
+            packed_rows: perf.stage_claim_bundle.stage1.packed_rows,
+            packed_cols: perf.stage_claim_bundle.stage1.packed_cols,
+            flatten_ms: perf.stage_claim_bundle.stage1.flatten_ms,
+            limb_encode_ms: perf.stage_claim_bundle.stage1.limb_encode_ms,
+            context_setup_ms: perf.stage_claim_bundle.stage1.context_setup_ms,
+            ccs_encode_ms: perf.stage_claim_bundle.stage1.ccs_encode_ms,
+            ajtai_commit_ms: perf.stage_claim_bundle.stage1.ajtai_commit_ms,
+            opening_manifest_ms: perf.stage_claim_bundle.stage1.opening_manifest_ms,
+            opening_prove_ms: perf.stage_claim_bundle.stage1.opening_prove_ms,
+        },
+        ExactStagePerfRow {
+            label: "stage2",
+            records: output.stages.stage2.register_reads.len()
+                + output.stages.stage2.register_writes.len()
+                + output.stages.stage2.ram_events.len()
+                + output.stages.stage2.twist_links.len()
+                + 4,
+            selected_labels: perf.stage_package_bundle.stage2.selected_labels,
+            selected_claim_words: perf.stage_package_bundle.stage2.claim_words,
+            flatten_u64_words: perf.stage_claim_bundle.stage2.flatten_u64_words,
+            field_limb_width: perf.stage_claim_bundle.stage2.field_limb_width,
+            packed_rows: perf.stage_claim_bundle.stage2.packed_rows,
+            packed_cols: perf.stage_claim_bundle.stage2.packed_cols,
+            flatten_ms: perf.stage_claim_bundle.stage2.flatten_ms,
+            limb_encode_ms: perf.stage_claim_bundle.stage2.limb_encode_ms,
+            context_setup_ms: perf.stage_claim_bundle.stage2.context_setup_ms,
+            ccs_encode_ms: perf.stage_claim_bundle.stage2.ccs_encode_ms,
+            ajtai_commit_ms: perf.stage_claim_bundle.stage2.ajtai_commit_ms,
+            opening_manifest_ms: perf.stage_claim_bundle.stage2.opening_manifest_ms,
+            opening_prove_ms: perf.stage_claim_bundle.stage2.opening_prove_ms,
+        },
+        ExactStagePerfRow {
+            label: "stage3",
+            records: output.stages.stage3.continuity.len() + 2,
+            selected_labels: perf.stage_package_bundle.stage3.selected_labels,
+            selected_claim_words: perf.stage_package_bundle.stage3.claim_words,
+            flatten_u64_words: perf.stage_claim_bundle.stage3.flatten_u64_words,
+            field_limb_width: perf.stage_claim_bundle.stage3.field_limb_width,
+            packed_rows: perf.stage_claim_bundle.stage3.packed_rows,
+            packed_cols: perf.stage_claim_bundle.stage3.packed_cols,
+            flatten_ms: perf.stage_claim_bundle.stage3.flatten_ms,
+            limb_encode_ms: perf.stage_claim_bundle.stage3.limb_encode_ms,
+            context_setup_ms: perf.stage_claim_bundle.stage3.context_setup_ms,
+            ccs_encode_ms: perf.stage_claim_bundle.stage3.ccs_encode_ms,
+            ajtai_commit_ms: perf.stage_claim_bundle.stage3.ajtai_commit_ms,
+            opening_manifest_ms: perf.stage_claim_bundle.stage3.opening_manifest_ms,
+            opening_prove_ms: perf.stage_claim_bundle.stage3.opening_prove_ms,
+        },
+    ]
+}
+
+fn selected_request_digests(output: &neo_fold_next::rv64im::SimpleKernelOutput) -> Vec<[u8; 32]> {
+    vec![
+        output.stage_packages.stage1.claim.points.first.digest,
+        output.stage_packages.stage1.claim.points.effect.digest,
+        output.stage_packages.stage1.claim.points.commit.digest,
+        output.stage_packages.stage1.claim.points.last.digest,
+        output.stage_packages.stage2.claim.points.first_read.digest,
+        output.stage_packages.stage2.claim.points.last_read.digest,
+        output.stage_packages.stage2.claim.points.first_write.digest,
+        output.stage_packages.stage2.claim.points.last_write.digest,
+        output.stage_packages.stage2.claim.points.first_ram.digest,
+        output.stage_packages.stage2.claim.points.last_ram.digest,
+        output.stage_packages.stage2.claim.points.first_twist.digest,
+        output.stage_packages.stage2.claim.points.last_twist.digest,
+        output
+            .stage_packages
+            .stage3
+            .claim
+            .points
+            .first_continuity
+            .digest,
+        output
+            .stage_packages
+            .stage3
+            .claim
+            .points
+            .last_continuity
+            .digest,
+        output
+            .kernel_opening
+            .claim
+            .bindings
+            .points
+            .first_binding
+            .digest,
+        output
+            .kernel_opening
+            .claim
+            .bindings
+            .points
+            .last_binding
+            .digest,
+        output
+            .kernel_opening
+            .claim
+            .prepared_steps
+            .points
+            .first_prepared_step
+            .digest,
+        output
+            .kernel_opening
+            .claim
+            .prepared_steps
+            .points
+            .last_prepared_step
+            .digest,
+    ]
+}
+
+fn print_exact_stage_witness_shape(rows: &[ExactStagePerfRow<'_>]) {
+    print_section("Exact Stage Witness Shape");
+    println!(
+        "  {:10} {:>8} {:>10} {:>10} {:>12} {:>12} {:>10} {:>12} {:>12} {:>10}",
+        "surface",
+        "records",
+        "pack_rows",
+        "pack_cols",
+        "u64_words",
+        "field_limbs",
+        "blowup",
+        "u64/record",
+        "limbs/record",
+        "selected"
+    );
+    for row in rows {
+        println!(
+            "  {:10} {:>8} {:>10} {:>10} {:>12} {:>12} {:>10.4} {:>12.4} {:>12.4} {:>10}",
+            row.label,
+            row.records,
+            row.packed_rows,
+            row.packed_cols,
+            row.flatten_u64_words,
+            row.field_limb_width,
+            per_unit(row.field_limb_width as f64, row.flatten_u64_words),
+            per_unit(row.flatten_u64_words as f64, row.records),
+            per_unit(row.field_limb_width as f64, row.records),
+            row.selected_labels,
+        );
+    }
+}
+
+fn print_selected_vs_exact_amplification(rows: &[ExactStagePerfRow<'_>]) {
+    print_section("Selected vs Exact Amplification");
+    println!(
+        "  {:10} {:>12} {:>12} {:>12} {:>14} {:>12} {:>12}",
+        "surface", "field_limbs", "claim_words", "labels", "exact/claim", "claim/label", "ms/label"
+    );
+    for row in rows {
+        println!(
+            "  {:10} {:>12} {:>12} {:>12} {:>14.4} {:>12.4} {:>12.4}",
+            row.label,
+            row.field_limb_width,
+            row.selected_claim_words,
+            row.selected_labels,
+            per_unit(row.field_limb_width as f64, row.selected_claim_words),
+            per_unit(row.selected_claim_words as f64, row.selected_labels),
+            per_unit(
+                row.flatten_ms
+                    + row.limb_encode_ms
+                    + row.context_setup_ms
+                    + row.ccs_encode_ms
+                    + row.ajtai_commit_ms
+                    + row.opening_manifest_ms
+                    + row.opening_prove_ms,
+                row.selected_labels,
+            ),
+        );
+    }
+}
+
+fn print_exact_stage_build_breakdown(rows: &[ExactStagePerfRow<'_>]) {
+    print_section("Exact Stage Build Breakdown");
+    println!(
+        "  {:10} {:>9} {:>9} {:>9} {:>9} {:>9} {:>9} {:>9}",
+        "surface", "flatten", "limb", "context", "ccs", "commit", "manifest", "proof"
+    );
+    for row in rows {
+        println!(
+            "  {:10} {:>9.3} {:>9.3} {:>9.3} {:>9.3} {:>9.3} {:>9.3} {:>9.3}",
+            row.label,
+            row.flatten_ms,
+            row.limb_encode_ms,
+            row.context_setup_ms,
+            row.ccs_encode_ms,
+            row.ajtai_commit_ms,
+            row.opening_manifest_ms,
+            row.opening_prove_ms,
+        );
+    }
+}
+
+fn print_opening_reuse_proxy(output: &neo_fold_next::rv64im::SimpleKernelOutput) {
+    let digests = selected_request_digests(output);
+    let unique_digests = digests.iter().copied().collect::<BTreeSet<_>>();
+    print_section("Opening Reuse Proxy");
+    print_kv("opening_requests_total", digests.len());
+    print_kv("opening_requests_unique_by_digest", unique_digests.len());
+    print_kv(
+        "opening_requests_aliasable_by_digest",
+        digests.len().saturating_sub(unique_digests.len()),
+    );
+    print_kv(
+        "opening_request_reuse_ratio",
+        format!(
+            "{:.4}",
+            per_unit(digests.len().saturating_sub(unique_digests.len()) as f64, digests.len())
+        ),
+    );
+}
+
+fn print_compact_opening_build_breakdown(perf: &SimpleKernelBuildPerf) {
+    print_section("Compact Opening Build Breakdown");
+    println!(
+        "  {:18} {:>8} {:>12} {:>12} {:>12}",
+        "surface", "labels", "claim_words", "package_ms", "ms/label"
+    );
+    for (label, stats) in [
+        ("stage1", perf.stage_package_bundle.stage1),
+        ("stage2", perf.stage_package_bundle.stage2),
+        ("stage3", perf.stage_package_bundle.stage3),
+        ("kernel_bindings", perf.kernel_opening_bundle.bindings),
+        ("kernel_prepared", perf.kernel_opening_bundle.prepared_steps),
+    ] {
+        println!(
+            "  {:18} {:>8} {:>12} {:>12.3} {:>12.4}",
+            label,
+            stats.selected_labels,
+            stats.claim_words,
+            stats.package_ms,
+            per_unit(stats.package_ms, stats.selected_labels),
+        );
+    }
+}
+
+fn print_verify_breakdown(
+    perf: &neo_fold_next::rv64im::Rv64imPublicProofVerifyPerf,
+    opcode_count: usize,
+    execution_rows: usize,
+) {
+    print_section("Verify Breakdown");
+    println!("  {:26} {:>12} {:>14} {:>14}", "phase", "wall ms", "ms/op", "ms/row");
+    for (label, ms) in [
+        ("public_claim_digests", perf.public_claim_digests_ms),
+        ("public_bundle_digests", perf.public_bundle_digests_ms),
+        ("public_bundle_bindings", perf.public_bundle_bindings_ms),
+        ("packaged_rebuild", perf.packaged_rebuild_ms),
+        ("verify_simple_kernel", perf.packaged_verify.simple_kernel.total_ms),
+        ("public_step_match", perf.packaged_verify.public_step_match_ms),
+        ("main_lane_verify", perf.packaged_verify.main_lane_verify_ms),
+        ("export_match", perf.export_match_ms),
+    ] {
+        println!(
+            "  {:26} {:>12.3} {:>14.4} {:>14.4}",
+            label,
+            ms,
+            per_unit(ms, opcode_count),
+            per_unit(ms, execution_rows),
+        );
+    }
+
+    println!();
+    println!("  {:26} {:>12}", "verify_simple_kernel subphase", "wall ms");
+    println!(
+        "  {:26} {:>12.3}",
+        "expected_core", perf.packaged_verify.simple_kernel.expected_core_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "trace_match", perf.packaged_verify.simple_kernel.trace_match_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "stages_match", perf.packaged_verify.simple_kernel.stages_match_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "stage_claims_match", perf.packaged_verify.simple_kernel.stage_claims_match_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "kernel_claims_match", perf.packaged_verify.simple_kernel.kernel_claims_match_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "stage_package_verify",
+        perf.packaged_verify
+            .simple_kernel
+            .stage_package_bundle
+            .total_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "kernel_opening_verify",
+        perf.packaged_verify
+            .simple_kernel
+            .kernel_opening_bundle
+            .total_ms
+    );
+}
+
+fn exact_opening_claim_stats(claims: &[ExactOpeningClaim]) -> ExactOpeningClaimStats {
+    let mut stats = ExactOpeningClaimStats::default();
+    for claim in claims {
+        stats.claims += 1;
+        stats.logical_width += claim.logical_width;
+        stats.packed_rows += claim.packed_rows;
+        stats.packed_cols += claim.packed_cols;
+    }
+    stats
+}
+
+fn packaged_proof_stats(packaged: &PackagedProof) -> PackagedProofStats {
+    let mut stats = PackagedProofStats {
+        public_steps: packaged.statement.steps.len(),
+        proof_steps: packaged.proof.session.steps.len(),
+        final_main_claims: packaged.proof.session.final_main_claims.len(),
+        ..PackagedProofStats::default()
+    };
+    for step in &packaged.proof.session.steps {
+        stats.ccs_outputs += step.ccs_outputs.len();
+        stats.dec_children += step.dec.children.len();
+    }
+    stats
+}
+
+fn opening_surface_totals(
+    build_perf: &SimpleKernelBuildPerf,
+    exact_claims: &[ExactOpeningClaimStats],
+    packaged_proofs: &[PackagedProofStats],
+    selected_labels: usize,
+) -> OpeningSurfaceTotals {
+    let mut totals = OpeningSurfaceTotals {
+        selected_labels,
+        flatten_u64_words: build_perf.stage_claim_bundle.stage1.flatten_u64_words
+            + build_perf.stage_claim_bundle.stage2.flatten_u64_words
+            + build_perf.stage_claim_bundle.stage3.flatten_u64_words,
+        selected_claim_words: build_perf.stage_package_bundle.stage1.claim_words
+            + build_perf.stage_package_bundle.stage2.claim_words
+            + build_perf.stage_package_bundle.stage3.claim_words
+            + build_perf.kernel_opening_bundle.bindings.claim_words
+            + build_perf.kernel_opening_bundle.prepared_steps.claim_words,
+        ..OpeningSurfaceTotals::default()
+    };
+    for stats in exact_claims {
+        totals.exact_claims += stats.claims;
+        totals.logical_width += stats.logical_width;
+        totals.packed_rows += stats.packed_rows;
+        totals.packed_cols += stats.packed_cols;
+    }
+    for stats in packaged_proofs {
+        totals.packaged_public_steps += stats.public_steps;
+        totals.packaged_proof_steps += stats.proof_steps;
+        totals.packaged_final_main_claims += stats.final_main_claims;
+        totals.packaged_ccs_outputs += stats.ccs_outputs;
+        totals.packaged_dec_children += stats.dec_children;
+    }
+    totals
+}
+
+fn opening_label_buckets(labels: &[OpeningPointLabel]) -> OpeningLabelBuckets {
+    let mut buckets = OpeningLabelBuckets::default();
+    for label in labels {
+        match label {
+            OpeningPointLabel::Stage1First
+            | OpeningPointLabel::Stage1Effect
+            | OpeningPointLabel::Stage1Commit
+            | OpeningPointLabel::Stage1Last => buckets.stage1 += 1,
+            OpeningPointLabel::Stage2FirstRead
+            | OpeningPointLabel::Stage2LastRead
+            | OpeningPointLabel::Stage2FirstWrite
+            | OpeningPointLabel::Stage2LastWrite
+            | OpeningPointLabel::Stage2FirstRam
+            | OpeningPointLabel::Stage2LastRam
+            | OpeningPointLabel::Stage2FirstTwist
+            | OpeningPointLabel::Stage2LastTwist => buckets.stage2 += 1,
+            OpeningPointLabel::Stage3FirstContinuity | OpeningPointLabel::Stage3LastContinuity => buckets.stage3 += 1,
+            OpeningPointLabel::KernelFirstBinding | OpeningPointLabel::KernelLastBinding => buckets.kernel_binding += 1,
+            OpeningPointLabel::KernelFirstPreparedStep | OpeningPointLabel::KernelLastPreparedStep => {
+                buckets.kernel_prepared_steps += 1
+            }
+        }
+    }
+    buckets
+}
+
+fn print_exact_opening_table(rows: &[(&str, ExactOpeningClaimStats)], opcode_count: usize, execution_rows: usize) {
+    print_section("Exact Opening Claims");
+    println!(
+        "  {:18} {:>8} {:>12} {:>12} {:>12} {:>10} {:>10}",
+        "surface", "claims", "field_limbs", "packed_rows", "packed_cols", "claims/op", "claims/row"
+    );
+    for (label, stats) in rows {
+        println!(
+            "  {:18} {:>8} {:>12} {:>12} {:>12} {:>10.4} {:>10.4}",
+            label,
+            stats.claims,
+            stats.logical_width,
+            stats.packed_rows,
+            stats.packed_cols,
+            per_unit(stats.claims as f64, opcode_count),
+            per_unit(stats.claims as f64, execution_rows),
+        );
+    }
+}
+
+fn print_packaged_proof_table(rows: &[(&str, PackagedProofStats)]) {
+    print_section("Packaged Opening Proofs");
+    println!(
+        "  {:18} {:>12} {:>12} {:>12} {:>12} {:>12}",
+        "surface", "public_steps", "proof_steps", "final_main", "ccs_outputs", "dec_children"
+    );
+    for (label, stats) in rows {
+        println!(
+            "  {:18} {:>12} {:>12} {:>12} {:>12} {:>12}",
+            label,
+            stats.public_steps,
+            stats.proof_steps,
+            stats.final_main_claims,
+            stats.ccs_outputs,
+            stats.dec_children,
+        );
+    }
+}
+
+fn print_opening_surface_totals(totals: OpeningSurfaceTotals, opcode_count: usize, execution_rows: usize) {
+    print_section("Opening Surface Totals");
+    print_kv("exact_claims_total", totals.exact_claims);
+    print_kv("selected_labels_total", totals.selected_labels);
+    print_kv("exact_stage_flatten_u64_words_total", totals.flatten_u64_words);
+    print_kv("exact_field_limb_width_total", totals.logical_width);
+    print_kv("selected_claim_words_total", totals.selected_claim_words);
+    print_kv("packed_rows_total", totals.packed_rows);
+    print_kv("packed_cols_total", totals.packed_cols);
+    print_kv("packaged_public_steps_total", totals.packaged_public_steps);
+    print_kv("packaged_proof_steps_total", totals.packaged_proof_steps);
+    print_kv("packaged_final_main_claims_total", totals.packaged_final_main_claims);
+    print_kv("packaged_ccs_outputs_total", totals.packaged_ccs_outputs);
+    print_kv("packaged_dec_children_total", totals.packaged_dec_children);
+    print_kv(
+        "exact_claims_per_non-halt_opcode",
+        format!("{:.4}", per_unit(totals.exact_claims as f64, opcode_count)),
+    );
+    print_kv(
+        "selected_labels_per_exact_claim",
+        format!("{:.4}", per_unit(totals.selected_labels as f64, totals.exact_claims)),
+    );
+    print_kv(
+        "exact_to_selected_amplification",
+        format!(
+            "{:.4}",
+            per_unit(totals.logical_width as f64, totals.selected_claim_words)
+        ),
+    );
+    print_kv(
+        "packaged_dec_children_per_execution_row",
+        format!("{:.4}", per_unit(totals.packaged_dec_children as f64, execution_rows)),
+    );
+}
+
+fn print_opening_label_summary(labels: &[OpeningPointLabel]) {
+    let buckets = opening_label_buckets(labels);
+    let rendered = labels
+        .iter()
+        .map(|label| format!("{label:?}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    print_section("Selected Opening Labels");
+    print_kv("total_labels", labels.len());
+    print_kv(
+        "bucket_counts",
+        format!(
+            "stage1={} stage2={} stage3={} kernel_binding={} kernel_prepared={}",
+            buckets.stage1, buckets.stage2, buckets.stage3, buckets.kernel_binding, buckets.kernel_prepared_steps
+        ),
+    );
+    print_kv("labels", rendered);
+}
+
 fn aggregate_family_rows(output: &neo_fold_next::rv64im::SimpleKernelOutput) -> [FamilyRowStats; FAMILY_ORDER.len()] {
     let mut stats = [FamilyRowStats::default(); FAMILY_ORDER.len()];
     for row in &output.trace.execution_rows {
@@ -348,8 +905,10 @@ fn aggregate_lookups(
 #[test]
 #[ignore = "performance/debugging snapshot; run with --release -- --ignored --nocapture"]
 fn rv64im_mixed_opcode_perf_snapshot() {
+    let end_to_end_started = Instant::now();
     let opcode_count = perf_opcode_count_from_env();
-    let (source, x1_increment_count) = mixed_opcode_perf_source_case(opcode_count);
+    let source = build_mixed_opcode_perf_source_case(opcode_count);
+    let x1_increment_count = mixed_opcode_perf_expected_x1(opcode_count);
     let total_opcodes = source.program_words.len();
     let input = Rv64imProofInput {
         source: source.clone(),
@@ -380,16 +939,17 @@ fn rv64im_mixed_opcode_perf_snapshot() {
     let parity_ms = millis_since(parity_started);
 
     let build_started = Instant::now();
-    let output = build_simple_kernel_witness(&input).expect("build simple kernel witness");
+    let (output, build_perf) = build_simple_kernel_witness_with_perf(&input).expect("build simple kernel witness");
     let build_ms = millis_since(build_started);
 
     let prove_started = Instant::now();
-    let (proved_witness, proof) = prove_rv64im_proof(&input).expect("prove rv64im proof");
+    let (proved_witness, proof, prove_perf) = prove_rv64im_proof_with_perf(&input).expect("prove rv64im proof");
     let prove_ms = millis_since(prove_started);
 
     let verify_started = Instant::now();
-    let verified_witness = verify_rv64im_proof(&input, &proof).expect("verify rv64im proof");
+    let (verified_witness, verify_perf) = verify_rv64im_proof_with_perf(&input, &proof).expect("verify rv64im proof");
     let verify_ms = millis_since(verify_started);
+    let end_to_end_ms = millis_since(end_to_end_started);
 
     let execution_row_count = output.trace.execution_rows.len();
     let real_row_count = output
@@ -413,6 +973,8 @@ fn rv64im_mixed_opcode_perf_snapshot() {
 
     let root_ccs = rv64im_root_main_lane_ccs().expect("build RV64IM root CCS");
     let root_params = rv64im_simple_root_params();
+    let root_ccs_n_p2 = root_ccs.n.next_power_of_two();
+    let root_ccs_m_p2 = root_ccs.m.next_power_of_two();
     let ccs_total_nnz: usize = root_ccs
         .matrices
         .iter()
@@ -432,6 +994,35 @@ fn rv64im_mixed_opcode_perf_snapshot() {
     let approx_trace_nnz = ccs_total_nnz.saturating_mul(output.prepared_steps.len());
     let family_rows = aggregate_family_rows(&output);
     let (lookup_summary, twist_family_counts) = aggregate_lookups(&output);
+    let active_twist_family_count = twist_family_counts
+        .iter()
+        .filter(|count| **count > 0)
+        .count();
+    let stage1_exact_openings = exact_opening_claim_stats(&output.stage_claims.stage1.opening_manifest.claims);
+    let stage2_exact_openings = exact_opening_claim_stats(&output.stage_claims.stage2.opening_manifest.claims);
+    let stage3_exact_openings = exact_opening_claim_stats(&output.stage_claims.stage3.opening_manifest.claims);
+    let stage1_packaged = packaged_proof_stats(&output.stage_packages.stage1.packaged);
+    let stage2_packaged = packaged_proof_stats(&output.stage_packages.stage2.packaged);
+    let stage3_packaged = packaged_proof_stats(&output.stage_packages.stage3.packaged);
+    let kernel_binding_packaged = packaged_proof_stats(&output.kernel_opening.bindings.packaged);
+    let kernel_prepared_packaged = packaged_proof_stats(&output.kernel_opening.prepared_steps.packaged);
+    let mut selected_opening_labels = output.stage_packages.stage1.claim.labels();
+    selected_opening_labels.extend(output.stage_packages.stage2.claim.labels());
+    selected_opening_labels.extend(output.stage_packages.stage3.claim.labels());
+    selected_opening_labels.extend(output.kernel_opening.claim.labels());
+    let opening_totals = opening_surface_totals(
+        &build_perf,
+        &[stage1_exact_openings, stage2_exact_openings, stage3_exact_openings],
+        &[
+            stage1_packaged,
+            stage2_packaged,
+            stage3_packaged,
+            kernel_binding_packaged,
+            kernel_prepared_packaged,
+        ],
+        selected_opening_labels.len(),
+    );
+    let exact_stage_rows = exact_stage_perf_rows(&output, &build_perf);
 
     assert_eq!(build.rows, output.trace.execution_rows);
     assert_eq!(build.final_state.pc, output.kernel_claims.kernel.final_pc);
@@ -494,7 +1085,7 @@ fn rv64im_mixed_opcode_perf_snapshot() {
         proof.kernel.stages.summary.transcript_event_count as usize,
         output.stages.transcript.events.len()
     );
-    assert_eq!(proof.statement.final_pc, START_PC + (total_opcodes as u64) * 4);
+    assert_eq!(proof.statement.final_pc, source.start_pc + (total_opcodes as u64) * 4);
     assert!(proof.statement.halted);
     assert_eq!(
         output.kernel_claims.kernel.final_registers[1],
@@ -503,12 +1094,15 @@ fn rv64im_mixed_opcode_perf_snapshot() {
     assert_eq!(output.kernel_claims.kernel.final_pc, proof.statement.final_pc);
     assert!(output.kernel_claims.kernel.halted);
     assert_eq!(output.kernel_claims.kernel.final_memory.len(), 1);
-    assert_eq!(output.kernel_claims.kernel.final_memory[0].addr, PERF_MEMORY_ADDR);
+    assert_eq!(
+        output.kernel_claims.kernel.final_memory[0].addr,
+        source.initial_memory[0].addr
+    );
 
     print_section("RV64IM Mixed Opcode Perf Snapshot");
     print_kv("ns_debug_n (non-halt ops)", opcode_count);
     print_kv("program_opcodes_total", total_opcodes);
-    print_kv("mixed_block_len", MIXED_BLOCK_LEN);
+    print_kv("mixed_block_len", RV64IM_MIXED_OPCODE_PERF_BLOCK_LEN);
     print_kv("family_tags", source.manifest.family_tags.len());
     print_kv("final_pc", proof.statement.final_pc);
     print_kv("final_x1", output.kernel_claims.kernel.final_registers[1]);
@@ -551,16 +1145,26 @@ fn rv64im_mixed_opcode_perf_snapshot() {
     print_kv("root_public_inputs", RV64IM_ROOT_PUBLIC_INPUTS);
     print_kv("constraints_per_step (n)", root_ccs.n);
     print_kv("columns_per_step (m)", root_ccs.m);
+    print_kv("constraints_per_step_p2", root_ccs_n_p2);
+    print_kv("columns_per_step_p2", root_ccs_m_p2);
     print_kv("matrix_count (t)", root_ccs.t());
     print_kv("max_degree", root_ccs.max_degree());
     print_kv("identity_matrices", ccs_identity_matrices);
-    print_kv("total_nnz_per_step", ccs_total_nnz);
+    print_kv("total_nnz_per_step (non-zero matrix entries)", ccs_total_nnz);
     print_kv(
-        "avg_nnz_per_constraint",
+        "avg_nnz_per_constraint (non-zero matrix entries)",
         format!("{:.4}", per_unit(ccs_total_nnz as f64, root_ccs.n)),
     );
     print_kv("approx_constraints_for_trace", approx_trace_constraints);
-    print_kv("approx_nnz_for_trace", approx_trace_nnz);
+    print_kv(
+        "approx_constraints_per_non-halt_opcode",
+        format!("{:.4}", per_unit(approx_trace_constraints as f64, opcode_count)),
+    );
+    print_kv("approx_nnz_for_trace (non-zero matrix entries)", approx_trace_nnz);
+    print_kv(
+        "approx_nnz_per_non-halt_opcode (non-zero matrix entries)",
+        format!("{:.4}", per_unit(approx_trace_nnz as f64, opcode_count)),
+    );
     print_kv(
         "root_params",
         format!(
@@ -590,6 +1194,36 @@ fn rv64im_mixed_opcode_perf_snapshot() {
 
     print_family_rows("Row Expansion by Family", &family_rows, opcode_count);
     print_lookup_summary(lookup_summary, opcode_count, &twist_family_counts);
+    print_lookup_group_density(
+        lookup_summary,
+        opcode_count,
+        &twist_family_counts,
+        active_twist_family_count,
+    );
+    print_exact_stage_witness_shape(&exact_stage_rows);
+    print_exact_opening_table(
+        &[
+            ("stage1", stage1_exact_openings),
+            ("stage2", stage2_exact_openings),
+            ("stage3", stage3_exact_openings),
+        ],
+        opcode_count,
+        execution_row_count,
+    );
+    print_selected_vs_exact_amplification(&exact_stage_rows);
+    print_exact_stage_build_breakdown(&exact_stage_rows);
+    print_packaged_proof_table(&[
+        ("stage1", stage1_packaged),
+        ("stage2", stage2_packaged),
+        ("stage3", stage3_packaged),
+        ("kernel_bindings", kernel_binding_packaged),
+        ("kernel_prepared", kernel_prepared_packaged),
+    ]);
+    print_compact_opening_build_breakdown(&build_perf);
+    print_opening_surface_totals(opening_totals, opcode_count, execution_row_count);
+    print_opening_reuse_proxy(&output);
+    print_opening_label_summary(&selected_opening_labels);
+    print_verify_breakdown(&verify_perf, opcode_count, execution_row_count);
 
     let total_executed_opcodes = build.executed_steps.len();
     let unique_opcode_labels = collect_unique_opcode_labels(&build);
@@ -607,5 +1241,13 @@ fn rv64im_mixed_opcode_perf_snapshot() {
     print_kv(
         "verifying time (avg) per opcode",
         format!("{:.4} ms", per_unit(verify_ms, total_executed_opcodes)),
+    );
+    print_kv("total end-to-end time", format!("{end_to_end_ms:.3} ms"));
+    print_kv(
+        "prove main-lane subphase",
+        format!(
+            "kernel_build={:.3} ms main_lane={:.3} ms export={:.3} ms",
+            prove_perf.simple_kernel.total_ms, prove_perf.packaged_main_lane_ms, prove_perf.public_export_ms
+        ),
     );
 }
