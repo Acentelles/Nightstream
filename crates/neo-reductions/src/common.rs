@@ -1138,15 +1138,18 @@ where
     Ff: PrimeField64 + PrimeCharacteristicRing + Copy,
     K: From<Ff>,
 {
-    let digits_by_col = build_witness_nc_digit_table(params, Z, expected_m)?;
+    let layout = witness_mat_layout(Z, expected_m)?;
     let mut yz = vec![K::ZERO; d_pad.max(D)];
     for col in 0..expected_m {
         let w = chi_s.get(col).copied().unwrap_or(K::ZERO);
         if w == K::ZERO {
             continue;
         }
+        let raw = witness_mat_get_f(Z, layout, expected_m, col % D, col);
+        let digits = decompose_balanced_fixed_d_digits_k(raw, params.b)
+            .map_err(|e| PiCcsError::InvalidInput(format!("witness logical_col={col} decomposition failed: {e}")))?;
         for rho in 0..D {
-            yz[rho] += digits_by_col[col][rho] * w;
+            yz[rho] += digits[rho] * w;
         }
     }
     yz.truncate(d_pad);

@@ -76,7 +76,7 @@ pub fn optimized_prove_with_cache<L: neo_ccs::traits::SModuleHomomorphism<F, Cmt
 
     // Dims + transcript binding
     let dims = utils::build_dims_and_policy(params, s)?;
-    utils::bind_header_and_instances(tr, params, s, mcs_list, dims)?;
+    utils::bind_header_and_instances_with_digest(tr, params, s, mcs_list, dims, cache.mat_digest())?;
     utils::bind_me_inputs(tr, me_inputs)?;
 
     // Sample challenges

@@ -5,12 +5,14 @@
 
 #![allow(non_snake_case)]
 
+use crate::engines::utils::digest_ccs_matrices_with_sparse_cache;
 use crate::error::PiCcsError;
 use crate::superneo_eval::{build_superneo_eval_cache, SuperneoEvalCache};
 use neo_ccs::CcsStructure;
 use neo_math::F;
 use neo_math::K;
 use p3_field::PrimeCharacteristicRing;
+use p3_goldilocks::Goldilocks;
 use std::sync::Arc;
 
 // Common types and utility functions shared across engines
@@ -135,6 +137,7 @@ impl PiCcsProof {
 pub use prove::optimized_prove as pi_ccs_prove;
 pub use prove::optimized_prove_with_cache;
 pub use verify::optimized_verify as pi_ccs_verify;
+pub use verify::optimized_verify_with_cache;
 
 /// Wrapper for simple case (k=1, no ME inputs)
 pub use prove::optimized_prove_simple as pi_ccs_prove_simple;
@@ -146,10 +149,12 @@ pub use oracle::OptimizedOracle as CcsOracle;
 pub struct OptimizedStructureCache {
     sparse: Arc<SparseCache<F>>,
     superneo: Arc<SuperneoEvalCache>,
+    mat_digest: [Goldilocks; 4],
 }
 
 impl OptimizedStructureCache {
     pub fn build(s: &CcsStructure<F>) -> Result<Self, PiCcsError> {
+        let sparse = Arc::new(SparseCache::build(s));
         let superneo = build_superneo_eval_cache(s).ok_or_else(|| {
             PiCcsError::InvalidInput(format!(
                 "optimized cache requires SuperNeo-compatible CCS shape (m={}, matrices={})",
@@ -157,9 +162,18 @@ impl OptimizedStructureCache {
                 s.matrices.len()
             ))
         })?;
+        let mat_digest: [Goldilocks; 4] = digest_ccs_matrices_with_sparse_cache(s, Some(sparse.as_ref()))
+            .try_into()
+            .map_err(|digest: Vec<Goldilocks>| {
+                PiCcsError::ProtocolError(format!(
+                    "optimized cache expected 4 CCS digest limbs, got {}",
+                    digest.len()
+                ))
+            })?;
         Ok(Self {
-            sparse: Arc::new(SparseCache::build(s)),
+            sparse,
             superneo: Arc::new(superneo),
+            mat_digest,
         })
     }
 
@@ -173,5 +187,9 @@ impl OptimizedStructureCache {
 
     pub(crate) fn superneo_arc(&self) -> Arc<SuperneoEvalCache> {
         self.superneo.clone()
+    }
+
+    pub(crate) fn mat_digest(&self) -> &[Goldilocks; 4] {
+        &self.mat_digest
     }
 }

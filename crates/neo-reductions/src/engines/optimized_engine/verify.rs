@@ -6,7 +6,7 @@
 #![allow(non_snake_case)]
 
 use crate::error::PiCcsError;
-use crate::optimized_engine::{PiCcsProof, PiCcsProofVariant};
+use crate::optimized_engine::{OptimizedStructureCache, PiCcsProof, PiCcsProofVariant};
 use neo_ajtai::Commitment as Cmt;
 use neo_ccs::{CcsClaim, CcsStructure, CeClaim};
 use neo_math::KExtensions;
@@ -28,12 +28,26 @@ pub fn optimized_verify(
     me_outputs: &[CeClaim<Cmt, F, K>],
     proof: &PiCcsProof,
 ) -> Result<bool, PiCcsError> {
+    let cache = OptimizedStructureCache::build(s)?;
+    optimized_verify_with_cache(tr, params, s, mcs_list, me_inputs, me_outputs, proof, &cache)
+}
+
+pub fn optimized_verify_with_cache(
+    tr: &mut Poseidon2Transcript,
+    params: &NeoParams,
+    s: &CcsStructure<F>,
+    mcs_list: &[CcsClaim<Cmt, F>],
+    me_inputs: &[CeClaim<Cmt, F, K>],
+    me_outputs: &[CeClaim<Cmt, F, K>],
+    proof: &PiCcsProof,
+    cache: &OptimizedStructureCache,
+) -> Result<bool, PiCcsError> {
     if mcs_list.is_empty() {
         return Err(PiCcsError::InvalidInput("optimized_verify: empty mcs_list".into()));
     }
 
     let dims = utils::build_dims_and_policy(params, s)?;
-    utils::bind_header_and_instances(tr, params, s, mcs_list, dims)?;
+    utils::bind_header_and_instances_with_digest(tr, params, s, mcs_list, dims, cache.mat_digest())?;
     utils::bind_me_inputs(tr, me_inputs)?;
     let mut ch = utils::sample_challenges(tr, dims.ell_d, dims.ell)?;
     ch.beta_m = utils::sample_beta_m(tr, dims.ell_m)?;
