@@ -15,9 +15,11 @@ use neo_reductions::error::PiCcsError;
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::PrimeCharacteristicRing;
 
-use crate::proof::{FinalProof, PackagedProof, PublicStatement, PublicStep, RunProof, StepProof};
+use crate::proof::{
+    ChunkProof, FinalProof, FoldSchedule, PackagedProof, PublicChunk, PublicStatement, PublicStep, RunProof,
+};
 use crate::prover::CommitmentMixers;
-use crate::run::verify_steps;
+use crate::run::verify_chunks;
 
 #[inline]
 fn extend_packed_bytes_as_fields(dst: &mut Vec<F>, bytes: &[u8]) {
@@ -56,6 +58,21 @@ fn public_step_digest_fields(step: &PublicStep) -> [F; 4] {
     poseidon_digest_fields(&digest_input)
 }
 
+fn append_fold_schedule_meta(tr: &mut Poseidon2Transcript, label: &'static [u8], schedule: FoldSchedule) {
+    tr.append_u64s(label, &schedule.meta_words());
+}
+
+fn public_chunk_digest_fields(chunk: &PublicChunk) -> [F; 4] {
+    let mut digest_input = Vec::<F>::with_capacity(32 + (chunk.steps.len() * 4));
+    extend_packed_bytes_as_fields(&mut digest_input, b"neo.fold.next/finalize/public_chunk_digest/v1");
+    digest_input.push(F::from_u64(chunk.start_index as u64));
+    digest_input.push(F::from_u64(chunk.steps.len() as u64));
+    for step in &chunk.steps {
+        digest_input.extend_from_slice(&public_step_digest_fields(step));
+    }
+    poseidon_digest_fields(&digest_input)
+}
+
 fn ce_claim_ref_digest_fields(claim: &CeClaim<Commitment, F, K>) -> [F; 4] {
     let mut digest_input = Vec::<F>::with_capacity(32);
     extend_packed_bytes_as_fields(&mut digest_input, b"neo.fold.next/finalize/ce_claim_ref_digest/v1");
@@ -66,36 +83,40 @@ fn ce_claim_ref_digest_fields(claim: &CeClaim<Commitment, F, K>) -> [F; 4] {
     poseidon_digest_fields(&digest_input)
 }
 
-fn step_proof_compact_digest_fields(step: &StepProof) -> [F; 4] {
-    let mut digest_input = Vec::<F>::with_capacity(96);
+fn chunk_proof_compact_digest_fields(chunk: &ChunkProof) -> [F; 4] {
+    let mut digest_input = Vec::<F>::with_capacity(128 + (chunk.chunk.steps.len() * 4));
     extend_packed_bytes_as_fields(
         &mut digest_input,
-        b"neo.fold.next/finalize/step_proof_compact_digest/v1",
+        b"neo.fold.next/finalize/chunk_proof_compact_digest/v1",
     );
-    digest_input.push(F::from_u64(step.ccs_outputs.len() as u64));
-    digest_input.push(F::from_u64(step.rlc.rhos.len() as u64));
-    digest_input.push(F::from_u64(step.dec.children.len() as u64));
-    extend_packed_bytes_as_fields(&mut digest_input, &step.ccs_proof.header_digest);
-    digest_input.extend_from_slice(&ce_claim_ref_digest_fields(&step.rlc.parent));
-    for child in &step.dec.children {
+    digest_input.extend_from_slice(&public_chunk_digest_fields(&chunk.chunk));
+    digest_input.push(F::from_u64(chunk.ccs_outputs.len() as u64));
+    digest_input.push(F::from_u64(chunk.rlc.rhos.len() as u64));
+    digest_input.push(F::from_u64(chunk.dec.children.len() as u64));
+    extend_packed_bytes_as_fields(&mut digest_input, &chunk.ccs_proof.header_digest);
+    digest_input.extend_from_slice(&ce_claim_ref_digest_fields(&chunk.rlc.parent));
+    for child in &chunk.dec.children {
         digest_input.extend_from_slice(&ce_claim_ref_digest_fields(child));
     }
     poseidon_digest_fields(&digest_input)
 }
 
-fn digest_public_statement(steps: &[PublicStep], final_main_claims: &[CeClaim<Commitment, F, K>]) -> [u8; 32] {
+fn digest_public_statement(
+    schedule: FoldSchedule,
+    chunks: &[PublicChunk],
+    final_main_claims: &[CeClaim<Commitment, F, K>],
+) -> [u8; 32] {
     let mut tr = Poseidon2Transcript::new(b"neo.fold.next/final_statement");
-    tr.append_message(b"neo.fold.next/final_statement/version", b"v1");
+    tr.append_message(b"neo.fold.next/final_statement/version", b"v2");
+    append_fold_schedule_meta(&mut tr, b"neo.fold.next/final_statement/fold_schedule", schedule);
     tr.append_u64s(
         b"neo.fold.next/final_statement/header",
-        &[steps.len() as u64, final_main_claims.len() as u64],
+        &[chunks.len() as u64, final_main_claims.len() as u64],
     );
     tr.append_fields_iter(
-        b"neo.fold.next/final_statement/step_digest",
-        steps.len() * 4,
-        steps
-            .iter()
-            .flat_map(|step| public_step_digest_fields(step)),
+        b"neo.fold.next/final_statement/chunk_digest",
+        chunks.len() * 4,
+        chunks.iter().flat_map(public_chunk_digest_fields),
     );
     tr.append_fields_iter(
         b"neo.fold.next/final_statement/final_main_claim_digest",
@@ -109,55 +130,99 @@ fn digest_public_statement(steps: &[PublicStep], final_main_claims: &[CeClaim<Co
 
 fn digest_final_proof(statement_digest: &[u8; 32], session: &RunProof) -> [u8; 32] {
     let mut tr = Poseidon2Transcript::new(b"neo.fold.next/final_proof");
-    tr.append_message(b"neo.fold.next/final_proof/version", b"v3");
+    tr.append_message(b"neo.fold.next/final_proof/version", b"v4");
     tr.append_message(b"neo.fold.next/final_proof/statement_digest", statement_digest);
+    append_fold_schedule_meta(
+        &mut tr,
+        b"neo.fold.next/final_proof/fold_schedule",
+        session.fold_schedule,
+    );
     tr.append_u64s(
         b"neo.fold.next/final_proof/header",
-        &[session.steps.len() as u64, session.final_main_claims.len() as u64],
+        &[session.chunks.len() as u64, session.final_main_claims.len() as u64],
     );
     tr.append_fields_iter(
-        b"neo.fold.next/final_proof/step_digest",
-        session.steps.len() * 4,
+        b"neo.fold.next/final_proof/chunk_digest",
+        session.chunks.len() * 4,
         session
-            .steps
+            .chunks
             .iter()
-            .flat_map(|step| step_proof_compact_digest_fields(step)),
+            .flat_map(chunk_proof_compact_digest_fields),
     );
     tr.digest32()
 }
 
-fn validate_public_steps_against_session(steps: &[PublicStep], session: &RunProof) -> Result<(), PiCcsError> {
-    if steps.len() != session.steps.len() {
+fn validate_public_chunks_against_session(chunks: &[PublicChunk], session: &RunProof) -> Result<(), PiCcsError> {
+    if chunks.len() != session.chunks.len() {
         return Err(PiCcsError::InvalidInput(format!(
-            "finalizer step mismatch: public steps={}, session steps={}",
-            steps.len(),
-            session.steps.len()
+            "finalizer chunk mismatch: public chunks={}, session chunks={}",
+            chunks.len(),
+            session.chunks.len()
         )));
     }
-    for (idx, (step, proved)) in steps.iter().zip(session.steps.iter()).enumerate() {
-        if proved.step.label != step.label
-            || proved.step.mcs.m_in != step.mcs.m_in
-            || proved.step.mcs.x != step.mcs.x
-            || proved.step.mcs.c != step.mcs.c
-        {
+    for (chunk_idx, (chunk, proved)) in chunks.iter().zip(session.chunks.iter()).enumerate() {
+        if chunk.start_index != proved.chunk.start_index {
             return Err(PiCcsError::InvalidInput(format!(
-                "finalizer step[{idx}] public/proof mismatch for '{}'",
-                step.label
+                "finalizer chunk[{chunk_idx}] start mismatch: {} != {}",
+                chunk.start_index, proved.chunk.start_index
             )));
+        }
+        if chunk.steps.len() != proved.chunk.steps.len() {
+            return Err(PiCcsError::InvalidInput(format!(
+                "finalizer chunk[{chunk_idx}] length mismatch: {} != {}",
+                chunk.steps.len(),
+                proved.chunk.steps.len()
+            )));
+        }
+        for (step_idx, (step, proved_step)) in chunk
+            .steps
+            .iter()
+            .zip(proved.chunk.steps.iter())
+            .enumerate()
+        {
+            if proved_step.label != step.label
+                || proved_step.mcs.m_in != step.mcs.m_in
+                || proved_step.mcs.x != step.mcs.x
+                || proved_step.mcs.c != step.mcs.c
+            {
+                return Err(PiCcsError::InvalidInput(format!(
+                    "finalizer chunk[{chunk_idx}] step[{step_idx}] public/proof mismatch for '{}'",
+                    step.label
+                )));
+            }
         }
     }
     Ok(())
 }
 
-pub fn package_session_proof(steps: Vec<PublicStep>, session: RunProof) -> Result<PackagedProof, PiCcsError> {
-    validate_public_steps_against_session(&steps, &session)?;
+fn validate_chunk_schedule(
+    schedule: FoldSchedule,
+    chunk_count: usize,
+    public_step_count: usize,
+) -> Result<(), PiCcsError> {
+    let expected = schedule.chunk_count(public_step_count)?;
+    if expected != chunk_count {
+        return Err(PiCcsError::InvalidInput(format!(
+            "chunk count {} does not match {:?} for {} public steps",
+            chunk_count, schedule, public_step_count
+        )));
+    }
+    Ok(())
+}
 
-    let statement_digest = digest_public_statement(&steps, &session.final_main_claims);
+pub fn package_session_proof(chunks: Vec<PublicChunk>, session: RunProof) -> Result<PackagedProof, PiCcsError> {
+    validate_public_chunks_against_session(&chunks, &session)?;
+    let public_step_count = chunks.iter().map(|chunk| chunk.steps.len()).sum();
+    validate_chunk_schedule(session.fold_schedule, chunks.len(), public_step_count)?;
+
+    let statement_digest = digest_public_statement(session.fold_schedule, &chunks, &session.final_main_claims);
     let proof_digest = digest_final_proof(&statement_digest, &session);
 
     Ok(PackagedProof {
         statement: PublicStatement {
-            steps,
+            fold_schedule: session.fold_schedule,
+            chunk_count: chunks.len() as u64,
+            chunks,
             final_main_claims: session.final_main_claims.clone(),
             digest: statement_digest,
         },
@@ -169,8 +234,8 @@ pub fn package_session_proof(steps: Vec<PublicStep>, session: RunProof) -> Resul
     })
 }
 
-pub fn package_proof(steps: Vec<PublicStep>, session: RunProof) -> Result<PackagedProof, PiCcsError> {
-    package_session_proof(steps, session)
+pub fn package_proof(chunks: Vec<PublicChunk>, session: RunProof) -> Result<PackagedProof, PiCcsError> {
+    package_session_proof(chunks, session)
 }
 
 pub fn verify_finalized_session<MR, MB>(
@@ -184,10 +249,34 @@ where
     MR: Fn(&[Mat<F>], &[Commitment]) -> Commitment + Clone + Copy,
     MB: Fn(&[Commitment], u32) -> Commitment + Clone + Copy,
 {
-    let expected_statement_digest =
-        digest_public_statement(&packaged.statement.steps, &packaged.statement.final_main_claims);
+    let expected_statement_digest = digest_public_statement(
+        packaged.statement.fold_schedule,
+        &packaged.statement.chunks,
+        &packaged.statement.final_main_claims,
+    );
     if packaged.statement.digest != expected_statement_digest {
         return Err(PiCcsError::ProtocolError("final statement digest mismatch".into()));
+    }
+    let public_step_count = packaged
+        .statement
+        .chunks
+        .iter()
+        .map(|chunk| chunk.steps.len())
+        .sum();
+    if packaged.statement.chunk_count as usize != packaged.statement.chunks.len() {
+        return Err(PiCcsError::ProtocolError(
+            "final statement chunk_count does not match chunk list".into(),
+        ));
+    }
+    validate_chunk_schedule(
+        packaged.statement.fold_schedule,
+        packaged.statement.chunks.len(),
+        public_step_count,
+    )?;
+    if packaged.proof.session.fold_schedule != packaged.statement.fold_schedule {
+        return Err(PiCcsError::ProtocolError(
+            "final proof schedule does not match public statement schedule".into(),
+        ));
     }
 
     let expected_digest = digest_final_proof(&packaged.statement.digest, &packaged.proof.session);
@@ -195,11 +284,11 @@ where
         return Err(PiCcsError::ProtocolError("final proof digest mismatch".into()));
     }
 
-    let verified = verify_steps(
+    let verified = verify_chunks(
         mode,
         params,
         s,
-        &packaged.statement.steps,
+        &packaged.statement.chunks,
         &packaged.proof.session,
         mixers,
     )?;

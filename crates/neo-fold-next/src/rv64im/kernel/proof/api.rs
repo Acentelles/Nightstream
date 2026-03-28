@@ -4,7 +4,7 @@ use neo_transcript::{Poseidon2Transcript, Transcript};
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 
-use crate::proof::PackagedProof;
+use crate::proof::{FoldSchedule, PackagedProof};
 
 use super::main_lane_artifact::build_simple_kernel_main_lane_artifact_from_summary;
 use super::proof_bridge::proof_from_public_kernel_and_artifact;
@@ -28,6 +28,8 @@ pub type Rv64imProofInput = SimpleKernelPublicInput;
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Rv64imProofStatement {
     pub root_params_id: [u8; 32],
+    pub fold_schedule: FoldSchedule,
+    pub chunk_count: u64,
     pub stage_claims_digest: [u8; 32],
     pub stage_packages_digest: [u8; 32],
     pub kernel_opening_digest: [u8; 32],
@@ -164,8 +166,23 @@ pub struct Rv64imKernelClaimBundle {
 pub struct Rv64imMainLaneProofBinding {
     pub root_lane_columns_digest: [u8; 32],
     pub root_lane_commitment_digest: [u8; 32],
+    pub fold_schedule: FoldSchedule,
+    pub chunk_count: u64,
     pub public_step_count: u64,
     pub digest: [u8; 32],
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Rv64imPublicProofOptions {
+    pub root_fold_schedule: FoldSchedule,
+}
+
+impl Default for Rv64imPublicProofOptions {
+    fn default() -> Self {
+        Self {
+            root_fold_schedule: FoldSchedule::WholeTrace,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -210,6 +227,10 @@ impl Rv64imProofStatement {
     pub(super) fn expected_digest(&self) -> [u8; 32] {
         let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/proof_statement");
         tr.append_message(b"rv64im/proof_statement/root_params_id", &self.root_params_id);
+        tr.append_u64s(
+            b"rv64im/proof_statement/fold_schedule",
+            &self.fold_schedule.meta_words(),
+        );
         tr.append_message(b"rv64im/proof_statement/stage_claims_digest", &self.stage_claims_digest);
         tr.append_message(
             b"rv64im/proof_statement/stage_packages_digest",
@@ -239,7 +260,12 @@ impl Rv64imProofStatement {
         );
         tr.append_u64s(
             b"rv64im/proof_statement/meta",
-            &[self.public_step_count, self.final_pc, self.halted as u64],
+            &[
+                self.chunk_count,
+                self.public_step_count,
+                self.final_pc,
+                self.halted as u64,
+            ],
         );
         tr.digest32()
     }
@@ -459,7 +485,14 @@ impl Rv64imMainLaneProofBinding {
             b"rv64im/main_lane_proof_binding/root_lane_commitment_digest",
             &self.root_lane_commitment_digest,
         );
-        tr.append_u64s(b"rv64im/main_lane_proof_binding/meta", &[self.public_step_count]);
+        tr.append_u64s(
+            b"rv64im/main_lane_proof_binding/fold_schedule",
+            &self.fold_schedule.meta_words(),
+        );
+        tr.append_u64s(
+            b"rv64im/main_lane_proof_binding/meta",
+            &[self.chunk_count, self.public_step_count],
+        );
         tr.digest32()
     }
 }
@@ -486,6 +519,14 @@ impl Rv64imMainLaneProofBundle {
 
     pub fn public_step_count(&self) -> u64 {
         self.binding.public_step_count
+    }
+
+    pub fn fold_schedule(&self) -> FoldSchedule {
+        self.binding.fold_schedule
+    }
+
+    pub fn chunk_count(&self) -> u64 {
+        self.binding.chunk_count
     }
 
     pub fn statement_digest(&self) -> [u8; 32] {
@@ -563,6 +604,7 @@ pub fn build_rv64im_audit_witness_bundle(
 
 fn prove_rv64im_public_proof_and_sidecar_with_perf(
     input: &Rv64imProofInput,
+    options: Rv64imPublicProofOptions,
 ) -> Result<
     (
         (
@@ -577,9 +619,13 @@ fn prove_rv64im_public_proof_and_sidecar_with_perf(
     let total_started = Instant::now();
     let ((kernel, sidecar), simple_kernel) = build_public_simple_kernel_output_and_witness_with_perf(input)?;
     let main_lane_started = Instant::now();
-    let main_lane =
-        build_simple_kernel_main_lane_artifact_from_summary(&kernel.root_lane_columns, &kernel.root_lane_commitment)?;
-    let root_main_lane = build_root_main_lane_packaged_proof(&sidecar.trace.execution_rows)?;
+    let main_lane = build_simple_kernel_main_lane_artifact_from_summary(
+        &kernel.root_lane_columns,
+        &kernel.root_lane_commitment,
+        options.root_fold_schedule,
+    )?;
+    let root_main_lane =
+        build_root_main_lane_packaged_proof(&sidecar.trace.execution_rows, options.root_fold_schedule)?;
     let main_lane_ms = main_lane_started.elapsed().as_secs_f64() * 1_000.0;
     let export_started = Instant::now();
     let witness = proof_witness_bundle_from_public_kernel_and_trace_stages(&kernel, &sidecar.trace, &sidecar.stages)?;
@@ -599,10 +645,25 @@ pub fn prove_rv64im_public_proof(input: &Rv64imProofInput) -> Result<Rv64imProof
     Ok(proof)
 }
 
+pub fn prove_rv64im_public_proof_with_options(
+    input: &Rv64imProofInput,
+    options: Rv64imPublicProofOptions,
+) -> Result<Rv64imProof, SimpleKernelError> {
+    let (proof, _) = prove_rv64im_public_proof_with_options_and_perf(input, options)?;
+    Ok(proof)
+}
+
 pub fn prove_rv64im_public_proof_with_perf(
     input: &Rv64imProofInput,
 ) -> Result<(Rv64imProof, Rv64imProofProvePerf), SimpleKernelError> {
-    let ((_, _), proof, perf) = prove_rv64im_public_proof_and_sidecar_with_perf(input)?;
+    prove_rv64im_public_proof_with_options_and_perf(input, Rv64imPublicProofOptions::default())
+}
+
+pub fn prove_rv64im_public_proof_with_options_and_perf(
+    input: &Rv64imProofInput,
+    options: Rv64imPublicProofOptions,
+) -> Result<(Rv64imProof, Rv64imProofProvePerf), SimpleKernelError> {
+    let ((_, _), proof, perf) = prove_rv64im_public_proof_and_sidecar_with_perf(input, options)?;
     Ok((proof, perf))
 }
 
@@ -616,7 +677,8 @@ pub fn prove_rv64im_audit_proof(
 pub fn prove_rv64im_audit_proof_with_perf(
     input: &Rv64imProofInput,
 ) -> Result<(Rv64imProofWitnessBundle, Rv64imProof, Rv64imProofProvePerf), SimpleKernelError> {
-    let ((_, _), proof, perf) = prove_rv64im_public_proof_and_sidecar_with_perf(input)?;
+    let ((_, _), proof, perf) =
+        prove_rv64im_public_proof_and_sidecar_with_perf(input, Rv64imPublicProofOptions::default())?;
     Ok((proof.witness.clone(), proof, perf))
 }
 

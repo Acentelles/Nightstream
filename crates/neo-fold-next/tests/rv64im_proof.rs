@@ -1,8 +1,11 @@
 //! Focused tests for the final public RV64IM proof API.
 
+use neo_fold_next::proof::FoldSchedule;
 use neo_fold_next::rv64im::{
     build_main_lane_surface, parity_source_cases, prove_rv64im_audit_proof as prove_rv64im_proof,
-    validate_rv64im_public_proof_against_input, verify_rv64im_audit_proof as verify_rv64im_proof, Rv64imProofInput,
+    prove_rv64im_public_proof, prove_rv64im_public_proof_with_options, validate_rv64im_public_proof_against_input,
+    verify_rv64im_audit_proof as verify_rv64im_proof, verify_rv64im_public_proof, Rv64imProofInput,
+    Rv64imPublicProofOptions,
 };
 use neo_fold_next::rv64im::{
     Rv64imKernelClaimProofBundle, Rv64imKernelProofBundle, Rv64imStageClaimDigestBundle, Rv64imStageClaimProofBundle,
@@ -331,6 +334,70 @@ fn rv64im_proof_roundtrip_matches_kernel_export() {
 }
 
 #[test]
+fn rv64im_public_proof_defaults_to_whole_trace_root_chunk() {
+    let input = proof_input("control_flow_jal_skip_ecall");
+
+    let proof = prove_rv64im_public_proof(&input).expect("prove public proof");
+    verify_rv64im_public_proof(&proof).expect("verify public proof");
+
+    assert_eq!(proof.statement.fold_schedule, FoldSchedule::WholeTrace);
+    assert_eq!(proof.statement.chunk_count, 1);
+    assert_eq!(proof.kernel.main_lane.fold_schedule(), FoldSchedule::WholeTrace);
+    assert_eq!(proof.kernel.main_lane.chunk_count(), 1);
+    assert_eq!(proof.kernel.main_lane.packaged.statement.chunks.len(), 1);
+    assert_eq!(proof.kernel.main_lane.packaged.proof.session.chunks.len(), 1);
+
+    let chunk = &proof.kernel.main_lane.packaged.statement.chunks[0];
+    assert_eq!(chunk.start_index, 0);
+    assert_eq!(chunk.steps.len() as u64, proof.statement.public_step_count);
+}
+
+#[test]
+fn rv64im_public_proof_rows_per_chunk_schedule_is_contiguous() {
+    let input = proof_input("control_flow_jal_skip_ecall");
+    let options = Rv64imPublicProofOptions {
+        root_fold_schedule: FoldSchedule::RowsPerChunk(7),
+    };
+
+    let proof = prove_rv64im_public_proof_with_options(&input, options).expect("prove chunked public proof");
+    verify_rv64im_public_proof(&proof).expect("verify chunked public proof");
+
+    assert_eq!(proof.statement.fold_schedule, FoldSchedule::RowsPerChunk(7));
+    assert_eq!(proof.kernel.main_lane.fold_schedule(), FoldSchedule::RowsPerChunk(7));
+    assert_eq!(
+        proof.statement.chunk_count as usize,
+        proof.kernel.main_lane.packaged.statement.chunks.len()
+    );
+
+    let mut next_start = 0usize;
+    for (idx, chunk) in proof
+        .kernel
+        .main_lane
+        .packaged
+        .statement
+        .chunks
+        .iter()
+        .enumerate()
+    {
+        assert_eq!(chunk.start_index, next_start);
+        assert!(!chunk.steps.is_empty());
+        if idx + 1 < proof.kernel.main_lane.packaged.statement.chunks.len() {
+            assert_eq!(chunk.steps.len(), 7);
+        } else {
+            assert!(chunk.steps.len() <= 7);
+        }
+        next_start += chunk.steps.len();
+    }
+
+    assert_eq!(next_start as u64, proof.statement.public_step_count);
+    assert_eq!(next_start as u64, proof.kernel.main_lane.public_step_count());
+    assert_eq!(
+        proof.kernel.main_lane.packaged.proof.session.chunks.len(),
+        proof.kernel.main_lane.packaged.statement.chunks.len()
+    );
+}
+
+#[test]
 fn rv64im_proof_rejects_tampered_root_main_lane_packaged_proof() {
     let input = proof_input("control_flow_jal_skip_ecall");
     let (_, mut proof) = prove_rv64im_proof(&input).expect("prove rv64im proof");
@@ -338,6 +405,40 @@ fn rv64im_proof_rejects_tampered_root_main_lane_packaged_proof() {
     proof.kernel.main_lane.packaged.proof.proof_digest[0] ^= 1;
 
     verify_rv64im_proof(&proof).expect_err("tampered root main-lane packaged proof must fail");
+}
+
+#[test]
+fn rv64im_public_proof_rejects_tampered_fold_schedule_and_chunk_layout() {
+    let input = proof_input("control_flow_jal_skip_ecall");
+    let options = Rv64imPublicProofOptions {
+        root_fold_schedule: FoldSchedule::RowsPerChunk(7),
+    };
+
+    let mut tampered_schedule =
+        prove_rv64im_public_proof_with_options(&input, options).expect("prove chunked public proof");
+    tampered_schedule.statement.fold_schedule = FoldSchedule::WholeTrace;
+    verify_rv64im_public_proof(&tampered_schedule).expect_err("tampered public statement fold schedule must fail");
+
+    let mut tampered_chunk_count =
+        prove_rv64im_public_proof_with_options(&input, options).expect("prove chunked public proof");
+    tampered_chunk_count
+        .kernel
+        .main_lane
+        .packaged
+        .statement
+        .chunk_count += 1;
+    verify_rv64im_public_proof(&tampered_chunk_count).expect_err("tampered packaged chunk count must fail");
+
+    let mut tampered_start_index =
+        prove_rv64im_public_proof_with_options(&input, options).expect("prove chunked public proof");
+    tampered_start_index
+        .kernel
+        .main_lane
+        .packaged
+        .statement
+        .chunks[0]
+        .start_index += 1;
+    verify_rv64im_public_proof(&tampered_start_index).expect_err("tampered chunk start index must fail");
 }
 
 #[test]

@@ -52,6 +52,8 @@ pub(super) fn main_lane_proof_bundle_from_artifact(
     let binding = Rv64imMainLaneProofBinding {
         root_lane_columns_digest: main_lane.binding.root_lane_columns_digest,
         root_lane_commitment_digest: main_lane.binding.root_lane_commitment_digest,
+        fold_schedule: main_lane.binding.fold_schedule,
+        chunk_count: main_lane.binding.chunk_count,
         public_step_count: main_lane.binding.public_step_count,
         digest: [0; 32],
     };
@@ -293,6 +295,8 @@ pub(super) fn proof_from_public_kernel_and_artifact(
     let kernel_claims = kernel_claim_proof_bundle_from_claims(&kernel.kernel_claims)?;
     let statement = Rv64imProofStatement {
         root_params_id: rv64im_simple_root_context_id(),
+        fold_schedule: main_lane.binding.fold_schedule,
+        chunk_count: main_lane.binding.chunk_count,
         stage_claims_digest: stage_claims.digest,
         stage_packages_digest: stage_packages.digest,
         kernel_opening_digest: kernel_opening.digest,

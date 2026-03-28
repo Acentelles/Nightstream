@@ -2456,6 +2456,31 @@ the expanded semantic trace itself, not merely over exported summaries of it. A
 future bridge layer may additionally expose architectural-sequence boundaries,
 but the kernel proof object is defined over the expanded trace.
 
+The packaging of that root theorem is parameterized by one proof-bound fold
+schedule:
+
+```text
+FoldSchedule ::= WholeTrace | RowsPerChunk(n), where n >= 1
+```
+
+Let the active semantic interval be `[0, N)`. The schedule induces one ordered
+contiguous chunk partition:
+
+- `WholeTrace` means one chunk covering all semantic rows,
+- `RowsPerChunk(n)` means consecutive chunks of size at most `n`, with every
+  non-final chunk of size exactly `n`,
+- there are no overlaps, no skipped rows, and no out-of-order chunks.
+
+For each chunk `q`, the root theorem runs exactly:
+
+- one `Π_CCS` over the fresh semantic rows in that chunk plus the carried CE
+  claims from the previous chunk,
+- one `Π_RLC`,
+- one `Π_DEC`.
+
+`RowsPerChunk(1)` is therefore the legacy per-row fold cadence. The theorem-
+facing default for RV64IM is `WholeTrace`.
+
 ### 8.3 What is not projected
 
 The following are deferred auxiliary obligations:
@@ -2482,8 +2507,8 @@ For this kernel version, the normative bridge mechanism is:
 
 - explicit row-opening / row-membership proofs from `C_lane`,
 - followed by `RootEncode(z_j)`,
-- followed by an accepted root main-lane CCS proof package for the
-  authenticated semantic row,
+- followed by an accepted root main-lane CCS proof package whose carried
+  `FoldSchedule` and chunk partition include the authenticated semantic row,
 - with recomputation of the root Ajtai commitment
   `PreparedStep_j.mcs.c = Ajtai_commit(Z_j)` required whenever a private
   `PreparedStep_j` helper is exported.
@@ -2814,8 +2839,28 @@ boundary is owned by:
 - one committed root lane family for the full `38 × T` semantic-row object,
 - canonical selected row refs into that committed family,
 - an accepted root main-lane CCS proof package over the authenticated semantic
-  rows,
+  rows, parameterized by a proof-carried `FoldSchedule`,
 - bridge and stage claim summaries derived from those selected refs.
+
+### 11.2a Root fold schedule
+
+The root main-lane theorem package carries one theorem-facing fold schedule:
+
+```text
+FoldSchedule ::= WholeTrace | RowsPerChunk(n), where n >= 1
+```
+
+Normative rules:
+
+1. the schedule is public proof metadata carried by the root theorem package,
+2. the verifier derives the chunk count from that schedule and the active
+   semantic row count; it is not a separate verifier input,
+3. the schedule partitions the active semantic interval `[0, N)` into one
+   ordered contiguous chunk list,
+4. each chunk runs exactly one `Π_CCS`, one `Π_RLC`, and one `Π_DEC`,
+5. `WholeTrace` means one root fold round for the entire active semantic
+   interval,
+6. `RowsPerChunk(1)` reproduces the legacy per-row root fold cadence.
 
 Normative rule for `RootEncode`:
 
@@ -3079,7 +3124,7 @@ This section restates the normative bridge mechanism from §8.4:
 - `RootEncode(z_j)` only as the local encoding rule for a selected semantic
   row,
 - root main-lane proof binding from authenticated selected rows to the accepted
-  row-local CCS theorem package,
+  chunk-scheduled CCS theorem package,
 - bridge binding from those authenticated and proved rows to the accepted
   row-local claim summaries.
 
@@ -3090,8 +3135,8 @@ Bridge verifier algorithm for row `j`:
 2. Recover `z_j` from those authenticated lane values by prepending `ONE = 1`.
 3. Compute `RootEncode(z_j)`.
 4. Verify that the resulting row-local encoding is accepted by the root
-   main-lane CCS proof package for row `j`, or by an equivalent folded proof
-   package that carries the same theorem.
+   main-lane CCS proof package for the unique chunk containing row `j`, under
+   the proof-carried `FoldSchedule`.
 5. Bind the accepted row-local execution object to the accepted bridge summary
    for row `j`.
 6. If a private `PreparedStep_j` helper is exported, check that it is derived
@@ -3142,25 +3187,28 @@ An RV64IM integration may claim conformance to this spec only if:
     theorem-facing row-opening object per consumer.
 13. Authenticated selected openings against `C_lane` do not by themselves close
     the root execution theorem. A conforming proof must also verify the root
-    main-lane row-local CCS relation from §11, either per row or through an
-    equivalent folded theorem package. Summary-only or digest-only binding of
-    semantic rows is non-conforming.
-14. Kernel and root opening manifests are disjoint.
-15. Strong kernel soundness requires the adjacent-state theorem via
+    main-lane row-local CCS relation from §11 through an accepted theorem
+    package whose `FoldSchedule` is carried inside the proof boundary. Summary-
+    only or digest-only binding of semantic rows is non-conforming.
+14. The root theorem package must reject invalid chunk schedules, including
+    `RowsPerChunk(0)`, non-contiguous partitions, skipped rows, overlapping
+    rows, or chunk metadata inconsistent with the carried `FoldSchedule`.
+15. Kernel and root opening manifests are disjoint.
+16. Strong kernel soundness requires the adjacent-state theorem via
     `Stage2TemporalContext` and `PcAdjacentBridge`.
-16. Division/remainder uses advice + verification with dedicated authenticated
+17. Division/remainder uses advice + verification with dedicated authenticated
     support relations for divide-by-zero, unsigned remainder bounds, and
     overflow-case divisor adjustment, together with explicit reconstruction of
     the signed remainder from the dividend sign and a proof of
     `SIGNED_DIVREM_SPEC`; prose-only corner-case handling is non-conforming.
-17. Lowering from ROM to expanded bytecode is deterministic and part of the
+18. Lowering from ROM to expanded bytecode is deterministic and part of the
     accepted theorem package. Conforming verification must bind the public ROM
     image and declared `lowering_version_id` directly to `C_rom_table` and
     `C_bytecode_table` by table evaluation or commitment recomputation;
     prover-chosen lowering or digest-only binding paths are non-conforming.
-18. The exact kernel boundary determines the accepted theorem package without
+19. The exact kernel boundary determines the accepted theorem package without
     additional external temporal-support premises.
-19. Trivial predicates that depend only on already-opened low bits or bytes may
+20. Trivial predicates that depend only on already-opened low bits or bytes may
     be represented as virtual instructions, but their proof rule is direct
     arithmetic unless a separate lookup family is explicitly justified by a
     measured prover-cost win.

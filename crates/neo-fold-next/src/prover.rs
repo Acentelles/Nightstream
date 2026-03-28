@@ -18,10 +18,10 @@ use neo_reductions::engines::utils;
 use neo_reductions::error::PiCcsError;
 use neo_reductions::optimized_engine::{optimized_prove_with_cache, OptimizedStructureCache};
 use neo_reductions::pi_rlc_dec::OptimizedRlcDec;
-use neo_transcript::{Poseidon2Transcript, Transcript};
+use neo_transcript::Poseidon2Transcript;
 use p3_field::PrimeCharacteristicRing;
 
-use crate::proof::{Carry, PiDecArtifact, PiRlcArtifact, StepInput, StepProof, StepResult};
+use crate::proof::{Carry, ChunkInput, ChunkProof, ChunkResult, PiDecArtifact, PiRlcArtifact};
 
 #[derive(Clone, Copy)]
 pub struct CommitmentMixers<MR, MB>
@@ -36,35 +36,44 @@ where
 pub struct ShardProver;
 
 impl ShardProver {
-    pub fn prove_step<L, MR, MB>(
+    pub fn prove_chunk<L, MR, MB>(
         mode: FoldingMode,
         tr: &mut Poseidon2Transcript,
         params: &NeoParams,
         s: &CcsStructure<F>,
-        step: &StepInput,
+        chunk: &ChunkInput,
         incoming_main: &Carry,
         log: &L,
         mixers: CommitmentMixers<MR, MB>,
         optimized_cache: Option<&OptimizedStructureCache>,
-    ) -> Result<StepResult, PiCcsError>
+    ) -> Result<ChunkResult, PiCcsError>
     where
         L: SModuleHomomorphism<F, Commitment> + Sync,
         MR: Fn(&[Mat<F>], &[Commitment]) -> Commitment + Clone + Copy,
         MB: Fn(&[Commitment], u32) -> Commitment + Clone + Copy,
     {
-        validate_main_carry("prove_step", incoming_main)?;
-        tr.append_message(b"neo.fold.next/step", step.label.as_bytes());
+        validate_main_carry("prove_chunk", incoming_main)?;
+        validate_chunk_input(chunk)?;
+        append_chunk_transcript(tr, chunk);
 
         let (ccs_outputs, ccs_proof) = if matches!(mode, FoldingMode::Optimized) {
             let cache = optimized_cache.ok_or_else(|| {
-                PiCcsError::InvalidInput("missing optimized structure cache for optimized prove_step".into())
+                PiCcsError::InvalidInput("missing optimized structure cache for optimized prove_chunk".into())
             })?;
             optimized_prove_with_cache(
                 tr,
                 params,
                 s,
-                core::slice::from_ref(&step.mcs),
-                core::slice::from_ref(&step.witness),
+                &chunk
+                    .steps
+                    .iter()
+                    .map(|step| step.mcs.clone())
+                    .collect::<Vec<_>>(),
+                &chunk
+                    .steps
+                    .iter()
+                    .map(|step| step.witness.clone())
+                    .collect::<Vec<_>>(),
                 &incoming_main.claims,
                 &incoming_main.witnesses,
                 log,
@@ -76,20 +85,28 @@ impl ShardProver {
                 tr,
                 params,
                 s,
-                core::slice::from_ref(&step.mcs),
-                core::slice::from_ref(&step.witness),
+                &chunk
+                    .steps
+                    .iter()
+                    .map(|step| step.mcs.clone())
+                    .collect::<Vec<_>>(),
+                &chunk
+                    .steps
+                    .iter()
+                    .map(|step| step.witness.clone())
+                    .collect::<Vec<_>>(),
                 &incoming_main.claims,
                 &incoming_main.witnesses,
                 log,
             )?
         };
-        validate_ccs_outputs(step, incoming_main, &ccs_outputs, &ccs_proof)?;
+        validate_ccs_outputs(chunk, incoming_main, &ccs_outputs, &ccs_proof)?;
 
         let dims = utils::build_dims_and_policy(params, s)?;
         let rlc_rhos = sample_rlc_rhos(tr, params, ccs_outputs.len())?;
 
-        let mut rlc_inputs_wit = Vec::with_capacity(1 + incoming_main.witnesses.len());
-        rlc_inputs_wit.push(step.witness.Z.clone());
+        let mut rlc_inputs_wit = Vec::with_capacity(chunk.steps.len() + incoming_main.witnesses.len());
+        rlc_inputs_wit.extend(chunk.steps.iter().map(|step| step.witness.Z.clone()));
         rlc_inputs_wit.extend(incoming_main.witnesses.iter().cloned());
 
         let (parent, z_mix) = rlc_with_commit(
@@ -134,14 +151,14 @@ impl ShardProver {
         };
         if !(ok_y && ok_x && ok_c) {
             return Err(PiCcsError::ProtocolError(format!(
-                "Π_DEC public checks failed for step '{}': y={}, X={}, c={}",
-                step.label, ok_y, ok_x, ok_c
+                "Π_DEC public checks failed for chunk starting at {}: y={}, X={}, c={}",
+                chunk.start_index, ok_y, ok_x, ok_c
             )));
         }
 
-        Ok(StepResult {
-            proof: StepProof {
-                step: step.instance(),
+        Ok(ChunkResult {
+            proof: ChunkProof {
+                chunk: chunk.public(),
                 ccs_outputs,
                 ccs_proof,
                 rlc: PiRlcArtifact { rhos: rlc_rhos, parent },
@@ -157,6 +174,18 @@ impl ShardProver {
     }
 }
 
+fn append_chunk_transcript(tr: &mut Poseidon2Transcript, chunk: &ChunkInput) {
+    if chunk.steps.len() == 1 {
+        tr.append_u64s(b"neo.fold.next/step_index", &[chunk.start_index as u64]);
+        return;
+    }
+
+    tr.append_u64s(
+        b"neo.fold.next/chunk_meta",
+        &[chunk.start_index as u64, chunk.steps.len() as u64],
+    );
+}
+
 fn validate_main_carry(context: &str, carry: &Carry) -> Result<(), PiCcsError> {
     if carry.claims.len() != carry.witnesses.len() {
         return Err(PiCcsError::InvalidInput(format!(
@@ -169,19 +198,21 @@ fn validate_main_carry(context: &str, carry: &Carry) -> Result<(), PiCcsError> {
 }
 
 fn validate_ccs_outputs(
-    step: &StepInput,
+    chunk: &ChunkInput,
     incoming_main: &Carry,
     ccs_outputs: &[neo_ccs::CeClaim<Commitment, F, K>],
     ccs_proof: &PiCcsProof,
 ) -> Result<(), PiCcsError> {
-    let expected = 1usize
+    let expected = chunk
+        .steps
+        .len()
         .checked_add(incoming_main.claims.len())
         .ok_or_else(|| PiCcsError::InvalidInput("Π_CCS output count overflow".into()))?;
     if ccs_outputs.len() != expected {
         return Err(PiCcsError::ProtocolError(format!(
-            "Π_CCS returned {} outputs for step '{}', expected {}",
+            "Π_CCS returned {} outputs for chunk starting at {}, expected {}",
             ccs_outputs.len(),
-            step.label,
+            chunk.start_index,
             expected
         )));
     }
@@ -193,10 +224,19 @@ fn validate_ccs_outputs(
     for (idx, out) in ccs_outputs.iter().enumerate() {
         if out.fold_digest != digest {
             return Err(PiCcsError::ProtocolError(format!(
-                "Π_CCS output[{idx}] fold_digest mismatch for step '{}'",
-                step.label
+                "Π_CCS output[{idx}] fold_digest mismatch for chunk starting at {}",
+                chunk.start_index
             )));
         }
+    }
+    Ok(())
+}
+
+fn validate_chunk_input(chunk: &ChunkInput) -> Result<(), PiCcsError> {
+    if chunk.steps.is_empty() {
+        return Err(PiCcsError::InvalidInput(
+            "chunk prove requires at least one fresh step".into(),
+        ));
     }
     Ok(())
 }

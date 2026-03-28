@@ -358,6 +358,8 @@ fn validate_public_bundle_bindings(proof: &Rv64imProof) -> Result<(), SimpleKern
         ));
     }
     if proof.statement.stage_claims_digest != proof.kernel.stage_claims.digest
+        || proof.statement.fold_schedule != proof.kernel.main_lane.fold_schedule()
+        || proof.statement.chunk_count != proof.kernel.main_lane.chunk_count()
         || proof.statement.stage_packages_digest != proof.kernel.stage_packages.digest
         || proof.statement.kernel_opening_digest != proof.kernel.kernel_opening.digest
         || proof.statement.prepared_step_bindings_digest != proof.kernel.kernel_claims.prepared_step_bindings_digest()
@@ -389,6 +391,7 @@ fn validate_public_bundle_bindings(proof: &Rv64imProof) -> Result<(), SimpleKern
         || derived_main_lane_surface.last_public_step != proof.kernel.root_lane_columns.last_row
         || proof.kernel.main_lane.root_lane_columns_digest() != proof.kernel.root_lane_columns.digest
         || proof.kernel.main_lane.root_lane_commitment_digest() != proof.kernel.root_lane_commitment.digest
+        || proof.kernel.main_lane.chunk_count() == 0
         || proof.kernel.main_lane.public_step_count() != proof.kernel.root_lane_columns.time_len
     {
         return Err(SimpleKernelError::Bridge(
@@ -793,11 +796,16 @@ fn rebuild_public_kernel_from_input(
             "RV64IM public proof root-lane commitment does not match the canonical commitment artifact".into(),
         ));
     }
-    let expected_main_lane =
-        build_simple_kernel_main_lane_artifact_from_summary(&kernel.root_lane_columns, &kernel.root_lane_commitment)?;
+    let expected_main_lane = build_simple_kernel_main_lane_artifact_from_summary(
+        &kernel.root_lane_columns,
+        &kernel.root_lane_commitment,
+        proof.statement.fold_schedule,
+    )?;
     if proof.kernel.main_lane.root_lane_columns_digest() != expected_main_lane.binding.root_lane_columns_digest
         || proof.kernel.main_lane.root_lane_commitment_digest()
             != expected_main_lane.binding.root_lane_commitment_digest
+        || proof.kernel.main_lane.fold_schedule() != expected_main_lane.binding.fold_schedule
+        || proof.kernel.main_lane.chunk_count() != expected_main_lane.binding.chunk_count
         || proof.kernel.main_lane.public_step_count() != expected_main_lane.binding.public_step_count
     {
         return Err(SimpleKernelError::Bridge(

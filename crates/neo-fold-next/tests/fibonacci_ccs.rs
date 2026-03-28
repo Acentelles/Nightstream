@@ -4,7 +4,7 @@ use std::time::Instant;
 use neo_ajtai::{s_mul_add, scale_commitment_add_inplace, setup as ajtai_setup, AjtaiSModule, Commitment};
 use neo_ccs::{poly::SparsePoly, poly::Term, CcsClaim, CcsStructure, CcsWitness, Mat};
 use neo_fold_next::finalize::package_proof;
-use neo_fold_next::proof::StepInput;
+use neo_fold_next::proof::{partition_public_steps, FoldSchedule, StepInput};
 use neo_fold_next::prover::CommitmentMixers;
 use neo_fold_next::run::{prove_and_package, prove_run, verify_packaged, verify_run};
 use neo_math::ring::Rq as RqEl;
@@ -158,6 +158,7 @@ fn fibonacci_traces_fold_through_the_real_superneo_spine() {
 
     let proof = prove_run(
         FoldingMode::Optimized,
+        FoldSchedule::RowsPerChunk(1),
         &params,
         &ccs,
         steps.clone(),
@@ -166,10 +167,10 @@ fn fibonacci_traces_fold_through_the_real_superneo_spine() {
     )
     .expect("prove run");
 
-    assert_eq!(proof.steps.len(), 2);
-    assert_eq!(proof.steps[0].ccs_outputs.len(), 1);
-    assert_eq!(proof.steps[0].dec.children.len(), params.k_rho as usize);
-    assert_eq!(proof.steps[1].ccs_outputs.len(), (params.k_rho as usize) + 1);
+    assert_eq!(proof.chunks.len(), 2);
+    assert_eq!(proof.chunks[0].ccs_outputs.len(), 1);
+    assert_eq!(proof.chunks[0].dec.children.len(), params.k_rho as usize);
+    assert_eq!(proof.chunks[1].ccs_outputs.len(), (params.k_rho as usize) + 1);
     assert_eq!(proof.final_main_claims.len(), params.k_rho as usize);
 
     let public_steps = steps
@@ -201,11 +202,19 @@ fn fibonacci_traces_package_into_one_packaged_proof() {
         .map(|(idx, values)| fibonacci_step(&log, &format!("fib_trace_{idx}"), values))
         .collect::<Vec<_>>();
 
-    let packaged =
-        prove_and_package(FoldingMode::Optimized, &params, &ccs, steps, &log, ajtai_mixers()).expect("prove packaged");
+    let packaged = prove_and_package(
+        FoldingMode::Optimized,
+        FoldSchedule::RowsPerChunk(1),
+        &params,
+        &ccs,
+        steps,
+        &log,
+        ajtai_mixers(),
+    )
+    .expect("prove packaged");
 
     assert_eq!(
-        packaged.proof.session.steps[0].dec.children.len(),
+        packaged.proof.session.chunks[0].dec.children.len(),
         params.k_rho as usize
     );
     assert_eq!(packaged.statement.final_main_claims.len(), params.k_rho as usize);
@@ -233,6 +242,7 @@ fn fibonacci_traces_fold_through_ten_steps() {
 
     let proof = prove_run(
         FoldingMode::Optimized,
+        FoldSchedule::RowsPerChunk(1),
         &params,
         &ccs,
         steps.clone(),
@@ -241,9 +251,9 @@ fn fibonacci_traces_fold_through_ten_steps() {
     )
     .expect("prove run");
 
-    assert_eq!(proof.steps.len(), 10);
-    assert_eq!(proof.steps[0].ccs_outputs.len(), 1);
-    for proved_step in proof.steps.iter().skip(1) {
+    assert_eq!(proof.chunks.len(), 10);
+    assert_eq!(proof.chunks[0].ccs_outputs.len(), 1);
+    for proved_step in proof.chunks.iter().skip(1) {
         assert_eq!(proved_step.ccs_outputs.len(), (params.k_rho as usize) + 1);
         assert_eq!(proved_step.dec.children.len(), params.k_rho as usize);
     }
@@ -284,6 +294,7 @@ fn fibonacci_traces_fold_five_ten_transition_chunks() {
 
     let proof = prove_run(
         FoldingMode::Optimized,
+        FoldSchedule::RowsPerChunk(1),
         &params,
         &ccs,
         steps.clone(),
@@ -292,9 +303,9 @@ fn fibonacci_traces_fold_five_ten_transition_chunks() {
     )
     .expect("prove run");
 
-    assert_eq!(proof.steps.len(), 5);
-    assert_eq!(proof.steps[0].ccs_outputs.len(), 1);
-    for proved_step in proof.steps.iter().skip(1) {
+    assert_eq!(proof.chunks.len(), 5);
+    assert_eq!(proof.chunks[0].ccs_outputs.len(), 1);
+    for proved_step in proof.chunks.iter().skip(1) {
         assert_eq!(proved_step.ccs_outputs.len(), (params.k_rho as usize) + 1);
         assert_eq!(proved_step.dec.children.len(), params.k_rho as usize);
     }
@@ -338,8 +349,16 @@ fn continuous_fifty_transition_fibonacci_exceeds_fixed_k_rho_budget() {
         .map(|(idx, values)| fibonacci_step(&log, &format!("fib_chunk_{idx}"), values))
         .collect::<Vec<_>>();
 
-    let err = prove_run(FoldingMode::Optimized, &params, &ccs, steps, &log, ajtai_mixers())
-        .expect_err("continuous 50-transition sequence should exceed fixed k_rho budget");
+    let err = prove_run(
+        FoldingMode::Optimized,
+        FoldSchedule::RowsPerChunk(1),
+        &params,
+        &ccs,
+        steps,
+        &log,
+        ajtai_mixers(),
+    )
+    .expect_err("continuous 50-transition sequence should exceed fixed k_rho budget");
     assert!(format!("{err}").contains("DEC split"));
 }
 
@@ -364,6 +383,7 @@ fn fibonacci_fold_metrics_five_ten_transition_chunks() {
     let prove_start = Instant::now();
     let proof = prove_run(
         FoldingMode::Optimized,
+        FoldSchedule::RowsPerChunk(1),
         &params,
         &ccs,
         steps.clone(),
@@ -387,7 +407,9 @@ fn fibonacci_fold_metrics_five_ten_transition_chunks() {
     assert_eq!(verified, proof.final_main_claims);
 
     let package_start = Instant::now();
-    let packaged = package_proof(public_steps.clone(), proof.clone()).expect("package run");
+    let public_chunks =
+        partition_public_steps(FoldSchedule::RowsPerChunk(1), public_steps.clone()).expect("public chunks");
+    let packaged = package_proof(public_chunks, proof.clone()).expect("package run");
     let package_ms = package_start.elapsed().as_secs_f64() * 1000.0;
 
     let packaged_verify_start = Instant::now();

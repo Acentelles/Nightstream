@@ -81,14 +81,15 @@ pub use perf_diagnostics::{
 };
 pub use proof_api::{
     build_rv64im_audit_witness_bundle, prove_rv64im_audit_proof, prove_rv64im_audit_proof_with_perf,
-    prove_rv64im_public_proof, prove_rv64im_public_proof_with_perf, validate_rv64im_public_proof_against_input,
+    prove_rv64im_public_proof, prove_rv64im_public_proof_with_options, prove_rv64im_public_proof_with_options_and_perf,
+    prove_rv64im_public_proof_with_perf, validate_rv64im_public_proof_against_input,
     validate_rv64im_public_proof_against_input_with_perf, verify_rv64im_audit_proof,
     verify_rv64im_audit_proof_with_perf, verify_rv64im_public_proof, verify_rv64im_public_proof_with_perf,
     Rv64imAcceptedProofClaim, Rv64imAcceptedProofMainLaneBinding, Rv64imAcceptedProofStatementBinding,
     Rv64imAcceptedProofTerminalBinding, Rv64imJointOpeningClaim, Rv64imKernelClaimBundle, Rv64imKernelOpeningClaim,
     Rv64imKernelProofBundle, Rv64imMainLaneClaim, Rv64imMainLaneClaimBinding, Rv64imMainLaneProofBinding,
     Rv64imMainLaneProofBundle, Rv64imMainLaneProofSummaryBundle, Rv64imProof, Rv64imProofInput, Rv64imProofStatement,
-    Rv64imRoot0Claim,
+    Rv64imPublicProofOptions, Rv64imRoot0Claim,
 };
 pub use proof_witness::{
     Rv64imKernelClaimProofBundle, Rv64imKernelClaimSummaryBundle, Rv64imKernelClaimSummaryProofBundle,

@@ -1,7 +1,7 @@
 //! Owns the RV64IM simple-kernel proof/output boundary and the live root main-lane prove/verify path.
 
 use neo_ajtai::{s_mul_add, scale_commitment_add_inplace, set_global_pp_seeded, AjtaiSModule, Commitment};
-use neo_ccs::{traits::SModuleHomomorphism, Mat};
+use neo_ccs::{traits::SModuleHomomorphism, CcsStructure, Mat};
 use neo_math::ring::{cf_inv, Rq as RqEl};
 use neo_math::{D, F};
 use neo_params::NeoParams;
@@ -11,9 +11,10 @@ use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::PrimeCharacteristicRing;
 use serde::{Deserialize, Serialize};
 use std::ops::Deref;
+use std::sync::OnceLock;
 use std::time::Instant;
 
-use crate::proof::{PackagedProof, PublicStep, StepInput};
+use crate::proof::{partition_public_steps, FoldSchedule, PackagedProof, PublicChunk, PublicStep, StepInput};
 use crate::prover::CommitmentMixers;
 use crate::run::{prove_and_package, verify_packaged};
 use crate::rv64im::ccs::{rv64im_root_main_lane_ccs, semantic_row_from_execution_row, RV64IM_ROOT_ROW_WIDTH};
@@ -305,6 +306,26 @@ impl SimpleKernelRootContext {
     }
 }
 
+fn cached_simple_kernel_root_context() -> Result<&'static SimpleKernelRootContext, SimpleKernelError> {
+    static ROOT_CONTEXT: OnceLock<Result<SimpleKernelRootContext, String>> = OnceLock::new();
+    ROOT_CONTEXT
+        .get_or_init(|| {
+            SimpleKernelRootContext::new().map_err(|err| match err {
+                SimpleKernelError::Build(msg) | SimpleKernelError::Bridge(msg) | SimpleKernelError::Proof(msg) => msg,
+            })
+        })
+        .as_ref()
+        .map_err(|err| SimpleKernelError::Bridge(err.clone()))
+}
+
+fn cached_root_main_lane_ccs() -> Result<&'static CcsStructure<F>, SimpleKernelError> {
+    static ROOT_MAIN_LANE_CCS: OnceLock<Result<CcsStructure<F>, String>> = OnceLock::new();
+    ROOT_MAIN_LANE_CCS
+        .get_or_init(rv64im_root_main_lane_ccs)
+        .as_ref()
+        .map_err(|err| SimpleKernelError::Proof(err.clone()))
+}
+
 pub fn rv64im_simple_root_params() -> NeoParams {
     let mut params = NeoParams::goldilocks_auto_r1cs_ccs(RV64IM_ROOT_ROW_WIDTH).expect("valid RV64IM root params");
     params.k_rho = SIMPLE_KERNEL_K_RHO;
@@ -365,6 +386,23 @@ fn build_prepared_step_from_semantic_row(
     })
 }
 
+fn build_public_step_from_semantic_row(
+    root_context: &SimpleKernelRootContext,
+    trace_index: usize,
+    semantic_row: &[F; RV64IM_ROOT_ROW_WIDTH],
+) -> Result<PublicStep, SimpleKernelError> {
+    let z_mat = encode_vector_for_ccs_m(root_context.params(), RV64IM_ROOT_ROW_WIDTH, semantic_row)
+        .map_err(|err| SimpleKernelError::Bridge(format!("root encoding failed for row {trace_index}: {err}")))?;
+    Ok(PublicStep {
+        label: format!("rv64im/simple/trace_{trace_index}"),
+        mcs: neo_ccs::CcsClaim {
+            c: root_context.log().commit(&z_mat),
+            x: vec![F::ONE],
+            m_in: 1,
+        },
+    })
+}
+
 fn build_prepared_steps_from_root_lane_witness(
     root_context: &SimpleKernelRootContext,
     rows: &[Rv64ExpandedRow],
@@ -386,13 +424,33 @@ fn build_prepared_steps_from_root_lane_witness(
 pub(super) fn build_prepared_steps_from_execution_rows(
     rows: &[Rv64ExpandedRow],
 ) -> Result<Vec<StepInput>, SimpleKernelError> {
-    let root_context = SimpleKernelRootContext::new()?;
-    rows.iter()
-        .map(|row| {
-            let semantic_row = semantic_row_from_execution_row(row);
-            build_prepared_step_from_semantic_row(&root_context, row.trace_index, &semantic_row)
-        })
-        .collect()
+    let root_context = cached_simple_kernel_root_context()?;
+    let mut steps = Vec::with_capacity(rows.len());
+    for row in rows {
+        let semantic_row = semantic_row_from_execution_row(row);
+        steps.push(build_prepared_step_from_semantic_row(
+            root_context,
+            row.trace_index,
+            &semantic_row,
+        )?);
+    }
+    Ok(steps)
+}
+
+pub(super) fn build_public_steps_from_execution_rows(
+    rows: &[Rv64ExpandedRow],
+) -> Result<Vec<PublicStep>, SimpleKernelError> {
+    let root_context = cached_simple_kernel_root_context()?;
+    let mut steps = Vec::with_capacity(rows.len());
+    for row in rows {
+        let semantic_row = semantic_row_from_execution_row(row);
+        steps.push(build_public_step_from_semantic_row(
+            root_context,
+            row.trace_index,
+            &semantic_row,
+        )?);
+    }
+    Ok(steps)
 }
 
 fn same_public_step(lhs: &PublicStep, rhs: &PublicStep) -> bool {
@@ -404,16 +462,28 @@ fn same_public_step(lhs: &PublicStep, rhs: &PublicStep) -> bool {
         && lhs.mcs.c.data == rhs.mcs.c.data
 }
 
+fn same_public_chunk(lhs: &PublicChunk, rhs: &PublicChunk) -> bool {
+    lhs.start_index == rhs.start_index
+        && lhs.steps.len() == rhs.steps.len()
+        && lhs
+            .steps
+            .iter()
+            .zip(rhs.steps.iter())
+            .all(|(lhs, rhs)| same_public_step(lhs, rhs))
+}
+
 pub(super) fn build_root_main_lane_packaged_proof(
     rows: &[Rv64ExpandedRow],
+    schedule: FoldSchedule,
 ) -> Result<PackagedProof, SimpleKernelError> {
-    let root_context = SimpleKernelRootContext::new()?;
-    let ccs = rv64im_root_main_lane_ccs().map_err(SimpleKernelError::Proof)?;
+    let root_context = cached_simple_kernel_root_context()?;
+    let ccs = cached_root_main_lane_ccs()?;
     let steps = build_prepared_steps_from_execution_rows(rows)?;
     Ok(prove_and_package(
         FoldingMode::Optimized,
+        schedule,
         root_context.params(),
-        &ccs,
+        ccs,
         steps,
         root_context.log(),
         rv64im_ajtai_mixers(),
@@ -424,33 +494,34 @@ pub(super) fn verify_root_main_lane_packaged_proof(
     rows: &[Rv64ExpandedRow],
     packaged: &PackagedProof,
 ) -> Result<(), SimpleKernelError> {
-    let root_context = SimpleKernelRootContext::new()?;
-    let ccs = rv64im_root_main_lane_ccs().map_err(SimpleKernelError::Proof)?;
-    let steps = build_prepared_steps_from_execution_rows(rows)?;
-    if packaged.statement.steps.len() != steps.len() {
+    let root_context = cached_simple_kernel_root_context()?;
+    let ccs = cached_root_main_lane_ccs()?;
+    let public_steps = build_public_steps_from_execution_rows(rows)?;
+    let expected_chunks = partition_public_steps(packaged.statement.fold_schedule, public_steps)?;
+    if packaged.statement.chunks.len() != expected_chunks.len() {
         return Err(SimpleKernelError::Bridge(format!(
-            "RV64IM root main-lane packaged proof step count {} != execution row count {}",
-            packaged.statement.steps.len(),
-            steps.len()
+            "RV64IM root main-lane packaged proof chunk count {} != expected chunk count {}",
+            packaged.statement.chunks.len(),
+            expected_chunks.len()
         )));
     }
     for (idx, (actual, expected)) in packaged
         .statement
-        .steps
+        .chunks
         .iter()
-        .zip(steps.iter().map(StepInput::instance))
+        .zip(expected_chunks.iter())
         .enumerate()
     {
-        if !same_public_step(actual, &expected) {
+        if !same_public_chunk(actual, expected) {
             return Err(SimpleKernelError::Bridge(format!(
-                "RV64IM root main-lane packaged proof public step {idx} mismatch"
+                "RV64IM root main-lane packaged proof public chunk {idx} mismatch"
             )));
         }
     }
     verify_packaged(
         FoldingMode::Optimized,
         root_context.params(),
-        &ccs,
+        ccs,
         packaged,
         rv64im_ajtai_mixers(),
     )?;
@@ -1159,7 +1230,11 @@ pub fn prove_packaged_simple_kernel_with_perf(
     let (output, simple_kernel) = build_packaged_simple_kernel_output_with_perf(&input.public)?;
     let kernel = simple_kernel_proof_from_output(&output);
     let main_lane_started = Instant::now();
-    let main_lane = build_simple_kernel_main_lane_artifact(&output.root_lane_columns, &output.root_lane_commitment)?;
+    let main_lane = build_simple_kernel_main_lane_artifact(
+        &output.root_lane_columns,
+        &output.root_lane_commitment,
+        FoldSchedule::WholeTrace,
+    )?;
     Ok((
         (output, SimpleKernelPackagedProof { kernel, main_lane }),
         Rv64imProofProvePerf {

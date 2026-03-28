@@ -13,6 +13,7 @@ use neo_ajtai::Commitment;
 use neo_ccs::{CcsClaim, CcsWitness, CeClaim, Mat};
 use neo_math::{F, K};
 use neo_reductions::api::{PiCcsProof, RotRho};
+use neo_reductions::error::PiCcsError;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -41,6 +42,66 @@ pub struct PublicStep {
     pub mcs: CcsClaim<Commitment, F>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum FoldSchedule {
+    WholeTrace,
+    RowsPerChunk(usize),
+}
+
+impl FoldSchedule {
+    pub fn validate(self) -> Result<(), PiCcsError> {
+        match self {
+            Self::WholeTrace => Ok(()),
+            Self::RowsPerChunk(0) => Err(PiCcsError::InvalidInput(
+                "RowsPerChunk(0) is not a valid fold schedule".into(),
+            )),
+            Self::RowsPerChunk(_) => Ok(()),
+        }
+    }
+
+    pub fn meta_words(self) -> [u64; 2] {
+        match self {
+            Self::WholeTrace => [0, 0],
+            Self::RowsPerChunk(rows) => [1, rows as u64],
+        }
+    }
+
+    pub fn chunk_count(self, step_count: usize) -> Result<usize, PiCcsError> {
+        self.validate()?;
+        Ok(match self {
+            Self::WholeTrace => usize::from(step_count != 0),
+            Self::RowsPerChunk(rows) => {
+                if step_count == 0 {
+                    0
+                } else {
+                    step_count.div_ceil(rows)
+                }
+            }
+        })
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ChunkInput {
+    pub start_index: usize,
+    pub steps: Vec<StepInput>,
+}
+
+impl ChunkInput {
+    pub fn public(&self) -> PublicChunk {
+        PublicChunk {
+            start_index: self.start_index,
+            steps: self.steps.iter().map(StepInput::instance).collect(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PublicChunk {
+    pub start_index: usize,
+    pub steps: Vec<PublicStep>,
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Carry {
     pub claims: Vec<CeClaim<Commitment, F, K>>,
@@ -65,8 +126,8 @@ pub struct PiDecArtifact {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct StepProof {
-    pub step: PublicStep,
+pub struct ChunkProof {
+    pub chunk: PublicChunk,
     pub ccs_outputs: Vec<CeClaim<Commitment, F, K>>,
     pub ccs_proof: PiCcsProof,
     pub rlc: PiRlcArtifact,
@@ -74,22 +135,50 @@ pub struct StepProof {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct StepResult {
-    pub proof: StepProof,
+pub struct ChunkResult {
+    pub proof: ChunkProof,
     pub next_main: Carry,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct RunProof {
-    pub steps: Vec<StepProof>,
+    pub fold_schedule: FoldSchedule,
+    pub chunks: Vec<ChunkProof>,
     pub final_main_claims: Vec<CeClaim<Commitment, F, K>>,
+}
+
+impl Default for FoldSchedule {
+    fn default() -> Self {
+        Self::RowsPerChunk(1)
+    }
+}
+
+impl RunProof {
+    pub fn public_step_count(&self) -> usize {
+        self.chunks
+            .iter()
+            .map(|chunk| chunk.chunk.steps.len())
+            .sum()
+    }
+
+    pub fn chunk_count(&self) -> usize {
+        self.chunks.len()
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PublicStatement {
-    pub steps: Vec<PublicStep>,
+    pub fold_schedule: FoldSchedule,
+    pub chunk_count: u64,
+    pub chunks: Vec<PublicChunk>,
     pub final_main_claims: Vec<CeClaim<Commitment, F, K>>,
     pub digest: [u8; 32],
+}
+
+impl PublicStatement {
+    pub fn public_step_count(&self) -> usize {
+        self.chunks.iter().map(|chunk| chunk.steps.len()).sum()
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -103,4 +192,47 @@ pub struct FinalProof {
 pub struct PackagedProof {
     pub statement: PublicStatement,
     pub proof: FinalProof,
+}
+
+pub fn partition_step_inputs(schedule: FoldSchedule, steps: Vec<StepInput>) -> Result<Vec<ChunkInput>, PiCcsError> {
+    partition_items(schedule, steps, |start_index, steps| ChunkInput { start_index, steps })
+}
+
+pub fn partition_public_steps(schedule: FoldSchedule, steps: Vec<PublicStep>) -> Result<Vec<PublicChunk>, PiCcsError> {
+    partition_items(schedule, steps, |start_index, steps| PublicChunk { start_index, steps })
+}
+
+fn partition_items<T, C, FBuild>(schedule: FoldSchedule, items: Vec<T>, build: FBuild) -> Result<Vec<C>, PiCcsError>
+where
+    FBuild: Fn(usize, Vec<T>) -> C,
+{
+    schedule.validate()?;
+    if items.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let chunk_len = match schedule {
+        FoldSchedule::WholeTrace => items.len(),
+        FoldSchedule::RowsPerChunk(rows) => rows,
+    };
+
+    let mut chunks = Vec::with_capacity(schedule.chunk_count(items.len())?);
+    let mut next_start = 0usize;
+    let mut cursor = items.into_iter();
+    loop {
+        let mut chunk_items = Vec::with_capacity(chunk_len);
+        for _ in 0..chunk_len {
+            match cursor.next() {
+                Some(item) => chunk_items.push(item),
+                None => break,
+            }
+        }
+        if chunk_items.is_empty() {
+            break;
+        }
+        let chunk_size = chunk_items.len();
+        chunks.push(build(next_start, chunk_items));
+        next_start += chunk_size;
+    }
+    Ok(chunks)
 }

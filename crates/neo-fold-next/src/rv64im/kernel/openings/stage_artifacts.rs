@@ -11,9 +11,11 @@ use neo_reductions::api::FoldingMode;
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::PrimeCharacteristicRing;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 
-use crate::proof::{PackagedProof, PublicStep, StepInput};
+use crate::proof::{FoldSchedule, PackagedProof, PublicStep, StepInput};
 use crate::run::{prove_and_package, verify_packaged};
 use crate::rv64im::stage1::Stage1Summary;
 use crate::rv64im::stage2::Stage2Summary;
@@ -134,6 +136,8 @@ struct ExactVectorPackageContext {
     log: AjtaiSModule,
     ccs: neo_ccs::CcsStructure<F>,
 }
+
+static EXACT_VECTOR_PACKAGE_CONTEXTS: OnceLock<Mutex<HashMap<usize, Arc<ExactVectorPackageContext>>>> = OnceLock::new();
 
 fn split_u64_to_fields(value: u64, out: &mut Vec<F>) {
     out.push(F::from_u64(value as u32 as u64));
@@ -355,8 +359,31 @@ impl ExactVectorPackageContext {
     }
 }
 
-fn build_exact_vector_package_step(label: &str, logical_values: &[F]) -> Result<StepInput, SimpleKernelError> {
-    let context = ExactVectorPackageContext::new(logical_values.len(), EXACT_STAGE_PP_SEED, label)?;
+fn exact_vector_package_context(
+    logical_width: usize,
+    label: &str,
+) -> Result<Arc<ExactVectorPackageContext>, SimpleKernelError> {
+    let contexts = EXACT_VECTOR_PACKAGE_CONTEXTS.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut contexts = contexts
+        .lock()
+        .map_err(|_| SimpleKernelError::Bridge(format!("{label} exact package context cache poisoned")))?;
+    if let Some(context) = contexts.get(&logical_width) {
+        return Ok(Arc::clone(context));
+    }
+    let context = Arc::new(ExactVectorPackageContext::new(
+        logical_width,
+        EXACT_STAGE_PP_SEED,
+        label,
+    )?);
+    contexts.insert(logical_width, Arc::clone(&context));
+    Ok(context)
+}
+
+fn build_exact_vector_package_step_with_context(
+    label: &str,
+    logical_values: &[F],
+    context: &ExactVectorPackageContext,
+) -> Result<StepInput, SimpleKernelError> {
     let mut full_vector = Vec::with_capacity(logical_values.len() + 1);
     full_vector.push(F::ONE);
     full_vector.extend_from_slice(logical_values);
@@ -374,6 +401,11 @@ fn build_exact_vector_package_step(label: &str, logical_values: &[F]) -> Result<
             Z: packed,
         },
     })
+}
+
+fn build_exact_vector_package_step(label: &str, logical_values: &[F]) -> Result<StepInput, SimpleKernelError> {
+    let context = exact_vector_package_context(logical_values.len(), label)?;
+    build_exact_vector_package_step_with_context(label, logical_values, context.as_ref())
 }
 
 pub(super) fn selected_opening_object(family: AjtaiFamilyKind, commitment_digest: [u8; 32]) -> AjtaiObjectId {
@@ -402,11 +434,6 @@ pub(super) fn first_last_selected_refs<T>(
     (Some(first_ref), Some(last_ref))
 }
 
-fn build_claim_package_step(label: &str, words: &[u64]) -> Result<StepInput, SimpleKernelError> {
-    let logical_values = u64_vector_to_field_limbs(&words);
-    build_exact_vector_package_step(&format!("{label}/selected_claim_package"), &logical_values)
-}
-
 fn build_kernel_binding_opening_package_step(
     claim: &KernelBindingOpeningClaim,
 ) -> Result<StepInput, SimpleKernelError> {
@@ -423,15 +450,21 @@ fn build_kernel_prepared_step_opening_package_step(
     build_exact_vector_package_step("rv64im/kernel_opening_bundle/prepared_steps", &logical_values)
 }
 
+fn packaged_single_step_matches(packaged: &PackagedProof, expected: &PublicStep) -> bool {
+    packaged.statement.chunks.len() == 1
+        && packaged.statement.chunks[0].start_index == 0
+        && packaged.statement.chunks[0].steps.len() == 1
+        && same_public_step(&packaged.statement.chunks[0].steps[0], expected)
+}
+
 pub(super) fn build_claim_packaged_proof(label: &str, words: &[u64]) -> Result<PackagedProof, SimpleKernelError> {
-    let step = build_claim_package_step(label, words)?;
-    let context = ExactVectorPackageContext::new(
-        step.witness.w.len(),
-        EXACT_STAGE_PP_SEED,
-        &format!("{label}/selected_claim_package"),
-    )?;
+    let context_label = format!("{label}/selected_claim_package");
+    let logical_values = u64_vector_to_field_limbs(words);
+    let context = exact_vector_package_context(logical_values.len(), &context_label)?;
+    let step = build_exact_vector_package_step_with_context(&context_label, &logical_values, context.as_ref())?;
     Ok(prove_and_package(
         FoldingMode::Optimized,
+        FoldSchedule::RowsPerChunk(1),
         context.params(),
         context.ccs(),
         [step],
@@ -445,18 +478,16 @@ pub(super) fn verify_claim_packaged_proof(
     words: &[u64],
     packaged: &PackagedProof,
 ) -> Result<(), SimpleKernelError> {
-    let expected_step = build_claim_package_step(label, words)?;
-    if packaged.statement.steps.len() != 1 || !same_public_step(&packaged.statement.steps[0], &expected_step.instance())
-    {
+    let context_label = format!("{label}/selected_claim_package");
+    let logical_values = u64_vector_to_field_limbs(words);
+    let context = exact_vector_package_context(logical_values.len(), &context_label)?;
+    let expected_step =
+        build_exact_vector_package_step_with_context(&context_label, &logical_values, context.as_ref())?;
+    if !packaged_single_step_matches(packaged, &expected_step.instance()) {
         return Err(SimpleKernelError::Bridge(format!(
             "{label} selected-claim package public step mismatch"
         )));
     }
-    let context = ExactVectorPackageContext::new(
-        expected_step.witness.w.len(),
-        EXACT_STAGE_PP_SEED,
-        &format!("{label}/selected_claim_package"),
-    )?;
     verify_packaged(
         FoldingMode::Optimized,
         context.params(),
@@ -642,6 +673,7 @@ fn build_kernel_opening_proof_with_perf(
     let bindings_started = Instant::now();
     let bindings_packaged = prove_and_package(
         FoldingMode::Optimized,
+        FoldSchedule::RowsPerChunk(1),
         bindings_context.params(),
         bindings_context.ccs(),
         [bindings_step],
@@ -668,6 +700,7 @@ fn build_kernel_opening_proof_with_perf(
     let prepared_steps_started = Instant::now();
     let prepared_steps_packaged = prove_and_package(
         FoldingMode::Optimized,
+        FoldSchedule::RowsPerChunk(1),
         prepared_steps_context.params(),
         prepared_steps_context.ccs(),
         [prepared_steps_step],
@@ -737,12 +770,7 @@ fn verify_kernel_opening_proof_with_perf(
         ));
     }
     let expected_bindings_step = build_kernel_binding_opening_package_step(&bundle.claim.bindings)?;
-    if bundle.bindings.packaged.statement.steps.len() != 1
-        || !same_public_step(
-            &bundle.bindings.packaged.statement.steps[0],
-            &expected_bindings_step.instance(),
-        )
-    {
+    if !packaged_single_step_matches(&bundle.bindings.packaged, &expected_bindings_step.instance()) {
         return Err(SimpleKernelError::Bridge(
             "RV64IM kernel binding opening package public step mismatch".into(),
         ));
@@ -772,12 +800,10 @@ fn verify_kernel_opening_proof_with_perf(
         ));
     }
     let expected_prepared_steps_step = build_kernel_prepared_step_opening_package_step(&bundle.claim.prepared_steps)?;
-    if bundle.prepared_steps.packaged.statement.steps.len() != 1
-        || !same_public_step(
-            &bundle.prepared_steps.packaged.statement.steps[0],
-            &expected_prepared_steps_step.instance(),
-        )
-    {
+    if !packaged_single_step_matches(
+        &bundle.prepared_steps.packaged,
+        &expected_prepared_steps_step.instance(),
+    ) {
         return Err(SimpleKernelError::Bridge(
             "RV64IM kernel prepared-step opening package public step mismatch".into(),
         ));

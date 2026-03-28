@@ -1,7 +1,7 @@
 use neo_ajtai::Commitment;
 use neo_ccs::traits::SModuleHomomorphism;
 use neo_ccs::{CcsClaim, CcsStructure, CcsWitness, Mat, SparsePoly};
-use neo_fold_next::proof::StepInput;
+use neo_fold_next::proof::{FoldSchedule, StepInput};
 use neo_fold_next::prover::CommitmentMixers;
 use neo_fold_next::run::{prove_and_package, verify_packaged};
 use neo_math::{D, F};
@@ -128,17 +128,25 @@ fn packaged_proof_packages_the_real_spine() {
     let log = ToyModule;
     let steps = vec![make_step(&log, 7, "step0"), make_step(&log, 29, "step1")];
 
-    let packaged =
-        prove_and_package(FoldingMode::Optimized, &params, &ccs, steps, &log, mixers()).expect("prove packaged run");
+    let packaged = prove_and_package(
+        FoldingMode::Optimized,
+        FoldSchedule::RowsPerChunk(1),
+        &params,
+        &ccs,
+        steps,
+        &log,
+        mixers(),
+    )
+    .expect("prove packaged run");
 
-    assert_eq!(packaged.statement.steps.len(), 2);
-    assert_eq!(packaged.proof.session.steps.len(), 2);
+    assert_eq!(packaged.statement.chunks.len(), 2);
+    assert_eq!(packaged.proof.session.chunks.len(), 2);
     assert_eq!(
-        packaged.proof.session.steps[0].dec.children.len(),
+        packaged.proof.session.chunks[0].dec.children.len(),
         params.k_rho as usize
     );
     assert_eq!(
-        packaged.proof.session.steps[1].ccs_outputs.len(),
+        packaged.proof.session.chunks[1].ccs_outputs.len(),
         (params.k_rho as usize) + 1
     );
     assert_eq!(packaged.statement.final_main_claims.len(), params.k_rho as usize);
@@ -155,8 +163,16 @@ fn packaged_proof_rejects_tampered_statement() {
     let log = ToyModule;
     let steps = vec![make_step(&log, 13, "step0"), make_step(&log, 31, "step1")];
 
-    let mut packaged =
-        prove_and_package(FoldingMode::Optimized, &params, &ccs, steps, &log, mixers()).expect("prove packaged run");
+    let mut packaged = prove_and_package(
+        FoldingMode::Optimized,
+        FoldSchedule::RowsPerChunk(1),
+        &params,
+        &ccs,
+        steps,
+        &log,
+        mixers(),
+    )
+    .expect("prove packaged run");
 
     packaged.statement.final_main_claims[0].ct[0] += neo_math::K::ONE;
 

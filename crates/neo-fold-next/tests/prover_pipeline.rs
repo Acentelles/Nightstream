@@ -1,7 +1,7 @@
 use neo_ajtai::Commitment;
 use neo_ccs::traits::SModuleHomomorphism;
 use neo_ccs::{CcsClaim, CcsStructure, CcsWitness, Mat, SparsePoly};
-use neo_fold_next::proof::StepInput;
+use neo_fold_next::proof::{FoldSchedule, StepInput};
 use neo_fold_next::prover::CommitmentMixers;
 use neo_fold_next::run::{prove_run, verify_run};
 use neo_math::{D, F};
@@ -128,12 +128,21 @@ fn run_uses_the_real_superneo_spine() {
     let log = ToyModule;
     let steps = vec![make_step(&log, 5, "step0"), make_step(&log, 19, "step1")];
 
-    let proof = prove_run(FoldingMode::Optimized, &params, &ccs, steps.clone(), &log, mixers()).expect("run prove");
+    let proof = prove_run(
+        FoldingMode::Optimized,
+        FoldSchedule::RowsPerChunk(1),
+        &params,
+        &ccs,
+        steps.clone(),
+        &log,
+        mixers(),
+    )
+    .expect("run prove");
 
-    assert_eq!(proof.steps.len(), 2);
-    assert_eq!(proof.steps[0].ccs_outputs.len(), 1);
-    assert_eq!(proof.steps[0].dec.children.len(), params.k_rho as usize);
-    assert_eq!(proof.steps[1].ccs_outputs.len(), (params.k_rho as usize) + 1);
+    assert_eq!(proof.chunks.len(), 2);
+    assert_eq!(proof.chunks[0].ccs_outputs.len(), 1);
+    assert_eq!(proof.chunks[0].dec.children.len(), params.k_rho as usize);
+    assert_eq!(proof.chunks[1].ccs_outputs.len(), (params.k_rho as usize) + 1);
     assert_eq!(proof.final_main_claims.len(), params.k_rho as usize);
 
     let public_steps = steps
@@ -152,8 +161,17 @@ fn verifier_rejects_tampered_rlc_parent() {
     let log = ToyModule;
     let steps = vec![make_step(&log, 11, "step0"), make_step(&log, 23, "step1")];
 
-    let mut proof = prove_run(FoldingMode::Optimized, &params, &ccs, steps.clone(), &log, mixers()).expect("run prove");
-    proof.steps[0].rlc.parent.ct[0] += neo_math::K::ONE;
+    let mut proof = prove_run(
+        FoldingMode::Optimized,
+        FoldSchedule::RowsPerChunk(1),
+        &params,
+        &ccs,
+        steps.clone(),
+        &log,
+        mixers(),
+    )
+    .expect("run prove");
+    proof.chunks[0].rlc.parent.ct[0] += neo_math::K::ONE;
 
     let public_steps = steps
         .into_iter()

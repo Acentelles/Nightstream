@@ -41,29 +41,38 @@ pub struct OpeningReductionGroup {
 }
 
 pub fn main_lane_opening_claims(session: &RunProof) -> Result<Vec<OpeningClaim>, PiCcsError> {
-    let mut claims = Vec::with_capacity(session.steps.len() + 1);
-    for (step_idx, step) in session.steps.iter().enumerate() {
-        let mut tr = Poseidon2Transcript::new(b"neo.fold.next/time_opening/main_lane_step");
-        tr.append_message(b"neo.fold.next/time_opening/step_label", step.step.label.as_bytes());
+    let mut claims = Vec::with_capacity(session.chunks.len() + 1);
+    for (chunk_idx, chunk) in session.chunks.iter().enumerate() {
+        let mut tr = Poseidon2Transcript::new(b"neo.fold.next/time_opening/main_lane_chunk");
         tr.append_u64s(
-            b"neo.fold.next/time_opening/step_meta",
+            b"neo.fold.next/time_opening/chunk_meta",
             &[
-                step_idx as u64,
-                step.ccs_outputs.len() as u64,
-                step.dec.children.len() as u64,
-                step.rlc.rhos.len() as u64,
+                chunk_idx as u64,
+                chunk.chunk.start_index as u64,
+                chunk.chunk.steps.len() as u64,
             ],
         );
-        let point = step
+        for step in &chunk.chunk.steps {
+            tr.append_message(b"neo.fold.next/time_opening/chunk_step_label", step.label.as_bytes());
+        }
+        tr.append_u64s(
+            b"neo.fold.next/time_opening/chunk_fold_meta",
+            &[
+                chunk.ccs_outputs.len() as u64,
+                chunk.dec.children.len() as u64,
+                chunk.rlc.rhos.len() as u64,
+            ],
+        );
+        let point = chunk
             .ccs_outputs
             .first()
             .map(|claim| claim.r.clone())
-            .ok_or_else(|| PiCcsError::ProtocolError(format!("missing main-lane CE output for step {step_idx}")))?;
+            .ok_or_else(|| PiCcsError::ProtocolError(format!("missing main-lane CE output for chunk {chunk_idx}")))?;
         claims.push(OpeningClaim {
             source: OpeningSource::MainLane,
             domain: OpeningDomain::Cpu,
             point,
-            ordinal: 0,
+            ordinal: chunk_idx as u64,
             column_ids: vec![0],
             digest: tr.digest32(),
         });

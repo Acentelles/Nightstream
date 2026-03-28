@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 use std::env;
 use std::time::Instant;
 
-use neo_fold_next::proof::PackagedProof;
+use neo_fold_next::proof::{FoldSchedule, PackagedProof};
 use neo_fold_next::rv64im::ccs::{rv64im_root_main_lane_ccs, RV64IM_ROOT_PUBLIC_INPUTS, RV64IM_ROOT_ROW_WIDTH};
 use neo_fold_next::rv64im::layout::RV64_REGISTER_COUNT;
 use neo_fold_next::rv64im::stage1::build_stage1_summary;
@@ -68,7 +68,8 @@ struct ExactOpeningClaimStats {
 #[derive(Clone, Copy, Default)]
 struct PackagedProofStats {
     public_steps: usize,
-    proof_steps: usize,
+    public_chunks: usize,
+    proof_chunks: usize,
     final_main_claims: usize,
     ccs_outputs: usize,
     dec_children: usize,
@@ -84,7 +85,8 @@ struct OpeningSurfaceTotals {
     selected_labels: usize,
     selected_claim_words: usize,
     packaged_public_steps: usize,
-    packaged_proof_steps: usize,
+    packaged_public_chunks: usize,
+    packaged_proof_chunks: usize,
     packaged_final_main_claims: usize,
     packaged_ccs_outputs: usize,
     packaged_dec_children: usize,
@@ -171,6 +173,13 @@ fn print_kv(label: &str, value: impl std::fmt::Display) {
     println!("  {:30} {}", label, value);
 }
 
+fn format_fold_schedule(schedule: FoldSchedule) -> String {
+    match schedule {
+        FoldSchedule::WholeTrace => "WholeTrace".to_string(),
+        FoldSchedule::RowsPerChunk(rows) => format!("RowsPerChunk({rows})"),
+    }
+}
+
 fn collect_unique_opcode_labels(build: &neo_fold_next::rv64im::builder::Rv64ProgramBuild) -> String {
     let mut labels = BTreeSet::new();
     for step in &build.executed_steps {
@@ -191,6 +200,29 @@ fn print_timing_table(rows: &[(&str, f64)], opcode_count: usize, execution_rows:
             per_unit(*ms, execution_rows),
         );
     }
+}
+
+fn exact_stage_path_is_live(rows: &[ExactStagePerfRow<'_>]) -> bool {
+    rows.iter().any(|row| {
+        row.records != 0
+            && (row.packed_rows != 0
+                || row.packed_cols != 0
+                || row.flatten_u64_words != 0
+                || row.field_limb_width != 0
+                || row.flatten_ms != 0.0
+                || row.limb_encode_ms != 0.0
+                || row.context_setup_ms != 0.0
+                || row.ccs_encode_ms != 0.0
+                || row.ajtai_commit_ms != 0.0
+                || row.opening_manifest_ms != 0.0
+                || row.opening_prove_ms != 0.0)
+    })
+}
+
+fn exact_opening_claims_are_live(rows: &[(&str, ExactOpeningClaimStats)]) -> bool {
+    rows.iter().any(|(_, stats)| {
+        stats.claims != 0 || stats.logical_width != 0 || stats.packed_rows != 0 || stats.packed_cols != 0
+    })
 }
 
 fn print_family_rows(title: &str, stats: &[FamilyRowStats], opcode_count: usize) {
@@ -445,7 +477,10 @@ fn opening_reuse_stats(output: &neo_fold_next::rv64im::SimpleKernelOutput) -> (O
     (accumulator.stats(), opening_ids)
 }
 
-fn print_root_main_lane_family(output: &neo_fold_next::rv64im::SimpleKernelOutput) {
+fn print_root_main_lane_family(
+    output: &neo_fold_next::rv64im::SimpleKernelOutput,
+    proof: &neo_fold_next::rv64im::Rv64imProof,
+) {
     print_section("Root Main Lane Columns");
     print_kv("canonical_lane_objects", 1);
     print_kv("row_width", output.root_lane_columns.row_width);
@@ -481,12 +516,22 @@ fn print_root_main_lane_family(output: &neo_fold_next::rv64im::SimpleKernelOutpu
             .unwrap_or(0),
     );
     print_kv(
+        "fold_schedule",
+        format_fold_schedule(proof.kernel.main_lane.fold_schedule()),
+    );
+    print_kv("proof_chunks", proof.kernel.main_lane.chunk_count());
+    print_kv(
         "bridge_status",
-        "column family now has Ajtai commitments and selected row openings; reductions still prove per-step instances",
+        "column family has Ajtai commitments and selected row openings; root reductions now prove schedule-bound contiguous chunks",
     );
 }
 
 fn print_exact_stage_witness_shape(rows: &[ExactStagePerfRow<'_>]) {
+    if !exact_stage_path_is_live(rows) {
+        print_section("Exact Stage Path");
+        print_kv("status", "disabled on the live proof-complete public path");
+        return;
+    }
     print_section("Exact Stage Witness Shape");
     println!(
         "  {:10} {:>8} {:>10} {:>10} {:>12} {:>12} {:>10} {:>12} {:>12} {:>10}",
@@ -519,6 +564,9 @@ fn print_exact_stage_witness_shape(rows: &[ExactStagePerfRow<'_>]) {
 }
 
 fn print_selected_vs_exact_amplification(rows: &[ExactStagePerfRow<'_>]) {
+    if !exact_stage_path_is_live(rows) {
+        return;
+    }
     print_section("Selected vs Exact Amplification");
     println!(
         "  {:10} {:>12} {:>12} {:>12} {:>14} {:>12} {:>12}",
@@ -548,6 +596,9 @@ fn print_selected_vs_exact_amplification(rows: &[ExactStagePerfRow<'_>]) {
 }
 
 fn print_exact_stage_build_breakdown(rows: &[ExactStagePerfRow<'_>]) {
+    if !exact_stage_path_is_live(rows) {
+        return;
+    }
     print_section("Exact Stage Build Breakdown");
     println!(
         "  {:10} {:>9} {:>9} {:>9} {:>9} {:>9} {:>9} {:>9}",
@@ -677,14 +728,15 @@ fn print_verify_breakdown(
 
 fn packaged_proof_stats(packaged: &PackagedProof) -> PackagedProofStats {
     let mut stats = PackagedProofStats {
-        public_steps: packaged.statement.steps.len(),
-        proof_steps: packaged.proof.session.steps.len(),
+        public_steps: packaged.statement.public_step_count(),
+        public_chunks: packaged.statement.chunks.len(),
+        proof_chunks: packaged.proof.session.chunks.len(),
         final_main_claims: packaged.proof.session.final_main_claims.len(),
         ..PackagedProofStats::default()
     };
-    for step in &packaged.proof.session.steps {
-        stats.ccs_outputs += step.ccs_outputs.len();
-        stats.dec_children += step.dec.children.len();
+    for chunk in &packaged.proof.session.chunks {
+        stats.ccs_outputs += chunk.ccs_outputs.len();
+        stats.dec_children += chunk.dec.children.len();
     }
     stats
 }
@@ -715,7 +767,8 @@ fn opening_surface_totals(
     }
     for stats in packaged_proofs {
         totals.packaged_public_steps += stats.public_steps;
-        totals.packaged_proof_steps += stats.proof_steps;
+        totals.packaged_public_chunks += stats.public_chunks;
+        totals.packaged_proof_chunks += stats.proof_chunks;
         totals.packaged_final_main_claims += stats.final_main_claims;
         totals.packaged_ccs_outputs += stats.ccs_outputs;
         totals.packaged_dec_children += stats.dec_children;
@@ -750,6 +803,9 @@ fn opening_label_buckets(labels: &[OpeningPointLabel]) -> OpeningLabelBuckets {
 }
 
 fn print_exact_opening_table(rows: &[(&str, ExactOpeningClaimStats)], opcode_count: usize, execution_rows: usize) {
+    if !exact_opening_claims_are_live(rows) {
+        return;
+    }
     print_section("Exact Opening Claims");
     println!(
         "  {:18} {:>8} {:>12} {:>12} {:>12} {:>10} {:>10}",
@@ -772,15 +828,16 @@ fn print_exact_opening_table(rows: &[(&str, ExactOpeningClaimStats)], opcode_cou
 fn print_packaged_proof_table(rows: &[(&str, PackagedProofStats)]) {
     print_section("Packaged Opening Proofs");
     println!(
-        "  {:18} {:>12} {:>12} {:>12} {:>12} {:>12}",
-        "surface", "public_steps", "proof_steps", "final_main", "ccs_outputs", "dec_children"
+        "  {:18} {:>12} {:>13} {:>12} {:>12} {:>12} {:>12}",
+        "surface", "public_steps", "public_chunks", "proof_chunks", "final_main", "ccs_outputs", "dec_children"
     );
     for (label, stats) in rows {
         println!(
-            "  {:18} {:>12} {:>12} {:>12} {:>12} {:>12}",
+            "  {:18} {:>12} {:>13} {:>12} {:>12} {:>12} {:>12}",
             label,
             stats.public_steps,
-            stats.proof_steps,
+            stats.public_chunks,
+            stats.proof_chunks,
             stats.final_main_claims,
             stats.ccs_outputs,
             stats.dec_children,
@@ -790,33 +847,36 @@ fn print_packaged_proof_table(rows: &[(&str, PackagedProofStats)]) {
 
 fn print_opening_surface_totals(totals: OpeningSurfaceTotals, opcode_count: usize, execution_rows: usize) {
     print_section("Opening Surface Totals");
-    print_kv("exact_claims_total", totals.exact_claims);
     print_kv("selected_labels_total", totals.selected_labels);
-    print_kv("exact_stage_flatten_u64_words_total", totals.flatten_u64_words);
-    print_kv("exact_field_limb_width_total", totals.logical_width);
     print_kv("selected_claim_words_total", totals.selected_claim_words);
-    print_kv("packed_rows_total", totals.packed_rows);
-    print_kv("packed_cols_total", totals.packed_cols);
     print_kv("packaged_public_steps_total", totals.packaged_public_steps);
-    print_kv("packaged_proof_steps_total", totals.packaged_proof_steps);
+    print_kv("packaged_public_chunks_total", totals.packaged_public_chunks);
+    print_kv("packaged_proof_chunks_total", totals.packaged_proof_chunks);
     print_kv("packaged_final_main_claims_total", totals.packaged_final_main_claims);
     print_kv("packaged_ccs_outputs_total", totals.packaged_ccs_outputs);
     print_kv("packaged_dec_children_total", totals.packaged_dec_children);
-    print_kv(
-        "exact_claims_per_non-halt_opcode",
-        format!("{:.4}", per_unit(totals.exact_claims as f64, opcode_count)),
-    );
-    print_kv(
-        "selected_labels_per_exact_claim",
-        format!("{:.4}", per_unit(totals.selected_labels as f64, totals.exact_claims)),
-    );
-    print_kv(
-        "exact_to_selected_amplification",
-        format!(
-            "{:.4}",
-            per_unit(totals.logical_width as f64, totals.selected_claim_words)
-        ),
-    );
+    if totals.exact_claims != 0 || totals.flatten_u64_words != 0 || totals.logical_width != 0 {
+        print_kv("exact_claims_total", totals.exact_claims);
+        print_kv("exact_stage_flatten_u64_words_total", totals.flatten_u64_words);
+        print_kv("exact_field_limb_width_total", totals.logical_width);
+        print_kv("packed_rows_total", totals.packed_rows);
+        print_kv("packed_cols_total", totals.packed_cols);
+        print_kv(
+            "exact_claims_per_non-halt_opcode",
+            format!("{:.4}", per_unit(totals.exact_claims as f64, opcode_count)),
+        );
+        print_kv(
+            "selected_labels_per_exact_claim",
+            format!("{:.4}", per_unit(totals.selected_labels as f64, totals.exact_claims)),
+        );
+        print_kv(
+            "exact_to_selected_amplification",
+            format!(
+                "{:.4}",
+                per_unit(totals.logical_width as f64, totals.selected_claim_words)
+            ),
+        );
+    }
     print_kv(
         "packaged_dec_children_per_execution_row",
         format!("{:.4}", per_unit(totals.packaged_dec_children as f64, execution_rows)),
@@ -1153,7 +1213,6 @@ fn rv64im_mixed_opcode_perf_snapshot() {
             ("root_lane_witness", build_perf.root_lane_witness_ms),
             ("root_lane_columns", build_perf.root_lane_columns_ms),
             ("root_lane_commitment", build_perf.root_lane_commitment_ms),
-            ("public_steps", build_perf.public_steps_ms),
             ("build_simple_kernel", build_ms),
             ("prove_rv64im_public_proof", prove_ms),
             ("verify_rv64im_public_proof", verify_ms),
@@ -1215,7 +1274,7 @@ fn rv64im_mixed_opcode_perf_snapshot() {
     print_kv("stage1_rows", output.stages.stage1.rows.len());
     print_kv("stage3_continuity", output.stages.stage3.continuity.len());
     print_kv("transcript_events", output.stages.transcript.events.len());
-    print_root_main_lane_family(&output);
+    print_root_main_lane_family(&output, &proof);
 
     print_family_rows("Row Expansion by Family", &family_rows, opcode_count);
     print_lookup_summary(lookup_summary, opcode_count, &twist_family_counts);
