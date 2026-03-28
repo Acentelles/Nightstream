@@ -13,6 +13,7 @@ export layer needed to reconstruct the theorem-owned kernel boundary. That
 layer includes:
 
 - the source case and derived execution rows,
+- the explicit fold schedule and any exported chunk-boundary inputs,
 - the transcript event stream and transcript-binding inputs,
 - the full prepared-step export list,
 - the full root-lane authentication rows and commitment inputs,

@@ -10,7 +10,10 @@ namespace Nightstream.Rv64IM
 
 namespace ExactTraceBoundariesInterface
 
+abbrev MinimalExactTraceInputs := @Nightstream.Rv64IM.MinimalExactTraceInputs
 abbrev ExactTraceBoundaries := @Nightstream.Rv64IM.ExactTraceBoundaries
+abbrev exactTraceBoundaries_of_minimalTraceInputs :=
+  @Nightstream.Rv64IM.exactTraceBoundaries_of_minimalTraceInputs
 abbrev authenticatedChunkTrace_of_exactBoundaries :=
   @Nightstream.Rv64IM.authenticatedChunkTrace_of_exactBoundaries
 abbrev executionCorrect_of_exactBoundaries :=

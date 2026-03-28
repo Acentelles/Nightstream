@@ -1,3 +1,4 @@
+import Nightstream.FoldSchedule
 import Nightstream.ShardComposition
 
 namespace Nightstream
@@ -48,6 +49,7 @@ theorem canonicalStageViews_stage_eq
   exact List.mem_map.mpr ⟨stage, hStage, rfl⟩
 
 structure ReleaseBridgePublicView (Stage Family : Type*) where
+  foldSchedule : FoldSchedule
   chunkCount : Nat
   preparedStepCount : Nat
   stages : List (ReleaseStageView Stage Family)
@@ -58,17 +60,38 @@ def ReleaseBridgePublicViewBound
   (shape : ReleaseShape Stage Family)
   (view : ReleaseBridgePublicView Stage Family)
   (preparedStepCount : Nat) : Prop :=
-  view.chunkCount = 1 ∧
+  FoldSchedule.Valid view.foldSchedule ∧
+    view.chunkCount = FoldSchedule.chunkCount view.foldSchedule preparedStepCount ∧
     view.preparedStepCount = preparedStepCount ∧
     view.stages = canonicalStageViews shape
+
+def releaseBridgePublicView_of_schedule
+  {Stage Family : Type*}
+  (shape : ReleaseShape Stage Family)
+  (schedule : FoldSchedule)
+  (preparedStepCount : Nat) : ReleaseBridgePublicView Stage Family :=
+  { foldSchedule := schedule
+    chunkCount := FoldSchedule.chunkCount schedule preparedStepCount
+    preparedStepCount := preparedStepCount
+    stages := canonicalStageViews shape }
 
 def releaseBridgePublicView_of_preparedStepCount
   {Stage Family : Type*}
   (shape : ReleaseShape Stage Family)
   (preparedStepCount : Nat) : ReleaseBridgePublicView Stage Family :=
-  { chunkCount := 1
-    preparedStepCount := preparedStepCount
-    stages := canonicalStageViews shape }
+  releaseBridgePublicView_of_schedule shape .wholeTrace preparedStepCount
+
+theorem releaseBridgePublicViewBound_of_schedule
+  {Stage Family : Type*}
+  (shape : ReleaseShape Stage Family)
+  {schedule : FoldSchedule}
+  (hValid : FoldSchedule.Valid schedule)
+  (preparedStepCount : Nat) :
+  ReleaseBridgePublicViewBound
+    shape
+    (releaseBridgePublicView_of_schedule shape schedule preparedStepCount)
+    preparedStepCount := by
+  simp [ReleaseBridgePublicViewBound, releaseBridgePublicView_of_schedule, hValid]
 
 theorem releaseBridgePublicViewBound_of_preparedStepCount
   {Stage Family : Type*}
@@ -78,6 +101,26 @@ theorem releaseBridgePublicViewBound_of_preparedStepCount
     shape
     (releaseBridgePublicView_of_preparedStepCount shape preparedStepCount)
     preparedStepCount := by
-  simp [ReleaseBridgePublicViewBound, releaseBridgePublicView_of_preparedStepCount]
+  simpa [releaseBridgePublicView_of_preparedStepCount] using
+    releaseBridgePublicViewBound_of_schedule
+      shape
+      FoldSchedule.valid_wholeTrace
+      preparedStepCount
+
+theorem foldSchedule_eq_wholeTrace_of_preparedStepCount
+  {Stage Family : Type*}
+  (shape : ReleaseShape Stage Family)
+  (preparedStepCount : Nat) :
+  (releaseBridgePublicView_of_preparedStepCount shape preparedStepCount).foldSchedule =
+    .wholeTrace := by
+  rfl
+
+theorem chunkCount_eq_one_of_preparedStepCount
+  {Stage Family : Type*}
+  (shape : ReleaseShape Stage Family)
+  (preparedStepCount : Nat) :
+  (releaseBridgePublicView_of_preparedStepCount shape preparedStepCount).chunkCount = 1 := by
+  simp [releaseBridgePublicView_of_preparedStepCount, releaseBridgePublicView_of_schedule,
+    FoldSchedule.chunkCount_wholeTrace]
 
 end Nightstream

@@ -35,7 +35,7 @@ Define the public bridge view:
 $$
 \mathrm{ReleaseBridgePublicView}
 =
-(\mathrm{chunkCount},\ \mathrm{preparedStepCount},\ \mathrm{stages}).
+(\mathrm{foldSchedule},\ \mathrm{chunkCount},\ \mathrm{preparedStepCount},\ \mathrm{stages}).
 $$
 
 Its exact realization predicate is:
@@ -43,14 +43,26 @@ Its exact realization predicate is:
 $$
 \mathrm{ReleaseBridgePublicViewBound}(view, n)
 \iff
-view.\mathrm{chunkCount} = 1
+\mathrm{Valid}(view.\mathrm{foldSchedule})
+\land
+view.\mathrm{chunkCount} =
+\mathrm{chunkCount}(view.\mathrm{foldSchedule}, n)
 \land
 view.\mathrm{preparedStepCount} = n
 \land
 view.\mathrm{stages} = \mathrm{canonicalStageViews}.
 $$
 
-The canonical constructor target is:
+The schedule-parameterized constructor target is:
+
+$$
+\mathrm{Valid}(schedule)
+\Longrightarrow
+\mathrm{ReleaseBridgePublicViewBound}
+(\mathrm{releaseBridgePublicView\_of\_schedule}(schedule, n), n).
+$$
+
+The canonical whole-trace constructor target is:
 
 $$
 \mathrm{ReleaseBridgePublicViewBound}
@@ -139,8 +151,11 @@ $$
 | Canonical stages | `canonicalStageViews` | def | Definitional | Fixes the exact release-stage order for the staged bridge |
 | Public view | `ReleaseBridgePublicView` | structure | Definitional | Packages the exact public bridge counts and stage inventory |
 | Predicate | `ReleaseBridgePublicViewBound` | def | Definitional | States the exact canonical public-bridge view contract |
+| Constructor | `releaseBridgePublicView_of_schedule` | def | Definitional | Canonical public-bridge view for one explicit fold schedule |
 | Constructor | `releaseBridgePublicView_of_preparedStepCount` | def | Definitional | Canonical public-bridge view for one prepared-step count |
+| Theorem | `releaseBridgePublicViewBound_of_schedule` | theorem | Theorem-Target | Any admissible explicit fold schedule yields the exact public-view contract |
 | Theorem | `releaseBridgePublicViewBound_of_preparedStepCount` | theorem | Theorem-Target | The canonical constructor satisfies the exact public-view contract |
+| Theorem | `foldSchedule_eq_wholeTrace_of_preparedStepCount` | theorem | Theorem-Target | The canonical helper is explicitly whole-trace folding |
 | Prepared steps | `bridgePreparedSteps` | def | Definitional | Fixes the exact ordered prepared-step list exported by the staged bridge |
 | Bundle | `ReadonlyBatchTraceBundle` | inductive | Definitional | Carries one exact readonly-batch bundle per authenticated frame in order |
 | Constructor | `readonlyBatchTraceBundle_of_frames` | def | Theorem-Target | Every authenticated frame yields its exact readonly-batch bundle |
@@ -166,7 +181,7 @@ $$
 - The staged bridge may trust only exact trace closure and exact chunk input.
 - The staged bridge must preserve the exact order of authenticated frames when
   exporting readonly-batch bundles and prepared steps.
-- The public bridge view must be canonical; no compatibility flag or
+- The public bridge view must be canonical and schedule-bearing; no compatibility flag or
   implementation-local mode bit belongs here.
 - The history payload must be the exact Stage-2 `HistoryBundle`, not a weaker
   digest-only approximation.

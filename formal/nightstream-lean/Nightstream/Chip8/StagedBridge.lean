@@ -1,3 +1,4 @@
+import Nightstream.FoldSchedule
 import Nightstream.Chip8.ReleaseBridge
 import Nightstream.Chip8.Trace.AuthenticatedTrace
 import Nightstream.Chip8.Stage2.EvidenceCoverageBounds
@@ -24,6 +25,7 @@ def canonicalStageViews : List ReleaseStageView :=
     releaseStageView .ramHistory]
 
 structure ReleaseBridgePublicView where
+  foldSchedule : Nightstream.FoldSchedule
   chunkCount : Nat
   preparedStepCount : Nat
   stages : List ReleaseStageView
@@ -32,23 +34,48 @@ deriving DecidableEq, Repr
 def ReleaseBridgePublicViewBound
   (view : ReleaseBridgePublicView)
   (preparedStepCount : Nat) : Prop :=
-  view.chunkCount = 1 ∧
+  Nightstream.FoldSchedule.Valid view.foldSchedule ∧
+    view.chunkCount =
+      Nightstream.FoldSchedule.chunkCount view.foldSchedule preparedStepCount ∧
     view.preparedStepCount = preparedStepCount ∧
     view.stages = canonicalStageViews
 
-def releaseBridgePublicView_of_preparedStepCount
+def releaseBridgePublicView_of_schedule
+  (schedule : Nightstream.FoldSchedule)
   (preparedStepCount : Nat) : ReleaseBridgePublicView :=
-  { chunkCount := 1
+  { foldSchedule := schedule
+    chunkCount := Nightstream.FoldSchedule.chunkCount schedule preparedStepCount
     preparedStepCount := preparedStepCount
     stages := canonicalStageViews }
+
+def releaseBridgePublicView_of_preparedStepCount
+  (preparedStepCount : Nat) : ReleaseBridgePublicView :=
+  releaseBridgePublicView_of_schedule .wholeTrace preparedStepCount
+
+theorem releaseBridgePublicViewBound_of_schedule
+  {schedule : Nightstream.FoldSchedule}
+  (hValid : Nightstream.FoldSchedule.Valid schedule)
+  (preparedStepCount : Nat) :
+  ReleaseBridgePublicViewBound
+    (releaseBridgePublicView_of_schedule schedule preparedStepCount)
+    preparedStepCount := by
+  simp [ReleaseBridgePublicViewBound, releaseBridgePublicView_of_schedule, hValid,
+    canonicalStageViews]
 
 theorem releaseBridgePublicViewBound_of_preparedStepCount
   (preparedStepCount : Nat) :
   ReleaseBridgePublicViewBound
     (releaseBridgePublicView_of_preparedStepCount preparedStepCount)
     preparedStepCount := by
-  simp [ReleaseBridgePublicViewBound, releaseBridgePublicView_of_preparedStepCount,
-    canonicalStageViews]
+  simpa [releaseBridgePublicView_of_preparedStepCount] using
+    releaseBridgePublicViewBound_of_schedule
+      Nightstream.FoldSchedule.valid_wholeTrace
+      preparedStepCount
+
+theorem foldSchedule_eq_wholeTrace_of_preparedStepCount
+  (preparedStepCount : Nat) :
+  (releaseBridgePublicView_of_preparedStepCount preparedStepCount).foldSchedule = .wholeTrace := by
+  rfl
 
 theorem canonicalStageViews_stage_eq
   (stage : ReleaseStage) :
@@ -324,6 +351,17 @@ theorem readonlyBatchLength_of_artifact
       readonlyBatchTraceBundle_length_eq artifact.readonlyBatch
     _ = (traceOf frames).length := by simp [traceOf]
 
+theorem foldSchedule_valid
+  {frames :
+    ExactFrames pcs inputs evalBase B publicTable tableBackedBy
+      readSessionKey pairedSessionKey validAddressColumns kernelAddressBound
+      readCheckExpression rwReadCheckExpression writeCheckExpression
+      valEvaluationExpression readOnlyMemoryRelation readWriteMemoryRelation
+      incrementRelation rom σ init}
+  (artifact : StagedBridgeArtifact (rootEncode := rootEncode) (ajtaiCommit := ajtaiCommit) frames) :
+  Nightstream.FoldSchedule.Valid artifact.publicView.foldSchedule := by
+  exact artifact.publicViewBound.1
+
 theorem preparedStepCount_matches_publicView
   {frames :
     ExactFrames pcs inputs evalBase B publicTable tableBackedBy
@@ -335,7 +373,7 @@ theorem preparedStepCount_matches_publicView
   artifact.publicView.preparedStepCount =
     (bridgePreparedSteps (rootEncode := rootEncode) (ajtaiCommit := ajtaiCommit) frames).length := by
   have hCount := artifact.preparedStepCount
-  rcases artifact.publicViewBound with ⟨_, hPrepared, _⟩
+  rcases artifact.publicViewBound with ⟨_, _, hPrepared, _⟩
   exact hPrepared.trans hCount.symm
 
 end Bridge

@@ -9,10 +9,19 @@ abbrev releaseStageView := Nightstream.Chip8.releaseStageView
 abbrev canonicalStageViews := Nightstream.Chip8.canonicalStageViews
 abbrev ReleaseBridgePublicView := Nightstream.Chip8.ReleaseBridgePublicView
 abbrev ReleaseBridgePublicViewBound := Nightstream.Chip8.ReleaseBridgePublicViewBound
+abbrev releaseBridgePublicView_of_schedule :=
+  Nightstream.Chip8.releaseBridgePublicView_of_schedule
 abbrev releaseBridgePublicView_of_preparedStepCount :=
   Nightstream.Chip8.releaseBridgePublicView_of_preparedStepCount
+abbrev releaseBridgePublicViewBound_of_schedule
+  {schedule : Nightstream.FoldSchedule}
+  (hValid : Nightstream.FoldSchedule.Valid schedule)
+  (preparedStepCount : Nat) :=
+  Nightstream.Chip8.releaseBridgePublicViewBound_of_schedule hValid preparedStepCount
 abbrev releaseBridgePublicViewBound_of_preparedStepCount :=
   Nightstream.Chip8.releaseBridgePublicViewBound_of_preparedStepCount
+abbrev foldSchedule_eq_wholeTrace_of_preparedStepCount :=
+  Nightstream.Chip8.foldSchedule_eq_wholeTrace_of_preparedStepCount
 abbrev canonicalStageViews_stage_eq := Nightstream.Chip8.canonicalStageViews_stage_eq
 
 abbrev bridgePreparedSteps := @Nightstream.Chip8.bridgePreparedSteps
@@ -29,6 +38,7 @@ abbrev StagedBridgeArtifact := @Nightstream.Chip8.StagedBridgeArtifact
 noncomputable abbrev stagedBridgeArtifact_of_exactTrace :=
   @Nightstream.Chip8.stagedBridgeArtifact_of_exactTrace
 abbrev readonlyBatchLength_of_artifact := @Nightstream.Chip8.readonlyBatchLength_of_artifact
+abbrev foldSchedule_valid := @Nightstream.Chip8.foldSchedule_valid
 abbrev preparedStepCount_matches_publicView :=
   @Nightstream.Chip8.preparedStepCount_matches_publicView
 

@@ -45,6 +45,15 @@ fn render_u64_list(values: &[u64]) -> String {
     out
 }
 
+fn render_fold_schedule(schedule: &neo_fold_next::proof::FoldSchedule) -> String {
+    match schedule {
+        neo_fold_next::proof::FoldSchedule::WholeTrace => "Nightstream.FoldSchedule.wholeTrace".into(),
+        neo_fold_next::proof::FoldSchedule::RowsPerChunk(rows) => {
+            format!("Nightstream.FoldSchedule.rowsPerChunk {rows}")
+        }
+    }
+}
+
 fn lean_ident_fragment(name: &str) -> String {
     name.chars()
         .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '_' })
@@ -604,8 +613,10 @@ pub(crate) fn render_derived_case(case: &Rv64imParityDerivedCase) -> String {
 
 fn render_proof_statement(statement: &rv64::Rv64imProofStatement) -> String {
     format!(
-        "{{\n  rootParamsId := {}\n  , stageClaimsDigest := {}\n  , stagePackagesDigest := {}\n  , kernelOpeningDigest := {}\n  , preparedStepBindingsDigest := {}\n  , executionDigest := {}\n  , finalStateDigest := {}\n  , transcriptFinalDigest := {}\n  , mainLaneSurfaceDigest := {}\n  , rootLaneColumnsDigest := {}\n  , publicStepCount := {}\n  , finalPc := {}\n  , halted := {}\n  , digest := {}\n}}",
+        "{{\n  rootParamsId := {}\n  , foldSchedule := {}\n  , chunkCount := {}\n  , stageClaimsDigest := {}\n  , stagePackagesDigest := {}\n  , kernelOpeningDigest := {}\n  , preparedStepBindingsDigest := {}\n  , executionDigest := {}\n  , finalStateDigest := {}\n  , transcriptFinalDigest := {}\n  , mainLaneSurfaceDigest := {}\n  , rootLaneColumnsDigest := {}\n  , publicStepCount := {}\n  , finalPc := {}\n  , halted := {}\n  , digest := {}\n}}",
         render_u8_list(&statement.root_params_id),
+        render_fold_schedule(&statement.fold_schedule),
+        statement.chunk_count,
         render_u8_list(&statement.stage_claims_digest),
         render_u8_list(&statement.stage_packages_digest),
         render_u8_list(&statement.kernel_opening_digest),
@@ -769,9 +780,11 @@ fn render_kernel_claim_bundle(bundle: &rv64::Rv64imKernelClaimBundle) -> String 
 
 fn render_main_lane_proof_binding(binding: &rv64::Rv64imMainLaneProofBinding) -> String {
     format!(
-        "{{ rootLaneColumnsDigest := {}, rootLaneCommitmentDigest := {}, publicStepCount := {}, digest := {} }}",
+        "{{ rootLaneColumnsDigest := {}, rootLaneCommitmentDigest := {}, foldSchedule := {}, chunkCount := {}, publicStepCount := {}, digest := {} }}",
         render_u8_list(&binding.root_lane_columns_digest),
         render_u8_list(&binding.root_lane_commitment_digest),
+        render_fold_schedule(&binding.fold_schedule),
+        binding.chunk_count,
         binding.public_step_count,
         render_u8_list(&binding.digest),
     )

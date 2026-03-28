@@ -1,12 +1,14 @@
 import Nightstream.Rv64IM.Generated.AcceptedProofArtifactTypes
+import Nightstream.Rv64IM.AcceptedArtifactRootLane
 import Nightstream.Rv64IM.Kernel.PublicProofSchema
 import Nightstream.Rv64IM.ProofBoundaryChecks
 
 /-!
 Owns the exact public-proof projection rebuilt from the Lean-owned accepted
-artifact view. The authoritative inputs are the derived case and the kernel
-proof bundle carried by the artifact; the exported public proof shape is only a
-projection target that must match this recomputation exactly.
+artifact view. The authoritative inputs are the source-derived execution rows
+and the proof-bearing kernel bundle carried by the artifact; the exported
+public proof shape is only a projection target that must match this
+recomputation exactly.
 -/
 
 namespace Nightstream.Rv64IM
@@ -21,19 +23,23 @@ abbrev GeneratedRv64imPublicProofSchema :=
 
 def projectedProofStatementOfAcceptedArtifact
     (artifact : AcceptedProofArtifactView) : ProofStatementView :=
-  let mainLaneSurface := mainLaneSurfaceOfRootLaneColumns artifact.kernelProof.rootLaneColumns
+  let recomputedRootLane := recomputeRootLaneView artifact.derived.executionRows
+  let rootLaneColumns := recomputedRootLane.rootLaneColumns
+  let mainLaneSurface := recomputedRootLane.mainLaneSurface
   let statement : ProofStatementView :=
     { rootParamsId := artifact.kernelProof.rootParamsId
+    , foldSchedule := artifact.kernelProof.mainLane.binding.foldSchedule
+    , chunkCount := artifact.kernelProof.mainLane.binding.chunkCount
     , stageClaimsDigest := artifact.kernelProof.stageClaims.digest
     , stagePackagesDigest := artifact.kernelProof.stagePackages.digest
     , kernelOpeningDigest := artifact.kernelProof.kernelOpening.digest
-    , preparedStepBindingsDigest := artifact.kernelProof.kernelClaims.summary.preparedStepBindingsDigest
+    , preparedStepBindingsDigest := recomputedRootLane.preparedStepBindings.digest
     , executionDigest := artifact.derived.kernel.executionDigest
     , finalStateDigest := artifact.derived.kernel.finalStateDigest
     , transcriptFinalDigest := artifact.derived.kernel.transcriptFinalDigest
     , mainLaneSurfaceDigest := mainLaneSurface.digest
-    , rootLaneColumnsDigest := artifact.kernelProof.rootLaneColumns.digest
-    , publicStepCount := artifact.derived.executionRows.length
+    , rootLaneColumnsDigest := rootLaneColumns.digest
+    , publicStepCount := rootLaneColumns.timeLen
     , finalPc := artifact.derived.kernel.finalPc
     , halted := artifact.derived.kernel.halted
     , digest := []

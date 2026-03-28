@@ -86,6 +86,7 @@ $$
 | Translation | `toGenericReleaseStageView` | def | Definitional | Erases RV64IM-local stage views into the generic stage-view surface |
 | Translation | `toGenericPublicView` | def | Definitional | Erases RV64IM-local public views into the generic public-view surface |
 | Theorem | `canonicalStageViews_refine` | theorem | Theorem-Target | RV64IM canonical stage views equal the generic canonical stage views after translation |
+| Theorem | `toGenericPublicView_of_schedule` | theorem | Theorem-Target | The RV64IM explicit schedule constructor matches the generic constructor exactly |
 | Theorem | `toGenericPublicView_of_preparedStepCount` | theorem | Theorem-Target | The RV64IM canonical public-view constructor matches the generic constructor exactly |
 | Theorem | `releaseBridge_refines_generic` | theorem | Theorem-Target | The concrete RV64IM release bridge exactly refines the generic Nightstream release bridge |
 | Theorem | `publicViewBound_refines` | theorem | Theorem-Target | Every well-formed RV64IM public view satisfies the generic public-view contract |
@@ -104,7 +105,7 @@ $$
 
 ## Proof Obligations
 
-- RV64IM must refine the generic bridge by exact preservation of stage order and prepared-step count.
+- RV64IM must refine the generic bridge by exact preservation of stage order, prepared-step count, and fold schedule.
 - The RV64IM staged artifact may enter the generic staged bridge only by supplying exactly one payload for each canonical stage.
 - The generic projection must be conservative: it may erase RV64IM-local names, but it may not alter the public bridge facts.
 

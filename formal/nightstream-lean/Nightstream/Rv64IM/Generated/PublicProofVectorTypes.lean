@@ -1,4 +1,5 @@
 import Nightstream.Rv64IM.Generated.ParityTypes
+import Nightstream.FoldSchedule
 
 /-!
 Generated-case surface for RV64IM public-proof boundary parity. These views
@@ -10,6 +11,8 @@ namespace Nightstream.Rv64IM.Generated
 
 structure ProofStatementView where
   rootParamsId : List Byte
+  foldSchedule : Nightstream.FoldSchedule
+  chunkCount : Nat
   stageClaimsDigest : List Byte
   stagePackagesDigest : List Byte
   kernelOpeningDigest : List Byte
@@ -130,6 +133,8 @@ deriving DecidableEq, Repr
 structure MainLaneProofBindingView where
   rootLaneColumnsDigest : List Byte
   rootLaneCommitmentDigest : List Byte
+  foldSchedule : Nightstream.FoldSchedule
+  chunkCount : Nat
   publicStepCount : Nat
   digest : List Byte
 deriving DecidableEq, Repr

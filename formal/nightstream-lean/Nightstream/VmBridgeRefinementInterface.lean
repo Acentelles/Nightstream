@@ -10,6 +10,8 @@ abbrev releaseBridgePublicViewBound_of_refines :=
   @Nightstream.releaseBridgePublicViewBound_of_refines
 abbrev releaseBridgePublicViewBound_of_publicView_eq :=
   @Nightstream.releaseBridgePublicViewBound_of_publicView_eq
+abbrev releaseBridgePublicViewBound_of_publicView_eq_schedule :=
+  @Nightstream.releaseBridgePublicViewBound_of_publicView_eq_schedule
 
 end VmBridgeRefinementInterface
 

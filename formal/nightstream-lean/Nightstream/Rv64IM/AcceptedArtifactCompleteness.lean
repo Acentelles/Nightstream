@@ -1,7 +1,13 @@
 import Nightstream.Rv64IM.Generated.AcceptedProofArtifactCorpus
+import Nightstream.Rv64IM.AcceptedArtifactKernelSurface
+import Nightstream.Rv64IM.AcceptedArtifactKernelReplay
+import Nightstream.Rv64IM.AcceptedArtifactLocalTrace
+import Nightstream.Rv64IM.AcceptedArtifactTemporalReplay
+import Nightstream.Rv64IM.AcceptedArtifactStage3Refinement
 import Nightstream.Rv64IM.AcceptedArtifactRootLane
 import Nightstream.Rv64IM.AcceptedArtifactChecks
 import Nightstream.Rv64IM.Checks
+import Nightstream.Rv64IM.Kernel.PublicProofProjection
 import Nightstream.Rv64IM.Execution.ExecutionSemantics
 import Nightstream.Rv64IM.Stage3.ContinuityBridge
 
@@ -21,7 +27,12 @@ inductive AcceptedArtifactTheoremField where
   | executionRows
   | transcriptEvents
   | traceChunkInput
+  | mainLaneBoundary
   | traceLinkBoundary
+  | stepCompositionProof
+  | temporalConsistency
+  | stage2Closure
+  | stage3Refinement
   | kernelProofBundle
   | soundnessAccounting
   | preparedStepExports
@@ -39,7 +50,12 @@ def acceptedArtifactTheoremFieldName : AcceptedArtifactTheoremField → String
   | .executionRows => "execution_rows"
   | .transcriptEvents => "transcript_events"
   | .traceChunkInput => "trace_chunk_input"
+  | .mainLaneBoundary => "main_lane_boundary"
   | .traceLinkBoundary => "trace_link_boundary"
+  | .stepCompositionProof => "step_composition_proof"
+  | .temporalConsistency => "temporal_consistency"
+  | .stage2Closure => "stage2_closure"
+  | .stage3Refinement => "stage3_refinement"
   | .kernelProofBundle => "kernel_proof_bundle"
   | .soundnessAccounting => "soundness_accounting"
   | .preparedStepExports => "prepared_step_exports"
@@ -56,7 +72,12 @@ def requiredAcceptedArtifactTheoremFields : List AcceptedArtifactTheoremField :=
   , .executionRows
   , .transcriptEvents
   , .traceChunkInput
+  , .mainLaneBoundary
   , .traceLinkBoundary
+  , .stepCompositionProof
+  , .temporalConsistency
+  , .stage2Closure
+  , .stage3Refinement
   , .kernelProofBundle
   , .soundnessAccounting
   , .preparedStepExports
@@ -82,13 +103,8 @@ private def executionRowsPresent (artifact : AcceptedProofArtifactView) : Bool :
   | some derived => !derived.executionRows.isEmpty
   | none => false
 
-private def transcriptEventsPresent (artifact : AcceptedProofArtifactView) : Bool :=
-  match replayedDerivedCaseOfArtifact? artifact with
-  | some derived => !derived.transcript.events.isEmpty
-  | none => false
-
-private def proofLedAcceptedArtifactPresent (artifact : AcceptedProofArtifactView) : Bool :=
-  checkAcceptedArtifactCase artifact
+private def transcriptEventsPresent (_artifact : AcceptedProofArtifactView) : Bool :=
+  false
 
 private def mainLaneProofPresent (artifact : AcceptedProofArtifactView) : Bool :=
   artifact.kernelProof.mainLane.binding.rootLaneColumnsDigest ≠ [] &&
@@ -142,130 +158,79 @@ private def root0ClaimPresent (artifact : AcceptedProofArtifactView) : Bool :=
     artifact.exportedClaims.root0.terminal.digest ≠ [] &&
     artifact.exportedClaims.root0.digest ≠ []
 
-private def programBindingInputsPresent (artifact : AcceptedProofArtifactView) : Bool :=
-  !artifact.source.programWords.isEmpty &&
-    !artifact.source.manifest.fixtureId.isEmpty
+private def programBindingInputsPresent (_artifact : AcceptedProofArtifactView) : Bool :=
+  false
 
 private def kernelOpeningWitnessBundlePresent
-    (artifact : AcceptedProofArtifactView) : Bool :=
-  artifact.kernelProof.kernelOpening.openingDigest ≠ [] &&
-    artifact.kernelProof.kernelOpening.bindings.claimDigest ≠ [] &&
-    artifact.kernelProof.kernelOpening.bindings.bindingsDigest ≠ [] &&
-    artifact.kernelProof.kernelOpening.bindings.preparedStepsDigest ≠ [] &&
-    artifact.kernelProof.kernelOpening.bindings.digest ≠ [] &&
-    artifact.kernelProof.kernelOpening.digest ≠ []
-
-private def listEnumFrom : Nat → List α → List (Nat × α)
-  | _, [] => []
-  | rowIndex, row :: rows => (rowIndex, row) :: listEnumFrom (rowIndex + 1) rows
-
-private def listEnum (rows : List α) : List (Nat × α) :=
-  listEnumFrom 0 rows
-
-private def preparedStepOfExecutionRow
-    (rowIndex : Nat)
-    (row : ExpandedRowView) : PreparedStepView Nat :=
-  { rowIndex := rowIndex
-  , pc := row.pc
-  , advanceArchPc := row.isCommitRow
-  , terminates := row.halted
-  }
-
-private def preparedStepExportsOfExecutionRows
-    (rows : List ExpandedRowView) : List (PreparedStepView Nat) :=
-  listEnum rows |>.map fun (rowIndex, row) =>
-    preparedStepOfExecutionRow rowIndex row
-
-private def stage3RowBindingsOfExecutionRows
-    (rows : List ExpandedRowView) :
-    List (RowProjectionBinding ExpandedRowView (PreparedStepView Nat)) :=
-  listEnum rows |>.map fun (rowIndex, row) =>
-    { row := row
-    , preparedStep := preparedStepOfExecutionRow rowIndex row
-    }
+    (_artifact : AcceptedProofArtifactView) : Bool :=
+  false
 
 private def preparedStepExportsPresent
     (artifact : AcceptedProofArtifactView) : Bool :=
-  match replayedDerivedCaseOfArtifact? artifact with
-  | some derived =>
-      let preparedSteps := preparedStepExportsOfExecutionRows derived.executionRows
-      !preparedSteps.isEmpty && preparedSteps.length = derived.executionRows.length
-  | none => false
+  let recomputedLocalTrace := recomputeLocalTraceView artifact
+  let recomputedRootLane := recomputeRootLaneView artifact.derived.executionRows
+  !recomputedLocalTrace.mainLane.preparedSteps.isEmpty &&
+    recomputedMainLaneBoundaryMatchesArtifact recomputedLocalTrace artifact &&
+    recomputedPreparedStepBindingsMatchArtifact recomputedRootLane artifact
 
 private def stage3RowBindingsPresent
     (artifact : AcceptedProofArtifactView) : Bool :=
-  match replayedDerivedCaseOfArtifact? artifact with
-  | some derived =>
-      let rowBindings := stage3RowBindingsOfExecutionRows derived.executionRows
-      !rowBindings.isEmpty && rowBindings.length = derived.executionRows.length
+  let recomputedLocalTrace := recomputeLocalTraceView artifact
+  !recomputedLocalTrace.rowBindings.isEmpty &&
+    recomputedStage3RowBindingsMatchArtifact recomputedLocalTrace artifact
+
+private def recoveredTemporalReplayPresent
+    (artifact : AcceptedProofArtifactView) : Bool :=
+  match recoverTemporalReplay? artifact with
+  | some recovered => recoveredTemporalReplayMatchesArtifact recovered artifact
   | none => false
 
 private def fullRootLaneRowsPresent
     (artifact : AcceptedProofArtifactView) : Bool :=
   match replayedDerivedCaseOfArtifact? artifact with
   | some derived =>
-      proofLedAcceptedArtifactPresent artifact &&
-        !derived.executionRows.isEmpty
+      let recomputedRootLane := recomputeRootLaneView derived.executionRows
+      !derived.executionRows.isEmpty &&
+        recomputedRootLaneProtocolBindingsMatchArtifact recomputedRootLane artifact
   | none => false
 
 private def exactOpeningWitnessesPresent
-    (artifact : AcceptedProofArtifactView) : Bool :=
-  proofLedAcceptedArtifactPresent artifact &&
-    kernelOpeningWitnessBundlePresent artifact
+    (_artifact : AcceptedProofArtifactView) : Bool :=
+  false
 
 private def root0BindingsPresent
-    (artifact : AcceptedProofArtifactView) : Bool :=
-  proofLedAcceptedArtifactPresent artifact &&
-    root0ClaimPresent artifact
+    (_artifact : AcceptedProofArtifactView) : Bool :=
+  false
 
 private def bridgeProvenanceChainsPresent
-    (artifact : AcceptedProofArtifactView) : Bool :=
-  proofLedAcceptedArtifactPresent artifact &&
-    stage3RowBindingsPresent artifact &&
-    root0BindingsPresent artifact &&
-    artifact.exportedClaims.opening.digest ≠ [] &&
-    artifact.exportedClaims.jointOpening.digest ≠ [] &&
-    artifact.exportedClaims.accepted.digest ≠ []
+    (_artifact : AcceptedProofArtifactView) : Bool :=
+  false
 
 private def soundnessAccountingPresent
-    (artifact : AcceptedProofArtifactView) : Bool :=
-  proofLedAcceptedArtifactPresent artifact &&
-    mainLaneProofPresent artifact &&
-    stageClaimProofPresent artifact &&
-    stagePackageProofsPresent artifact &&
-    kernelClaimProofPresent artifact &&
-    programBindingInputsPresent artifact &&
-    exactOpeningWitnessesPresent artifact &&
-    bridgeProvenanceChainsPresent artifact
+    (_artifact : AcceptedProofArtifactView) : Bool :=
+  false
 
 private def acceptedArtifactTheoremFieldPresentCached
     (artifact : AcceptedProofArtifactView)
     (replayedDerivedCase : Option ParityDerivedCase)
-    (proofLedAcceptedArtifact : Bool)
     (field : AcceptedArtifactTheoremField) : Bool :=
   let executionRowsPresent :=
     match replayedDerivedCase with
     | some derived => !derived.executionRows.isEmpty
     | none => false
-  let transcriptEventsPresent :=
-    match replayedDerivedCase with
-    | some derived => !derived.transcript.events.isEmpty
-    | none => false
+  let recomputedKernelSurface := recomputeKernelSurfaceView artifact
+  let recomputedLocalTrace := recomputeLocalTraceView artifact
+  let recoveredTemporalReplay := recoverTemporalReplay? artifact
+  let recoveredStage3Refinement := recoverStage3Refinement? artifact
+  let transcriptEventsPresent := false
   let preparedStepExportsPresent :=
-    match replayedDerivedCase with
-    | some derived =>
-        let preparedSteps := preparedStepExportsOfExecutionRows derived.executionRows
-        let recomputedRootLane := recomputeRootLaneView derived.executionRows
-        !preparedSteps.isEmpty &&
-          preparedSteps.length = derived.executionRows.length &&
-          recomputedPreparedStepBindingsMatchArtifact recomputedRootLane artifact
-    | none => false
+    let recomputedRootLane := recomputeRootLaneView artifact.derived.executionRows
+    !recomputedLocalTrace.mainLane.preparedSteps.isEmpty &&
+      recomputedMainLaneBoundaryMatchesArtifact recomputedLocalTrace artifact &&
+      recomputedPreparedStepBindingsMatchArtifact recomputedRootLane artifact
   let stage3RowBindingsPresent :=
-    match replayedDerivedCase with
-    | some derived =>
-        let rowBindings := stage3RowBindingsOfExecutionRows derived.executionRows
-        !rowBindings.isEmpty && rowBindings.length = derived.executionRows.length
-    | none => false
+    !recomputedLocalTrace.rowBindings.isEmpty &&
+      recomputedStage3RowBindingsMatchArtifact recomputedLocalTrace artifact
   let fullRootLaneRowsPresent :=
     match replayedDerivedCase with
     | some derived =>
@@ -273,32 +238,42 @@ private def acceptedArtifactTheoremFieldPresentCached
         !derived.executionRows.isEmpty &&
           recomputedRootLaneProtocolBindingsMatchArtifact recomputedRootLane artifact
     | none => false
-  let exactOpeningWitnessesPresent :=
-    proofLedAcceptedArtifact && kernelOpeningWitnessBundlePresent artifact
-  let root0BindingsPresent :=
-    proofLedAcceptedArtifact && root0ClaimPresent artifact
-  let bridgeProvenanceChainsPresent :=
-    proofLedAcceptedArtifact &&
-      stage3RowBindingsPresent &&
-      root0BindingsPresent &&
-      artifact.exportedClaims.opening.digest ≠ [] &&
-      artifact.exportedClaims.jointOpening.digest ≠ [] &&
-      artifact.exportedClaims.accepted.digest ≠ []
-  let soundnessAccountingPresent :=
-    proofLedAcceptedArtifact &&
-      mainLaneProofPresent artifact &&
-      stageClaimProofPresent artifact &&
-      stagePackageProofsPresent artifact &&
-      kernelClaimProofPresent artifact &&
-      programBindingInputsPresent artifact &&
-      exactOpeningWitnessesPresent &&
-      bridgeProvenanceChainsPresent
+  let exactOpeningWitnessesPresent := false
+  let root0BindingsPresent := false
+  let bridgeProvenanceChainsPresent := false
+  let soundnessAccountingPresent := false
   match field with
   | .sourceCase => sourceCasePresent artifact
   | .executionRows => executionRowsPresent
   | .transcriptEvents => transcriptEventsPresent
-  | .traceChunkInput => sourceCasePresent artifact && executionRowsPresent
-  | .traceLinkBoundary => executionRowsPresent
+  | .traceChunkInput =>
+      sourceCasePresent artifact &&
+        executionRowsPresent &&
+        recomputedChunkInputMatchesArtifact recomputedLocalTrace artifact &&
+        recomputedTraceProjectionMatchesArtifact recomputedKernelSurface artifact
+  | .mainLaneBoundary =>
+      executionRowsPresent &&
+        recomputedMainLaneBoundaryMatchesArtifact recomputedLocalTrace artifact
+  | .traceLinkBoundary =>
+      executionRowsPresent &&
+        recomputedTraceLinkBoundaryMatchesArtifact recomputedLocalTrace artifact &&
+        recomputedStageWitnessProjectionMatchesArtifact recomputedKernelSurface artifact
+  | .stepCompositionProof => false
+  | .temporalConsistency =>
+      match recoveredTemporalReplay with
+      | some recovered =>
+          recoveredTemporalReplayMatchesArtifact recovered artifact
+      | none => false
+  | .stage2Closure =>
+      match recoveredTemporalReplay with
+      | some recovered =>
+          recoveredTemporalReplayMatchesArtifact recovered artifact
+      | none => false
+  | .stage3Refinement =>
+      match recoveredStage3Refinement with
+      | some recovered =>
+          recoveredStage3RefinementMatchesArtifact recovered artifact
+      | none => false
   | .kernelProofBundle => artifact.kernelProof.digest ≠ []
   | .soundnessAccounting => soundnessAccountingPresent
   | .preparedStepExports => preparedStepExportsPresent
@@ -316,19 +291,16 @@ def acceptedArtifactTheoremFieldPresent
   acceptedArtifactTheoremFieldPresentCached
     artifact
     (replayedDerivedCaseOfArtifact? artifact)
-    (checkAcceptedArtifactCase artifact)
     field
 
 def acceptedArtifactTheoremCompletenessChecks
     (artifact : AcceptedProofArtifactView) : List (String × Bool) :=
   let replayedDerivedCase := replayedDerivedCaseOfArtifact? artifact
-  let proofLedAcceptedArtifact := checkAcceptedArtifactCase artifact
   requiredAcceptedArtifactTheoremFields.map fun field =>
     (acceptedArtifactTheoremFieldName field,
       acceptedArtifactTheoremFieldPresentCached
         artifact
         replayedDerivedCase
-        proofLedAcceptedArtifact
         field)
 
 def theoremCompleteAcceptedArtifact (artifact : AcceptedProofArtifactView) : Bool :=

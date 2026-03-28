@@ -8,9 +8,10 @@ import Nightstream.Chip8.Kernel.Poseidon2GoldilocksCore
 /-!
 Owns exact recomputation of the RV64IM root main-lane protocol-binding objects
 from replayed execution rows. This owner covers the semantic-row embedding,
-root-lane row and column authentication digests, the derived root-lane summary,
-the derived main-lane surface, and the prepared-step binding summary. It does
-not own PCS commitment verification or root0 binding recovery.
+root-lane row and column authentication digests, the exported root-lane
+commitment summary surface, the derived main-lane surface, and the prepared-step
+binding summary. It does not own PCS commitment verification or root0 binding
+recovery.
 -/
 
 namespace Nightstream.Rv64IM
@@ -20,24 +21,26 @@ open Nightstream.Chip8.Poseidon2Transcript
 open Nightstream.Chip8.Root0Digest
 open Nightstream.Chip8.Poseidon2GoldilocksCore (concreteCore)
 
-abbrev Byte := Generated.Byte
+private abbrev RvByte := Generated.Byte
 
 def rv64imRootRowWidth : Nat := 38
 def rv64imRootLaneColumnsLayoutV1 : Nat := 1
+def rv64imRootLaneCommittedRowsFamilyTag : Nat := 10
+def rv64imRootLaneCommittedRowsLayoutV1 : Nat := 3
 
 structure RecomputedPreparedStepBindingSummary where
-  bindingDigests : List (List Byte)
+  bindingDigests : List (List RvByte)
   bindingCount : Nat
-  firstBindingDigest : Option (List Byte)
-  lastBindingDigest : Option (List Byte)
-  digest : List Byte
+  firstBindingDigest : Option (List RvByte)
+  lastBindingDigest : Option (List RvByte)
+  digest : List RvByte
 deriving DecidableEq, Repr
 
 structure RecomputedRootLaneView where
   semanticRows : List (List Nat)
-  rowDigests : List (List Byte)
-  columnDigests : List (List Byte)
-  familyDigest : List Byte
+  rowDigests : List (List RvByte)
+  columnDigests : List (List RvByte)
+  familyDigest : List RvByte
   rootLaneColumns : RootLaneColumnsView
   mainLaneSurface : MainLaneSurfaceView
   preparedStepBindings : RecomputedPreparedStepBindingSummary
@@ -216,7 +219,7 @@ private def appendFieldWordsCursor
   absorbFields concreteCore cursor
     (toFieldElems (absorbPackedBytesWithLenWords (utf8Bytes label) ++ [fieldWords.length] ++ fieldWords))
 
-def rootLaneRowDigest (logicalIndex : Nat) (semanticRow : List Nat) : List Byte :=
+def rootLaneRowDigest (logicalIndex : Nat) (semanticRow : List Nat) : List RvByte :=
   let cursor0 := transcriptAppCursor "neo.fold.next/rv64im/root_lane_row"
   let cursor1 :=
     appendU64sCursor concreteCore cursor0 "rv64im/root_lane_row/logical_index" [logicalIndex]
@@ -224,7 +227,7 @@ def rootLaneRowDigest (logicalIndex : Nat) (semanticRow : List Nat) : List Byte 
     appendFieldWordsCursor cursor1 "rv64im/root_lane_row/semantic" semanticRow
   digestBytes concreteCore cursor2
 
-def rootLaneColumnDigest (columnIndex : Nat) (values : List Nat) : List Byte :=
+def rootLaneColumnDigest (columnIndex : Nat) (values : List Nat) : List RvByte :=
   let cursor0 := transcriptAppCursor "neo.fold.next/rv64im/root_lane_column"
   let cursor1 :=
     appendU64sCursor concreteCore cursor0 "rv64im/root_lane_column/meta" [columnIndex, values.length]
@@ -232,7 +235,7 @@ def rootLaneColumnDigest (columnIndex : Nat) (values : List Nat) : List Byte :=
     appendFieldWordsCursor cursor1 "rv64im/root_lane_column/values" values
   digestBytes concreteCore cursor2
 
-def rootLaneFamilyDigest (columnDigests : List (List Byte)) : List Byte :=
+def rootLaneFamilyDigest (columnDigests : List (List RvByte)) : List RvByte :=
   transcriptDigest "neo.fold.next/rv64im/root_lane_column_family"
     ([ .appendU64s
          "rv64im/root_lane_column_family/column_count"
@@ -241,7 +244,7 @@ def rootLaneFamilyDigest (columnDigests : List (List Byte)) : List Byte :=
       columnDigests.map fun digest =>
         TranscriptOp.appendMessage "rv64im/root_lane_column_family/column_digest" digest)
 
-private def rootLaneColumnsObject (familyDigest : List Byte) : AjtaiObjectIdView :=
+private def rootLaneColumnsObject (familyDigest : List RvByte) : AjtaiObjectIdView :=
   let object : AjtaiObjectIdView :=
     { familyTag := 0
     , commitmentDigest := familyDigest
@@ -253,7 +256,7 @@ private def rootLaneColumnsObject (familyDigest : List Byte) : AjtaiObjectIdView
 private def selectedOpeningRefOfRowDigest
     (object : AjtaiObjectIdView)
     (logicalIndex : Nat)
-    (rowDigest : List Byte) : SelectedOpeningRefView :=
+    (rowDigest : List RvByte) : SelectedOpeningRefView :=
   let openingId : AjtaiOpeningIdView :=
     { object := object
     , logicalIndex := logicalIndex
@@ -267,9 +270,28 @@ private def selectedOpeningRefOfRowDigest
     }
   { reference with digest := selectedOpeningRefDigest reference }
 
+private def rootLaneCommittedRowsObject
+    (commitmentDigest : List RvByte) : AjtaiObjectIdView :=
+  let object : AjtaiObjectIdView :=
+    { familyTag := rv64imRootLaneCommittedRowsFamilyTag
+    , commitmentDigest := commitmentDigest
+    , layoutVersion := rv64imRootLaneCommittedRowsLayoutV1
+    , digest := []
+    }
+  { object with digest := ajtaiObjectIdDigest object }
+
+private def selectedCommittedRowRefOfDigest
+    (commitmentDigest : List RvByte)
+    (logicalIndex : Nat)
+    (rowDigest : List RvByte) : SelectedOpeningRefView :=
+  selectedOpeningRefOfRowDigest
+    (rootLaneCommittedRowsObject commitmentDigest)
+    logicalIndex
+    rowDigest
+
 private def rootLaneColumnsOfRows
     (semanticRows : List (List Nat))
-    (rowDigests : List (List Byte)) : RootLaneColumnsView :=
+    (rowDigests : List (List RvByte)) : RootLaneColumnsView :=
   let columnDigests :=
     (List.range rv64imRootRowWidth).map fun columnIndex =>
       rootLaneColumnDigest columnIndex (semanticRows.map fun row => row.getD columnIndex 0)
@@ -295,7 +317,7 @@ private def rootLaneColumnsOfRows
 
 def preparedStepBindingDigest
     (logicalIndex traceIndex : Nat)
-    (semanticRow : List Nat) : List Byte :=
+    (semanticRow : List Nat) : List RvByte :=
   let cursor0 := transcriptAppCursor "neo.fold.next/rv64im/prepared_step_binding"
   let cursor1 :=
     appendU64sCursor concreteCore cursor0
@@ -328,6 +350,27 @@ def preparedStepBindingSummaryOfExecutionRows
   , digest := digest
   }
 
+def rootLaneCommitmentSummaryOfRowDigests
+    (commitmentDigest : List RvByte)
+    (rowDigests : List (List RvByte)) : RootLaneCommitmentArtifactView :=
+  let firstSelectedRow :=
+    rowDigests.head?.map fun rowDigest =>
+      selectedCommittedRowRefOfDigest commitmentDigest 0 rowDigest
+  let lastSelectedRow :=
+    listLast? (listEnum rowDigests) |>.map fun (logicalIndex, rowDigest) =>
+      selectedCommittedRowRefOfDigest commitmentDigest logicalIndex rowDigest
+  let artifact : RootLaneCommitmentArtifactView :=
+    { timeLen := rowDigests.length
+    , commitments :=
+        { commitmentCount := rv64imRootRowWidth
+        , digest := commitmentDigest
+        }
+    , firstSelectedRow := firstSelectedRow
+    , lastSelectedRow := lastSelectedRow
+    , digest := []
+    }
+  { artifact with digest := rootLaneCommitmentArtifactDigest artifact }
+
 def recomputeRootLaneView (rows : List ExpandedRowView) : RecomputedRootLaneView :=
   let semanticRows := rows.map semanticRowWordsOfExecutionRow
   let rowDigests :=
@@ -357,9 +400,34 @@ def recomputedMainLaneSurfaceMatchesArtifact
     (recomputed : RecomputedRootLaneView)
     (artifact : AcceptedProofArtifactView) : Bool :=
   recomputed.mainLaneSurface.digest = artifact.exportedStatement.mainLaneSurfaceDigest &&
+    artifact.exportedStatement.publicStepCount = recomputed.rootLaneColumns.timeLen &&
+    artifact.exportedStatement.chunkCount =
+      Nightstream.FoldSchedule.chunkCount
+        artifact.exportedStatement.foldSchedule
+        artifact.exportedStatement.publicStepCount &&
+    artifact.exportedStatement.foldSchedule = artifact.kernelProof.mainLane.binding.foldSchedule &&
+    artifact.exportedStatement.chunkCount = artifact.kernelProof.mainLane.binding.chunkCount &&
+    artifact.kernelProof.mainLane.binding.publicStepCount = recomputed.rootLaneColumns.timeLen &&
+    artifact.kernelProof.mainLane.binding.chunkCount =
+      Nightstream.FoldSchedule.chunkCount
+        artifact.kernelProof.mainLane.binding.foldSchedule
+        artifact.kernelProof.mainLane.binding.publicStepCount &&
     recomputed.mainLaneSurface.objectDigest = recomputed.rootLaneColumns.object.digest &&
     recomputed.mainLaneSurface.familyDigest = recomputed.rootLaneColumns.familyDigest &&
-    recomputed.mainLaneSurface.publicStepCount = recomputed.rootLaneColumns.timeLen
+    recomputed.mainLaneSurface.publicStepCount = recomputed.rootLaneColumns.timeLen &&
+    recomputed.mainLaneSurface.firstPublicStep = recomputed.rootLaneColumns.firstRow &&
+    recomputed.mainLaneSurface.lastPublicStep = recomputed.rootLaneColumns.lastRow
+
+def recomputedRootLaneCommitmentMatchesArtifact
+    (recomputed : RecomputedRootLaneView)
+    (artifact : AcceptedProofArtifactView) : Bool :=
+  let recomputedCommitment :=
+    rootLaneCommitmentSummaryOfRowDigests
+      artifact.kernelProof.rootLaneCommitment.commitments.digest
+      recomputed.rowDigests
+  recomputedCommitment = artifact.kernelProof.rootLaneCommitment &&
+    recomputedCommitment = artifact.exportedKernelProof.rootLaneCommitment &&
+    recomputedCommitment.digest = artifact.kernelProof.mainLane.binding.rootLaneCommitmentDigest
 
 def recomputedPreparedStepBindingsMatchArtifact
     (recomputed : RecomputedRootLaneView)
@@ -376,6 +444,7 @@ def recomputedRootLaneProtocolBindingsMatchArtifact
     (recomputed : RecomputedRootLaneView)
     (artifact : AcceptedProofArtifactView) : Bool :=
   recomputedRootLaneColumnsMatchArtifact recomputed artifact &&
+    recomputedRootLaneCommitmentMatchesArtifact recomputed artifact &&
     recomputedMainLaneSurfaceMatchesArtifact recomputed artifact &&
     recomputedPreparedStepBindingsMatchArtifact recomputed artifact
 

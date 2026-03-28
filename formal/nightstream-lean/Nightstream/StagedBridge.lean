@@ -45,25 +45,40 @@ def stagedBridgeArtifact_of_parts
   (shape : ReleaseShape Stage Family)
   (PreparedTraceBound : PreparedTrace → List PreparedStep → Prop)
   (StagePayload : Stage → Type*)
+  (schedule : FoldSchedule)
+  (hSchedule : FoldSchedule.Valid schedule)
   (preparedSteps : List PreparedStep)
   (preparedTrace : PreparedTrace)
   (hTrace : PreparedTraceBound preparedTrace preparedSteps)
   (stagePayloads : CanonicalStagePayloads shape.stageOrder StagePayload) :
   StagedBridgeArtifact shape PreparedTraceBound StagePayload :=
-  { publicView := releaseBridgePublicView_of_preparedStepCount shape preparedSteps.length
+  { publicView := releaseBridgePublicView_of_schedule shape schedule preparedSteps.length
     preparedSteps := preparedSteps
     preparedTrace := preparedTrace
     preparedTraceBound := hTrace
     stagePayloads := stagePayloads
-    publicViewBound := releaseBridgePublicViewBound_of_preparedStepCount shape preparedSteps.length }
+    publicViewBound := releaseBridgePublicViewBound_of_schedule shape
+      (preparedStepCount := preparedSteps.length)
+      (schedule := schedule)
+      hSchedule }
 
-theorem chunkCount_eq_one
+theorem chunkCount_matches_schedule
   {Stage Family PreparedStep PreparedTrace : Type*}
   {shape : ReleaseShape Stage Family}
   {PreparedTraceBound : PreparedTrace → List PreparedStep → Prop}
   {StagePayload : Stage → Type*}
   (artifact : StagedBridgeArtifact shape PreparedTraceBound StagePayload) :
-  artifact.publicView.chunkCount = 1 :=
+  artifact.publicView.chunkCount =
+    FoldSchedule.chunkCount artifact.publicView.foldSchedule artifact.preparedSteps.length :=
+  artifact.publicViewBound.2.1
+
+theorem foldSchedule_valid
+  {Stage Family PreparedStep PreparedTrace : Type*}
+  {shape : ReleaseShape Stage Family}
+  {PreparedTraceBound : PreparedTrace → List PreparedStep → Prop}
+  {StagePayload : Stage → Type*}
+  (artifact : StagedBridgeArtifact shape PreparedTraceBound StagePayload) :
+  FoldSchedule.Valid artifact.publicView.foldSchedule :=
   artifact.publicViewBound.1
 
 theorem preparedStepCount_matches_publicView
@@ -73,7 +88,7 @@ theorem preparedStepCount_matches_publicView
   {StagePayload : Stage → Type*}
   (artifact : StagedBridgeArtifact shape PreparedTraceBound StagePayload) :
   artifact.publicView.preparedStepCount = artifact.preparedSteps.length :=
-  artifact.publicViewBound.2.1
+  artifact.publicViewBound.2.2.1
 
 theorem publicStages_eq_canonical
   {Stage Family PreparedStep PreparedTrace : Type*}
@@ -82,7 +97,7 @@ theorem publicStages_eq_canonical
   {StagePayload : Stage → Type*}
   (artifact : StagedBridgeArtifact shape PreparedTraceBound StagePayload) :
   artifact.publicView.stages = canonicalStageViews shape :=
-  artifact.publicViewBound.2.2
+  artifact.publicViewBound.2.2.2
 
 theorem stagePayloadCount_matches_stageOrder
   {Stage Family PreparedStep PreparedTrace : Type*}

@@ -81,6 +81,133 @@ structure ExactTraceBoundaries
   stage2MatchesTemporal :
     stage2Closure = temporal.stage2
 
+structure MinimalExactTraceInputs
+  (BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
+    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
+    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
+    PreparedStep : Type _) [OfNat Limb 0] where
+  stepComposition :
+    StepCompositionProofPackage
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep
+  chunkInput :
+    ChunkInput
+      (ArchitecturalState Pc RegIdx RamAddr Word)
+      (ExpandedRow Pc BytecodeAddr RegIdx StateLocation)
+  mainLane :
+    MainLaneTraceBoundaryProofPackage
+      (ExpandedRow Pc BytecodeAddr RegIdx StateLocation)
+      (PreparedStepView Pc)
+  traceLink :
+    TraceLinkBoundaryProofPackage
+      (ExpandedRow Pc BytecodeAddr RegIdx StateLocation)
+  temporal :
+    TemporalConsistencyProofPackage
+      (ArchitecturalState Pc RegIdx RamAddr Word)
+      Pc
+      RegIdx
+      RamAddr
+      Word
+      RegisterTimeline
+      RamTimeline
+      Unit
+  stage3Refinement :
+    Stage3RefinementPackage
+      Pc
+      (ExpandedRow Pc BytecodeAddr RegIdx StateLocation)
+      PreparedStep
+  executionRowsMatch :
+    stepComposition.execution.rows = chunkInput.rows
+  executionRowsLength :
+    stepComposition.execution.rows.length = chunkInput.semanticRows
+  preparedStepExport :
+    stepComposition.execution.preparedSteps = mainLane.preparedSteps
+  mainLaneRowsMatch :
+    mainLane.rows = chunkInput.rows
+  traceRowsMatch :
+    traceLink.rows = chunkInput.rows
+
+def exactTraceBoundaries_of_minimalTraceInputs
+  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
+    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
+    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
+    PreparedStep : Type _} [OfNat Limb 0]
+  (inputs :
+    MinimalExactTraceInputs
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep) :
+  ExactTraceBoundaries
+    BytecodeAddr
+    Pc
+    RegIdx
+    VirtualOpcode
+    AluOp
+    BranchOp
+    MemWidth
+    DivRemKind
+    RamAddr
+    Word
+    StateLocation
+    RegisterTimeline
+    RamTimeline
+    Limb
+    ArchitecturalInputs
+    AuthenticatedReads
+    WitnessAssignment
+    Output
+    StateEffect
+    PreparedStep :=
+  { stepComposition := inputs.stepComposition
+  , chunkInput := inputs.chunkInput
+  , mainLane := inputs.mainLane
+  , traceLink := inputs.traceLink
+  , temporal := inputs.temporal
+  , stage2Closure := inputs.temporal.stage2
+  , stage3Refinement := inputs.stage3Refinement
+  , executionRowsMatch := inputs.executionRowsMatch
+  , executionRowsLength := inputs.executionRowsLength
+  , preparedStepExport := inputs.preparedStepExport
+  , mainLaneRowsMatch := inputs.mainLaneRowsMatch
+  , traceRowsMatch := inputs.traceRowsMatch
+  , stage2MatchesTemporal := rfl
+  }
+
 def authenticatedChunkTrace_of_exactBoundaries
   {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
     RamAddr Word StateLocation RegisterTimeline RamTimeline Limb

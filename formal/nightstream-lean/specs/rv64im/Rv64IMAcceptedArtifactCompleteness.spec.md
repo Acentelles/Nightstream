@@ -13,8 +13,13 @@ low-level data for Lean to reconstruct:
 
 - the source/program-binding inputs,
 - the committed execution rows,
+- the exact step-composition package,
 - the exact trace chunk input,
+- the exact main-lane trace boundary,
 - the exact trace-link boundary,
+- the exact temporal-consistency package,
+- the exact Stage 2 temporal-closure package,
+- the exact Stage 3 refinement package,
 - the transcript event schedule inputs,
 - the explicit soundness/accounting package or an equally explicit theorem-owned assumption surface,
 - the full prepared-step export list,

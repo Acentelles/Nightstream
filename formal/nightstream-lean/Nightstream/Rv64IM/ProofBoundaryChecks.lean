@@ -25,6 +25,21 @@ open Nightstream.Chip8.Poseidon2GoldilocksCore (concreteCore)
 def boolWord (value : Bool) : Nat :=
   if value then 1 else 0
 
+def foldScheduleWords : Nightstream.FoldSchedule → List Nat
+  | .wholeTrace => [0, 0]
+  | .rowsPerChunk rows => [1, rows]
+
+def validFoldSchedule : Nightstream.FoldSchedule → Bool
+  | .wholeTrace => true
+  | .rowsPerChunk 0 => false
+  | .rowsPerChunk (_ + 1) => true
+
+def chunkScheduleMatches
+    (schedule : Nightstream.FoldSchedule)
+    (chunkCount publicStepCount : Nat) : Bool :=
+  validFoldSchedule schedule &&
+    chunkCount = Nightstream.FoldSchedule.chunkCount schedule publicStepCount
+
 def transcriptDigest (appLabel : String) (ops : List TranscriptOp) : List Byte :=
   let cursor0 := appendMessageCursor concreteCore emptyCursor poseidon2AppDomain (utf8Bytes appLabel)
   let cursor := runOps concreteCore cursor0 ops
@@ -86,6 +101,7 @@ def acceptedPublicProofLockstep
 def proofStatementDigest (statement : ProofStatementView) : List Byte :=
   transcriptDigest "neo.fold.next/rv64im/proof_statement"
     [ .appendMessage "rv64im/proof_statement/root_params_id" statement.rootParamsId
+    , .appendU64s "rv64im/proof_statement/fold_schedule" (foldScheduleWords statement.foldSchedule)
     , .appendMessage "rv64im/proof_statement/stage_claims_digest" statement.stageClaimsDigest
     , .appendMessage "rv64im/proof_statement/stage_packages_digest" statement.stagePackagesDigest
     , .appendMessage "rv64im/proof_statement/kernel_opening_digest" statement.kernelOpeningDigest
@@ -96,7 +112,7 @@ def proofStatementDigest (statement : ProofStatementView) : List Byte :=
     , .appendMessage "rv64im/proof_statement/main_lane_surface_digest" statement.mainLaneSurfaceDigest
     , .appendMessage "rv64im/proof_statement/root_lane_columns_digest" statement.rootLaneColumnsDigest
     , .appendU64s "rv64im/proof_statement/meta"
-        [statement.publicStepCount, statement.finalPc, boolWord statement.halted]
+        [statement.chunkCount, statement.publicStepCount, statement.finalPc, boolWord statement.halted]
     ]
 
 def acceptedProofStatementBindingDigest (binding : AcceptedProofStatementBindingView) : List Byte :=
@@ -242,8 +258,11 @@ def mainLaneProofBindingDigest (binding : MainLaneProofBindingView) : List Byte 
         "rv64im/main_lane_proof_binding/root_lane_commitment_digest"
         binding.rootLaneCommitmentDigest
     , .appendU64s
+        "rv64im/main_lane_proof_binding/fold_schedule"
+        (foldScheduleWords binding.foldSchedule)
+    , .appendU64s
         "rv64im/main_lane_proof_binding/meta"
-        [binding.publicStepCount]
+        [binding.chunkCount, binding.publicStepCount]
     ]
 
 def ajtaiFamilyName : Nat → List Byte
@@ -715,7 +734,10 @@ def statementMatchesKernelAndDerived
     (kernel : KernelProofBundleView)
     (derived : ParityDerivedCase) : Bool :=
   let mainLaneSurface := mainLaneSurfaceOfRootLaneColumns kernel.rootLaneColumns
-  statement.stageClaimsDigest = kernel.stageClaims.digest &&
+  chunkScheduleMatches statement.foldSchedule statement.chunkCount statement.publicStepCount &&
+    statement.foldSchedule = kernel.mainLane.binding.foldSchedule &&
+    statement.chunkCount = kernel.mainLane.binding.chunkCount &&
+    statement.stageClaimsDigest = kernel.stageClaims.digest &&
     statement.stagePackagesDigest = kernel.stagePackages.digest &&
     statement.kernelOpeningDigest = kernel.kernelOpening.digest &&
     statement.preparedStepBindingsDigest = kernel.kernelClaims.summary.preparedStepBindingsDigest &&
@@ -777,6 +799,10 @@ def kernelProofMatchesDerivedAndClaims
     (derived : ParityDerivedCase) : Bool :=
   let mainLaneSurface := mainLaneSurfaceOfRootLaneColumns kernel.rootLaneColumns
   kernel.trace.manifest = derived.manifest &&
+    chunkScheduleMatches
+      kernel.mainLane.binding.foldSchedule
+      kernel.mainLane.binding.chunkCount
+      kernel.mainLane.binding.publicStepCount &&
     kernel.trace.executionDigest = derived.kernel.executionDigest &&
     kernel.trace.shape.executionRowCount = derived.executionRows.length &&
     kernel.trace.shape.realRowCount = (derived.executionRows.filter (·.isReal)).length &&
@@ -823,7 +849,11 @@ def kernelProofMatchesDerivedAndClaims
     mainLaneSurface.rowWidth = 38 &&
     kernel.mainLane.binding.rootLaneColumnsDigest = kernel.rootLaneColumns.digest &&
     kernel.mainLane.binding.rootLaneCommitmentDigest = kernel.rootLaneCommitment.digest &&
-    kernel.mainLane.binding.publicStepCount = kernel.rootLaneColumns.timeLen
+    kernel.mainLane.binding.publicStepCount = kernel.rootLaneColumns.timeLen &&
+    kernel.mainLane.binding.chunkCount =
+      Nightstream.FoldSchedule.chunkCount
+        kernel.mainLane.binding.foldSchedule
+        kernel.mainLane.binding.publicStepCount
 
 private def caseCheckResultsAgainstDerived
     (proofCase : PublicProofVectorCase)

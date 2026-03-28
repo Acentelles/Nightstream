@@ -3,6 +3,7 @@ import Nightstream.Chip8.Checks
 import Nightstream.Rv64IM.Checks
 import Nightstream.Rv64IM.AcceptedArtifactChecks
 import Nightstream.Rv64IM.AcceptedArtifactCompleteness
+import Nightstream.Rv64IM.AcceptedArtifactConstructorAudit
 
 def main : IO UInt32 := do
   IO.println s!"chip8_transcript_vector_checks={Nightstream.Chip8.transcriptVectorChecks}"
@@ -27,11 +28,16 @@ def main : IO UInt32 := do
   IO.println s!"rv64im_accepted_artifact_negative_reports={reprStr Nightstream.Rv64IM.rv64imAcceptedArtifactNegativeReports}"
   IO.println s!"rv64im_accepted_artifact_completeness_checks={Nightstream.Rv64IM.rv64imAcceptedArtifactCompletenessChecks}"
   IO.println s!"rv64im_accepted_artifact_completeness_reports={reprStr Nightstream.Rv64IM.rv64imAcceptedArtifactCompletenessReports}"
+  IO.println s!"rv64im_accepted_artifact_trace_constructor_checks={Nightstream.Rv64IM.rv64imAcceptedArtifactTraceConstructorChecks}"
+  IO.println s!"rv64im_accepted_artifact_kernel_constructor_checks={Nightstream.Rv64IM.rv64imAcceptedArtifactKernelConstructorChecks}"
+  IO.println s!"rv64im_accepted_artifact_constructor_reports={reprStr Nightstream.Rv64IM.rv64imAcceptedArtifactConstructorReports}"
   if Nightstream.Chip8.validGeneratedChip8ProtocolCases &&
       Nightstream.Rv64IM.validGeneratedRv64imParityCases &&
       Nightstream.Rv64IM.validGeneratedRv64imAcceptedArtifactCases &&
       Nightstream.Rv64IM.validGeneratedRv64imAcceptedArtifactNegativeCases &&
-      Nightstream.Rv64IM.validGeneratedRv64imAcceptedArtifactCompletenessCases then
+      Nightstream.Rv64IM.validGeneratedRv64imAcceptedArtifactCompletenessCases &&
+      Nightstream.Rv64IM.validGeneratedRv64imAcceptedArtifactTraceConstructorCases &&
+      Nightstream.Rv64IM.validGeneratedRv64imAcceptedArtifactKernelConstructorCases then
     pure 0
   else
     pure 1

@@ -18,10 +18,20 @@
 - exact Stage-3 bridge bindings,
 - row-binding coverage over the exact exported row-binding list.
 
+The module also owns the minimal theorem-owned constructor contract
+`MinimalExactKernelInputs`. This minimal contract carries the smallest
+kernel-level proof-bearing inputs needed to build `ExactKernelBoundaries`
+without trusting Rust summaries. The transcript events, transcript schedule,
+and row-binding coverage are derived canonically from conforming `root0`
+bindings and the exact trace export length; they are not separate minimal
+inputs.
+
 ## Canonical Constructors
 
 The module must expose:
 
+- `exactKernelBoundaries_of_minimalKernelInputs`
+- `exactKernelBoundaries_of_minimalKernelInputPackage`
 - `kernelSoundnessAccepted_of_exactBoundaries`
 - `kernelSoundness_of_exactBoundaries`
 

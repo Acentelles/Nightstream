@@ -27,6 +27,7 @@ namespace Nightstream.Rv64IM
 
 namespace ExactKernelBoundariesInterface
 
+abbrev MinimalExactKernelInputs := @Nightstream.Rv64IM.MinimalExactKernelInputs
 abbrev ExactKernelBoundaries := @Nightstream.Rv64IM.ExactKernelBoundaries
 abbrev AcceptedProofSoundness := @Nightstream.Rv64IM.AcceptedProofSoundness
 abbrev AcceptedProofConclusion := @Nightstream.Rv64IM.AcceptedProofConclusion
@@ -36,6 +37,14 @@ abbrev kernelSoundnessAccepted_of_exactBoundaries :=
   @Nightstream.Rv64IM.kernelSoundnessAccepted_of_exactBoundaries
 abbrev kernelSoundness_of_exactBoundaries :=
   @Nightstream.Rv64IM.kernelSoundness_of_exactBoundaries
+abbrev rowBinding_mem_stage3RowBindingEvents_iff :=
+  @Nightstream.Rv64IM.rowBinding_mem_stage3RowBindingEvents_iff
+abbrev rowBinding_mem_transcriptEvents_iff :=
+  @Nightstream.Rv64IM.rowBinding_mem_transcriptEvents_iff
+abbrev exactKernelBoundaries_of_minimalKernelInputs :=
+  @Nightstream.Rv64IM.exactKernelBoundaries_of_minimalKernelInputs
+abbrev exactKernelBoundaries_of_minimalKernelInputPackage :=
+  @Nightstream.Rv64IM.exactKernelBoundaries_of_minimalKernelInputPackage
 abbrev kernelSemanticClosure_of_exactKernelBoundaries :=
   @Nightstream.Rv64IM.kernelSemanticClosure_of_exactKernelBoundaries
 abbrev topLevelSoundness_of_exactKernelBoundaries :=

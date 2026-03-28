@@ -19,10 +19,17 @@
 - `Stage3RefinementPackage`,
 - and the exact equality witnesses showing that they refer to one shared active semantic prefix.
 
+The module also owns the minimal theorem-owned constructor contract
+`MinimalExactTraceInputs`. This minimal contract carries the smallest
+trace-local proof-bearing inputs needed to build `ExactTraceBoundaries`
+without trusting Rust summaries. In this contract the `stage2Closure` field is
+not a separate input; it is derived canonically as `temporal.stage2`.
+
 ## Canonical Constructor
 
 The module must expose:
 
+- `exactTraceBoundaries_of_minimalTraceInputs`
 - `authenticatedChunkTrace_of_exactBoundaries`
 
 which constructs the canonical `AuthenticatedChunkTrace` directly from one exact

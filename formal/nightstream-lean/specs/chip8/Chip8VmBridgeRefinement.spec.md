@@ -97,6 +97,7 @@ $$
 | Translation | `toGenericReleaseStageView` | def | Definitional | Converts one CHIP-8 stage view into the generic release-stage view |
 | Translation | `toGenericPublicView` | def | Definitional | Converts one CHIP-8 public bridge view into the generic public bridge view |
 | Theorem | `canonicalStageViews_refine` | theorem | Theorem-Target | CHIP-8 canonical stage views equal the generic canonical stage views after translation |
+| Theorem | `toGenericPublicView_of_schedule` | theorem | Theorem-Target | The CHIP-8 explicit schedule constructor matches the generic constructor exactly |
 | Theorem | `releaseBridge_refines_generic` | theorem | Theorem-Target | The CHIP-8 release bridge refines the generic release bridge |
 | Theorem | `publicViewBound_refines` | theorem | Theorem-Target | Any accepted CHIP-8 public bridge view satisfies the generic public-view bound after translation |
 | Payload family | `StagePayload` | inductive | Definitional | Splits the CHIP-8 staged artifact into one typed payload per generic stage |
@@ -115,7 +116,7 @@ $$
 
 ## Proof Obligations
 
-- The CHIP-8 refinement owner must preserve exact stage order and exact stage inventories.
+- The CHIP-8 refinement owner must preserve exact stage order, exact stage inventories, and exact fold schedule.
 - The CHIP-8 refinement owner must split the staged artifact into exact per-stage payloads; the generic artifact may not consume a weaker history digest.
 - The translation must remain canonical; no compatibility-only view bit may survive into the generic public bridge view.
 

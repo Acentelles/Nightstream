@@ -56,4 +56,19 @@ theorem releaseBridgePublicViewBound_of_publicView_eq
   rw [hEq]
   exact releaseBridgePublicViewBound_of_preparedStepCount shape preparedStepCount
 
+theorem releaseBridgePublicViewBound_of_publicView_eq_schedule
+  {Stage Family VmPublicView : Type*}
+  {shape : ReleaseShape Stage Family}
+  {toPublicView : VmPublicView → ReleaseBridgePublicView Stage Family}
+  {view : VmPublicView}
+  {schedule : FoldSchedule}
+  {preparedStepCount : Nat}
+  (hValid : FoldSchedule.Valid schedule)
+  (hEq :
+    toPublicView view =
+      releaseBridgePublicView_of_schedule shape schedule preparedStepCount) :
+  ReleaseBridgePublicViewBound shape (toPublicView view) preparedStepCount := by
+  rw [hEq]
+  exact releaseBridgePublicViewBound_of_schedule shape hValid preparedStepCount
+
 end Nightstream

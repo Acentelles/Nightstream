@@ -1,4 +1,9 @@
 import Nightstream.Rv64IM.Generated.AcceptedProofArtifactCorpus
+import Nightstream.Rv64IM.AcceptedArtifactKernelSurface
+import Nightstream.Rv64IM.AcceptedArtifactKernelReplay
+import Nightstream.Rv64IM.AcceptedArtifactLocalTrace
+import Nightstream.Rv64IM.AcceptedArtifactTemporalReplay
+import Nightstream.Rv64IM.AcceptedArtifactStage3Refinement
 import Nightstream.Rv64IM.AcceptedArtifactRootLane
 import Nightstream.Rv64IM.Checks
 import Nightstream.Rv64IM.Kernel.PublicProofProjection
@@ -16,14 +21,9 @@ namespace Nightstream.Rv64IM
 
 open Nightstream.Rv64IM.Generated
 
-private def replayedArtifactCase? (artifact : AcceptedProofArtifactView) :
-    Option AcceptedProofArtifactView :=
-  recomputeDerivedCase? artifact.source |>.map fun derived =>
-    { artifact with derived := derived }
-
 private def acceptedArtifactCaseCheckResults
     (artifact : AcceptedProofArtifactView) : List (String × Bool) :=
-  match replayedArtifactCase? artifact with
+  match replayedAcceptedArtifactCase? artifact with
   | none =>
       [ ("sourceReplayMatchesImportedDerived", false)
       , ("exportedPublicProofApiLockstep"
@@ -32,17 +32,70 @@ private def acceptedArtifactCaseCheckResults
             artifact.exportedProof.kernel = artifact.exportedKernelProof)
       ]
   | some replayed =>
+      let recomputedKernelReplay := { derived := replayed.derived }
       let schema := projectedPublicProofSchemaOfAcceptedArtifact replayed
       let proof := projectedPublicProofOfAcceptedArtifact replayed
+      let recomputedKernelSurface := recomputeKernelSurfaceView replayed
+      let recomputedLocalTrace := recomputeLocalTraceView replayed
+      let recomputedTemporal := recoverTemporalReplay? replayed
+      let recomputedStage3 := recoverStage3Refinement? replayed
       let recomputedRootLane := recomputeRootLaneView replayed.derived.executionRows
-      [ ("sourceReplayMatchesImportedDerived", replayed.derived = artifact.derived)
+      [ ("sourceReplayMatchesImportedDerived"
+        , recomputedKernelReplayMatchesArtifact recomputedKernelReplay artifact)
       , ("exportedPublicProofApiLockstep"
         , artifact.exportedProof.statement = artifact.exportedStatement &&
             artifact.exportedProof.claim = artifact.exportedClaims &&
             artifact.exportedProof.kernel = artifact.exportedKernelProof)
       , ("kernelProofArtifactMatchesExported", projectedKernelProofMatchesExported replayed)
+      , ("recomputedKernelStatementMatchesArtifact"
+        , recomputedKernelStatementMatchesArtifact recomputedKernelReplay artifact)
+      , ("recomputedKernelClaimsMatchArtifact"
+        , recomputedKernelClaimsMatchArtifact recomputedKernelReplay artifact)
+      , ("recomputedKernelProofMatchesArtifact"
+        , recomputedKernelProofMatchesArtifact recomputedKernelReplay artifact)
+      , ("recomputedKernelStageDigestBindingsMatchArtifact"
+        , recomputedKernelStageDigestBindingsMatchArtifact recomputedKernelReplay artifact)
+      , ("recomputedKernelTerminalBindingsMatchArtifact"
+        , recomputedKernelTerminalBindingsMatchArtifact recomputedKernelReplay artifact)
+      , ("recomputedKernelReplayMatchesAllArtifactBindings"
+        , recomputedKernelReplayMatchesAllArtifactBindings recomputedKernelReplay artifact)
+      , ("recomputedTraceProjectionMatchesArtifact"
+        , recomputedTraceProjectionMatchesArtifact recomputedKernelSurface replayed)
+      , ("recomputedStageWitnessProjectionMatchesArtifact"
+        , recomputedStageWitnessProjectionMatchesArtifact recomputedKernelSurface replayed)
+      , ("recomputedKernelSurfaceMatchesArtifact"
+        , recomputedKernelSurfaceMatchesArtifact recomputedKernelSurface replayed)
+      , ("recomputedChunkInputMatchesArtifact"
+        , recomputedChunkInputMatchesArtifact recomputedLocalTrace artifact)
+      , ("recomputedMainLaneBoundaryMatchesArtifact"
+        , recomputedMainLaneBoundaryMatchesArtifact recomputedLocalTrace artifact)
+      , ("recomputedTraceLinkBoundaryMatchesArtifact"
+        , recomputedTraceLinkBoundaryMatchesArtifact recomputedLocalTrace artifact)
+      , ("recomputedStage3RowBindingsMatchArtifact"
+        , recomputedStage3RowBindingsMatchArtifact recomputedLocalTrace artifact)
+      , ("recomputedLocalTraceMatchesArtifact"
+        , recomputedLocalTraceMatchesArtifact recomputedLocalTrace artifact)
+      , ("recoveredTemporalReplay"
+        , recomputedTemporal.isSome)
+      , ("recoveredTemporalReplayMatchesArtifact"
+        , recomputedTemporal.map (fun replay => recoveredTemporalReplayMatchesArtifact replay artifact) |>.getD false)
+      , ("recoveredStage2TemporalClosure"
+        , recomputedTemporal.isSome)
+      , ("recoveredTemporalConsistency"
+        , recomputedTemporal.isSome)
+      , ("recoveredStage3Refinement"
+        , recomputedStage3.isSome)
+      , ("recoveredStage3RefinementMatchesArtifact"
+        , recomputedStage3.map (fun pkg => recoveredStage3RefinementMatchesArtifact pkg artifact)
+            |>.getD false)
+      , ("recoveredStage3ContinuitySemantics"
+        , recomputedStage3.isSome)
+      , ("recoveredStage3ExportSemantics"
+        , recomputedStage3.isSome)
       , ("recomputedRootLaneColumnsMatchArtifact"
         , recomputedRootLaneColumnsMatchArtifact recomputedRootLane replayed)
+      , ("recomputedRootLaneCommitmentMatchesArtifact"
+        , recomputedRootLaneCommitmentMatchesArtifact recomputedRootLane replayed)
       , ("recomputedMainLaneSurfaceMatchesArtifact"
         , recomputedMainLaneSurfaceMatchesArtifact recomputedRootLane replayed)
       , ("recomputedPreparedStepBindingsMatchArtifact"
@@ -182,6 +235,17 @@ private def rootProofAcceptanceInputMismatchArtifact (artifact : AcceptedProofAr
     }
   withKernelProof artifact kernelProof
 
+private def rootLaneCommitmentSummaryMismatchArtifact
+    (artifact : AcceptedProofArtifactView) : AcceptedProofArtifactView :=
+  let kernelProof :=
+    { artifact.kernelProof with
+        rootLaneCommitment :=
+          { artifact.kernelProof.rootLaneCommitment with
+              digest := tamperBytes artifact.kernelProof.rootLaneCommitment.digest
+          }
+    }
+  withKernelProof artifact kernelProof
+
 private def placeholderLikeExportedKernelProofArtifact (artifact : AcceptedProofArtifactView) :
     AcceptedProofArtifactView :=
   let exportedKernelProof :=
@@ -203,6 +267,51 @@ private def exportedSummaryVsRecomputationMismatchArtifact (artifact : AcceptedP
           }
     }
   withDerived artifact derived
+
+private def executionRowLocalTraceMismatchArtifact
+    (artifact : AcceptedProofArtifactView) : AcceptedProofArtifactView :=
+  match artifact.derived.executionRows with
+  | [] => artifact
+  | row :: rows =>
+      let derived :=
+        { artifact.derived with
+            executionRows := { row with pc := row.pc + 4 } :: rows
+        }
+      withDerived artifact derived
+
+private def temporalReplayMismatchArtifact
+    (artifact : AcceptedProofArtifactView) : AcceptedProofArtifactView :=
+  match artifact.derived.stage2.registerWrites with
+  | [] => artifact
+  | write :: writes =>
+      let derived :=
+        { artifact.derived with
+            stage2 :=
+              { artifact.derived.stage2 with
+                  registerWrites := { write with next := write.next + 1 } :: writes
+              }
+        }
+      withDerived artifact derived
+
+private def stage3RefinementMismatchArtifact
+    (artifact : AcceptedProofArtifactView) : AcceptedProofArtifactView :=
+  match artifact.derived.stage3.continuity with
+  | [] =>
+      let derived :=
+        { artifact.derived with
+            stage3 := { artifact.derived.stage3 with halted := !artifact.derived.stage3.halted }
+        }
+      withDerived artifact derived
+  | event :: continuity =>
+      let derived :=
+        { artifact.derived with
+            stage3 :=
+              { artifact.derived.stage3 with
+                  continuity :=
+                    { event with continuityHolds := !event.continuityHolds } :: continuity
+              }
+        }
+      withDerived artifact derived
 
 structure Rv64imAcceptedArtifactNegativeCase where
   name : String
@@ -238,6 +347,15 @@ private def acceptedArtifactNegativeCases : List Rv64imAcceptedArtifactNegativeC
         , expectedFailedChecks := ["kernelProofArtifactMatchesExported", "kernelProofDigests"]
         , artifact := rootProofAcceptanceInputMismatchArtifact artifact
         }
+      , { name := "root_lane_commitment_summary_mismatch"
+        , expectedFailedChecks :=
+            [ "kernelProofArtifactMatchesExported"
+            , "recomputedRootLaneCommitmentMatchesArtifact"
+            , "recomputedRootLaneProtocolBindingsMatchArtifact"
+            , "kernelProofDigests"
+            ]
+        , artifact := rootLaneCommitmentSummaryMismatchArtifact artifact
+        }
       , { name := "placeholder_like_exported_kernel_payload"
         , expectedFailedChecks := ["kernelProofArtifactMatchesExported", "projectedProofMatchesExported"]
         , artifact := placeholderLikeExportedKernelProofArtifact artifact
@@ -245,6 +363,31 @@ private def acceptedArtifactNegativeCases : List Rv64imAcceptedArtifactNegativeC
       , { name := "exported_summary_vs_recomputation_mismatch"
         , expectedFailedChecks := ["sourceReplayMatchesImportedDerived"]
         , artifact := exportedSummaryVsRecomputationMismatchArtifact artifact
+        }
+      , { name := "execution_row_local_trace_mismatch"
+        , expectedFailedChecks :=
+            [ "sourceReplayMatchesImportedDerived"
+            , "recomputedChunkInputMatchesArtifact"
+            , "recomputedMainLaneBoundaryMatchesArtifact"
+            , "recomputedTraceLinkBoundaryMatchesArtifact"
+            , "recomputedStage3RowBindingsMatchArtifact"
+            , "recomputedLocalTraceMatchesArtifact"
+            ]
+        , artifact := executionRowLocalTraceMismatchArtifact artifact
+        }
+      , { name := "temporal_replay_mismatch"
+        , expectedFailedChecks :=
+            [ "sourceReplayMatchesImportedDerived"
+            , "recoveredTemporalReplayMatchesArtifact"
+            ]
+        , artifact := temporalReplayMismatchArtifact artifact
+        }
+      , { name := "stage3_refinement_mismatch"
+        , expectedFailedChecks :=
+            [ "sourceReplayMatchesImportedDerived"
+            , "recoveredStage3RefinementMatchesArtifact"
+            ]
+        , artifact := stage3RefinementMismatchArtifact artifact
         }
       ]
 

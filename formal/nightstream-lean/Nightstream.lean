@@ -1,6 +1,7 @@
 import Nightstream.ClaimedMemorySemanticsInterface
 import Nightstream.BridgeTypesInterface
 import Nightstream.ProjectionInterface
+import Nightstream.FoldScheduleInterface
 import Nightstream.FoldAdmissibilityInterface
 import Nightstream.MainLaneBridgeInterface
 import Nightstream.ShardCompositionInterface
@@ -133,8 +134,14 @@ import Nightstream.Rv64IM.Kernel.AcceptedProofArtifactConsequencesInterface
 import Nightstream.Rv64IM.Kernel.AcceptedProofCheckerInterface
 import Nightstream.Rv64IM.ChecksInterface
 import Nightstream.Rv64IM.AcceptedArtifactRootLaneInterface
+import Nightstream.Rv64IM.AcceptedArtifactKernelSurfaceInterface
+import Nightstream.Rv64IM.AcceptedArtifactKernelReplayInterface
+import Nightstream.Rv64IM.AcceptedArtifactLocalTraceInterface
+import Nightstream.Rv64IM.AcceptedArtifactTemporalReplayInterface
+import Nightstream.Rv64IM.AcceptedArtifactStage3RefinementInterface
 import Nightstream.Rv64IM.AcceptedArtifactChecksInterface
 import Nightstream.Rv64IM.AcceptedArtifactCompletenessInterface
+import Nightstream.Rv64IM.AcceptedArtifactConstructorAuditInterface
 import Nightstream.Chip8.ReleaseBridgeInterface
 import Nightstream.Chip8.StagedBridgeInterface
 import Nightstream.Chip8.VmBridgeRefinementInterface

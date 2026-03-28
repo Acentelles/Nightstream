@@ -26,7 +26,8 @@ def toGenericReleaseStageView
 def toGenericPublicView
   (view : ReleaseBridgePublicView) :
   Nightstream.ReleaseBridgePublicView ReleaseStage ExtensionFamily :=
-  { chunkCount := view.chunkCount
+  { foldSchedule := view.foldSchedule
+    chunkCount := view.chunkCount
     preparedStepCount := view.preparedStepCount
     stages := view.stages.map toGenericReleaseStageView }
 
@@ -37,15 +38,27 @@ theorem canonicalStageViews_refine :
     releaseStageOrder, toGenericReleaseStageView, releaseStageView,
     Nightstream.releaseStageView, stageFamilies]
 
+theorem toGenericPublicView_of_schedule
+  (schedule : Nightstream.FoldSchedule)
+  (preparedStepCount : Nat) :
+  toGenericPublicView (releaseBridgePublicView_of_schedule schedule preparedStepCount) =
+    Nightstream.releaseBridgePublicView_of_schedule
+      releaseShape
+      schedule
+      preparedStepCount := by
+  simp [toGenericPublicView, releaseBridgePublicView_of_schedule,
+    Nightstream.releaseBridgePublicView_of_schedule,
+    canonicalStageViews_refine]
+
 theorem toGenericPublicView_of_preparedStepCount
   (preparedStepCount : Nat) :
   toGenericPublicView (releaseBridgePublicView_of_preparedStepCount preparedStepCount) =
     Nightstream.releaseBridgePublicView_of_preparedStepCount
       releaseShape
       preparedStepCount := by
-  simp [toGenericPublicView, releaseBridgePublicView_of_preparedStepCount,
+  simp [releaseBridgePublicView_of_preparedStepCount,
     Nightstream.releaseBridgePublicView_of_preparedStepCount,
-    canonicalStageViews_refine]
+    toGenericPublicView_of_schedule]
 
 theorem releaseBridge_refines_generic :
   Nightstream.RefinesReleaseBridge
@@ -57,8 +70,8 @@ theorem releaseBridge_refines_generic :
   constructor
   · exact canonicalStageViews_refine
   · intro view preparedStepCount hView
-    rcases hView with ⟨hChunk, hPrepared, hStages⟩
-    refine ⟨hChunk, hPrepared, ?_⟩
+    rcases hView with ⟨hValid, hChunk, hPrepared, hStages⟩
+    refine ⟨hValid, hChunk, hPrepared, ?_⟩
     calc
       (toGenericPublicView view).stages = view.stages.map toGenericReleaseStageView := rfl
       _ = canonicalStageViews.map toGenericReleaseStageView := by
@@ -155,6 +168,8 @@ noncomputable def toGenericStagedBridgeArtifact
       releaseShape
       (fun trace steps => StepComposition.PreparedStepTraceBound rootEncode ajtaiCommit trace steps)
       (StagePayload frames)
+      artifact.publicView.foldSchedule
+      (foldSchedule_valid artifact)
       (bridgePreparedSteps (rootEncode := rootEncode) (ajtaiCommit := ajtaiCommit) frames)
       (AuthenticatedTrace.traceOf frames)
       artifact.preparedStepTrace

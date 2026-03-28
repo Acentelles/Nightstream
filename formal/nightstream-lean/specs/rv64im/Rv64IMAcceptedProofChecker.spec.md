@@ -15,7 +15,8 @@ Acceptance means:
 
 - the artifact is paired with an explicit Lean-owned projection function,
 - the artifact carries the full low-level theorem inputs needed to reconstruct
-  the exact kernel boundary,
+  the exact kernel boundary, including the explicit fold schedule used by the
+  root/public bridge,
 - the checker uses that function to recompute the exact public-proof projection,
 - the checker rejects any artifact that omits reconstructable theorem inputs,
 - any remaining backend or accounting assumptions appear as explicit checker inputs or explicit theorem-owned side conditions, never as hidden ambient trust,

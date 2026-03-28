@@ -88,7 +88,7 @@ $$
 
 ## Proof Obligations
 
-- A VM-local public bridge view may refine the generic bridge only by preserving the exact canonical stage inventory and exact prepared-step count.
+- A VM-local public bridge view may refine the generic bridge only by preserving the exact canonical stage inventory, exact prepared-step count, and exact fold schedule.
 - A VM-local release bridge must prove exact refinement; heuristic correspondence is not sufficient.
 
 ## Out of Scope
