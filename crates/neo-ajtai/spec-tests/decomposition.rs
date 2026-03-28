@@ -29,18 +29,17 @@ fn recompose(digits: &[Fq], b: u32, d: usize, m: usize) -> Vec<Fq> {
     result
 }
 
-/// Decomposition.spec.md: round-trip z = Sigma b^i * d_i (balanced)
+/// Decomposition.spec.md: round-trip z = Sigma b^i * d_i (balanced) on the concrete b=2 path
 #[test]
 fn decomp_round_trip_balanced() {
     let mut rng = ChaCha8Rng::seed_from_u64(1);
     // d=64 covers the full Goldilocks balanced range (|val| < 2^63)
     let d = 64;
-    for b in [2u32, 3, 5, 7] {
-        let z = random_fq_vec(&mut rng, 8);
-        let digits = decomp_b(&z, b, d, DecompStyle::Balanced);
-        let recomp = recompose(&digits, b, d, z.len());
-        assert_eq!(recomp, z, "balanced round-trip failed for b={b}");
-    }
+    let b = 2u32;
+    let z = random_fq_vec(&mut rng, 8);
+    let digits = decomp_b(&z, b, d, DecompStyle::Balanced);
+    let recomp = recompose(&digits, b, d, z.len());
+    assert_eq!(recomp, z, "balanced round-trip failed for b={b}");
 }
 
 /// Decomposition.spec.md: round-trip z = Sigma b^i * d_i (non-negative)
@@ -52,30 +51,28 @@ fn decomp_round_trip_balanced() {
 fn decomp_round_trip_nonneg() {
     let mut rng = ChaCha8Rng::seed_from_u64(2);
     let d = 64;
-    for b in [2u32, 3, 5] {
-        // Small positive values ensure positive balanced representation
-        let z: Vec<Fq> = (0..8)
-            .map(|_| Fq::from_u64((rng.random::<u32>() as u64) % 100_000))
-            .collect();
-        let digits = decomp_b(&z, b, d, DecompStyle::NonNegative);
-        let recomp = recompose(&digits, b, d, z.len());
-        assert_eq!(recomp, z, "non-negative round-trip failed for b={b}");
-    }
+    let b = 2u32;
+    // Small positive values ensure positive balanced representation
+    let z: Vec<Fq> = (0..8)
+        .map(|_| Fq::from_u64((rng.random::<u32>() as u64) % 100_000))
+        .collect();
+    let digits = decomp_b(&z, b, d, DecompStyle::NonNegative);
+    let recomp = recompose(&digits, b, d, z.len());
+    assert_eq!(recomp, z, "non-negative round-trip failed for b={b}");
 }
 
 /// Decomposition.spec.md: digit bound ||d_j||_inf < b (balanced)
 #[test]
 fn decomp_digit_bound_balanced() {
     let mut rng = ChaCha8Rng::seed_from_u64(3);
-    for b in [2u32, 3, 5] {
-        let z = random_fq_vec(&mut rng, 8);
-        let d = 64;
-        let digits = decomp_b(&z, b, d, DecompStyle::Balanced);
-        assert!(
-            assert_range_b(&digits, b).is_ok(),
-            "balanced digit out of range for b={b}"
-        );
-    }
+    let b = 2u32;
+    let z = random_fq_vec(&mut rng, 8);
+    let d = 64;
+    let digits = decomp_b(&z, b, d, DecompStyle::Balanced);
+    assert!(
+        assert_range_b(&digits, b).is_ok(),
+        "balanced digit out of range for b={b}"
+    );
 }
 
 /// Decomposition.spec.md: column-major vs row-major transpose equivalence
@@ -83,7 +80,7 @@ fn decomp_digit_bound_balanced() {
 fn decomp_col_vs_row_major() {
     let mut rng = ChaCha8Rng::seed_from_u64(4);
     let z = random_fq_vec(&mut rng, 8);
-    let b = 3u32;
+    let b = 2u32;
     let d = 14;
     let m = z.len();
     let col_major = decomp_b(&z, b, d, DecompStyle::Balanced);
@@ -132,8 +129,8 @@ fn split_b_round_trip() {
 /// Decomposition.spec.md: assert_range_b catches out-of-range digits
 #[test]
 fn assert_range_b_catches_violation() {
-    let bad = vec![Fq::from_u64(10)]; // |10| >= 3
-    assert!(assert_range_b(&bad, 3).is_err(), "should reject out-of-range digit");
+    let bad = vec![Fq::from_u64(2)]; // |2| >= 2
+    assert!(assert_range_b(&bad, 2).is_err(), "should reject out-of-range digit");
     let good = vec![Fq::from_u64(1), Fq::ZERO];
-    assert!(assert_range_b(&good, 3).is_ok(), "should accept in-range digit");
+    assert!(assert_range_b(&good, 2).is_ok(), "should accept in-range digit");
 }

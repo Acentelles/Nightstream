@@ -211,9 +211,7 @@ private def decompCasesJson : String :=
       ("expected_recomposed", jsonFArray recomposed)
     ]
   let cases := #[
-    mkCase "decomp_b2" (arrayOfInts [0, 1, -1, 2, -2, 3, -3, 4]) 2 8,
-    mkCase "decomp_b3" (arrayOfInts [-2, -1, 0, 1, 2, -4, 5, -7]) 3 7,
-    mkCase "decomp_b5" (arrayOfInts [4, -3, 2, -1, 0, 1, -2, 3]) 5 6
+    mkCase "decomp_b2" (arrayOfInts [0, 1, -1, 2, -2, 3, -3, 4]) 2 8
   ]
   jsonFields #[
     ("family", jsonString "decomp_v1"),

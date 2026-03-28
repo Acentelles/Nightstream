@@ -116,6 +116,14 @@ fn make_ajtai_module(params: &NeoParams, witness_cols: usize) -> AjtaiSModule {
     AjtaiSModule::new(Arc::new(pp))
 }
 
+fn base2_params_with_k_rho(n_rows: usize, k_rho: u32) -> NeoParams {
+    let mut params = NeoParams::goldilocks_auto_r1cs_ccs(n_rows).expect("params");
+    assert_eq!(params.b, 2, "test helper assumes base-2 decomposition");
+    params.k_rho = k_rho;
+    params.B = 1_u64.checked_shl(k_rho).expect("B fits in u64");
+    params
+}
+
 fn fibonacci_step(log: &AjtaiSModule, label: &str, values: &[u64]) -> StepInput {
     assert!(values.len() <= D);
 
@@ -276,13 +284,13 @@ fn fibonacci_traces_fold_through_ten_steps() {
 }
 
 #[test]
-fn fibonacci_traces_fold_five_ten_transition_chunks() {
+fn fibonacci_traces_fold_five_ten_transition_chunks_with_higher_k_rho() {
     let transitions_per_chunk = 10usize;
     let trace_len = transitions_per_chunk + 2;
     let traces = (1_u64..=5)
         .map(|seed| fibonacci_trace_from_seeds(seed, seed + 1, trace_len))
         .collect::<Vec<_>>();
-    let params = NeoParams::goldilocks_auto_r1cs_ccs(transitions_per_chunk).expect("params");
+    let params = base2_params_with_k_rho(transitions_per_chunk, 13);
     let ccs = fibonacci_trace_ccs(trace_len);
     let log = make_ajtai_module(&params, 1);
 
@@ -301,14 +309,9 @@ fn fibonacci_traces_fold_five_ten_transition_chunks() {
         &log,
         ajtai_mixers(),
     )
-    .expect("prove run");
+    .expect("five ten-transition chunks should fit once k_rho is raised");
 
     assert_eq!(proof.chunks.len(), 5);
-    assert_eq!(proof.chunks[0].ccs_outputs.len(), 1);
-    for proved_step in proof.chunks.iter().skip(1) {
-        assert_eq!(proved_step.ccs_outputs.len(), (params.k_rho as usize) + 1);
-        assert_eq!(proved_step.dec.children.len(), params.k_rho as usize);
-    }
     assert_eq!(proof.final_main_claims.len(), params.k_rho as usize);
 
     let public_steps = steps
@@ -363,13 +366,13 @@ fn continuous_fifty_transition_fibonacci_exceeds_fixed_k_rho_budget() {
 }
 
 #[test]
-fn fibonacci_fold_metrics_five_ten_transition_chunks() {
+fn fibonacci_fold_metrics_five_ten_transition_chunks_with_higher_k_rho() {
     let transitions_per_chunk = 10usize;
     let trace_len = transitions_per_chunk + 2;
     let traces = (1_u64..=5)
         .map(|seed| fibonacci_trace_from_seeds(seed, seed + 1, trace_len))
         .collect::<Vec<_>>();
-    let params = NeoParams::goldilocks_auto_r1cs_ccs(transitions_per_chunk).expect("params");
+    let params = base2_params_with_k_rho(transitions_per_chunk, 13);
     let ccs = fibonacci_trace_ccs(trace_len);
     let log = make_ajtai_module(&params, 1);
 

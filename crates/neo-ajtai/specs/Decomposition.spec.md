@@ -35,7 +35,7 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 | Group | Rust symbol | Kind | Role | Guarantee |
 |---|---|---|---|---|
 | Decompose | `decomp_b(z, b, d, style) -> Vec<Fq>` | fn | Core | Column-major base-b digit decomposition |
-| Decompose | `decomp_b_row_major(z, b, d, style) -> Vec<Fq>` | fn | Core | Row-major variant (optimized for `b=2,3`) |
+| Decompose | `decomp_b_row_major(z, b, d, style) -> Vec<Fq>` | fn | Core | Row-major variant used by the concrete `b=2` path |
 | Split | `split_b(Z, b, d, m, k, style) -> Vec<Vec<Fq>>` | fn | Core | Split matrix into `k` digit-matrices |
 | Assertion | `assert_range_b(Z, b) -> AjtaiResult<()>` | fn | Core | Range assertion (`|d| < b`) |
 | Style | `DecompStyle` | enum | Core | `Balanced \| NonNegative` |
@@ -56,7 +56,7 @@ Source: ./formal/superneo-lean/SuperNeo.pdf.md
 | Assumption | Source | Justification |
 |---|---|---|
 | Balanced representation is unique for `\|z\| < q/2` | Field arithmetic | Standard signed-digit representation over `F_q` |
-| Decomposition base `b` divides field characteristic cleanly | Parameter selection | `b in {2, 3, 5}` are small primes; digit extraction via repeated division is exact |
+| Concrete decomposition base is fixed | Appendix B.2 parameter selection | The shipped Goldilocks instantiation fixes `b = 2`; abstract formulas remain parameterized by `b` but active conformance is base-2 |
 
 ## Dependency and Consumer Map
 
@@ -74,12 +74,12 @@ All spec-derived tests (lean oracles + invariant obligations) live in `spec-test
 
 | Test file | Oracle family | What it checks |
 |---|---|---|
-| `crates/neo-ajtai/spec-tests/lean_oracles.rs` | `decomp_v1` | Round-trip, digit bounds, recomposition for bases 2, 3, 5 |
+| `crates/neo-ajtai/spec-tests/lean_oracles.rs` | `decomp_v1` | Round-trip, digit bounds, recomposition for the concrete base-2 oracle |
 
 ## Quality Expectations
 
 - No `unsafe` (enforced crate-wide)
-- `decomp_b_row_major` is optimized for `b=2` and `b=3` with specialized branches
+- `decomp_b_row_major` is exercised on the concrete `b=2` path used by the Goldilocks instantiation
 - `DecompStyle::Balanced` produces centered digits in `[-(b-1)/2, (b-1)/2]`
 - `DecompStyle::NonNegative` produces digits in `[0, b-1]`
 
@@ -88,7 +88,7 @@ All spec-derived tests (lean oracles + invariant obligations) live in `spec-test
 - `cargo test -p neo-ajtai --release` succeeds
 - `decomp_v1` lean oracle family passes
 - All invariant obligations have spec-tests
-- Round-trip holds for random field elements with bases 2, 3, and 5
+- Round-trip holds for random field elements on the concrete base-2 path
 
 ## Out of Scope
 
