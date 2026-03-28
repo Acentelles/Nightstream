@@ -20,6 +20,8 @@ open Nightstream.Chip8.Poseidon2Transcript
 open Nightstream.Chip8.Root0Digest
 open Nightstream.Chip8.Poseidon2GoldilocksCore (concreteCore)
 
+abbrev Byte := Generated.Byte
+
 def rv64imRootRowWidth : Nat := 38
 def rv64imRootLaneColumnsLayoutV1 : Nat := 1
 
@@ -240,7 +242,7 @@ def rootLaneFamilyDigest (columnDigests : List (List Byte)) : List Byte :=
         TranscriptOp.appendMessage "rv64im/root_lane_column_family/column_digest" digest)
 
 private def rootLaneColumnsObject (familyDigest : List Byte) : AjtaiObjectIdView :=
-  let object :=
+  let object : AjtaiObjectIdView :=
     { familyTag := 0
     , commitmentDigest := familyDigest
     , layoutVersion := rv64imRootLaneColumnsLayoutV1
@@ -252,13 +254,13 @@ private def selectedOpeningRefOfRowDigest
     (object : AjtaiObjectIdView)
     (logicalIndex : Nat)
     (rowDigest : List Byte) : SelectedOpeningRefView :=
-  let openingId :=
+  let openingId : AjtaiOpeningIdView :=
     { object := object
     , logicalIndex := logicalIndex
     , digest := []
     }
   let openingId := { openingId with digest := ajtaiOpeningIdDigest openingId }
-  let reference :=
+  let reference : SelectedOpeningRefView :=
     { id := openingId
     , valueDigest := rowDigest
     , digest := []
@@ -279,7 +281,7 @@ private def rootLaneColumnsOfRows
   let lastRow :=
     listLast? (listEnum rowDigests) |>.map fun (logicalIndex, digest) =>
       selectedOpeningRefOfRowDigest object logicalIndex digest
-  let bundle :=
+  let bundle : RootLaneColumnsView :=
     { object := object
     , rowWidth := rv64imRootRowWidth
     , timeLen := semanticRows.length
