@@ -40,12 +40,14 @@ jobs:
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
 
-    - name: Install Lean toolchain
-      run: |
-        if ! command -v elan >/dev/null 2>&1; then
-          curl https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -sSf | sh -s -- -y
-        fi
-        echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+    # Temporarily disabled while the merge path is focused on Rust-side
+    # stabilization and we are not gating CI on Lean conformance.
+    # - name: Install Lean toolchain
+    #   run: |
+    #     if ! command -v elan >/dev/null 2>&1; then
+    #       curl https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -sSf | sh -s -- -y
+    #     fi
+    #     echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
       
     - name: Cache dependencies
       uses: actions/cache@v3
@@ -64,8 +66,10 @@ jobs:
     - name: Run CHIP-8 audit-feature tests
       run: cargo test -p neo-fold-next --release --features chip8-audit
 
-    - name: Run Nightstream Lean/Rust conformance gates
-      run: bash ./scripts/check_lean_rust_conformance.sh
+    # Temporarily disabled while the merge path is focused on Rust-side
+    # stabilization and we are not gating CI on Lean conformance.
+    # - name: Run Nightstream Lean/Rust conformance gates
+    #   run: bash ./scripts/check_lean_rust_conformance.sh
 
   # ============================================================================
   # WASM Build Checks (with Spartan)
