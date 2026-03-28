@@ -3,9 +3,13 @@ use std::path::{Path, PathBuf};
 
 use neo_fold_next::rv64im as rv64;
 use neo_fold_next::rv64im::{
-    build_all_parity_cases, prove_rv64im_proof, verify_rv64im_proof, MemoryWord, Rv64imKernelSummary,
-    Rv64imParityCaseManifest, Rv64imParityDerivedCase, Rv64imParitySourceCase, Rv64TraceVirtualOpcode,
-    TranscriptCursorSnapshot, TranscriptEventKind, TranscriptEventRecord, TranscriptRecord,
+    build_all_parity_cases, build_rv64im_audit_witness_bundle, prove_rv64im_public_proof,
+    verify_rv64im_public_proof, MemoryWord, Rv64imKernelSummary, Rv64imParityCaseManifest,
+    Rv64imParityDerivedCase, Rv64imParitySourceCase, Rv64TraceVirtualOpcode, TranscriptCursorSnapshot,
+    TranscriptEventKind, TranscriptEventRecord, TranscriptRecord,
+};
+use neo_fold_next::rv64im::kernel::{
+    RootLaneCommitmentSetSummary, RootLaneCommitmentSummaryArtifact,
 };
 
 #[derive(Clone)]
@@ -217,6 +221,69 @@ fn render_option_bytes(value: Option<&[u8]>) -> String {
         Some(bytes) => format!("(some {})", render_u8_list(bytes)),
         None => "none".into(),
     }
+}
+
+fn render_ajtai_family_kind(kind: rv64::AjtaiFamilyKind) -> u64 {
+    match kind {
+        rv64::AjtaiFamilyKind::RootMainLaneColumns => 0,
+        rv64::AjtaiFamilyKind::RootMainLaneCommittedRows => 10,
+        rv64::AjtaiFamilyKind::Stage1Rows => 1,
+        rv64::AjtaiFamilyKind::Stage2RegisterReads => 2,
+        rv64::AjtaiFamilyKind::Stage2RegisterWrites => 3,
+        rv64::AjtaiFamilyKind::Stage2RamEvents => 4,
+        rv64::AjtaiFamilyKind::Stage2TwistLinks => 5,
+        rv64::AjtaiFamilyKind::Stage3Continuity => 6,
+        rv64::AjtaiFamilyKind::KernelBindings => 7,
+        rv64::AjtaiFamilyKind::KernelPreparedSteps => 8,
+        rv64::AjtaiFamilyKind::RootMainLanePublicSteps => 9,
+    }
+}
+
+fn render_ajtai_object_id(object: &rv64::AjtaiObjectId) -> String {
+    format!(
+        "{{ familyTag := {}, commitmentDigest := {}, layoutVersion := {}, digest := {} }}",
+        render_ajtai_family_kind(object.family),
+        render_u8_list(&object.commitment_digest),
+        object.layout_version,
+        render_u8_list(&object.digest),
+    )
+}
+
+fn render_ajtai_opening_id(opening: &rv64::AjtaiOpeningId) -> String {
+    format!(
+        "{{ object := {}, logicalIndex := {}, digest := {} }}",
+        render_ajtai_object_id(&opening.object),
+        opening.logical_index,
+        render_u8_list(&opening.digest),
+    )
+}
+
+fn render_selected_opening_ref(reference: &rv64::SelectedOpeningRef) -> String {
+    format!(
+        "{{ id := {}, valueDigest := {}, digest := {} }}",
+        render_ajtai_opening_id(&reference.id),
+        render_u8_list(&reference.value_digest),
+        render_u8_list(&reference.digest),
+    )
+}
+
+fn render_option_selected_opening_ref(reference: Option<&rv64::SelectedOpeningRef>) -> String {
+    match reference {
+        Some(reference) => format!("(some {})", render_selected_opening_ref(reference)),
+        None => "none".into(),
+    }
+}
+
+fn render_u8_matrix(values: &[[u8; 32]]) -> String {
+    let mut out = String::from("[");
+    for (idx, value) in values.iter().enumerate() {
+        if idx > 0 {
+            out.push_str(", ");
+        }
+        out.push_str(&render_u8_list(value));
+    }
+    out.push(']');
+    out
 }
 
 fn render_bool(value: bool) -> &'static str {
@@ -537,7 +604,7 @@ pub(crate) fn render_derived_case(case: &Rv64imParityDerivedCase) -> String {
 
 fn render_proof_statement(statement: &rv64::Rv64imProofStatement) -> String {
     format!(
-        "{{\n  rootParamsId := {}\n  , stageClaimsDigest := {}\n  , stagePackagesDigest := {}\n  , kernelOpeningDigest := {}\n  , preparedStepBindingsDigest := {}\n  , executionDigest := {}\n  , finalStateDigest := {}\n  , transcriptFinalDigest := {}\n  , mainLaneStatementDigest := {}\n  , publicStepCount := {}\n  , finalPc := {}\n  , halted := {}\n  , digest := {}\n}}",
+        "{{\n  rootParamsId := {}\n  , stageClaimsDigest := {}\n  , stagePackagesDigest := {}\n  , kernelOpeningDigest := {}\n  , preparedStepBindingsDigest := {}\n  , executionDigest := {}\n  , finalStateDigest := {}\n  , transcriptFinalDigest := {}\n  , mainLaneSurfaceDigest := {}\n  , rootLaneColumnsDigest := {}\n  , publicStepCount := {}\n  , finalPc := {}\n  , halted := {}\n  , digest := {}\n}}",
         render_u8_list(&statement.root_params_id),
         render_u8_list(&statement.stage_claims_digest),
         render_u8_list(&statement.stage_packages_digest),
@@ -546,7 +613,8 @@ fn render_proof_statement(statement: &rv64::Rv64imProofStatement) -> String {
         render_u8_list(&statement.execution_digest),
         render_u8_list(&statement.final_state_digest),
         render_u8_list(&statement.transcript_final_digest),
-        render_u8_list(&statement.main_lane_statement_digest),
+        render_u8_list(&statement.main_lane_surface_digest),
+        render_u8_list(&statement.root_lane_columns_digest),
         statement.public_step_count,
         statement.final_pc,
         render_bool(statement.halted),
@@ -565,18 +633,16 @@ fn render_accepted_proof_statement_binding(binding: &rv64::Rv64imAcceptedProofSt
 
 fn render_accepted_proof_main_lane_binding(binding: &rv64::Rv64imAcceptedProofMainLaneBinding) -> String {
     format!(
-        "{{ mainLaneStatementDigest := {}, mainLaneProofDigest := {}, digest := {} }}",
-        render_u8_list(&binding.main_lane_statement_digest),
-        render_u8_list(&binding.main_lane_proof_digest),
+        "{{ mainLaneBundleDigest := {}, digest := {} }}",
+        render_u8_list(&binding.main_lane_bundle_digest),
         render_u8_list(&binding.digest),
     )
 }
 
 fn render_accepted_proof_terminal_binding(binding: &rv64::Rv64imAcceptedProofTerminalBinding) -> String {
     format!(
-        "{{ finalStateDigest := {}, publicStepCount := {}, finalPc := {}, halted := {}, digest := {} }}",
+        "{{ finalStateDigest := {}, finalPc := {}, halted := {}, digest := {} }}",
         render_u8_list(&binding.final_state_digest),
-        binding.public_step_count,
         binding.final_pc,
         render_bool(binding.halted),
         render_u8_list(&binding.digest),
@@ -596,11 +662,42 @@ fn render_accepted_proof_claim(claim: &rv64::Rv64imAcceptedProofClaim) -> String
 
 fn render_main_lane_claim_binding(binding: &rv64::Rv64imMainLaneClaimBinding) -> String {
     format!(
-        "{{ statementDigest := {}, proofDigest := {}, publicStepCount := {}, digest := {} }}",
-        render_u8_list(&binding.statement_digest),
-        render_u8_list(&binding.proof_digest),
-        binding.public_step_count,
+        "{{ mainLaneBundleDigest := {}, digest := {} }}",
+        render_u8_list(&binding.main_lane_bundle_digest),
         render_u8_list(&binding.digest),
+    )
+}
+
+fn render_root_lane_columns(columns: &rv64::RootLaneColumns) -> String {
+    format!(
+        "{{ object := {}, rowWidth := {}, timeLen := {}, columnDigests := {}, familyDigest := {}, firstRow := {}, lastRow := {}, digest := {} }}",
+        render_ajtai_object_id(&columns.object),
+        columns.row_width,
+        columns.time_len,
+        render_u8_matrix(&columns.column_digests),
+        render_u8_list(&columns.family_digest),
+        render_option_selected_opening_ref(columns.first_row.as_ref()),
+        render_option_selected_opening_ref(columns.last_row.as_ref()),
+        render_u8_list(&columns.digest),
+    )
+}
+
+fn render_root_lane_commitment_set(set: &RootLaneCommitmentSetSummary) -> String {
+    format!(
+        "{{ commitmentCount := {}, digest := {} }}",
+        set.commitment_count,
+        render_u8_list(&set.digest),
+    )
+}
+
+fn render_root_lane_commitment_artifact(artifact: &RootLaneCommitmentSummaryArtifact) -> String {
+    format!(
+        "{{ timeLen := {}, commitments := {}, firstSelectedRow := {}, lastSelectedRow := {}, digest := {} }}",
+        artifact.time_len,
+        render_root_lane_commitment_set(&artifact.commitments),
+        render_option_selected_opening_ref(artifact.first_selected_row.as_ref()),
+        render_option_selected_opening_ref(artifact.last_selected_row.as_ref()),
+        render_u8_list(&artifact.digest),
     )
 }
 
@@ -615,7 +712,7 @@ fn render_main_lane_claim(claim: &rv64::Rv64imMainLaneClaim) -> String {
 
 fn render_kernel_opening_claim(claim: &rv64::Rv64imKernelOpeningClaim) -> String {
     format!(
-        "{{\n  rootParamsId := {}\n  , stages := {{ stageClaimsDigest := {}, stagePackagesDigest := {}, kernelOpeningDigest := {}, digest := {} }}\n  , terminal := {{ preparedStepBindingsDigest := {}, executionDigest := {}, transcriptFinalDigest := {}, digest := {} }}\n  , publicStepCount := {}\n  , digest := {}\n}}",
+        "{{\n  rootParamsId := {}\n  , stages := {{ stageClaimsDigest := {}, stagePackagesDigest := {}, kernelOpeningDigest := {}, digest := {} }}\n  , terminal := {{ preparedStepBindingsDigest := {}, executionDigest := {}, transcriptFinalDigest := {}, digest := {} }}\n  , digest := {}\n}}",
         render_u8_list(&claim.root_params_id),
         render_u8_list(&claim.stages.stage_claims_digest),
         render_u8_list(&claim.stages.stage_packages_digest),
@@ -625,20 +722,18 @@ fn render_kernel_opening_claim(claim: &rv64::Rv64imKernelOpeningClaim) -> String
         render_u8_list(&claim.terminal.execution_digest),
         render_u8_list(&claim.terminal.transcript_final_digest),
         render_u8_list(&claim.terminal.digest),
-        claim.public_step_count,
         render_u8_list(&claim.digest),
     )
 }
 
 fn render_joint_opening_claim(claim: &rv64::Rv64imJointOpeningClaim) -> String {
     format!(
-        "{{ rootParamsId := {}, binding := {{ proofStatementDigest := {}, mainLaneClaimDigest := {}, kernelOpeningClaimDigest := {}, digest := {} }}, publicStepCount := {}, digest := {} }}",
+        "{{ rootParamsId := {}, binding := {{ proofStatementDigest := {}, mainLaneClaimDigest := {}, kernelOpeningClaimDigest := {}, digest := {} }}, digest := {} }}",
         render_u8_list(&claim.root_params_id),
         render_u8_list(&claim.binding.proof_statement_digest),
         render_u8_list(&claim.binding.main_lane_claim_digest),
         render_u8_list(&claim.binding.kernel_opening_claim_digest),
         render_u8_list(&claim.binding.digest),
-        claim.public_step_count,
         render_u8_list(&claim.digest),
     )
 }
@@ -674,9 +769,9 @@ fn render_kernel_claim_bundle(bundle: &rv64::Rv64imKernelClaimBundle) -> String 
 
 fn render_main_lane_proof_binding(binding: &rv64::Rv64imMainLaneProofBinding) -> String {
     format!(
-        "{{ statementDigest := {}, proofDigest := {}, publicStepCount := {}, digest := {} }}",
-        render_u8_list(&binding.statement_digest),
-        render_u8_list(&binding.proof_digest),
+        "{{ rootLaneColumnsDigest := {}, rootLaneCommitmentDigest := {}, publicStepCount := {}, digest := {} }}",
+        render_u8_list(&binding.root_lane_columns_digest),
+        render_u8_list(&binding.root_lane_commitment_digest),
         binding.public_step_count,
         render_u8_list(&binding.digest),
     )
@@ -684,8 +779,10 @@ fn render_main_lane_proof_binding(binding: &rv64::Rv64imMainLaneProofBinding) ->
 
 fn render_main_lane_proof_bundle(bundle: &rv64::Rv64imMainLaneProofBundle) -> String {
     format!(
-        "{{ binding := {}, digest := {} }}",
+        "{{ binding := {}, statementDigest := {}, proofDigest := {}, digest := {} }}",
         render_main_lane_proof_binding(&bundle.binding),
+        render_u8_list(&bundle.statement_digest),
+        render_u8_list(&bundle.proof_digest),
         render_u8_list(&bundle.digest),
     )
 }
@@ -701,7 +798,7 @@ fn render_trace_shape_bundle(bundle: &rv64::Rv64imTraceShapeBundle) -> String {
     )
 }
 
-fn render_trace_proof_bundle(bundle: &rv64::Rv64imTraceProofBundle) -> String {
+fn render_trace_projection_bundle(bundle: &rv64::Rv64imTraceProjectionBundle) -> String {
     format!(
         "{{\n  manifest := {}\n  , executionDigest := {}\n  , shape := {}\n  , digest := {}\n}}",
         render_manifest(&bundle.manifest),
@@ -726,7 +823,7 @@ fn render_stage_witness_summary_bundle(bundle: &rv64::Rv64imStageWitnessSummaryB
     )
 }
 
-fn render_stage_witness_proof_bundle(bundle: &rv64::Rv64imStageWitnessProofBundle) -> String {
+fn render_stage_witness_projection_bundle(bundle: &rv64::Rv64imStageWitnessProjectionBundle) -> String {
     format!(
         "{{ summary := {}, digest := {} }}",
         render_stage_witness_summary_bundle(&bundle.summary),
@@ -749,8 +846,10 @@ fn render_stage_claim_digest_bundle(bundle: &rv64::Rv64imStageClaimDigestBundle)
 
 fn render_stage_claim_proof_bundle(bundle: &rv64::Rv64imStageClaimProofBundle) -> String {
     format!(
-        "{{ summary := {}, digest := {} }}",
+        "{{ summary := {}, statementDigest := {}, proofDigest := {}, digest := {} }}",
         render_stage_claim_digest_bundle(&bundle.summary),
+        render_u8_list(&bundle.packaged.statement.digest),
+        render_u8_list(&bundle.packaged.proof.proof_digest),
         render_u8_list(&bundle.digest),
     )
 }
@@ -817,22 +916,26 @@ fn render_kernel_claim_summary_bundle(bundle: &rv64::Rv64imKernelClaimSummaryBun
 
 fn render_kernel_claim_proof_bundle(bundle: &rv64::Rv64imKernelClaimProofBundle) -> String {
     format!(
-        "{{ summary := {}, digest := {} }}",
+        "{{ summary := {}, statementDigest := {}, proofDigest := {}, digest := {} }}",
         render_kernel_claim_summary_bundle(&bundle.summary),
+        render_u8_list(&bundle.packaged.statement.digest),
+        render_u8_list(&bundle.packaged.proof.proof_digest),
         render_u8_list(&bundle.digest),
     )
 }
 
 fn render_kernel_proof_bundle(bundle: &rv64::Rv64imKernelProofBundle) -> String {
     format!(
-        "{{\n  rootParamsId := {}\n  , trace := {}\n  , stages := {}\n  , stageClaims := {}\n  , stagePackages := {}\n  , kernelOpening := {}\n  , kernelClaims := {}\n  , mainLane := {}\n  , digest := {}\n}}",
+        "{{\n  rootParamsId := {}\n  , trace := {}\n  , stages := {}\n  , stageClaims := {}\n  , stagePackages := {}\n  , kernelOpening := {}\n  , kernelClaims := {}\n  , rootLaneColumns := {}\n  , rootLaneCommitment := {}\n  , mainLane := {}\n  , digest := {}\n}}",
         render_u8_list(&bundle.root_params_id),
-        render_trace_proof_bundle(&bundle.trace),
-        render_stage_witness_proof_bundle(&bundle.stages),
+        render_trace_projection_bundle(&bundle.trace),
+        render_stage_witness_projection_bundle(&bundle.stages),
         render_stage_claim_proof_bundle(&bundle.stage_claims),
         render_stage_package_proof_bundle(&bundle.stage_packages),
         render_kernel_opening_proof_bundle(&bundle.kernel_opening),
         render_kernel_claim_proof_bundle(&bundle.kernel_claims),
+        render_root_lane_columns(&bundle.root_lane_columns),
+        render_root_lane_commitment_artifact(&bundle.root_lane_commitment),
         render_main_lane_proof_bundle(&bundle.main_lane),
         render_u8_list(&bundle.digest),
     )
@@ -960,10 +1063,14 @@ pub(crate) fn build_public_proof_cases(
         .map(|(source, derived)| {
             let name = source.manifest.name.as_str();
             let input = public_proof_input(source);
-            let (witness, proof) = prove_rv64im_proof(&input)
+            let witness = build_rv64im_audit_witness_bundle(&input)
+                .unwrap_or_else(|err| panic!("build RV64IM audit witness vector {name}: {err}"));
+            let proof = prove_rv64im_public_proof(&input)
                 .unwrap_or_else(|err| panic!("prove RV64IM public proof vector {name}: {err}"));
-            let verified = verify_rv64im_proof(&input, &proof)
+            verify_rv64im_public_proof(&proof)
                 .unwrap_or_else(|err| panic!("verify RV64IM public proof vector {name}: {err}"));
+            let verified = build_rv64im_audit_witness_bundle(&input)
+                .unwrap_or_else(|err| panic!("rebuild RV64IM audit witness vector {name}: {err}"));
             assert_eq!(verified.digest, witness.digest, "proof witness digest roundtrip for {name}");
             assert_eq!(
                 proof.statement.execution_digest,

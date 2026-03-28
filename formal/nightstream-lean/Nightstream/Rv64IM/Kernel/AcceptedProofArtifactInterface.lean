@@ -1,0 +1,21 @@
+import Nightstream.Rv64IM.Kernel.AcceptedProofArtifact
+
+/-!
+Interface for the theorem-facing RV64IM accepted-proof artifact boundary.
+-/
+
+namespace Nightstream.Rv64IM.AcceptedProofArtifactInterface
+
+abbrev AcceptedProofArtifact := @Nightstream.Rv64IM.AcceptedProofArtifact
+abbrev exactKernelBoundaries_of_acceptedProofArtifact :=
+  @Nightstream.Rv64IM.exactKernelBoundaries_of_acceptedProofArtifact
+abbrev recomputedPublicProofSchema_of_acceptedProofArtifact :=
+  @Nightstream.Rv64IM.recomputedPublicProofSchema_of_acceptedProofArtifact
+abbrev publicProofBoundary_of_acceptedProofArtifact :=
+  @Nightstream.Rv64IM.publicProofBoundary_of_acceptedProofArtifact
+abbrev publicProofSchemaExecutionResult_of_acceptedProofArtifact :=
+  @Nightstream.Rv64IM.publicProofSchemaExecutionResult_of_acceptedProofArtifact
+abbrev acceptedProofSoundness_of_acceptedProofArtifact :=
+  @Nightstream.Rv64IM.acceptedProofSoundness_of_acceptedProofArtifact
+
+end Nightstream.Rv64IM.AcceptedProofArtifactInterface

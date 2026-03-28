@@ -1,10 +1,11 @@
 import Nightstream.Rv64IM.Kernel.PublicProofBoundary
 
 /-!
-Owns the canonical theorem-facing accepted public proof object. At this layer,
-that object is exactly the Rust-shaped public proof boundary
+Owns the derived theorem-facing accepted public proof projection. At this
+layer, that object is still the Rust-shaped public proof boundary
 (`statement / claims / kernelProof`) together with the accepted-proof witness
-that discharges it.
+that discharges it, but the authoritative theorem entrypoint now lives at the
+accepted-artifact boundary.
 -/
 
 namespace Nightstream.Rv64IM

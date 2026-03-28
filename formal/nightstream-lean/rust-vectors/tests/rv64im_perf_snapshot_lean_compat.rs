@@ -29,6 +29,22 @@ fn perf_opcode_count_from_env() -> usize {
     }
 }
 
+fn build_lean_proof_boundary_targets() {
+    let output = Command::new(lake_binary())
+        .current_dir(formal_root())
+        .arg("build")
+        .arg("Nightstream.Rv64IM.ProofBoundaryChecks")
+        .output()
+        .expect("run lake build for RV64IM proof boundary checks");
+
+    assert!(
+        output.status.success(),
+        "lake build failed for RV64IM proof boundary checks\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
 #[test]
 fn rv64im_mixed_opcode_perf_snapshot_matches_lean_checks() {
     let opcode_count = perf_opcode_count_from_env();
@@ -49,6 +65,8 @@ fn rv64im_mixed_opcode_perf_snapshot_matches_lean_checks() {
         unique
     ));
     fs::write(&temp_path, lean_module).expect("write temporary Lean compatibility module");
+
+    build_lean_proof_boundary_targets();
 
     let output = Command::new(lake_binary())
         .current_dir(formal_root())

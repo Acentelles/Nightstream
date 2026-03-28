@@ -1,10 +1,10 @@
 import Nightstream.Rv64IM.Kernel.PublicProofBoundaryConsequences
 
 /-!
-Owns the Rust-shaped public proof schema at the theorem boundary: a statement,
-claim bundle, and kernel proof bundle as one object. This file does not re-own
-accepted-proof soundness or the execution/public-result consequences; it routes
-schema witnesses to the public proof boundary and its consequences.
+Owns the derived Rust-shaped public proof schema: a statement, claim bundle,
+and kernel proof bundle as one object. This file does not re-own the accepted
+artifact boundary or accepted-proof soundness; it routes the derived schema to
+the public proof boundary and its consequences.
 -/
 
 namespace Nightstream.Rv64IM

@@ -1,10 +1,11 @@
 import Nightstream.Rv64IM.Kernel.AcceptedProofExecutionResult
 
 /-!
-Owns the theorem-facing RV64IM boundary that mirrors the public Rust proof API:
-a statement, a claim bundle, a kernel proof bundle, and the accepted-proof
-soundness witness that discharges that boundary. This file does not re-own
-accepted-proof soundness or the derived execution/public-result consequences.
+Owns the derived theorem-facing RV64IM boundary that mirrors the public Rust
+proof API: a statement, a claim bundle, a kernel proof bundle, and the
+accepted-proof soundness witness that discharges that boundary. The accepted
+artifact boundary is now the authoritative theorem entrypoint; this file owns
+the downstream public projection only.
 -/
 
 namespace Nightstream.Rv64IM

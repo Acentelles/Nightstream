@@ -17,7 +17,8 @@ structure ProofStatementView where
   executionDigest : List Byte
   finalStateDigest : List Byte
   transcriptFinalDigest : List Byte
-  mainLaneStatementDigest : List Byte
+  mainLaneSurfaceDigest : List Byte
+  rootLaneColumnsDigest : List Byte
   publicStepCount : Nat
   finalPc : Nat
   halted : Bool
@@ -31,14 +32,12 @@ structure AcceptedProofStatementBindingView where
 deriving DecidableEq, Repr
 
 structure AcceptedProofMainLaneBindingView where
-  mainLaneStatementDigest : List Byte
-  mainLaneProofDigest : List Byte
+  mainLaneBundleDigest : List Byte
   digest : List Byte
 deriving DecidableEq, Repr
 
 structure AcceptedProofTerminalBindingView where
   finalStateDigest : List Byte
-  publicStepCount : Nat
   finalPc : Nat
   halted : Bool
   digest : List Byte
@@ -53,9 +52,7 @@ structure AcceptedProofClaimView where
 deriving DecidableEq, Repr
 
 structure MainLaneClaimBindingView where
-  statementDigest : List Byte
-  proofDigest : List Byte
-  publicStepCount : Nat
+  mainLaneBundleDigest : List Byte
   digest : List Byte
 deriving DecidableEq, Repr
 
@@ -83,7 +80,6 @@ structure KernelOpeningClaimView where
   rootParamsId : List Byte
   stages : KernelOpeningStageClaimBindingView
   terminal : KernelOpeningTerminalClaimBindingView
-  publicStepCount : Nat
   digest : List Byte
 deriving DecidableEq, Repr
 
@@ -97,7 +93,6 @@ deriving DecidableEq, Repr
 structure JointOpeningClaimView where
   rootParamsId : List Byte
   binding : JointOpeningClaimBindingView
-  publicStepCount : Nat
   digest : List Byte
 deriving DecidableEq, Repr
 
@@ -133,14 +128,69 @@ structure KernelClaimBundleView where
 deriving DecidableEq, Repr
 
 structure MainLaneProofBindingView where
-  statementDigest : List Byte
-  proofDigest : List Byte
+  rootLaneColumnsDigest : List Byte
+  rootLaneCommitmentDigest : List Byte
   publicStepCount : Nat
+  digest : List Byte
+deriving DecidableEq, Repr
+
+structure AjtaiObjectIdView where
+  familyTag : Nat
+  commitmentDigest : List Byte
+  layoutVersion : Nat
+  digest : List Byte
+deriving DecidableEq, Repr
+
+structure AjtaiOpeningIdView where
+  object : AjtaiObjectIdView
+  logicalIndex : Nat
+  digest : List Byte
+deriving DecidableEq, Repr
+
+structure SelectedOpeningRefView where
+  id : AjtaiOpeningIdView
+  valueDigest : List Byte
+  digest : List Byte
+deriving DecidableEq, Repr
+
+structure MainLaneSurfaceView where
+  objectDigest : List Byte
+  familyDigest : List Byte
+  rowWidth : Nat
+  publicStepCount : Nat
+  firstPublicStep : Option SelectedOpeningRefView
+  lastPublicStep : Option SelectedOpeningRefView
+  digest : List Byte
+deriving DecidableEq, Repr
+
+structure RootLaneColumnsView where
+  object : AjtaiObjectIdView
+  rowWidth : Nat
+  timeLen : Nat
+  columnDigests : List (List Byte)
+  familyDigest : List Byte
+  firstRow : Option SelectedOpeningRefView
+  lastRow : Option SelectedOpeningRefView
+  digest : List Byte
+deriving DecidableEq, Repr
+
+structure RootLaneCommitmentSetView where
+  commitmentCount : Nat
+  digest : List Byte
+deriving DecidableEq, Repr
+
+structure RootLaneCommitmentArtifactView where
+  timeLen : Nat
+  commitments : RootLaneCommitmentSetView
+  firstSelectedRow : Option SelectedOpeningRefView
+  lastSelectedRow : Option SelectedOpeningRefView
   digest : List Byte
 deriving DecidableEq, Repr
 
 structure MainLaneProofBundleView where
   binding : MainLaneProofBindingView
+  statementDigest : List Byte
+  proofDigest : List Byte
   digest : List Byte
 deriving DecidableEq, Repr
 
@@ -157,7 +207,7 @@ structure TraceShapeBundleView where
   digest : List Byte
 deriving DecidableEq, Repr
 
-structure TraceProofBundleView where
+structure TraceProjectionBundleView where
   manifest : ParityCaseManifest
   executionDigest : List Byte
   shape : TraceShapeBundleView
@@ -176,7 +226,7 @@ structure StageWitnessSummaryBundleView where
   digest : List Byte
 deriving DecidableEq, Repr
 
-structure StageWitnessProofBundleView where
+structure StageWitnessProjectionBundleView where
   summary : StageWitnessSummaryBundleView
   digest : List Byte
 deriving DecidableEq, Repr
@@ -193,6 +243,8 @@ deriving DecidableEq, Repr
 
 structure StageClaimProofBundleView where
   summary : StageClaimDigestBundleView
+  statementDigest : List Byte
+  proofDigest : List Byte
   digest : List Byte
 deriving DecidableEq, Repr
 
@@ -246,17 +298,21 @@ deriving DecidableEq, Repr
 
 structure KernelClaimProofBundleView where
   summary : KernelClaimSummaryBundleView
+  statementDigest : List Byte
+  proofDigest : List Byte
   digest : List Byte
 deriving DecidableEq, Repr
 
 structure KernelProofBundleView where
   rootParamsId : List Byte
-  trace : TraceProofBundleView
-  stages : StageWitnessProofBundleView
+  trace : TraceProjectionBundleView
+  stages : StageWitnessProjectionBundleView
   stageClaims : StageClaimProofBundleView
   stagePackages : StagePackageProofBundleView
   kernelOpening : KernelOpeningProofBundleView
   kernelClaims : KernelClaimProofBundleView
+  rootLaneColumns : RootLaneColumnsView
+  rootLaneCommitment : RootLaneCommitmentArtifactView
   mainLane : MainLaneProofBundleView
   digest : List Byte
 deriving DecidableEq, Repr

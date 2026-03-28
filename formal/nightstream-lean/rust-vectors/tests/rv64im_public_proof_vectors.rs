@@ -1,7 +1,8 @@
 use std::collections::BTreeSet;
 
 use neo_fold_next::rv64im::{
-    build_all_parity_cases, prove_rv64im_proof, verify_rv64im_proof, Rv64imProofInput,
+    build_all_parity_cases, build_rv64im_audit_witness_bundle, prove_rv64im_public_proof,
+    verify_rv64im_public_proof, Rv64imProofInput,
 };
 
 const EXPECTED_PUBLIC_PROOF_CASE_NAMES: &[&str] = &[
@@ -59,10 +60,14 @@ fn rv64im_public_proof_vectors_cover_the_full_parity_corpus() {
             source: source.clone(),
             max_steps: source.program_words.len(),
         };
-        let (witness, proof) = prove_rv64im_proof(&input)
+        let witness = build_rv64im_audit_witness_bundle(&input)
+            .unwrap_or_else(|err| panic!("build RV64IM audit witness vector {name}: {err}"));
+        let proof = prove_rv64im_public_proof(&input)
             .unwrap_or_else(|err| panic!("prove RV64IM public proof vector {name}: {err}"));
-        let verified = verify_rv64im_proof(&input, &proof)
+        verify_rv64im_public_proof(&proof)
             .unwrap_or_else(|err| panic!("verify RV64IM public proof vector {name}: {err}"));
+        let verified = build_rv64im_audit_witness_bundle(&input)
+            .unwrap_or_else(|err| panic!("rebuild RV64IM audit witness vector {name}: {err}"));
 
         assert_eq!(
             verified.digest, witness.digest,

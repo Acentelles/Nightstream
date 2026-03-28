@@ -2143,7 +2143,7 @@ private def buildTranscript
   , kernelFinalMix := kernelFinalMix
   , finalDigest := finalDigest }
 
-private def recomputeDerivedCase? (source : ParitySourceCase) : Option ParityDerivedCase := do
+def recomputeDerivedCase? (source : ParitySourceCase) : Option ParityDerivedCase := do
   let (steps, finalState) <- executeProgram? source
   let rows := expandedRowsOfSteps steps
   let stage1 := stage1SummaryOfRows rows

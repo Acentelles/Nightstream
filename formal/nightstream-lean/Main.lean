@@ -30,7 +30,8 @@ private def runNightstreamProtocolParity : IO Bool := do
       "build",
       "Nightstream.Chip8.Checks",
       "Nightstream.Rv64IM.Checks",
-      "Nightstream.Rv64IM.ProofBoundaryChecks"
+      "Nightstream.Rv64IM.AcceptedArtifactChecks",
+      "Nightstream.Rv64IM.AcceptedArtifactCompleteness"
     ]
   }
   let buildStdout := buildOut.stdout.trimAscii.toString

@@ -1,0 +1,18 @@
+import Nightstream.Rv64IM.Kernel.AcceptedProofArtifactConsequences
+
+namespace Nightstream.Rv64IM.AcceptedProofArtifactConsequencesInterface
+
+abbrev acceptedProofArtifactRecoversExactKernelBoundaries :=
+  @Nightstream.Rv64IM.acceptedProofArtifactRecoversExactKernelBoundaries
+abbrev acceptedProofArtifactRecoversAcceptedProofSoundness :=
+  @Nightstream.Rv64IM.acceptedProofArtifactRecoversAcceptedProofSoundness
+abbrev acceptedProofArtifactHasExactPublicProofProjection :=
+  @Nightstream.Rv64IM.acceptedProofArtifactHasExactPublicProofProjection
+abbrev acceptedProofExecutionResult_of_acceptedProofArtifact :=
+  @Nightstream.Rv64IM.acceptedProofExecutionResult_of_acceptedProofArtifact
+abbrev acceptedProofArtifactImpliesExecutionConsequences :=
+  @Nightstream.Rv64IM.acceptedProofArtifactImpliesExecutionConsequences
+abbrev acceptedProofArtifactImpliesAcceptedPublicProofExecutionConsequences :=
+  @Nightstream.Rv64IM.acceptedProofArtifactImpliesAcceptedPublicProofExecutionConsequences
+
+end Nightstream.Rv64IM.AcceptedProofArtifactConsequencesInterface

@@ -22,15 +22,15 @@ open Nightstream.Chip8.Poseidon2Transcript (TranscriptOp poseidon2AppDomain utf8
 open Nightstream.Chip8.Root0Digest (emptyCursor appendMessageCursor runOps digestBytes)
 open Nightstream.Chip8.Poseidon2GoldilocksCore (concreteCore)
 
-private def boolWord (value : Bool) : Nat :=
+def boolWord (value : Bool) : Nat :=
   if value then 1 else 0
 
-private def transcriptDigest (appLabel : String) (ops : List TranscriptOp) : List Byte :=
+def transcriptDigest (appLabel : String) (ops : List TranscriptOp) : List Byte :=
   let cursor0 := appendMessageCursor concreteCore emptyCursor poseidon2AppDomain (utf8Bytes appLabel)
   let cursor := runOps concreteCore cursor0 ops
   digestBytes concreteCore cursor
 
-private def familyWord : FamilyTag → Nat
+def familyWord : FamilyTag → Nat
   | .nativeAlu => 0
   | .alignedMemory => 1
   | .controlFlow => 2
@@ -54,21 +54,21 @@ private structure Rv64imRustAcceptedPublicProofView where
   kernelProof : KernelProofBundleView
   accepted : Unit
 
-private def publicProofSchemaOfCase
+def publicProofSchemaOfCase
     (proofCase : PublicProofVectorCase) :
     Rv64imRustPublicProofSchemaView :=
   { statement := proofCase.proof.statement
   , claims := proofCase.proof.claim
   , kernelProof := proofCase.proof.kernel }
 
-private def exportedProofApiLockstep
+def exportedProofApiLockstep
     (proofCase : PublicProofVectorCase) : Bool :=
   let proof : Rv64imRustExportedProofView := proofCase.proof
   proof.statement = proofCase.statement &&
     proof.claim = proofCase.claims &&
     proof.kernel = proofCase.kernelProof
 
-private def acceptedPublicProofOfCase
+def acceptedPublicProofOfCase
     (proofCase : PublicProofVectorCase) :
     Rv64imRustAcceptedPublicProofView :=
   { statement := proofCase.proof.statement
@@ -76,14 +76,14 @@ private def acceptedPublicProofOfCase
   , kernelProof := proofCase.proof.kernel
   , accepted := () }
 
-private def acceptedPublicProofLockstep
+def acceptedPublicProofLockstep
     (proofCase : PublicProofVectorCase) : Bool :=
   let accepted := acceptedPublicProofOfCase proofCase
   accepted.statement = proofCase.proof.statement &&
     accepted.claims = proofCase.proof.claim &&
     accepted.kernelProof = proofCase.proof.kernel
 
-private def proofStatementDigest (statement : ProofStatementView) : List Byte :=
+def proofStatementDigest (statement : ProofStatementView) : List Byte :=
   transcriptDigest "neo.fold.next/rv64im/proof_statement"
     [ .appendMessage "rv64im/proof_statement/root_params_id" statement.rootParamsId
     , .appendMessage "rv64im/proof_statement/stage_claims_digest" statement.stageClaimsDigest
@@ -93,12 +93,13 @@ private def proofStatementDigest (statement : ProofStatementView) : List Byte :=
     , .appendMessage "rv64im/proof_statement/execution_digest" statement.executionDigest
     , .appendMessage "rv64im/proof_statement/final_state_digest" statement.finalStateDigest
     , .appendMessage "rv64im/proof_statement/transcript_final_digest" statement.transcriptFinalDigest
-    , .appendMessage "rv64im/proof_statement/main_lane_statement_digest" statement.mainLaneStatementDigest
+    , .appendMessage "rv64im/proof_statement/main_lane_surface_digest" statement.mainLaneSurfaceDigest
+    , .appendMessage "rv64im/proof_statement/root_lane_columns_digest" statement.rootLaneColumnsDigest
     , .appendU64s "rv64im/proof_statement/meta"
         [statement.publicStepCount, statement.finalPc, boolWord statement.halted]
     ]
 
-private def acceptedProofStatementBindingDigest (binding : AcceptedProofStatementBindingView) : List Byte :=
+def acceptedProofStatementBindingDigest (binding : AcceptedProofStatementBindingView) : List Byte :=
   transcriptDigest "neo.fold.next/rv64im/accepted_proof_statement_binding"
     [ .appendMessage
         "rv64im/accepted_proof_statement_binding/proof_statement_digest"
@@ -108,27 +109,24 @@ private def acceptedProofStatementBindingDigest (binding : AcceptedProofStatemen
         binding.kernelOpeningDigest
     ]
 
-private def acceptedProofMainLaneBindingDigest (binding : AcceptedProofMainLaneBindingView) : List Byte :=
+def acceptedProofMainLaneBindingDigest (binding : AcceptedProofMainLaneBindingView) : List Byte :=
   transcriptDigest "neo.fold.next/rv64im/accepted_proof_main_lane_binding"
     [ .appendMessage
-        "rv64im/accepted_proof_main_lane_binding/main_lane_statement_digest"
-        binding.mainLaneStatementDigest
-    , .appendMessage
-        "rv64im/accepted_proof_main_lane_binding/main_lane_proof_digest"
-        binding.mainLaneProofDigest
+        "rv64im/accepted_proof_main_lane_binding/main_lane_bundle_digest"
+        binding.mainLaneBundleDigest
     ]
 
-private def acceptedProofTerminalBindingDigest (binding : AcceptedProofTerminalBindingView) : List Byte :=
+def acceptedProofTerminalBindingDigest (binding : AcceptedProofTerminalBindingView) : List Byte :=
   transcriptDigest "neo.fold.next/rv64im/accepted_proof_terminal_binding"
     [ .appendMessage
         "rv64im/accepted_proof_terminal_binding/final_state_digest"
         binding.finalStateDigest
     , .appendU64s
         "rv64im/accepted_proof_terminal_binding/meta"
-        [binding.publicStepCount, binding.finalPc, boolWord binding.halted]
+        [binding.finalPc, boolWord binding.halted]
     ]
 
-private def acceptedProofClaimDigest (claim : AcceptedProofClaimView) : List Byte :=
+def acceptedProofClaimDigest (claim : AcceptedProofClaimView) : List Byte :=
   transcriptDigest "neo.fold.next/rv64im/accepted_proof_claim"
     [ .appendMessage "rv64im/accepted_proof/root_params_id" claim.rootParamsId
     , .appendMessage "rv64im/accepted_proof/statement_digest" claim.statement.digest
@@ -136,20 +134,17 @@ private def acceptedProofClaimDigest (claim : AcceptedProofClaimView) : List Byt
     , .appendMessage "rv64im/accepted_proof/terminal_digest" claim.terminal.digest
     ]
 
-private def mainLaneClaimBindingDigest (binding : MainLaneClaimBindingView) : List Byte :=
+def mainLaneClaimBindingDigest (binding : MainLaneClaimBindingView) : List Byte :=
   transcriptDigest "neo.fold.next/rv64im/main_lane_claim_binding"
-    [ .appendMessage "rv64im/main_lane_claim_binding/statement_digest" binding.statementDigest
-    , .appendMessage "rv64im/main_lane_claim_binding/proof_digest" binding.proofDigest
-    , .appendU64s "rv64im/main_lane_claim_binding/meta" [binding.publicStepCount]
-    ]
+    [ .appendMessage "rv64im/main_lane_claim_binding/main_lane_bundle_digest" binding.mainLaneBundleDigest ]
 
-private def mainLaneClaimDigest (claim : MainLaneClaimView) : List Byte :=
+def mainLaneClaimDigest (claim : MainLaneClaimView) : List Byte :=
   transcriptDigest "neo.fold.next/rv64im/main_lane_claim"
     [ .appendMessage "rv64im/main_lane_claim/root_params_id" claim.rootParamsId
     , .appendMessage "rv64im/main_lane_claim/binding_digest" claim.binding.digest
     ]
 
-private def kernelOpeningStageClaimBindingDigest
+def kernelOpeningStageClaimBindingDigest
     (binding : KernelOpeningStageClaimBindingView) : List Byte :=
   transcriptDigest "neo.fold.next/rv64im/kernel_opening_stage_claim_binding"
     [ .appendMessage
@@ -163,7 +158,7 @@ private def kernelOpeningStageClaimBindingDigest
         binding.kernelOpeningDigest
     ]
 
-private def kernelOpeningTerminalClaimBindingDigest
+def kernelOpeningTerminalClaimBindingDigest
     (binding : KernelOpeningTerminalClaimBindingView) : List Byte :=
   transcriptDigest "neo.fold.next/rv64im/kernel_opening_terminal_claim_binding"
     [ .appendMessage
@@ -177,15 +172,14 @@ private def kernelOpeningTerminalClaimBindingDigest
         binding.transcriptFinalDigest
     ]
 
-private def kernelOpeningClaimDigest (claim : KernelOpeningClaimView) : List Byte :=
+def kernelOpeningClaimDigest (claim : KernelOpeningClaimView) : List Byte :=
   transcriptDigest "neo.fold.next/rv64im/kernel_opening_claim"
     [ .appendMessage "rv64im/kernel_opening_claim/root_params_id" claim.rootParamsId
     , .appendMessage "rv64im/kernel_opening_claim/stages_digest" claim.stages.digest
     , .appendMessage "rv64im/kernel_opening_claim/terminal_digest" claim.terminal.digest
-    , .appendU64s "rv64im/kernel_opening_claim/meta" [claim.publicStepCount]
     ]
 
-private def jointOpeningClaimBindingDigest (binding : JointOpeningClaimBindingView) : List Byte :=
+def jointOpeningClaimBindingDigest (binding : JointOpeningClaimBindingView) : List Byte :=
   transcriptDigest "neo.fold.next/rv64im/joint_opening_claim_binding"
     [ .appendMessage
         "rv64im/joint_opening_claim_binding/proof_statement_digest"
@@ -198,21 +192,20 @@ private def jointOpeningClaimBindingDigest (binding : JointOpeningClaimBindingVi
         binding.kernelOpeningClaimDigest
     ]
 
-private def jointOpeningClaimDigest (claim : JointOpeningClaimView) : List Byte :=
+def jointOpeningClaimDigest (claim : JointOpeningClaimView) : List Byte :=
   transcriptDigest "neo.fold.next/rv64im/joint_opening_claim"
     [ .appendMessage "rv64im/joint_opening_claim/root_params_id" claim.rootParamsId
     , .appendMessage "rv64im/joint_opening_claim/binding_digest" claim.binding.digest
-    , .appendU64s "rv64im/joint_opening_claim/meta" [claim.publicStepCount]
     ]
 
-private def root0StageClaimBindingDigest (binding : Root0StageClaimBindingView) : List Byte :=
+def root0StageClaimBindingDigest (binding : Root0StageClaimBindingView) : List Byte :=
   transcriptDigest "neo.fold.next/rv64im/root0_stage_claim_binding"
     [ .appendMessage "rv64im/root0_stage_claim_binding/stage1_digest" binding.stage1Digest
     , .appendMessage "rv64im/root0_stage_claim_binding/stage2_digest" binding.stage2Digest
     , .appendMessage "rv64im/root0_stage_claim_binding/stage3_digest" binding.stage3Digest
     ]
 
-private def root0TerminalClaimBindingDigest (binding : Root0TerminalClaimBindingView) : List Byte :=
+def root0TerminalClaimBindingDigest (binding : Root0TerminalClaimBindingView) : List Byte :=
   transcriptDigest "neo.fold.next/rv64im/root0_terminal_claim_binding"
     [ .appendMessage "rv64im/root0_terminal_claim_binding/root0_digest" binding.root0Digest
     , .appendMessage "rv64im/root0_terminal_claim_binding/execution_digest" binding.executionDigest
@@ -222,14 +215,14 @@ private def root0TerminalClaimBindingDigest (binding : Root0TerminalClaimBinding
         binding.transcriptFinalDigest
     ]
 
-private def root0ClaimDigest (claim : Root0ClaimView) : List Byte :=
+def root0ClaimDigest (claim : Root0ClaimView) : List Byte :=
   transcriptDigest "neo.fold.next/rv64im/root0_claim"
     [ .appendMessage "rv64im/root0_claim/root_params_id" claim.rootParamsId
     , .appendMessage "rv64im/root0_claim/stages_digest" claim.stages.digest
     , .appendMessage "rv64im/root0_claim/terminal_digest" claim.terminal.digest
     ]
 
-private def kernelClaimBundleDigest (claims : KernelClaimBundleView) : List Byte :=
+def kernelClaimBundleDigest (claims : KernelClaimBundleView) : List Byte :=
   transcriptDigest "neo.fold.next/rv64im/kernel_claim_bundle"
     [ .appendMessage "rv64im/kernel_claim_bundle/accepted_digest" claims.accepted.digest
     , .appendMessage "rv64im/kernel_claim_bundle/main_lane_digest" claims.mainLane.digest
@@ -240,46 +233,203 @@ private def kernelClaimBundleDigest (claims : KernelClaimBundleView) : List Byte
     , .appendMessage "rv64im/kernel_claim_bundle/root0_digest" claims.root0.digest
     ]
 
-private def mainLaneProofBindingDigest (binding : MainLaneProofBindingView) : List Byte :=
+def mainLaneProofBindingDigest (binding : MainLaneProofBindingView) : List Byte :=
   transcriptDigest "neo.fold.next/rv64im/main_lane_proof_binding"
-    [ .appendMessage "rv64im/main_lane_proof_binding/statement_digest" binding.statementDigest
-    , .appendMessage "rv64im/main_lane_proof_binding/proof_digest" binding.proofDigest
-    , .appendU64s "rv64im/main_lane_proof_binding/meta" [binding.publicStepCount]
+    [ .appendMessage
+        "rv64im/main_lane_proof_binding/root_lane_columns_digest"
+        binding.rootLaneColumnsDigest
+    , .appendMessage
+        "rv64im/main_lane_proof_binding/root_lane_commitment_digest"
+        binding.rootLaneCommitmentDigest
+    , .appendU64s
+        "rv64im/main_lane_proof_binding/meta"
+        [binding.publicStepCount]
     ]
 
-private def mainLaneProofBundleDigest (bundle : MainLaneProofBundleView) : List Byte :=
-  transcriptDigest "neo.fold.next/rv64im/main_lane_proof_bundle"
-    [ .appendMessage "rv64im/main_lane_proof_bundle/binding_digest" bundle.binding.digest ]
+def ajtaiFamilyName : Nat → List Byte
+  | 0 => utf8Bytes "root_main_lane_columns"
+  | 1 => utf8Bytes "stage1_rows"
+  | 2 => utf8Bytes "stage2_register_reads"
+  | 3 => utf8Bytes "stage2_register_writes"
+  | 4 => utf8Bytes "stage2_ram_events"
+  | 5 => utf8Bytes "stage2_twist_links"
+  | 6 => utf8Bytes "stage3_continuity"
+  | 7 => utf8Bytes "kernel_bindings"
+  | 8 => utf8Bytes "kernel_prepared_steps"
+  | 9 => utf8Bytes "root_main_lane_public_steps"
+  | 10 => utf8Bytes "root_main_lane_committed_rows"
+  | _ => []
 
-private def mainLaneProofSummaryBundleDigest (bundle : MainLaneProofSummaryBundleView) : List Byte :=
+def ajtaiObjectIdDigest (object : AjtaiObjectIdView) : List Byte :=
+  transcriptDigest "neo.fold.next/rv64im/ajtai_object_id"
+    [ .appendU64s
+        "rv64im/ajtai_object_id/meta"
+        [object.familyTag, object.layoutVersion]
+    , .appendMessage "rv64im/ajtai_object_id/family" (ajtaiFamilyName object.familyTag)
+    , .appendMessage "rv64im/ajtai_object_id/commitment_digest" object.commitmentDigest
+    ]
+
+def ajtaiOpeningIdDigest (opening : AjtaiOpeningIdView) : List Byte :=
+  transcriptDigest "neo.fold.next/rv64im/ajtai_opening_id"
+    [ .appendMessage "rv64im/ajtai_opening_id/object_digest" opening.object.digest
+    , .appendU64s "rv64im/ajtai_opening_id/logical_index" [opening.logicalIndex]
+    ]
+
+def selectedOpeningRefDigest (reference : SelectedOpeningRefView) : List Byte :=
+  transcriptDigest "neo.fold.next/rv64im/selected_opening_ref"
+    [ .appendMessage "rv64im/selected_opening_ref/opening_id" reference.id.digest
+    , .appendMessage "rv64im/selected_opening_ref/value_digest" reference.valueDigest
+    ]
+
+def mainLaneSurfaceDigest (surface : MainLaneSurfaceView) : List Byte :=
+  transcriptDigest "neo.fold.next/rv64im/main_lane_surface"
+    ([ .appendMessage "rv64im/main_lane_surface/object_digest" surface.objectDigest
+     , .appendMessage "rv64im/main_lane_surface/family_digest" surface.familyDigest
+     , .appendU64s
+         "rv64im/main_lane_surface/meta"
+         [surface.rowWidth, surface.publicStepCount]
+     , .appendU64s
+         "rv64im/main_lane_surface/first_present"
+         [boolWord surface.firstPublicStep.isSome]
+     ] ++
+       (match surface.firstPublicStep with
+       | some reference => [TranscriptOp.appendMessage "rv64im/main_lane_surface/first_digest" reference.digest]
+       | none => []) ++
+       [ .appendU64s
+           "rv64im/main_lane_surface/last_present"
+           [boolWord surface.lastPublicStep.isSome]
+       ] ++
+       (match surface.lastPublicStep with
+       | some reference => [TranscriptOp.appendMessage "rv64im/main_lane_surface/last_digest" reference.digest]
+       | none => []))
+
+def rootLaneColumnsDigest (bundle : RootLaneColumnsView) : List Byte :=
+  transcriptDigest "neo.fold.next/rv64im/root_lane_columns"
+    ([ .appendMessage "rv64im/root_lane_columns/object_digest" bundle.object.digest
+     , .appendU64s
+         "rv64im/root_lane_columns/meta"
+         [bundle.rowWidth, bundle.timeLen, bundle.columnDigests.length]
+     , .appendMessage "rv64im/root_lane_columns/family_digest" bundle.familyDigest
+     ] ++
+      bundle.columnDigests.map (fun digest =>
+        TranscriptOp.appendMessage "rv64im/root_lane_columns/column_digest" digest) ++
+      [ .appendU64s
+          "rv64im/root_lane_columns/first_present"
+          [boolWord bundle.firstRow.isSome]
+      ] ++
+      (match bundle.firstRow with
+      | some reference => [TranscriptOp.appendMessage "rv64im/root_lane_columns/first_digest" reference.digest]
+      | none => []) ++
+      [ .appendU64s
+          "rv64im/root_lane_columns/last_present"
+          [boolWord bundle.lastRow.isSome]
+      ] ++
+      (match bundle.lastRow with
+      | some reference => [TranscriptOp.appendMessage "rv64im/root_lane_columns/last_digest" reference.digest]
+      | none => []))
+
+def rootLaneCommitmentArtifactDigest (artifact : RootLaneCommitmentArtifactView) : List Byte :=
+  transcriptDigest "neo.fold.next/rv64im/root_lane_commitment_artifact"
+    ([ .appendU64s
+         "rv64im/root_lane_commitment_artifact/meta"
+         [artifact.timeLen]
+     , .appendMessage
+         "rv64im/root_lane_commitment_artifact/commitments_digest"
+         artifact.commitments.digest
+     , .appendU64s
+         "rv64im/root_lane_commitment_artifact/first_present"
+         [boolWord artifact.firstSelectedRow.isSome]
+     ] ++
+      (match artifact.firstSelectedRow with
+      | some reference =>
+          [TranscriptOp.appendMessage "rv64im/root_lane_commitment_artifact/first_digest" reference.digest]
+      | none => []) ++
+      [ .appendU64s
+          "rv64im/root_lane_commitment_artifact/last_present"
+          [boolWord artifact.lastSelectedRow.isSome]
+      ] ++
+      (match artifact.lastSelectedRow with
+      | some reference =>
+          [TranscriptOp.appendMessage "rv64im/root_lane_commitment_artifact/last_digest" reference.digest]
+      | none => []))
+
+def validRootLaneColumnsOpeningRefAt
+    (bundle : RootLaneColumnsView)
+    (reference : SelectedOpeningRefView)
+    (logicalIndex : Nat) : Bool :=
+  ajtaiObjectIdDigest reference.id.object = reference.id.object.digest &&
+    ajtaiOpeningIdDigest reference.id = reference.id.digest &&
+    selectedOpeningRefDigest reference = reference.digest &&
+    reference.id.object.familyTag = 0 &&
+    reference.id.object.commitmentDigest = bundle.familyDigest &&
+    reference.id.object.digest = bundle.object.digest &&
+    reference.id.logicalIndex = logicalIndex
+
+def mainLaneProofBundleDigest (bundle : MainLaneProofBundleView) : List Byte :=
+  transcriptDigest "neo.fold.next/rv64im/main_lane_proof_bundle"
+    [ .appendMessage "rv64im/main_lane_proof_bundle/binding_digest" bundle.binding.digest
+    , .appendMessage "rv64im/main_lane_proof_bundle/statement_digest" bundle.statementDigest
+    , .appendMessage "rv64im/main_lane_proof_bundle/proof_digest" bundle.proofDigest
+    ]
+
+def mainLaneProofSummaryBundleDigest (bundle : MainLaneProofSummaryBundleView) : List Byte :=
   transcriptDigest "neo.fold.next/rv64im/main_lane_proof_summary_bundle"
     [ .appendMessage "rv64im/main_lane_proof_summary_bundle/binding_digest" bundle.binding.digest ]
 
-private def traceShapeBundleDigest (shape : TraceShapeBundleView) : List Byte :=
+def mainLaneSurfaceOfRootLaneColumns (bundle : RootLaneColumnsView) : MainLaneSurfaceView :=
+  let surface :
+      MainLaneSurfaceView :=
+    { objectDigest := bundle.object.digest
+    , familyDigest := bundle.familyDigest
+    , rowWidth := bundle.rowWidth
+    , publicStepCount := bundle.timeLen
+    , firstPublicStep := bundle.firstRow
+    , lastPublicStep := bundle.lastRow
+    , digest := [] }
+  { surface with digest := mainLaneSurfaceDigest surface }
+
+def traceShapeBundleDigest (shape : TraceShapeBundleView) : List Byte :=
   transcriptDigest "neo.fold.next/rv64im/trace_shape_bundle"
     [ .appendU64s
         "rv64im/trace_shape_bundle/meta"
         [shape.executionRowCount, shape.realRowCount, shape.effectRowCount, shape.commitRowCount]
     ]
 
-private def traceProofBundleDigest (bundle : TraceProofBundleView) : List Byte :=
-  transcriptDigest "neo.fold.next/rv64im/trace_proof_bundle"
-    ([ .appendMessage "rv64im/trace_proof_bundle/name" (utf8Bytes bundle.manifest.name)
-     , .appendMessage "rv64im/trace_proof_bundle/fixture_id" (utf8Bytes bundle.manifest.fixtureId)
+def traceProjectionBundleDigest (bundle : TraceProjectionBundleView) : List Byte :=
+  transcriptDigest "neo.fold.next/rv64im/trace_summary_proof_bundle"
+    ([ .appendMessage "rv64im/trace_summary_proof_bundle/name" (utf8Bytes bundle.manifest.name)
+     , .appendMessage "rv64im/trace_summary_proof_bundle/fixture_id" (utf8Bytes bundle.manifest.fixtureId)
      , .appendU64s
-         "rv64im/trace_proof_bundle/meta"
+         "rv64im/trace_summary_proof_bundle/meta"
          [bundle.manifest.protocolVersionId, bundle.manifest.loweringVersionId]
      , .appendU64s
-         "rv64im/trace_proof_bundle/family_tag_len"
+         "rv64im/trace_summary_proof_bundle/family_tag_len"
          [bundle.manifest.familyTags.length]
      ] ++
       bundle.manifest.familyTags.map (fun family =>
-        TranscriptOp.appendU64s "rv64im/trace_proof_bundle/family_tag" [familyWord family]) ++
-      [ .appendMessage "rv64im/trace_proof_bundle/execution_digest" bundle.executionDigest
-      , .appendMessage "rv64im/trace_proof_bundle/shape_digest" bundle.shape.digest
+        TranscriptOp.appendU64s "rv64im/trace_summary_proof_bundle/family_tag" [familyWord family]) ++
+      [ .appendMessage "rv64im/trace_summary_proof_bundle/execution_digest" bundle.executionDigest
+      , .appendMessage "rv64im/trace_summary_proof_bundle/shape_digest" bundle.shape.digest
       ])
 
-private def stageWitnessSummaryBundleDigest (bundle : StageWitnessSummaryBundleView) : List Byte :=
+def traceSummaryProjectionBundleDigest (bundle : TraceProjectionBundleView) : List Byte :=
+  transcriptDigest "neo.fold.next/rv64im/trace_summary_proof_bundle"
+    ([ .appendMessage "rv64im/trace_summary_proof_bundle/name" (utf8Bytes bundle.manifest.name)
+     , .appendMessage "rv64im/trace_summary_proof_bundle/fixture_id" (utf8Bytes bundle.manifest.fixtureId)
+     , .appendU64s
+         "rv64im/trace_summary_proof_bundle/meta"
+         [bundle.manifest.protocolVersionId, bundle.manifest.loweringVersionId]
+     , .appendU64s
+         "rv64im/trace_summary_proof_bundle/family_tag_len"
+         [bundle.manifest.familyTags.length]
+     ] ++
+      bundle.manifest.familyTags.map (fun family =>
+        TranscriptOp.appendU64s "rv64im/trace_summary_proof_bundle/family_tag" [familyWord family]) ++
+      [ .appendMessage "rv64im/trace_summary_proof_bundle/execution_digest" bundle.executionDigest
+      , .appendMessage "rv64im/trace_summary_proof_bundle/shape_digest" bundle.shape.digest
+      ])
+
+def stageWitnessSummaryBundleDigest (bundle : StageWitnessSummaryBundleView) : List Byte :=
   transcriptDigest "neo.fold.next/rv64im/stage_witness_summary_bundle"
     [ .appendU64s
         "rv64im/stage_witness_summary_bundle/meta"
@@ -294,11 +444,15 @@ private def stageWitnessSummaryBundleDigest (bundle : StageWitnessSummaryBundleV
         ]
     ]
 
-private def stageWitnessProofBundleDigest (bundle : StageWitnessProofBundleView) : List Byte :=
-  transcriptDigest "neo.fold.next/rv64im/stage_witness_proof_bundle"
-    [ .appendMessage "rv64im/stage_witness_proof_bundle/summary" bundle.summary.digest ]
+def stageWitnessProjectionBundleDigest (bundle : StageWitnessProjectionBundleView) : List Byte :=
+  transcriptDigest "neo.fold.next/rv64im/stage_witness_summary_proof_bundle"
+    [ .appendMessage "rv64im/stage_witness_summary_proof_bundle/summary" bundle.summary.digest ]
 
-private def stageClaimDigestBundleDigest (bundle : StageClaimDigestBundleView) : List Byte :=
+def stageWitnessSummaryProjectionBundleDigest (bundle : StageWitnessProjectionBundleView) : List Byte :=
+  transcriptDigest "neo.fold.next/rv64im/stage_witness_summary_proof_bundle"
+    [ .appendMessage "rv64im/stage_witness_summary_proof_bundle/summary" bundle.summary.digest ]
+
+def stageClaimDigestBundleDigest (bundle : StageClaimDigestBundleView) : List Byte :=
   transcriptDigest "neo.fold.next/rv64im/stage_claim_digest_bundle"
     [ .appendMessage
         "rv64im/stage_claim_digest_bundle/claim_bundle_digest"
@@ -310,11 +464,18 @@ private def stageClaimDigestBundleDigest (bundle : StageClaimDigestBundleView) :
     , .appendMessage "rv64im/stage_claim_digest_bundle/execution_digest" bundle.executionDigest
     ]
 
-private def stageClaimProofBundleDigest (bundle : StageClaimProofBundleView) : List Byte :=
+def stageClaimProofBundleDigest (bundle : StageClaimProofBundleView) : List Byte :=
   transcriptDigest "neo.fold.next/rv64im/stage_claim_proof_bundle"
-    [ .appendMessage "rv64im/stage_claim_proof_bundle/summary" bundle.summary.digest ]
+    [ .appendMessage "summary_digest" bundle.summary.digest
+    , .appendMessage "statement_digest" bundle.statementDigest
+    , .appendMessage "proof_digest" bundle.proofDigest
+    ]
 
-private def stagePackageDigestBundleDigest (bundle : StagePackageDigestBundleView) : List Byte :=
+def stageClaimSummaryProofBundleDigest (bundle : StageClaimProofBundleView) : List Byte :=
+  transcriptDigest "neo.fold.next/rv64im/stage_claim_summary_proof_bundle"
+    [ .appendMessage "rv64im/stage_claim_summary_proof_bundle/summary" bundle.summary.digest ]
+
+def stagePackageDigestBundleDigest (bundle : StagePackageDigestBundleView) : List Byte :=
   transcriptDigest "neo.fold.next/rv64im/stage_package_digest_bundle"
     [ .appendMessage
         "rv64im/stage_package_digest_bundle/package_bundle_digest"
@@ -324,11 +485,15 @@ private def stagePackageDigestBundleDigest (bundle : StagePackageDigestBundleVie
     , .appendMessage "rv64im/stage_package_digest_bundle/stage3_digest" bundle.stage3Digest
     ]
 
-private def stagePackageProofBundleDigest (bundle : StagePackageProofBundleView) : List Byte :=
+def stagePackageProofBundleDigest (bundle : StagePackageProofBundleView) : List Byte :=
   transcriptDigest "neo.fold.next/rv64im/stage_package_proof_bundle"
     [ .appendMessage "rv64im/stage_package_proof_bundle/summary" bundle.summary.digest ]
 
-private def kernelOpeningBindingBundleDigest (bundle : KernelOpeningBindingBundleView) : List Byte :=
+def stagePackageSummaryProofBundleDigest (bundle : StagePackageProofBundleView) : List Byte :=
+  transcriptDigest "neo.fold.next/rv64im/stage_package_summary_proof_bundle"
+    [ .appendMessage "rv64im/stage_package_summary_proof_bundle/summary" bundle.summary.digest ]
+
+def kernelOpeningBindingBundleDigest (bundle : KernelOpeningBindingBundleView) : List Byte :=
   transcriptDigest "neo.fold.next/rv64im/kernel_opening_binding_bundle"
     [ .appendMessage "rv64im/kernel_opening_binding_bundle/claim_digest" bundle.claimDigest
     , .appendMessage "rv64im/kernel_opening_binding_bundle/bindings_digest" bundle.bindingsDigest
@@ -337,13 +502,13 @@ private def kernelOpeningBindingBundleDigest (bundle : KernelOpeningBindingBundl
         bundle.preparedStepsDigest
     ]
 
-private def kernelOpeningProofBundleDigest (bundle : KernelOpeningProofBundleView) : List Byte :=
+def kernelOpeningProofBundleDigest (bundle : KernelOpeningProofBundleView) : List Byte :=
   transcriptDigest "neo.fold.next/rv64im/kernel_opening_proof_bundle"
     [ .appendMessage "rv64im/kernel_opening_proof_bundle/opening_digest" bundle.openingDigest
     , .appendMessage "rv64im/kernel_opening_proof_bundle/bindings" bundle.bindings.digest
     ]
 
-private def kernelOpeningSummaryBundleDigest (bundle : KernelOpeningSummaryBundleView) : List Byte :=
+def kernelOpeningSummaryProofBundleDigest (bundle : KernelOpeningProofBundleView) : List Byte :=
   transcriptDigest "neo.fold.next/rv64im/kernel_opening_summary_bundle"
     [ .appendMessage "rv64im/kernel_opening_summary_bundle/opening_digest" bundle.openingDigest
     , .appendMessage
@@ -351,7 +516,15 @@ private def kernelOpeningSummaryBundleDigest (bundle : KernelOpeningSummaryBundl
         bundle.bindings.digest
     ]
 
-private def kernelClaimTerminalBundleDigest (bundle : KernelClaimTerminalBundleView) : List Byte :=
+def kernelOpeningSummaryBundleDigest (bundle : KernelOpeningSummaryBundleView) : List Byte :=
+  transcriptDigest "neo.fold.next/rv64im/kernel_opening_summary_bundle"
+    [ .appendMessage "rv64im/kernel_opening_summary_bundle/opening_digest" bundle.openingDigest
+    , .appendMessage
+        "rv64im/kernel_opening_summary_bundle/bindings_digest"
+        bundle.bindings.digest
+    ]
+
+def kernelClaimTerminalBundleDigest (bundle : KernelClaimTerminalBundleView) : List Byte :=
   transcriptDigest "neo.fold.next/rv64im/kernel_claim_terminal_bundle"
     [ .appendMessage "rv64im/kernel_claim_terminal_bundle/root0_digest" bundle.root0Digest
     , .appendMessage "rv64im/kernel_claim_terminal_bundle/execution_digest" bundle.executionDigest
@@ -366,7 +539,7 @@ private def kernelClaimTerminalBundleDigest (bundle : KernelClaimTerminalBundleV
         [bundle.finalPc, boolWord bundle.halted]
     ]
 
-private def kernelClaimSummaryBundleDigest (bundle : KernelClaimSummaryBundleView) : List Byte :=
+def kernelClaimSummaryBundleDigest (bundle : KernelClaimSummaryBundleView) : List Byte :=
   transcriptDigest "neo.fold.next/rv64im/kernel_claim_summary_bundle"
     [ .appendMessage
         "rv64im/kernel_claim_summary_bundle/prepared_step_bindings_digest"
@@ -374,16 +547,25 @@ private def kernelClaimSummaryBundleDigest (bundle : KernelClaimSummaryBundleVie
     , .appendMessage "rv64im/kernel_claim_summary_bundle/terminal_digest" bundle.terminal.digest
     ]
 
-private def kernelClaimProofBundleDigest (bundle : KernelClaimProofBundleView) : List Byte :=
+def kernelClaimProofBundleDigest (bundle : KernelClaimProofBundleView) : List Byte :=
   transcriptDigest "neo.fold.next/rv64im/kernel_claim_proof_bundle"
-    [ .appendMessage "rv64im/kernel_claim_proof_bundle/summary" bundle.summary.digest ]
+    [ .appendMessage "summary_digest" bundle.summary.digest
+    , .appendMessage "statement_digest" bundle.statementDigest
+    , .appendMessage "proof_digest" bundle.proofDigest
+    ]
 
-private def mainLaneProofSummaryOfBundle (bundle : MainLaneProofBundleView) :
+def kernelClaimSummaryProofBundleDigest (bundle : KernelClaimProofBundleView) : List Byte :=
+  transcriptDigest "neo.fold.next/rv64im/kernel_claim_summary_proof_bundle"
+    [ .appendMessage "rv64im/kernel_claim_summary_proof_bundle/summary" bundle.summary.digest ]
+
+def mainLaneProofSummaryOfBundle (bundle : MainLaneProofBundleView) :
     MainLaneProofSummaryBundleView :=
   { binding := bundle.binding
-  , digest := mainLaneProofSummaryBundleDigest { binding := bundle.binding, digest := [] } }
+  , digest :=
+      mainLaneProofSummaryBundleDigest
+        { binding := bundle.binding, digest := [] } }
 
-private def kernelOpeningSummaryOfProof (bundle : KernelOpeningProofBundleView) :
+def kernelOpeningSummaryOfProof (bundle : KernelOpeningProofBundleView) :
     KernelOpeningSummaryBundleView :=
   { openingDigest := bundle.openingDigest
   , bindings := bundle.bindings
@@ -391,9 +573,9 @@ private def kernelOpeningSummaryOfProof (bundle : KernelOpeningProofBundleView) 
       kernelOpeningSummaryBundleDigest
         { openingDigest := bundle.openingDigest, bindings := bundle.bindings, digest := [] } }
 
-private def jointOpeningBundleDigest
+def jointOpeningBundleDigest
     (mainLane : MainLaneProofSummaryBundleView)
-    (kernelOpening : KernelOpeningSummaryBundleView) : List Byte :=
+    (kernelOpening : KernelOpeningProofBundleView) : List Byte :=
   transcriptDigest "neo.fold.next/rv64im/joint_opening_proof_bundle"
     [ .appendMessage
         "rv64im/joint_opening_proof_bundle/main_lane_digest"
@@ -403,8 +585,8 @@ private def jointOpeningBundleDigest
         kernelOpening.digest
     ]
 
-private def root0CommitmentBundleDigest
-    (kernelOpening : KernelOpeningSummaryBundleView)
+def root0CommitmentBundleDigest
+    (kernelOpening : KernelOpeningProofBundleView)
     (kernelClaims : KernelClaimSummaryBundleView) : List Byte :=
   transcriptDigest "neo.fold.next/rv64im/root0_commitment_bundle"
     [ .appendMessage
@@ -415,9 +597,7 @@ private def root0CommitmentBundleDigest
         kernelClaims.digest
     ]
 
-private def kernelProofBundleDigest (bundle : KernelProofBundleView) : List Byte :=
-  let mainLaneSummary := mainLaneProofSummaryOfBundle bundle.mainLane
-  let kernelOpeningSummary := kernelOpeningSummaryOfProof bundle.kernelOpening
+def kernelProofBundleDigest (bundle : KernelProofBundleView) : List Byte :=
   transcriptDigest "neo.fold.next/rv64im/kernel_proof_bundle"
     [ .appendMessage "rv64im/kernel_proof_bundle/root_params_id" bundle.rootParamsId
     , .appendMessage "rv64im/kernel_proof_bundle/trace_digest" bundle.trace.digest
@@ -432,27 +612,24 @@ private def kernelProofBundleDigest (bundle : KernelProofBundleView) : List Byte
         "rv64im/kernel_proof_bundle/kernel_opening_digest"
         bundle.kernelOpening.digest
     , .appendMessage
-        "rv64im/kernel_proof_bundle/root0_digest"
-        bundle.kernelClaims.summary.terminal.root0Digest
+        "rv64im/kernel_proof_bundle/kernel_claims_digest"
+        bundle.kernelClaims.digest
     , .appendMessage
-        "rv64im/kernel_proof_bundle/prepared_step_bindings_digest"
-        bundle.kernelClaims.summary.preparedStepBindingsDigest
+        "rv64im/kernel_proof_bundle/root_lane_columns_digest"
+        bundle.rootLaneColumns.digest
+    , .appendMessage
+        "rv64im/kernel_proof_bundle/root_lane_commitment_digest"
+        bundle.rootLaneCommitment.digest
     , .appendMessage "rv64im/kernel_proof_bundle/main_lane_digest" bundle.mainLane.digest
-    , .appendMessage
-        "rv64im/kernel_proof_bundle/joint_opening_bundle_digest"
-        (jointOpeningBundleDigest mainLaneSummary kernelOpeningSummary)
-    , .appendMessage
-        "rv64im/kernel_proof_bundle/root0_commitment_bundle_digest"
-        (root0CommitmentBundleDigest kernelOpeningSummary bundle.kernelClaims.summary)
     ]
 
-private def parityCaseByName? (name : String) : Option (ParitySourceCase × ParityDerivedCase) :=
+def parityCaseByName? (name : String) : Option (ParitySourceCase × ParityDerivedCase) :=
   Generated.parityCases.find? (fun (source, _) => source.manifest.name = name)
 
-private def validStatementDigest (statement : ProofStatementView) : Bool :=
+def validStatementDigest (statement : ProofStatementView) : Bool :=
   proofStatementDigest statement = statement.digest
 
-private def validClaimDigests (claims : KernelClaimBundleView) : Bool :=
+def validClaimDigests (claims : KernelClaimBundleView) : Bool :=
   acceptedProofStatementBindingDigest claims.accepted.statement = claims.accepted.statement.digest &&
     acceptedProofMainLaneBindingDigest claims.accepted.mainLane = claims.accepted.mainLane.digest &&
     acceptedProofTerminalBindingDigest claims.accepted.terminal = claims.accepted.terminal.digest &&
@@ -469,36 +646,78 @@ private def validClaimDigests (claims : KernelClaimBundleView) : Bool :=
     root0ClaimDigest claims.root0 = claims.root0.digest &&
     kernelClaimBundleDigest claims = claims.digest
 
-private def validKernelProofDigests (kernel : KernelProofBundleView) : Bool :=
+def validMainLaneOpeningRefAt
+    (surface : MainLaneSurfaceView)
+    (reference : SelectedOpeningRefView)
+    (logicalIndex : Nat) : Bool :=
+  ajtaiObjectIdDigest reference.id.object = reference.id.object.digest &&
+    ajtaiOpeningIdDigest reference.id = reference.id.digest &&
+    selectedOpeningRefDigest reference = reference.digest &&
+    reference.id.object.familyTag = 0 &&
+    reference.id.object.commitmentDigest = surface.familyDigest &&
+    reference.id.object.digest = surface.objectDigest &&
+    reference.id.logicalIndex = logicalIndex
+
+def kernelProofDigestCheckResults (kernel : KernelProofBundleView) : List (String × Bool) :=
   let mainLaneSummary := mainLaneProofSummaryOfBundle kernel.mainLane
   let kernelOpeningSummary := kernelOpeningSummaryOfProof kernel.kernelOpening
-  traceShapeBundleDigest kernel.trace.shape = kernel.trace.shape.digest &&
-    traceProofBundleDigest kernel.trace = kernel.trace.digest &&
-    stageWitnessSummaryBundleDigest kernel.stages.summary = kernel.stages.summary.digest &&
-    stageWitnessProofBundleDigest kernel.stages = kernel.stages.digest &&
-    stageClaimDigestBundleDigest kernel.stageClaims.summary = kernel.stageClaims.summary.digest &&
-    stageClaimProofBundleDigest kernel.stageClaims = kernel.stageClaims.digest &&
-    stagePackageDigestBundleDigest kernel.stagePackages.summary = kernel.stagePackages.summary.digest &&
-    stagePackageProofBundleDigest kernel.stagePackages = kernel.stagePackages.digest &&
-    kernelOpeningBindingBundleDigest kernel.kernelOpening.bindings = kernel.kernelOpening.bindings.digest &&
-    kernelOpeningProofBundleDigest kernel.kernelOpening = kernel.kernelOpening.digest &&
-    kernelOpeningSummaryBundleDigest kernelOpeningSummary = kernelOpeningSummary.digest &&
-    kernelClaimTerminalBundleDigest kernel.kernelClaims.summary.terminal =
-      kernel.kernelClaims.summary.terminal.digest &&
-    kernelClaimSummaryBundleDigest kernel.kernelClaims.summary = kernel.kernelClaims.summary.digest &&
-    kernelClaimProofBundleDigest kernel.kernelClaims = kernel.kernelClaims.digest &&
-    mainLaneProofBindingDigest kernel.mainLane.binding = kernel.mainLane.binding.digest &&
-    mainLaneProofBundleDigest kernel.mainLane = kernel.mainLane.digest &&
-    mainLaneProofSummaryBundleDigest mainLaneSummary = mainLaneSummary.digest &&
-    kernelProofBundleDigest kernel = kernel.digest
+  let mainLaneSurface := mainLaneSurfaceOfRootLaneColumns kernel.rootLaneColumns
+  [ ("traceShapeDigest", traceShapeBundleDigest kernel.trace.shape = kernel.trace.shape.digest)
+  , ("traceDigest", traceProjectionBundleDigest kernel.trace = kernel.trace.digest)
+  , ("stageWitnessSummaryDigest", stageWitnessSummaryBundleDigest kernel.stages.summary = kernel.stages.summary.digest)
+  , ("stageWitnessDigest", stageWitnessProjectionBundleDigest kernel.stages = kernel.stages.digest)
+  , ("stageClaimSummaryDigest", stageClaimDigestBundleDigest kernel.stageClaims.summary = kernel.stageClaims.summary.digest)
+  , ("stageClaimDigest", stageClaimProofBundleDigest kernel.stageClaims = kernel.stageClaims.digest)
+  , ("stagePackageSummaryDigest", stagePackageDigestBundleDigest kernel.stagePackages.summary = kernel.stagePackages.summary.digest)
+  , ("stagePackageDigest", stagePackageProofBundleDigest kernel.stagePackages = kernel.stagePackages.digest)
+  , ("kernelOpeningBindingDigest", kernelOpeningBindingBundleDigest kernel.kernelOpening.bindings = kernel.kernelOpening.bindings.digest)
+  , ("kernelOpeningDigest", kernelOpeningProofBundleDigest kernel.kernelOpening = kernel.kernelOpening.digest)
+  , ("kernelOpeningSummaryDigest", kernelOpeningSummaryBundleDigest kernelOpeningSummary = kernelOpeningSummary.digest)
+  , ("kernelClaimTerminalDigest", kernelClaimTerminalBundleDigest kernel.kernelClaims.summary.terminal =
+      kernel.kernelClaims.summary.terminal.digest)
+  , ("kernelClaimSummaryDigest", kernelClaimSummaryBundleDigest kernel.kernelClaims.summary = kernel.kernelClaims.summary.digest)
+  , ("kernelClaimDigest", kernelClaimProofBundleDigest kernel.kernelClaims = kernel.kernelClaims.digest)
+  , ("rootLaneObjectDigest", ajtaiObjectIdDigest kernel.rootLaneColumns.object = kernel.rootLaneColumns.object.digest)
+  , ("rootLaneColumnsDigest", rootLaneColumnsDigest kernel.rootLaneColumns = kernel.rootLaneColumns.digest)
+  , ("rootLaneFirstRef", match kernel.rootLaneColumns.firstRow with
+      | some reference => validRootLaneColumnsOpeningRefAt kernel.rootLaneColumns reference 0
+      | none => true)
+  , ("rootLaneLastRef", match kernel.rootLaneColumns.lastRow with
+      | some reference =>
+          validRootLaneColumnsOpeningRefAt
+            kernel.rootLaneColumns
+            reference
+            (kernel.rootLaneColumns.timeLen - 1)
+      | none => true)
+  , ("rootLaneCommitmentDigest", rootLaneCommitmentArtifactDigest kernel.rootLaneCommitment = kernel.rootLaneCommitment.digest)
+  , ("mainLaneBindingDigest", mainLaneProofBindingDigest kernel.mainLane.binding = kernel.mainLane.binding.digest)
+  , ("mainLaneSurfaceDigest", mainLaneSurfaceDigest mainLaneSurface = mainLaneSurface.digest)
+  , ("mainLaneFirstRef", match mainLaneSurface.firstPublicStep with
+      | some reference => validMainLaneOpeningRefAt mainLaneSurface reference 0
+      | none => true)
+  , ("mainLaneLastRef", match mainLaneSurface.lastPublicStep with
+      | some reference =>
+          validMainLaneOpeningRefAt
+            mainLaneSurface
+            reference
+            (mainLaneSurface.publicStepCount - 1)
+      | none => true)
+  , ("mainLaneDigest", mainLaneProofBundleDigest kernel.mainLane = kernel.mainLane.digest)
+  , ("mainLaneSummaryDigest", mainLaneProofSummaryBundleDigest mainLaneSummary = mainLaneSummary.digest)
+  , ("kernelProofDigest", kernelProofBundleDigest kernel = kernel.digest)
+  ]
 
-private def statementMatchesKernelAndDerived
+def validKernelProofDigests (kernel : KernelProofBundleView) : Bool :=
+  (kernelProofDigestCheckResults kernel).all Prod.snd
+
+def statementMatchesKernelAndDerived
     (statement : ProofStatementView)
     (kernel : KernelProofBundleView)
     (derived : ParityDerivedCase) : Bool :=
-  statement.stageClaimsDigest = kernel.stageClaims.summary.claimBundleDigest &&
-    statement.stagePackagesDigest = kernel.stagePackages.summary.packageBundleDigest &&
-    statement.kernelOpeningDigest = kernel.kernelOpening.openingDigest &&
+  let mainLaneSurface := mainLaneSurfaceOfRootLaneColumns kernel.rootLaneColumns
+  statement.stageClaimsDigest = kernel.stageClaims.digest &&
+    statement.stagePackagesDigest = kernel.stagePackages.digest &&
+    statement.kernelOpeningDigest = kernel.kernelOpening.digest &&
     statement.preparedStepBindingsDigest = kernel.kernelClaims.summary.preparedStepBindingsDigest &&
     statement.executionDigest = derived.kernel.executionDigest &&
     statement.executionDigest = kernel.trace.executionDigest &&
@@ -509,15 +728,15 @@ private def statementMatchesKernelAndDerived
     statement.transcriptFinalDigest = derived.kernel.transcriptFinalDigest &&
     statement.transcriptFinalDigest = kernel.stageClaims.summary.transcriptDigest &&
     statement.transcriptFinalDigest = kernel.kernelClaims.summary.terminal.transcriptFinalDigest &&
-    statement.mainLaneStatementDigest = kernel.mainLane.binding.statementDigest &&
+    statement.mainLaneSurfaceDigest = mainLaneSurface.digest &&
+    statement.rootLaneColumnsDigest = kernel.rootLaneColumns.digest &&
     statement.publicStepCount = derived.executionRows.length &&
-    statement.publicStepCount = kernel.mainLane.binding.publicStepCount &&
     statement.finalPc = derived.kernel.finalPc &&
     statement.finalPc = kernel.kernelClaims.summary.terminal.finalPc &&
     statement.halted = derived.kernel.halted &&
     statement.halted = kernel.kernelClaims.summary.terminal.halted
 
-private def claimsMatchStatementAndKernel
+def claimsMatchStatementAndKernel
     (statement : ProofStatementView)
     (claims : KernelClaimBundleView)
     (kernel : KernelProofBundleView)
@@ -526,16 +745,12 @@ private def claimsMatchStatementAndKernel
     claims.accepted.rootParamsId = kernel.rootParamsId &&
     claims.accepted.statement.proofStatementDigest = statement.digest &&
     claims.accepted.statement.kernelOpeningDigest = statement.kernelOpeningDigest &&
-    claims.accepted.mainLane.mainLaneStatementDigest = statement.mainLaneStatementDigest &&
-    claims.accepted.mainLane.mainLaneProofDigest = kernel.mainLane.binding.proofDigest &&
+    claims.accepted.mainLane.mainLaneBundleDigest = kernel.mainLane.digest &&
     claims.accepted.terminal.finalStateDigest = statement.finalStateDigest &&
-    claims.accepted.terminal.publicStepCount = statement.publicStepCount &&
     claims.accepted.terminal.finalPc = statement.finalPc &&
     claims.accepted.terminal.halted = statement.halted &&
     claims.mainLane.rootParamsId = statement.rootParamsId &&
-    claims.mainLane.binding.statementDigest = statement.mainLaneStatementDigest &&
-    claims.mainLane.binding.proofDigest = kernel.mainLane.binding.proofDigest &&
-    claims.mainLane.binding.publicStepCount = statement.publicStepCount &&
+    claims.mainLane.binding.mainLaneBundleDigest = kernel.mainLane.digest &&
     claims.opening.rootParamsId = statement.rootParamsId &&
     claims.opening.stages.stageClaimsDigest = statement.stageClaimsDigest &&
     claims.opening.stages.stagePackagesDigest = statement.stagePackagesDigest &&
@@ -543,12 +758,10 @@ private def claimsMatchStatementAndKernel
     claims.opening.terminal.preparedStepBindingsDigest = statement.preparedStepBindingsDigest &&
     claims.opening.terminal.executionDigest = statement.executionDigest &&
     claims.opening.terminal.transcriptFinalDigest = statement.transcriptFinalDigest &&
-    claims.opening.publicStepCount = statement.publicStepCount &&
     claims.jointOpening.rootParamsId = statement.rootParamsId &&
     claims.jointOpening.binding.proofStatementDigest = statement.digest &&
     claims.jointOpening.binding.mainLaneClaimDigest = claims.mainLane.digest &&
     claims.jointOpening.binding.kernelOpeningClaimDigest = claims.opening.digest &&
-    claims.jointOpening.publicStepCount = statement.publicStepCount &&
     claims.root0.rootParamsId = statement.rootParamsId &&
     claims.root0.stages.stage1Digest = derived.kernel.stage1Digest &&
     claims.root0.stages.stage2Digest = derived.kernel.stage2Digest &&
@@ -559,9 +772,10 @@ private def claimsMatchStatementAndKernel
     claims.root0.terminal.finalStateDigest = statement.finalStateDigest &&
     claims.root0.terminal.transcriptFinalDigest = statement.transcriptFinalDigest
 
-private def kernelProofMatchesDerivedAndClaims
+def kernelProofMatchesDerivedAndClaims
     (kernel : KernelProofBundleView)
     (derived : ParityDerivedCase) : Bool :=
+  let mainLaneSurface := mainLaneSurfaceOfRootLaneColumns kernel.rootLaneColumns
   kernel.trace.manifest = derived.manifest &&
     kernel.trace.executionDigest = derived.kernel.executionDigest &&
     kernel.trace.shape.executionRowCount = derived.executionRows.length &&
@@ -581,7 +795,35 @@ private def kernelProofMatchesDerivedAndClaims
     kernel.kernelClaims.summary.terminal.finalStateDigest = derived.kernel.finalStateDigest &&
     kernel.kernelClaims.summary.terminal.transcriptFinalDigest = derived.kernel.transcriptFinalDigest &&
     kernel.kernelClaims.summary.terminal.finalPc = derived.kernel.finalPc &&
-    kernel.kernelClaims.summary.terminal.halted = derived.kernel.halted
+    kernel.kernelClaims.summary.terminal.halted = derived.kernel.halted &&
+    kernel.rootLaneColumns.object.familyTag = 0 &&
+    kernel.rootLaneColumns.object.commitmentDigest = kernel.rootLaneColumns.familyDigest &&
+    kernel.rootLaneColumns.rowWidth = 38 &&
+    kernel.rootLaneColumns.timeLen = derived.executionRows.length &&
+    kernel.rootLaneColumns.columnDigests.length = kernel.rootLaneColumns.rowWidth &&
+    kernel.rootLaneCommitment.timeLen = kernel.rootLaneColumns.timeLen &&
+    kernel.rootLaneCommitment.commitments.commitmentCount = kernel.rootLaneColumns.rowWidth &&
+    (match kernel.rootLaneCommitment.firstSelectedRow, kernel.rootLaneColumns.firstRow with
+    | some reference, some columnRef =>
+        reference.id.logicalIndex = 0 &&
+        reference.valueDigest = columnRef.valueDigest
+    | none, none => true
+    | _, _ => false) &&
+    (match kernel.rootLaneCommitment.lastSelectedRow, kernel.rootLaneColumns.lastRow with
+    | some reference, some columnRef =>
+        reference.id.logicalIndex = kernel.rootLaneColumns.timeLen - 1 &&
+        reference.valueDigest = columnRef.valueDigest
+    | none, none => true
+    | _, _ => false) &&
+    mainLaneSurface.objectDigest = kernel.rootLaneColumns.object.digest &&
+    mainLaneSurface.familyDigest = kernel.rootLaneColumns.familyDigest &&
+    mainLaneSurface.firstPublicStep = kernel.rootLaneColumns.firstRow &&
+    mainLaneSurface.lastPublicStep = kernel.rootLaneColumns.lastRow &&
+    mainLaneSurface.publicStepCount = derived.executionRows.length &&
+    mainLaneSurface.rowWidth = 38 &&
+    kernel.mainLane.binding.rootLaneColumnsDigest = kernel.rootLaneColumns.digest &&
+    kernel.mainLane.binding.rootLaneCommitmentDigest = kernel.rootLaneCommitment.digest &&
+    kernel.mainLane.binding.publicStepCount = kernel.rootLaneColumns.timeLen
 
 private def caseCheckResultsAgainstDerived
     (proofCase : PublicProofVectorCase)
@@ -623,6 +865,11 @@ def checkPublicProofVectorCaseAgainstDerived
     (proofCase : PublicProofVectorCase)
     (derived : ParityDerivedCase) : Bool :=
   (caseCheckResultsAgainstDerived proofCase derived).all Prod.snd
+
+def publicProofCaseCheckResultsAgainstDerived
+    (proofCase : PublicProofVectorCase)
+    (derived : ParityDerivedCase) : List (String × Bool) :=
+  caseCheckResultsAgainstDerived proofCase derived
 
 def checkPublicProofVectorCase (proofCase : PublicProofVectorCase) : Bool :=
   (caseCheckResults proofCase).all Prod.snd
