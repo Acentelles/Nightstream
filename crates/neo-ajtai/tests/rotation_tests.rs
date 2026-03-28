@@ -51,7 +51,7 @@ fn rot_step_cyclotomic_identity() {
     let x = {
         let mut coeffs = vec![Fq::ZERO; D];
         coeffs[1] = Fq::ONE; // X = 0 + 1*X + 0*X^2 + ...
-        Rq::from_field_coeffs(coeffs)
+        Rq::from_field_coeffs(&coeffs)
     };
 
     let mut col = cf(x);
@@ -70,7 +70,7 @@ fn rot_step_cyclotomic_identity() {
     let x27 = {
         let mut coeffs = vec![Fq::ZERO; D];
         coeffs[27] = Fq::ONE;
-        Rq::from_field_coeffs(coeffs)
+        Rq::from_field_coeffs(&coeffs)
     };
     let neg_x27_minus_1 = cf(Rq::zero() - x27 - Rq::one());
 

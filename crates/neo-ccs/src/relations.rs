@@ -373,6 +373,11 @@ pub struct CeWitness<F> {
     pub Z: Mat<F>,
 }
 
+/// Witness matrix interpretation strategy.
+///
+/// Currently only SuperNeo packed layout is supported, but this enum
+/// exists to support future witness formats without changing the
+/// validation and extraction call sites.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum WitnessLayout {
     SuperneoPacked,

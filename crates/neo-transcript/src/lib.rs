@@ -17,6 +17,13 @@ pub trait Transcript {
     fn append_fields(&mut self, label: &'static [u8], fs: &[F]);
     fn challenge_bytes(&mut self, label: &'static [u8], out: &mut [u8]);
     fn challenge_field(&mut self, label: &'static [u8]) -> F;
+    fn challenge_fields(&mut self, label: &'static [u8], n: usize) -> Vec<F> {
+        let mut out = Vec::with_capacity(n);
+        for _ in 0..n {
+            out.push(self.challenge_field(label));
+        }
+        out
+    }
     fn fork(&self, scope: &'static [u8]) -> Self;
     fn digest32(&mut self) -> [u8; 32];
 }

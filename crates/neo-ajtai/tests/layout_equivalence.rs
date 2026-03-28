@@ -44,24 +44,17 @@ fn decomp_b_row_major_is_transpose_of_decomp_b_b2_balanced() {
 }
 
 #[test]
-fn decomp_b_row_major_is_transpose_of_decomp_b_b3_balanced() {
+fn decomp_b_row_major_is_transpose_of_decomp_b_b2_nonnegative() {
     let d = D;
     let m = 257usize;
-    let b = 3u32;
+    let b = 2u32;
 
     let z: Vec<Fq> = (0..m)
-        .map(|i| {
-            let v = (i as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ 0xD1B5_4A32_D192_ED03;
-            match i % 3 {
-                0 => Fq::from_u64(v),
-                1 => Fq::ZERO - Fq::from_u64(v),
-                _ => Fq::from_u64(v.wrapping_add(2)),
-            }
-        })
+        .map(|i| Fq::from_u64((i as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) & 0xFFFF))
         .collect();
 
-    let col_major = decomp_b(&z, b, d, DecompStyle::Balanced);
-    let row_major = decomp_b_row_major(&z, b, d, DecompStyle::Balanced);
+    let col_major = decomp_b(&z, b, d, DecompStyle::NonNegative);
+    let row_major = decomp_b_row_major(&z, b, d, DecompStyle::NonNegative);
     assert_eq!(col_major.len(), d * m);
     assert_eq!(row_major.len(), d * m);
 

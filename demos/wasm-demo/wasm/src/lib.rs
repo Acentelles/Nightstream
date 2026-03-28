@@ -21,7 +21,7 @@ pub fn init_thread_pool(num_threads: usize) -> js_sys::Promise {
     wasm_bindgen_rayon::init_thread_pool(num_threads)
 }
 
-/// Parse a `TestExport` JSON (same schema as `crates/neo-fold/poseidon2-tests/*.json`),
+/// Parse a `TestExport` JSON (same schema as `crates/deprecated-neo-fold/poseidon2-tests/*.json`),
 /// then run prove+verify and return a small result object.
 #[wasm_bindgen]
 pub fn prove_verify_test_export_json(json: &str) -> Result<JsValue, JsValue> {

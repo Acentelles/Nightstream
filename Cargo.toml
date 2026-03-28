@@ -7,15 +7,7 @@ members = [
   "crates/neo-ajtai",
   "crates/neo-ccs",
   "crates/neo-reductions",
-  "crates/neo-fold",
-  "crates/neo-fold-ffi",
-  "crates/neo-fold-jni",
-  "crates/neo-midnight-bridge",
-  "crates/nightstream-sdk",
-  "crates/nightstream-sdk-macros",
-  "crates/neo-spartan-bridge",
-  "crates/neo-vm-trace",
-  "crates/neo-memory",
+  "crates/neo-fold-next",
 ]
 exclude = [
   "external/Spartan2",

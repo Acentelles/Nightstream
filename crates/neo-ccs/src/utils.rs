@@ -62,6 +62,60 @@ pub fn mat_vec_mul_fk<F: Field, K: Field + From<F>>(m: &[F], n_rows: usize, n_co
     out
 }
 
+/// Extract triplets from a [`CcsMatrix`], applying row/col offsets for block-diagonal embedding.
+fn embed_matrix_triplets<F: Field>(
+    src: &crate::sparse::CcsMatrix<F>,
+    row_offset: usize,
+    col_offset: usize,
+) -> Vec<(usize, usize, F)> {
+    match src {
+        crate::sparse::CcsMatrix::Identity { n } => (0..*n)
+            .map(|i| (row_offset + i, col_offset + i, F::ONE))
+            .collect(),
+        crate::sparse::CcsMatrix::Csc(m) => {
+            let mut trips = Vec::with_capacity(m.vals.len());
+            for col in 0..m.ncols {
+                let s = m.col_ptr[col];
+                let e = m.col_ptr[col + 1];
+                for k in s..e {
+                    trips.push((row_offset + m.row_idx[k], col_offset + col, m.vals[k]));
+                }
+            }
+            trips
+        }
+    }
+}
+
+/// Build block-diagonal stacked matrices for two CCS structures.
+///
+/// ccs1's matrices occupy the top-left block, ccs2's the bottom-right.
+/// All returned matrices have dimensions `n_total × m_total`.
+fn build_stacked_matrices<F: Field>(
+    ccs1: &crate::relations::CcsStructure<F>,
+    ccs2: &crate::relations::CcsStructure<F>,
+    n_total: usize,
+    m_total: usize,
+) -> Vec<crate::sparse::CcsMatrix<F>> {
+    use crate::sparse::{CcsMatrix, CscMat};
+
+    let t_total = ccs1.t() + ccs2.t();
+    let mut stacked: Vec<CcsMatrix<F>> = Vec::with_capacity(t_total);
+
+    // Top-left block (ccs1): no offset
+    for j in 0..ccs1.t() {
+        let trips = embed_matrix_triplets(&ccs1.matrices[j], 0, 0);
+        stacked.push(CcsMatrix::Csc(CscMat::from_triplets(trips, n_total, m_total)));
+    }
+
+    // Bottom-right block (ccs2): offset by (n1, m1)
+    for j in 0..ccs2.t() {
+        let trips = embed_matrix_triplets(&ccs2.matrices[j], ccs1.n, ccs1.m);
+        stacked.push(CcsMatrix::Csc(CscMat::from_triplets(trips, n_total, m_total)));
+    }
+
+    stacked
+}
+
 /// Compute the direct sum (block diagonal composition) of two CCS structures.
 /// This creates a new CCS that enforces both systems independently by stacking
 /// the constraint matrices in block-diagonal form and concatenating the witness vectors.
@@ -71,10 +125,7 @@ pub fn direct_sum<F: Field>(
     ccs1: &crate::relations::CcsStructure<F>,
     ccs2: &crate::relations::CcsStructure<F>,
 ) -> Result<crate::relations::CcsStructure<F>, crate::error::CcsError> {
-    use crate::{
-        poly::{SparsePoly, Term},
-        sparse::{CcsMatrix, CscMat},
-    };
+    use crate::poly::{SparsePoly, Term};
 
     // If one is empty, return the other
     if ccs1.n == 0 || ccs1.m == 0 {
@@ -84,70 +135,12 @@ pub fn direct_sum<F: Field>(
         return Ok(ccs1.clone());
     }
 
-    let n1 = ccs1.n;
-    let m1 = ccs1.m;
-    let n2 = ccs2.n;
-    let m2 = ccs2.m;
     let t1 = ccs1.t();
-    let t2 = ccs2.t();
+    let n_total = ccs1.n + ccs2.n;
+    let m_total = ccs1.m + ccs2.m;
+    let t_total = t1 + ccs2.t();
 
-    // Result dimensions
-    let n_total = n1 + n2;
-    let m_total = m1 + m2;
-    let t_total = t1 + t2;
-
-    // Build block-diagonal matrices (sparse)
-    let mut stacked_matrices: Vec<CcsMatrix<F>> = Vec::with_capacity(t_total);
-
-    for j in 0..t1 {
-        let src = &ccs1.matrices[j];
-        let mut trips: Vec<(usize, usize, F)> = Vec::new();
-        match src {
-            CcsMatrix::Identity { n } => {
-                // Top-left identity block
-                trips.reserve(*n);
-                for i in 0..*n {
-                    trips.push((i, i, F::ONE));
-                }
-            }
-            CcsMatrix::Csc(m) => {
-                trips.reserve(m.vals.len());
-                for col in 0..m.ncols {
-                    let s = m.col_ptr[col];
-                    let e = m.col_ptr[col + 1];
-                    for k in s..e {
-                        trips.push((m.row_idx[k], col, m.vals[k]));
-                    }
-                }
-            }
-        }
-        stacked_matrices.push(CcsMatrix::Csc(CscMat::from_triplets(trips, n_total, m_total)));
-    }
-
-    for j in 0..t2 {
-        let src = &ccs2.matrices[j];
-        let mut trips: Vec<(usize, usize, F)> = Vec::new();
-        match src {
-            CcsMatrix::Identity { n } => {
-                // Bottom-right identity block (offset)
-                trips.reserve(*n);
-                for i in 0..*n {
-                    trips.push((n1 + i, m1 + i, F::ONE));
-                }
-            }
-            CcsMatrix::Csc(m) => {
-                trips.reserve(m.vals.len());
-                for col in 0..m.ncols {
-                    let s = m.col_ptr[col];
-                    let e = m.col_ptr[col + 1];
-                    for k in s..e {
-                        trips.push((n1 + m.row_idx[k], m1 + col, m.vals[k]));
-                    }
-                }
-            }
-        }
-        stacked_matrices.push(CcsMatrix::Csc(CscMat::from_triplets(trips, n_total, m_total)));
-    }
+    let stacked_matrices = build_stacked_matrices(ccs1, ccs2, n_total, m_total);
 
     // Build combined polynomial f
     // f_combined(X1, ..., X_{t1+t2}) = f1(X1, ..., X_{t1}) + f2(X_{t1+1}, ..., X_{t1+t2})
@@ -191,7 +184,7 @@ pub fn direct_sum<F: Field>(
 ///
 /// # Security
 /// - ✅ Prevents cross-cancellation in terminal polynomial evaluation
-/// - ✅ Uses unpredictable, statement-bound mixing coefficient β  
+/// - ✅ Uses unpredictable, statement-bound mixing coefficient β
 /// - ✅ Preserves block-diagonal constraint structure
 /// - ✅ Recommended for combining independent CCS subsystems
 ///
@@ -203,10 +196,7 @@ pub fn direct_sum_mixed<F: Field>(
     ccs2: &crate::relations::CcsStructure<F>,
     beta: F,
 ) -> Result<crate::relations::CcsStructure<F>, crate::error::CcsError> {
-    use crate::{
-        poly::{SparsePoly, Term},
-        sparse::{CcsMatrix, CscMat},
-    };
+    use crate::poly::{SparsePoly, Term};
 
     if ccs1.n == 0 || ccs1.m == 0 {
         // Scale the second CCS by beta
@@ -227,67 +217,12 @@ pub fn direct_sum_mixed<F: Field>(
         return Ok(ccs1.clone());
     }
 
-    let n1 = ccs1.n;
-    let m1 = ccs1.m;
-    let n2 = ccs2.n;
-    let m2 = ccs2.m;
     let t1 = ccs1.t();
-    let t2 = ccs2.t();
+    let n_total = ccs1.n + ccs2.n;
+    let m_total = ccs1.m + ccs2.m;
+    let t_total = t1 + ccs2.t();
 
-    let n_total = n1 + n2;
-    let m_total = m1 + m2;
-    let t_total = t1 + t2;
-
-    // Build block-diagonal matrices (same shape as `direct_sum`, but sparse)
-    let mut stacked_matrices: Vec<CcsMatrix<F>> = Vec::with_capacity(t_total);
-
-    for j in 0..t1 {
-        let src = &ccs1.matrices[j];
-        let mut trips: Vec<(usize, usize, F)> = Vec::new();
-        match src {
-            CcsMatrix::Identity { n } => {
-                trips.reserve(*n);
-                for i in 0..*n {
-                    trips.push((i, i, F::ONE));
-                }
-            }
-            CcsMatrix::Csc(m) => {
-                trips.reserve(m.vals.len());
-                for col in 0..m.ncols {
-                    let s = m.col_ptr[col];
-                    let e = m.col_ptr[col + 1];
-                    for k in s..e {
-                        trips.push((m.row_idx[k], col, m.vals[k]));
-                    }
-                }
-            }
-        }
-        stacked_matrices.push(CcsMatrix::Csc(CscMat::from_triplets(trips, n_total, m_total)));
-    }
-
-    for j in 0..t2 {
-        let src = &ccs2.matrices[j];
-        let mut trips: Vec<(usize, usize, F)> = Vec::new();
-        match src {
-            CcsMatrix::Identity { n } => {
-                trips.reserve(*n);
-                for i in 0..*n {
-                    trips.push((n1 + i, m1 + i, F::ONE));
-                }
-            }
-            CcsMatrix::Csc(m) => {
-                trips.reserve(m.vals.len());
-                for col in 0..m.ncols {
-                    let s = m.col_ptr[col];
-                    let e = m.col_ptr[col + 1];
-                    for k in s..e {
-                        trips.push((n1 + m.row_idx[k], m1 + col, m.vals[k]));
-                    }
-                }
-            }
-        }
-        stacked_matrices.push(CcsMatrix::Csc(CscMat::from_triplets(trips, n_total, m_total)));
-    }
+    let stacked_matrices = build_stacked_matrices(ccs1, ccs2, n_total, m_total);
 
     // SECURE MIXING: f_total = f1 + β*f2 (prevents cancellation attacks)
     let mut mixed_terms = Vec::new();
@@ -331,7 +266,9 @@ pub fn direct_sum_transcript_mixed<F: Field>(
     ccs2: &crate::relations::CcsStructure<F>,
     transcript_digest: [u8; 32],
 ) -> Result<crate::relations::CcsStructure<F>, crate::error::CcsError> {
-    // Derive β from transcript (use ALL 32 bytes for better entropy)
+    // Derive β from transcript (use ALL 32 bytes for better entropy).
+    // The digest is exactly 32 bytes; each 8-byte slice is guaranteed to
+    // convert to [u8; 8], so these unwraps cannot fail.
     let limb0 = u64::from_le_bytes(transcript_digest[0..8].try_into().unwrap());
     let limb1 = u64::from_le_bytes(transcript_digest[8..16].try_into().unwrap());
     let limb2 = u64::from_le_bytes(transcript_digest[16..24].try_into().unwrap());

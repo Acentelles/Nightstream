@@ -74,7 +74,7 @@ fn monomial_multiplication_regression() {
     let mut coeffs = [Fq::ZERO; D];
     coeffs[0] = Fq::ONE; // polynomial "1"
     coeffs[1] = Fq::from_u64(2); // polynomial "1 + 2X"
-    let p = Rq::from_field_coeffs(coeffs.to_vec());
+    let p = Rq::from_field_coeffs(&coeffs);
 
     // Multiply by X (should shift coefficients)
     let px = p.mul_by_monomial(1);
@@ -112,7 +112,7 @@ fn cyclotomic_phi_81_relation() {
             test_reduce_mod_phi_81(&mut tmp);
             let mut out = [Fq::ZERO; D];
             out.copy_from_slice(&tmp[..D]);
-            Rq::from_field_coeffs(out.to_vec())
+            Rq::from_field_coeffs(&out)
         };
 
         // X^54 ≡ -X^27 - 1 (mod Φ_81)
@@ -120,7 +120,7 @@ fn cyclotomic_phi_81_relation() {
             let mut coeffs = [Fq::ZERO; D];
             coeffs[0] = -Fq::ONE; // -1
             coeffs[27] = -Fq::ONE; // -X^27
-            Rq::from_field_coeffs(coeffs.to_vec())
+            Rq::from_field_coeffs(&coeffs)
         };
 
         assert_eq!(
@@ -254,7 +254,7 @@ fn rotation_step_vs_ring_multiply() {
         let x_poly = {
             let mut coeffs = vec![Fq::ZERO; neo_math::D];
             coeffs[1] = Fq::ONE; // X = 0 + 1*X + 0*X^2 + ...
-            Rq::from_field_coeffs(coeffs)
+            Rq::from_field_coeffs(&coeffs)
         };
         let cf_x = cf(x_poly); // cf of X (monomial degree 1)
         let rot_a_cf_x = rot_apply_vec(&a, &cf_x);

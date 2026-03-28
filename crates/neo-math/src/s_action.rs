@@ -46,13 +46,6 @@ impl SAction {
         cf(prod)
     }
 
-    /// Left action on a d×m matrix (columns are vectors).
-    #[inline]
-    pub fn apply_matrix(&self, z: &DenseMatrix<Fq>) -> DenseMatrix<Fq> {
-        // The heavy lifting is in ring::rot_apply_matrix which validates shape.
-        crate::ring::rot_apply_matrix(&self.a, z).expect("shape checked")
-    }
-
     /// Compose S-actions (rot(a) ∘ rot(b) = rot(a*b)).
     #[inline]
     pub fn compose(&self, other: &SAction) -> SAction {
@@ -62,7 +55,7 @@ impl SAction {
     }
 
     /// Left action on a K-vector by applying the S-action independently to real and imaginary parts.
-    /// This extends the Fq-linear S-action to the extension field K = Fq[u]/(u^2 - 7).
+    /// This extends the Fq-linear S-action to the extension field K = Fq\[u\]/(u^2 - 7).
     ///
     /// Security: For ME claims (y_j ∈ K^d should be length D), vectors may be
     /// padded up to the next power-of-two (for sum-check alignment). If the
@@ -104,64 +97,13 @@ impl SAction {
         // Recombine into K elements - return exactly y.len() elements
         let mut result = Vec::with_capacity(y.len());
 
-        // Apply S-action to the processed part
         for i in 0..process_len {
             result.push(from_complex(rotated_re[i], rotated_im[i]));
         }
 
         // Copy any remaining elements unchanged (must be zeros by contract)
-        // This makes the behavior consistent with apply_k_slice and prevents future index errors
         result.extend_from_slice(&y[process_len..]);
 
         Ok(result)
-    }
-
-    /// Left action on a slice of K elements (fixed-size version for performance)
-    pub fn apply_k_slice(&self, y: &[K], result: &mut [K]) -> Result<(), SActionError> {
-        if y.len() != result.len() {
-            return Err(SActionError::DimMismatch {
-                expected: result.len(),
-                got: y.len(),
-            });
-        }
-
-        // Allow zero-padded tails; enforce zeros beyond D
-        if y.len() > D && y[D..].iter().any(|&v| v != K::ZERO) {
-            return Err(SActionError::DimMismatch {
-                expected: D,
-                got: y.len(),
-            });
-        }
-
-        let process_len = y.len().min(D);
-
-        if process_len == 0 {
-            return Ok(());
-        }
-
-        // Split into real/imaginary parts
-        let mut y_re = [Fq::ZERO; D];
-        let mut y_im = [Fq::ZERO; D];
-
-        for (i, &yk) in y.iter().enumerate().take(process_len) {
-            y_re[i] = yk.real();
-            y_im[i] = yk.imag();
-        }
-
-        // Apply S-action
-        let rotated_re = self.apply_vec(&y_re);
-        let rotated_im = self.apply_vec(&y_im);
-
-        // Write results
-        for i in 0..process_len {
-            result[i] = from_complex(rotated_re[i], rotated_im[i]);
-        }
-
-        // Copy any remaining elements unchanged if result is longer than what we processed
-        if process_len < result.len() {
-            result[process_len..].copy_from_slice(&y[process_len..]);
-        }
-
-        Ok(())
     }
 }

@@ -24,8 +24,6 @@ rand = "0.9"
 rand_chacha = "0.9"
 serde = { version = "1.0", features = ["derive"] }
 thiserror = "2"
-subtle = "2.6"
-tracing = { version = "0.1", default-features = false, features = ["std"] }
 
 # Plonky3 (field + small dense matrix)
 p3-field = "0.4.1"
@@ -42,3 +40,25 @@ rayon = { workspace = true }
 proptest = "1.7"
 serde_json = { workspace = true }
 p3-symmetric = "0.4.1"
+rand_chacha = "0.9"
+
+# Spec-derived tests (lean oracles + invariant obligations)
+[[test]]
+name = "spec_lean_oracles"
+path = "spec-tests/lean_oracles.rs"
+
+[[test]]
+name = "spec_ajtai_commit"
+path = "spec-tests/ajtai_commit.rs"
+
+[[test]]
+name = "spec_decomposition"
+path = "spec-tests/decomposition.rs"
+
+[[test]]
+name = "spec_s_module"
+path = "spec-tests/s_module.rs"
+
+[[test]]
+name = "spec_public_parameters"
+path = "spec-tests/public_parameters.rs"

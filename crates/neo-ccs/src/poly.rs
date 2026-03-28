@@ -70,7 +70,7 @@ impl<F> SparsePoly<F> {
         let mut new_terms = Vec::with_capacity(self.terms.len());
         for term in &self.terms {
             let mut exps = term.exps.clone();
-            exps.extend(core::iter::repeat(0u32).take(extra));
+            exps.extend(std::iter::repeat_n(0u32, extra));
             new_terms.push(Term {
                 coeff: term.coeff.clone(),
                 exps,

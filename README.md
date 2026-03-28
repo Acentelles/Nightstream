@@ -69,7 +69,7 @@ See `docs/ios-native.md` for Xcode/Swift integration details.
 
 ```bash
 cargo test -p neo-fold --release
-cargo test -p neo-memory --release
+cargo test -p deprecated-neo-memory --release
 cargo test -p neo-reductions --release
 ```
 
@@ -230,7 +230,7 @@ cargo test -p neo-fold shared_cpu_bus_linkage --release -- --nocapture
 
 ### 3. Where to Start in the Code
 
-**Shard folding loop** — [`crates/neo-fold/src/shard.rs`](crates/neo-fold/src/shard.rs)
+**Shard folding loop** — [`crates/deprecated-neo-fold/src/shard.rs`](crates/deprecated-neo-fold/src/shard.rs)
 - Look for `fold_shard_prove_impl(...)` and `fold_shard_verify(...)`
 - This is where:
   - Per-step inputs are bound into the transcript
@@ -238,22 +238,22 @@ cargo test -p neo-fold shared_cpu_bus_linkage --release -- --nocapture
   - Twist/Shout proofs are produced/checked
   - Π_RLC → Π_DEC runs for the main lane, and (when needed) for the value lane
 
-**Memory sidecar (Twist/Shout integration)** — [`crates/neo-fold/src/memory_sidecar/memory.rs`](crates/neo-fold/src/memory_sidecar/memory.rs)
+**Memory sidecar (Twist/Shout integration)** — [`crates/deprecated-neo-fold/src/memory_sidecar/memory.rs`](crates/deprecated-neo-fold/src/memory_sidecar/memory.rs)
 - Bridge layer that:
   - Runs the memory/lookup sum-checks
   - Emits ME claims/witnesses at `r_time`
   - Runs Twist's value-eval sum-check and emits value-lane ME claims at `r_val`
 
-**Trace → per-step witnesses** — [`crates/neo-memory/src/builder.rs`](crates/neo-memory/src/builder.rs)
+**Trace → per-step witnesses** — [`crates/deprecated-neo-memory/src/builder.rs`](crates/deprecated-neo-memory/src/builder.rs)
 - `build_shard_witness_shared_cpu_bus(...)` builds per-step bundles for **shared CPU-bus** mode:
   - CPU MCS witnesses (via the CPU arithmetization)
   - Metadata-only Twist/Shout instances (no separate commitments)
 
 **Shared CPU-bus layout and constraints**
-- [`crates/neo-memory/src/cpu/bus_layout.rs`](crates/neo-memory/src/cpu/bus_layout.rs) — canonical bus layout (single source of truth)
-- [`crates/neo-memory/src/cpu/constraints.rs`](crates/neo-memory/src/cpu/constraints.rs) — CPU↔bus binding + padding-to-zero constraints
-- [`crates/neo-fold/src/memory_sidecar/cpu_bus.rs`](crates/neo-fold/src/memory_sidecar/cpu_bus.rs) — guardrails + bus copyouts
-- [`crates/neo-memory/src/twist_oracle.rs`](crates/neo-memory/src/twist_oracle.rs) — sum-check oracles
+- [`crates/deprecated-neo-memory/src/cpu/bus_layout.rs`](crates/deprecated-neo-memory/src/cpu/bus_layout.rs) — canonical bus layout (single source of truth)
+- [`crates/deprecated-neo-memory/src/cpu/constraints.rs`](crates/deprecated-neo-memory/src/cpu/constraints.rs) — CPU↔bus binding + padding-to-zero constraints
+- [`crates/deprecated-neo-fold/src/memory_sidecar/cpu_bus.rs`](crates/deprecated-neo-fold/src/memory_sidecar/cpu_bus.rs) — guardrails + bus copyouts
+- [`crates/deprecated-neo-memory/src/twist_oracle.rs`](crates/deprecated-neo-memory/src/twist_oracle.rs) — sum-check oracles
 
 ---
 
@@ -261,23 +261,23 @@ cargo test -p neo-fold shared_cpu_bus_linkage --release -- --nocapture
 
 | Concept | Meaning | Code Entry Points |
 |---------|---------|-------------------|
-| **Shard** | Trace segment processed chunk-by-chunk | [`crates/neo-fold/src/shard.rs`](crates/neo-fold/src/shard.rs) |
-| **Folding step** | Unit consumed per iteration of the loop | `StepWitnessBundle` in [`neo_memory::witness`](crates/neo-memory/src/witness.rs) |
+| **Shard** | Trace segment processed chunk-by-chunk | [`crates/deprecated-neo-fold/src/shard.rs`](crates/deprecated-neo-fold/src/shard.rs) |
+| **Folding step** | Unit consumed per iteration of the loop | `StepWitnessBundle` in [`deprecated_neo_memory::witness`](crates/deprecated-neo-memory/src/witness.rs) |
 | **CCS** | Customizable Constraint System | `neo_ccs::relations::CcsStructure` |
 | **MCS** | Matrix Constraint System (CCS + commitment) | `neo_ccs::relations::{McsInstance, McsWitness}` |
 | **ME** | Universal foldable claim (single-point eval) | `neo_ccs::relations::MeInstance` |
 | **Π_CCS** | CCS/MCS → ME claims via sum-check | [`neo_reductions::engines::*`](crates/neo-reductions/src/engines/) |
-| **Π_RLC / Π_DEC** | Aggregate then decompose (norm control) | [`crates/neo-fold/src/shard.rs`](crates/neo-fold/src/shard.rs) |
-| **Twist** | R/W memory argument (sparse increments) | [`crates/neo-memory/src/twist.rs`](crates/neo-memory/src/twist.rs), [`twist_oracle.rs`](crates/neo-memory/src/twist_oracle.rs) |
-| **Shout** | Read-only lookup argument | [`crates/neo-memory/src/shout.rs`](crates/neo-memory/src/shout.rs) |
-| **IDX** | Index-to-virtual-one-hot adapter (proved via sum-check over bit-columns) | `IndexAdapterOracle` in [`twist_oracle.rs`](crates/neo-memory/src/twist_oracle.rs) |
-| **Two-lane folding** | Needed for Twist's second eval point `r_val` | `val_fold` in [`shard.rs`](crates/neo-fold/src/shard.rs) |
+| **Π_RLC / Π_DEC** | Aggregate then decompose (norm control) | [`crates/deprecated-neo-fold/src/shard.rs`](crates/deprecated-neo-fold/src/shard.rs) |
+| **Twist** | R/W memory argument (sparse increments) | [`crates/deprecated-neo-memory/src/twist.rs`](crates/deprecated-neo-memory/src/twist.rs), [`twist_oracle.rs`](crates/deprecated-neo-memory/src/twist_oracle.rs) |
+| **Shout** | Read-only lookup argument | [`crates/deprecated-neo-memory/src/shout.rs`](crates/deprecated-neo-memory/src/shout.rs) |
+| **IDX** | Index-to-virtual-one-hot adapter (proved via sum-check over bit-columns) | `IndexAdapterOracle` in [`twist_oracle.rs`](crates/deprecated-neo-memory/src/twist_oracle.rs) |
+| **Two-lane folding** | Needed for Twist's second eval point `r_val` | `val_fold` in [`shard.rs`](crates/deprecated-neo-fold/src/shard.rs) |
 
 ### Key Structs
 
 ```rust
 // One folding chunk worth of witness:
-neo_memory::witness::StepWitnessBundle {
+deprecated_neo_memory::witness::StepWitnessBundle {
     mcs: (McsInstance, McsWitness),      // CPU chunk
     lut_instances: Vec<(LutInstance, LutWitness)>,  // Shout per chunk
     mem_instances: Vec<(MemInstance, MemWitness)>,  // Twist per chunk
@@ -319,8 +319,8 @@ crates/
   neo-ccs/             # CCS/MCS/ME relations, matrices, arithmetization
   neo-fold/            # Shard folding loop, proof types, transcript plumbing
   neo-reductions/      # Π_CCS / Π_RLC / Π_DEC engines (optimized + paper-exact)
-  neo-memory/          # Twist/Shout traces, encoding, MLE utilities, oracles
-  neo-vm-trace/        # VM tracing traits (CPU, Twist, Shout) + trace capture
+  deprecated-neo-memory/          # Twist/Shout traces, encoding, MLE utilities, oracles
+  deprecated-neo-vm-trace/  # VM tracing traits (CPU, Twist, Shout) + trace capture
   neo-spartan-bridge/  # ME → Spartan2-style R1CS bridge using hash-MLE (WIP)
   neo-math/            # Field/ring utilities, extension field, norms
   neo-params/          # Parameter bundles + Poseidon2 config
@@ -342,11 +342,11 @@ formal/
 
 ### Step 1: Build Per-Chunk Witnesses
 
-Use the shared CPU-bus witness builder in `neo-memory`. The following is **pseudocode** illustrating the pattern; see the [actual test code](crates/neo-fold/tests/full_folding_integration.rs) for working examples:
+Use the shared CPU-bus witness builder in `deprecated-neo-memory`. The following is **pseudocode** illustrating the pattern; see the [actual test code](crates/deprecated-neo-fold/tests/full_folding_integration.rs) for working examples:
 
 ```rust
 // Pseudocode — see full_folding_integration.rs for working code
-use neo_memory::builder::build_shard_witness_shared_cpu_bus;
+use deprecated_neo_memory::builder::build_shard_witness_shared_cpu_bus;
 
 let steps = build_shard_witness_shared_cpu_bus(
     vm, twist, shout,
@@ -359,7 +359,7 @@ let steps = build_shard_witness_shared_cpu_bus(
 )?;
 ```
 
-**Reference test**: [`crates/neo-fold/tests/full_folding_integration.rs`](crates/neo-fold/tests/full_folding_integration.rs) — `full_folding_integration_single_chunk`
+**Reference test**: [`crates/deprecated-neo-fold/tests/full_folding_integration.rs`](crates/deprecated-neo-fold/tests/full_folding_integration.rs) — `full_folding_integration_single_chunk`
 
 ### Step 2: Prove a Shard
 
@@ -427,9 +427,9 @@ opened from the CPU commitment (the tail of the CPU witness `z`):
 - Full memory vector `Val_t` (never committed, computed via sum-check)
 
 **Code:**
-- Bus layout: [`crates/neo-memory/src/cpu/bus_layout.rs`](crates/neo-memory/src/cpu/bus_layout.rs)
-- CPU↔bus constraints: [`crates/neo-memory/src/cpu/constraints.rs`](crates/neo-memory/src/cpu/constraints.rs)
-- Oracles: [`neo_memory::twist_oracle.rs`](crates/neo-memory/src/twist_oracle.rs)
+- Bus layout: [`crates/deprecated-neo-memory/src/cpu/bus_layout.rs`](crates/deprecated-neo-memory/src/cpu/bus_layout.rs)
+- CPU↔bus constraints: [`crates/deprecated-neo-memory/src/cpu/constraints.rs`](crates/deprecated-neo-memory/src/cpu/constraints.rs)
+- Oracles: [`deprecated_neo_memory::twist_oracle.rs`](crates/deprecated-neo-memory/src/twist_oracle.rs)
 
 ### Shout (Read-Only Lookups)
 
@@ -441,8 +441,8 @@ Shout proves that when `has_lookup[t] = 1`, the committed `val[t]` matches `tabl
 - `val`
 
 **Code:**
-- Oracles: [`neo_memory::shout.rs`](crates/neo-memory/src/shout.rs)
- - Bus layout: [`crates/neo-memory/src/cpu/bus_layout.rs`](crates/neo-memory/src/cpu/bus_layout.rs)
+- Oracles: [`deprecated_neo_memory::shout.rs`](crates/deprecated-neo-memory/src/shout.rs)
+ - Bus layout: [`crates/deprecated-neo-memory/src/cpu/bus_layout.rs`](crates/deprecated-neo-memory/src/cpu/bus_layout.rs)
 
 ### Address Encoding & IDX Adapter
 
@@ -453,7 +453,7 @@ Addresses use compact **bit-decomposition** instead of one-hot vectors:
 
 The **IDX adapter** implements an index-to-virtual-one-hot bridge: it provides a **virtual one-hot oracle** backed by committed bit-columns. Twist/Shout protocols query conceptual one-hot MLE evaluations, and the adapter proves these are consistent with the compact index-bit representation via sum-check. This shifts work from commitments to foldable sum-check proofs.
 
-**Code:** `IndexAdapterOracle` in [`twist_oracle.rs`](crates/neo-memory/src/twist_oracle.rs), bit-address validation in [`crates/neo-memory/src/addr.rs`](crates/neo-memory/src/addr.rs)
+**Code:** `IndexAdapterOracle` in [`twist_oracle.rs`](crates/deprecated-neo-memory/src/twist_oracle.rs), bit-address validation in [`crates/deprecated-neo-memory/src/addr.rs`](crates/deprecated-neo-memory/src/addr.rs)
 
 ---
 

@@ -103,7 +103,7 @@ export function init_thread_pool(num_threads: number): Promise<any>;
 export function prove_verify_rv32_trace_fibonacci_asm(asm: string, n: number, ram_bytes: number, chunk_size: number, max_steps: number, do_spartan: boolean): any;
 
 /**
- * Parse a `TestExport` JSON (same schema as `crates/neo-fold/poseidon2-tests/*.json`),
+ * Parse a `TestExport` JSON (same schema as `crates/deprecated-neo-fold/poseidon2-tests/*.json`),
  * then run prove+verify and return a small result object.
  */
 export function prove_verify_test_export_json(json: string): any;

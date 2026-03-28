@@ -1,0 +1,14 @@
+import Nightstream.Rv64IM.Kernel.NarrowMemoryPayloadSemantics
+
+namespace Nightstream.Rv64IM
+
+namespace NarrowMemoryPayloadSemanticsInterface
+
+abbrev exactNarrowMemoryPayloadSemantics_of_kernelSoundness :=
+  @Nightstream.Rv64IM.exactNarrowMemoryPayloadSemantics_of_kernelSoundness
+abbrev exactNarrowMemoryPayloadSemantics_of_exactKernelBoundaries :=
+  @Nightstream.Rv64IM.exactNarrowMemoryPayloadSemantics_of_exactKernelBoundaries
+
+end NarrowMemoryPayloadSemanticsInterface
+
+end Nightstream.Rv64IM

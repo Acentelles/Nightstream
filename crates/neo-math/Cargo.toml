@@ -28,13 +28,38 @@ serde = { workspace = true, optional = true, features = ["derive"] }
 proptest = { workspace = true }
 rand = { workspace = true }
 rand_chacha = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
 
 [features]
 default = []
 serde = ["dep:serde"]
 spartan2-compat = []
-# Expose testing utilities (like random_extf) without making them part of the stable API
-testing = []
+
+# Spec-derived tests (lean oracles + invariant obligations)
+[[test]]
+name = "spec_lean_oracles"
+path = "spec-tests/lean_oracles.rs"
+
+[[test]]
+name = "spec_ring"
+path = "spec-tests/ring.rs"
+
+[[test]]
+name = "spec_goldilocks"
+path = "spec-tests/goldilocks.rs"
+
+[[test]]
+name = "spec_norms"
+path = "spec-tests/norms.rs"
+
+[[test]]
+name = "spec_bar_transform"
+path = "spec-tests/bar_transform.rs"
+
+[[test]]
+name = "spec_s_action"
+path = "spec-tests/s_action.rs"
 
 [package.metadata.docs.rs]
 rustdoc-args = ["--cfg", "docsrs"]

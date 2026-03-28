@@ -329,7 +329,7 @@ let wasm_bindgen = (function(exports) {
     exports.prove_verify_rv32_b1_fibonacci_asm = prove_verify_rv32_b1_fibonacci_asm;
 
     /**
-     * Parse a `TestExport` JSON (same schema as `crates/neo-fold/poseidon2-tests/*.json`),
+     * Parse a `TestExport` JSON (same schema as `crates/deprecated-neo-fold/poseidon2-tests/*.json`),
      * then run prove+verify and return a small result object.
      * @param {string} json
      * @returns {any}

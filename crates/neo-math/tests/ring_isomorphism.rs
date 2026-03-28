@@ -1,7 +1,6 @@
-mod test_helpers;
+use neo_math::ring::inf_norm;
 use neo_math::{cf, cf_inv, Fq, Rq, D};
 use p3_field::PrimeCharacteristicRing;
-use test_helpers::inf_norm;
 
 fn rand_rq(seed: u64) -> Rq {
     let mut c = [Fq::ZERO; D];

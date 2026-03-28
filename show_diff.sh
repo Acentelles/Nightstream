@@ -7,7 +7,7 @@
 #   ./show_diff.sh                                    # Save all changes to 'git_diff.txt' (vs HEAD)
 #   ./show_diff.sh my_changes.txt                     # Save all changes to 'my_changes.txt' (vs HEAD)
 #   ./show_diff.sh changes.txt "src,tests"            # Save only src/ and tests/ changes (vs HEAD)
-#   ./show_diff.sh diff.txt "crates/neo-fold,neo-main/src"  # Save specific paths only (vs HEAD)
+#   ./show_diff.sh diff.txt "crates/deprecated-neo-fold,neo-main/src"  # Save specific paths only (vs HEAD)
 #   ./show_diff.sh changes.txt "" "main"              # Save all changes vs main branch
 #   ./show_diff.sh changes.txt "src" "abc123"         # Save src/ changes vs commit abc123
 #   ./show_diff.sh changes.txt "" "HEAD" --no-tests   # Save all changes excluding test files
@@ -28,7 +28,7 @@ for arg in "$@"; do
         echo "  $0                                    # Save all changes to 'git_diff.txt' (vs HEAD)"
         echo "  $0 my_changes.txt                     # Save all changes to 'my_changes.txt' (vs HEAD)"
         echo "  $0 changes.txt \"src,tests\"            # Save only src/ and tests/ changes (vs HEAD)"
-        echo "  $0 diff.txt \"crates/neo-fold,neo-main/src\"  # Save specific paths only (vs HEAD)"
+        echo "  $0 diff.txt \"crates/deprecated-neo-fold,neo-main/src\"  # Save specific paths only (vs HEAD)"
         echo "  $0 changes.txt \"\" \"main\"              # Save all changes vs main branch"
         echo "  $0 changes.txt \"src\" \"abc123\"         # Save src/ changes vs commit abc123"
         echo "  $0 changes.txt \"\" \"HEAD\" --no-tests   # Save all changes excluding test files"

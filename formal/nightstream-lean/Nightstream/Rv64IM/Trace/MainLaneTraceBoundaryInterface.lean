@@ -1,0 +1,15 @@
+import Nightstream.Rv64IM.Trace.MainLaneTraceBoundary
+
+namespace Nightstream.Rv64IM
+
+namespace MainLaneTraceBoundaryInterface
+
+abbrev MainLaneTraceBoundary := @Nightstream.Rv64IM.MainLaneTraceBoundary
+abbrev MainLaneTraceBoundaryProofPackage := Nightstream.Rv64IM.MainLaneTraceBoundaryProofPackage
+abbrev mainLaneTraceBoundary_rowsLength := @Nightstream.Rv64IM.mainLaneTraceBoundary_rowsLength
+abbrev mainLaneTraceBoundary_preparedStepsLength :=
+  @Nightstream.Rv64IM.mainLaneTraceBoundary_preparedStepsLength
+
+end MainLaneTraceBoundaryInterface
+
+end Nightstream.Rv64IM

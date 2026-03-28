@@ -18,12 +18,10 @@ fn sample_vec() -> Vec<Fq> {
 fn decomp_b_row_major_into_matches_allocating_path() {
     let z = sample_vec();
     let mut scratch = vec![Fq::from_u64(999); 3];
-    for &base in &[2u32, 3, 11] {
-        for &style in &[DecompStyle::Balanced, DecompStyle::NonNegative] {
-            let expected = decomp_b_row_major(&z, base, /*d=*/ 4, style);
-            decomp_b_row_major_into(&z, base, /*d=*/ 4, style, &mut scratch);
-            assert_eq!(scratch, expected, "base={base} style={style:?}");
-        }
+    for &style in &[DecompStyle::Balanced, DecompStyle::NonNegative] {
+        let expected = decomp_b_row_major(&z, /*b=*/ 2, /*d=*/ 4, style);
+        decomp_b_row_major_into(&z, /*b=*/ 2, /*d=*/ 4, style, &mut scratch);
+        assert_eq!(scratch, expected, "style={style:?}");
     }
 }
 
@@ -38,10 +36,16 @@ fn decomp_b_row_major_into_reuses_buffer_across_calls() {
     ];
 
     let mut scratch = vec![Fq::from_u64(42); 64];
-    decomp_b_row_major_into(&z0, /*b=*/ 3, /*d=*/ 4, DecompStyle::Balanced, &mut scratch);
+    decomp_b_row_major_into(&z0, /*b=*/ 2, /*d=*/ 4, DecompStyle::Balanced, &mut scratch);
     let first = scratch.clone();
-    assert_eq!(first, decomp_b_row_major(&z0, 3, 4, DecompStyle::Balanced));
+    assert_eq!(first, decomp_b_row_major(&z0, 2, 4, DecompStyle::Balanced));
 
-    decomp_b_row_major_into(&z1, /*b=*/ 11, /*d=*/ 4, DecompStyle::Balanced, &mut scratch);
-    assert_eq!(scratch, decomp_b_row_major(&z1, 11, 4, DecompStyle::Balanced));
+    decomp_b_row_major_into(
+        &z1,
+        /*b=*/ 2,
+        /*d=*/ 4,
+        DecompStyle::NonNegative,
+        &mut scratch,
+    );
+    assert_eq!(scratch, decomp_b_row_major(&z1, 2, 4, DecompStyle::NonNegative));
 }

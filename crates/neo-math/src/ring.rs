@@ -1,11 +1,8 @@
-//! Ring layer: R_q = F_q[X]/(Phi_eta) with eta=81, Phi_eta = X^54 + X^27 + 1.
-//! MUST: cf/cf^{-1}, ||a||_∞, rot(a) S-action on vectors/matrices; constant-time schoolbook mul.
-//! SHOULD: fast-mul hook (API-level; can be swapped to NTT later).
+//! Ring layer: R_q = F_q\[X\]/(Phi_eta) with eta=81, Phi_eta = X^54 + X^27 + 1.
+//! MUST: cf/cf^{-1}, ||a||_∞, rot(a) S-action on vectors; constant-time schoolbook mul.
 
-use crate::norms::{NeoMathError, Norms};
 use crate::Fq;
 use p3_field::{Field, PrimeCharacteristicRing, PrimeField64};
-use p3_matrix::dense::DenseMatrix;
 use std::ops::{Add, Mul, Sub};
 use std::sync::OnceLock;
 
@@ -107,18 +104,10 @@ impl Rq {
         Self(out)
     }
 
-    /// SHOULD: placeholder "fast" multiply; currently calls `mul`.
-    #[inline]
-    pub fn mul_fast(&self, rhs: &Self) -> Self {
-        self.mul(rhs)
-    }
-
-    // Direct field-based methods (replacing ModInt backward compatibility)
-
     /// Create ring element from field coefficients
-    pub fn from_field_coeffs(coeffs: Vec<Fq>) -> Self {
+    pub fn from_field_coeffs(coeffs: &[Fq]) -> Self {
         let mut ring_coeffs = [Fq::ZERO; D];
-        for (i, c) in coeffs.into_iter().enumerate().take(D) {
+        for (i, &c) in coeffs.iter().enumerate().take(D) {
             ring_coeffs[i] = c;
         }
         Self(ring_coeffs)
@@ -155,9 +144,11 @@ impl Rq {
         Self(coeffs)
     }
 
-    /// Infinity norm over centered representatives (backward compatibility)
+    /// Infinity norm over centered representatives.
     pub fn norm_inf(&self) -> u64 {
-        inf_norm(self) as u64
+        let n = inf_norm(self);
+        debug_assert!(n <= u64::MAX as u128, "inf_norm exceeds u64 range");
+        n as u64
     }
 
     /// Pay-per-bit multiplication by sparse vector (Neo's key optimization)
@@ -382,27 +373,7 @@ pub fn rot_apply_vec(a: &Rq, v: &[Fq; D]) -> [Fq; D] {
     cf(prod)
 }
 
-/// SHOULD: left action on a dense d×m matrix (columns are vectors in F_q^d).
-pub(crate) fn rot_apply_matrix(a: &Rq, z: &DenseMatrix<Fq>) -> Result<DenseMatrix<Fq>, NeoMathError> {
-    let norms = Norms::default();
-    norms.must(z.width > 0 && z.values.len() % z.width == 0, "matrix shape")?;
-    let h = z.values.len() / z.width;
-    norms.must(h == D, "matrix height must be d")?;
-    let mut out = DenseMatrix::default(z.width, h);
-    for col in 0..z.width {
-        let mut colv = [Fq::ZERO; D];
-        colv.iter_mut().enumerate().for_each(|(r, elem)| {
-            *elem = z.values[r * z.width + col];
-        });
-        let newc = rot_apply_vec(a, &colv);
-        newc.iter().enumerate().for_each(|(r, &val)| {
-            out.values[r * z.width + col] = val;
-        });
-    }
-    Ok(out)
-}
-
-// Implement arithmetic traits for backward compatibility
+// Arithmetic trait implementations
 impl Add for Rq {
     type Output = Self;
     fn add(self, rhs: Self) -> Self::Output {

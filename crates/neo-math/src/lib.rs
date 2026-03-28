@@ -9,7 +9,6 @@
 
 pub mod balanced;
 pub mod field;
-pub mod norms;
 pub mod ring;
 pub mod s_action;
 
@@ -24,16 +23,5 @@ pub use field::{from_complex, Fq, KExtensions, K};
 pub use ring::{cf, cf_inv, ct, superneo_bar_block, superneo_bar_matrix, superneo_bar_vec, Rq, D, ETA};
 pub use s_action::SAction;
 
-// Import trait for field operations - removed unused import
-
-// Backward compatibility exports for existing crates
-pub use Fq as F; // Field type alias
-
-// Legacy modules removed as part of codebase cleanup
-// Use neo_fold::transcript::FoldTranscript for transcript functionality
-// Use neo-ajtai for decomposition functions
-// For ModInt/polynomial functionality, use the main field/ring types
-
-// Extension field utility functions moved to field.rs
-
-// Random generation moved to field.rs
+/// Short alias used across the workspace (250+ files import `neo_math::F`).
+pub use Fq as F;

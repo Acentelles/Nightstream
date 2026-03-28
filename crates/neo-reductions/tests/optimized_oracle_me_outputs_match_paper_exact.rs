@@ -157,8 +157,14 @@ fn optimized_oracle_outputs_match_paper_exact_builder() {
     }
 
     let fold_digest = [7u8; 32];
-    let out_fast =
-        oracle.build_me_outputs_from_ajtai_precomp(core::slice::from_ref(&mcs_inst), &me_inputs, &[], fold_digest, &l);
+    let out_fast = oracle.build_me_outputs_from_ajtai_precomp(
+        core::slice::from_ref(&mcs_inst),
+        &me_inputs,
+        &[],
+        None,
+        fold_digest,
+        &l,
+    );
     let out_ref = build_me_outputs_paper_exact(
         &s,
         &params,
@@ -296,7 +302,7 @@ fn optimized_oracle_outputs_match_paper_exact_builder_superneo_shape() {
     }
 
     let fold_digest = [77u8; 32];
-    let out_fast = oracle.build_me_outputs_from_ajtai_precomp(&mcs_list, &me_inputs, &s_col, fold_digest, &l);
+    let out_fast = oracle.build_me_outputs_from_ajtai_precomp(&mcs_list, &me_inputs, &s_col, None, fold_digest, &l);
     let out_ref = build_me_outputs_paper_exact(
         &s,
         &params,

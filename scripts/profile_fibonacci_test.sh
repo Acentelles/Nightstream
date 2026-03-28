@@ -9,7 +9,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_ROOT"
 
 TEST_NAME="test_perf_fibonacci"
-TEST_PATH="crates/neo-fold/perf-tests"
+TEST_PATH="crates/deprecated-neo-fold/perf-tests"
 PROFILE_MODE="${1:-flamegraph}"
 
 echo "🔍 Profiling test: $TEST_NAME"
@@ -89,9 +89,9 @@ case "$PROFILE_MODE" in
     echo "🌐 Generating Chrome tracing format..."
     
     # Check if tracing-chrome is in Cargo.toml
-    if ! grep -q "tracing-chrome" "$PROJECT_ROOT/crates/neo-fold/Cargo.toml"; then
+    if ! grep -q "tracing-chrome" "$PROJECT_ROOT/crates/deprecated-neo-fold/Cargo.toml"; then
       echo "⚠️  tracing-chrome not found in Cargo.toml"
-      echo "You need to add the following dependencies to crates/neo-fold/Cargo.toml:"
+      echo "You need to add the following dependencies to crates/deprecated-neo-fold/Cargo.toml:"
       echo ""
       echo "[dev-dependencies]"
       echo "tracing = \"0.1\""

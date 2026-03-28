@@ -11,8 +11,6 @@ workspace = true
 [dependencies]
 neo-math = { path = "../neo-math" }
 neo-params = { path = "../neo-params" }
-# neo-ring functionality now in neo-math
-# Sumcheck functionality integrated locally
 p3-field = { workspace = true }
 p3-matrix = { workspace = true }
 p3-goldilocks = { workspace = true }
@@ -35,8 +33,6 @@ rayon = { workspace = true }
 default = []
 # Enable verbose logging for debugging (OFF by default for security - CWE-532) 
 neo-logs = []
-# Enable testing features (including unsafe direct sum operations)
-testing = []
 spartan2-compat = ["spartan2", "neo-math/spartan2-compat"]
 wasm-threads = []
 
@@ -46,6 +42,33 @@ rayon = { workspace = true }
 [dev-dependencies]
 criterion = { workspace = true }
 rand = { workspace = true }
+rand_chacha = { workspace = true }
+p3-field = { workspace = true }
 p3-goldilocks = { workspace = true }
 neo-ajtai = { path = "../neo-ajtai" }
 serde_json = { workspace = true }
+
+# Spec-derived tests (lean oracles + invariant obligations)
+[[test]]
+name = "spec_lean_oracles"
+path = "spec-tests/lean_oracles.rs"
+
+[[test]]
+name = "spec_relations"
+path = "spec-tests/relations.rs"
+
+[[test]]
+name = "spec_matrix"
+path = "spec-tests/matrix.rs"
+
+[[test]]
+name = "spec_polynomial"
+path = "spec-tests/polynomial.rs"
+
+[[test]]
+name = "spec_crypto"
+path = "spec-tests/crypto.rs"
+
+[[test]]
+name = "spec_gadgets"
+path = "spec-tests/gadgets.rs"

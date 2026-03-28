@@ -229,7 +229,7 @@ mod production_tests {
 
     #[test]
     fn test_realistic_bridge_scenario() {
-        println!("🧪 Testing scenario matching neo-spartan-bridge usage...");
+        println!("🧪 Testing scenario matching folding-bridge usage...");
 
         // Values matching bridge smoke test patterns
         let dim = 4; // y_outputs length from bridge test

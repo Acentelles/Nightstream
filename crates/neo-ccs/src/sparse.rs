@@ -241,6 +241,12 @@ impl<Ff: Field + PrimeCharacteristicRing + Copy + Send + Sync> SparseCache<Ff> {
         self.csc.len()
     }
 
+    /// Returns `true` if the cache contains no matrices.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.csc.is_empty()
+    }
+
     /// Get the CSC for matrix `j` (returns `None` if the matrix is an identity sentinel).
     #[inline]
     pub fn csc(&self, j: usize) -> Option<&CscMat<Ff>> {

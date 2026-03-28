@@ -8,11 +8,11 @@ CRATES=(
   neo-ccs
   neo-fold
   neo-math
-  neo-memory
+  deprecated-neo-memory
   neo-params
   neo-reductions
   neo-transcript
-  neo-vm-trace
+  deprecated-neo-vm-trace
 )
 
 count_loc() {

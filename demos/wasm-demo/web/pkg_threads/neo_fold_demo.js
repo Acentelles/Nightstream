@@ -339,7 +339,7 @@ export function prove_verify_rv32_trace_fibonacci_asm(asm, n, ram_bytes, chunk_s
 }
 
 /**
- * Parse a `TestExport` JSON (same schema as `crates/neo-fold/poseidon2-tests/*.json`),
+ * Parse a `TestExport` JSON (same schema as `crates/deprecated-neo-fold/poseidon2-tests/*.json`),
  * then run prove+verify and return a small result object.
  * @param {string} json
  * @returns {any}

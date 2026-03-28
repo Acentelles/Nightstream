@@ -131,6 +131,11 @@ impl Poseidon2Transcript {
     pub fn state(&self) -> [Goldilocks; p2::WIDTH] {
         self.st
     }
+
+    /// Export the current absorb cursor within the rate portion.
+    pub fn absorbed(&self) -> usize {
+        self.absorbed
+    }
 }
 
 impl Transcript for Poseidon2Transcript {
@@ -205,6 +210,25 @@ impl Transcript for Poseidon2Transcript {
         }
         #[cfg(feature = "fs-guard")]
         crate::fs_guard::record(crate::debug::Event::new("challenge_field", label, 1, &self.st));
+        out
+    }
+
+    fn challenge_fields(&mut self, label: &'static [u8], n: usize) -> Vec<F> {
+        self.append_message(b"chal/label", label);
+        let mut out = Vec::with_capacity(n);
+        while out.len() < n {
+            self.absorb_elem(Goldilocks::ONE);
+            self.permute();
+            for i in 0..p2::DIGEST_LEN.min(n - out.len()) {
+                out.push(F::from_u64(self.st[i].as_canonical_u64()));
+            }
+        }
+        #[cfg(feature = "debug-log")]
+        if std::env::var("NEO_TRANSCRIPT_DUMP").ok().as_deref() == Some("1") {
+            self.dump_and_clear("challenge_fields");
+        }
+        #[cfg(feature = "fs-guard")]
+        crate::fs_guard::record(crate::debug::Event::new("challenge_fields", label, n, &self.st));
         out
     }
 
@@ -283,6 +307,40 @@ impl Poseidon2Transcript {
             .push(crate::debug::Event::new("append_u64s", label, us.len(), &self.st));
     }
 
+    pub fn append_u64s_iter<I>(&mut self, label: &'static [u8], len: usize, iter: I)
+    where
+        I: IntoIterator<Item = u64>,
+    {
+        self.absorb_packed_bytes_with_len(label);
+        self.absorb_elem(Goldilocks::from_u64(len as u64));
+
+        const WORD_CHUNK: usize = 64;
+        let mut buf = [Goldilocks::ZERO; WORD_CHUNK * 2];
+        let mut used = 0usize;
+        let mut seen = 0usize;
+        for value in iter {
+            let lo = (value & 0xFFFF_FFFF) as u64;
+            let hi = value >> 32;
+            buf[2 * used] = Goldilocks::from_u64(lo);
+            buf[2 * used + 1] = Goldilocks::from_u64(hi);
+            used += 1;
+            seen += 1;
+            if used == WORD_CHUNK {
+                self.absorb_slice(&buf);
+                used = 0;
+            }
+        }
+        if used > 0 {
+            self.absorb_slice(&buf[..used * 2]);
+        }
+        if seen != len {
+            panic!("append_u64s_iter: iterator length mismatch (seen={seen}, len={len})");
+        }
+        #[cfg(feature = "debug-log")]
+        self.log
+            .push(crate::debug::Event::new("append_u64s_iter", label, len, &self.st));
+    }
+
     pub fn append_fields_iter<I>(&mut self, label: &'static [u8], len: usize, iter: I)
     where
         I: IntoIterator<Item = F>,
@@ -329,30 +387,6 @@ impl Poseidon2Transcript {
             &self.st,
         ));
     }
-
-    pub fn challenge_fields(&mut self, label: &'static [u8], n: usize) -> Vec<F> {
-        self.append_message(b"chal/label", label);
-        let mut out = Vec::with_capacity(n);
-        while out.len() < n {
-            self.absorb_elem(Goldilocks::ONE);
-            self.permute();
-            for i in 0..p2::DIGEST_LEN.min(n - out.len()) {
-                out.push(F::from_u64(self.st[i].as_canonical_u64()));
-            }
-        }
-        #[cfg(feature = "debug-log")]
-        if std::env::var("NEO_TRANSCRIPT_DUMP").ok().as_deref() == Some("1") {
-            self.dump_and_clear("challenge_fields");
-        }
-        out
-    }
-
-    pub fn challenge_bytes_vec(&mut self, label: &'static [u8], len: usize) -> Vec<u8> {
-        let mut out = vec![0u8; len];
-        self.challenge_bytes(label, &mut out);
-        out
-    }
-
     #[cfg(feature = "debug-log")]
     pub fn dump_and_clear(&mut self, ctx: &str) {
         let tag = std::env::var("NEO_TRANSCRIPT_TAG").ok();

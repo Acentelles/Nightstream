@@ -13,6 +13,22 @@ fn format_k(k: &K) -> String {
     format!("K[{}, {}]", coeffs[0].as_canonical_u64(), coeffs[1].as_canonical_u64())
 }
 
+#[inline]
+pub fn append_round_coeffs<Tr: Transcript>(tr: &mut Tr, coeffs: &[K]) {
+    let coeff_width = coeffs.first().map(|c| c.as_coeffs().len()).unwrap_or(0);
+    let mut packed = Vec::with_capacity(coeffs.len() * coeff_width);
+    for coeff in coeffs {
+        let parts = coeff.as_coeffs();
+        debug_assert_eq!(
+            parts.len(),
+            coeff_width,
+            "sumcheck round coefficient width changed within one round"
+        );
+        packed.extend(parts.iter().copied());
+    }
+    tr.append_fields(b"sumcheck/round/coeff", packed.as_slice());
+}
+
 /// Trait for round oracles in the sumcheck protocol
 pub trait RoundOracle {
     /// Evaluate the oracle at multiple points for the current round
@@ -292,14 +308,11 @@ pub fn run_sumcheck_prover<O: RoundOracle, Tr: Transcript>(
             .all(|(&x, &y)| poly_eval_k(&coeffs, x) == y));
 
         // Commit coefficients to the transcript.
-        for &coeff in coeffs.iter() {
-            tr.append_fields(b"sumcheck/round/coeff", &coeff.as_coeffs());
-        }
+        append_round_coeffs(tr, &coeffs);
 
         // Sample challenge as an extension-field element
-        let c = tr.challenge_field(b"sumcheck/challenge/0");
-        let d = tr.challenge_field(b"sumcheck/challenge/1");
-        let challenge = from_complex(c, d);
+        let c = tr.challenge_fields(b"sumcheck/challenge", 2);
+        let challenge = from_complex(c[0], c[1]);
         challenges.push(challenge);
 
         // Advance state
@@ -381,15 +394,12 @@ pub fn verify_sumcheck_rounds<Tr: Transcript>(
         }
 
         // Append round polynomial to transcript.
-        for &coeff in round_poly.iter() {
-            tr.append_fields(b"sumcheck/round/coeff", &coeff.as_coeffs());
-        }
+        append_round_coeffs(tr, round_poly);
 
         // Sample challenge for this round: extension field element
         // Sample 2 base field elements and combine them
-        let c = tr.challenge_field(b"sumcheck/challenge/0");
-        let d = tr.challenge_field(b"sumcheck/challenge/1");
-        let challenge = neo_math::from_complex(c, d);
+        let c = tr.challenge_fields(b"sumcheck/challenge", 2);
+        let challenge = neo_math::from_complex(c[0], c[1]);
         challenges.push(challenge);
 
         // Update running sum: running_sum := round_poly(challenge)
@@ -630,9 +640,8 @@ pub fn run_batched_sumcheck_prover<Tr: Transcript>(
         append_batched_round_polys(tr, &per_claim_results, round_idx, &mut packed_round_poly);
 
         // 3. Derive ONE shared challenge from transcript
-        let c = tr.challenge_field(b"batched/challenge/0");
-        let d = tr.challenge_field(b"batched/challenge/1");
-        let shared_challenge = from_complex(c, d);
+        let c = tr.challenge_fields(b"batched/challenge", 2);
+        let shared_challenge = from_complex(c[0], c[1]);
         shared_challenges.push(shared_challenge);
 
         #[cfg(feature = "debug-logs")]
@@ -783,9 +792,8 @@ pub fn verify_batched_sumcheck_rounds<Tr: Transcript>(
         append_batched_round_polys(tr, per_claim_rounds, round_idx, &mut packed_round_poly);
 
         // Derive shared challenge (must match prover)
-        let c = tr.challenge_field(b"batched/challenge/0");
-        let d = tr.challenge_field(b"batched/challenge/1");
-        let shared_challenge = from_complex(c, d);
+        let c = tr.challenge_fields(b"batched/challenge", 2);
+        let shared_challenge = from_complex(c[0], c[1]);
         shared_challenges.push(shared_challenge);
 
         // Update running sums
