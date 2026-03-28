@@ -87,11 +87,8 @@ Upstream dependencies:
 - `neo-params`: concrete protocol parameters
 
 Downstream consumers:
-- `neo-fold`: shard commitment
+- `neo-fold-next`: root-lane and opening commitments
 - `neo-reductions`: `Pi_DEC`
-- `deprecated-neo-memory`: witness commitment
-- `neo-spartan-bridge`: bridge layer
-- `neo-midnight-bridge`: bridge layer
 
 ## Lean Oracle Conformance
 
