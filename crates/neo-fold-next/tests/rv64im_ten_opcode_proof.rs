@@ -5,8 +5,9 @@ use neo_fold_next::rv64im::layout::{
 };
 use neo_fold_next::rv64im::tables::Rv64FamilyTag;
 use neo_fold_next::rv64im::{
-    build_parity_case_from_source, encode_add, encode_addi, encode_and, encode_ecall, encode_ld, encode_lui,
-    encode_mul, encode_ori, encode_sd, prove_rv64im_proof, verify_rv64im_proof, MemoryWord, Rv64imParityCaseManifest,
+    build_parity_case_from_source, build_rv64im_audit_witness_bundle, encode_add, encode_addi, encode_and,
+    encode_ecall, encode_ld, encode_lui, encode_mul, encode_ori, encode_sd, prove_rv64im_public_proof,
+    validate_rv64im_public_proof_against_input, verify_rv64im_public_proof, MemoryWord, Rv64imParityCaseManifest,
     Rv64imParitySourceCase, Rv64imProofInput,
 };
 
@@ -59,8 +60,11 @@ fn rv64im_proves_and_verifies_fresh_ten_opcode_program() {
     let (_, derived) = build_parity_case_from_source(source.clone(), max_steps).expect("build derived parity case");
     let input = Rv64imProofInput { source, max_steps };
 
-    let (witness, proof) = prove_rv64im_proof(&input).expect("prove rv64im proof");
-    let verified = verify_rv64im_proof(&input, &proof).expect("verify rv64im proof");
+    let witness = build_rv64im_audit_witness_bundle(&input).expect("build rv64im audit witness bundle");
+    let proof = prove_rv64im_public_proof(&input).expect("prove rv64im public proof");
+    verify_rv64im_public_proof(&proof).expect("verify rv64im public proof");
+    validate_rv64im_public_proof_against_input(&input, &proof).expect("proof matches public input");
+    let verified = build_rv64im_audit_witness_bundle(&input).expect("rebuild rv64im audit witness bundle");
 
     assert_eq!(verified.digest, witness.digest);
     assert_eq!(verified.trace.digest, witness.trace.digest);

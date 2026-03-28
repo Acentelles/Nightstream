@@ -59,8 +59,11 @@ pub struct KernelOpeningBundleBuildPerf {
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SimpleKernelBuildPerf {
-    pub prepared_steps_ms: f64,
+    pub root_lane_witness_ms: f64,
+    pub root_lane_columns_ms: f64,
+    pub root_lane_commitment_ms: f64,
     pub public_steps_ms: f64,
+    pub prepared_steps_ms: f64,
     pub prepared_step_bindings_ms: f64,
     pub stage_claim_bundle: StageClaimBundleBuildPerf,
     pub stage_package_bundle: StagePackageBundleBuildPerf,
@@ -91,6 +94,8 @@ pub struct SimpleKernelVerifyPerf {
     pub stages_match_ms: f64,
     pub stage_claims_match_ms: f64,
     pub kernel_claims_match_ms: f64,
+    pub root_lane_columns_match_ms: f64,
+    pub root_lane_commitment_match_ms: f64,
     pub stage_package_bundle: StagePackageBundleVerifyPerf,
     pub kernel_opening_bundle: KernelOpeningBundleVerifyPerf,
     pub total_ms: f64,
@@ -99,15 +104,14 @@ pub struct SimpleKernelVerifyPerf {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct PackagedSimpleKernelVerifyPerf {
     pub simple_kernel: SimpleKernelVerifyPerf,
-    pub public_step_match_ms: f64,
-    pub main_lane_verify_ms: f64,
+    pub main_lane_artifact_match_ms: f64,
     pub total_ms: f64,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Rv64imProofProvePerf {
     pub simple_kernel: SimpleKernelBuildPerf,
-    pub packaged_main_lane_ms: f64,
+    pub main_lane_ms: f64,
     pub public_export_ms: f64,
     pub total_ms: f64,
 }
@@ -117,8 +121,10 @@ pub struct Rv64imPublicProofVerifyPerf {
     pub public_claim_digests_ms: f64,
     pub public_bundle_digests_ms: f64,
     pub public_bundle_bindings_ms: f64,
-    pub packaged_rebuild_ms: f64,
-    pub packaged_verify: PackagedSimpleKernelVerifyPerf,
-    pub export_match_ms: f64,
+    pub public_kernel_build: SimpleKernelBuildPerf,
+    pub root_main_lane_proof_ms: f64,
+    pub stage_package_verify_ms: f64,
+    pub kernel_opening_verify_ms: f64,
+    pub summary_consistency_ms: f64,
     pub total_ms: f64,
 }

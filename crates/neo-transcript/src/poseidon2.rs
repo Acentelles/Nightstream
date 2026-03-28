@@ -307,6 +307,40 @@ impl Poseidon2Transcript {
             .push(crate::debug::Event::new("append_u64s", label, us.len(), &self.st));
     }
 
+    pub fn append_u64s_iter<I>(&mut self, label: &'static [u8], len: usize, iter: I)
+    where
+        I: IntoIterator<Item = u64>,
+    {
+        self.absorb_packed_bytes_with_len(label);
+        self.absorb_elem(Goldilocks::from_u64(len as u64));
+
+        const WORD_CHUNK: usize = 64;
+        let mut buf = [Goldilocks::ZERO; WORD_CHUNK * 2];
+        let mut used = 0usize;
+        let mut seen = 0usize;
+        for value in iter {
+            let lo = (value & 0xFFFF_FFFF) as u64;
+            let hi = value >> 32;
+            buf[2 * used] = Goldilocks::from_u64(lo);
+            buf[2 * used + 1] = Goldilocks::from_u64(hi);
+            used += 1;
+            seen += 1;
+            if used == WORD_CHUNK {
+                self.absorb_slice(&buf);
+                used = 0;
+            }
+        }
+        if used > 0 {
+            self.absorb_slice(&buf[..used * 2]);
+        }
+        if seen != len {
+            panic!("append_u64s_iter: iterator length mismatch (seen={seen}, len={len})");
+        }
+        #[cfg(feature = "debug-log")]
+        self.log
+            .push(crate::debug::Event::new("append_u64s_iter", label, len, &self.st));
+    }
+
     pub fn append_fields_iter<I>(&mut self, label: &'static [u8], len: usize, iter: I)
     where
         I: IntoIterator<Item = F>,

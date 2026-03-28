@@ -14,6 +14,7 @@ use p3_field::PrimeCharacteristicRing;
 use super::super::{KernelOpeningClaim, KernelOpeningManifest, SimpleKernelError};
 use super::{TimeVectorFamilySpec, TimeVectorOpeningProof};
 use crate::chip8::kernel::openings::commitment_polynomial_slot;
+use crate::chip8::poly::build_eq_table;
 
 const TIME_VECTOR_OPENING_DECOMP_BASE: u32 = 2;
 const TIME_VECTOR_OPENING_SLICE_BITS: usize = 32;
@@ -355,7 +356,7 @@ fn eval_time_mat_digits_at_point(point: &[K], encoded: &Mat<F>, label: &str) -> 
             TIME_VECTOR_OPENING_SLICE_COUNT
         )));
     }
-    let weights = neo_memory::mle::build_chi_table(point);
+    let weights = build_eq_table(point);
     if weights.len() != raw_t {
         return Err(SimpleKernelError::OpeningFailed(format!(
             "{label} opening point dimension {} yields {} weights for raw_t {}",

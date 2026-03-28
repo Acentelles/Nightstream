@@ -787,7 +787,7 @@ pub fn parity_source_cases() -> Vec<Rv64imParitySourceCase> {
     ]
 }
 
-fn opcode_word(opcode: Rv64Opcode) -> u64 {
+pub(crate) fn opcode_word(opcode: Rv64Opcode) -> u64 {
     match opcode {
         Rv64Opcode::Addi => 0,
         Rv64Opcode::Add => 1,
@@ -856,7 +856,7 @@ fn opcode_word(opcode: Rv64Opcode) -> u64 {
     }
 }
 
-fn family_word(family: Rv64FamilyTag) -> u64 {
+pub(crate) fn family_word(family: Rv64FamilyTag) -> u64 {
     match family {
         Rv64FamilyTag::NativeAlu => 0,
         Rv64FamilyTag::AlignedMemory => 1,
@@ -868,21 +868,21 @@ fn family_word(family: Rv64FamilyTag) -> u64 {
     }
 }
 
-fn register_read_role_word(role: crate::rv64im::stage2::RegisterReadRole) -> u64 {
+pub(crate) fn register_read_role_word(role: crate::rv64im::stage2::RegisterReadRole) -> u64 {
     match role {
         crate::rv64im::stage2::RegisterReadRole::Rs1 => 0,
         crate::rv64im::stage2::RegisterReadRole::Rs2 => 1,
     }
 }
 
-fn ram_access_kind_word(kind: crate::rv64im::stage2::RamAccessKind) -> u64 {
+pub(crate) fn ram_access_kind_word(kind: crate::rv64im::stage2::RamAccessKind) -> u64 {
     match kind {
         crate::rv64im::stage2::RamAccessKind::Read => 0,
         crate::rv64im::stage2::RamAccessKind::Write => 1,
     }
 }
 
-fn trace_virtual_opcode_word(opcode: crate::rv64im::lower::Rv64TraceVirtualOpcode) -> u64 {
+pub(crate) fn trace_virtual_opcode_word(opcode: crate::rv64im::lower::Rv64TraceVirtualOpcode) -> u64 {
     match opcode {
         crate::rv64im::lower::Rv64TraceVirtualOpcode::Movsign => 0,
         crate::rv64im::lower::Rv64TraceVirtualOpcode::Advice => 1,
@@ -1105,33 +1105,29 @@ fn digest_final_state(final_state: &Rv64State) -> [u8; 32] {
     )
 }
 
-pub fn build_parity_case_from_source(
-    source: Rv64imParitySourceCase,
-    max_steps: usize,
-) -> Result<(Rv64imParitySourceCase, Rv64imParityDerivedCase), Rv64BuildError> {
-    let program = Rv64Program::new(source.start_pc, source.program_words.clone());
-    let initial_state = Rv64State::new(source.start_pc, source.initial_registers, &source.initial_memory);
-    let build = build_program(&program, &initial_state, max_steps)?;
-
-    let stage1 = build_stage1_summary(&build.rows);
-    let stage2 = build_stage2_summary(&build.rows);
-    let stage3 = build_stage3_summary(&build.rows);
-
-    let root0_digest = digest_source_case(&source);
+pub(super) fn build_kernel_transcript_and_summary_from_parts(
+    source: &Rv64imParitySourceCase,
+    rows: &[Rv64ExpandedRow],
+    stage1: &Stage1Summary,
+    stage2: &Stage2Summary,
+    stage3: &Stage3Summary,
+    final_state: &Rv64State,
+) -> (TranscriptRecord, Rv64imKernelSummary) {
+    let root0_digest = digest_source_case(source);
     let stage1_digest = append_u64_matrix_digest(
         b"neo.fold.next/rv64im/stage1_digest_v1",
-        &[(b"stage1/rows", flatten_stage1(&stage1))],
+        &[(b"stage1/rows", flatten_stage1(stage1))],
     );
     let stage2_digest = append_u64_matrix_digest(
         b"neo.fold.next/rv64im/stage2_digest_v1",
-        &[(b"stage2/summary", flatten_stage2(&stage2))],
+        &[(b"stage2/summary", flatten_stage2(stage2))],
     );
     let stage3_digest = append_u64_matrix_digest(
         b"neo.fold.next/rv64im/stage3_digest_v1",
-        &[(b"stage3/summary", flatten_stage3(&stage3))],
+        &[(b"stage3/summary", flatten_stage3(stage3))],
     );
-    let execution_digest = digest_rows(&build.rows);
-    let final_state_digest = digest_final_state(&build.final_state);
+    let execution_digest = digest_rows(rows);
+    let final_state_digest = digest_final_state(final_state);
 
     let mut transcript = LoggingTranscript::new(RV64IM_PARITY_TRANSCRIPT_APP_LABEL);
     transcript.append_message(RV64IM_PARITY_TRANSCRIPT_SEED_LABEL, &source.transcript_seed);
@@ -1176,11 +1172,34 @@ pub fn build_parity_case_from_source(
         stage3_continuity_mix,
         kernel_final_mix,
         transcript_final_digest,
-        final_pc: build.final_state.pc,
-        final_registers: build.final_state.regs,
-        final_memory: build.final_state.memory_words(),
-        halted: build.final_state.halted,
+        final_pc: final_state.pc,
+        final_registers: final_state.regs,
+        final_memory: final_state.memory_words(),
+        halted: final_state.halted,
     };
+    (transcript, kernel)
+}
+
+pub fn build_parity_case_from_source(
+    source: Rv64imParitySourceCase,
+    max_steps: usize,
+) -> Result<(Rv64imParitySourceCase, Rv64imParityDerivedCase), Rv64BuildError> {
+    let program = Rv64Program::new(source.start_pc, source.program_words.clone());
+    let initial_state = Rv64State::new(source.start_pc, source.initial_registers, &source.initial_memory);
+    let build = build_program(&program, &initial_state, max_steps)?;
+
+    let stage1 = build_stage1_summary(&build.rows);
+    let stage2 = build_stage2_summary(&build.rows);
+    let stage3 = build_stage3_summary(&build.rows);
+
+    let (transcript, kernel) = build_kernel_transcript_and_summary_from_parts(
+        &source,
+        &build.rows,
+        &stage1,
+        &stage2,
+        &stage3,
+        &build.final_state,
+    );
 
     Ok((
         source.clone(),

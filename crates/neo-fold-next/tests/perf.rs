@@ -13,8 +13,10 @@ use neo_fold_next::rv64im::stage3::build_stage3_summary;
 use neo_fold_next::rv64im::tables::Rv64FamilyTag;
 use neo_fold_next::rv64im::{
     build_mixed_opcode_perf_source_case, build_parity_case_from_source, build_program,
-    build_simple_kernel_witness_with_perf, mixed_opcode_perf_expected_x1, prove_rv64im_proof_with_perf,
-    rv64im_simple_root_params, verify_rv64im_proof_with_perf, ExactOpeningClaim, OpeningPointLabel, Rv64Program,
+    build_rv64im_audit_witness_bundle as build_rv64im_proof_witness, build_simple_kernel_witness_with_perf,
+    mixed_opcode_perf_expected_x1, prove_rv64im_public_proof_with_perf, rv64im_simple_root_params,
+    validate_rv64im_public_proof_against_input_with_perf, verify_rv64im_audit_proof as verify_rv64im_proof,
+    verify_rv64im_public_proof_with_perf, OpeningAccumulator, OpeningAccumulatorStats, OpeningPointLabel, Rv64Program,
     Rv64State, Rv64imProofInput, SimpleKernelBuildPerf, RV64IM_MIXED_OPCODE_PERF_BLOCK_LEN,
     RV64IM_MIXED_OPCODE_PERF_DEFAULT_N,
 };
@@ -412,63 +414,76 @@ fn exact_stage_perf_rows(
     ]
 }
 
-fn selected_request_digests(output: &neo_fold_next::rv64im::SimpleKernelOutput) -> Vec<[u8; 32]> {
-    vec![
-        output.stage_packages.stage1.claim.points.first.digest,
-        output.stage_packages.stage1.claim.points.effect.digest,
-        output.stage_packages.stage1.claim.points.commit.digest,
-        output.stage_packages.stage1.claim.points.last.digest,
-        output.stage_packages.stage2.claim.points.first_read.digest,
-        output.stage_packages.stage2.claim.points.last_read.digest,
-        output.stage_packages.stage2.claim.points.first_write.digest,
-        output.stage_packages.stage2.claim.points.last_write.digest,
-        output.stage_packages.stage2.claim.points.first_ram.digest,
-        output.stage_packages.stage2.claim.points.last_ram.digest,
-        output.stage_packages.stage2.claim.points.first_twist.digest,
-        output.stage_packages.stage2.claim.points.last_twist.digest,
+fn opening_reuse_stats(output: &neo_fold_next::rv64im::SimpleKernelOutput) -> (OpeningAccumulatorStats, Vec<[u8; 32]>) {
+    let mut accumulator = OpeningAccumulator::default();
+    for reference in output.root_lane_columns.opening_refs() {
+        accumulator
+            .observe(reference)
+            .expect("root-lane canonical opening alias");
+    }
+    for reference in output.stage_packages.stage1.claim.opening_refs() {
+        accumulator
+            .observe(reference)
+            .expect("stage1 canonical opening alias");
+    }
+    for reference in output.stage_packages.stage2.claim.opening_refs() {
+        accumulator
+            .observe(reference)
+            .expect("stage2 canonical opening alias");
+    }
+    for reference in output.stage_packages.stage3.claim.opening_refs() {
+        accumulator
+            .observe(reference)
+            .expect("stage3 canonical opening alias");
+    }
+    for reference in output.kernel_opening.claim.opening_refs() {
+        accumulator
+            .observe(reference)
+            .expect("kernel canonical opening alias");
+    }
+    let opening_ids = accumulator.opening_id_digests();
+    (accumulator.stats(), opening_ids)
+}
+
+fn print_root_main_lane_family(output: &neo_fold_next::rv64im::SimpleKernelOutput) {
+    print_section("Root Main Lane Columns");
+    print_kv("canonical_lane_objects", 1);
+    print_kv("row_width", output.root_lane_columns.row_width);
+    print_kv("time_len", output.root_lane_columns.time_len);
+    print_kv("padded_time_len", output.root_lane_commitment.padded_time_len);
+    print_kv("column_count", output.root_lane_columns.column_digests.len());
+    print_kv(
+        "column_commitments",
+        output.root_lane_commitment.commitments.commitments.len(),
+    );
+    print_kv("selected_openings", output.root_lane_columns.opening_refs().len());
+    print_kv(
+        "opening_proofs",
+        usize::from(output.root_lane_commitment.first_opening.is_some())
+            + usize::from(output.root_lane_commitment.last_opening.is_some()),
+    );
+    print_kv(
+        "first_logical_index",
         output
-            .stage_packages
-            .stage3
-            .claim
-            .points
-            .first_continuity
-            .digest,
+            .root_lane_columns
+            .first_row
+            .as_ref()
+            .map(|reference| reference.id.logical_index)
+            .unwrap_or(0),
+    );
+    print_kv(
+        "last_logical_index",
         output
-            .stage_packages
-            .stage3
-            .claim
-            .points
-            .last_continuity
-            .digest,
-        output
-            .kernel_opening
-            .claim
-            .bindings
-            .points
-            .first_binding
-            .digest,
-        output
-            .kernel_opening
-            .claim
-            .bindings
-            .points
-            .last_binding
-            .digest,
-        output
-            .kernel_opening
-            .claim
-            .prepared_steps
-            .points
-            .first_prepared_step
-            .digest,
-        output
-            .kernel_opening
-            .claim
-            .prepared_steps
-            .points
-            .last_prepared_step
-            .digest,
-    ]
+            .root_lane_columns
+            .last_row
+            .as_ref()
+            .map(|reference| reference.id.logical_index)
+            .unwrap_or(0),
+    );
+    print_kv(
+        "bridge_status",
+        "column family now has Ajtai commitments and selected row openings; reductions still prove per-step instances",
+    );
 }
 
 fn print_exact_stage_witness_shape(rows: &[ExactStagePerfRow<'_>]) {
@@ -554,22 +569,16 @@ fn print_exact_stage_build_breakdown(rows: &[ExactStagePerfRow<'_>]) {
 }
 
 fn print_opening_reuse_proxy(output: &neo_fold_next::rv64im::SimpleKernelOutput) {
-    let digests = selected_request_digests(output);
-    let unique_digests = digests.iter().copied().collect::<BTreeSet<_>>();
-    print_section("Opening Reuse Proxy");
-    print_kv("opening_requests_total", digests.len());
-    print_kv("opening_requests_unique_by_digest", unique_digests.len());
-    print_kv(
-        "opening_requests_aliasable_by_digest",
-        digests.len().saturating_sub(unique_digests.len()),
-    );
+    let (stats, unique_opening_ids) = opening_reuse_stats(output);
+    print_section("Opening Reuse");
+    print_kv("opening_requests_total", stats.total_requests);
+    print_kv("opening_requests_unique", stats.unique_requests);
+    print_kv("opening_requests_aliased", stats.aliased_requests);
     print_kv(
         "opening_request_reuse_ratio",
-        format!(
-            "{:.4}",
-            per_unit(digests.len().saturating_sub(unique_digests.len()) as f64, digests.len())
-        ),
+        format!("{:.4}", per_unit(stats.aliased_requests as f64, stats.total_requests)),
     );
+    print_kv("opening_id_digests_recorded", unique_opening_ids.len());
 }
 
 fn print_compact_opening_build_breakdown(perf: &SimpleKernelBuildPerf) {
@@ -597,21 +606,21 @@ fn print_compact_opening_build_breakdown(perf: &SimpleKernelBuildPerf) {
 }
 
 fn print_verify_breakdown(
+    title: &str,
     perf: &neo_fold_next::rv64im::Rv64imPublicProofVerifyPerf,
     opcode_count: usize,
     execution_rows: usize,
 ) {
-    print_section("Verify Breakdown");
+    print_section(title);
     println!("  {:26} {:>12} {:>14} {:>14}", "phase", "wall ms", "ms/op", "ms/row");
     for (label, ms) in [
         ("public_claim_digests", perf.public_claim_digests_ms),
         ("public_bundle_digests", perf.public_bundle_digests_ms),
         ("public_bundle_bindings", perf.public_bundle_bindings_ms),
-        ("packaged_rebuild", perf.packaged_rebuild_ms),
-        ("verify_simple_kernel", perf.packaged_verify.simple_kernel.total_ms),
-        ("public_step_match", perf.packaged_verify.public_step_match_ms),
-        ("main_lane_verify", perf.packaged_verify.main_lane_verify_ms),
-        ("export_match", perf.export_match_ms),
+        ("root_main_lane_proof", perf.root_main_lane_proof_ms),
+        ("stage_package_verify", perf.stage_package_verify_ms),
+        ("kernel_opening_verify", perf.kernel_opening_verify_ms),
+        ("summary_consistency", perf.summary_consistency_ms),
     ] {
         println!(
             "  {:26} {:>12.3} {:>14.4} {:>14.4}",
@@ -622,55 +631,48 @@ fn print_verify_breakdown(
         );
     }
 
-    println!();
-    println!("  {:26} {:>12}", "verify_simple_kernel subphase", "wall ms");
-    println!(
-        "  {:26} {:>12.3}",
-        "expected_core", perf.packaged_verify.simple_kernel.expected_core_ms
-    );
-    println!(
-        "  {:26} {:>12.3}",
-        "trace_match", perf.packaged_verify.simple_kernel.trace_match_ms
-    );
-    println!(
-        "  {:26} {:>12.3}",
-        "stages_match", perf.packaged_verify.simple_kernel.stages_match_ms
-    );
-    println!(
-        "  {:26} {:>12.3}",
-        "stage_claims_match", perf.packaged_verify.simple_kernel.stage_claims_match_ms
-    );
-    println!(
-        "  {:26} {:>12.3}",
-        "kernel_claims_match", perf.packaged_verify.simple_kernel.kernel_claims_match_ms
-    );
-    println!(
-        "  {:26} {:>12.3}",
-        "stage_package_verify",
-        perf.packaged_verify
-            .simple_kernel
-            .stage_package_bundle
-            .total_ms
-    );
-    println!(
-        "  {:26} {:>12.3}",
-        "kernel_opening_verify",
-        perf.packaged_verify
-            .simple_kernel
-            .kernel_opening_bundle
-            .total_ms
-    );
-}
-
-fn exact_opening_claim_stats(claims: &[ExactOpeningClaim]) -> ExactOpeningClaimStats {
-    let mut stats = ExactOpeningClaimStats::default();
-    for claim in claims {
-        stats.claims += 1;
-        stats.logical_width += claim.logical_width;
-        stats.packed_rows += claim.packed_rows;
-        stats.packed_cols += claim.packed_cols;
+    if perf.public_kernel_build.total_ms > 0.0 {
+        println!(
+            "  {:26} {:>12.3} {:>14.4} {:>14.4}",
+            "build_public_kernel",
+            perf.public_kernel_build.total_ms,
+            per_unit(perf.public_kernel_build.total_ms, opcode_count),
+            per_unit(perf.public_kernel_build.total_ms, execution_rows),
+        );
+        println!();
+        println!("  {:26} {:>12}", "build_public_kernel subphase", "wall ms");
+        println!(
+            "  {:26} {:>12.3}",
+            "root_lane_witness", perf.public_kernel_build.root_lane_witness_ms
+        );
+        println!(
+            "  {:26} {:>12.3}",
+            "root_lane_columns", perf.public_kernel_build.root_lane_columns_ms
+        );
+        println!(
+            "  {:26} {:>12.3}",
+            "root_lane_commitment", perf.public_kernel_build.root_lane_commitment_ms
+        );
+        println!(
+            "  {:26} {:>12.3}",
+            "prepared_step_bindings", perf.public_kernel_build.prepared_step_bindings_ms
+        );
+        println!(
+            "  {:26} {:>12.3}",
+            "stage_claim_build", perf.public_kernel_build.stage_claim_bundle.total_ms
+        );
+        println!(
+            "  {:26} {:>12.3}",
+            "stage_package_build", perf.public_kernel_build.stage_package_bundle.total_ms
+        );
+        println!(
+            "  {:26} {:>12.3}",
+            "kernel_opening_build", perf.public_kernel_build.kernel_opening_bundle.total_ms
+        );
+    } else {
+        println!();
+        println!("  theorem verify uses the carried proof witness; no public-kernel replay runs in this path");
     }
-    stats
 }
 
 fn packaged_proof_stats(packaged: &PackagedProof) -> PackagedProofStats {
@@ -943,13 +945,26 @@ fn rv64im_mixed_opcode_perf_snapshot() {
     let build_ms = millis_since(build_started);
 
     let prove_started = Instant::now();
-    let (proved_witness, proof, prove_perf) = prove_rv64im_proof_with_perf(&input).expect("prove rv64im proof");
+    let (proof, prove_perf) = prove_rv64im_public_proof_with_perf(&input).expect("prove rv64im public proof");
     let prove_ms = millis_since(prove_started);
 
     let verify_started = Instant::now();
-    let (verified_witness, verify_perf) = verify_rv64im_proof_with_perf(&input, &proof).expect("verify rv64im proof");
+    let verify_perf = verify_rv64im_public_proof_with_perf(&proof).expect("verify rv64im public proof");
     let verify_ms = millis_since(verify_started);
+
+    let verify_replay_started = Instant::now();
+    let verify_replay_perf = validate_rv64im_public_proof_against_input_with_perf(&input, &proof)
+        .expect("validate rv64im public proof against input");
+    let verify_replay_ms = millis_since(verify_replay_started);
     let end_to_end_ms = millis_since(end_to_end_started);
+
+    let prove_witness_started = Instant::now();
+    let proved_witness = build_rv64im_proof_witness(&input).expect("build rv64im proof witness");
+    let prove_witness_ms = millis_since(prove_witness_started);
+
+    let verify_witness_started = Instant::now();
+    let verified_witness = verify_rv64im_proof(&proof).expect("verify rv64im proof witness");
+    let verify_witness_ms = millis_since(verify_witness_started);
 
     let execution_row_count = output.trace.execution_rows.len();
     let real_row_count = output
@@ -998,9 +1013,9 @@ fn rv64im_mixed_opcode_perf_snapshot() {
         .iter()
         .filter(|count| **count > 0)
         .count();
-    let stage1_exact_openings = exact_opening_claim_stats(&output.stage_claims.stage1.opening_manifest.claims);
-    let stage2_exact_openings = exact_opening_claim_stats(&output.stage_claims.stage2.opening_manifest.claims);
-    let stage3_exact_openings = exact_opening_claim_stats(&output.stage_claims.stage3.opening_manifest.claims);
+    let stage1_exact_openings = ExactOpeningClaimStats::default();
+    let stage2_exact_openings = ExactOpeningClaimStats::default();
+    let stage3_exact_openings = ExactOpeningClaimStats::default();
     let stage1_packaged = packaged_proof_stats(&output.stage_packages.stage1.packaged);
     let stage2_packaged = packaged_proof_stats(&output.stage_packages.stage2.packaged);
     let stage3_packaged = packaged_proof_stats(&output.stage_packages.stage3.packaged);
@@ -1042,14 +1057,17 @@ fn rv64im_mixed_opcode_perf_snapshot() {
         proved_witness.kernel_claims.digest,
         verified_witness.kernel_claims.digest
     );
-    assert_eq!(proved_witness.public_step_count as usize, output.public_steps.len());
-    assert_eq!(proof.statement.public_step_count as usize, output.public_steps.len());
     assert_eq!(
-        proof.kernel.main_lane.public_step_count() as usize,
-        output.public_steps.len()
+        proved_witness.root_lane_columns.time_len as usize,
+        output.prepared_steps.len()
+    );
+    assert_eq!(proof.statement.public_step_count as usize, output.prepared_steps.len());
+    assert_eq!(
+        proof.kernel.root_lane_columns.time_len as usize,
+        output.prepared_steps.len()
     );
     assert_eq!(execution_row_count, output.prepared_steps.len());
-    assert_eq!(execution_row_count, output.public_steps.len());
+    assert_eq!(execution_row_count, output.root_lane_columns.time_len as usize);
     assert_eq!(
         proved_witness.trace.shape.execution_row_count as usize,
         execution_row_count
@@ -1132,9 +1150,15 @@ fn rv64im_mixed_opcode_perf_snapshot() {
             ("stage2_summary", stage2_ms),
             ("stage3_summary", stage3_ms),
             ("build_parity_case", parity_ms),
+            ("root_lane_witness", build_perf.root_lane_witness_ms),
+            ("root_lane_columns", build_perf.root_lane_columns_ms),
+            ("root_lane_commitment", build_perf.root_lane_commitment_ms),
+            ("public_steps", build_perf.public_steps_ms),
             ("build_simple_kernel", build_ms),
-            ("prove_rv64im_proof", prove_ms),
-            ("verify_rv64im_proof", verify_ms),
+            ("prove_rv64im_public_proof", prove_ms),
+            ("verify_rv64im_public_proof", verify_ms),
+            ("build_rv64im_proof_witness", prove_witness_ms),
+            ("verify_rv64im_proof_witness", verify_witness_ms),
         ],
         opcode_count,
         execution_row_count,
@@ -1187,10 +1211,11 @@ fn rv64im_mixed_opcode_perf_snapshot() {
     print_kv("effect_rows", effect_row_count);
     print_kv("commit_rows", commit_row_count);
     print_kv("prepared_steps", output.prepared_steps.len());
-    print_kv("public_steps", output.public_steps.len());
+    print_kv("public_steps", output.root_lane_columns.time_len);
     print_kv("stage1_rows", output.stages.stage1.rows.len());
     print_kv("stage3_continuity", output.stages.stage3.continuity.len());
     print_kv("transcript_events", output.stages.transcript.events.len());
+    print_root_main_lane_family(&output);
 
     print_family_rows("Row Expansion by Family", &family_rows, opcode_count);
     print_lookup_summary(lookup_summary, opcode_count, &twist_family_counts);
@@ -1223,7 +1248,18 @@ fn rv64im_mixed_opcode_perf_snapshot() {
     print_opening_surface_totals(opening_totals, opcode_count, execution_row_count);
     print_opening_reuse_proxy(&output);
     print_opening_label_summary(&selected_opening_labels);
-    print_verify_breakdown(&verify_perf, opcode_count, execution_row_count);
+    print_verify_breakdown(
+        "Theorem Verify Breakdown",
+        &verify_perf,
+        opcode_count,
+        execution_row_count,
+    );
+    print_verify_breakdown(
+        "Verify + Input Replay Breakdown",
+        &verify_replay_perf,
+        opcode_count,
+        execution_row_count,
+    );
 
     let total_executed_opcodes = build.executed_steps.len();
     let unique_opcode_labels = collect_unique_opcode_labels(&build);
@@ -1232,22 +1268,29 @@ fn rv64im_mixed_opcode_perf_snapshot() {
         "total opcodes",
         format!("{total_executed_opcodes} ({unique_opcode_labels})"),
     );
-    print_kv("total proving time", format!("{prove_ms:.3} ms"));
+    print_kv("total public proving time", format!("{prove_ms:.3} ms"));
     print_kv(
-        "proving time (avg) per opcode",
+        "public proving time (avg) per opcode",
         format!("{:.4} ms", per_unit(prove_ms, total_executed_opcodes)),
     );
-    print_kv("total verifying time", format!("{verify_ms:.3} ms"));
+    print_kv("total public verifying time", format!("{verify_ms:.3} ms"));
     print_kv(
-        "verifying time (avg) per opcode",
+        "public verifying time (avg) per opcode",
         format!("{:.4} ms", per_unit(verify_ms, total_executed_opcodes)),
     );
+    print_kv("public verify + replay time", format!("{verify_replay_ms:.3} ms"));
+    print_kv(
+        "public verify + replay time (avg) per opcode",
+        format!("{:.4} ms", per_unit(verify_replay_ms, total_executed_opcodes)),
+    );
+    print_kv("proof witness build time", format!("{prove_witness_ms:.3} ms"));
+    print_kv("verified witness build time", format!("{verify_witness_ms:.3} ms"));
     print_kv("total end-to-end time", format!("{end_to_end_ms:.3} ms"));
     print_kv(
         "prove main-lane subphase",
         format!(
             "kernel_build={:.3} ms main_lane={:.3} ms export={:.3} ms",
-            prove_perf.simple_kernel.total_ms, prove_perf.packaged_main_lane_ms, prove_perf.public_export_ms
+            prove_perf.simple_kernel.total_ms, prove_perf.main_lane_ms, prove_perf.public_export_ms
         ),
     );
 }

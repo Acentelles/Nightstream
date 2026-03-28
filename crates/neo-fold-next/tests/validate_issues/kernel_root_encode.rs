@@ -1,6 +1,6 @@
 use neo_fold_next::chip8::spec::WITNESS_WIDTH;
+use neo_fold_next::witness_layout::decode_vector_for_ccs_m;
 use neo_math::F;
-use neo_memory::ajtai::decode_vector_for_ccs_m;
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::PrimeCharacteristicRing;
 

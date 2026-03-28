@@ -7,6 +7,7 @@
 //! - `opening`: shared opening-claim and time-opening summary boundary
 //! - `step_build`: frontend-produced step packaging and extension records
 //! - `time_opening`, `finalize`: final opening and packaged-proof boundaries
+//! - `witness_layout`: shared local packed witness layout helpers
 //! - `vm`: static VM contracts
 //! - `chip8`: current VM frontend and staged kernel
 
@@ -21,3 +22,4 @@ pub mod step_build;
 pub mod time_opening;
 pub mod verifier;
 pub mod vm;
+pub mod witness_layout;

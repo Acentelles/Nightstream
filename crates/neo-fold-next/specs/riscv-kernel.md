@@ -2448,7 +2448,11 @@ Normative meaning:
 
 ### 8.2 What is projected
 
-All semantic expanded rows `j ∈ [0, N)` are exported as `PreparedStep_j`. A
+All semantic expanded rows `j ∈ [0, N)` are projected into the theorem package
+through the root main-lane row-local CCS relation from §11. A conforming proof
+may expose that projection either as per-row `PreparedStep_j` objects or as an
+equivalent folded root proof package, but the kernel theorem is defined over
+the expanded semantic trace itself, not merely over exported summaries of it. A
 future bridge layer may additionally expose architectural-sequence boundaries,
 but the kernel proof object is defined over the expanded trace.
 
@@ -2478,8 +2482,11 @@ For this kernel version, the normative bridge mechanism is:
 
 - explicit row-opening / row-membership proofs from `C_lane`,
 - followed by `RootEncode(z_j)`,
-- followed by recomputation of the root Ajtai commitment
-  `PreparedStep_j.mcs.c = Ajtai_commit(Z_j)`.
+- followed by an accepted root main-lane CCS proof package for the
+  authenticated semantic row,
+- with recomputation of the root Ajtai commitment
+  `PreparedStep_j.mcs.c = Ajtai_commit(Z_j)` required whenever a private
+  `PreparedStep_j` helper is exported.
 
 Formal linear row decomposition is a possible optimization, but it is not a
 conforming alternative under this spec.
@@ -2496,18 +2503,33 @@ OpeningClaim {
     commitment_id,   // Lane | BytecodeRa | AluRa | BranchRa | DecodeHandoff |
                      // RegTwist | RamTwist | RomTable | BytecodeTable |
                      // AluSubtables | BranchTable | RootProver(...)
+    family_object_id,
     point,
-    polynomial_ids,
-    claimed_values,
+    selected_refs,
     digest,
 }
 ```
+
+`family_object_id` names one committed family object under the chosen
+`commitment_id`. `selected_refs` is the canonical list of selected members of
+that family at `point`, ordered in the local family registry order. Each
+selected ref carries enough information to bind:
+
+- the logical member index inside the family,
+- the logical opening identity for that exact `(family_object_id, point,
+  logical_member_index)` request,
+- the opened value digest.
+
+The theorem-facing opening boundary owns committed family objects and canonical
+selected refs. It does not require proof-style transport of one fresh exact
+opening witness per consumer of the same family work.
 
 ### 9.2 Grouping rule
 
 There are two distinct grouping notions:
 
-- direct kernel opening claims are keyed by `(commitment_id, point)`,
+- direct kernel opening claims are keyed by
+  `(commitment_id, family_object_id, point)`,
 - later claim-space reduction groups are keyed by the narrower
   `(source, domain, point)` rule owned by `time_opening`, with member claims
   ordered canonically by their manifest ordinals within that group.
@@ -2517,14 +2539,17 @@ opening surface; the second identifies one transcript-local reduction bucket.
 
 Same-surface collision rule:
 
-- if two required direct openings land on the same `(commitment_id, point)`,
-  they remain distinct direct claims only through their exact `polynomial_ids`,
-- the kernel boundary does not require canonical coalescing of such
-  same-surface claims,
-- canonical manifest order breaks same-surface ties by `polynomial_ids` in the
-  commitment-local registry order,
+- if two required direct openings land on the same
+  `(commitment_id, family_object_id, point)`, they must alias to one canonical
+  direct opening surface,
+- consumers of that same-family surface contribute additional `selected_refs`
+  to that one claim instead of creating parallel claims,
+- canonical manifest order breaks same-surface ties by the local family member
+  order inside `selected_refs`,
 - two distinct claims with the same
-  `(commitment_id, point, polynomial_ids)` are illegal duplicates.
+  `(commitment_id, family_object_id, point)` are illegal duplicates,
+- two distinct selected refs with the same logical opening identity are illegal
+  duplicates.
 
 The opening boundary is split into two disjoint ownership buckets:
 
@@ -2562,12 +2587,12 @@ RootProver(...)
 Canonical non-kernel-fixed manifest sort key:
 
 ```text
-(commitment_id_order, point_arity, point_coordinates, polynomial_ids)
+(commitment_id_order, family_object_id, point_arity, point_coordinates, selected_refs)
 ```
 
 Normative rules:
 
-- `polynomial_ids` must be strictly increasing in the local registry order of
+- `selected_refs` must be strictly increasing in the local registry order of
   the referenced commitment family,
 - `point_arity` is the number of coordinates in the evaluation point,
 - `point_coordinates` are ordered exactly as the commitment family defines them
@@ -2579,7 +2604,7 @@ Normative rules:
   Goldilocks coefficients `(c0, c1)` in that order, each using the
   implementation's canonical field-element byte encoding,
 - the manifest must not contain duplicate
-  `(commitment_id, point, polynomial_ids)` entries,
+  `(commitment_id, family_object_id, point)` entries,
 - `LaneShiftProof` and other transcript-local reduction proofs are not
   `OpeningClaim`s and must not appear in either opening manifest.
 
@@ -2588,13 +2613,16 @@ Normative rules:
 The soundness-carrying opening provenance chain is:
 
 ```text
-root0 → OpeningClaim → ExactOpeningWitness → OpeningRefinement
-      → RowProjectionWitness → BridgeBinding → PreparedStep
+root0 → committed family object → OpeningClaim(selected refs)
+      → OpeningRefinement → RowProjectionWitness
+      → RootMainLaneRowProof → BridgeBinding → claim summaries
 ```
 
-This chain must remain explicit: commitment binding, opening verification,
-semantic row projection, and bridge binding are distinct obligations even when a
-single implementation function verifies them together.
+This chain must remain explicit: commitment binding, selected-opening
+authentication, semantic row projection, root main-lane row-proof checking, and
+bridge binding are distinct obligations even when one implementation function
+verifies them together. `PreparedStep` may exist as a private audit artifact,
+but it is not itself the normative theorem-facing provenance object.
 
 ### 9.5 Rust-facing kernel boundary
 
@@ -2662,6 +2690,9 @@ Stage proof structures are split by stage as follows:
   increments, and RAM `ra` virtualization) proofs.
 - `Stage3Proof` includes shift proof (PC only, no burst), continuity check,
   and row bindings.
+- `RootMainLaneProof` includes the accepted row-local CCS proof package over
+  the authenticated semantic rows from §11, exported either per row or in an
+  equivalent folded form.
 
 ---
 
@@ -2774,6 +2805,17 @@ PreparedStep_j = {
     deferred_extensions: [],
 }
 ```
+
+`RootEncode` is normative because it fixes the canonical witness encoding for a
+semantic row. `PreparedStep_j` is not a required theorem-facing object. A
+conforming proof may expose it as a private audit helper, but the public kernel
+boundary is owned by:
+
+- one committed root lane family for the full `38 × T` semantic-row object,
+- canonical selected row refs into that committed family,
+- an accepted root main-lane CCS proof package over the authenticated semantic
+  rows,
+- bridge and stage claim summaries derived from those selected refs.
 
 Normative rule for `RootEncode`:
 
@@ -3031,20 +3073,34 @@ Row 28: L = ONE - IsLoad - IsStore,     R = MEM_VAL_HI,                      O =
 
 This section restates the normative bridge mechanism from §8.4:
 
-- explicit row-opening proofs against `C_lane`, one per semantic row
-  `j ∈ [0, N)`,
-- followed by `RootEncode(z_j)`,
-- followed by Ajtai commitment recomputation.
+- one committed root lane family `C_lane` for the full semantic-row object,
+- canonical selected row refs against that committed family for the rows needed
+  by the bridge,
+- `RootEncode(z_j)` only as the local encoding rule for a selected semantic
+  row,
+- root main-lane proof binding from authenticated selected rows to the accepted
+  row-local CCS theorem package,
+- bridge binding from those authenticated and proved rows to the accepted
+  row-local claim summaries.
 
 Bridge verifier algorithm for row `j`:
 
-1. Verify the batched opening of the 37 committed non-fixed lane columns at
-   `j_bits` under `C_lane`.
-2. Recover `z_j` by prepending `ONE = 1`.
+1. Verify that the selected row refs for `j_bits` are authenticated against the
+   committed root lane family object.
+2. Recover `z_j` from those authenticated lane values by prepending `ONE = 1`.
 3. Compute `RootEncode(z_j)`.
-4. Check `PreparedStep_j.witness.Z = Z_j`.
-5. Recompute and check `PreparedStep_j.mcs.c = Ajtai_commit(Z_j)`.
-6. Check `PreparedStep_j.mcs.x = [F::ONE]` and `m_in = 1`.
+4. Verify that the resulting row-local encoding is accepted by the root
+   main-lane CCS proof package for row `j`, or by an equivalent folded proof
+   package that carries the same theorem.
+5. Bind the accepted row-local execution object to the accepted bridge summary
+   for row `j`.
+6. If a private `PreparedStep_j` helper is exported, check that it is derived
+   from the same `RootEncode(z_j)` object. This helper check is optional and
+   not part of the required theorem-facing surface.
+
+When multiple consumers request the same `(C_lane, j_bits)` row, the verifier
+authenticates that selected row once and reuses it for all downstream bridge,
+stage, and kernel-opening obligations.
 
 ---
 
@@ -3080,34 +3136,42 @@ An RV64IM integration may claim conformance to this spec only if:
    `Align(4, JUMP_TARGET) = 1`.
 10. Booleanity is explicitly proved; Ajtai norm bounds do not substitute.
 11. All tables are committed and absorbed into `root0`.
-12. The bridge uses explicit row-opening proofs against `C_lane`.
-13. Kernel and root opening manifests are disjoint.
-14. Strong kernel soundness requires the adjacent-state theorem via
+12. The bridge uses canonical selected openings against one committed root lane
+    family object `C_lane`; repeated work on the same `(family, point)` aliases
+    to one authenticated opening surface rather than spawning one fresh
+    theorem-facing row-opening object per consumer.
+13. Authenticated selected openings against `C_lane` do not by themselves close
+    the root execution theorem. A conforming proof must also verify the root
+    main-lane row-local CCS relation from §11, either per row or through an
+    equivalent folded theorem package. Summary-only or digest-only binding of
+    semantic rows is non-conforming.
+14. Kernel and root opening manifests are disjoint.
+15. Strong kernel soundness requires the adjacent-state theorem via
     `Stage2TemporalContext` and `PcAdjacentBridge`.
-15. Division/remainder uses advice + verification with dedicated authenticated
+16. Division/remainder uses advice + verification with dedicated authenticated
     support relations for divide-by-zero, unsigned remainder bounds, and
     overflow-case divisor adjustment, together with explicit reconstruction of
     the signed remainder from the dividend sign and a proof of
     `SIGNED_DIVREM_SPEC`; prose-only corner-case handling is non-conforming.
-16. Lowering from ROM to expanded bytecode is deterministic and part of the
+17. Lowering from ROM to expanded bytecode is deterministic and part of the
     accepted theorem package. Conforming verification must bind the public ROM
     image and declared `lowering_version_id` directly to `C_rom_table` and
     `C_bytecode_table` by table evaluation or commitment recomputation;
     prover-chosen lowering or digest-only binding paths are non-conforming.
-17. The exact kernel boundary determines the accepted theorem package without
+18. The exact kernel boundary determines the accepted theorem package without
     additional external temporal-support premises.
-18. Trivial predicates that depend only on already-opened low bits or bytes may
+19. Trivial predicates that depend only on already-opened low bits or bytes may
     be represented as virtual instructions, but their proof rule is direct
     arithmetic unless a separate lookup family is explicitly justified by a
     measured prover-cost win.
-19. Every multi-row lowered sequence ships with machine-checkable correctness
+20. Every multi-row lowered sequence ships with machine-checkable correctness
     and determinism proofs; prose-only reasoning or empirical tests are
     non-conforming.
-20. RAM chunking parameters (`ram_addr_d`, `ram_chunk_bits`) are public,
+21. RAM chunking parameters (`ram_addr_d`, `ram_chunk_bits`) are public,
     absorbed into `root0`, and match the committed `C_ram` address-factor
     bundle; prover-private RAM chunking or hidden `ra`-virtualization layouts
     are non-conforming.
-21. Accepted proofs attest a full halted execution ending in a sequence-final
+22. Accepted proofs attest a full halted execution ending in a sequence-final
     terminating `ECALL` row. Valid-prefix claims are non-conforming in this
     kernel version.
 

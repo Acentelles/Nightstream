@@ -4,7 +4,6 @@ use neo_ajtai::{set_global_pp_seeded, AjtaiSModule};
 use neo_ccs::traits::SModuleHomomorphism;
 use neo_ccs::{CcsClaim, CcsWitness, Mat};
 use neo_math::{KExtensions, D, F, K};
-use neo_memory::ajtai::{commit_cols_for_ccs_m, encode_vector_for_ccs_m};
 use neo_params::NeoParams;
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
@@ -19,6 +18,7 @@ use crate::chip8::tables::{
     build_rom_table, decode_to_output, flatten_alu_key, flatten_eq4_key, OperandSelector, RAM_SINK_ADDR, REG_SINK_ADDR,
 };
 use crate::proof::StepInput;
+use crate::witness_layout::{commit_cols_for_ccs_m, encode_vector_for_ccs_m};
 
 use super::evidence::{build_kernel_stage3_digest_surfaces_from_frames, KernelStage3DigestSurface};
 #[cfg(feature = "chip8-audit")]

@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::proof::PackagedProof;
 
+use super::canonical_openings::SelectedOpeningRef;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum OpeningPointLabel {
     Stage1First,
@@ -76,41 +78,34 @@ impl OpeningPointLabel {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct DigestPoint {
-    pub digest: [u8; 32],
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Stage1OpeningPoints {
-    pub first: DigestPoint,
-    pub effect: DigestPoint,
-    pub commit: DigestPoint,
-    pub last: DigestPoint,
+    pub first: SelectedOpeningRef,
+    pub effect: SelectedOpeningRef,
+    pub commit: SelectedOpeningRef,
+    pub last: SelectedOpeningRef,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Stage2OpeningPoints {
-    pub first_read: DigestPoint,
-    pub last_read: DigestPoint,
-    pub first_write: DigestPoint,
-    pub last_write: DigestPoint,
-    pub first_ram: DigestPoint,
-    pub last_ram: DigestPoint,
-    pub first_twist: DigestPoint,
-    pub last_twist: DigestPoint,
+    pub first_read: Option<SelectedOpeningRef>,
+    pub last_read: Option<SelectedOpeningRef>,
+    pub first_write: Option<SelectedOpeningRef>,
+    pub last_write: Option<SelectedOpeningRef>,
+    pub first_ram: Option<SelectedOpeningRef>,
+    pub last_ram: Option<SelectedOpeningRef>,
+    pub first_twist: Option<SelectedOpeningRef>,
+    pub last_twist: Option<SelectedOpeningRef>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Stage3OpeningPoints {
-    pub first_continuity: DigestPoint,
-    pub last_continuity: DigestPoint,
+    pub first_continuity: Option<SelectedOpeningRef>,
+    pub last_continuity: Option<SelectedOpeningRef>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Stage1SelectedOpeningClaim {
-    pub source_commitment_digest: [u8; 32],
-    pub source_opening_manifest_digest: [u8; 32],
-    pub source_opening_proof_digest: [u8; 32],
+    pub rows_family_digest: [u8; 32],
     pub row_count: u64,
     pub effect_row_count: u64,
     pub commit_row_count: u64,
@@ -127,9 +122,10 @@ pub struct Stage1SelectedOpeningClaim {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Stage2SelectedOpeningClaim {
-    pub source_commitment_digest: [u8; 32],
-    pub source_opening_manifest_digest: [u8; 32],
-    pub source_opening_proof_digest: [u8; 32],
+    pub register_reads_family_digest: [u8; 32],
+    pub register_writes_family_digest: [u8; 32],
+    pub ram_events_family_digest: [u8; 32],
+    pub twist_links_family_digest: [u8; 32],
     pub register_read_count: u64,
     pub register_write_count: u64,
     pub ram_event_count: u64,
@@ -144,9 +140,7 @@ pub struct Stage2SelectedOpeningClaim {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Stage3SelectedOpeningClaim {
-    pub source_commitment_digest: [u8; 32],
-    pub source_opening_manifest_digest: [u8; 32],
-    pub source_opening_proof_digest: [u8; 32],
+    pub continuity_family_digest: [u8; 32],
     pub continuity_count: u64,
     pub final_step_count: u64,
     pub halted: bool,
@@ -187,14 +181,14 @@ pub struct SimpleKernelStagePackageBundle {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct KernelBindingOpeningPoints {
-    pub first_binding: DigestPoint,
-    pub last_binding: DigestPoint,
+    pub first_binding: Option<SelectedOpeningRef>,
+    pub last_binding: Option<SelectedOpeningRef>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct KernelPreparedStepOpeningPoints {
-    pub first_prepared_step: DigestPoint,
-    pub last_prepared_step: DigestPoint,
+    pub first_prepared_step: Option<SelectedOpeningRef>,
+    pub last_prepared_step: Option<SelectedOpeningRef>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -266,17 +260,33 @@ fn digest_to_words(digest: [u8; 32]) -> [u64; 4] {
     words
 }
 
-fn append_labeled_point(
+fn append_labeled_opening_ref(
     tr: &mut Poseidon2Transcript,
     tag_label: &'static [u8],
     point_label: &'static [u8],
-    digest_label: &'static [u8],
+    present_label: &'static [u8],
+    opening_id_label: &'static [u8],
+    value_digest_label: &'static [u8],
     label: OpeningPointLabel,
-    digest: [u8; 32],
+    reference: Option<&SelectedOpeningRef>,
 ) {
     tr.append_u64s(tag_label, &[label.tag()]);
     tr.append_message(point_label, label.as_str().as_bytes());
-    tr.append_message(digest_label, &digest);
+    tr.append_u64s(present_label, &[reference.is_some() as u64]);
+    if let Some(reference) = reference {
+        tr.append_message(opening_id_label, &reference.id.digest);
+        tr.append_message(value_digest_label, &reference.value_digest);
+    }
+}
+
+fn append_optional_ref_words(out: &mut Vec<u64>, reference: Option<&SelectedOpeningRef>) {
+    out.push(reference.is_some() as u64);
+    if let Some(reference) = reference {
+        out.extend(digest_to_words(reference.id.digest));
+        out.extend(digest_to_words(reference.value_digest));
+    } else {
+        out.extend([0u64; 8]);
+    }
 }
 
 impl Stage1OpeningPoints {
@@ -289,268 +299,327 @@ impl Stage1OpeningPoints {
         ]
     }
 
+    pub fn opening_refs(&self) -> Vec<&SelectedOpeningRef> {
+        vec![&self.first, &self.effect, &self.commit, &self.last]
+    }
+
     pub fn first_digest_mut(&mut self) -> &mut [u8; 32] {
-        &mut self.first.digest
+        self.first.value_digest_mut()
     }
 
     fn append_digest_material(&self, tr: &mut Poseidon2Transcript) {
         tr.append_u64s(b"rv64im/stage_opening_points/variant", &[0]);
-        append_labeled_point(
+        append_labeled_opening_ref(
             tr,
             b"rv64im/stage_opening_points/tag",
             b"rv64im/stage_opening_points/label",
-            b"rv64im/stage_opening_points/digest",
+            b"rv64im/stage_opening_points/present",
+            b"rv64im/stage_opening_points/opening_id",
+            b"rv64im/stage_opening_points/value_digest",
             OpeningPointLabel::Stage1First,
-            self.first.digest,
+            Some(&self.first),
         );
-        append_labeled_point(
+        append_labeled_opening_ref(
             tr,
             b"rv64im/stage_opening_points/tag",
             b"rv64im/stage_opening_points/label",
-            b"rv64im/stage_opening_points/digest",
+            b"rv64im/stage_opening_points/present",
+            b"rv64im/stage_opening_points/opening_id",
+            b"rv64im/stage_opening_points/value_digest",
             OpeningPointLabel::Stage1Effect,
-            self.effect.digest,
+            Some(&self.effect),
         );
-        append_labeled_point(
+        append_labeled_opening_ref(
             tr,
             b"rv64im/stage_opening_points/tag",
             b"rv64im/stage_opening_points/label",
-            b"rv64im/stage_opening_points/digest",
+            b"rv64im/stage_opening_points/present",
+            b"rv64im/stage_opening_points/opening_id",
+            b"rv64im/stage_opening_points/value_digest",
             OpeningPointLabel::Stage1Commit,
-            self.commit.digest,
+            Some(&self.commit),
         );
-        append_labeled_point(
+        append_labeled_opening_ref(
             tr,
             b"rv64im/stage_opening_points/tag",
             b"rv64im/stage_opening_points/label",
-            b"rv64im/stage_opening_points/digest",
+            b"rv64im/stage_opening_points/present",
+            b"rv64im/stage_opening_points/opening_id",
+            b"rv64im/stage_opening_points/value_digest",
             OpeningPointLabel::Stage1Last,
-            self.last.digest,
+            Some(&self.last),
         );
     }
 
     fn append_word_material(&self, out: &mut Vec<u64>) {
         out.push(0);
-        out.extend(digest_to_words(self.first.digest));
-        out.extend(digest_to_words(self.effect.digest));
-        out.extend(digest_to_words(self.commit.digest));
-        out.extend(digest_to_words(self.last.digest));
+        append_optional_ref_words(out, Some(&self.first));
+        append_optional_ref_words(out, Some(&self.effect));
+        append_optional_ref_words(out, Some(&self.commit));
+        append_optional_ref_words(out, Some(&self.last));
     }
 }
 
 impl Stage2OpeningPoints {
     pub fn labels(&self) -> Vec<OpeningPointLabel> {
-        vec![
-            OpeningPointLabel::Stage2FirstRead,
-            OpeningPointLabel::Stage2LastRead,
-            OpeningPointLabel::Stage2FirstWrite,
-            OpeningPointLabel::Stage2LastWrite,
-            OpeningPointLabel::Stage2FirstRam,
-            OpeningPointLabel::Stage2LastRam,
-            OpeningPointLabel::Stage2FirstTwist,
-            OpeningPointLabel::Stage2LastTwist,
+        let mut labels = Vec::new();
+        if self.first_read.is_some() {
+            labels.push(OpeningPointLabel::Stage2FirstRead);
+        }
+        if self.last_read.is_some() {
+            labels.push(OpeningPointLabel::Stage2LastRead);
+        }
+        if self.first_write.is_some() {
+            labels.push(OpeningPointLabel::Stage2FirstWrite);
+        }
+        if self.last_write.is_some() {
+            labels.push(OpeningPointLabel::Stage2LastWrite);
+        }
+        if self.first_ram.is_some() {
+            labels.push(OpeningPointLabel::Stage2FirstRam);
+        }
+        if self.last_ram.is_some() {
+            labels.push(OpeningPointLabel::Stage2LastRam);
+        }
+        if self.first_twist.is_some() {
+            labels.push(OpeningPointLabel::Stage2FirstTwist);
+        }
+        if self.last_twist.is_some() {
+            labels.push(OpeningPointLabel::Stage2LastTwist);
+        }
+        labels
+    }
+
+    pub fn opening_refs(&self) -> Vec<&SelectedOpeningRef> {
+        [
+            self.first_read.as_ref(),
+            self.last_read.as_ref(),
+            self.first_write.as_ref(),
+            self.last_write.as_ref(),
+            self.first_ram.as_ref(),
+            self.last_ram.as_ref(),
+            self.first_twist.as_ref(),
+            self.last_twist.as_ref(),
         ]
+        .into_iter()
+        .flatten()
+        .collect()
     }
 
     pub fn first_digest_mut(&mut self) -> &mut [u8; 32] {
-        &mut self.first_read.digest
+        self.first_read
+            .as_mut()
+            .or(self.last_read.as_mut())
+            .or(self.first_write.as_mut())
+            .or(self.last_write.as_mut())
+            .or(self.first_ram.as_mut())
+            .or(self.last_ram.as_mut())
+            .or(self.first_twist.as_mut())
+            .or(self.last_twist.as_mut())
+            .expect("stage2 selected opening claim missing selected points")
+            .value_digest_mut()
     }
 
     fn append_digest_material(&self, tr: &mut Poseidon2Transcript) {
         tr.append_u64s(b"rv64im/stage_opening_points/variant", &[1]);
-        append_labeled_point(
-            tr,
-            b"rv64im/stage_opening_points/tag",
-            b"rv64im/stage_opening_points/label",
-            b"rv64im/stage_opening_points/digest",
-            OpeningPointLabel::Stage2FirstRead,
-            self.first_read.digest,
-        );
-        append_labeled_point(
-            tr,
-            b"rv64im/stage_opening_points/tag",
-            b"rv64im/stage_opening_points/label",
-            b"rv64im/stage_opening_points/digest",
-            OpeningPointLabel::Stage2LastRead,
-            self.last_read.digest,
-        );
-        append_labeled_point(
-            tr,
-            b"rv64im/stage_opening_points/tag",
-            b"rv64im/stage_opening_points/label",
-            b"rv64im/stage_opening_points/digest",
-            OpeningPointLabel::Stage2FirstWrite,
-            self.first_write.digest,
-        );
-        append_labeled_point(
-            tr,
-            b"rv64im/stage_opening_points/tag",
-            b"rv64im/stage_opening_points/label",
-            b"rv64im/stage_opening_points/digest",
-            OpeningPointLabel::Stage2LastWrite,
-            self.last_write.digest,
-        );
-        append_labeled_point(
-            tr,
-            b"rv64im/stage_opening_points/tag",
-            b"rv64im/stage_opening_points/label",
-            b"rv64im/stage_opening_points/digest",
-            OpeningPointLabel::Stage2FirstRam,
-            self.first_ram.digest,
-        );
-        append_labeled_point(
-            tr,
-            b"rv64im/stage_opening_points/tag",
-            b"rv64im/stage_opening_points/label",
-            b"rv64im/stage_opening_points/digest",
-            OpeningPointLabel::Stage2LastRam,
-            self.last_ram.digest,
-        );
-        append_labeled_point(
-            tr,
-            b"rv64im/stage_opening_points/tag",
-            b"rv64im/stage_opening_points/label",
-            b"rv64im/stage_opening_points/digest",
-            OpeningPointLabel::Stage2FirstTwist,
-            self.first_twist.digest,
-        );
-        append_labeled_point(
-            tr,
-            b"rv64im/stage_opening_points/tag",
-            b"rv64im/stage_opening_points/label",
-            b"rv64im/stage_opening_points/digest",
-            OpeningPointLabel::Stage2LastTwist,
-            self.last_twist.digest,
-        );
+        for (label, reference) in [
+            (OpeningPointLabel::Stage2FirstRead, self.first_read.as_ref()),
+            (OpeningPointLabel::Stage2LastRead, self.last_read.as_ref()),
+            (OpeningPointLabel::Stage2FirstWrite, self.first_write.as_ref()),
+            (OpeningPointLabel::Stage2LastWrite, self.last_write.as_ref()),
+            (OpeningPointLabel::Stage2FirstRam, self.first_ram.as_ref()),
+            (OpeningPointLabel::Stage2LastRam, self.last_ram.as_ref()),
+            (OpeningPointLabel::Stage2FirstTwist, self.first_twist.as_ref()),
+            (OpeningPointLabel::Stage2LastTwist, self.last_twist.as_ref()),
+        ] {
+            append_labeled_opening_ref(
+                tr,
+                b"rv64im/stage_opening_points/tag",
+                b"rv64im/stage_opening_points/label",
+                b"rv64im/stage_opening_points/present",
+                b"rv64im/stage_opening_points/opening_id",
+                b"rv64im/stage_opening_points/value_digest",
+                label,
+                reference,
+            );
+        }
     }
 
     fn append_word_material(&self, out: &mut Vec<u64>) {
         out.push(1);
-        out.extend(digest_to_words(self.first_read.digest));
-        out.extend(digest_to_words(self.last_read.digest));
-        out.extend(digest_to_words(self.first_write.digest));
-        out.extend(digest_to_words(self.last_write.digest));
-        out.extend(digest_to_words(self.first_ram.digest));
-        out.extend(digest_to_words(self.last_ram.digest));
-        out.extend(digest_to_words(self.first_twist.digest));
-        out.extend(digest_to_words(self.last_twist.digest));
+        append_optional_ref_words(out, self.first_read.as_ref());
+        append_optional_ref_words(out, self.last_read.as_ref());
+        append_optional_ref_words(out, self.first_write.as_ref());
+        append_optional_ref_words(out, self.last_write.as_ref());
+        append_optional_ref_words(out, self.first_ram.as_ref());
+        append_optional_ref_words(out, self.last_ram.as_ref());
+        append_optional_ref_words(out, self.first_twist.as_ref());
+        append_optional_ref_words(out, self.last_twist.as_ref());
     }
 }
 
 impl Stage3OpeningPoints {
     pub fn labels(&self) -> Vec<OpeningPointLabel> {
-        vec![
-            OpeningPointLabel::Stage3FirstContinuity,
-            OpeningPointLabel::Stage3LastContinuity,
-        ]
+        let mut labels = Vec::new();
+        if self.first_continuity.is_some() {
+            labels.push(OpeningPointLabel::Stage3FirstContinuity);
+        }
+        if self.last_continuity.is_some() {
+            labels.push(OpeningPointLabel::Stage3LastContinuity);
+        }
+        labels
+    }
+
+    pub fn opening_refs(&self) -> Vec<&SelectedOpeningRef> {
+        [self.first_continuity.as_ref(), self.last_continuity.as_ref()]
+            .into_iter()
+            .flatten()
+            .collect()
     }
 
     pub fn first_digest_mut(&mut self) -> &mut [u8; 32] {
-        &mut self.first_continuity.digest
+        self.first_continuity
+            .as_mut()
+            .or(self.last_continuity.as_mut())
+            .expect("stage3 selected opening claim missing selected points")
+            .value_digest_mut()
     }
 
     fn append_digest_material(&self, tr: &mut Poseidon2Transcript) {
         tr.append_u64s(b"rv64im/stage_opening_points/variant", &[2]);
-        append_labeled_point(
-            tr,
-            b"rv64im/stage_opening_points/tag",
-            b"rv64im/stage_opening_points/label",
-            b"rv64im/stage_opening_points/digest",
-            OpeningPointLabel::Stage3FirstContinuity,
-            self.first_continuity.digest,
-        );
-        append_labeled_point(
-            tr,
-            b"rv64im/stage_opening_points/tag",
-            b"rv64im/stage_opening_points/label",
-            b"rv64im/stage_opening_points/digest",
-            OpeningPointLabel::Stage3LastContinuity,
-            self.last_continuity.digest,
-        );
+        for (label, reference) in [
+            (OpeningPointLabel::Stage3FirstContinuity, self.first_continuity.as_ref()),
+            (OpeningPointLabel::Stage3LastContinuity, self.last_continuity.as_ref()),
+        ] {
+            append_labeled_opening_ref(
+                tr,
+                b"rv64im/stage_opening_points/tag",
+                b"rv64im/stage_opening_points/label",
+                b"rv64im/stage_opening_points/present",
+                b"rv64im/stage_opening_points/opening_id",
+                b"rv64im/stage_opening_points/value_digest",
+                label,
+                reference,
+            );
+        }
     }
 
     fn append_word_material(&self, out: &mut Vec<u64>) {
         out.push(2);
-        out.extend(digest_to_words(self.first_continuity.digest));
-        out.extend(digest_to_words(self.last_continuity.digest));
+        append_optional_ref_words(out, self.first_continuity.as_ref());
+        append_optional_ref_words(out, self.last_continuity.as_ref());
     }
 }
 
 impl KernelBindingOpeningPoints {
     pub fn labels(&self) -> Vec<OpeningPointLabel> {
-        vec![
-            OpeningPointLabel::KernelFirstBinding,
-            OpeningPointLabel::KernelLastBinding,
-        ]
+        let mut labels = Vec::new();
+        if self.first_binding.is_some() {
+            labels.push(OpeningPointLabel::KernelFirstBinding);
+        }
+        if self.last_binding.is_some() {
+            labels.push(OpeningPointLabel::KernelLastBinding);
+        }
+        labels
+    }
+
+    pub fn opening_refs(&self) -> Vec<&SelectedOpeningRef> {
+        [self.first_binding.as_ref(), self.last_binding.as_ref()]
+            .into_iter()
+            .flatten()
+            .collect()
     }
 
     pub fn first_digest_mut(&mut self) -> &mut [u8; 32] {
-        &mut self.first_binding.digest
+        self.first_binding
+            .as_mut()
+            .or(self.last_binding.as_mut())
+            .expect("kernel binding opening claim missing selected points")
+            .value_digest_mut()
     }
 
     fn append_digest_material(&self, tr: &mut Poseidon2Transcript) {
         tr.append_u64s(b"rv64im/kernel_binding_opening_points/variant", &[0]);
-        append_labeled_point(
-            tr,
-            b"rv64im/kernel_binding_opening_points/tag",
-            b"rv64im/kernel_binding_opening_points/label",
-            b"rv64im/kernel_binding_opening_points/digest",
-            OpeningPointLabel::KernelFirstBinding,
-            self.first_binding.digest,
-        );
-        append_labeled_point(
-            tr,
-            b"rv64im/kernel_binding_opening_points/tag",
-            b"rv64im/kernel_binding_opening_points/label",
-            b"rv64im/kernel_binding_opening_points/digest",
-            OpeningPointLabel::KernelLastBinding,
-            self.last_binding.digest,
-        );
+        for (label, reference) in [
+            (OpeningPointLabel::KernelFirstBinding, self.first_binding.as_ref()),
+            (OpeningPointLabel::KernelLastBinding, self.last_binding.as_ref()),
+        ] {
+            append_labeled_opening_ref(
+                tr,
+                b"rv64im/kernel_binding_opening_points/tag",
+                b"rv64im/kernel_binding_opening_points/label",
+                b"rv64im/kernel_binding_opening_points/present",
+                b"rv64im/kernel_binding_opening_points/opening_id",
+                b"rv64im/kernel_binding_opening_points/value_digest",
+                label,
+                reference,
+            );
+        }
     }
 
     fn append_word_material(&self, out: &mut Vec<u64>) {
         out.push(0);
-        out.extend(digest_to_words(self.first_binding.digest));
-        out.extend(digest_to_words(self.last_binding.digest));
+        append_optional_ref_words(out, self.first_binding.as_ref());
+        append_optional_ref_words(out, self.last_binding.as_ref());
     }
 }
 
 impl KernelPreparedStepOpeningPoints {
     pub fn labels(&self) -> Vec<OpeningPointLabel> {
-        vec![
-            OpeningPointLabel::KernelFirstPreparedStep,
-            OpeningPointLabel::KernelLastPreparedStep,
-        ]
+        let mut labels = Vec::new();
+        if self.first_prepared_step.is_some() {
+            labels.push(OpeningPointLabel::KernelFirstPreparedStep);
+        }
+        if self.last_prepared_step.is_some() {
+            labels.push(OpeningPointLabel::KernelLastPreparedStep);
+        }
+        labels
+    }
+
+    pub fn opening_refs(&self) -> Vec<&SelectedOpeningRef> {
+        [self.first_prepared_step.as_ref(), self.last_prepared_step.as_ref()]
+            .into_iter()
+            .flatten()
+            .collect()
     }
 
     pub fn first_digest_mut(&mut self) -> &mut [u8; 32] {
-        &mut self.first_prepared_step.digest
+        self.first_prepared_step
+            .as_mut()
+            .or(self.last_prepared_step.as_mut())
+            .expect("kernel prepared-step opening claim missing selected points")
+            .value_digest_mut()
     }
 
     fn append_digest_material(&self, tr: &mut Poseidon2Transcript) {
         tr.append_u64s(b"rv64im/kernel_prepared_step_opening_points/variant", &[1]);
-        append_labeled_point(
-            tr,
-            b"rv64im/kernel_prepared_step_opening_points/tag",
-            b"rv64im/kernel_prepared_step_opening_points/label",
-            b"rv64im/kernel_prepared_step_opening_points/digest",
-            OpeningPointLabel::KernelFirstPreparedStep,
-            self.first_prepared_step.digest,
-        );
-        append_labeled_point(
-            tr,
-            b"rv64im/kernel_prepared_step_opening_points/tag",
-            b"rv64im/kernel_prepared_step_opening_points/label",
-            b"rv64im/kernel_prepared_step_opening_points/digest",
-            OpeningPointLabel::KernelLastPreparedStep,
-            self.last_prepared_step.digest,
-        );
+        for (label, reference) in [
+            (
+                OpeningPointLabel::KernelFirstPreparedStep,
+                self.first_prepared_step.as_ref(),
+            ),
+            (
+                OpeningPointLabel::KernelLastPreparedStep,
+                self.last_prepared_step.as_ref(),
+            ),
+        ] {
+            append_labeled_opening_ref(
+                tr,
+                b"rv64im/kernel_prepared_step_opening_points/tag",
+                b"rv64im/kernel_prepared_step_opening_points/label",
+                b"rv64im/kernel_prepared_step_opening_points/present",
+                b"rv64im/kernel_prepared_step_opening_points/opening_id",
+                b"rv64im/kernel_prepared_step_opening_points/value_digest",
+                label,
+                reference,
+            );
+        }
     }
 
     fn append_word_material(&self, out: &mut Vec<u64>) {
         out.push(1);
-        out.extend(digest_to_words(self.first_prepared_step.digest));
-        out.extend(digest_to_words(self.last_prepared_step.digest));
+        append_optional_ref_words(out, self.first_prepared_step.as_ref());
+        append_optional_ref_words(out, self.last_prepared_step.as_ref());
     }
 }
 
@@ -563,15 +632,17 @@ impl Stage1SelectedOpeningClaim {
         self.points.labels()
     }
 
+    pub fn opening_refs(&self) -> Vec<&SelectedOpeningRef> {
+        self.points.opening_refs()
+    }
+
     pub fn first_digest_mut(&mut self) -> &mut [u8; 32] {
         self.points.first_digest_mut()
     }
 
     pub(crate) fn claim_words(&self) -> Vec<u64> {
-        let mut out = Vec::with_capacity(12 + 10 + 17);
-        out.extend(digest_to_words(self.source_commitment_digest));
-        out.extend(digest_to_words(self.source_opening_manifest_digest));
-        out.extend(digest_to_words(self.source_opening_proof_digest));
+        let mut out = Vec::with_capacity(4 + 10 + 37);
+        out.extend(digest_to_words(self.rows_family_digest));
         out.extend([
             self.row_count,
             self.effect_row_count,
@@ -592,16 +663,8 @@ impl Stage1SelectedOpeningClaim {
         let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/stage_selected_opening_claim");
         tr.append_message(b"rv64im/stage_selected_opening_claim/label", b"rv64im/stage1");
         tr.append_message(
-            b"rv64im/stage_selected_opening_claim/source_commitment",
-            &self.source_commitment_digest,
-        );
-        tr.append_message(
-            b"rv64im/stage_selected_opening_claim/source_manifest",
-            &self.source_opening_manifest_digest,
-        );
-        tr.append_message(
-            b"rv64im/stage_selected_opening_claim/source_opening_proof",
-            &self.source_opening_proof_digest,
+            b"rv64im/stage_selected_opening_claim/stage1_rows_family",
+            &self.rows_family_digest,
         );
         tr.append_u64s(
             b"rv64im/stage_selected_opening_claim/meta_words",
@@ -632,15 +695,20 @@ impl Stage2SelectedOpeningClaim {
         self.points.labels()
     }
 
+    pub fn opening_refs(&self) -> Vec<&SelectedOpeningRef> {
+        self.points.opening_refs()
+    }
+
     pub fn first_digest_mut(&mut self) -> &mut [u8; 32] {
         self.points.first_digest_mut()
     }
 
     pub(crate) fn claim_words(&self) -> Vec<u64> {
-        let mut out = Vec::with_capacity(12 + 8 + 33);
-        out.extend(digest_to_words(self.source_commitment_digest));
-        out.extend(digest_to_words(self.source_opening_manifest_digest));
-        out.extend(digest_to_words(self.source_opening_proof_digest));
+        let mut out = Vec::with_capacity(16 + 8 + 73);
+        out.extend(digest_to_words(self.register_reads_family_digest));
+        out.extend(digest_to_words(self.register_writes_family_digest));
+        out.extend(digest_to_words(self.ram_events_family_digest));
+        out.extend(digest_to_words(self.twist_links_family_digest));
         out.extend([
             self.register_read_count,
             self.register_write_count,
@@ -659,16 +727,20 @@ impl Stage2SelectedOpeningClaim {
         let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/stage_selected_opening_claim");
         tr.append_message(b"rv64im/stage_selected_opening_claim/label", b"rv64im/stage2");
         tr.append_message(
-            b"rv64im/stage_selected_opening_claim/source_commitment",
-            &self.source_commitment_digest,
+            b"rv64im/stage_selected_opening_claim/register_reads_family",
+            &self.register_reads_family_digest,
         );
         tr.append_message(
-            b"rv64im/stage_selected_opening_claim/source_manifest",
-            &self.source_opening_manifest_digest,
+            b"rv64im/stage_selected_opening_claim/register_writes_family",
+            &self.register_writes_family_digest,
         );
         tr.append_message(
-            b"rv64im/stage_selected_opening_claim/source_opening_proof",
-            &self.source_opening_proof_digest,
+            b"rv64im/stage_selected_opening_claim/ram_events_family",
+            &self.ram_events_family_digest,
+        );
+        tr.append_message(
+            b"rv64im/stage_selected_opening_claim/twist_links_family",
+            &self.twist_links_family_digest,
         );
         tr.append_u64s(
             b"rv64im/stage_selected_opening_claim/meta_words",
@@ -697,15 +769,17 @@ impl Stage3SelectedOpeningClaim {
         self.points.labels()
     }
 
+    pub fn opening_refs(&self) -> Vec<&SelectedOpeningRef> {
+        self.points.opening_refs()
+    }
+
     pub fn first_digest_mut(&mut self) -> &mut [u8; 32] {
         self.points.first_digest_mut()
     }
 
     pub(crate) fn claim_words(&self) -> Vec<u64> {
-        let mut out = Vec::with_capacity(12 + 5 + 9);
-        out.extend(digest_to_words(self.source_commitment_digest));
-        out.extend(digest_to_words(self.source_opening_manifest_digest));
-        out.extend(digest_to_words(self.source_opening_proof_digest));
+        let mut out = Vec::with_capacity(4 + 5 + 19);
+        out.extend(digest_to_words(self.continuity_family_digest));
         out.extend([
             self.continuity_count,
             self.final_step_count,
@@ -721,16 +795,8 @@ impl Stage3SelectedOpeningClaim {
         let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/stage_selected_opening_claim");
         tr.append_message(b"rv64im/stage_selected_opening_claim/label", b"rv64im/stage3");
         tr.append_message(
-            b"rv64im/stage_selected_opening_claim/source_commitment",
-            &self.source_commitment_digest,
-        );
-        tr.append_message(
-            b"rv64im/stage_selected_opening_claim/source_manifest",
-            &self.source_opening_manifest_digest,
-        );
-        tr.append_message(
-            b"rv64im/stage_selected_opening_claim/source_opening_proof",
-            &self.source_opening_proof_digest,
+            b"rv64im/stage_selected_opening_claim/continuity_family",
+            &self.continuity_family_digest,
         );
         tr.append_u64s(
             b"rv64im/stage_selected_opening_claim/meta_words",
@@ -810,12 +876,16 @@ impl KernelBindingOpeningClaim {
         self.points.labels()
     }
 
+    pub fn opening_refs(&self) -> Vec<&SelectedOpeningRef> {
+        self.points.opening_refs()
+    }
+
     pub fn first_digest_mut(&mut self) -> &mut [u8; 32] {
         self.points.first_digest_mut()
     }
 
     pub(crate) fn claim_words(&self) -> Vec<u64> {
-        let mut out = Vec::with_capacity(11 * 4 + 6 + 9);
+        let mut out = Vec::with_capacity(6 * 4 + 6 + 19);
         out.extend(digest_to_words(self.stage_claim_bundle_digest));
         out.extend(digest_to_words(self.stage_package_bundle_digest));
         out.extend(digest_to_words(self.stage1_package_digest));
@@ -885,12 +955,16 @@ impl KernelPreparedStepOpeningClaim {
         self.points.labels()
     }
 
+    pub fn opening_refs(&self) -> Vec<&SelectedOpeningRef> {
+        self.points.opening_refs()
+    }
+
     pub fn first_digest_mut(&mut self) -> &mut [u8; 32] {
         self.points.first_digest_mut()
     }
 
     pub(crate) fn claim_words(&self) -> Vec<u64> {
-        let mut out = Vec::with_capacity(6 * 4 + 3 + 9);
+        let mut out = Vec::with_capacity(3 * 4 + 3 + 19);
         out.extend(digest_to_words(self.execution_digest));
         out.extend(digest_to_words(self.final_state_digest));
         out.extend(digest_to_words(self.transcript_final_digest));
@@ -931,6 +1005,12 @@ impl SimpleKernelOpeningClaim {
         let mut labels = self.bindings.labels();
         labels.extend(self.prepared_steps.labels());
         labels
+    }
+
+    pub fn opening_refs(&self) -> Vec<&SelectedOpeningRef> {
+        let mut refs = self.bindings.opening_refs();
+        refs.extend(self.prepared_steps.opening_refs());
+        refs
     }
 
     pub fn first_digest_mut(&mut self) -> &mut [u8; 32] {

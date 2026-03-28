@@ -114,7 +114,7 @@ pub(crate) fn build_kernel_stage3_digest_surfaces_from_frames(
 ) -> Result<Vec<KernelStage3DigestSurface>, SimpleKernelError> {
     let prepared_steps = build_prepared_steps_from_frames(&frames)?;
     assert_stage3_prepared_steps_match_output(&prepared_steps, &output.prepared_steps)?;
-    let (beta1, beta2, expected_shift_point) = replay_stage3_challenges(public, proof)?;
+    let (beta1, beta2, expected_shift_point) = replay_stage3_challenges(public, proof, frames)?;
     if proof.stage3.shift_proof.source_point != expected_shift_point {
         return Err(SimpleKernelError::ContinuityFailed(
             "stage3 digest shift point does not match canonical transcript replay".into(),
@@ -234,11 +234,16 @@ fn build_shift_witness(proof: &SimpleKernelProof) -> KernelStage3ShiftWitness {
 fn replay_stage3_challenges(
     public: &SimpleKernelPublicInput,
     proof: &SimpleKernelProof,
+    frames: &[KernelExactFrame],
 ) -> Result<(K, K, Vec<K>), SimpleKernelError> {
     let program = Chip8Program {
         bytes: public.program_image.clone(),
         start_pc: CHIP8_PROGRAM_START,
     };
+    let aux_data = frames
+        .iter()
+        .map(|frame| frame.kernel_aux.clone())
+        .collect::<Vec<_>>();
     let rom_table = build_rom_table(&program, proof.meta_pub.pad_pc_word);
     let decode_table = build_decode_table();
     let alu_table = build_alu_table();
@@ -253,7 +258,7 @@ fn replay_stage3_challenges(
         &alu_table,
         &eq4_table,
         proof.meta_pub.cycle_bits,
-        None,
+        Some(stage1::stage1_alu_expected_claim(&aux_data, &proof.stage1.cycle_point)),
         &mut transcript,
     )
     .map_err(SimpleKernelError::ContinuityFailed)?;
