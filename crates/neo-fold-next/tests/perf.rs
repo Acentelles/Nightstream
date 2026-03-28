@@ -526,6 +526,149 @@ fn print_root_main_lane_family(
     );
 }
 
+fn print_root_main_lane_prove_breakdown(perf: &neo_fold_next::rv64im::Rv64imProofProvePerf) {
+    print_section("Root Main Lane Prove Breakdown");
+    print_kv("chunks", perf.root_main_lane.session.chunk_count());
+    print_kv("fresh_steps", perf.root_main_lane.session.fresh_steps());
+    print_kv(
+        "incoming_main_claims",
+        perf.root_main_lane.session.incoming_main_claims(),
+    );
+    print_kv("ccs_outputs", perf.root_main_lane.session.ccs_outputs());
+    print_kv("dec_children", perf.root_main_lane.session.dec_children());
+    let package_overhead_ms =
+        (perf.root_main_lane.total_ms - perf.root_main_lane.prepare_steps_ms - perf.root_main_lane.session.total_ms)
+            .max(0.0);
+    println!("  {:26} {:>12}", "phase", "wall ms");
+    println!(
+        "  {:26} {:>12.3}",
+        "prepare_steps", perf.root_main_lane.prepare_steps_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "prepare_inputs",
+        perf.root_main_lane.session.prepare_inputs_ms()
+    );
+    println!("  {:26} {:>12.3}", "Π_CCS", perf.root_main_lane.session.ccs_ms());
+    println!(
+        "  {:26} {:>12.3}",
+        "Π_CCS bind",
+        perf.root_main_lane.session.ccs_bind_ms()
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "Π_CCS challenge sample",
+        perf.root_main_lane.session.ccs_sample_challenges_ms()
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "Π_CCS FE sumcheck",
+        perf.root_main_lane.session.ccs_fe_sumcheck_ms()
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "Π_CCS NC sumcheck",
+        perf.root_main_lane.session.ccs_nc_sumcheck_ms()
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "Π_CCS outputs",
+        perf.root_main_lane.session.ccs_output_materialize_ms()
+    );
+    println!("  {:26} {:>12.3}", "dims", perf.root_main_lane.session.dims_ms());
+    println!(
+        "  {:26} {:>12.3}",
+        "Π_RLC input build",
+        perf.root_main_lane.session.rlc_prepare_ms()
+    );
+    println!("  {:26} {:>12.3}", "Π_RLC", perf.root_main_lane.session.rlc_ms());
+    println!(
+        "  {:26} {:>12.3}",
+        "Π_DEC split",
+        perf.root_main_lane.session.dec_split_ms()
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "Π_DEC commitments",
+        perf.root_main_lane.session.dec_commit_ms()
+    );
+    println!("  {:26} {:>12.3}", "Π_DEC", perf.root_main_lane.session.dec_ms());
+    println!("  {:26} {:>12.3}", "package", package_overhead_ms);
+    println!("  {:26} {:>12.3}", "total", perf.root_main_lane.total_ms);
+}
+
+fn print_root_main_lane_verify_breakdown(perf: &neo_fold_next::rv64im::Rv64imPublicProofVerifyPerf) {
+    print_section("Root Main Lane Verify Breakdown");
+    print_kv("chunks", perf.root_main_lane.session.chunk_count());
+    print_kv("fresh_steps", perf.root_main_lane.session.fresh_steps());
+    print_kv(
+        "incoming_main_claims",
+        perf.root_main_lane.session.incoming_main_claims(),
+    );
+    print_kv("ccs_outputs", perf.root_main_lane.session.ccs_outputs());
+    print_kv("dec_children", perf.root_main_lane.session.dec_children());
+    let package_overhead_ms = (perf.root_main_lane.total_ms
+        - perf.root_main_lane.prepare_public_steps_ms
+        - perf.root_main_lane.public_chunk_match_ms
+        - perf.root_main_lane.session.total_ms)
+        .max(0.0);
+    println!("  {:26} {:>12}", "phase", "wall ms");
+    println!(
+        "  {:26} {:>12.3}",
+        "prepare_public_steps", perf.root_main_lane.prepare_public_steps_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "public_chunk_match", perf.root_main_lane.public_chunk_match_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "prepare_inputs",
+        perf.root_main_lane.session.prepare_inputs_ms()
+    );
+    println!("  {:26} {:>12.3}", "Π_CCS", perf.root_main_lane.session.ccs_ms());
+    println!(
+        "  {:26} {:>12.3}",
+        "Π_CCS bind",
+        perf.root_main_lane.session.ccs_bind_ms()
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "Π_CCS FE sumcheck",
+        perf.root_main_lane.session.ccs_fe_sumcheck_ms()
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "Π_CCS NC sumcheck",
+        perf.root_main_lane.session.ccs_nc_sumcheck_ms()
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "Π_CCS output checks",
+        perf.root_main_lane.session.ccs_output_checks_ms()
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "Π_CCS terminal",
+        perf.root_main_lane.session.ccs_terminal_ms()
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "digest_checks",
+        perf.root_main_lane.session.digest_checks_ms()
+    );
+    println!("  {:26} {:>12.3}", "dims", perf.root_main_lane.session.dims_ms());
+    println!(
+        "  {:26} {:>12.3}",
+        "Π_RLC challenge",
+        perf.root_main_lane.session.rlc_challenge_ms()
+    );
+    println!("  {:26} {:>12.3}", "Π_RLC", perf.root_main_lane.session.rlc_ms());
+    println!("  {:26} {:>12.3}", "Π_DEC", perf.root_main_lane.session.dec_ms());
+    println!("  {:26} {:>12.3}", "package", package_overhead_ms);
+    println!("  {:26} {:>12.3}", "total", perf.root_main_lane.total_ms);
+}
+
 fn print_exact_stage_witness_shape(rows: &[ExactStagePerfRow<'_>]) {
     if !exact_stage_path_is_live(rows) {
         print_section("Exact Stage Path");
@@ -1275,6 +1418,7 @@ fn rv64im_mixed_opcode_perf_snapshot() {
     print_kv("stage3_continuity", output.stages.stage3.continuity.len());
     print_kv("transcript_events", output.stages.transcript.events.len());
     print_root_main_lane_family(&output, &proof);
+    print_root_main_lane_prove_breakdown(&prove_perf);
 
     print_family_rows("Row Expansion by Family", &family_rows, opcode_count);
     print_lookup_summary(lookup_summary, opcode_count, &twist_family_counts);
@@ -1307,6 +1451,7 @@ fn rv64im_mixed_opcode_perf_snapshot() {
     print_opening_surface_totals(opening_totals, opcode_count, execution_row_count);
     print_opening_reuse_proxy(&output);
     print_opening_label_summary(&selected_opening_labels);
+    print_root_main_lane_verify_breakdown(&verify_perf);
     print_verify_breakdown(
         "Theorem Verify Breakdown",
         &verify_perf,

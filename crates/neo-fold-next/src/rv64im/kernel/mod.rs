@@ -76,8 +76,10 @@ pub use main_lane_artifact::{
 pub use main_lane_surface::{build_main_lane_surface, Rv64imMainLaneSurface};
 pub use perf_diagnostics::{
     ExactStageVectorBuildPerf, KernelOpeningBundleBuildPerf, KernelOpeningBundleVerifyPerf, PackagedOpeningBuildPerf,
-    PackagedSimpleKernelVerifyPerf, Rv64imProofProvePerf, Rv64imPublicProofVerifyPerf, SimpleKernelBuildPerf,
-    SimpleKernelVerifyPerf, StageClaimBundleBuildPerf, StagePackageBundleBuildPerf, StagePackageBundleVerifyPerf,
+    PackagedSimpleKernelVerifyPerf, RootMainLanePackagedProofProvePerf, RootMainLanePackagedProofVerifyPerf,
+    RootMainLaneRunProofProvePerf, RootMainLaneRunProofVerifyPerf, Rv64imProofProvePerf, Rv64imPublicProofVerifyPerf,
+    SimpleKernelBuildPerf, SimpleKernelVerifyPerf, StageClaimBundleBuildPerf, StagePackageBundleBuildPerf,
+    StagePackageBundleVerifyPerf,
 };
 pub use proof_api::{
     build_rv64im_audit_witness_bundle, prove_rv64im_audit_proof, prove_rv64im_audit_proof_with_perf,
@@ -107,8 +109,10 @@ pub use root_lane_commitment::{
 };
 pub use simple::{
     build_simple_kernel_witness, build_simple_kernel_witness_with_perf, prove_packaged_simple_kernel,
-    prove_packaged_simple_kernel_with_perf, prove_simple_kernel, rv64im_ajtai_mixers, rv64im_simple_root_context_id,
+    prove_packaged_simple_kernel_with_perf, prove_root_main_lane_packaged_proof_with_perf,
+    prove_root_main_lane_run_proof_with_perf, prove_simple_kernel, rv64im_ajtai_mixers, rv64im_simple_root_context_id,
     rv64im_simple_root_params, verify_packaged_simple_kernel, verify_packaged_simple_kernel_with_perf,
+    verify_root_main_lane_packaged_proof_with_public_rows, verify_root_main_lane_run_proof_with_public_rows,
     verify_simple_kernel, verify_simple_kernel_with_perf, PreparedStepBinding, PreparedStepBindingSummary,
     SimpleKernelAuditOutput, SimpleKernelError, SimpleKernelKernelClaimBundle, SimpleKernelOutput,
     SimpleKernelPackagedProof, SimpleKernelProof, SimpleKernelProverInput, SimpleKernelPublicInput,

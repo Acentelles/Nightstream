@@ -17,7 +17,9 @@ use super::proof_witness::{
     Rv64imKernelOpeningProofBundle, Rv64imProofWitnessBundle, Rv64imStageClaimProofBundle,
     Rv64imStagePackageProofBundle, Rv64imStageWitnessProjectionBundle, Rv64imTraceProjectionBundle,
 };
-use super::simple::{build_public_simple_kernel_output_and_witness_with_perf, build_root_main_lane_packaged_proof};
+use super::simple::{
+    build_public_simple_kernel_output_and_witness_with_perf, build_root_main_lane_packaged_proof_with_perf,
+};
 use super::{
     RootLaneColumns, RootLaneCommitmentSummaryArtifact, Rv64imProofProvePerf, Rv64imPublicProofVerifyPerf,
     SimpleKernelError, SimpleKernelPublicInput,
@@ -624,8 +626,8 @@ fn prove_rv64im_public_proof_and_sidecar_with_perf(
         &kernel.root_lane_commitment,
         options.root_fold_schedule,
     )?;
-    let root_main_lane =
-        build_root_main_lane_packaged_proof(&sidecar.trace.execution_rows, options.root_fold_schedule)?;
+    let (root_main_lane, root_main_lane_perf) =
+        build_root_main_lane_packaged_proof_with_perf(&sidecar.trace.execution_rows, options.root_fold_schedule)?;
     let main_lane_ms = main_lane_started.elapsed().as_secs_f64() * 1_000.0;
     let export_started = Instant::now();
     let witness = proof_witness_bundle_from_public_kernel_and_trace_stages(&kernel, &sidecar.trace, &sidecar.stages)?;
@@ -634,6 +636,7 @@ fn prove_rv64im_public_proof_and_sidecar_with_perf(
     let perf = Rv64imProofProvePerf {
         simple_kernel,
         main_lane_ms,
+        root_main_lane: root_main_lane_perf,
         public_export_ms,
         total_ms: total_started.elapsed().as_secs_f64() * 1_000.0,
     };

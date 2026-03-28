@@ -36,6 +36,26 @@ pub enum PiCcsProofVariant {
     SplitNcV1,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct PiCcsProvePerf {
+    pub bind_ms: f64,
+    pub sample_challenges_ms: f64,
+    pub fe_sumcheck_ms: f64,
+    pub nc_sumcheck_ms: f64,
+    pub output_materialize_ms: f64,
+    pub total_ms: f64,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct PiCcsVerifyPerf {
+    pub bind_ms: f64,
+    pub fe_sumcheck_ms: f64,
+    pub nc_sumcheck_ms: f64,
+    pub output_checks_ms: f64,
+    pub terminal_ms: f64,
+    pub total_ms: f64,
+}
+
 // Re-export core functions for building proofs and cross-checking
 pub use common::{
     chi_ajtai_at_bool_point,
@@ -136,8 +156,10 @@ impl PiCcsProof {
 // Re-export optimized prove/verify entrypoints as the main interface
 pub use prove::optimized_prove as pi_ccs_prove;
 pub use prove::optimized_prove_with_cache;
+pub use prove::optimized_prove_with_cache_and_perf;
 pub use verify::optimized_verify as pi_ccs_verify;
 pub use verify::optimized_verify_with_cache;
+pub use verify::optimized_verify_with_cache_and_perf;
 
 /// Wrapper for simple case (k=1, no ME inputs)
 pub use prove::optimized_prove_simple as pi_ccs_prove_simple;

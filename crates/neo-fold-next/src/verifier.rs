@@ -11,10 +11,11 @@ use neo_reductions::api::{
 };
 use neo_reductions::engines::utils;
 use neo_reductions::error::PiCcsError;
-use neo_reductions::optimized_engine::{optimized_verify_with_cache, OptimizedStructureCache};
+use neo_reductions::optimized_engine::{optimized_verify_with_cache_and_perf, OptimizedStructureCache};
 use neo_transcript::{Poseidon2Transcript, Transcript};
+use std::time::Instant;
 
-use crate::proof::{ChunkProof, PublicChunk};
+use crate::proof::{ChunkProof, ChunkVerifyPerf, PublicChunk};
 use crate::prover::CommitmentMixers;
 
 pub struct ShardVerifier;
@@ -35,43 +36,78 @@ impl ShardVerifier {
         MR: Fn(&[neo_ccs::Mat<F>], &[Commitment]) -> Commitment + Clone + Copy,
         MB: Fn(&[Commitment], u32) -> Commitment + Clone + Copy,
     {
+        Ok(Self::verify_chunk_with_perf(
+            mode,
+            tr,
+            params,
+            s,
+            chunk,
+            incoming_main,
+            proof,
+            mixers,
+            optimized_cache,
+        )?
+        .0)
+    }
+
+    pub fn verify_chunk_with_perf<'a, MR, MB>(
+        mode: FoldingMode,
+        tr: &mut Poseidon2Transcript,
+        params: &NeoParams,
+        s: &CcsStructure<F>,
+        chunk: &PublicChunk,
+        incoming_main: &[neo_ccs::CeClaim<Commitment, F, K>],
+        proof: &'a ChunkProof,
+        mixers: CommitmentMixers<MR, MB>,
+        optimized_cache: Option<&OptimizedStructureCache>,
+    ) -> Result<(&'a [neo_ccs::CeClaim<Commitment, F, K>], ChunkVerifyPerf), PiCcsError>
+    where
+        MR: Fn(&[neo_ccs::Mat<F>], &[Commitment]) -> Commitment + Clone + Copy,
+        MB: Fn(&[Commitment], u32) -> Commitment + Clone + Copy,
+    {
+        let total_started = Instant::now();
         validate_chunk_metadata(chunk, proof)?;
         append_chunk_transcript(tr, chunk);
 
-        let ok_ccs = if matches!(mode, FoldingMode::Optimized) {
+        let prepare_inputs_started = Instant::now();
+        let fresh_claims = chunk
+            .steps
+            .iter()
+            .map(|step| step.mcs.clone())
+            .collect::<Vec<_>>();
+        let prepare_inputs_ms = prepare_inputs_started.elapsed().as_secs_f64() * 1_000.0;
+
+        let ccs_started = Instant::now();
+        let (ok_ccs, ccs_perf) = if matches!(mode, FoldingMode::Optimized) {
             let cache = optimized_cache.ok_or_else(|| {
                 PiCcsError::InvalidInput("missing optimized structure cache for optimized verify_chunk".into())
             })?;
-            optimized_verify_with_cache(
+            optimized_verify_with_cache_and_perf(
                 tr,
                 params,
                 s,
-                &chunk
-                    .steps
-                    .iter()
-                    .map(|step| step.mcs.clone())
-                    .collect::<Vec<_>>(),
+                &fresh_claims,
                 incoming_main,
                 &proof.ccs_outputs,
                 &proof.ccs_proof,
                 cache,
             )?
         } else {
-            verify(
-                mode,
-                tr,
-                params,
-                s,
-                &chunk
-                    .steps
-                    .iter()
-                    .map(|step| step.mcs.clone())
-                    .collect::<Vec<_>>(),
-                incoming_main,
-                &proof.ccs_outputs,
-                &proof.ccs_proof,
-            )?
+            (
+                verify(
+                    mode,
+                    tr,
+                    params,
+                    s,
+                    &fresh_claims,
+                    incoming_main,
+                    &proof.ccs_outputs,
+                    &proof.ccs_proof,
+                )?,
+                neo_reductions::optimized_engine::PiCcsVerifyPerf::default(),
+            )
         };
+        let ccs_ms = ccs_started.elapsed().as_secs_f64() * 1_000.0;
         if !ok_ccs {
             return Err(PiCcsError::ProtocolError(format!(
                 "Π_CCS verification failed for chunk starting at {}",
@@ -79,6 +115,7 @@ impl ShardVerifier {
             )));
         }
 
+        let digest_checks_started = Instant::now();
         let observed_digest = tr.digest32();
         if proof.ccs_proof.header_digest.as_slice() != observed_digest {
             return Err(PiCcsError::ProtocolError(format!(
@@ -94,9 +131,14 @@ impl ShardVerifier {
                 )));
             }
         }
+        let digest_checks_ms = digest_checks_started.elapsed().as_secs_f64() * 1_000.0;
 
+        let dims_started = Instant::now();
         let dims = utils::build_dims_and_policy(params, s)?;
+        let dims_ms = dims_started.elapsed().as_secs_f64() * 1_000.0;
+        let rlc_challenge_started = Instant::now();
         let expected_rhos = sample_rlc_rhos(tr, params, proof.ccs_outputs.len())?;
+        let rlc_challenge_ms = rlc_challenge_started.elapsed().as_secs_f64() * 1_000.0;
         if expected_rhos != proof.rlc.rhos {
             return Err(PiCcsError::ProtocolError(format!(
                 "Π_RLC challenge mismatch for chunk starting at {}",
@@ -104,6 +146,7 @@ impl ShardVerifier {
             )));
         }
 
+        let rlc_started = Instant::now();
         let parent_matches = rlc_public_matches(
             s,
             params,
@@ -119,7 +162,9 @@ impl ShardVerifier {
                 chunk.start_index
             )));
         }
+        let rlc_ms = rlc_started.elapsed().as_secs_f64() * 1_000.0;
 
+        let dec_started = Instant::now();
         if !verify_dec_public(
             s,
             params,
@@ -133,8 +178,30 @@ impl ShardVerifier {
                 chunk.start_index
             )));
         }
+        let dec_ms = dec_started.elapsed().as_secs_f64() * 1_000.0;
 
-        Ok(&proof.dec.children)
+        let perf = ChunkVerifyPerf {
+            start_index: chunk.start_index,
+            fresh_steps: chunk.steps.len(),
+            incoming_main_claims: incoming_main.len(),
+            ccs_outputs: proof.ccs_outputs.len(),
+            dec_children: proof.dec.children.len(),
+            prepare_inputs_ms,
+            ccs_bind_ms: ccs_perf.bind_ms,
+            ccs_fe_sumcheck_ms: ccs_perf.fe_sumcheck_ms,
+            ccs_nc_sumcheck_ms: ccs_perf.nc_sumcheck_ms,
+            ccs_output_checks_ms: ccs_perf.output_checks_ms,
+            ccs_terminal_ms: ccs_perf.terminal_ms,
+            ccs_ms,
+            digest_checks_ms,
+            dims_ms,
+            rlc_challenge_ms,
+            rlc_ms,
+            dec_ms,
+            total_ms: total_started.elapsed().as_secs_f64() * 1_000.0,
+        };
+
+        Ok((&proof.dec.children, perf))
     }
 }
 

@@ -1040,17 +1040,7 @@ pub(crate) fn stage_claim_proof_bundle_from_claims(
 pub(crate) fn stage_package_proof_bundle_from_packages(
     packages: &SimpleKernelStagePackageBundle,
 ) -> Rv64imStagePackageProofBundle {
-    let summary = Rv64imStagePackageDigestBundle {
-        package_bundle_digest: packages.digest,
-        stage1_digest: packages.stage1.digest,
-        stage2_digest: packages.stage2.digest,
-        stage3_digest: packages.stage3.digest,
-        digest: [0; 32],
-    };
-    let summary = Rv64imStagePackageDigestBundle {
-        digest: summary.expected_digest(),
-        ..summary
-    };
+    let summary = stage_package_summary_bundle_from_packages(packages);
     let bundle = Rv64imStagePackageProofBundle {
         summary,
         digest: [0; 32],
@@ -1062,19 +1052,26 @@ pub(crate) fn stage_package_proof_bundle_from_packages(
     }
 }
 
+pub(crate) fn stage_package_summary_bundle_from_packages(
+    packages: &SimpleKernelStagePackageBundle,
+) -> Rv64imStagePackageDigestBundle {
+    let summary = Rv64imStagePackageDigestBundle {
+        package_bundle_digest: packages.digest,
+        stage1_digest: packages.stage1.digest,
+        stage2_digest: packages.stage2.digest,
+        stage3_digest: packages.stage3.digest,
+        digest: [0; 32],
+    };
+    Rv64imStagePackageDigestBundle {
+        digest: summary.expected_digest(),
+        ..summary
+    }
+}
+
 pub(crate) fn kernel_opening_proof_bundle_from_opening(
     opening: &SimpleKernelOpeningBundle,
 ) -> Rv64imKernelOpeningProofBundle {
-    let bindings = Rv64imKernelOpeningBindingBundle {
-        claim_digest: opening.claim.digest,
-        bindings_digest: opening.bindings.digest,
-        prepared_steps_digest: opening.prepared_steps.digest,
-        digest: [0; 32],
-    };
-    let bindings = Rv64imKernelOpeningBindingBundle {
-        digest: bindings.expected_digest(),
-        ..bindings
-    };
+    let bindings = kernel_opening_binding_bundle_from_opening(opening);
     let bundle = Rv64imKernelOpeningProofBundle {
         opening_digest: opening.digest,
         bindings,
@@ -1084,6 +1081,21 @@ pub(crate) fn kernel_opening_proof_bundle_from_opening(
     Rv64imKernelOpeningProofBundle {
         digest: bundle.expected_digest(),
         ..bundle
+    }
+}
+
+pub(crate) fn kernel_opening_binding_bundle_from_opening(
+    opening: &SimpleKernelOpeningBundle,
+) -> Rv64imKernelOpeningBindingBundle {
+    let bindings = Rv64imKernelOpeningBindingBundle {
+        claim_digest: opening.claim.digest,
+        bindings_digest: opening.bindings.digest,
+        prepared_steps_digest: opening.prepared_steps.digest,
+        digest: [0; 32],
+    };
+    Rv64imKernelOpeningBindingBundle {
+        digest: bindings.expected_digest(),
+        ..bindings
     }
 }
 

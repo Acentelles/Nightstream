@@ -6,7 +6,7 @@
 #![allow(non_snake_case)]
 
 use crate::error::PiCcsError;
-use crate::optimized_engine::{OptimizedStructureCache, PiCcsProof, PiCcsProofVariant};
+use crate::optimized_engine::{OptimizedStructureCache, PiCcsProof, PiCcsProofVariant, PiCcsVerifyPerf};
 use neo_ajtai::Commitment as Cmt;
 use neo_ccs::{CcsClaim, CcsStructure, CeClaim};
 use neo_math::KExtensions;
@@ -42,15 +42,33 @@ pub fn optimized_verify_with_cache(
     proof: &PiCcsProof,
     cache: &OptimizedStructureCache,
 ) -> Result<bool, PiCcsError> {
+    let (ok, _perf) =
+        optimized_verify_with_cache_and_perf(tr, params, s, mcs_list, me_inputs, me_outputs, proof, cache)?;
+    Ok(ok)
+}
+
+pub fn optimized_verify_with_cache_and_perf(
+    tr: &mut Poseidon2Transcript,
+    params: &NeoParams,
+    s: &CcsStructure<F>,
+    mcs_list: &[CcsClaim<Cmt, F>],
+    me_inputs: &[CeClaim<Cmt, F, K>],
+    me_outputs: &[CeClaim<Cmt, F, K>],
+    proof: &PiCcsProof,
+    cache: &OptimizedStructureCache,
+) -> Result<(bool, PiCcsVerifyPerf), PiCcsError> {
+    let total_started = std::time::Instant::now();
     if mcs_list.is_empty() {
         return Err(PiCcsError::InvalidInput("optimized_verify: empty mcs_list".into()));
     }
 
+    let bind_started = std::time::Instant::now();
     let dims = utils::build_dims_and_policy(params, s)?;
     utils::bind_header_and_instances_with_digest(tr, params, s, mcs_list, dims, cache.mat_digest())?;
     utils::bind_me_inputs(tr, me_inputs)?;
     let mut ch = utils::sample_challenges(tr, dims.ell_d, dims.ell)?;
     ch.beta_m = utils::sample_beta_m(tr, dims.ell_m)?;
+    let bind_ms = bind_started.elapsed().as_secs_f64() * 1_000.0;
 
     // Compute the public claimed sum T from ME inputs and α
     // (this is the only legitimate initial sum for sumcheck).
@@ -94,6 +112,7 @@ pub fn optimized_verify_with_cache(
     // -----------------------------
     // FE sumcheck
     // -----------------------------
+    let fe_sumcheck_started = std::time::Instant::now();
     tr.append_message(b"sumcheck/fe", b"");
     tr.append_fields(b"sumcheck/initial_sum", &claimed_initial.as_coeffs());
     let (r_all, running_sum, ok) =
@@ -109,10 +128,12 @@ pub fn optimized_verify_with_cache(
         )));
     }
     let (r_prime, alpha_prime) = r_all.split_at(dims.ell_n);
+    let fe_sumcheck_ms = fe_sumcheck_started.elapsed().as_secs_f64() * 1_000.0;
 
     // -----------------------------
     // NC-only sumcheck
     // -----------------------------
+    let nc_sumcheck_started = std::time::Instant::now();
     tr.append_message(b"sumcheck/nc", b"");
     let claimed_nc = K::ZERO;
     tr.append_fields(b"sumcheck/initial_sum", &claimed_nc.as_coeffs());
@@ -129,7 +150,9 @@ pub fn optimized_verify_with_cache(
         )));
     }
     let (s_col_prime, alpha_prime_nc) = r_all_nc.split_at(dims.ell_m);
+    let nc_sumcheck_ms = nc_sumcheck_started.elapsed().as_secs_f64() * 1_000.0;
 
+    let output_checks_started = std::time::Instant::now();
     let r_inputs = utils::shared_me_input_r(me_inputs, dims.ell_n)?;
 
     // Strictly enforce NC channel presence and transcript-derived points.
@@ -221,8 +244,10 @@ pub fn optimized_verify_with_cache(
     utils::validate_ct_constant_term(s, params, me_outputs)?;
     // MCS-derived outputs must expose X consistent with public x.
     utils::validate_mcs_output_x_recomposition(params, s.m, mcs_list, me_outputs)?;
+    let output_checks_ms = output_checks_started.elapsed().as_secs_f64() * 1_000.0;
 
     // RHS assembly (FE-only; NC is verified separately)
+    let terminal_started = std::time::Instant::now();
     let rhs = super::rhs_terminal_identity_fe_with_k_mcs(
         s,
         params,
@@ -255,5 +280,14 @@ pub fn optimized_verify_with_cache(
         );
     }
 
-    Ok(ok_fe && ok_nc)
+    let perf = PiCcsVerifyPerf {
+        bind_ms,
+        fe_sumcheck_ms,
+        nc_sumcheck_ms,
+        output_checks_ms,
+        terminal_ms: terminal_started.elapsed().as_secs_f64() * 1_000.0,
+        total_ms: total_started.elapsed().as_secs_f64() * 1_000.0,
+    };
+
+    Ok((ok_fe && ok_nc, perf))
 }

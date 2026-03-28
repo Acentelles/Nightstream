@@ -679,6 +679,24 @@ where
         }
     }
 
+    pub fn finalized_y_zcol_digits(&self) -> Vec<[K; D]> {
+        debug_assert!(
+            self.round_idx >= self.ell_m,
+            "NC column point not finalized before requesting y_zcol digits"
+        );
+        debug_assert_eq!(
+            self.cur_len, 1,
+            "expected NC column tables to be fully folded before requesting y_zcol digits"
+        );
+        self.digits_tables
+            .iter()
+            .map(|tbl| {
+                debug_assert_eq!(tbl.len(), 1, "expected folded NC digit table to have exactly one entry");
+                tbl[0]
+            })
+            .collect()
+    }
+
     #[doc(hidden)]
     pub fn __test_col_phase_fast_vs_generic(&self, xs: &[K]) -> Option<(Vec<K>, Vec<K>)> {
         if self.round_idx >= self.ell_m {
@@ -2307,6 +2325,7 @@ where
         mcs_list: &[CcsClaim<Cmt, F>],
         me_inputs: &[CeClaim<Cmt, F, K>],
         s_col: &[K],
+        y_zcol_digits: Option<&[[K; D]]>,
         fold_digest: [u8; 32],
         _l: &L,
     ) -> Vec<CeClaim<Cmt, F, K>>
@@ -2347,7 +2366,7 @@ where
             .as_ref()
             .expect("ajtai_precomp just populated for ME output builder");
 
-        let chi_s = if s_col.is_empty() {
+        let chi_s = if s_col.is_empty() || y_zcol_digits.is_some() {
             None
         } else {
             Some(chi_tail_weights(s_col))
@@ -2361,7 +2380,11 @@ where
                 .unwrap_or_else(|e| panic!("ME output builder: project_x_from_public_inputs failed: {e}"));
             let (y_ring, ct) = materialize_y_ring_from_precomputed_digits(&pre.y_eval[mcs_idx], d_pad);
 
-            let y_zcol = if let Some(chi_s) = chi_s.as_ref() {
+            let y_zcol = if let Some(y_zcol_digits) = y_zcol_digits {
+                let mut row = vec![K::ZERO; d_pad];
+                row[..D].copy_from_slice(&y_zcol_digits[mcs_idx]);
+                row
+            } else if let Some(chi_s) = chi_s.as_ref() {
                 debug_assert!(chi_s.len() >= self.s.m, "chi_s too short for CCS width");
                 crate::common::compute_y_zcol_from_witness_digits(self.params, &wit.Z, self.s.m, chi_s, d_pad)
                     .unwrap_or_else(|e| panic!("ME output builder: y_zcol compute failed (MCS): {e}"))
@@ -2391,7 +2414,11 @@ where
             let Zi = &self.me_witnesses[me_idx];
             let (y_ring, ct) = materialize_y_ring_from_precomputed_digits(&pre.y_eval[k_mcs + me_idx], d_pad);
 
-            let y_zcol = if let Some(chi_s) = chi_s.as_ref() {
+            let y_zcol = if let Some(y_zcol_digits) = y_zcol_digits {
+                let mut row = vec![K::ZERO; d_pad];
+                row[..D].copy_from_slice(&y_zcol_digits[k_mcs + me_idx]);
+                row
+            } else if let Some(chi_s) = chi_s.as_ref() {
                 debug_assert!(chi_s.len() >= self.s.m, "chi_s too short for CCS width");
                 crate::common::compute_y_zcol_from_witness_digits(self.params, Zi, self.s.m, chi_s, d_pad)
                     .unwrap_or_else(|e| panic!("ME output builder: y_zcol compute failed (ME): {e}"))

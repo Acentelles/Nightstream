@@ -7,6 +7,7 @@ use neo_math::{D, F};
 use neo_params::NeoParams;
 use neo_reductions::api::FoldingMode;
 use neo_reductions::error::PiCcsError;
+use neo_reductions::optimized_engine::OptimizedStructureCache;
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::PrimeCharacteristicRing;
 use serde::{Deserialize, Serialize};
@@ -14,15 +15,19 @@ use std::ops::Deref;
 use std::sync::OnceLock;
 use std::time::Instant;
 
-use crate::proof::{partition_public_steps, FoldSchedule, PackagedProof, PublicChunk, PublicStep, StepInput};
-use crate::prover::CommitmentMixers;
-use crate::run::{prove_and_package, verify_packaged};
+use crate::proof::{
+    partition_public_steps, Carry, ChunkInput, FoldSchedule, PackagedProof, PublicChunk, PublicStep, RunProof,
+    RunProvePerf, RunVerifyPerf, StepInput,
+};
+use crate::prover::{CommitmentMixers, ShardProver};
+use crate::run::{prove_and_package_with_perf, verify_packaged_with_perf};
 use crate::rv64im::ccs::{rv64im_root_main_lane_ccs, semantic_row_from_execution_row, RV64IM_ROOT_ROW_WIDTH};
 use crate::rv64im::isa::Rv64BuildError;
 use crate::rv64im::lower::Rv64ExpandedRow;
 use crate::rv64im::stage1::Stage1Summary;
 use crate::rv64im::stage2::Stage2Summary;
 use crate::rv64im::stage3::Stage3Summary;
+use crate::verifier::ShardVerifier;
 use crate::witness_layout::{commit_cols_for_ccs_m, encode_vector_for_ccs_m};
 
 use super::{
@@ -31,7 +36,9 @@ use super::{
         build_simple_kernel_main_lane_artifact, validate_simple_kernel_main_lane_artifact, SimpleKernelMainLaneArtifact,
     },
     perf_diagnostics::{
-        PackagedSimpleKernelVerifyPerf, Rv64imProofProvePerf, SimpleKernelBuildPerf, SimpleKernelVerifyPerf,
+        PackagedSimpleKernelVerifyPerf, RootMainLanePackagedProofProvePerf, RootMainLanePackagedProofVerifyPerf,
+        RootMainLaneRunProofProvePerf, RootMainLaneRunProofVerifyPerf, Rv64imProofProvePerf, SimpleKernelBuildPerf,
+        SimpleKernelVerifyPerf,
     },
     proof_witness::{
         stage_witness_projection_bundle_from_summaries, trace_projection_bundle_from_rows,
@@ -75,6 +82,7 @@ pub(super) const SIMPLE_KERNEL_B: u64 = 1 << 48;
 // Ajtai public parameters are global per dimension bucket, so the exact stage surfaces
 // must share one canonical seed and rely on local labels/digests for domain separation.
 pub(super) const EXACT_STAGE_PP_SEED: [u8; 32] = SIMPLE_KERNEL_PP_SEED;
+const ROOT_MAIN_LANE_STEP_LABEL: &str = "";
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SimpleKernelPublicInput {
@@ -376,7 +384,9 @@ fn build_prepared_step_from_semantic_row(
 ) -> Result<StepInput, SimpleKernelError> {
     let (witness, z_mat) = root_encode_semantic_row(root_context, trace_index, semantic_row)?;
     Ok(StepInput {
-        label: format!("rv64im/simple/trace_{trace_index}"),
+        // Root main-lane position is already bound by chunk ordering and start indices.
+        // A per-row formatted label only bloats long traces.
+        label: ROOT_MAIN_LANE_STEP_LABEL.into(),
         mcs: neo_ccs::CcsClaim {
             c: root_context.log().commit(&z_mat),
             x: vec![F::ONE],
@@ -394,7 +404,7 @@ fn build_public_step_from_semantic_row(
     let z_mat = encode_vector_for_ccs_m(root_context.params(), RV64IM_ROOT_ROW_WIDTH, semantic_row)
         .map_err(|err| SimpleKernelError::Bridge(format!("root encoding failed for row {trace_index}: {err}")))?;
     Ok(PublicStep {
-        label: format!("rv64im/simple/trace_{trace_index}"),
+        label: ROOT_MAIN_LANE_STEP_LABEL.into(),
         mcs: neo_ccs::CcsClaim {
             c: root_context.log().commit(&z_mat),
             x: vec![F::ONE],
@@ -472,14 +482,25 @@ fn same_public_chunk(lhs: &PublicChunk, rhs: &PublicChunk) -> bool {
             .all(|(lhs, rhs)| same_public_step(lhs, rhs))
 }
 
-pub(super) fn build_root_main_lane_packaged_proof(
+fn root_main_lane_chunk_len(schedule: FoldSchedule, row_count: usize) -> Result<usize, SimpleKernelError> {
+    schedule.validate()?;
+    Ok(match schedule {
+        FoldSchedule::WholeTrace => row_count.max(1),
+        FoldSchedule::RowsPerChunk(rows) => rows,
+    })
+}
+
+pub(super) fn build_root_main_lane_packaged_proof_with_perf(
     rows: &[Rv64ExpandedRow],
     schedule: FoldSchedule,
-) -> Result<PackagedProof, SimpleKernelError> {
+) -> Result<(PackagedProof, RootMainLanePackagedProofProvePerf), SimpleKernelError> {
+    let total_started = Instant::now();
     let root_context = cached_simple_kernel_root_context()?;
     let ccs = cached_root_main_lane_ccs()?;
+    let prepare_steps_started = Instant::now();
     let steps = build_prepared_steps_from_execution_rows(rows)?;
-    Ok(prove_and_package(
+    let prepare_steps_ms = millis_since(prepare_steps_started);
+    let (packaged, session) = prove_and_package_with_perf(
         FoldingMode::Optimized,
         schedule,
         root_context.params(),
@@ -487,16 +508,89 @@ pub(super) fn build_root_main_lane_packaged_proof(
         steps,
         root_context.log(),
         rv64im_ajtai_mixers(),
-    )?)
+    )?;
+    Ok((
+        packaged,
+        RootMainLanePackagedProofProvePerf {
+            prepare_steps_ms,
+            session,
+            total_ms: millis_since(total_started),
+        },
+    ))
 }
 
-pub(super) fn verify_root_main_lane_packaged_proof(
+pub fn prove_root_main_lane_packaged_proof_with_perf(
     rows: &[Rv64ExpandedRow],
-    packaged: &PackagedProof,
-) -> Result<(), SimpleKernelError> {
+    schedule: FoldSchedule,
+) -> Result<(PackagedProof, RootMainLanePackagedProofProvePerf), SimpleKernelError> {
+    build_root_main_lane_packaged_proof_with_perf(rows, schedule)
+}
+
+#[allow(dead_code)]
+pub fn prove_root_main_lane_run_proof_with_perf(
+    rows: &[Rv64ExpandedRow],
+    schedule: FoldSchedule,
+) -> Result<(RunProof, RootMainLaneRunProofProvePerf), SimpleKernelError> {
+    let total_started = Instant::now();
     let root_context = cached_simple_kernel_root_context()?;
     let ccs = cached_root_main_lane_ccs()?;
+    let chunk_len = root_main_lane_chunk_len(schedule, rows.len())?;
+    let optimized_cache = OptimizedStructureCache::build(ccs)?;
+    let mut tr = Poseidon2Transcript::new(b"neo.fold.next/session");
+    let mut main_carry = Carry::default();
+    let mut proof = RunProof {
+        fold_schedule: schedule,
+        ..RunProof::default()
+    };
+    let mut session = RunProvePerf::default();
+    let mut prepare_steps_ms = 0.0;
+    let mut start_index = 0usize;
+    while start_index < rows.len() {
+        let end_index = (start_index + chunk_len).min(rows.len());
+        let prepare_steps_started = Instant::now();
+        let steps = build_prepared_steps_from_execution_rows(&rows[start_index..end_index])?;
+        prepare_steps_ms += millis_since(prepare_steps_started);
+        let chunk = ChunkInput { start_index, steps };
+        let (proved, chunk_perf) = ShardProver::prove_chunk_with_perf(
+            FoldingMode::Optimized,
+            &mut tr,
+            root_context.params(),
+            ccs,
+            &chunk,
+            &main_carry,
+            root_context.log(),
+            rv64im_ajtai_mixers(),
+            Some(&optimized_cache),
+        )?;
+        main_carry = proved.next_main;
+        proof.chunks.push(proved.proof);
+        session.chunks.push(chunk_perf);
+        tr.append_message(b"neo.fold.next/chunk_done", &[1]);
+        start_index = end_index;
+    }
+    proof.final_main_claims = main_carry.claims;
+    session.total_ms = millis_since(total_started);
+    Ok((
+        proof,
+        RootMainLaneRunProofProvePerf {
+            prepare_steps_ms,
+            session,
+            total_ms: millis_since(total_started),
+        },
+    ))
+}
+
+pub(super) fn verify_root_main_lane_packaged_proof_with_perf(
+    rows: &[Rv64ExpandedRow],
+    packaged: &PackagedProof,
+) -> Result<RootMainLanePackagedProofVerifyPerf, SimpleKernelError> {
+    let total_started = Instant::now();
+    let root_context = cached_simple_kernel_root_context()?;
+    let ccs = cached_root_main_lane_ccs()?;
+    let prepare_public_steps_started = Instant::now();
     let public_steps = build_public_steps_from_execution_rows(rows)?;
+    let prepare_public_steps_ms = millis_since(prepare_public_steps_started);
+    let public_chunk_match_started = Instant::now();
     let expected_chunks = partition_public_steps(packaged.statement.fold_schedule, public_steps)?;
     if packaged.statement.chunks.len() != expected_chunks.len() {
         return Err(SimpleKernelError::Bridge(format!(
@@ -518,14 +612,87 @@ pub(super) fn verify_root_main_lane_packaged_proof(
             )));
         }
     }
-    verify_packaged(
+    let public_chunk_match_ms = millis_since(public_chunk_match_started);
+    let (_, session) = verify_packaged_with_perf(
         FoldingMode::Optimized,
         root_context.params(),
         ccs,
         packaged,
         rv64im_ajtai_mixers(),
     )?;
-    Ok(())
+    Ok(RootMainLanePackagedProofVerifyPerf {
+        prepare_public_steps_ms,
+        public_chunk_match_ms,
+        session,
+        total_ms: millis_since(total_started),
+    })
+}
+
+pub fn verify_root_main_lane_packaged_proof_with_public_rows(
+    rows: &[Rv64ExpandedRow],
+    packaged: &PackagedProof,
+) -> Result<RootMainLanePackagedProofVerifyPerf, SimpleKernelError> {
+    verify_root_main_lane_packaged_proof_with_perf(rows, packaged)
+}
+
+#[allow(dead_code)]
+pub fn verify_root_main_lane_run_proof_with_public_rows(
+    rows: &[Rv64ExpandedRow],
+    proof: &RunProof,
+) -> Result<RootMainLaneRunProofVerifyPerf, SimpleKernelError> {
+    let total_started = Instant::now();
+    let root_context = cached_simple_kernel_root_context()?;
+    let ccs = cached_root_main_lane_ccs()?;
+    let chunk_len = root_main_lane_chunk_len(proof.fold_schedule, rows.len())?;
+    let optimized_cache = OptimizedStructureCache::build(ccs)?;
+    let mut tr = Poseidon2Transcript::new(b"neo.fold.next/session");
+    let mut main_carry = &[][..];
+    let mut session = RunVerifyPerf::default();
+    let mut prepare_public_steps_ms = 0.0;
+    let mut start_index = 0usize;
+    for (chunk_index, chunk_proof) in proof.chunks.iter().enumerate() {
+        let end_index = (start_index + chunk_len).min(rows.len());
+        let prepare_public_steps_started = Instant::now();
+        let steps = build_public_steps_from_execution_rows(&rows[start_index..end_index])?;
+        prepare_public_steps_ms += millis_since(prepare_public_steps_started);
+        let chunk = PublicChunk { start_index, steps };
+        let (next_main, chunk_perf) = ShardVerifier::verify_chunk_with_perf(
+            FoldingMode::Optimized,
+            &mut tr,
+            root_context.params(),
+            ccs,
+            &chunk,
+            main_carry,
+            chunk_proof,
+            rv64im_ajtai_mixers(),
+            Some(&optimized_cache),
+        )?;
+        main_carry = next_main;
+        session.chunks.push(chunk_perf);
+        tr.append_message(b"neo.fold.next/chunk_done", &[1]);
+        start_index = end_index;
+        if chunk_index + 1 == proof.chunks.len() && start_index != rows.len() {
+            return Err(SimpleKernelError::Bridge(
+                "RV64IM root main-lane run proof ended before covering all rows".into(),
+            ));
+        }
+    }
+    if start_index != rows.len() {
+        return Err(SimpleKernelError::Bridge(
+            "RV64IM root main-lane run proof chunk count does not cover the provided rows".into(),
+        ));
+    }
+    if main_carry != proof.final_main_claims.as_slice() {
+        return Err(SimpleKernelError::Proof(
+            "RV64IM root main-lane run proof final carried claims mismatch".into(),
+        ));
+    }
+    session.total_ms = millis_since(total_started);
+    Ok(RootMainLaneRunProofVerifyPerf {
+        prepare_public_steps_ms,
+        session,
+        total_ms: millis_since(total_started),
+    })
 }
 
 fn build_prepared_step_binding_summary(
@@ -1240,6 +1407,7 @@ pub fn prove_packaged_simple_kernel_with_perf(
         Rv64imProofProvePerf {
             simple_kernel,
             main_lane_ms: millis_since(main_lane_started),
+            root_main_lane: RootMainLanePackagedProofProvePerf::default(),
             public_export_ms: 0.0,
             total_ms: millis_since(total_started),
         },

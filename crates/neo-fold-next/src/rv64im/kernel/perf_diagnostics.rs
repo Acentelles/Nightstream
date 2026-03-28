@@ -1,5 +1,7 @@
 //! Owns compact performance-diagnostics records for the RV64IM kernel path.
 
+use crate::proof::{RunProvePerf, RunVerifyPerf};
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ExactStageVectorBuildPerf {
     pub flatten_u64_words: usize,
@@ -108,23 +110,56 @@ pub struct PackagedSimpleKernelVerifyPerf {
     pub total_ms: f64,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct Rv64imProofProvePerf {
     pub simple_kernel: SimpleKernelBuildPerf,
     pub main_lane_ms: f64,
+    pub root_main_lane: RootMainLanePackagedProofProvePerf,
     pub public_export_ms: f64,
     pub total_ms: f64,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct Rv64imPublicProofVerifyPerf {
     pub public_claim_digests_ms: f64,
     pub public_bundle_digests_ms: f64,
     pub public_bundle_bindings_ms: f64,
     pub public_kernel_build: SimpleKernelBuildPerf,
     pub root_main_lane_proof_ms: f64,
+    pub root_main_lane: RootMainLanePackagedProofVerifyPerf,
     pub stage_package_verify_ms: f64,
     pub kernel_opening_verify_ms: f64,
     pub summary_consistency_ms: f64,
+    pub total_ms: f64,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct RootMainLanePackagedProofProvePerf {
+    pub prepare_steps_ms: f64,
+    pub session: RunProvePerf,
+    pub total_ms: f64,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Debug, Default)]
+pub struct RootMainLaneRunProofProvePerf {
+    pub prepare_steps_ms: f64,
+    pub session: RunProvePerf,
+    pub total_ms: f64,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct RootMainLanePackagedProofVerifyPerf {
+    pub prepare_public_steps_ms: f64,
+    pub public_chunk_match_ms: f64,
+    pub session: RunVerifyPerf,
+    pub total_ms: f64,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Debug, Default)]
+pub struct RootMainLaneRunProofVerifyPerf {
+    pub prepare_public_steps_ms: f64,
+    pub session: RunVerifyPerf,
     pub total_ms: f64,
 }

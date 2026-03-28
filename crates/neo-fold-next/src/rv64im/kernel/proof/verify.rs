@@ -4,12 +4,12 @@ use super::main_lane_artifact::build_simple_kernel_main_lane_artifact_from_summa
 use super::perf_diagnostics::{Rv64imPublicProofVerifyPerf, SimpleKernelBuildPerf};
 use super::proof_api::Rv64imProof;
 use super::proof_witness::{
-    kernel_claim_summary_bundle_from_claims, kernel_opening_proof_bundle_from_opening,
-    stage_claim_summary_bundle_from_claims, stage_package_proof_bundle_from_packages,
+    kernel_claim_summary_bundle_from_claims, kernel_opening_binding_bundle_from_opening,
+    stage_claim_summary_bundle_from_claims, stage_package_summary_bundle_from_packages,
     verify_kernel_claim_packaged_proof, verify_stage_claim_packaged_proof,
 };
 use super::simple::{
-    build_public_simple_kernel_output_and_witness_with_perf, verify_root_main_lane_packaged_proof,
+    build_public_simple_kernel_output_and_witness_with_perf, verify_root_main_lane_packaged_proof_with_perf,
     PublicSimpleKernelOutput, PublicSimpleKernelWitnessSidecar,
 };
 use super::stage_artifacts::verify_public_kernel_opening_bundle_with_perf;
@@ -219,8 +219,8 @@ fn validate_public_bundle_digests(proof: &Rv64imProof) -> Result<(), SimpleKerne
             "RV64IM stage-package proof bundle digest mismatch".into(),
         ));
     }
-    let expected_stage_packages = stage_package_proof_bundle_from_packages(&proof.kernel.stage_packages.packages);
-    if proof.kernel.stage_packages.summary != expected_stage_packages.summary {
+    let expected_stage_packages = stage_package_summary_bundle_from_packages(&proof.kernel.stage_packages.packages);
+    if proof.kernel.stage_packages.summary != expected_stage_packages {
         return Err(SimpleKernelError::Bridge(
             "RV64IM stage-package summary bundle does not match the carried stage packages".into(),
         ));
@@ -235,9 +235,10 @@ fn validate_public_bundle_digests(proof: &Rv64imProof) -> Result<(), SimpleKerne
             "RV64IM kernel-opening proof bundle digest mismatch".into(),
         ));
     }
-    let expected_kernel_opening = kernel_opening_proof_bundle_from_opening(&proof.kernel.kernel_opening.opening);
-    if proof.kernel.kernel_opening.opening_digest != expected_kernel_opening.opening_digest
-        || proof.kernel.kernel_opening.bindings != expected_kernel_opening.bindings
+    let expected_kernel_opening_bindings =
+        kernel_opening_binding_bundle_from_opening(&proof.kernel.kernel_opening.opening);
+    if proof.kernel.kernel_opening.opening_digest != proof.kernel.kernel_opening.opening.digest
+        || proof.kernel.kernel_opening.bindings != expected_kernel_opening_bindings
     {
         return Err(SimpleKernelError::Bridge(
             "RV64IM kernel-opening summary bundle does not match the carried opening proof".into(),
@@ -763,14 +764,16 @@ fn rebuild_public_kernel_from_input(
             "RV64IM public proof stage claims do not match the canonical stage claims".into(),
         ));
     }
-    let expected_stage_packages = stage_package_proof_bundle_from_packages(&kernel.stage_packages).summary_bundle();
-    if proof.kernel.stage_packages.summary_bundle() != expected_stage_packages {
+    let expected_stage_packages = stage_package_summary_bundle_from_packages(&kernel.stage_packages);
+    if proof.kernel.stage_packages.summary != expected_stage_packages {
         return Err(SimpleKernelError::Bridge(
             "RV64IM public proof stage-package summary does not match the canonical stage packages".into(),
         ));
     }
-    let expected_kernel_opening = kernel_opening_proof_bundle_from_opening(&kernel.kernel_opening).summary();
-    if proof.kernel.kernel_opening.summary() != expected_kernel_opening {
+    let expected_kernel_opening_bindings = kernel_opening_binding_bundle_from_opening(&kernel.kernel_opening);
+    if proof.kernel.kernel_opening.opening_digest != kernel.kernel_opening.digest
+        || proof.kernel.kernel_opening.bindings != expected_kernel_opening_bindings
+    {
         return Err(SimpleKernelError::Bridge(
             "RV64IM public proof kernel-opening summary does not match the canonical kernel opening".into(),
         ));
@@ -824,7 +827,10 @@ fn finalize_public_proof_verify_with_perf(
     total_started: Instant,
 ) -> Result<(PublicSimpleKernelOutput, Rv64imPublicProofVerifyPerf), SimpleKernelError> {
     let root_main_lane_started = Instant::now();
-    verify_root_main_lane_packaged_proof(&sidecar.trace.execution_rows, &proof.kernel.main_lane.packaged)?;
+    let root_main_lane = verify_root_main_lane_packaged_proof_with_perf(
+        &sidecar.trace.execution_rows,
+        &proof.kernel.main_lane.packaged,
+    )?;
     let root_main_lane_proof_ms = millis_since(root_main_lane_started);
 
     let stage_package_started = Instant::now();
@@ -855,6 +861,7 @@ fn finalize_public_proof_verify_with_perf(
             public_bundle_bindings_ms: 0.0,
             public_kernel_build,
             root_main_lane_proof_ms,
+            root_main_lane,
             stage_package_verify_ms,
             kernel_opening_verify_ms,
             summary_consistency_ms,

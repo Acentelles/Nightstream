@@ -30,10 +30,7 @@ use super::{
         ExactStageVectorBuildPerf, KernelOpeningBundleBuildPerf, KernelOpeningBundleVerifyPerf,
         PackagedOpeningBuildPerf, StageClaimBundleBuildPerf,
     },
-    simple::{
-        rv64im_ajtai_mixers, SimpleKernelError, SimpleKernelKernelClaimBundle, EXACT_STAGE_PP_SEED, SIMPLE_KERNEL_B,
-        SIMPLE_KERNEL_K_RHO,
-    },
+    simple::{rv64im_ajtai_mixers, SimpleKernelError, SimpleKernelKernelClaimBundle, EXACT_STAGE_PP_SEED},
     simple_openings::{
         KernelBindingOpeningClaim, KernelBindingOpeningPoints, KernelBindingPackagedOpeningProof,
         KernelPreparedStepOpeningClaim, KernelPreparedStepOpeningPoints, KernelPreparedStepPackagedOpeningProof,
@@ -49,6 +46,10 @@ use super::{
 };
 
 pub(super) const RV64IM_SELECTED_OPENING_LAYOUT_V1: u64 = 1;
+const EXACT_VECTOR_PACKAGE_LIMB_BITS: u32 = 16;
+const EXACT_VECTOR_PACKAGE_LIMB_COUNT: usize = 64 / EXACT_VECTOR_PACKAGE_LIMB_BITS as usize;
+const EXACT_VECTOR_PACKAGE_K_RHO: u32 = 24;
+const EXACT_VECTOR_PACKAGE_B: u64 = 1 << EXACT_VECTOR_PACKAGE_K_RHO;
 
 fn millis_since(started: Instant) -> f64 {
     started.elapsed().as_secs_f64() * 1_000.0
@@ -140,12 +141,14 @@ struct ExactVectorPackageContext {
 static EXACT_VECTOR_PACKAGE_CONTEXTS: OnceLock<Mutex<HashMap<usize, Arc<ExactVectorPackageContext>>>> = OnceLock::new();
 
 fn split_u64_to_fields(value: u64, out: &mut Vec<F>) {
-    out.push(F::from_u64(value as u32 as u64));
-    out.push(F::from_u64((value >> 32) as u32 as u64));
+    const LIMB_MASK: u64 = (1u64 << EXACT_VECTOR_PACKAGE_LIMB_BITS) - 1;
+    for shift in (0..64).step_by(EXACT_VECTOR_PACKAGE_LIMB_BITS as usize) {
+        out.push(F::from_u64((value >> shift) & LIMB_MASK));
+    }
 }
 
 fn u64_vector_to_field_limbs(values: &[u64]) -> Vec<F> {
-    let mut out = Vec::with_capacity(values.len() * 2);
+    let mut out = Vec::with_capacity(values.len() * EXACT_VECTOR_PACKAGE_LIMB_COUNT);
     for &value in values {
         split_u64_to_fields(value, &mut out);
     }
@@ -308,8 +311,8 @@ impl ExactVectorPackageContext {
             .ok_or_else(|| SimpleKernelError::Bridge(format!("{label} exact package width overflow")))?;
         let mut params = NeoParams::goldilocks_auto_r1cs_ccs(full_width)
             .map_err(|err| SimpleKernelError::Bridge(format!("{label} exact package params failed: {err}")))?;
-        params.k_rho = SIMPLE_KERNEL_K_RHO;
-        params.B = SIMPLE_KERNEL_B;
+        params.k_rho = EXACT_VECTOR_PACKAGE_K_RHO;
+        params.B = EXACT_VECTOR_PACKAGE_B;
         let m = commit_cols_for_ccs_m(full_width);
         let want_kappa = params.kappa as usize;
         if has_global_pp_for_dims(D, m) {

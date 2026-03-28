@@ -146,16 +146,30 @@ pub fn bind_header_and_instances_with_digest(
             mat_digest.len()
         )));
     }
-    for &digest_elem in mat_digest {
-        tr.append_fields(b"mat_digest", &[F::from_u64(digest_elem.as_canonical_u64())]);
-    }
+    let mat_digest_fields = [
+        F::from_u64(mat_digest[0].as_canonical_u64()),
+        F::from_u64(mat_digest[1].as_canonical_u64()),
+        F::from_u64(mat_digest[2].as_canonical_u64()),
+        F::from_u64(mat_digest[3].as_canonical_u64()),
+    ];
+    tr.append_fields(b"mat_digest", &mat_digest_fields);
 
     absorb_sparse_polynomial(tr, &s.f);
 
-    for inst in mcs_list.iter() {
-        tr.append_fields(b"x", &inst.x);
-        tr.append_u64s(b"m_in", &[inst.m_in as u64]);
-        tr.append_fields(b"c_data", &inst.c.data);
+    if !mcs_list.is_empty() {
+        let mut encoded_instances = Vec::with_capacity(
+            1 + mcs_list
+                .iter()
+                .map(|inst| 4 + inst.x.len() + inst.c.data.len())
+                .sum::<usize>(),
+        );
+        encoded_instances.push(F::from_u64(mcs_list.len() as u64));
+        for inst in mcs_list.iter() {
+            extend_f_slice(&mut encoded_instances, &inst.x);
+            encoded_instances.push(F::from_u64(inst.m_in as u64));
+            extend_f_slice(&mut encoded_instances, &inst.c.data);
+        }
+        tr.append_fields(b"mcs_instances/v2", &encoded_instances);
     }
 
     Ok(())
@@ -198,30 +212,36 @@ fn poseidon_digest_fields(input: &[F]) -> [F; 4] {
     neo_ccs::crypto::poseidon2_goldilocks::poseidon2_hash(input)
 }
 
-pub fn me_digest_poseidon(me: &CeClaim<Cmt, F, K>) -> [F; 4] {
-    let mut digest_input = Vec::<F>::with_capacity(2048);
-    extend_packed_bytes_as_fields(&mut digest_input, b"neo/ccs/me_input_digest_poseidon/v2");
+pub fn me_digest_poseidon_into(dst: &mut Vec<F>, me: &CeClaim<Cmt, F, K>) -> [F; 4] {
+    dst.clear();
+    dst.reserve(2048);
+    extend_packed_bytes_as_fields(dst, b"neo/ccs/me_input_digest_poseidon/v2");
 
-    extend_f_slice(&mut digest_input, &me.c.data);
-    extend_f_slice(&mut digest_input, me.X.as_slice());
-    extend_k_slice(&mut digest_input, &me.r);
-    extend_k_slice(&mut digest_input, &me.s_col);
-    extend_k_slice(&mut digest_input, &me.y_zcol);
+    extend_f_slice(dst, &me.c.data);
+    extend_f_slice(dst, me.X.as_slice());
+    extend_k_slice(dst, &me.r);
+    extend_k_slice(dst, &me.s_col);
+    extend_k_slice(dst, &me.y_zcol);
 
-    digest_input.push(F::from_u64(me.y_ring.len() as u64));
+    dst.push(F::from_u64(me.y_ring.len() as u64));
     for row in &me.y_ring {
-        extend_k_slice(&mut digest_input, row);
+        extend_k_slice(dst, row);
     }
 
-    extend_k_slice(&mut digest_input, &me.ct);
-    extend_k_slice(&mut digest_input, &me.aux_openings);
-    extend_f_slice(&mut digest_input, &me.c_step_coords);
-    digest_input.push(F::from_u64(me.m_in as u64));
-    digest_input.push(F::from_u64(me.u_offset as u64));
-    digest_input.push(F::from_u64(me.u_len as u64));
-    extend_packed_bytes_as_fields(&mut digest_input, &me.fold_digest);
+    extend_k_slice(dst, &me.ct);
+    extend_k_slice(dst, &me.aux_openings);
+    extend_f_slice(dst, &me.c_step_coords);
+    dst.push(F::from_u64(me.m_in as u64));
+    dst.push(F::from_u64(me.u_offset as u64));
+    dst.push(F::from_u64(me.u_len as u64));
+    extend_packed_bytes_as_fields(dst, &me.fold_digest);
 
-    poseidon_digest_fields(&digest_input)
+    poseidon_digest_fields(dst)
+}
+
+pub fn me_digest_poseidon(me: &CeClaim<Cmt, F, K>) -> [F; 4] {
+    let mut digest_input = Vec::<F>::with_capacity(2048);
+    me_digest_poseidon_into(&mut digest_input, me)
 }
 
 pub fn bind_me_inputs(tr: &mut Poseidon2Transcript, me_inputs: &[CeClaim<Cmt, F, K>]) -> Result<(), PiCcsError> {

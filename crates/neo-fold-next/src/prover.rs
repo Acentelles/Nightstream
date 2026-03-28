@@ -16,12 +16,13 @@ use neo_reductions::api::{
 };
 use neo_reductions::engines::utils;
 use neo_reductions::error::PiCcsError;
-use neo_reductions::optimized_engine::{optimized_prove_with_cache, OptimizedStructureCache};
+use neo_reductions::optimized_engine::{optimized_prove_with_cache_and_perf, OptimizedStructureCache};
 use neo_reductions::pi_rlc_dec::OptimizedRlcDec;
 use neo_transcript::Poseidon2Transcript;
 use p3_field::PrimeCharacteristicRing;
+use std::time::Instant;
 
-use crate::proof::{Carry, ChunkInput, ChunkProof, ChunkResult, PiDecArtifact, PiRlcArtifact};
+use crate::proof::{Carry, ChunkInput, ChunkProof, ChunkProvePerf, ChunkResult, PiDecArtifact, PiRlcArtifact};
 
 #[derive(Clone, Copy)]
 pub struct CommitmentMixers<MR, MB>
@@ -52,63 +53,92 @@ impl ShardProver {
         MR: Fn(&[Mat<F>], &[Commitment]) -> Commitment + Clone + Copy,
         MB: Fn(&[Commitment], u32) -> Commitment + Clone + Copy,
     {
+        Ok(Self::prove_chunk_with_perf(mode, tr, params, s, chunk, incoming_main, log, mixers, optimized_cache)?.0)
+    }
+
+    pub fn prove_chunk_with_perf<L, MR, MB>(
+        mode: FoldingMode,
+        tr: &mut Poseidon2Transcript,
+        params: &NeoParams,
+        s: &CcsStructure<F>,
+        chunk: &ChunkInput,
+        incoming_main: &Carry,
+        log: &L,
+        mixers: CommitmentMixers<MR, MB>,
+        optimized_cache: Option<&OptimizedStructureCache>,
+    ) -> Result<(ChunkResult, ChunkProvePerf), PiCcsError>
+    where
+        L: SModuleHomomorphism<F, Commitment> + Sync,
+        MR: Fn(&[Mat<F>], &[Commitment]) -> Commitment + Clone + Copy,
+        MB: Fn(&[Commitment], u32) -> Commitment + Clone + Copy,
+    {
+        let total_started = Instant::now();
         validate_main_carry("prove_chunk", incoming_main)?;
         validate_chunk_input(chunk)?;
         append_chunk_transcript(tr, chunk);
 
-        let (ccs_outputs, ccs_proof) = if matches!(mode, FoldingMode::Optimized) {
+        let prepare_inputs_started = Instant::now();
+        let fresh_claims = chunk
+            .steps
+            .iter()
+            .map(|step| step.mcs.clone())
+            .collect::<Vec<_>>();
+        let fresh_witnesses = chunk
+            .steps
+            .iter()
+            .map(|step| step.witness.clone())
+            .collect::<Vec<_>>();
+        let prepare_inputs_ms = prepare_inputs_started.elapsed().as_secs_f64() * 1_000.0;
+
+        let ccs_started = Instant::now();
+        let (ccs_outputs, ccs_proof, ccs_perf) = if matches!(mode, FoldingMode::Optimized) {
             let cache = optimized_cache.ok_or_else(|| {
                 PiCcsError::InvalidInput("missing optimized structure cache for optimized prove_chunk".into())
             })?;
-            optimized_prove_with_cache(
+            optimized_prove_with_cache_and_perf(
                 tr,
                 params,
                 s,
-                &chunk
-                    .steps
-                    .iter()
-                    .map(|step| step.mcs.clone())
-                    .collect::<Vec<_>>(),
-                &chunk
-                    .steps
-                    .iter()
-                    .map(|step| step.witness.clone())
-                    .collect::<Vec<_>>(),
+                &fresh_claims,
+                &fresh_witnesses,
                 &incoming_main.claims,
                 &incoming_main.witnesses,
                 log,
                 cache,
             )?
         } else {
-            prove(
+            let (ccs_outputs, ccs_proof) = prove(
                 mode.clone(),
                 tr,
                 params,
                 s,
-                &chunk
-                    .steps
-                    .iter()
-                    .map(|step| step.mcs.clone())
-                    .collect::<Vec<_>>(),
-                &chunk
-                    .steps
-                    .iter()
-                    .map(|step| step.witness.clone())
-                    .collect::<Vec<_>>(),
+                &fresh_claims,
+                &fresh_witnesses,
                 &incoming_main.claims,
                 &incoming_main.witnesses,
                 log,
-            )?
+            )?;
+            (
+                ccs_outputs,
+                ccs_proof,
+                neo_reductions::optimized_engine::PiCcsProvePerf::default(),
+            )
         };
+        let ccs_ms = ccs_started.elapsed().as_secs_f64() * 1_000.0;
         validate_ccs_outputs(chunk, incoming_main, &ccs_outputs, &ccs_proof)?;
 
+        let dims_started = Instant::now();
         let dims = utils::build_dims_and_policy(params, s)?;
+        let dims_ms = dims_started.elapsed().as_secs_f64() * 1_000.0;
         let rlc_rhos = sample_rlc_rhos(tr, params, ccs_outputs.len())?;
 
+        let rlc_prepare_started = Instant::now();
         let mut rlc_inputs_wit = Vec::with_capacity(chunk.steps.len() + incoming_main.witnesses.len());
         rlc_inputs_wit.extend(chunk.steps.iter().map(|step| step.witness.Z.clone()));
         rlc_inputs_wit.extend(incoming_main.witnesses.iter().cloned());
+        let rlc_prepare_ms = rlc_prepare_started.elapsed().as_secs_f64() * 1_000.0;
 
+        let rlc_started = Instant::now();
         let (parent, z_mix) = rlc_with_commit(
             mode.clone(),
             s,
@@ -119,10 +149,16 @@ impl ShardProver {
             dims.ell_d,
             mixers.mix_rhos_commits,
         )?;
+        let rlc_ms = rlc_started.elapsed().as_secs_f64() * 1_000.0;
 
         let k_dec = params.k_rho as usize;
+        let dec_split_started = Instant::now();
         let (z_split, digit_nonzero) = split_b_matrix_k_with_nonzero_flags(&z_mix, k_dec, params.b)?;
+        let dec_split_ms = dec_split_started.elapsed().as_secs_f64() * 1_000.0;
+        let dec_commit_started = Instant::now();
         let child_commitments = commit_split_children(log, &z_split, &digit_nonzero)?;
+        let dec_commit_ms = dec_commit_started.elapsed().as_secs_f64() * 1_000.0;
+        let dec_started = Instant::now();
         let (children, ok_y, ok_x, ok_c) = if matches!(mode, FoldingMode::Optimized) {
             let cache = optimized_cache.ok_or_else(|| {
                 PiCcsError::InvalidInput("missing optimized structure cache for optimized DEC".into())
@@ -149,6 +185,7 @@ impl ShardProver {
                 mixers.combine_b_pows,
             )
         };
+        let dec_ms = dec_started.elapsed().as_secs_f64() * 1_000.0;
         if !(ok_y && ok_x && ok_c) {
             return Err(PiCcsError::ProtocolError(format!(
                 "Π_DEC public checks failed for chunk starting at {}: y={}, X={}, c={}",
@@ -156,7 +193,9 @@ impl ShardProver {
             )));
         }
 
-        Ok(ChunkResult {
+        let ccs_output_count = ccs_outputs.len();
+        let dec_children = children.len();
+        let result = ChunkResult {
             proof: ChunkProof {
                 chunk: chunk.public(),
                 ccs_outputs,
@@ -170,7 +209,30 @@ impl ShardProver {
                 claims: children,
                 witnesses: z_split,
             },
-        })
+        };
+        let perf = ChunkProvePerf {
+            start_index: chunk.start_index,
+            fresh_steps: chunk.steps.len(),
+            incoming_main_claims: incoming_main.claims.len(),
+            ccs_outputs: ccs_output_count,
+            dec_children,
+            prepare_inputs_ms,
+            ccs_bind_ms: ccs_perf.bind_ms,
+            ccs_sample_challenges_ms: ccs_perf.sample_challenges_ms,
+            ccs_fe_sumcheck_ms: ccs_perf.fe_sumcheck_ms,
+            ccs_nc_sumcheck_ms: ccs_perf.nc_sumcheck_ms,
+            ccs_output_materialize_ms: ccs_perf.output_materialize_ms,
+            ccs_ms,
+            dims_ms,
+            rlc_prepare_ms,
+            rlc_ms,
+            dec_split_ms,
+            dec_commit_ms,
+            dec_ms,
+            total_ms: total_started.elapsed().as_secs_f64() * 1_000.0,
+        };
+
+        Ok((result, perf))
     }
 }
 

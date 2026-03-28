@@ -6,7 +6,7 @@
 #![allow(non_snake_case)]
 
 use crate::error::PiCcsError;
-use crate::optimized_engine::{PiCcsProof, PiCcsProofVariant};
+use crate::optimized_engine::{PiCcsProof, PiCcsProofVariant, PiCcsProvePerf};
 use crate::sumcheck::RoundOracle;
 use neo_ajtai::Commitment as Cmt;
 use neo_ccs::{CcsClaim, CcsStructure, CcsWitness, CeClaim, Mat};
@@ -56,6 +56,32 @@ pub fn optimized_prove_with_cache<L: neo_ccs::traits::SModuleHomomorphism<F, Cmt
     log: &L,
     cache: &OptimizedStructureCache,
 ) -> Result<(Vec<CeClaim<Cmt, F, K>>, PiCcsProof), PiCcsError> {
+    let (me_outputs, proof, _perf) = optimized_prove_with_cache_and_perf(
+        tr,
+        params,
+        s,
+        mcs_list,
+        mcs_witnesses,
+        me_inputs,
+        me_witnesses,
+        log,
+        cache,
+    )?;
+    Ok((me_outputs, proof))
+}
+
+pub fn optimized_prove_with_cache_and_perf<L: neo_ccs::traits::SModuleHomomorphism<F, Cmt>>(
+    tr: &mut Poseidon2Transcript,
+    params: &NeoParams,
+    s: &CcsStructure<F>,
+    mcs_list: &[CcsClaim<Cmt, F>],
+    mcs_witnesses: &[CcsWitness<F>],
+    me_inputs: &[CeClaim<Cmt, F, K>],
+    me_witnesses: &[Mat<F>],
+    log: &L,
+    cache: &OptimizedStructureCache,
+) -> Result<(Vec<CeClaim<Cmt, F, K>>, PiCcsProof, PiCcsProvePerf), PiCcsError> {
+    let total_started = std::time::Instant::now();
     if mcs_list.is_empty() {
         return Err(PiCcsError::InvalidInput("optimized_prove: empty mcs_list".into()));
     }
@@ -75,13 +101,17 @@ pub fn optimized_prove_with_cache<L: neo_ccs::traits::SModuleHomomorphism<F, Cmt
     }
 
     // Dims + transcript binding
+    let bind_started = std::time::Instant::now();
     let dims = utils::build_dims_and_policy(params, s)?;
     utils::bind_header_and_instances_with_digest(tr, params, s, mcs_list, dims, cache.mat_digest())?;
     utils::bind_me_inputs(tr, me_inputs)?;
+    let bind_ms = bind_started.elapsed().as_secs_f64() * 1_000.0;
 
     // Sample challenges
+    let sample_started = std::time::Instant::now();
     let mut ch = utils::sample_challenges(tr, dims.ell_d, dims.ell)?;
     ch.beta_m = utils::sample_beta_m(tr, dims.ell_m)?;
+    let sample_challenges_ms = sample_started.elapsed().as_secs_f64() * 1_000.0;
 
     let r_inputs = utils::shared_me_input_r(me_inputs, dims.ell_n)?;
 
@@ -158,6 +188,7 @@ pub fn optimized_prove_with_cache<L: neo_ccs::traits::SModuleHomomorphism<F, Cmt
     let mut sumcheck_rounds: Vec<Vec<K>> = Vec::with_capacity(oracle.num_rounds());
     let mut sumcheck_chals: Vec<K> = Vec::with_capacity(oracle.num_rounds());
 
+    let fe_sumcheck_started = std::time::Instant::now();
     for round_idx in 0..oracle.num_rounds() {
         let deg = oracle.degree_bound();
         let xs: Vec<K> = (0..=deg).map(|t| K::from(F::from_u64(t as u64))).collect();
@@ -210,6 +241,7 @@ pub fn optimized_prove_with_cache<L: neo_ccs::traits::SModuleHomomorphism<F, Cmt
         oracle.fold(r_i);
         sumcheck_rounds.push(coeffs);
     }
+    let fe_sumcheck_ms = fe_sumcheck_started.elapsed().as_secs_f64() * 1_000.0;
 
     // ---------------------------------------------------------------------
     // NC-only sumcheck (split-NC scaffolding; claimed sum is 0)
@@ -233,6 +265,7 @@ pub fn optimized_prove_with_cache<L: neo_ccs::traits::SModuleHomomorphism<F, Cmt
     let mut sumcheck_rounds_nc: Vec<Vec<K>> = Vec::with_capacity(oracle_nc.num_rounds());
     let mut sumcheck_chals_nc: Vec<K> = Vec::with_capacity(oracle_nc.num_rounds());
 
+    let nc_sumcheck_started = std::time::Instant::now();
     for _round_idx in 0..oracle_nc.num_rounds() {
         let coeffs = if let Some(coeffs) = oracle_nc.optimized_col_phase_round_coeffs() {
             coeffs
@@ -260,11 +293,22 @@ pub fn optimized_prove_with_cache<L: neo_ccs::traits::SModuleHomomorphism<F, Cmt
         oracle_nc.fold(r_i);
         sumcheck_rounds_nc.push(coeffs);
     }
+    let nc_sumcheck_ms = nc_sumcheck_started.elapsed().as_secs_f64() * 1_000.0;
 
     // Build outputs at r′ using the oracle's r′-only precomputation (no dense scan).
+    let output_started = std::time::Instant::now();
     let fold_digest = tr.digest32();
     let (s_col, _alpha_nc) = sumcheck_chals_nc.split_at(dims.ell_m);
-    let out_me = oracle.build_me_outputs_from_ajtai_precomp(mcs_list, me_inputs, s_col, fold_digest, log);
+    let y_zcol_digits = (!s_col.is_empty()).then(|| oracle_nc.finalized_y_zcol_digits());
+    let out_me = oracle.build_me_outputs_from_ajtai_precomp(
+        mcs_list,
+        me_inputs,
+        s_col,
+        y_zcol_digits.as_deref(),
+        fold_digest,
+        log,
+    );
+    let output_materialize_ms = output_started.elapsed().as_secs_f64() * 1_000.0;
 
     let mut proof = PiCcsProof::new(sumcheck_rounds, Some(initial_sum));
     proof.variant = PiCcsProofVariant::SplitNcV1;
@@ -277,7 +321,16 @@ pub fn optimized_prove_with_cache<L: neo_ccs::traits::SModuleHomomorphism<F, Cmt
     proof.sumcheck_final_nc = running_sum_nc;
     proof.header_digest = fold_digest.to_vec();
 
-    Ok((out_me, proof))
+    let perf = PiCcsProvePerf {
+        bind_ms,
+        sample_challenges_ms,
+        fe_sumcheck_ms,
+        nc_sumcheck_ms,
+        output_materialize_ms,
+        total_ms: total_started.elapsed().as_secs_f64() * 1_000.0,
+    };
+
+    Ok((out_me, proof, perf))
 }
 
 /// Simple wrapper for k=1 case (no ME inputs)

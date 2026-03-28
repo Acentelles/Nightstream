@@ -10,11 +10,7 @@ use super::proof_api::{
     Rv64imMainLaneProofBinding, Rv64imMainLaneProofBundle, Rv64imProof, Rv64imProofStatement, Rv64imRoot0Claim,
     Rv64imRoot0StageClaimBinding, Rv64imRoot0TerminalClaimBinding,
 };
-use super::proof_witness::{
-    kernel_claim_proof_bundle_from_claims, kernel_opening_proof_bundle_from_opening,
-    stage_claim_proof_bundle_from_claims, stage_package_proof_bundle_from_packages, Rv64imProofWitnessBundle,
-    Rv64imStageWitnessProjectionBundle, Rv64imTraceProjectionBundle,
-};
+use super::proof_witness::{Rv64imProofWitnessBundle, Rv64imStageWitnessProjectionBundle, Rv64imTraceProjectionBundle};
 use super::simple::PublicSimpleKernelOutput;
 use super::{build_main_lane_surface, rv64im_simple_root_context_id, SimpleKernelMainLaneArtifact};
 
@@ -287,12 +283,12 @@ pub(super) fn proof_from_public_kernel_and_artifact(
 ) -> Result<Rv64imProof, super::simple::SimpleKernelError> {
     let main_lane_surface = build_main_lane_surface(&kernel.root_lane_columns);
     let main_lane = main_lane_proof_bundle_from_artifact(main_lane_artifact, root_main_lane);
-    let trace = kernel.trace.clone();
-    let stages = kernel.stages.clone();
-    let stage_claims = stage_claim_proof_bundle_from_claims(&kernel.stage_claims)?;
-    let stage_packages = stage_package_proof_bundle_from_packages(&kernel.stage_packages);
-    let kernel_opening = kernel_opening_proof_bundle_from_opening(&kernel.kernel_opening);
-    let kernel_claims = kernel_claim_proof_bundle_from_claims(&kernel.kernel_claims)?;
+    let trace = witness.trace.projection();
+    let stages = witness.stages.projection_bundle();
+    let stage_claims = witness.stage_claims.clone();
+    let stage_packages = witness.stage_packages.clone();
+    let kernel_opening = witness.kernel_opening.clone();
+    let kernel_claims = witness.kernel_claims.clone();
     let statement = Rv64imProofStatement {
         root_params_id: rv64im_simple_root_context_id(),
         fold_schedule: main_lane.binding.fold_schedule,
