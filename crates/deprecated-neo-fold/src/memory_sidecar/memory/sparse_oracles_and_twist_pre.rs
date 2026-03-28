@@ -1160,7 +1160,7 @@ pub(crate) fn extract_trace_cpu_link_openings(
         return Ok(None);
     }
 
-    let trace = neo_memory::riscv::trace::Rv64TraceLayout::new();
+    let trace = deprecated_neo_memory::riscv::trace::Rv64TraceLayout::new();
     let trace_cols_to_open: Vec<usize> = vec![
         trace.active,
         trace.cycle,
@@ -1249,7 +1249,7 @@ pub(crate) fn prove_twist_addr_pre_time(
     }
 
     for (idx, (mem_inst, _mem_wit)) in step.mem_instances.iter().enumerate() {
-        neo_memory::addr::validate_twist_bit_addressing(mem_inst)?;
+        deprecated_neo_memory::addr::validate_twist_bit_addressing(mem_inst)?;
         let pow2_cycle = 1usize << ell_n;
         if mem_inst.steps > pow2_cycle {
             return Err(PiCcsError::InvalidInput(format!(

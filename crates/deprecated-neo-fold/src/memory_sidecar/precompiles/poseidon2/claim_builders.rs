@@ -1,13 +1,13 @@
 use super::*;
-use neo_ccs::Mat;
-use neo_memory::riscv::exec_table::{
+use deprecated_neo_memory::riscv::exec_table::{
     RiscvPoseidonCycleEventRow, RiscvPoseidonPermSlotMetaRow, RiscvPoseidonSidecarTable,
 };
-use neo_memory::riscv::lookups::{
+use deprecated_neo_memory::riscv::lookups::{
     RiscvInstruction, POSEIDON2_ABSORB_FUNCT7, POSEIDON2_CUSTOM_OPCODE, POSEIDON2_FINALIZE_FUNCT7,
     POSEIDON2_SQUEEZE_FUNCT7,
 };
-use neo_memory::riscv::trace::Rv64TraceLayout;
+use deprecated_neo_memory::riscv::trace::Rv64TraceLayout;
+use neo_ccs::Mat;
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
 use p3_goldilocks::Goldilocks;
 use p3_symmetric::Permutation;

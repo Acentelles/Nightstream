@@ -1,12 +1,12 @@
 use crate::pi_ccs::RotRho;
 use crate::PiCcsProof;
+use deprecated_neo_memory::{output_check::OutputBindingProof, RiscvGuestMemoryLayout, RiscvProofProfileConfig};
 use neo_ajtai::Commitment as Cmt;
 use neo_ccs::{matrix::Mat, CeClaim};
 use neo_math::{F, K};
-use neo_memory::{output_check::OutputBindingProof, RiscvGuestMemoryLayout, RiscvProofProfileConfig};
 
-pub type TwistProofK = neo_memory::twist::TwistProof<K>;
-pub type InstructionLookupProofK = neo_memory::shout::ShoutProof<K>;
+pub type TwistProofK = deprecated_neo_memory::twist::TwistProof<K>;
+pub type InstructionLookupProofK = deprecated_neo_memory::shout::ShoutProof<K>;
 
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct CpuTimeSumcheckProof {

@@ -3,13 +3,13 @@
 #[path = "../../common/fixtures.rs"]
 mod fixtures;
 
+use deprecated_neo_memory::witness::{StepInstanceBundle, StepWitnessBundle};
 use fixtures::build_twist_shout_2step_fixture;
 use neo_ccs::relations::{CcsClaim, CcsWitness};
 use neo_ccs::traits::SModuleHomomorphism;
 use neo_fold::pi_ccs::FoldingMode;
 use neo_fold::shard::{fold_shard_prove, fold_shard_verify, ShardSegmentKind};
 use neo_math::{F, K};
-use neo_memory::witness::{StepInstanceBundle, StepWitnessBundle};
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::PrimeCharacteristicRing;
 
@@ -26,7 +26,8 @@ fn build_ccs_only_step(fx: &fixtures::ShardFixture, salt: u64) -> StepWitnessBun
         .collect();
     let x = z[..m_in].to_vec();
     let w = z[m_in..].to_vec();
-    let Z = neo_memory::ajtai::encode_vector_for_ccs_m(&fx.params, z.len(), &z).expect("encode witness for CCS width");
+    let Z = deprecated_neo_memory::ajtai::encode_vector_for_ccs_m(&fx.params, z.len(), &z)
+        .expect("encode witness for CCS width");
     let c = fx.l.commit(&Z);
     StepWitnessBundle::from((CcsClaim { c, x, m_in }, CcsWitness { w, Z }))
 }

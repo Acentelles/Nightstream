@@ -5,6 +5,10 @@
 use std::marker::PhantomData;
 use std::sync::Arc;
 
+use deprecated_neo_memory::ajtai::{commit_cols_for_ccs_m, encode_vector_for_ccs_m};
+use deprecated_neo_memory::plain::{LutTable, PlainLutTrace, PlainMemLayout, PlainMemTrace};
+use deprecated_neo_memory::witness::{StepInstanceBundle, StepWitnessBundle};
+use deprecated_neo_memory::MemInit;
 use neo_ajtai::{s_lincomb, s_mul, setup as ajtai_setup, AjtaiSModule, Commitment as Cmt};
 use neo_ccs::poly::SparsePoly;
 use neo_ccs::relations::{CcsClaim, CcsStructure, CcsWitness, CeClaim};
@@ -16,10 +20,6 @@ use neo_fold::shard::{fold_shard_prove, fold_shard_verify, ShardFoldOutputs, Sha
 use neo_fold::{finalize::ObligationFinalizer, PiCcsError};
 use neo_math::ring::Rq as RqEl;
 use neo_math::{D, F, K};
-use neo_memory::ajtai::{commit_cols_for_ccs_m, encode_vector_for_ccs_m};
-use neo_memory::plain::{LutTable, PlainLutTrace, PlainMemLayout, PlainMemTrace};
-use neo_memory::witness::{StepInstanceBundle, StepWitnessBundle};
-use neo_memory::MemInit;
 use neo_params::NeoParams;
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::PrimeCharacteristicRing;
@@ -110,9 +110,9 @@ fn bus_cols_twist(d: usize, ell: usize) -> usize {
 fn build_cpu_witness_with_bus(
     m: usize,
     bus_base: usize,
-    lut_inst: &neo_memory::witness::LutInstance<Cmt, F>,
+    lut_inst: &deprecated_neo_memory::witness::LutInstance<Cmt, F>,
     lut_trace: &PlainLutTrace<F>,
-    mem_inst: &neo_memory::witness::MemInstance<Cmt, F>,
+    mem_inst: &deprecated_neo_memory::witness::MemInstance<Cmt, F>,
     mem_trace: &PlainMemTrace<F>,
     tag: u64,
 ) -> Vec<F> {
@@ -293,7 +293,7 @@ fn build_twist_shout_2step_fixture_inner(seed: u64, bad_lookup_step1: bool) -> S
     let mem_ell = mem_layout.n_side.trailing_zeros() as usize;
     let lut_ell = lut_table.n_side.trailing_zeros() as usize;
 
-    let mem_inst0 = neo_memory::witness::MemInstance::<Cmt, F> {
+    let mem_inst0 = deprecated_neo_memory::witness::MemInstance::<Cmt, F> {
         mem_id: 0,
         comms: Vec::new(),
         k: mem_layout.k,
@@ -306,8 +306,8 @@ fn build_twist_shout_2step_fixture_inner(seed: u64, bad_lookup_step1: bool) -> S
         init_digest: None,
         guest_addr_remap: None,
     };
-    let mem_wit0 = neo_memory::witness::MemWitness { mats: Vec::new() };
-    let lut_inst0 = neo_memory::witness::LutInstance::<Cmt, F> {
+    let mem_wit0 = deprecated_neo_memory::witness::MemWitness { mats: Vec::new() };
+    let lut_inst0 = deprecated_neo_memory::witness::LutInstance::<Cmt, F> {
         table_id: lut_table.table_id,
         comms: Vec::new(),
         k: lut_table.k,
@@ -322,9 +322,9 @@ fn build_twist_shout_2step_fixture_inner(seed: u64, bad_lookup_step1: bool) -> S
         addr_group: None,
         selector_group: None,
     };
-    let lut_wit0 = neo_memory::witness::LutWitness { mats: Vec::new() };
+    let lut_wit0 = deprecated_neo_memory::witness::LutWitness { mats: Vec::new() };
 
-    let mem_inst1 = neo_memory::witness::MemInstance::<Cmt, F> {
+    let mem_inst1 = deprecated_neo_memory::witness::MemInstance::<Cmt, F> {
         mem_id: 0,
         comms: Vec::new(),
         k: mem_layout.k,
@@ -337,8 +337,8 @@ fn build_twist_shout_2step_fixture_inner(seed: u64, bad_lookup_step1: bool) -> S
         init_digest: None,
         guest_addr_remap: None,
     };
-    let mem_wit1 = neo_memory::witness::MemWitness { mats: Vec::new() };
-    let lut_inst1 = neo_memory::witness::LutInstance::<Cmt, F> {
+    let mem_wit1 = deprecated_neo_memory::witness::MemWitness { mats: Vec::new() };
+    let lut_inst1 = deprecated_neo_memory::witness::LutInstance::<Cmt, F> {
         table_id: lut_table.table_id,
         comms: Vec::new(),
         k: lut_table.k,
@@ -353,7 +353,7 @@ fn build_twist_shout_2step_fixture_inner(seed: u64, bad_lookup_step1: bool) -> S
         addr_group: None,
         selector_group: None,
     };
-    let lut_wit1 = neo_memory::witness::LutWitness { mats: Vec::new() };
+    let lut_wit1 = deprecated_neo_memory::witness::LutWitness { mats: Vec::new() };
 
     let bus_cols_total = bus_cols_shout(lut_inst0.d, lut_inst0.ell) + bus_cols_twist(mem_inst0.d, mem_inst0.ell);
     let bus_base = ccs.m - bus_cols_total;

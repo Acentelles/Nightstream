@@ -477,9 +477,10 @@ pub(super) fn table_ell_addr_for_shared_bus(
                 2usize,
             ),
             LutTableSpec::IdentityU32 => (32usize, 2usize),
-            LutTableSpec::RiscvOpcodePacked { opcode, xlen } => {
-                (neo_memory::riscv::packed::rv_packed_d(*opcode, *xlen)?, 2usize)
-            }
+            LutTableSpec::RiscvOpcodePacked { opcode, xlen } => (
+                deprecated_neo_memory::riscv::packed::rv_packed_d(*opcode, *xlen)?,
+                2usize,
+            ),
             _ => {
                 return Err(PiCcsError::InvalidInput(
                     "unsupported shout table spec in the RV64 trace proving slice".into(),
@@ -620,7 +621,7 @@ pub(super) fn inject_exact_reg_writes_into_trace(trace: &mut VmTrace<u64, u64, u
             .twist_events
             .iter()
             .filter(|event| {
-                event.twist_id == REG_ID && event.kind == neo_vm_trace::TwistOpKind::Write && event.addr < 32
+                event.twist_id == REG_ID && event.kind == deprecated_neo_vm_trace::TwistOpKind::Write && event.addr < 32
             })
             .map(|event| (event.addr, event.value))
             .collect();
@@ -639,16 +640,16 @@ pub(super) fn inject_exact_reg_writes_into_trace(trace: &mut VmTrace<u64, u64, u
                     step.cycle
                 ))
             })?;
-            step.twist_events.push(neo_vm_trace::TwistEvent {
+            step.twist_events.push(deprecated_neo_vm_trace::TwistEvent {
                 twist_id: REG_EXACT_ID,
-                kind: neo_vm_trace::TwistOpKind::Write,
+                kind: deprecated_neo_vm_trace::TwistOpKind::Write,
                 addr: reg,
                 value: lo,
                 lane: Some(0),
             });
-            step.twist_events.push(neo_vm_trace::TwistEvent {
+            step.twist_events.push(deprecated_neo_vm_trace::TwistEvent {
                 twist_id: REG_EXACT_ID,
-                kind: neo_vm_trace::TwistOpKind::Write,
+                kind: deprecated_neo_vm_trace::TwistOpKind::Write,
                 addr: hi_addr,
                 value: hi,
                 lane: Some(1),
@@ -705,12 +706,12 @@ pub(super) fn final_reg_state_dense_injective(
 }
 
 pub(super) fn final_shared_mem_state_dense(
-    aux: Option<&neo_memory::builder::ShardWitnessAux>,
+    aux: Option<&deprecated_neo_memory::builder::ShardWitnessAux>,
     mem_id: u32,
     k: usize,
     num_bits: usize,
 ) -> Result<Vec<F>, PiCcsError> {
-    if num_bits > neo_memory::output_check::OUTPUT_SUMCHECK_MAX_NUM_BITS {
+    if num_bits > deprecated_neo_memory::output_check::OUTPUT_SUMCHECK_MAX_NUM_BITS {
         return Ok(Vec::new());
     }
     let aux =

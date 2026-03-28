@@ -1,8 +1,8 @@
 //! Tests for output_binding module.
 
+use deprecated_neo_memory::output_check::ProgramIO;
 use neo_fold::output_binding::{simple_output_config, OutputBindingConfig};
 use neo_math::F;
-use neo_memory::output_check::ProgramIO;
 use p3_field::PrimeCharacteristicRing;
 
 #[test]

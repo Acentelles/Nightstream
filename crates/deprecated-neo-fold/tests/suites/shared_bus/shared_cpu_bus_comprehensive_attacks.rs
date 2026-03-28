@@ -23,6 +23,13 @@
 
 use std::marker::PhantomData;
 
+use deprecated_neo_memory::cpu::build_bus_layout_for_instances;
+use deprecated_neo_memory::cpu::constraints::{CpuColumnLayout, CpuConstraintBuilder};
+use deprecated_neo_memory::plain::{LutTable, PlainLutTrace, PlainMemLayout, PlainMemTrace};
+use deprecated_neo_memory::witness::{
+    LutInstance, LutWitness, MemInstance, MemWitness, StepInstanceBundle, StepWitnessBundle,
+};
+use deprecated_neo_memory::MemInit;
 use neo_ajtai::Commitment as Cmt;
 use neo_ccs::poly::SparsePoly;
 use neo_ccs::relations::{CcsClaim, CcsStructure, CcsWitness};
@@ -33,11 +40,6 @@ use neo_fold::shard::{
     fold_shard_prove as fold_shard_prove_shared_cpu_bus, fold_shard_verify as fold_shard_verify_shared_cpu_bus,
 };
 use neo_math::{F, K};
-use neo_memory::cpu::build_bus_layout_for_instances;
-use neo_memory::cpu::constraints::{CpuColumnLayout, CpuConstraintBuilder};
-use neo_memory::plain::{LutTable, PlainLutTrace, PlainMemLayout, PlainMemTrace};
-use neo_memory::witness::{LutInstance, LutWitness, MemInstance, MemWitness, StepInstanceBundle, StepWitnessBundle};
-use neo_memory::MemInit;
 use neo_params::NeoParams;
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::PrimeCharacteristicRing;
@@ -283,7 +285,7 @@ fn ccs_must_reference_bus_columns_guardrail() {
     };
 
     let z = build_cpu_witness_with_twist_bus(m, bus_base, &mem_trace, &mem_layout);
-    let Z = neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z);
+    let Z = deprecated_neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z);
     let c = l.commit(&Z);
 
     let mcs = (
@@ -387,7 +389,7 @@ fn address_bit_tampering_attack_should_be_rejected() {
     z[bus_base + 5] = F::from_u64(100); // rv = 100 (WRONG: addr 1 has 200)
     z[bus_base + 6] = F::ZERO; // inc
 
-    let Z = neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z);
+    let Z = deprecated_neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z);
     let c = l.commit(&Z);
 
     let mcs = (
@@ -517,7 +519,7 @@ fn has_read_flag_mismatch_attack_should_be_rejected() {
     z[bus_base + 5] = F::from_u64(42); // rv = 42 (SHOULD BE 0 since has_read=0)
     z[bus_base + 6] = F::ZERO; // inc
 
-    let Z = neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z);
+    let Z = deprecated_neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z);
     let c = l.commit(&Z);
 
     let mcs = (
@@ -649,7 +651,7 @@ fn increment_value_tampering_attack_should_be_rejected() {
     z[bus_base + 5] = F::ZERO; // rv
     z[bus_base + 6] = F::from_u64(100); // inc = 100 (WRONG: should be 40)
 
-    let Z = neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z);
+    let Z = deprecated_neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z);
     let c = l.commit(&Z);
 
     let mcs = (
@@ -790,7 +792,7 @@ fn lookup_value_tampering_attack_should_be_rejected() {
     z[twist_base + 2] = F::ZERO; // has_read = 0
     z[twist_base + 3] = F::ZERO; // has_write = 0
 
-    let Z = neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z);
+    let Z = deprecated_neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z);
     let c = l.commit(&Z);
 
     let mcs = (
@@ -934,7 +936,7 @@ fn bus_region_mismatch_with_twist_trace_should_be_rejected() {
     z[bus_base + 5] = F::ZERO; // rv = 0 (WRONG: should be 42)
     z[bus_base + 6] = F::ZERO; // inc
 
-    let Z = neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z);
+    let Z = deprecated_neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z);
     let c = l.commit(&Z);
 
     let mcs = (
@@ -1075,7 +1077,7 @@ fn write_then_read_consistency_attack_should_be_rejected() {
     z1[bus_base + 5] = F::ZERO; // rv
     z1[bus_base + 6] = F::from_u64(100); // inc
 
-    let Z1 = neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z1);
+    let Z1 = deprecated_neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z1);
     let c1 = l.commit(&Z1);
     let mcs1 = (
         CcsClaim {
@@ -1114,7 +1116,7 @@ fn write_then_read_consistency_attack_should_be_rejected() {
     z2[bus_base + 5] = F::ZERO; // rv = 0 (WRONG)
     z2[bus_base + 6] = F::ZERO; // inc
 
-    let Z2 = neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z2);
+    let Z2 = deprecated_neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z2);
     let c2 = l.commit(&Z2);
     let mcs2 = (
         CcsClaim {
@@ -1241,7 +1243,7 @@ fn correct_witness_should_verify() {
     z[bus_base + 5] = F::from_u64(42); // rv = 42 (CORRECT)
     z[bus_base + 6] = F::ZERO; // inc
 
-    let Z = neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z);
+    let Z = deprecated_neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z);
     let c = l.commit(&Z);
 
     let mcs = (

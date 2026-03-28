@@ -1,5 +1,12 @@
 #![allow(non_snake_case)]
 
+use deprecated_neo_memory::ajtai::encode_vector_for_ccs_m;
+use deprecated_neo_memory::cpu::build_bus_layout_for_instances;
+use deprecated_neo_memory::cpu::constraints::{
+    CpuConstraint, CpuConstraintBuilder, CpuConstraintLabel, ShoutCpuBinding, TwistCpuBinding,
+};
+use deprecated_neo_memory::mem_init::MemInit;
+use deprecated_neo_memory::witness::{LutInstance, MemInstance, StepInstanceBundle};
 use neo_ajtai::Commitment;
 use neo_ccs::poly::{SparsePoly, Term};
 use neo_ccs::relations::CcsStructure;
@@ -8,13 +15,6 @@ use neo_fold::memory_sidecar::cpu_bus::{
     append_bus_openings_to_me_instance, decode_cpu_z_to_k, prepare_ccs_for_shared_cpu_bus_step_instances,
 };
 use neo_math::{D, F, K};
-use neo_memory::ajtai::encode_vector_for_ccs_m;
-use neo_memory::cpu::build_bus_layout_for_instances;
-use neo_memory::cpu::constraints::{
-    CpuConstraint, CpuConstraintBuilder, CpuConstraintLabel, ShoutCpuBinding, TwistCpuBinding,
-};
-use neo_memory::mem_init::MemInit;
-use neo_memory::witness::{LutInstance, MemInstance, StepInstanceBundle};
 use neo_params::NeoParams;
 use p3_field::PrimeCharacteristicRing;
 

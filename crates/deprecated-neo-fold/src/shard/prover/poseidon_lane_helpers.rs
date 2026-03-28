@@ -2,7 +2,7 @@ use super::*;
 
 pub(crate) struct PoseidonProverSetup {
     pub cycle_enabled: bool,
-    pub sidecar: Option<neo_memory::riscv::exec_table::RiscvPoseidonSidecarTable>,
+    pub sidecar: Option<deprecated_neo_memory::riscv::exec_table::RiscvPoseidonSidecarTable>,
     pub cycle_wit: Option<Mat<F>>,
     pub cycle_open_spec: Option<(usize, usize, Vec<usize>)>,
     pub local_wit_full: Option<Mat<F>>,
@@ -361,7 +361,7 @@ pub(crate) fn build_poseidon_cycle_time_claims(
     r_cycle: &[K],
     ell_t: usize,
     poseidon_cycle_enabled: bool,
-    poseidon_sidecar: Option<&neo_memory::riscv::exec_table::RiscvPoseidonSidecarTable>,
+    poseidon_sidecar: Option<&deprecated_neo_memory::riscv::exec_table::RiscvPoseidonSidecarTable>,
     poseidon_cycle_wit: Option<&Mat<F>>,
     poseidon_cycle_open_spec: Option<&(usize, usize, Vec<usize>)>,
     poseidon_link_chals: Option<&crate::memory_sidecar::memory::PoseidonLinkChallenges>,
@@ -680,7 +680,7 @@ fn poseidon_open_cols_to_time_vectors(
     if t_len == 0 {
         return Err(PiCcsError::InvalidInput(format!("{label}: t_len must be > 0")));
     }
-    let logical = neo_memory::ajtai::decode_vector_for_ccs_m(params, expected_m, z).map_err(|e| {
+    let logical = deprecated_neo_memory::ajtai::decode_vector_for_ccs_m(params, expected_m, z).map_err(|e| {
         PiCcsError::ProtocolError(format!(
             "{label}: failed to decode packed witness coefficients for m={expected_m}: {e}"
         ))

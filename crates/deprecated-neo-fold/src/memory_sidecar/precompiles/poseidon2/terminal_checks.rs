@@ -137,7 +137,7 @@ pub(crate) fn verify_route_a_poseidon_cycle_terminals(
         ));
     }
     let decode = Rv32DecodeSidecarLayout::new();
-    let trace_layout = neo_memory::riscv::trace::Rv64TraceLayout::new();
+    let trace_layout = deprecated_neo_memory::riscv::trace::Rv64TraceLayout::new();
     let cpu_cols = poseidon_cpu_word_cols_for_cpu_len(step.time_columns.cpu_cols.len());
     let mut trace_opening_required_cols = vec![
         cpu_cols.active,

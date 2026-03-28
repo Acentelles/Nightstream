@@ -3,12 +3,12 @@
 #[path = "../../common/fixtures.rs"]
 mod fixtures;
 
+use deprecated_neo_memory::cpu::build_bus_layout_for_instances;
+use deprecated_neo_memory::mle::chi_at_index;
 use fixtures::{build_twist_shout_2step_fixture, prove};
 use neo_fold::pi_ccs::FoldingMode;
 use neo_fold::shard::{ShardProof, StepProof};
 use neo_math::K;
-use neo_memory::cpu::build_bus_layout_for_instances;
-use neo_memory::mle::chi_at_index;
 
 fn first_materialized_step(proof: &ShardProof) -> &StepProof {
     let step0 = proof
@@ -65,7 +65,7 @@ fn shared_cpu_bus_copyout_indices_match_bus_layout() {
     )
     .expect("bus layout");
 
-    let z = neo_memory::ajtai::decode_vector_for_ccs_m(&fx.params, s0.m, &step0_wit.mcs.1.Z)
+    let z = deprecated_neo_memory::ajtai::decode_vector_for_ccs_m(&fx.params, s0.m, &step0_wit.mcs.1.Z)
         .expect("decode logical witness from packed Z");
 
     let time_row = bus.time_index(0);

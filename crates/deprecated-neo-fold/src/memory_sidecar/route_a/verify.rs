@@ -224,7 +224,7 @@ pub fn verify_route_a_memory_step(
                 "virtual-domain check: trace-opening ME m_in mismatch".into(),
             ));
         }
-        let trace_layout = neo_memory::riscv::trace::Rv64TraceLayout::new();
+        let trace_layout = deprecated_neo_memory::riscv::trace::Rv64TraceLayout::new();
         let trace_opening_cols = rv64_trace_opening_columns(&trace_layout);
         let (trace_opening_entry, trace_opening_openings) = require_time_openings_covering_point(
             step_time_openings,
@@ -289,7 +289,7 @@ pub fn verify_route_a_memory_step(
         for (inst, inst_cols) in step.lut_insts.iter().zip(cpu_bus.shout_cols.iter()) {
             let table_id = trace_link_opcode_table_id_from_spec(&inst.table_spec)?;
             let is_combined_lane = table_id
-                .map(neo_memory::riscv::trace::riscv_trace_uses_combined_operand_key_table_id)
+                .map(deprecated_neo_memory::riscv::trace::riscv_trace_uses_combined_operand_key_table_id)
                 .unwrap_or(false);
             for lane_cols in inst_cols.lanes.iter() {
                 let key = (lane_cols.addr_bits.start, lane_cols.addr_bits.end);
@@ -313,7 +313,7 @@ pub fn verify_route_a_memory_step(
         let packed_xlen = packed_layout.map(|(_op, xlen)| xlen).unwrap_or(0);
         let packed_opcode = match &inst.table_spec {
             Some(LutTableSpec::RiscvOpcodePacked { opcode, xlen }) => {
-                if !neo_memory::riscv::packed::rv_packed_supported_opcode(*opcode, *xlen) {
+                if !deprecated_neo_memory::riscv::packed::rv_packed_supported_opcode(*opcode, *xlen) {
                     return Err(PiCcsError::InvalidInput(format!(
                         "unsupported packed RISC-V shout spec in Route-A verification: opcode={opcode:?}, xlen={xlen}"
                     )));
@@ -432,7 +432,7 @@ pub fn verify_route_a_memory_step(
                     if lane_claims.gamma_group.is_some() {
                         continue;
                     }
-                    let mut lane_terms = neo_memory::riscv::packed::rv_collect_packed_bitness_terms(
+                    let mut lane_terms = deprecated_neo_memory::riscv::packed::rv_collect_packed_bitness_terms(
                         op,
                         packed_xlen,
                         lane.addr_bits.as_slice(),
@@ -484,7 +484,7 @@ pub fn verify_route_a_memory_step(
                 shout_trace_sums.val += lane.val;
                 shout_trace_sums.table_id += lane.has_lookup * lane_table_id;
                 let is_combined_lane = lane_table_id_u32
-                    .map(neo_memory::riscv::trace::riscv_trace_uses_combined_operand_key_table_id)
+                    .map(deprecated_neo_memory::riscv::trace::riscv_trace_uses_combined_operand_key_table_id)
                     .unwrap_or(false);
                 if is_combined_lane {
                     let bits_to_scalar = |bits: &[K]| {

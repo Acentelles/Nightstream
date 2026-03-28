@@ -7,7 +7,7 @@ pub(crate) fn prove_rlc_dec_lane<L, MR, MB>(
     params: &NeoParams,
     s: &CcsStructure<F>,
     ccs_sparse_cache: Option<&SparseCache<F>>,
-    cpu_bus: Option<&neo_memory::cpu::BusLayout>,
+    cpu_bus: Option<&deprecated_neo_memory::cpu::BusLayout>,
     ring: &ccs::RotRing,
     ell_d: usize,
     k_dec: usize,
@@ -317,7 +317,7 @@ where
             .len()
             .checked_sub(trace_open_base)
             .ok_or_else(|| PiCcsError::InvalidInput("trace linkage aux base underflow".into()))?;
-        let trace = neo_memory::riscv::trace::Rv64TraceLayout::new();
+        let trace = deprecated_neo_memory::riscv::trace::Rv64TraceLayout::new();
         let trace_cols_to_open: Vec<usize> = vec![
             trace.active,
             trace.cycle,
@@ -659,7 +659,7 @@ pub(crate) fn crosscheck_route_a_ccs_step<L>(
     step_idx: usize,
     params: &NeoParams,
     s: &CcsStructure<F>,
-    cpu_bus: &neo_memory::cpu::BusLayout,
+    cpu_bus: &deprecated_neo_memory::cpu::BusLayout,
     mcs_inst: &neo_ccs::CcsClaim<Cmt, F>,
     mcs_wit: &neo_ccs::CcsWitness<F>,
     me_inputs: &[CeClaim<Cmt, F, K>],
@@ -894,7 +894,7 @@ where
                 crate::memory_sidecar::cpu_bus::append_bus_openings_to_me_instance(params, cpu_bus, core_t, Z, out)?;
             }
 
-            let trace = neo_memory::riscv::trace::Rv64TraceLayout::new();
+            let trace = deprecated_neo_memory::riscv::trace::Rv64TraceLayout::new();
             let trace_cols_to_open: Vec<usize> = vec![
                 trace.active,
                 trace.cycle,

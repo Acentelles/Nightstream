@@ -12,10 +12,10 @@
 
 #![allow(non_snake_case)]
 
-use neo_memory::riscv::lookups::{
+use deprecated_neo_memory::riscv::lookups::{
     encode_program, BranchCondition, RiscvCpu, RiscvInstruction, RiscvMemOp, RiscvMemory, RiscvOpcode, RiscvShoutTables,
 };
-use neo_vm_trace::{trace_program, TwistId};
+use deprecated_neo_vm_trace::{trace_program, TwistId};
 
 // ============================================================================
 // Test 1: Simple Arithmetic Program

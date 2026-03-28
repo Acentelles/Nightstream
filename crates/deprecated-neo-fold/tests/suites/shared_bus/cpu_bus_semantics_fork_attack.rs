@@ -35,6 +35,11 @@
 
 use std::marker::PhantomData;
 
+use deprecated_neo_memory::plain::{PlainMemLayout, PlainMemTrace};
+use deprecated_neo_memory::witness::{
+    LutInstance, LutWitness, MemInstance, MemWitness, StepInstanceBundle, StepWitnessBundle,
+};
+use deprecated_neo_memory::MemInit;
 use neo_ajtai::Commitment as Cmt;
 use neo_ccs::relations::{CcsClaim, CcsStructure, CcsWitness};
 use neo_ccs::traits::SModuleHomomorphism;
@@ -44,9 +49,6 @@ use neo_fold::shard::{
     fold_shard_prove as fold_shard_prove_shared_cpu_bus, fold_shard_verify as fold_shard_verify_shared_cpu_bus,
 };
 use neo_math::{F, K};
-use neo_memory::plain::{PlainMemLayout, PlainMemTrace};
-use neo_memory::witness::{LutInstance, LutWitness, MemInstance, MemWitness, StepInstanceBundle, StepWitnessBundle};
-use neo_memory::MemInit;
 use neo_params::NeoParams;
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::PrimeCharacteristicRing;
@@ -175,7 +177,7 @@ fn cpu_semantic_shadow_fork_attack_should_be_rejected() {
     z_cpu[bus_base + 5] = F::ZERO; // rv = 0 (CORRECT value from zero-init memory)
     z_cpu[bus_base + 6] = F::ZERO; // inc = 0
 
-    let Z_cpu = neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z_cpu);
+    let Z_cpu = deprecated_neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z_cpu);
     let c_cpu = l.commit(&Z_cpu);
 
     let mcs = (
@@ -385,7 +387,7 @@ fn cpu_semantic_fork_splice_attack_should_be_rejected() {
     // Let's use sparse init with the pre-written value.
     let mem_init = MemInit::Sparse(vec![(0, real_write_val)]);
 
-    let Z_fake = neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z_fake);
+    let Z_fake = deprecated_neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z_fake);
     let c_fake = l.commit(&Z_fake);
 
     let mcs = (
@@ -502,7 +504,7 @@ fn cpu_semantic_fork_splice_attack_should_be_rejected() {
 /// This tests the same vulnerability pattern but for lookup tables instead of memory.
 #[test]
 fn cpu_lookup_shadow_fork_attack_should_be_rejected() {
-    use neo_memory::plain::{LutTable, PlainLutTrace};
+    use deprecated_neo_memory::plain::{LutTable, PlainLutTrace};
 
     let n = 20usize;
     let m = 20usize;
@@ -571,7 +573,7 @@ fn cpu_lookup_shadow_fork_attack_should_be_rejected() {
     z_cpu[twist_bus_start + 5] = F::ZERO; // rv
     z_cpu[twist_bus_start + 6] = F::ZERO; // inc
 
-    let Z_cpu = neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z_cpu);
+    let Z_cpu = deprecated_neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z_cpu);
     let c_cpu = l.commit(&Z_cpu);
 
     let mcs = (

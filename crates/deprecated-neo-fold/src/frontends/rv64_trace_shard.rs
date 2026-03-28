@@ -23,34 +23,34 @@ use crate::pi_ccs::FoldingMode;
 use crate::session::FoldingSession;
 use crate::shard::{ShardProof, StepLinkingConfig};
 use crate::PiCcsError;
-use neo_ajtai::AjtaiSModule;
-use neo_ccs::CcsStructure;
-use neo_math::{D, F};
-use neo_memory::cpu::bus_layout::{
+use deprecated_neo_memory::cpu::bus_layout::{
     build_bus_layout_for_instances_with_shout_shapes_and_twist_lanes, ShoutInstanceShape,
 };
-use neo_memory::output_check::ProgramIO;
-use neo_memory::plain::{LutTable, PlainMemLayout};
-use neo_memory::riscv::ccs::{
+use deprecated_neo_memory::output_check::ProgramIO;
+use deprecated_neo_memory::plain::{LutTable, PlainMemLayout};
+use deprecated_neo_memory::riscv::ccs::{
     build_rv64_trace_wiring_ccs, rv64_trace_ccs_witness_from_exec_table, Rv64TraceCcsLayout, TraceShoutBusSpec,
 };
-use neo_memory::riscv::elf_loader::{load_elf, ElfLoadSegment, LoadedProgram};
-use neo_memory::riscv::exec_table::{RiscvExecRow, RiscvExecTable};
-use neo_memory::riscv::lookups::{
+use deprecated_neo_memory::riscv::elf_loader::{load_elf, ElfLoadSegment, LoadedProgram};
+use deprecated_neo_memory::riscv::exec_table::{RiscvExecRow, RiscvExecTable};
+use deprecated_neo_memory::riscv::lookups::{
     RiscvCpu, RiscvInstruction, RiscvMemOp, RiscvMemory, RiscvOpcode, RiscvShoutTables, PROG_ID, RAM_ID, REG_EXACT_ID,
     REG_ID,
 };
-use neo_memory::riscv::rom_init::prog_rom_layout_and_init_words;
-use neo_memory::riscv::trace::{
+use deprecated_neo_memory::riscv::rom_init::prog_rom_layout_and_init_words;
+use deprecated_neo_memory::riscv::trace::{
     riscv_trace_lookup_addr_group_for_table_id, riscv_trace_lookup_n_vals_for_table_id,
     riscv_trace_lookup_selector_group_for_table_id,
 };
-use neo_memory::{
+use deprecated_neo_memory::{
     lower_loaded_program, LoweredInstruction, LoweredProgram, LutTableSpec, R1csCpu, RiscvGuestMemoryLayout,
     RiscvProofProfile, RiscvProofProfileConfig, RiscvProofProfileError,
 };
+use deprecated_neo_vm_trace::{trace_program, StepTrace, Twist as _, VmTrace};
+use neo_ajtai::AjtaiSModule;
+use neo_ccs::CcsStructure;
+use neo_math::{D, F};
 use neo_params::NeoParams;
-use neo_vm_trace::{trace_program, StepTrace, Twist as _, VmTrace};
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
 use rand_chacha::rand_core::SeedableRng;
 
@@ -490,7 +490,7 @@ impl Rv64TraceWiring {
             .map_err(|e| PiCcsError::InvalidInput(format!("build_rv64_trace_wiring_ccs failed: {e}")))?;
         let params = NeoParams::goldilocks_auto_r1cs_ccs(ccs.n.max(ccs.m))
             .map_err(|e| PiCcsError::InvalidInput(format!("NeoParams::goldilocks_auto_r1cs_ccs failed: {e}")))?;
-        let m_commit = neo_memory::ajtai::commit_cols_for_ccs_m(ccs.m);
+        let m_commit = deprecated_neo_memory::ajtai::commit_cols_for_ccs_m(ccs.m);
         let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(42);
         let pp = neo_ajtai::setup_par(&mut rng, D, params.kappa as usize, m_commit)
             .map_err(|e| PiCcsError::InvalidInput(format!("Ajtai setup failed: {e}")))?;
@@ -893,7 +893,9 @@ impl Rv64TraceWiringRun {
         &self.memory_layout
     }
 
-    pub fn steps_public(&self) -> Vec<neo_memory::witness::StepInstanceBundle<neo_ajtai::Commitment, F, neo_math::K>> {
+    pub fn steps_public(
+        &self,
+    ) -> Vec<deprecated_neo_memory::witness::StepInstanceBundle<neo_ajtai::Commitment, F, neo_math::K>> {
         self.session.steps_public()
     }
 

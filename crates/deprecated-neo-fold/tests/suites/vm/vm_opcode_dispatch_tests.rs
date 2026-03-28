@@ -17,6 +17,11 @@
 
 use std::marker::PhantomData;
 
+use deprecated_neo_memory::plain::{LutTable, PlainLutTrace, PlainMemLayout, PlainMemTrace};
+use deprecated_neo_memory::witness::{
+    LutInstance, LutWitness, MemInstance, MemWitness, StepInstanceBundle, StepWitnessBundle,
+};
+use deprecated_neo_memory::MemInit;
 use neo_ajtai::{set_global_pp, setup as ajtai_setup, AjtaiSModule, Commitment as Cmt};
 use neo_ccs::poly::SparsePoly;
 use neo_ccs::relations::{CcsClaim, CcsStructure, CcsWitness, CeClaim};
@@ -26,9 +31,6 @@ use neo_fold::pi_ccs::FoldingMode;
 use neo_fold::shard::CommitMixers;
 use neo_fold::shard::{fold_shard_prove, fold_shard_verify};
 use neo_math::{D, F, K};
-use neo_memory::plain::{LutTable, PlainLutTrace, PlainMemLayout, PlainMemTrace};
-use neo_memory::witness::{LutInstance, LutWitness, MemInstance, MemWitness, StepInstanceBundle, StepWitnessBundle};
-use neo_memory::MemInit;
 use neo_params::NeoParams;
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
@@ -47,7 +49,7 @@ const OP_HALT: u64 = 4;
 /// Setup real Ajtai public parameters for tests.
 fn setup_ajtai_pp(m: usize, seed: u64) -> AjtaiSModule {
     let d = D;
-    let m_commit = neo_memory::ajtai::commit_cols_for_ccs_m(m);
+    let m_commit = deprecated_neo_memory::ajtai::commit_cols_for_ccs_m(m);
     if neo_ajtai::has_global_pp_for_dims(d, m_commit) {
         return AjtaiSModule::from_global_for_dims(d, m_commit).expect("from_global_for_dims");
     }
@@ -82,11 +84,11 @@ fn write_bits_le(out: &mut [F], mut x: u64, ell: usize) {
     }
 }
 
-fn bus_cols_shout(inst: &neo_memory::witness::LutInstance<Cmt, F>) -> usize {
+fn bus_cols_shout(inst: &deprecated_neo_memory::witness::LutInstance<Cmt, F>) -> usize {
     inst.d * inst.ell + 2
 }
 
-fn bus_cols_twist(inst: &neo_memory::witness::MemInstance<Cmt, F>) -> usize {
+fn bus_cols_twist(inst: &deprecated_neo_memory::witness::MemInstance<Cmt, F>) -> usize {
     2 * inst.d * inst.ell + 5
 }
 
@@ -94,7 +96,7 @@ fn fill_shout_bus(
     z: &mut [F],
     bus_base: usize,
     col_id: &mut usize,
-    inst: &neo_memory::witness::LutInstance<Cmt, F>,
+    inst: &deprecated_neo_memory::witness::LutInstance<Cmt, F>,
     trace: &PlainLutTrace<F>,
 ) {
     let ell_addr = inst.d * inst.ell;
@@ -121,7 +123,7 @@ fn fill_twist_bus(
     z: &mut [F],
     bus_base: usize,
     col_id: &mut usize,
-    inst: &neo_memory::witness::MemInstance<Cmt, F>,
+    inst: &deprecated_neo_memory::witness::MemInstance<Cmt, F>,
     trace: &PlainMemTrace<F>,
 ) {
     let ell_addr = inst.d * inst.ell;
@@ -172,8 +174,8 @@ fn create_mcs_with_bus(
     ccs: &CcsStructure<F>,
     l: &AjtaiSModule,
     tag: u64,
-    lut_insts: &[(&neo_memory::witness::LutInstance<Cmt, F>, &PlainLutTrace<F>)],
-    mem_insts: &[(&neo_memory::witness::MemInstance<Cmt, F>, &PlainMemTrace<F>)],
+    lut_insts: &[(&deprecated_neo_memory::witness::LutInstance<Cmt, F>, &PlainLutTrace<F>)],
+    mem_insts: &[(&deprecated_neo_memory::witness::MemInstance<Cmt, F>, &PlainMemTrace<F>)],
 ) -> (CcsClaim<Cmt, F>, CcsWitness<F>) {
     let m_in = 0usize;
     let mut z: Vec<F> = vec![F::ZERO; ccs.m];
@@ -206,7 +208,7 @@ fn create_mcs_with_bus(
         debug_assert_eq!(col_id, bus_cols_total, "bus col count mismatch");
     }
 
-    let Z = neo_memory::ajtai::encode_vector_balanced_to_mat(params, &z);
+    let Z = deprecated_neo_memory::ajtai::encode_vector_balanced_to_mat(params, &z);
     let c = l.commit(&Z);
 
     let x = z[..m_in].to_vec();

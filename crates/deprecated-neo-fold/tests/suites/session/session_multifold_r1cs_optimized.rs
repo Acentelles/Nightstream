@@ -1,12 +1,12 @@
 #![allow(non_snake_case)]
 
+use deprecated_neo_memory::ajtai::commit_cols_for_ccs_m;
 use neo_ajtai::{set_global_pp, setup as ajtai_setup, AjtaiSModule};
 use neo_ccs::{r1cs_to_ccs, Mat};
 use neo_fold::pi_ccs::FoldingMode;
 use neo_fold::session::{me_from_z_balanced, Accumulator, FoldingSession};
 use neo_fold::shard::StepLinkingConfig;
 use neo_math::{D, F, K};
-use neo_memory::ajtai::commit_cols_for_ccs_m;
 use neo_params::NeoParams;
 use p3_field::PrimeCharacteristicRing;
 use rand_chacha::rand_core::SeedableRng;

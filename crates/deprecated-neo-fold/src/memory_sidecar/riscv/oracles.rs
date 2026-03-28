@@ -1,6 +1,6 @@
 use super::*;
-use neo_memory::riscv::lookups::RiscvOpcode;
-use neo_memory::twist_oracle::{
+use deprecated_neo_memory::riscv::lookups::RiscvOpcode;
+use deprecated_neo_memory::twist_oracle::{
     Rv64PackedDivOracleSparseTime, Rv64PackedDivRemAdapterOracleSparseTime, Rv64PackedDivRemuAdapterOracleSparseTime,
     Rv64PackedDivuOracleSparseTime, Rv64PackedMulHiOracleSparseTime, Rv64PackedMulOracleSparseTime,
     Rv64PackedMulhAdapterOracleSparseTime, Rv64PackedMulhsuAdapterOracleSparseTime, Rv64PackedMulhuOracleSparseTime,
@@ -38,9 +38,9 @@ pub(crate) fn build_route_a_memory_oracles(
     let trace_is_virtual_sparse = if step
         .mem_instances
         .iter()
-        .any(|(mem_inst, _)| mem_inst.mem_id == neo_memory::riscv::lookups::REG_ID.0)
+        .any(|(mem_inst, _)| mem_inst.mem_id == deprecated_neo_memory::riscv::lookups::REG_ID.0)
     {
-        let trace = neo_memory::riscv::trace::Rv64TraceLayout::new();
+        let trace = deprecated_neo_memory::riscv::trace::Rv64TraceLayout::new();
         let t_len = step.time_columns.t;
         let decoded = decode_trace_col_values_batch(params, step, t_len, &[trace.is_virtual])?;
         let is_virtual_vals = decoded.get(&trace.is_virtual).ok_or_else(|| {
@@ -1133,7 +1133,7 @@ pub(crate) fn build_route_a_memory_oracles(
                         PackedOpcodeKind::Remu => RiscvOpcode::Remu,
                         _ => unreachable!(),
                     };
-                    let mut lane_terms = neo_memory::riscv::packed::rv_collect_packed_bitness_terms(
+                    let mut lane_terms = deprecated_neo_memory::riscv::packed::rv_collect_packed_bitness_terms(
                         opcode,
                         64,
                         packed_cols,
@@ -1552,7 +1552,7 @@ pub(crate) fn build_route_a_memory_oracles(
                     }
                     let mut acc = K::ZERO;
                     for (i, &v) in lut_inst.table.iter().enumerate().take(pow2) {
-                        let w = neo_memory::mle::chi_at_index(r_addr, i);
+                        let w = deprecated_neo_memory::mle::chi_at_index(r_addr, i);
                         acc += K::from(v) * w;
                     }
                     acc
@@ -1712,7 +1712,8 @@ pub(crate) fn build_route_a_memory_oracles(
         let weights = bitness_weights(r_cycle, bit_cols.len(), 0x5457_4953_54u64 + mem_idx as u64);
         let bitness_oracle = LazyWeightedBitnessOracleSparseTime::new_with_cycle(r_cycle, bit_cols, weights);
         let bitness: Vec<Box<dyn RoundOracle + Send>> = vec![Box::new(bitness_oracle)];
-        let (virtual_write_domain, nonvirtual_arch_domain) = if mem_inst.mem_id == neo_memory::riscv::lookups::REG_ID.0
+        let (virtual_write_domain, nonvirtual_arch_domain) = if mem_inst.mem_id
+            == deprecated_neo_memory::riscv::lookups::REG_ID.0
         {
             if let Some(is_virtual) = trace_is_virtual_sparse.as_ref() {
                 let mut vd_oracles: Vec<Box<dyn RoundOracle + Send>> = Vec::with_capacity(pre.decoded.lanes.len());

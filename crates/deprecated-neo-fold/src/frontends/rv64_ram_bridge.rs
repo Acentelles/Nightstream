@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
+use deprecated_neo_memory::output_check::ProgramIO;
+use deprecated_neo_memory::riscv::elf_loader::LoadedProgram;
+use deprecated_neo_memory::riscv::lookups::RAM_ID;
+use deprecated_neo_memory::{AffineWordAddressRemap, RiscvGuestMemoryLayout};
+use deprecated_neo_vm_trace::VmTrace;
 use neo_math::F;
-use neo_memory::output_check::ProgramIO;
-use neo_memory::riscv::elf_loader::LoadedProgram;
-use neo_memory::riscv::lookups::RAM_ID;
-use neo_memory::{AffineWordAddressRemap, RiscvGuestMemoryLayout};
-use neo_vm_trace::VmTrace;
 
 use crate::PiCcsError;
 

@@ -1,12 +1,12 @@
+use deprecated_neo_memory::riscv::lookups::RiscvOpcode;
+use deprecated_neo_memory::witness::LutTableSpec;
+use deprecated_neo_vm_trace::{ShoutEvent, ShoutId, StepTrace, TwistEvent, TwistId, TwistOpKind};
 use neo_fold::session::witness_layout;
 use neo_fold::session::{
     Lane, LookupPort, Public, Scalar, SharedBusResources, TwistPort, TwistPortWithInc, WitnessLayout,
     WitnessLayoutAllocator,
 };
 use neo_math::F;
-use neo_memory::riscv::lookups::RiscvOpcode;
-use neo_memory::witness::LutTableSpec;
-use neo_vm_trace::{ShoutEvent, ShoutId, StepTrace, TwistEvent, TwistId, TwistOpKind};
 use p3_field::PrimeCharacteristicRing;
 
 witness_layout! {

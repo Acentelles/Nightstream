@@ -13,10 +13,10 @@
 //! Jolt's R1CS constraint system defines the binding between CPU instruction semantics
 //! and memory/lookup values. We adapt this for Neo's CCS-based proving system.
 
+use deprecated_neo_memory::cpu::build_bus_layout_for_instances;
+use deprecated_neo_memory::cpu::constraints::{CpuColumnLayout, CpuConstraintBuilder};
 use neo_ccs::relations::check_ccs_rowwise_zero;
 use neo_ccs::CcsStructure;
-use neo_memory::cpu::build_bus_layout_for_instances;
-use neo_memory::cpu::constraints::{CpuColumnLayout, CpuConstraintBuilder};
 use p3_field::PrimeCharacteristicRing;
 use p3_goldilocks::Goldilocks;
 
@@ -57,7 +57,7 @@ fn create_cpu_layout() -> CpuColumnLayout {
 /// - Load value binding: is_load * (rd_value - bus_rv) = 0
 /// - Store value binding: is_store * (rs2_value - bus_wv) = 0
 /// - Padding constraints: (1 - has_read) * rv = 0, etc.
-fn create_ccs_with_binding_constraints(ell_addr: usize) -> (CcsStructure<F>, neo_memory::cpu::BusLayout) {
+fn create_ccs_with_binding_constraints(ell_addr: usize) -> (CcsStructure<F>, deprecated_neo_memory::cpu::BusLayout) {
     let bus_cols = 2 * ell_addr + 5;
     let m = CPU_COLS + bus_cols;
     let n = m; // Square for identity-first

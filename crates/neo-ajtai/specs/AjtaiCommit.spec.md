@@ -89,7 +89,7 @@ Upstream dependencies:
 Downstream consumers:
 - `neo-fold`: shard commitment
 - `neo-reductions`: `Pi_DEC`
-- `neo-memory`: witness commitment
+- `deprecated-neo-memory`: witness commitment
 - `neo-spartan-bridge`: bridge layer
 - `neo-midnight-bridge`: bridge layer
 

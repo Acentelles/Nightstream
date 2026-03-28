@@ -1,16 +1,16 @@
 use crate::PiCcsError;
-use neo_ccs::{CcsMatrix, CcsStructure, CeClaim, Mat};
-use neo_math::{F, K};
-use neo_memory::cpu::{
+use deprecated_neo_memory::cpu::{
     build_bus_layout_for_instances_with_shout_shapes_and_twist_lanes, BusLayout, ShoutInstanceShape,
 };
-use neo_memory::riscv::lookups::{PROG_ID, REG_ID};
-use neo_memory::riscv::trace::{
+use deprecated_neo_memory::riscv::lookups::{PROG_ID, REG_ID};
+use deprecated_neo_memory::riscv::trace::{
     riscv_is_decode_lookup_table_id, riscv_trace_is_width_lookup_table_id, riscv_trace_lookup_n_vals_for_table_id,
     rv64_trace_cpu_cols,
 };
-use neo_memory::sparse_time::SparseIdxVec;
-use neo_memory::witness::{LutInstance, MemInstance, StepInstanceBundle, StepWitnessBundle};
+use deprecated_neo_memory::sparse_time::SparseIdxVec;
+use deprecated_neo_memory::witness::{LutInstance, MemInstance, StepInstanceBundle, StepWitnessBundle};
+use neo_ccs::{CcsMatrix, CcsStructure, CeClaim, Mat};
+use neo_math::{F, K};
 use neo_params::NeoParams;
 use p3_field::PrimeCharacteristicRing;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -1889,7 +1889,7 @@ fn ensure_ccs_references_bus_cols_outside_padding_rows(
          This is a common linkage footgun: padding constraints (1-has_*)*field=0 only restrict inactive fields, \
          and do not bind active bus semantics to CPU semantics.\n\
          Fix: inject binding constraints tying CPU semantics columns to the shared bus (recommended: \
-         `neo_memory::cpu::constraints::extend_ccs_with_shared_cpu_bus_constraints` / `CpuConstraintBuilder`).\n\
+         `deprecated_neo_memory::cpu::constraints::extend_ccs_with_shared_cpu_bus_constraints` / `CpuConstraintBuilder`).\n\
          Missing examples: {}",
         examples.join(", ")
     )))
@@ -2048,8 +2048,8 @@ fn ensure_ccs_has_bus_padding_constraints(
         return Err(PiCcsError::InvalidInput(
             "shared_cpu_bus=true but no public constant-one column found to validate required padding constraints.\n\
              Fix: include a public input column that is always 1 (e.g., x[0]=1) and build padding constraints using it \
-             (recommended: use `neo_memory::cpu::constraints::extend_ccs_with_shared_cpu_bus_constraints` or \
-              `neo_memory::cpu::constraints::CpuConstraintBuilder`)."
+             (recommended: use `deprecated_neo_memory::cpu::constraints::extend_ccs_with_shared_cpu_bus_constraints` or \
+              `deprecated_neo_memory::cpu::constraints::CpuConstraintBuilder`)."
                 .into(),
         ));
     }
@@ -2358,8 +2358,8 @@ fn ensure_ccs_has_bus_padding_constraints(
     Err(PiCcsError::InvalidInput(format!(
         "shared_cpu_bus=true but CPU CCS is missing required padding constraints that force inactive bus fields to zero.\n\
          This is a common footgun: memory-side / lookup gate checks by has_* flags, so unconstrained bus fields become arbitrary degrees of freedom.\n\
-         Fix: inject the canonical shared-bus constraints (binding + padding) using `neo_memory::cpu::constraints::extend_ccs_with_shared_cpu_bus_constraints`, \
-         or add constraints of the form (1 - has_*) * field = 0 for each gated bus field (recommended: use `neo_memory::cpu::constraints::CpuConstraintBuilder`).\n\
+         Fix: inject the canonical shared-bus constraints (binding + padding) using `deprecated_neo_memory::cpu::constraints::extend_ccs_with_shared_cpu_bus_constraints`, \
+         or add constraints of the form (1 - has_*) * field = 0 for each gated bus field (recommended: use `deprecated_neo_memory::cpu::constraints::CpuConstraintBuilder`).\n\
          Missing examples: {}",
         examples.join(", ")
     )))

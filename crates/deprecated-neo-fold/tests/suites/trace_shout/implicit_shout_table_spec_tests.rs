@@ -2,6 +2,9 @@
 
 use std::marker::PhantomData;
 
+use deprecated_neo_memory::riscv::instruction::encode_lookup_key;
+use deprecated_neo_memory::riscv::lookups::{compute_op, RiscvOpcode};
+use deprecated_neo_memory::witness::{LutInstance, LutTableSpec, LutWitness, StepInstanceBundle, StepWitnessBundle};
 use neo_ajtai::Commitment as Cmt;
 use neo_ccs::poly::SparsePoly;
 use neo_ccs::relations::{CcsClaim, CcsStructure, CcsWitness, CeClaim};
@@ -11,9 +14,6 @@ use neo_fold::pi_ccs::FoldingMode;
 use neo_fold::shard::CommitMixers;
 use neo_fold::shard::{absorb_step_memory, fold_shard_prove, fold_shard_verify};
 use neo_math::{D, F, K};
-use neo_memory::riscv::instruction::encode_lookup_key;
-use neo_memory::riscv::lookups::{compute_op, RiscvOpcode};
-use neo_memory::witness::{LutInstance, LutTableSpec, LutWitness, StepInstanceBundle, StepWitnessBundle};
 use neo_params::NeoParams;
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::PrimeCharacteristicRing;
@@ -57,7 +57,7 @@ fn create_identity_ccs(n: usize) -> CcsStructure<F> {
 fn create_mcs_from_z(params: &NeoParams, l: &DummyCommit, m_in: usize, z: Vec<F>) -> (CcsClaim<Cmt, F>, CcsWitness<F>) {
     let x = z[..m_in].to_vec();
     let w = z[m_in..].to_vec();
-    let Z = neo_memory::ajtai::encode_vector_balanced_to_mat(params, &z);
+    let Z = deprecated_neo_memory::ajtai::encode_vector_balanced_to_mat(params, &z);
     let c = l.commit(&Z);
 
     (CcsClaim { c, x, m_in }, CcsWitness { w, Z })

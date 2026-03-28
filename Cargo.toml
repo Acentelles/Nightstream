@@ -15,8 +15,8 @@ members = [
   "crates/nightstream-sdk",
   "crates/nightstream-sdk-macros",
   "crates/neo-spartan-bridge",
-  "crates/neo-vm-trace",
-  "crates/neo-memory",
+  "crates/deprecated-neo-vm-trace",
+  "crates/deprecated-neo-memory",
 ]
 exclude = [
   "external/Spartan2",

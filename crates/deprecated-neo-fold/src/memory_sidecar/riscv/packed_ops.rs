@@ -38,56 +38,52 @@ pub(crate) fn packed_opcode_layout(
             "packed RISC-V opcode lanes require xlen=32 or 64 in Route A (got xlen={xlen})"
         )));
     }
-    let op =
-        match opcode {
-            neo_memory::riscv::lookups::RiscvOpcode::And => PackedOpcodeKind::And,
-            neo_memory::riscv::lookups::RiscvOpcode::Andn => PackedOpcodeKind::Andn,
-            neo_memory::riscv::lookups::RiscvOpcode::Add => PackedOpcodeKind::Add,
-            neo_memory::riscv::lookups::RiscvOpcode::Or => PackedOpcodeKind::Or,
-            neo_memory::riscv::lookups::RiscvOpcode::Sub => PackedOpcodeKind::Sub,
-            neo_memory::riscv::lookups::RiscvOpcode::Xor => PackedOpcodeKind::Xor,
-            neo_memory::riscv::lookups::RiscvOpcode::Eq => PackedOpcodeKind::Eq,
-            neo_memory::riscv::lookups::RiscvOpcode::Neq => PackedOpcodeKind::Neq,
-            neo_memory::riscv::lookups::RiscvOpcode::Slt => PackedOpcodeKind::Slt,
-            neo_memory::riscv::lookups::RiscvOpcode::Sll => PackedOpcodeKind::Sll,
-            neo_memory::riscv::lookups::RiscvOpcode::Srl => PackedOpcodeKind::Srl,
-            neo_memory::riscv::lookups::RiscvOpcode::Sra
-            | neo_memory::riscv::lookups::RiscvOpcode::VirtualMovsignWord => PackedOpcodeKind::Sra,
-            neo_memory::riscv::lookups::RiscvOpcode::Sltu => PackedOpcodeKind::Sltu,
-            neo_memory::riscv::lookups::RiscvOpcode::Mul | neo_memory::riscv::lookups::RiscvOpcode::VirtualMulWord => {
-                PackedOpcodeKind::Mul
-            }
-            neo_memory::riscv::lookups::RiscvOpcode::Mulh => PackedOpcodeKind::Mulh,
-            neo_memory::riscv::lookups::RiscvOpcode::Mulhu => PackedOpcodeKind::Mulhu,
-            neo_memory::riscv::lookups::RiscvOpcode::Mulhsu => PackedOpcodeKind::Mulhsu,
-            neo_memory::riscv::lookups::RiscvOpcode::Div | neo_memory::riscv::lookups::RiscvOpcode::VirtualDivWord => {
-                PackedOpcodeKind::Div
-            }
-            neo_memory::riscv::lookups::RiscvOpcode::Divu
-            | neo_memory::riscv::lookups::RiscvOpcode::VirtualDivuWord => PackedOpcodeKind::Divu,
-            neo_memory::riscv::lookups::RiscvOpcode::Rem | neo_memory::riscv::lookups::RiscvOpcode::VirtualRemWord => {
-                PackedOpcodeKind::Rem
-            }
-            neo_memory::riscv::lookups::RiscvOpcode::Remu
-            | neo_memory::riscv::lookups::RiscvOpcode::VirtualRemuWord => PackedOpcodeKind::Remu,
-            _ => {
-                return Err(PiCcsError::InvalidInput(format!(
-                    "packed RISC-V opcode lanes are unsupported in Route A for opcode={opcode:?}, xlen={xlen}"
-                )));
-            }
-        };
+    let op = match opcode {
+        deprecated_neo_memory::riscv::lookups::RiscvOpcode::And => PackedOpcodeKind::And,
+        deprecated_neo_memory::riscv::lookups::RiscvOpcode::Andn => PackedOpcodeKind::Andn,
+        deprecated_neo_memory::riscv::lookups::RiscvOpcode::Add => PackedOpcodeKind::Add,
+        deprecated_neo_memory::riscv::lookups::RiscvOpcode::Or => PackedOpcodeKind::Or,
+        deprecated_neo_memory::riscv::lookups::RiscvOpcode::Sub => PackedOpcodeKind::Sub,
+        deprecated_neo_memory::riscv::lookups::RiscvOpcode::Xor => PackedOpcodeKind::Xor,
+        deprecated_neo_memory::riscv::lookups::RiscvOpcode::Eq => PackedOpcodeKind::Eq,
+        deprecated_neo_memory::riscv::lookups::RiscvOpcode::Neq => PackedOpcodeKind::Neq,
+        deprecated_neo_memory::riscv::lookups::RiscvOpcode::Slt => PackedOpcodeKind::Slt,
+        deprecated_neo_memory::riscv::lookups::RiscvOpcode::Sll => PackedOpcodeKind::Sll,
+        deprecated_neo_memory::riscv::lookups::RiscvOpcode::Srl => PackedOpcodeKind::Srl,
+        deprecated_neo_memory::riscv::lookups::RiscvOpcode::Sra
+        | deprecated_neo_memory::riscv::lookups::RiscvOpcode::VirtualMovsignWord => PackedOpcodeKind::Sra,
+        deprecated_neo_memory::riscv::lookups::RiscvOpcode::Sltu => PackedOpcodeKind::Sltu,
+        deprecated_neo_memory::riscv::lookups::RiscvOpcode::Mul
+        | deprecated_neo_memory::riscv::lookups::RiscvOpcode::VirtualMulWord => PackedOpcodeKind::Mul,
+        deprecated_neo_memory::riscv::lookups::RiscvOpcode::Mulh => PackedOpcodeKind::Mulh,
+        deprecated_neo_memory::riscv::lookups::RiscvOpcode::Mulhu => PackedOpcodeKind::Mulhu,
+        deprecated_neo_memory::riscv::lookups::RiscvOpcode::Mulhsu => PackedOpcodeKind::Mulhsu,
+        deprecated_neo_memory::riscv::lookups::RiscvOpcode::Div
+        | deprecated_neo_memory::riscv::lookups::RiscvOpcode::VirtualDivWord => PackedOpcodeKind::Div,
+        deprecated_neo_memory::riscv::lookups::RiscvOpcode::Divu
+        | deprecated_neo_memory::riscv::lookups::RiscvOpcode::VirtualDivuWord => PackedOpcodeKind::Divu,
+        deprecated_neo_memory::riscv::lookups::RiscvOpcode::Rem
+        | deprecated_neo_memory::riscv::lookups::RiscvOpcode::VirtualRemWord => PackedOpcodeKind::Rem,
+        deprecated_neo_memory::riscv::lookups::RiscvOpcode::Remu
+        | deprecated_neo_memory::riscv::lookups::RiscvOpcode::VirtualRemuWord => PackedOpcodeKind::Remu,
+        _ => {
+            return Err(PiCcsError::InvalidInput(format!(
+                "packed RISC-V opcode lanes are unsupported in Route A for opcode={opcode:?}, xlen={xlen}"
+            )));
+        }
+    };
 
     if xlen == 64
         && !matches!(
             opcode,
-            neo_memory::riscv::lookups::RiscvOpcode::Mul
-                | neo_memory::riscv::lookups::RiscvOpcode::Mulh
-                | neo_memory::riscv::lookups::RiscvOpcode::Mulhu
-                | neo_memory::riscv::lookups::RiscvOpcode::Mulhsu
-                | neo_memory::riscv::lookups::RiscvOpcode::Div
-                | neo_memory::riscv::lookups::RiscvOpcode::Divu
-                | neo_memory::riscv::lookups::RiscvOpcode::Rem
-                | neo_memory::riscv::lookups::RiscvOpcode::Remu
+            deprecated_neo_memory::riscv::lookups::RiscvOpcode::Mul
+                | deprecated_neo_memory::riscv::lookups::RiscvOpcode::Mulh
+                | deprecated_neo_memory::riscv::lookups::RiscvOpcode::Mulhu
+                | deprecated_neo_memory::riscv::lookups::RiscvOpcode::Mulhsu
+                | deprecated_neo_memory::riscv::lookups::RiscvOpcode::Div
+                | deprecated_neo_memory::riscv::lookups::RiscvOpcode::Divu
+                | deprecated_neo_memory::riscv::lookups::RiscvOpcode::Rem
+                | deprecated_neo_memory::riscv::lookups::RiscvOpcode::Remu
         )
     {
         return Err(PiCcsError::InvalidInput(format!(
@@ -124,7 +120,7 @@ pub(crate) fn opcode_table_id_from_spec(spec: &Option<LutTableSpec>) -> Result<u
             "trace linkage expects RISC-V opcode specs with xlen=32 or 64 (got xlen={xlen})"
         )));
     }
-    Ok(neo_memory::riscv::lookups::RiscvShoutTables::new(xlen)
+    Ok(deprecated_neo_memory::riscv::lookups::RiscvShoutTables::new(xlen)
         .opcode_to_id(opcode)
         .0)
 }

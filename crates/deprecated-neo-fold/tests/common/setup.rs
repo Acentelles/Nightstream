@@ -2,6 +2,12 @@
 
 use std::sync::Arc;
 
+use deprecated_neo_memory::ajtai::commit_cols_for_ccs_m;
+use deprecated_neo_memory::cpu::{
+    build_bus_layout_for_instances_with_shout_shapes_and_twist_lanes, ShoutInstanceShape,
+};
+use deprecated_neo_memory::riscv::trace::rv32_trace_lookup_n_vals_for_table_id;
+use deprecated_neo_memory::witness::{StepWitnessBundle, TimeColumns};
 use neo_ajtai::{s_lincomb, s_mul, setup as ajtai_setup, AjtaiSModule, Commitment as Cmt};
 use neo_ccs::relations::CcsStructure;
 use neo_ccs::sparse::{CcsMatrix, CscMat};
@@ -9,10 +15,6 @@ use neo_ccs::Mat;
 use neo_fold::shard::CommitMixers;
 use neo_math::ring::{cf_inv, Rq as RqEl};
 use neo_math::{D, F};
-use neo_memory::ajtai::commit_cols_for_ccs_m;
-use neo_memory::cpu::{build_bus_layout_for_instances_with_shout_shapes_and_twist_lanes, ShoutInstanceShape};
-use neo_memory::riscv::trace::rv32_trace_lookup_n_vals_for_table_id;
-use neo_memory::witness::{StepWitnessBundle, TimeColumns};
 use neo_params::NeoParams;
 use p3_field::PrimeCharacteristicRing;
 use rand_chacha::rand_core::SeedableRng;

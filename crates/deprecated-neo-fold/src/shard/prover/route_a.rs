@@ -3,7 +3,7 @@
 use super::*;
 
 pub(super) struct PreparedRouteAStepMetadata {
-    pub output_binding_proof: Option<neo_memory::output_check::OutputBindingProof>,
+    pub output_binding_proof: Option<deprecated_neo_memory::output_check::OutputBindingProof>,
     pub ell_t: usize,
     pub time_declared_len: usize,
     pub time_cpu_commitments: Vec<Cmt>,
@@ -38,7 +38,9 @@ pub(super) fn prepare_route_a_step_metadata(
     let exact_reg_output_binding_active = include_output_binding
         && output_binding
             .as_ref()
-            .map(|(cfg, _)| step.mem_instances[cfg.mem_idx].0.mem_id == neo_memory::riscv::lookups::REG_EXACT_ID.0)
+            .map(|(cfg, _)| {
+                step.mem_instances[cfg.mem_idx].0.mem_id == deprecated_neo_memory::riscv::lookups::REG_EXACT_ID.0
+            })
             .unwrap_or(false);
 
     if include_output_binding {
@@ -76,7 +78,8 @@ pub(super) fn prepare_route_a_step_metadata(
         tr.append_u64s(b"output_binding/mem_idx", &[cfg.mem_idx as u64]);
         tr.append_u64s(b"output_binding/num_bits", &[cfg.num_bits as u64]);
 
-        let use_dense_output_sumcheck = cfg.num_bits <= neo_memory::output_check::OUTPUT_SUMCHECK_MAX_NUM_BITS;
+        let use_dense_output_sumcheck =
+            cfg.num_bits <= deprecated_neo_memory::output_check::OUTPUT_SUMCHECK_MAX_NUM_BITS;
         if use_dense_output_sumcheck {
             if final_memory_state.len() != expected_k {
                 return Err(PiCcsError::InvalidInput(format!(
@@ -85,14 +88,15 @@ pub(super) fn prepare_route_a_step_metadata(
                     expected_k
                 )));
             }
-            let (output_sc, r_prime) = neo_memory::output_check::generate_output_sumcheck_proof_and_challenges(
-                tr,
-                cfg.num_bits,
-                cfg.program_io.clone(),
-                final_memory_state,
-            )
-            .map_err(|e| PiCcsError::ProtocolError(format!("output sumcheck failed: {e:?}")))?;
-            output_binding_proof = Some(neo_memory::output_check::OutputBindingProof { output_sc });
+            let (output_sc, r_prime) =
+                deprecated_neo_memory::output_check::generate_output_sumcheck_proof_and_challenges(
+                    tr,
+                    cfg.num_bits,
+                    cfg.program_io.clone(),
+                    final_memory_state,
+                )
+                .map_err(|e| PiCcsError::ProtocolError(format!("output sumcheck failed: {e:?}")))?;
+            output_binding_proof = Some(deprecated_neo_memory::output_check::OutputBindingProof { output_sc });
             ob_r_prime = Some(r_prime);
         } else {
             let sampled = crate::output_binding::sample_output_lincomb_weights(tr, &cfg.program_io);
@@ -100,8 +104,8 @@ pub(super) fn prepare_route_a_step_metadata(
                 .into_iter()
                 .map(|(addr, _claim_value, alpha)| (crate::output_binding::addr_bits_as_k(addr, cfg.num_bits), alpha))
                 .collect::<Vec<_>>();
-            output_binding_proof = Some(neo_memory::output_check::OutputBindingProof {
-                output_sc: neo_memory::output_check::OutputSumcheckProof::default(),
+            output_binding_proof = Some(deprecated_neo_memory::output_check::OutputBindingProof {
+                output_sc: deprecated_neo_memory::output_check::OutputSumcheckProof::default(),
             });
             ob_sparse_addr_weights = Some(addr_weights);
         }
@@ -175,7 +179,7 @@ pub(super) fn prepare_route_a_step_metadata(
 pub(super) fn prove_route_a_time_phase(
     tr: &mut Poseidon2Transcript,
     params: &NeoParams,
-    cpu_bus: &neo_memory::cpu::BusLayout,
+    cpu_bus: &deprecated_neo_memory::cpu::BusLayout,
     step: &StepWitnessBundle<Cmt, F, K>,
     step_idx: usize,
     ell_t: usize,
@@ -186,7 +190,7 @@ pub(super) fn prove_route_a_time_phase(
     ob_r_prime: Option<Vec<K>>,
     ob_sparse_addr_weights: Option<Vec<(Vec<K>, K)>>,
     poseidon_cycle_enabled: bool,
-    poseidon_sidecar: Option<&neo_memory::riscv::exec_table::RiscvPoseidonSidecarTable>,
+    poseidon_sidecar: Option<&deprecated_neo_memory::riscv::exec_table::RiscvPoseidonSidecarTable>,
     poseidon_cycle_wit: Option<&Mat<F>>,
     poseidon_cycle_open_spec: Option<&(usize, usize, Vec<usize>)>,
     poseidon_link_chals: Option<&crate::memory_sidecar::memory::PoseidonLinkChallenges>,
@@ -268,14 +272,15 @@ pub(super) fn prove_route_a_time_phase(
 
         let mut oracles: Vec<Box<dyn RoundOracle + Send>> = Vec::new();
         let mut claimed_sum = K::ZERO;
-        let use_dense_output_sumcheck = cfg.num_bits <= neo_memory::output_check::OUTPUT_SUMCHECK_MAX_NUM_BITS;
+        let use_dense_output_sumcheck =
+            cfg.num_bits <= deprecated_neo_memory::output_check::OUTPUT_SUMCHECK_MAX_NUM_BITS;
         if use_dense_output_sumcheck {
             let r_prime = ob_r_prime
                 .as_ref()
                 .ok_or_else(|| PiCcsError::ProtocolError("output binding r_prime missing".into()))?;
             oracles.reserve(pre.decoded.lanes.len());
             for lane in &pre.decoded.lanes {
-                let (oracle, claim) = neo_memory::twist_oracle::TwistTotalIncOracleSparseTime::new(
+                let (oracle, claim) = deprecated_neo_memory::twist_oracle::TwistTotalIncOracleSparseTime::new(
                     lane.wa_bits.clone(),
                     lane.has_write.clone(),
                     lane.inc_at_write_addr.clone(),
@@ -294,7 +299,7 @@ pub(super) fn prove_route_a_time_phase(
                     if *alpha == K::ZERO {
                         continue;
                     }
-                    let scaled_inc = neo_memory::sparse_time::SparseIdxVec::from_entries(
+                    let scaled_inc = deprecated_neo_memory::sparse_time::SparseIdxVec::from_entries(
                         lane.inc_at_write_addr.len(),
                         lane.inc_at_write_addr
                             .entries()
@@ -302,7 +307,7 @@ pub(super) fn prove_route_a_time_phase(
                             .map(|(idx, val)| (*idx, *val * *alpha))
                             .collect(),
                     );
-                    let (oracle, claim) = neo_memory::twist_oracle::TwistTotalIncOracleSparseTime::new(
+                    let (oracle, claim) = deprecated_neo_memory::twist_oracle::TwistTotalIncOracleSparseTime::new(
                         lane.wa_bits.clone(),
                         lane.has_write.clone(),
                         scaled_inc,

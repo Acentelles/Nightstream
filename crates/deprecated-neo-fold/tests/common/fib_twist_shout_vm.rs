@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use neo_vm_trace::{Shout, ShoutId, StepMeta, Twist, TwistId, VmCpu};
+use deprecated_neo_vm_trace::{Shout, ShoutId, StepMeta, Twist, TwistId, VmCpu};
 
 #[derive(Clone, Debug, Default)]
 pub struct MapTwist {

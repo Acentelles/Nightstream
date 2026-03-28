@@ -2,9 +2,9 @@
 
 use std::time::Instant;
 
+use deprecated_neo_memory::riscv::lookups::{RiscvInstruction, RiscvOpcode};
 use neo_fold::pi_ccs::FoldingMode;
 use neo_fold::rv64_trace_shard::Rv64TraceWiring;
-use neo_memory::riscv::lookups::{RiscvInstruction, RiscvOpcode};
 
 #[path = "../../../riscv-tests/support/rv64_elf.rs"]
 mod rv64_elf;

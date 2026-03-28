@@ -8,19 +8,19 @@ use neo_ccs::traits::SModuleHomomorphism;
 use neo_fold::pi_ccs::FoldingMode;
 use neo_fold::shard::{fold_shard_prove, fold_shard_verify};
 use neo_math::F;
-use neo_memory::cpu::build_bus_layout_for_instances_with_shout_and_twist_lanes;
-use neo_memory::riscv::ccs::{build_rv32_trace_wiring_ccs, rv32_trace_ccs_witness_from_exec_table, Rv32TraceCcsLayout};
-use neo_memory::riscv::exec_table::Rv32ExecTable;
-use neo_memory::riscv::lookups::{
+use deprecated_neo_memory::cpu::build_bus_layout_for_instances_with_shout_and_twist_lanes;
+use deprecated_neo_memory::riscv::ccs::{build_rv32_trace_wiring_ccs, rv32_trace_ccs_witness_from_exec_table, Rv32TraceCcsLayout};
+use deprecated_neo_memory::riscv::exec_table::Rv32ExecTable;
+use deprecated_neo_memory::riscv::lookups::{
     decode_program, encode_program, uninterleave_bits, RiscvCpu, RiscvInstruction, RiscvMemory, RiscvOpcode,
     RiscvShoutTables, PROG_ID,
 };
-use neo_memory::riscv::trace::extract_shout_lanes_over_time;
-use neo_memory::witness::{LutInstance, LutTableSpec, LutWitness, StepInstanceBundle, StepWitnessBundle};
+use deprecated_neo_memory::riscv::trace::extract_shout_lanes_over_time;
+use deprecated_neo_memory::witness::{LutInstance, LutTableSpec, LutWitness, StepInstanceBundle, StepWitnessBundle};
 use neo_params::NeoParams;
 use neo_transcript::Poseidon2Transcript;
 use neo_transcript::Transcript;
-use neo_vm_trace::trace_program;
+use deprecated_neo_vm_trace::trace_program;
 use p3_field::{Field, PrimeCharacteristicRing};
 
 use crate::suite::{default_mixers, setup_ajtai_committer, widen_ccs_cols_for_test};
@@ -46,7 +46,7 @@ fn build_shout_only_bus_z_packed_divu(
     m_in: usize,
     t: usize,
     ell_addr: usize,
-    lane_data: &neo_memory::riscv::trace::ShoutLaneOverTime,
+    lane_data: &deprecated_neo_memory::riscv::trace::ShoutLaneOverTime,
     x_prefix: &[F],
 ) -> Result<Vec<F>, String> {
     if ell_addr != 38 {
@@ -133,7 +133,7 @@ fn build_shout_only_bus_z_packed_remu(
     m_in: usize,
     t: usize,
     ell_addr: usize,
-    lane_data: &neo_memory::riscv::trace::ShoutLaneOverTime,
+    lane_data: &deprecated_neo_memory::riscv::trace::ShoutLaneOverTime,
     x_prefix: &[F],
 ) -> Result<Vec<F>, String> {
     if ell_addr != 38 {
@@ -374,7 +374,7 @@ fn riscv_trace_wiring_ccs_shared_cpu_bus_shout_divu_remu_semantics_redteam() {
 
     // Main CPU trace witness commitment (honest).
     let z_cpu: Vec<F> = x.iter().copied().chain(w.iter().copied()).collect();
-    let Z_cpu = neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z_cpu);
+    let Z_cpu = deprecated_neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z_cpu);
     let c_cpu = l.commit(&Z_cpu);
     let mcs = (
         CcsClaim {
@@ -451,7 +451,7 @@ fn riscv_trace_wiring_ccs_shared_cpu_bus_shout_divu_remu_semantics_redteam() {
     let cell = bus.bus_cell(diff_bit0_col_id, j);
     divu_z[cell] = if divu_z[cell] == F::ONE { F::ZERO } else { F::ONE };
 
-    let divu_Z = neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &divu_z);
+    let divu_Z = deprecated_neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &divu_z);
     let divu_c = l.commit(&divu_Z);
     let divu_inst = LutInstance::<Cmt, F> {
         table_id: 0,
@@ -463,7 +463,7 @@ fn riscv_trace_wiring_ccs_shared_cpu_bus_shout_divu_remu_semantics_redteam() {
     let remu_z =
         build_shout_only_bus_z_packed_remu(ccs.m, layout.m_in, t, remu_inst.d * remu_inst.ell, &shout_lanes[1], &x)
             .expect("REMU packed z");
-    let remu_Z = neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &remu_z);
+    let remu_Z = deprecated_neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &remu_z);
     let remu_c = l.commit(&remu_Z);
     let remu_inst = LutInstance::<Cmt, F> {
         table_id: 0,

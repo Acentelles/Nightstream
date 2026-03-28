@@ -44,7 +44,7 @@ pub(crate) fn build_bus_layout_for_step_witness(
         .map(|(inst, _)| ShoutInstanceShape {
             ell_addr: inst.d * inst.ell,
             lanes: inst.lanes.max(1),
-            n_vals: neo_memory::riscv::trace::riscv_trace_lookup_n_vals_for_table_id(inst.table_id),
+            n_vals: deprecated_neo_memory::riscv::trace::riscv_trace_lookup_n_vals_for_table_id(inst.table_id),
             addr_group: inst.addr_group,
             selector_group: inst.selector_group,
         })
@@ -91,7 +91,7 @@ pub(crate) fn build_route_a_trace_opening_time_claims(
         return Ok((None, None));
     }
 
-    let trace = neo_memory::riscv::trace::Rv64TraceLayout::new();
+    let trace = deprecated_neo_memory::riscv::trace::Rv64TraceLayout::new();
     let t_len = step.time_columns.t;
     let m_in = step.mcs.0.m_in;
     let ell_n = r_cycle.len();
@@ -147,7 +147,7 @@ pub(crate) fn emit_route_a_trace_opening_me_claims(
         return Ok((Vec::new(), Vec::new()));
     }
 
-    let trace = neo_memory::riscv::trace::Rv64TraceLayout::new();
+    let trace = deprecated_neo_memory::riscv::trace::Rv64TraceLayout::new();
     let t_len = step.time_columns.t;
     let m_in = step.mcs.0.m_in;
     let core_t = s.t();
@@ -245,7 +245,7 @@ pub(crate) fn verify_route_a_trace_opening_terminals(
         return Ok(());
     }
 
-    let trace = neo_memory::riscv::trace::Rv64TraceLayout::new();
+    let trace = deprecated_neo_memory::riscv::trace::Rv64TraceLayout::new();
     let requires_trace_openings = claim_plan.booleanity_claim.is_some()
         || claim_plan.trace_opening_quiescence.is_some()
         || !mem_proof.booleanity_me_claims.is_empty()

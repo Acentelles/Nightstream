@@ -1,13 +1,15 @@
+use deprecated_neo_memory::riscv::ccs::{
+    build_rv32_trace_wiring_ccs, rv32_trace_ccs_witness_from_exec_table, Rv32TraceCcsLayout,
+};
+use deprecated_neo_memory::riscv::exec_table::Rv32ExecTable;
+use deprecated_neo_memory::riscv::lookups::{
+    decode_program, encode_program, RiscvCpu, RiscvInstruction, RiscvMemory, RiscvOpcode, RiscvShoutTables, PROG_ID,
+};
+use deprecated_neo_vm_trace::trace_program;
 use neo_ajtai::AjtaiSModule;
 use neo_ccs::relations::check_ccs_rowwise_zero;
 use neo_fold::pi_ccs::FoldingMode;
 use neo_fold::session::FoldingSession;
-use neo_memory::riscv::ccs::{build_rv32_trace_wiring_ccs, rv32_trace_ccs_witness_from_exec_table, Rv32TraceCcsLayout};
-use neo_memory::riscv::exec_table::Rv32ExecTable;
-use neo_memory::riscv::lookups::{
-    decode_program, encode_program, RiscvCpu, RiscvInstruction, RiscvMemory, RiscvOpcode, RiscvShoutTables, PROG_ID,
-};
-use neo_vm_trace::trace_program;
 
 #[test]
 fn riscv_trace_wiring_ccs_single_step_prove_verify() {

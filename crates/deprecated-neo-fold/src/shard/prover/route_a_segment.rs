@@ -168,7 +168,7 @@ where
     let mut accumulator_wit = acc_wit_init.to_vec();
     let mut merged_steps: Vec<StepProof> = Vec::new();
     let mut merged_val_lane_wits: Vec<Mat<F>> = Vec::new();
-    let mut merged_output_proof: Option<neo_memory::output_check::OutputBindingProof> = None;
+    let mut merged_output_proof: Option<deprecated_neo_memory::output_check::OutputBindingProof> = None;
     let mut merged_audit = ShardProofAudit::default();
     let mut prev_step_ctx: Option<&StepWitnessBundle<Cmt, F, K>> = None;
     let mut prev_twist_decoded: Option<Vec<crate::memory_sidecar::memory::TwistDecodedColsSparse>> = None;

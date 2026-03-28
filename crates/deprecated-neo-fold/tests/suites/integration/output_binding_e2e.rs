@@ -2,6 +2,12 @@
 
 use std::marker::PhantomData;
 
+use deprecated_neo_memory::ajtai::encode_vector_for_ccs_m;
+use deprecated_neo_memory::cpu::build_bus_layout_for_instances;
+use deprecated_neo_memory::cpu::constraints::{extend_ccs_with_shared_cpu_bus_constraints, TwistCpuBinding};
+use deprecated_neo_memory::output_check::ProgramIO;
+use deprecated_neo_memory::witness::{MemInstance, MemWitness, StepInstanceBundle, StepWitnessBundle, TimeColumns};
+use deprecated_neo_memory::MemInit;
 use neo_ajtai::Commitment as Cmt;
 use neo_ccs::matrix::Mat;
 use neo_ccs::poly::{SparsePoly, Term};
@@ -15,12 +21,6 @@ use neo_fold::shard::{
 };
 use neo_fold::PiCcsError;
 use neo_math::{F, K};
-use neo_memory::ajtai::encode_vector_for_ccs_m;
-use neo_memory::cpu::build_bus_layout_for_instances;
-use neo_memory::cpu::constraints::{extend_ccs_with_shared_cpu_bus_constraints, TwistCpuBinding};
-use neo_memory::output_check::ProgramIO;
-use neo_memory::witness::{MemInstance, MemWitness, StepInstanceBundle, StepWitnessBundle, TimeColumns};
-use neo_memory::MemInit;
 use neo_params::NeoParams;
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::PrimeCharacteristicRing;

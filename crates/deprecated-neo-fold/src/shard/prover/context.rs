@@ -5,7 +5,7 @@ use super::*;
 /// Step-invariant context computed during shard preflight and reused across all steps.
 pub(super) struct PreparedShardProveContext<'a> {
     pub s: &'a CcsStructure<F>,
-    pub cpu_bus: neo_memory::cpu::BusLayout,
+    pub cpu_bus: deprecated_neo_memory::cpu::BusLayout,
     pub dims: utils::Dims,
     pub ell_d: usize,
     pub ell_n: usize,

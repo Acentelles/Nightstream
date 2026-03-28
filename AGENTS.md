@@ -79,16 +79,9 @@ Perf tests live in `crates/neo-fold/tests/suites/perf/single_addi_metrics_nights
 
 Full constraint architecture report (main CCS, bus, Route-A claims, openings, timing):
 ```bash
-NS_DEBUG_N=10 cargo test -p neo-fold --release --test perf -- --ignored --nocapture report_track_a_w0_w1_snapshot
+NS_DEBUG_N=10000 cargo test -p neo-fold-next --release --test perf -- --ignored --nocapture rv64im_mixed_opcode_perf_snapshot
 ```
 N: number of riscv instructions + 1 (halt).
-
-Other useful tests (all accept `NS_DEBUG_N`):
-- `debug_trace_single_n_mixed_ops` — trace-wiring prove/verify + openings
-- `debug_chunked_single_n_mixed_ops` — same in chunked trace mode
-- `debug_trace_vs_chunked_single_n_mixed_ops` — side-by-side comparison
-- `report_trace_vs_chunked_medians` — 5-run median timing
-- `debug_trace_core_rows_per_cycle_equiv` — CCS rows/cycle (no prove, fast; uses `NS_DEBUG_T`)
 
 ## Profiling
 

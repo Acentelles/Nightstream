@@ -28,9 +28,9 @@
 //! )?;
 //! ```
 
+use deprecated_neo_memory::bit_ops::eq_bit_affine;
+use deprecated_neo_memory::output_check::{OutputCheckError, ProgramIO};
 use neo_math::{from_complex, F, K};
-use neo_memory::bit_ops::eq_bit_affine;
-use neo_memory::output_check::{OutputCheckError, ProgramIO};
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::PrimeCharacteristicRing;
 
@@ -97,11 +97,11 @@ pub(crate) fn sample_output_lincomb_weights(
 }
 
 pub(crate) fn val_init_from_mem_init(
-    init: &neo_memory::MemInit<F>,
+    init: &deprecated_neo_memory::MemInit<F>,
     k: usize,
     r_prime: &[K],
 ) -> Result<K, OutputCheckError> {
-    neo_memory::mem_init::eval_init_at_r_addr::<F, K>(init, k, r_prime)
+    deprecated_neo_memory::mem_init::eval_init_at_r_addr::<F, K>(init, k, r_prime)
         .map_err(|e| OutputCheckError::External(format!("MemInit eval failed: {e}")))
 }
 

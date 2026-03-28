@@ -117,7 +117,7 @@ Upstream dependencies:
 Downstream consumers:
 - `neo-reductions`: all engines (pi_ccs, pi_rlc_dec, sumcheck) use `Transcript` + `TranscriptProtocol` for challenge derivation
 - `neo-fold`: shard proving/verification, session management, memory sidecar, time opening — all use transcript for Fiat-Shamir
-- `neo-memory`: Twist/Shout memory argument proving uses transcript
+- `deprecated-neo-memory`: Twist/Shout memory argument proving uses transcript
 
 ## Lean Oracle Conformance
 

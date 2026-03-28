@@ -15,6 +15,9 @@
 
 use std::marker::PhantomData;
 
+use deprecated_neo_memory::plain::{PlainMemLayout, PlainMemTrace};
+use deprecated_neo_memory::witness::{StepInstanceBundle, StepWitnessBundle};
+use deprecated_neo_memory::MemInit;
 use neo_ajtai::{set_global_pp, setup as ajtai_setup, AjtaiSModule, Commitment as Cmt};
 use neo_ccs::poly::SparsePoly;
 use neo_ccs::relations::{CcsClaim, CcsStructure, CcsWitness, CeClaim};
@@ -24,9 +27,6 @@ use neo_fold::pi_ccs::FoldingMode;
 use neo_fold::shard::CommitMixers;
 use neo_fold::shard::{fold_shard_prove, fold_shard_verify};
 use neo_math::{D, F, K};
-use neo_memory::plain::{PlainMemLayout, PlainMemTrace};
-use neo_memory::witness::{StepInstanceBundle, StepWitnessBundle};
-use neo_memory::MemInit;
 use neo_params::NeoParams;
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::PrimeCharacteristicRing;
@@ -41,7 +41,7 @@ const M_IN: usize = 0;
 /// Setup real Ajtai public parameters for tests.
 fn setup_ajtai_pp(m: usize, seed: u64) -> AjtaiSModule {
     let d = D;
-    let m_commit = neo_memory::ajtai::commit_cols_for_ccs_m(m);
+    let m_commit = deprecated_neo_memory::ajtai::commit_cols_for_ccs_m(m);
     if neo_ajtai::has_global_pp_for_dims(d, m_commit) {
         return AjtaiSModule::from_global_for_dims(d, m_commit).expect("from_global_for_dims");
     }
@@ -75,7 +75,8 @@ fn create_mcs_from_z(
     m_in: usize,
     z: Vec<F>,
 ) -> (CcsClaim<Cmt, F>, CcsWitness<F>) {
-    let Z = neo_memory::ajtai::encode_vector_for_ccs_m(params, z.len(), &z).expect("encode witness for CCS width");
+    let Z = deprecated_neo_memory::ajtai::encode_vector_for_ccs_m(params, z.len(), &z)
+        .expect("encode witness for CCS width");
     let c = l.commit(&Z);
     let x = z[..m_in].to_vec();
     let w = z[m_in..].to_vec();
@@ -88,12 +89,12 @@ fn make_twist_instance(
     init: MemInit<F>,
     steps: usize,
 ) -> (
-    neo_memory::witness::MemInstance<Cmt, F>,
-    neo_memory::witness::MemWitness<F>,
+    deprecated_neo_memory::witness::MemInstance<Cmt, F>,
+    deprecated_neo_memory::witness::MemWitness<F>,
 ) {
     let ell = layout.n_side.trailing_zeros() as usize;
     (
-        neo_memory::witness::MemInstance {
+        deprecated_neo_memory::witness::MemInstance {
             mem_id,
             comms: Vec::new(),
             k: layout.k,
@@ -106,7 +107,7 @@ fn make_twist_instance(
             init_digest: None,
             guest_addr_remap: None,
         },
-        neo_memory::witness::MemWitness { mats: Vec::new() },
+        deprecated_neo_memory::witness::MemWitness { mats: Vec::new() },
     )
 }
 
@@ -115,7 +116,7 @@ fn write_twist_bus_step(
     bus_base: usize,
     chunk_size: usize,
     j: usize,
-    inst: &neo_memory::witness::MemInstance<Cmt, F>,
+    inst: &deprecated_neo_memory::witness::MemInstance<Cmt, F>,
     trace: &PlainMemTrace<F>,
     col_id: &mut usize,
 ) {
@@ -181,8 +182,8 @@ fn create_step_with_twist_bus(
     l: &AjtaiSModule,
     tag: u64,
     mem_instances: Vec<(
-        neo_memory::witness::MemInstance<Cmt, F>,
-        neo_memory::witness::MemWitness<F>,
+        deprecated_neo_memory::witness::MemInstance<Cmt, F>,
+        deprecated_neo_memory::witness::MemWitness<F>,
         PlainMemTrace<F>,
     )>,
 ) -> StepWitnessBundle<Cmt, F, K> {

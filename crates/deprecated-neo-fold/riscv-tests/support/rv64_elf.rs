@@ -1,5 +1,5 @@
-use neo_memory::riscv::lookups::encode_program;
-use neo_memory::riscv::lookups::RiscvInstruction;
+use deprecated_neo_memory::riscv::lookups::encode_program;
+use deprecated_neo_memory::riscv::lookups::RiscvInstruction;
 
 const ELF_HDR64_SIZE: usize = 64;
 const ELF_PHDR64_SIZE: usize = 56;

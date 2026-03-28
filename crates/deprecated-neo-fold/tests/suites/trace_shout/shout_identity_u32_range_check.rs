@@ -11,6 +11,7 @@
 
 use std::marker::PhantomData;
 
+use deprecated_neo_memory::witness::{LutInstance, LutTableSpec, LutWitness, StepWitnessBundle};
 use neo_ajtai::{AjtaiSModule, Commitment as Cmt};
 use neo_ccs::poly::SparsePoly;
 use neo_ccs::relations::{CcsClaim, CcsStructure, CcsWitness};
@@ -19,7 +20,6 @@ use neo_ccs::Mat;
 use neo_fold::pi_ccs::FoldingMode;
 use neo_fold::session::FoldingSession;
 use neo_math::{F, K};
-use neo_memory::witness::{LutInstance, LutTableSpec, LutWitness, StepWitnessBundle};
 use neo_params::NeoParams;
 use p3_field::PrimeCharacteristicRing;
 
@@ -41,7 +41,7 @@ fn create_mcs_from_z(
 ) -> (CcsClaim<Cmt, F>, CcsWitness<F>) {
     let x = z[..m_in].to_vec();
     let w = z[m_in..].to_vec();
-    let z_mat = neo_memory::ajtai::encode_vector_balanced_to_mat(params, &z);
+    let z_mat = deprecated_neo_memory::ajtai::encode_vector_balanced_to_mat(params, &z);
     let c = l.commit(&z_mat);
 
     (CcsClaim { c, x, m_in }, CcsWitness { w, Z: z_mat })

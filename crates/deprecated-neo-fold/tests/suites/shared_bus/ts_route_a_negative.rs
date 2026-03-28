@@ -1,16 +1,16 @@
 #![allow(non_snake_case)]
 
+use deprecated_neo_memory::sparse_time::SparseIdxVec;
+use deprecated_neo_memory::twist_oracle::{
+    table_mle_eval, AddressLookupOracle, IndexAdapterOracleSparseTime, LazyWeightedBitnessOracleSparseTime,
+    ShoutValueOracleSparse, TwistReadCheckOracleSparseTime, TwistWriteCheckOracleSparseTime,
+};
 use neo_fold::memory_sidecar::sumcheck_ds::{
     run_batched_sumcheck_prover_ds, run_sumcheck_prover_ds, verify_batched_sumcheck_rounds_ds,
     verify_sumcheck_rounds_ds,
 };
 use neo_fold::memory_sidecar::utils::bitness_weights;
 use neo_math::{F, K};
-use neo_memory::sparse_time::SparseIdxVec;
-use neo_memory::twist_oracle::{
-    table_mle_eval, AddressLookupOracle, IndexAdapterOracleSparseTime, LazyWeightedBitnessOracleSparseTime,
-    ShoutValueOracleSparse, TwistReadCheckOracleSparseTime, TwistWriteCheckOracleSparseTime,
-};
 use neo_reductions::sumcheck::{BatchedClaim, RoundOracle};
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::PrimeCharacteristicRing;

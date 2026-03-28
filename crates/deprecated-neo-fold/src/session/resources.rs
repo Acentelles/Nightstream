@@ -1,6 +1,6 @@
+use deprecated_neo_memory::plain::{LutTable, PlainMemLayout};
+use deprecated_neo_memory::witness::LutTableSpec;
 use neo_math::F;
-use neo_memory::plain::{LutTable, PlainMemLayout};
-use neo_memory::witness::LutTableSpec;
 use p3_field::PrimeCharacteristicRing;
 use std::collections::HashMap;
 use std::iter;
@@ -8,7 +8,7 @@ use std::iter;
 /// Declarative resource configuration for shared-CPU-bus runs (Twist + generic lookup).
 ///
 /// This is a thin convenience wrapper around the maps consumed by
-/// `neo_memory::builder::build_shard_witness_shared_cpu_bus*`.
+/// `deprecated_neo_memory::builder::build_shard_witness_shared_cpu_bus*`.
 #[derive(Clone, Debug, Default)]
 pub struct SharedBusResources {
     pub mem_layouts: HashMap<u32, PlainMemLayout>,

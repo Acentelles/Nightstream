@@ -2,6 +2,8 @@
 
 use bellpepper::gadgets::boolean::{AllocatedBit, Boolean};
 use bellpepper_core::{Circuit, ConstraintSystem, Index, LinearCombination, SynthesisError, Variable};
+use deprecated_neo_memory::ajtai::{commit_cols_for_ccs_m, encode_vector_for_ccs_m};
+use deprecated_neo_memory::witness::{StepInstanceBundle, StepWitnessBundle};
 use ff::PrimeField;
 use neo_ajtai::Commitment as Cmt;
 use neo_ajtai::{s_lincomb, s_mul, set_global_pp_seeded, AjtaiSModule};
@@ -15,8 +17,6 @@ use neo_fold::shard::{
 };
 use neo_math::ring::{cf_inv, Rq as RqEl};
 use neo_math::{D, F, K};
-use neo_memory::ajtai::{commit_cols_for_ccs_m, encode_vector_for_ccs_m};
-use neo_memory::witness::{StepInstanceBundle, StepWitnessBundle};
 use neo_params::NeoParams;
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::{PrimeCharacteristicRing, PrimeField64};

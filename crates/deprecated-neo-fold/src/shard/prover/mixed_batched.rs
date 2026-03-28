@@ -182,7 +182,7 @@ where
     let mut accumulator_wit = acc_wit_init.to_vec();
     let mut val_lane_wits: Vec<Mat<F>> = Vec::new();
     let mut merged_steps: Vec<StepProof> = Vec::new();
-    let mut output_proof: Option<neo_memory::output_check::OutputBindingProof> = None;
+    let mut output_proof: Option<deprecated_neo_memory::output_check::OutputBindingProof> = None;
     let mut segment_meta: Vec<ShardSegmentMeta> = Vec::new();
     let mut merged_audit = ShardProofAudit::default();
 

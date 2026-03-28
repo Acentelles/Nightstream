@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use neo_memory::riscv::lookups::{encode_program, BranchCondition, RiscvInstruction, RiscvMemOp, RiscvOpcode};
+use deprecated_neo_memory::riscv::lookups::{encode_program, BranchCondition, RiscvInstruction, RiscvMemOp, RiscvOpcode};
 
 #[derive(Debug)]
 enum PendingInstr {
@@ -171,7 +171,7 @@ fn parse_line(
     }
 
     if let Some(word) = parse_u32_word(rest) {
-        let decoded = neo_memory::riscv::lookups::decode_instruction(word)
+        let decoded = deprecated_neo_memory::riscv::lookups::decode_instruction(word)
             .map_err(|e| format!("line {line_no}: invalid RV32 word '{rest}': {e}"))?;
         // Ensure our round-trip matches the original encoding.
         let expected = word.to_le_bytes();

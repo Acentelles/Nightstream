@@ -1,10 +1,10 @@
-use neo_ajtai::Commitment as Cmt;
-use neo_math::{F, K};
-use neo_memory::riscv::lookups::{
+use deprecated_neo_memory::riscv::lookups::{
     POSEIDON2_ABSORB_FUNCT7, POSEIDON2_CUSTOM_OPCODE, POSEIDON2_FINALIZE_FUNCT7, POSEIDON2_SQUEEZE_FUNCT7, PROG_ID,
     REG_ID,
 };
-use neo_memory::witness::{LutInstance, MemInstance, StepInstanceBundle, StepWitnessBundle};
+use deprecated_neo_memory::witness::{LutInstance, MemInstance, StepInstanceBundle, StepWitnessBundle};
+use neo_ajtai::Commitment as Cmt;
+use neo_math::{F, K};
 use p3_field::PrimeField64;
 
 use crate::instruction_lookup::{
@@ -169,8 +169,8 @@ impl RouteATimeClaimPlan {
         };
 
         match &prog_inst.init {
-            neo_memory::MemInit::Zero => Ok(false),
-            neo_memory::MemInit::Sparse(pairs) => {
+            deprecated_neo_memory::MemInit::Zero => Ok(false),
+            deprecated_neo_memory::MemInit::Sparse(pairs) => {
                 for (addr, value) in pairs.iter() {
                     let word_u64 = value.as_canonical_u64();
                     if word_u64 > u32::MAX as u64 {

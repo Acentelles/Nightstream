@@ -12,12 +12,12 @@
 use crate::pi_ccs::FoldingMode;
 use crate::session::{FoldingSession, NeoStep, StepArtifacts, StepSpec};
 use crate::shard::StepLinkingConfig;
+use deprecated_neo_memory::ajtai::commit_cols_for_ccs_m;
 #[cfg(target_arch = "wasm32")]
 use js_sys::Date;
 use neo_ajtai::{set_global_pp, setup as ajtai_setup, AjtaiSModule};
 use neo_ccs::{CcsMatrix, CcsStructure, CscMat, SparsePoly, Term};
 use neo_math::{D, F};
-use neo_memory::ajtai::commit_cols_for_ccs_m;
 use neo_params::NeoParams;
 use p3_field::PrimeCharacteristicRing;
 use rand_chacha::rand_core::SeedableRng;

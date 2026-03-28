@@ -1,7 +1,7 @@
+use deprecated_neo_memory::riscv::lookups::{encode_program, RiscvInstruction, RiscvOpcode};
 use neo_fold::pi_ccs::FoldingMode;
 use neo_fold::rv64_trace_shard::Rv64TraceWiring;
 use neo_math::F;
-use neo_memory::riscv::lookups::{encode_program, RiscvInstruction, RiscvOpcode};
 use p3_field::PrimeCharacteristicRing;
 
 #[path = "support/rv64_elf.rs"]

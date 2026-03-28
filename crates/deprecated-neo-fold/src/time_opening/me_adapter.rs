@@ -13,7 +13,7 @@ pub fn build_small_chi_table(point: &[K]) -> Result<Option<Vec<K>>, PiCcsError> 
         .checked_shl(point.len() as u32)
         .ok_or_else(|| PiCcsError::InvalidInput("time/opening eval: 2^ell_n overflow".into()))?;
     if n_pad <= (1usize << 16) {
-        Ok(Some(neo_memory::mle::build_chi_table(point)))
+        Ok(Some(deprecated_neo_memory::mle::build_chi_table(point)))
     } else {
         Ok(None)
     }
@@ -150,7 +150,7 @@ pub fn cpu_time_row_weights(point: &[K], m_in: usize, t: usize, chi_table: Optio
 #[inline]
 pub fn mem_time_row_weights(
     point: &[K],
-    bus: &neo_memory::cpu::BusLayout,
+    bus: &deprecated_neo_memory::cpu::BusLayout,
     chi_table: Option<&[K]>,
 ) -> Result<Vec<K>, PiCcsError> {
     let n_pad = 1usize
@@ -380,7 +380,7 @@ pub fn eval_cpu_time_vector_at_point(point: &[K], m_in: usize, col: &[F]) -> Res
         )));
     }
     let chi_table = if n_pad <= (1usize << 16) {
-        Some(neo_memory::mle::build_chi_table(point))
+        Some(deprecated_neo_memory::mle::build_chi_table(point))
     } else {
         None
     };
@@ -400,7 +400,7 @@ pub fn eval_cpu_time_vector_at_point(point: &[K], m_in: usize, col: &[F]) -> Res
 #[inline]
 pub fn eval_mem_time_vector_at_point(
     point: &[K],
-    bus: &neo_memory::cpu::BusLayout,
+    bus: &deprecated_neo_memory::cpu::BusLayout,
     col: &[F],
 ) -> Result<K, PiCcsError> {
     if col.len() != bus.chunk_size {
@@ -414,7 +414,7 @@ pub fn eval_mem_time_vector_at_point(
         .checked_shl(point.len() as u32)
         .ok_or_else(|| PiCcsError::InvalidInput("time/opening MEM eval: 2^ell_n overflow".into()))?;
     let chi_table = if n_pad <= (1usize << 16) {
-        Some(neo_memory::mle::build_chi_table(point))
+        Some(deprecated_neo_memory::mle::build_chi_table(point))
     } else {
         None
     };
@@ -442,7 +442,7 @@ pub fn eval_time_vector_at_point(
     domain: OpeningDomain,
     point: &[K],
     m_in: usize,
-    bus: &neo_memory::cpu::BusLayout,
+    bus: &deprecated_neo_memory::cpu::BusLayout,
     col: &[F],
 ) -> Result<K, PiCcsError> {
     match domain {
@@ -585,7 +585,7 @@ fn eval_cpu_time_mat_digits_at_point_with_chi(
 #[inline]
 fn eval_mem_time_mat_digits_at_point_with_chi(
     point: &[K],
-    bus: &neo_memory::cpu::BusLayout,
+    bus: &deprecated_neo_memory::cpu::BusLayout,
     z: &Mat<F>,
     chi_table: Option<&[K]>,
 ) -> Result<Vec<K>, PiCcsError> {
@@ -607,7 +607,7 @@ pub fn eval_time_mat_digits_at_point(
     domain: OpeningDomain,
     point: &[K],
     m_in: usize,
-    bus: &neo_memory::cpu::BusLayout,
+    bus: &deprecated_neo_memory::cpu::BusLayout,
     z: &Mat<F>,
 ) -> Result<Vec<K>, PiCcsError> {
     let chi_storage = build_small_chi_table(point)?;
@@ -619,7 +619,7 @@ pub fn eval_time_mat_digits_at_point_with_chi(
     domain: OpeningDomain,
     point: &[K],
     m_in: usize,
-    bus: &neo_memory::cpu::BusLayout,
+    bus: &deprecated_neo_memory::cpu::BusLayout,
     z: &Mat<F>,
     chi_table: Option<&[K]>,
 ) -> Result<Vec<K>, PiCcsError> {

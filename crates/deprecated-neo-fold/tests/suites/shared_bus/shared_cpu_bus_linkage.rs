@@ -2,6 +2,9 @@
 
 use std::marker::PhantomData;
 
+use deprecated_neo_memory::plain::{LutTable, PlainLutTrace, PlainMemLayout, PlainMemTrace};
+use deprecated_neo_memory::witness::{StepInstanceBundle, StepWitnessBundle};
+use deprecated_neo_memory::MemInit;
 use neo_ajtai::{AjtaiSModule, Commitment as Cmt};
 use neo_ccs::poly::SparsePoly;
 use neo_ccs::relations::{CcsClaim, CcsStructure, CcsWitness};
@@ -11,9 +14,6 @@ use neo_fold::pi_ccs::FoldingMode;
 use neo_fold::shard::{fold_shard_prove, fold_shard_verify, CommitMixers, StepProof};
 use neo_fold::PiCcsError;
 use neo_math::{F, K};
-use neo_memory::plain::{LutTable, PlainLutTrace, PlainMemLayout, PlainMemTrace};
-use neo_memory::witness::{StepInstanceBundle, StepWitnessBundle};
-use neo_memory::MemInit;
 use neo_params::NeoParams;
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::PrimeCharacteristicRing;
@@ -46,9 +46,9 @@ fn build_cpu_witness_with_bus(
     bus_base: usize,
     chunk_size: usize,
     step_in_chunk: usize,
-    lut_inst: &neo_memory::witness::LutInstance<Cmt, F>,
+    lut_inst: &deprecated_neo_memory::witness::LutInstance<Cmt, F>,
     lut_trace: &PlainLutTrace<F>,
-    mem_inst: &neo_memory::witness::MemInstance<Cmt, F>,
+    mem_inst: &deprecated_neo_memory::witness::MemInstance<Cmt, F>,
     mem_trace: &PlainMemTrace<F>,
     tag: u64,
 ) -> Vec<F> {
@@ -141,7 +141,7 @@ fn build_time_columns_from_flattened_test_witness(
     bus_base: usize,
     bus_cols: usize,
     chunk_size: usize,
-) -> neo_memory::witness::TimeColumns<F> {
+) -> deprecated_neo_memory::witness::TimeColumns<F> {
     let cpu_region_len = bus_base
         .checked_sub(m_in)
         .expect("bus_base must be >= m_in for flattened test witness");
@@ -173,7 +173,7 @@ fn build_time_columns_from_flattened_test_witness(
         col_ids.push(id);
     }
 
-    neo_memory::witness::TimeColumns {
+    deprecated_neo_memory::witness::TimeColumns {
         t: chunk_size,
         cpu_cols,
         mem_cols,
@@ -239,7 +239,7 @@ fn build_one_step_fixture(seed: u64) -> SharedBusFixture {
     let mem_ell = mem_layout.n_side.trailing_zeros() as usize;
     let lut_ell = lut_table.n_side.trailing_zeros() as usize;
 
-    let mem_inst = neo_memory::witness::MemInstance::<Cmt, F> {
+    let mem_inst = deprecated_neo_memory::witness::MemInstance::<Cmt, F> {
         mem_id: 0,
         comms: Vec::new(),
         k: mem_layout.k,
@@ -252,9 +252,9 @@ fn build_one_step_fixture(seed: u64) -> SharedBusFixture {
         init_digest: None,
         guest_addr_remap: None,
     };
-    let mem_wit = neo_memory::witness::MemWitness { mats: Vec::new() };
+    let mem_wit = deprecated_neo_memory::witness::MemWitness { mats: Vec::new() };
 
-    let lut_inst = neo_memory::witness::LutInstance::<Cmt, F> {
+    let lut_inst = deprecated_neo_memory::witness::LutInstance::<Cmt, F> {
         table_id: lut_table.table_id,
         comms: Vec::new(),
         k: lut_table.k,
@@ -269,7 +269,7 @@ fn build_one_step_fixture(seed: u64) -> SharedBusFixture {
         addr_group: None,
         selector_group: None,
     };
-    let lut_wit = neo_memory::witness::LutWitness { mats: Vec::new() };
+    let lut_wit = deprecated_neo_memory::witness::LutWitness { mats: Vec::new() };
 
     let bus_cols_total = bus_cols_shout(lut_inst.d, lut_inst.ell) + bus_cols_twist(mem_inst.d, mem_inst.ell);
     let chunk_size = 1usize;
@@ -278,7 +278,7 @@ fn build_one_step_fixture(seed: u64) -> SharedBusFixture {
         ccs.m, bus_base, chunk_size, 0, &lut_inst, &lut_trace, &mem_inst, &mem_trace, seed,
     );
     let time_columns = build_time_columns_from_flattened_test_witness(&z, m_in, bus_base, bus_cols_total, chunk_size);
-    let Z = neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z);
+    let Z = deprecated_neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z);
     let c = l.commit(&Z);
     let x = z[..m_in].to_vec();
     let w = z[m_in..].to_vec();

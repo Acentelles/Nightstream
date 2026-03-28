@@ -3,17 +3,17 @@
 use std::marker::PhantomData;
 use std::sync::Arc;
 
+use deprecated_neo_memory::ajtai::{commit_cols_for_ccs_m, encode_vector_for_ccs_m};
+use deprecated_neo_memory::plain::{LutTable, PlainLutTrace, PlainMemLayout, PlainMemTrace};
+use deprecated_neo_memory::riscv::trace::rv32_trace_lookup_n_vals_for_table_id;
+use deprecated_neo_memory::witness::{LutInstance, LutWitness, MemInstance, MemWitness, StepWitnessBundle};
+use deprecated_neo_memory::MemInit;
 use neo_ajtai::{setup as ajtai_setup, AjtaiSModule, Commitment as Cmt};
 use neo_ccs::poly::SparsePoly;
 use neo_ccs::relations::{CcsClaim, CcsStructure, CcsWitness};
 use neo_ccs::traits::SModuleHomomorphism;
 use neo_ccs::Mat;
 use neo_math::{D, F, K};
-use neo_memory::ajtai::{commit_cols_for_ccs_m, encode_vector_for_ccs_m};
-use neo_memory::plain::{LutTable, PlainLutTrace, PlainMemLayout, PlainMemTrace};
-use neo_memory::riscv::trace::rv32_trace_lookup_n_vals_for_table_id;
-use neo_memory::witness::{LutInstance, LutWitness, MemInstance, MemWitness, StepWitnessBundle};
-use neo_memory::MemInit;
 use neo_params::NeoParams;
 use p3_field::PrimeCharacteristicRing;
 use rand::SeedableRng;

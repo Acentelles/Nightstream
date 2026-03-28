@@ -4,6 +4,7 @@
 #[path = "../../common/fixtures.rs"]
 mod fixtures;
 
+use deprecated_neo_memory::MemInit;
 use fixtures::{
     build_twist_shout_2step_fixture, build_twist_shout_2step_fixture_bad_lookup, prove, verify, verify_and_finalize,
 };
@@ -13,7 +14,6 @@ use neo_fold::pi_ccs::FoldingMode;
 use neo_fold::shard::ShardObligations;
 use neo_fold::PiCcsError;
 use neo_math::{F, K};
-use neo_memory::MemInit;
 use neo_transcript::Transcript;
 use p3_field::PrimeCharacteristicRing;
 

@@ -4,6 +4,7 @@
 #[path = "../../common/fixtures.rs"]
 mod fixtures;
 
+use deprecated_neo_memory::witness::{StepInstanceBundle, StepWitnessBundle};
 use neo_ajtai::{AjtaiSModule, Commitment as Cmt};
 use neo_ccs::{
     matrix::Mat,
@@ -13,7 +14,6 @@ use neo_fold::memory_sidecar::claim_plan::RouteATimeClaimPlan;
 use neo_fold::shard::CommitMixers;
 use neo_fold::shard::{fold_shard_prove as fold_shard_prove_legacy, fold_shard_verify as fold_shard_verify_legacy};
 use neo_math::K;
-use neo_memory::witness::{StepInstanceBundle, StepWitnessBundle};
 use neo_params::NeoParams;
 use neo_reductions::api::FoldingMode;
 use neo_transcript::{Poseidon2Transcript, Transcript};

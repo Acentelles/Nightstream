@@ -1,7 +1,7 @@
+use deprecated_neo_memory::riscv::lookups::RiscvOpcode;
+use deprecated_neo_memory::witness::LutInstance;
 use neo_ajtai::Commitment as Cmt;
 use neo_math::F;
-use neo_memory::riscv::lookups::RiscvOpcode;
-use neo_memory::witness::LutInstance;
 
 use crate::memory_sidecar::claim_plan::TimeClaimMeta;
 
@@ -65,7 +65,7 @@ where
         let ell_addr = lut_inst.d * lut_inst.ell;
         let is_packed = matches!(
             lut_inst.table_spec,
-            Some(neo_memory::witness::LutTableSpec::RiscvOpcodePacked { .. })
+            Some(deprecated_neo_memory::witness::LutTableSpec::RiscvOpcodePacked { .. })
         );
         let is_gamma_candidate = !is_packed && lut_inst.addr_group.is_some();
         for lane_idx in 0..lanes {
@@ -119,8 +119,8 @@ where
         let ell_addr = lut_inst.d * lut_inst.ell;
         let lanes = lut_inst.lanes.max(1);
         let packed_opcode = match &lut_inst.table_spec {
-            Some(neo_memory::witness::LutTableSpec::RiscvOpcodePacked { opcode, xlen })
-                if neo_memory::riscv::packed::rv_packed_supported_opcode(*opcode, *xlen) =>
+            Some(deprecated_neo_memory::witness::LutTableSpec::RiscvOpcodePacked { opcode, xlen })
+                if deprecated_neo_memory::riscv::packed::rv_packed_supported_opcode(*opcode, *xlen) =>
             {
                 Some(*opcode)
             }

@@ -4,11 +4,11 @@
 //! New note-circuit validation and perf work should target this file.
 #![cfg(feature = "poseidon-precompile")]
 
+use deprecated_neo_memory::riscv::exec_table::RiscvExecTable;
+use deprecated_neo_vm_trace::TwistOpKind;
 use neo_fold::pi_ccs::FoldingMode;
 use neo_fold::rv64_trace_shard::{Rv64TraceWiring, Rv64TraceWiringRun};
 use neo_math::F;
-use neo_memory::riscv::exec_table::RiscvExecTable;
-use neo_vm_trace::TwistOpKind;
 use p3_field::PrimeCharacteristicRing;
 use std::collections::{BTreeSet, HashMap};
 use std::time::{Duration, Instant};

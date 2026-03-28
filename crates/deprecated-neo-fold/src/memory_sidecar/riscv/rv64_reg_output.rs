@@ -1,6 +1,6 @@
-use neo_memory::riscv::lookups::REG_EXACT_ID;
-use neo_memory::riscv::trace::Rv64TraceLayout;
-use neo_memory::sparse_time::SparseIdxVec;
+use deprecated_neo_memory::riscv::lookups::REG_EXACT_ID;
+use deprecated_neo_memory::riscv::trace::Rv64TraceLayout;
+use deprecated_neo_memory::sparse_time::SparseIdxVec;
 use neo_reductions::sumcheck::RoundOracle;
 
 use super::*;

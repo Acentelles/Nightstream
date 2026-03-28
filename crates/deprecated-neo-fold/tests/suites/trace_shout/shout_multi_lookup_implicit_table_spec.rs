@@ -3,18 +3,18 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use deprecated_neo_memory::ajtai::commit_cols_for_ccs_m;
+use deprecated_neo_memory::cpu::ShoutCpuBinding;
+use deprecated_neo_memory::riscv::instruction::{encode_lookup_key, mask_to_xlen};
+use deprecated_neo_memory::riscv::lookups::RiscvOpcode;
+use deprecated_neo_memory::witness::LutTableSpec;
+use deprecated_neo_vm_trace::{Shout, ShoutId, StepMeta, StepTrace, Twist, TwistId, VmCpu};
 use neo_ajtai::{setup as ajtai_setup, AjtaiSModule};
 use neo_fold::pi_ccs::FoldingMode;
 use neo_fold::session::{preprocess_shared_bus_r1cs, witness_layout, FoldingSession, NeoCircuit, SharedBusResources};
 use neo_fold::session::{LookupPort, Public, Scalar};
 use neo_math::{D, F};
-use neo_memory::ajtai::commit_cols_for_ccs_m;
-use neo_memory::cpu::ShoutCpuBinding;
-use neo_memory::riscv::instruction::{encode_lookup_key, mask_to_xlen};
-use neo_memory::riscv::lookups::RiscvOpcode;
-use neo_memory::witness::LutTableSpec;
 use neo_params::NeoParams;
-use neo_vm_trace::{Shout, ShoutId, StepMeta, StepTrace, Twist, TwistId, VmCpu};
 use p3_field::PrimeCharacteristicRing;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -61,7 +61,7 @@ impl<const N: usize> NeoCircuit for MultiLookupImplicitSpecCircuit<N> {
     ) -> Result<
         (
             HashMap<u32, Vec<ShoutCpuBinding>>,
-            HashMap<u32, Vec<neo_memory::cpu::TwistCpuBinding>>,
+            HashMap<u32, Vec<deprecated_neo_memory::cpu::TwistCpuBinding>>,
         ),
         String,
     > {

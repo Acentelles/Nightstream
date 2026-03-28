@@ -2,7 +2,7 @@ use neo_math::{KExtensions, F, K};
 use neo_transcript::{Poseidon2Transcript, Transcript};
 
 pub fn digest_fields(label: &'static [u8], fs: &[F]) -> [u8; 32] {
-    neo_memory::memory_public_digest_fields(label, fs)
+    deprecated_neo_memory::memory_public_digest_fields(label, fs)
 }
 
 pub fn bind_batched_claim_sums(

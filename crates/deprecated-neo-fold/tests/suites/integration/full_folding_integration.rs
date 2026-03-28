@@ -2,6 +2,9 @@
 
 use std::marker::PhantomData;
 
+use deprecated_neo_memory::plain::{PlainLutTrace, PlainMemLayout, PlainMemTrace};
+use deprecated_neo_memory::witness::{StepInstanceBundle, StepWitnessBundle};
+use deprecated_neo_memory::MemInit;
 use neo_ajtai::Commitment as Cmt;
 use neo_ccs::traits::SModuleHomomorphism;
 use neo_ccs::{
@@ -15,9 +18,6 @@ use neo_fold::shard::{
 };
 use neo_fold::PiCcsError;
 use neo_math::K;
-use neo_memory::plain::{PlainLutTrace, PlainMemLayout, PlainMemTrace};
-use neo_memory::witness::{StepInstanceBundle, StepWitnessBundle};
-use neo_memory::MemInit;
 use neo_params::NeoParams;
 use neo_reductions::api::FoldingMode;
 use neo_reductions::engines::utils;
@@ -221,7 +221,8 @@ fn build_add_ccs(
 }
 
 fn build_mcs_from_z(params: &NeoParams, l: &DummyCommit, m_in: usize, z: Vec<F>) -> (CcsClaim<Cmt, F>, CcsWitness<F>) {
-    let Z = neo_memory::ajtai::encode_vector_for_ccs_m(params, z.len(), &z).expect("encode witness for CCS width");
+    let Z = deprecated_neo_memory::ajtai::encode_vector_for_ccs_m(params, z.len(), &z)
+        .expect("encode witness for CCS width");
     let c = l.commit(&Z);
     let x = z[..m_in].to_vec();
     let w = z[m_in..].to_vec();
@@ -232,9 +233,9 @@ fn write_bus_for_chunk(
     z: &mut [F],
     bus_base: usize,
     chunk_size: usize,
-    lut_inst: &neo_memory::witness::LutInstance<Cmt, F>,
+    lut_inst: &deprecated_neo_memory::witness::LutInstance<Cmt, F>,
     lut_trace: &PlainLutTrace<F>,
-    mem_inst: &neo_memory::witness::MemInstance<Cmt, F>,
+    mem_inst: &deprecated_neo_memory::witness::MemInstance<Cmt, F>,
     mem_trace: &PlainMemTrace<F>,
 ) {
     assert_eq!(lut_inst.steps, chunk_size);
@@ -346,7 +347,7 @@ fn build_time_columns_from_flattened_test_witness(
     bus_base: usize,
     bus_cols: usize,
     chunk_size: usize,
-) -> neo_memory::witness::TimeColumns<F> {
+) -> deprecated_neo_memory::witness::TimeColumns<F> {
     let cpu_region_len = bus_base
         .checked_sub(m_in)
         .expect("bus_base must be >= m_in for flattened test witness");
@@ -382,7 +383,7 @@ fn build_time_columns_from_flattened_test_witness(
         col_ids.push(id);
     }
 
-    neo_memory::witness::TimeColumns {
+    deprecated_neo_memory::witness::TimeColumns {
         t: chunk_size,
         cpu_cols,
         mem_cols,
@@ -460,7 +461,7 @@ fn build_single_chunk_inputs() -> (
         addr: vec![0],
         val: vec![F::from_u64(1)],
     };
-    let lut_table = neo_memory::plain::LutTable {
+    let lut_table = deprecated_neo_memory::plain::LutTable {
         table_id: 0,
         k: 2,
         d: 1,
@@ -469,7 +470,7 @@ fn build_single_chunk_inputs() -> (
     };
 
     // Shared-bus mode: instances are metadata-only; access rows live in the CPU witness.
-    let mem_inst = neo_memory::witness::MemInstance::<Cmt, F> {
+    let mem_inst = deprecated_neo_memory::witness::MemInstance::<Cmt, F> {
         mem_id: 0,
         comms: Vec::new(),
         k: mem_layout.k,
@@ -482,8 +483,8 @@ fn build_single_chunk_inputs() -> (
         init_digest: None,
         guest_addr_remap: None,
     };
-    let mem_wit = neo_memory::witness::MemWitness { mats: Vec::new() };
-    let lut_inst = neo_memory::witness::LutInstance::<Cmt, F> {
+    let mem_wit = deprecated_neo_memory::witness::MemWitness { mats: Vec::new() };
+    let lut_inst = deprecated_neo_memory::witness::LutInstance::<Cmt, F> {
         table_id: lut_table.table_id,
         comms: Vec::new(),
         k: lut_table.k,
@@ -498,7 +499,7 @@ fn build_single_chunk_inputs() -> (
         addr_group: None,
         selector_group: None,
     };
-    let lut_wit = neo_memory::witness::LutWitness { mats: Vec::new() };
+    let lut_wit = deprecated_neo_memory::witness::LutWitness { mats: Vec::new() };
 
     // CPU witness z: core coords in [0..4), bus in the tail segment.
     let bus_cols = (lut_inst.d * lut_inst.ell + 2) + (2 * mem_inst.d * mem_inst.ell + 5);
@@ -632,7 +633,7 @@ fn full_folding_integration_multi_step_chunk() {
     let mem_init = MemInit::Zero;
 
     // 4-step RO lookup trace (k=2) with lookups at steps 0 and 2.
-    let lut_table = neo_memory::plain::LutTable {
+    let lut_table = deprecated_neo_memory::plain::LutTable {
         table_id: 0,
         k: 2,
         d: 1,
@@ -645,7 +646,7 @@ fn full_folding_integration_multi_step_chunk() {
         val: vec![F::ONE, F::ZERO, F::from_u64(2), F::ZERO],
     };
 
-    let mem_inst = neo_memory::witness::MemInstance::<Cmt, F> {
+    let mem_inst = deprecated_neo_memory::witness::MemInstance::<Cmt, F> {
         mem_id: 0,
         comms: Vec::new(),
         k: mem_layout.k,
@@ -658,8 +659,8 @@ fn full_folding_integration_multi_step_chunk() {
         init_digest: None,
         guest_addr_remap: None,
     };
-    let mem_wit = neo_memory::witness::MemWitness { mats: Vec::new() };
-    let lut_inst = neo_memory::witness::LutInstance::<Cmt, F> {
+    let mem_wit = deprecated_neo_memory::witness::MemWitness { mats: Vec::new() };
+    let lut_inst = deprecated_neo_memory::witness::LutInstance::<Cmt, F> {
         table_id: lut_table.table_id,
         comms: Vec::new(),
         k: lut_table.k,
@@ -674,7 +675,7 @@ fn full_folding_integration_multi_step_chunk() {
         addr_group: None,
         selector_group: None,
     };
-    let lut_wit = neo_memory::witness::LutWitness { mats: Vec::new() };
+    let lut_wit = deprecated_neo_memory::witness::LutWitness { mats: Vec::new() };
 
     let bus_cols = (lut_inst.d * lut_inst.ell + 2) + (2 * mem_inst.d * mem_inst.ell + 5);
     let chunk_size = plain_mem.steps;

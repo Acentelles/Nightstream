@@ -9,7 +9,7 @@ where
 {
     pub params: &'a NeoParams,
     pub mode: &'a FoldingMode,
-    pub cpu_bus: &'a neo_memory::cpu::BusLayout,
+    pub cpu_bus: &'a deprecated_neo_memory::cpu::BusLayout,
     pub ring: &'a ccs::RotRing,
     pub ell_d: usize,
     pub k_dec: usize,
@@ -189,7 +189,7 @@ where
         }
         if let Some(booleanity_me) = mem_proof.booleanity_me_claims.first() {
             let booleanity_cols = crate::memory_sidecar::memory::rv64_trace_booleanity_columns(
-                &neo_memory::riscv::trace::Rv64TraceLayout::new(),
+                &deprecated_neo_memory::riscv::trace::Rv64TraceLayout::new(),
             );
             let can_use_time_cpu_cols = step.time_columns.t > 0
                 && !step.time_columns.cpu_cols.is_empty()
@@ -233,7 +233,7 @@ where
         }
         if let Some(trace_opening_me) = mem_proof.trace_opening_me_claims.first() {
             let mut trace_opening_cols = crate::memory_sidecar::memory::rv64_trace_opening_columns(
-                &neo_memory::riscv::trace::Rv64TraceLayout::new(),
+                &deprecated_neo_memory::riscv::trace::Rv64TraceLayout::new(),
             );
             trace_opening_cols.extend(crate::memory_sidecar::memory::rv64_trace_exact_word_opening_columns());
             let mut seen_trace_opening_cols = std::collections::BTreeSet::new();
@@ -280,7 +280,7 @@ where
             });
         }
         if exact_reg_output_binding_active {
-            let trace = neo_memory::riscv::trace::Rv64TraceLayout::new();
+            let trace = deprecated_neo_memory::riscv::trace::Rv64TraceLayout::new();
             let reg_exact_cols = vec![
                 trace.rd_addr,
                 trace.rd_has_write,

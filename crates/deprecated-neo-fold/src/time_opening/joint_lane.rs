@@ -8,10 +8,10 @@ use crate::time_opening::me_adapter::{
 };
 use crate::time_opening::reduction::bind_opening_reduction_and_sample_group_coeffs;
 use crate::PiCcsError;
+use deprecated_neo_memory::witness::{StepInstanceBundle, StepWitnessBundle};
 use neo_ajtai::Commitment as Cmt;
 use neo_ccs::{CcsMatrix, CcsStructure, CeClaim, CscMat, Mat, SModuleHomomorphism, SparsePoly, Term};
 use neo_math::{KExtensions, D, F, K};
-use neo_memory::witness::{StepInstanceBundle, StepWitnessBundle};
 use neo_params::NeoParams;
 use neo_reductions as ccs;
 use neo_transcript::{Poseidon2Transcript, Transcript};
@@ -455,7 +455,7 @@ pub fn prove_joint_opening_lane_with_witnesses(
     params: &NeoParams,
     step_idx: usize,
     step: &StepWitnessBundle<Cmt, F, K>,
-    cpu_bus: &neo_memory::cpu::BusLayout,
+    cpu_bus: &deprecated_neo_memory::cpu::BusLayout,
     time_cpu_commitments: &[Cmt],
     time_mem_commitments: &[Cmt],
     time_col_ids: &[usize],
@@ -763,7 +763,7 @@ pub fn prove_joint_opening_lane(
     params: &NeoParams,
     step_idx: usize,
     step: &StepWitnessBundle<Cmt, F, K>,
-    cpu_bus: &neo_memory::cpu::BusLayout,
+    cpu_bus: &deprecated_neo_memory::cpu::BusLayout,
     time_cpu_commitments: &[Cmt],
     time_mem_commitments: &[Cmt],
     time_col_ids: &[usize],
@@ -796,7 +796,7 @@ pub fn verify_joint_opening_lane(
     params: &NeoParams,
     step_idx: usize,
     _step: &StepInstanceBundle<Cmt, F, K>,
-    _cpu_bus: &neo_memory::cpu::BusLayout,
+    _cpu_bus: &deprecated_neo_memory::cpu::BusLayout,
     time_t: usize,
     time_cpu_commitments: &[Cmt],
     time_mem_commitments: &[Cmt],

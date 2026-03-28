@@ -32,7 +32,7 @@ fn sorted_col_eval_pairs(col_ids: &[usize], evals: &[K], label: &str) -> Result<
 #[inline]
 fn bus_logical_col_ids_for_step(
     step_proof: &StepProof,
-    bus: &neo_memory::cpu::BusLayout,
+    bus: &deprecated_neo_memory::cpu::BusLayout,
     label: &str,
 ) -> Result<Vec<usize>, PiCcsError> {
     let cpu_cols_len = step_proof.fold.time_cpu_commitments.len();
@@ -62,7 +62,7 @@ pub(crate) fn validate_step_time_opening_batches_with_transcript(
     step_idx: usize,
     step: &StepInstanceBundle<Cmt, F, K>,
     step_proof: &StepProof,
-    cpu_bus: &neo_memory::cpu::BusLayout,
+    cpu_bus: &deprecated_neo_memory::cpu::BusLayout,
 ) -> Result<(), PiCcsError> {
     let fold = &step_proof.fold;
     let t = fold.time_t;
@@ -118,7 +118,7 @@ pub(crate) fn validate_step_time_opening_batches_with_transcript(
 pub(crate) fn validate_step_time_openings_consistency(
     step: &StepInstanceBundle<Cmt, F, K>,
     step_proof: &StepProof,
-    cpu_bus: &neo_memory::cpu::BusLayout,
+    cpu_bus: &deprecated_neo_memory::cpu::BusLayout,
     r_time: &[K],
 ) -> Result<(), PiCcsError> {
     let openings = &step_proof.fold.openings;
@@ -286,7 +286,7 @@ pub(crate) fn validate_step_time_openings_consistency(
     }
 
     if crate::memory_sidecar::memory::trace_opening_path_required_for_step_instance(step) && step.mcs_inst.m_in == 5 {
-        let trace = neo_memory::riscv::trace::Rv64TraceLayout::new();
+        let trace = deprecated_neo_memory::riscv::trace::Rv64TraceLayout::new();
         let trace_cols: Vec<usize> = vec![
             trace.active,
             trace.cycle,
@@ -323,7 +323,7 @@ pub(crate) fn validate_step_time_openings_consistency(
 
     if let Some(booleanity_me) = step_proof.mem.booleanity_me_claims.first() {
         let booleanity_cols = crate::memory_sidecar::memory::rv64_trace_booleanity_columns(
-            &neo_memory::riscv::trace::Rv64TraceLayout::new(),
+            &deprecated_neo_memory::riscv::trace::Rv64TraceLayout::new(),
         );
         let opening_entry = crate::memory_sidecar::memory::require_time_opening_entry_for_point(
             openings,
@@ -341,7 +341,7 @@ pub(crate) fn validate_step_time_openings_consistency(
 
     if let Some(trace_opening_me) = step_proof.mem.trace_opening_me_claims.first() {
         let mut trace_opening_cols = crate::memory_sidecar::memory::rv64_trace_opening_columns(
-            &neo_memory::riscv::trace::Rv64TraceLayout::new(),
+            &deprecated_neo_memory::riscv::trace::Rv64TraceLayout::new(),
         );
         trace_opening_cols.extend(crate::memory_sidecar::memory::rv64_trace_exact_word_opening_columns());
         let mut seen_trace_opening_cols = std::collections::BTreeSet::new();

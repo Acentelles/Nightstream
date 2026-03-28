@@ -5,10 +5,10 @@
 //! models claims by semantic stage instead of passing a long positional list
 //! of optional claims/config flags.
 
+use deprecated_neo_memory::ts_common as ts;
+use deprecated_neo_memory::witness::{StepInstanceBundle, StepWitnessBundle};
 use neo_ajtai::Commitment as Cmt;
 use neo_math::{F, K};
-use neo_memory::ts_common as ts;
-use neo_memory::witness::{StepInstanceBundle, StepWitnessBundle};
 use neo_reductions::sumcheck::{BatchedClaim, RoundOracle};
 use neo_transcript::Poseidon2Transcript;
 use p3_field::PrimeCharacteristicRing;

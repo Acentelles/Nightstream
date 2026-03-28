@@ -1,7 +1,7 @@
 use core::marker::PhantomData;
+use deprecated_neo_memory::cpu::{ShoutCpuBinding, TwistCpuBinding};
+use deprecated_neo_vm_trace::{StepTrace, TwistOpKind};
 use neo_math::F;
-use neo_memory::cpu::{ShoutCpuBinding, TwistCpuBinding};
-use neo_vm_trace::{StepTrace, TwistOpKind};
 use p3_field::PrimeCharacteristicRing;
 
 /// Column index type used by witness layouts.

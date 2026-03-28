@@ -1,12 +1,12 @@
 use super::{CcsBuilder, FoldingSession, SharedBusResources, WitnessLayout};
 use crate::PiCcsError;
+use deprecated_neo_memory::cpu::{CpuConstraintBuilder, R1csCpu, SharedCpuBusConfig, ShoutCpuBinding, TwistCpuBinding};
+use deprecated_neo_memory::plain::LutTable;
+use deprecated_neo_memory::witness::LutTableSpec;
+use deprecated_neo_vm_trace::StepTrace;
 use neo_ccs::traits::SModuleHomomorphism;
 use neo_ccs::CcsStructure;
-use neo_memory::cpu::{CpuConstraintBuilder, R1csCpu, SharedCpuBusConfig, ShoutCpuBinding, TwistCpuBinding};
-use neo_memory::plain::LutTable;
-use neo_memory::witness::LutTableSpec;
 use neo_params::NeoParams;
-use neo_vm_trace::StepTrace;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -42,7 +42,7 @@ pub trait NeoCircuit: Send + Sync + 'static {
 
     /// Build the CPU witness prefix z[0..USED_COLS) for a single trace chunk.
     ///
-    /// The shared-bus tail is filled separately by `neo_memory::cpu::R1csCpu`.
+    /// The shared-bus tail is filled separately by `deprecated_neo_memory::cpu::R1csCpu`.
     fn build_witness_prefix(
         &self,
         layout: &Self::Layout,
@@ -72,7 +72,7 @@ impl<C: NeoCircuit> SharedBusR1csPreprocessing<C> {
 
     /// Build a prover-side `R1csCpu` (injecting shared-bus constraints).
     ///
-    /// Note: witness building errors currently panic because `neo_memory::cpu::R1csCpu` requires a
+    /// Note: witness building errors currently panic because `deprecated_neo_memory::cpu::R1csCpu` requires a
     /// `Fn(&[StepTrace]) -> Vec<F>` callback. If we evolve the arithmetization interface to return
     /// `Result`, this can become a structured error instead.
     pub fn into_prover<L>(self, params: NeoParams, committer: L) -> Result<SharedBusR1csProver<L, C>, PiCcsError>
@@ -158,9 +158,9 @@ where
         max_steps: usize,
     ) -> Result<(), PiCcsError>
     where
-        V: neo_vm_trace::VmCpu<u64, u64, u128>,
-        Tw: neo_vm_trace::Twist<u64, u64>,
-        Sh: neo_vm_trace::Shout<u128, u64>,
+        V: deprecated_neo_vm_trace::VmCpu<u64, u64, u128>,
+        Tw: deprecated_neo_vm_trace::Twist<u64, u64>,
+        Sh: deprecated_neo_vm_trace::Shout<u128, u64>,
     {
         session.set_shared_bus_resources(self.resources.clone());
         session.execute_shard_shared_cpu_bus_configured(
@@ -290,7 +290,7 @@ fn shout_meta_for_bus(
                 Ok((d, 2usize))
             }
             LutTableSpec::RiscvOpcodePacked { opcode, xlen } => {
-                let d = neo_memory::riscv::packed::rv_packed_d(*opcode, *xlen)
+                let d = deprecated_neo_memory::riscv::packed::rv_packed_d(*opcode, *xlen)
                     .map_err(|e| format!("invalid packed opcode spec: {e}"))?;
                 Ok((d, 2usize))
             }
@@ -386,7 +386,7 @@ fn shared_bus_buslen_and_constraints(
         .checked_add(bus_region_len)
         .ok_or_else(|| "shared-bus witness width overflow".to_string())?;
 
-    let bus_layout = neo_memory::cpu::build_bus_layout_for_instances_with_shout_and_twist_lanes(
+    let bus_layout = deprecated_neo_memory::cpu::build_bus_layout_for_instances_with_shout_and_twist_lanes(
         m_min,
         m_in,
         chunk_size,

@@ -22,6 +22,13 @@
 
 use std::marker::PhantomData;
 
+use deprecated_neo_memory::cpu::build_bus_layout_for_instances;
+use deprecated_neo_memory::cpu::constraints::{CpuColumnLayout, CpuConstraintBuilder};
+use deprecated_neo_memory::plain::{LutTable, PlainLutTrace, PlainMemLayout, PlainMemTrace};
+use deprecated_neo_memory::witness::{
+    LutInstance, LutWitness, MemInstance, MemWitness, StepInstanceBundle, StepWitnessBundle,
+};
+use deprecated_neo_memory::MemInit;
 use neo_ajtai::Commitment as Cmt;
 use neo_ccs::relations::{CcsClaim, CcsStructure, CcsWitness};
 use neo_ccs::traits::SModuleHomomorphism;
@@ -30,11 +37,6 @@ use neo_fold::shard::{
     fold_shard_prove as fold_shard_prove_shared_cpu_bus, fold_shard_verify as fold_shard_verify_shared_cpu_bus,
 };
 use neo_math::{F, K};
-use neo_memory::cpu::build_bus_layout_for_instances;
-use neo_memory::cpu::constraints::{CpuColumnLayout, CpuConstraintBuilder};
-use neo_memory::plain::{LutTable, PlainLutTrace, PlainMemLayout, PlainMemTrace};
-use neo_memory::witness::{LutInstance, LutWitness, MemInstance, MemWitness, StepInstanceBundle, StepWitnessBundle};
-use neo_memory::MemInit;
 use neo_params::NeoParams;
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::PrimeCharacteristicRing;
@@ -199,7 +201,7 @@ fn has_write_flag_mismatch_wv_nonzero_should_be_rejected() {
     z[bus_base + 5] = F::ZERO; // rv
     z[bus_base + 6] = F::ZERO; // inc
 
-    let Z = neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z);
+    let Z = deprecated_neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z);
     let c = l.commit(&Z);
 
     let mcs = (
@@ -321,7 +323,7 @@ fn has_write_flag_mismatch_inc_nonzero_should_be_rejected() {
     z[bus_base + 5] = F::ZERO; // rv
     z[bus_base + 6] = F::from_u64(50); // inc = 50 (SHOULD BE 0)
 
-    let Z = neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z);
+    let Z = deprecated_neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z);
     let c = l.commit(&Z);
 
     let mcs = (
@@ -443,7 +445,7 @@ fn has_read_flag_mismatch_ra_bits_nonzero_should_be_rejected() {
     z[bus_base + 5] = F::ZERO; // rv
     z[bus_base + 6] = F::ZERO; // inc
 
-    let Z = neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z);
+    let Z = deprecated_neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z);
     let c = l.commit(&Z);
 
     let mcs = (
@@ -565,7 +567,7 @@ fn has_write_flag_mismatch_wa_bits_nonzero_should_be_rejected() {
     z[bus_base + 5] = F::ZERO; // rv
     z[bus_base + 6] = F::ZERO; // inc
 
-    let Z = neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z);
+    let Z = deprecated_neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z);
     let c = l.commit(&Z);
 
     let mcs = (
@@ -697,7 +699,7 @@ fn has_lookup_flag_mismatch_val_nonzero_should_be_rejected() {
     z[twist_base + 2] = F::ZERO; // has_read = 0
     z[twist_base + 3] = F::ZERO; // has_write = 0
 
-    let Z = neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z);
+    let Z = deprecated_neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z);
     let c = l.commit(&Z);
 
     let mcs = (
@@ -839,7 +841,7 @@ fn has_lookup_flag_mismatch_addr_bits_nonzero_should_be_rejected() {
     z[twist_base + 2] = F::ZERO; // has_read = 0
     z[twist_base + 3] = F::ZERO; // has_write = 0
 
-    let Z = neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z);
+    let Z = deprecated_neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z);
     let c = l.commit(&Z);
 
     let mcs = (

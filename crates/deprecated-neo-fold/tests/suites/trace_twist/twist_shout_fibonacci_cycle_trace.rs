@@ -7,6 +7,10 @@ mod shared_bus_port_constraints;
 #[path = "../../common/twist_low_level_fixtures.rs"]
 mod twist_low_level_fixtures;
 
+use deprecated_neo_memory::cpu::{ShoutCpuBinding, ShoutInstanceShape, TwistCpuBinding};
+use deprecated_neo_memory::plain::{LutTable, PlainLutTrace, PlainMemLayout, PlainMemTrace};
+use deprecated_neo_memory::witness::StepInstanceBundle;
+use deprecated_neo_memory::MemInit;
 use fib_twist_shout_vm::{add_mod_q, fib_mod_q_u64};
 use neo_ajtai::Commitment as Cmt;
 use neo_fold::output_binding::simple_output_config;
@@ -17,10 +21,6 @@ use neo_fold::shard::{
     ShardVerifyApiOptions,
 };
 use neo_math::{F, K};
-use neo_memory::cpu::{ShoutCpuBinding, ShoutInstanceShape, TwistCpuBinding};
-use neo_memory::plain::{LutTable, PlainLutTrace, PlainMemLayout, PlainMemTrace};
-use neo_memory::witness::StepInstanceBundle;
-use neo_memory::MemInit;
 use neo_params::NeoParams;
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::PrimeCharacteristicRing;

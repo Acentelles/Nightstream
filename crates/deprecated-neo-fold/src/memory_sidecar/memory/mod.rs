@@ -11,20 +11,17 @@ pub(crate) use crate::shard_proof_types::{
     MemOrInstructionLookupProof, MemSidecarProof, TwistProofK,
 };
 pub(crate) use crate::PiCcsError;
-pub(crate) use neo_ajtai::Commitment as Cmt;
-pub(crate) use neo_ccs::{CcsStructure, CeClaim};
-pub(crate) use neo_math::{KExtensions, F, K};
-pub(crate) use neo_memory::bit_ops::{eq_bit_affine, eq_bits_prod};
-pub(crate) use neo_memory::cpu::{
+pub(crate) use deprecated_neo_memory::bit_ops::{eq_bit_affine, eq_bits_prod};
+pub(crate) use deprecated_neo_memory::cpu::{
     build_bus_layout_for_instances_with_shout_shapes_and_twist_lanes, BusLayout, ShoutInstanceShape,
 };
-pub(crate) use neo_memory::identity::shout_oracle::IdentityAddressLookupOracleSparse;
-pub(crate) use neo_memory::mle::{eq_points, lt_eval};
-pub(crate) use neo_memory::riscv::shout_oracle::RiscvAddressLookupOracleSparse;
-pub(crate) use neo_memory::riscv::trace::Rv32DecodeSidecarLayout;
-pub(crate) use neo_memory::sparse_time::SparseIdxVec;
-pub(crate) use neo_memory::ts_common as ts;
-pub(crate) use neo_memory::twist_oracle::{
+pub(crate) use deprecated_neo_memory::identity::shout_oracle::IdentityAddressLookupOracleSparse;
+pub(crate) use deprecated_neo_memory::mle::{eq_points, lt_eval};
+pub(crate) use deprecated_neo_memory::riscv::shout_oracle::RiscvAddressLookupOracleSparse;
+pub(crate) use deprecated_neo_memory::riscv::trace::Rv32DecodeSidecarLayout;
+pub(crate) use deprecated_neo_memory::sparse_time::SparseIdxVec;
+pub(crate) use deprecated_neo_memory::ts_common as ts;
+pub(crate) use deprecated_neo_memory::twist_oracle::{
     AddressLookupOracle, IndexAdapterOracleSparseTime, LazyWeightedBitnessOracleSparseTime,
     Rv32NonVirtualArchDomainOracleSparseTime, Rv32PackedAddOracleSparseTime, Rv32PackedAndOracleSparseTime,
     Rv32PackedAndnOracleSparseTime, Rv32PackedBitwiseAdapterOracleSparseTime, Rv32PackedDivOracleSparseTime,
@@ -41,8 +38,13 @@ pub(crate) use neo_memory::twist_oracle::{
     TwistValEvalOracleSparseTime, TwistWriteCheckAddrOracleSparseTimeMultiLane, TwistWriteCheckOracleSparseTime,
     U32DecompOracleSparseTime, ZeroOracleSparseTime,
 };
-pub(crate) use neo_memory::witness::{LutInstance, LutTableSpec, MemInstance, StepInstanceBundle, StepWitnessBundle};
-pub(crate) use neo_memory::{eval_init_at_r_addr, twist, BatchedAddrProof, MemInit};
+pub(crate) use deprecated_neo_memory::witness::{
+    LutInstance, LutTableSpec, MemInstance, StepInstanceBundle, StepWitnessBundle,
+};
+pub(crate) use deprecated_neo_memory::{eval_init_at_r_addr, twist, BatchedAddrProof, MemInit};
+pub(crate) use neo_ajtai::Commitment as Cmt;
+pub(crate) use neo_ccs::{CcsStructure, CeClaim};
+pub(crate) use neo_math::{KExtensions, F, K};
 pub(crate) use neo_params::NeoParams;
 pub(crate) use neo_reductions::sumcheck::{BatchedClaim, RoundOracle};
 pub(crate) use neo_transcript::{Poseidon2Transcript, Transcript};

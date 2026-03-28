@@ -1,10 +1,10 @@
 #![allow(non_snake_case)]
 
+use deprecated_neo_memory::riscv::lookups::{RiscvInstruction, RiscvMemOp, RiscvOpcode};
+use deprecated_neo_memory::riscv::trace::{riscv_is_decode_lookup_table_id, riscv_trace_is_width_lookup_table_id};
 use neo_fold::pi_ccs::FoldingMode;
 use neo_fold::rv64_trace_shard::Rv64TraceWiring;
 use neo_math::F;
-use neo_memory::riscv::lookups::{RiscvInstruction, RiscvMemOp, RiscvOpcode};
-use neo_memory::riscv::trace::{riscv_is_decode_lookup_table_id, riscv_trace_is_width_lookup_table_id};
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
 use p3_goldilocks::Goldilocks;
 

@@ -10,13 +10,13 @@ pub(crate) fn bind_shout_table_spec(tr: &mut Poseidon2Transcript, spec: &Option<
 
     match spec {
         LutTableSpec::RiscvOpcode { opcode, xlen } => {
-            let opcode_id = neo_memory::riscv::lookups::RiscvShoutTables::new(*xlen)
+            let opcode_id = deprecated_neo_memory::riscv::lookups::RiscvShoutTables::new(*xlen)
                 .opcode_to_id(*opcode)
                 .0 as u64;
             tr.append_u64s(b"shout/table_spec/meta_u64", &[1u64, opcode_id, *xlen as u64, 0u64]);
         }
         LutTableSpec::RiscvOpcodePacked { opcode, xlen } => {
-            let opcode_id = neo_memory::riscv::lookups::RiscvShoutTables::new(*xlen)
+            let opcode_id = deprecated_neo_memory::riscv::lookups::RiscvShoutTables::new(*xlen)
                 .opcode_to_id(*opcode)
                 .0 as u64;
             tr.append_u64s(b"shout/table_spec/meta_u64", &[2u64, opcode_id, *xlen as u64, 0u64]);

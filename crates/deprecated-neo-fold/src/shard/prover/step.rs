@@ -9,7 +9,7 @@ pub(super) struct ShardRunState {
     val_lane_wits: Vec<Mat<F>>,
     prev_twist_decoded: Option<Vec<crate::memory_sidecar::memory::TwistDecodedColsSparse>>,
     poseidon_carry: crate::memory_sidecar::memory::PoseidonSidecarCarryState,
-    output_proof: Option<neo_memory::output_check::OutputBindingProof>,
+    output_proof: Option<deprecated_neo_memory::output_check::OutputBindingProof>,
     audit_steps: Vec<StepWitnessAudit<F>>,
 }
 
@@ -190,12 +190,13 @@ where
         let local_layout = poseidon_local_layout
             .as_ref()
             .ok_or_else(|| PiCcsError::ProtocolError("missing poseidon local layout".into()))?;
-        let mcs_logical = neo_memory::ajtai::decode_vector_for_ccs_m(params, s.m, &mcs_wit.Z).map_err(|e| {
-            PiCcsError::ProtocolError(format!(
-                "failed to decode packed main witness for poseidon lane prefix (m={}): {e}",
-                s.m
-            ))
-        })?;
+        let mcs_logical =
+            deprecated_neo_memory::ajtai::decode_vector_for_ccs_m(params, s.m, &mcs_wit.Z).map_err(|e| {
+                PiCcsError::ProtocolError(format!(
+                    "failed to decode packed main witness for poseidon lane prefix (m={}): {e}",
+                    s.m
+                ))
+            })?;
         let link_chals = crate::memory_sidecar::memory::sample_poseidon_link_challenges(tr);
         let cont_chals = crate::memory_sidecar::memory::sample_poseidon_continuity_challenges(tr);
 
@@ -512,7 +513,7 @@ where
             }
         }
 
-        let trace = neo_memory::riscv::trace::Rv64TraceLayout::new();
+        let trace = deprecated_neo_memory::riscv::trace::Rv64TraceLayout::new();
         let (trace_cols_to_open_dense, trace_cols_to_open_shout): (Vec<usize>, Vec<usize>) = (
             vec![
                 trace.active,
@@ -749,7 +750,7 @@ where
     let mut booleanity_fold = Vec::new();
     let mut booleanity_lane_audits = Vec::new();
     if !mem_proof.booleanity_me_claims.is_empty() {
-        let trace = neo_memory::riscv::trace::Rv64TraceLayout::new();
+        let trace = deprecated_neo_memory::riscv::trace::Rv64TraceLayout::new();
         let booleanity_cols = crate::memory_sidecar::memory::rv64_trace_booleanity_columns(&trace);
         let booleanity_lane = prove_aux_cpu_me_lane(
             AuxCpuLaneConfig {
@@ -784,7 +785,7 @@ where
     let mut trace_opening_lane_audits = Vec::new();
     if !mem_proof.trace_opening_me_claims.is_empty() {
         let mut trace_opening_cols = crate::memory_sidecar::memory::rv64_trace_opening_columns(
-            &neo_memory::riscv::trace::Rv64TraceLayout::new(),
+            &deprecated_neo_memory::riscv::trace::Rv64TraceLayout::new(),
         );
         trace_opening_cols.extend(crate::memory_sidecar::memory::rv64_trace_exact_word_opening_columns());
 

@@ -2,6 +2,9 @@
 
 use std::sync::Arc;
 
+use deprecated_neo_memory::ajtai::{commit_cols_for_ccs_m, encode_vector_for_ccs_m};
+use deprecated_neo_memory::witness::{MemInstance, MemWitness, StepInstanceBundle, StepWitnessBundle};
+use deprecated_neo_memory::MemInit;
 use neo_ajtai::{s_lincomb, s_mul, setup as ajtai_setup, AjtaiSModule, Commitment as Cmt};
 use neo_ccs::traits::SModuleHomomorphism;
 use neo_ccs::{CcsClaim, CcsStructure, CcsWitness, Mat, SparsePoly};
@@ -12,9 +15,6 @@ use neo_fold::shard::{
 };
 use neo_math::ring::Rq as RqEl;
 use neo_math::{D, F, K};
-use neo_memory::ajtai::{commit_cols_for_ccs_m, encode_vector_for_ccs_m};
-use neo_memory::witness::{MemInstance, MemWitness, StepInstanceBundle, StepWitnessBundle};
-use neo_memory::MemInit;
 use neo_params::NeoParams;
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::PrimeCharacteristicRing;

@@ -1,5 +1,7 @@
 #![allow(non_snake_case)]
 
+use deprecated_neo_memory::ajtai::{commit_cols_for_ccs_m, encode_vector_for_ccs_m};
+use deprecated_neo_memory::witness::{StepInstanceBundle, StepWitnessBundle};
 use neo_ajtai::{
     set_global_pp, set_global_pp_seeded, setup_par, try_get_loaded_global_pp_for_dims, AjtaiSModule, Commitment as Cmt,
 };
@@ -10,8 +12,6 @@ use neo_ccs::Mat;
 use neo_fold::pi_ccs::FoldingMode;
 use neo_fold::shard::{fold_shard_prove, fold_shard_prove_with_witnesses, fold_shard_verify, CommitMixers};
 use neo_math::{D, F, K};
-use neo_memory::ajtai::{commit_cols_for_ccs_m, encode_vector_for_ccs_m};
-use neo_memory::witness::{StepInstanceBundle, StepWitnessBundle};
 use neo_params::NeoParams;
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::PrimeCharacteristicRing;

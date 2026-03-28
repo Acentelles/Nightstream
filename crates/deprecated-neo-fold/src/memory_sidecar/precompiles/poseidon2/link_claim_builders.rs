@@ -1,6 +1,6 @@
 use super::*;
+use deprecated_neo_memory::riscv::exec_table::RiscvPoseidonSidecarTable;
 use neo_ccs::Mat;
-use neo_memory::riscv::exec_table::RiscvPoseidonSidecarTable;
 use p3_field::{Field, PrimeCharacteristicRing};
 
 const POSEIDON_LINK_ETA_LEN: usize = 19;
@@ -181,7 +181,7 @@ pub(crate) fn populate_poseidon_cycle_link_aux_columns(
 ) -> Result<(), PiCcsError> {
     let zrow = cycle_z.row_mut(0);
     let mut perm_by_cycle_slot =
-        BTreeMap::<(u64, u8), &neo_memory::riscv::exec_table::RiscvPoseidonPermSlotMetaRow>::new();
+        BTreeMap::<(u64, u8), &deprecated_neo_memory::riscv::exec_table::RiscvPoseidonPermSlotMetaRow>::new();
     for perm in sidecar.perm_rows.iter() {
         let key = (perm.cycle, perm.slot);
         if perm_by_cycle_slot.insert(key, perm).is_some() {

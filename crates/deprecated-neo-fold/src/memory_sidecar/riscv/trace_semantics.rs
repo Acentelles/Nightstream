@@ -100,7 +100,9 @@ pub(crate) fn trace_opening_weight_vector(r_cycle: &[K], len: usize) -> Vec<K> {
     bitness_weights(r_cycle, len, 0x5750_5F51_5549_4553u64)
 }
 
-pub(crate) fn rv64_trace_booleanity_columns(layout: &neo_memory::riscv::trace::Rv64TraceLayout) -> Vec<usize> {
+pub(crate) fn rv64_trace_booleanity_columns(
+    layout: &deprecated_neo_memory::riscv::trace::Rv64TraceLayout,
+) -> Vec<usize> {
     vec![layout.active, layout.halted, layout.shout_has_lookup]
 }
 
@@ -109,7 +111,9 @@ pub(crate) fn decode_bool01(v: K) -> K {
     v * (v - K::ONE)
 }
 
-pub(crate) fn rv64_trace_quiescence_columns(layout: &neo_memory::riscv::trace::Rv64TraceLayout) -> Vec<usize> {
+pub(crate) fn rv64_trace_quiescence_columns(
+    layout: &deprecated_neo_memory::riscv::trace::Rv64TraceLayout,
+) -> Vec<usize> {
     vec![
         layout.is_virtual,
         layout.virtual_sequence_remaining,
@@ -137,11 +141,11 @@ pub(crate) fn rv64_trace_quiescence_columns(layout: &neo_memory::riscv::trace::R
 
 #[inline]
 pub(crate) fn trace_uses_rv64_exact_words(cpu_cols_len: usize) -> bool {
-    neo_memory::riscv::trace::infer_riscv_trace_machine_xlen(cpu_cols_len) == Some(64)
+    deprecated_neo_memory::riscv::trace::infer_riscv_trace_machine_xlen(cpu_cols_len) == Some(64)
 }
 
 pub(crate) fn rv64_trace_exact_word_opening_columns() -> Vec<usize> {
-    let layout = neo_memory::riscv::trace::Rv64TraceLayout::new();
+    let layout = deprecated_neo_memory::riscv::trace::Rv64TraceLayout::new();
     vec![
         layout.rs1_val_lo32,
         layout.rs2_val_lo32,
@@ -155,7 +159,7 @@ pub(crate) fn rv64_trace_exact_word_opening_columns() -> Vec<usize> {
     ]
 }
 
-pub(crate) fn rv64_trace_opening_columns(layout: &neo_memory::riscv::trace::Rv64TraceLayout) -> Vec<usize> {
+pub(crate) fn rv64_trace_opening_columns(layout: &deprecated_neo_memory::riscv::trace::Rv64TraceLayout) -> Vec<usize> {
     let mut out = Vec::with_capacity(22);
     out.push(layout.active);
     out.extend(rv64_trace_quiescence_columns(layout));

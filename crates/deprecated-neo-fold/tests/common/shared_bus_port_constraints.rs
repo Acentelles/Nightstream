@@ -1,12 +1,12 @@
 #![allow(dead_code)]
 
-use neo_fold::session::{CcsBuilder, LookupPort, TwistPortWithInc};
-use neo_math::F;
-use neo_memory::cpu::constraints::{CpuConstraint, CpuConstraintBuilder};
-use neo_memory::cpu::{
+use deprecated_neo_memory::cpu::constraints::{CpuConstraint, CpuConstraintBuilder};
+use deprecated_neo_memory::cpu::{
     build_bus_layout_for_instances_with_shout_shapes_and_twist_lanes, ShoutCpuBinding, ShoutInstanceShape,
     TwistCpuBinding,
 };
+use neo_fold::session::{CcsBuilder, LookupPort, TwistPortWithInc};
+use neo_math::F;
 use p3_field::PrimeCharacteristicRing;
 
 pub fn constrain_boolean(cs: &mut CcsBuilder<F>, one: usize, col: usize) {

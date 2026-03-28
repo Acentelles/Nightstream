@@ -31,22 +31,22 @@ pub use crate::witness_layout;
 pub use circuit::*;
 use driver::SessionCcsCache;
 
+use deprecated_neo_memory::ajtai::{commit_cols_for_ccs_m, decode_vector_for_ccs_m, encode_vector_for_ccs_m};
+use deprecated_neo_memory::builder::{
+    build_shard_witness_shared_cpu_bus_from_trace_with_aux,
+    build_shard_witness_shared_cpu_bus_from_trace_with_aux_and_mem_remaps, build_shard_witness_shared_cpu_bus_with_aux,
+    CpuArithmetization, ShardWitnessAux,
+};
+use deprecated_neo_memory::plain::{LutTable, PlainMemLayout};
+use deprecated_neo_memory::witness::LutTableSpec;
+use deprecated_neo_memory::witness::{StepInstanceBundle, StepWitnessBundle};
+use deprecated_neo_memory::AffineWordAddressRemap;
 use neo_ajtai::AjtaiSModule;
 use neo_ajtai::{has_seed_for_dims, s_lincomb, s_mul, unload_global_pp_for_dims, Commitment as Cmt};
 use neo_ccs::traits::SModuleHomomorphism;
 use neo_ccs::{CcsClaim, CcsStructure, CcsWitness, CeClaim, Mat};
 use neo_math::ring::Rq as RqEl;
 use neo_math::{D, F, K};
-use neo_memory::ajtai::{commit_cols_for_ccs_m, decode_vector_for_ccs_m, encode_vector_for_ccs_m};
-use neo_memory::builder::{
-    build_shard_witness_shared_cpu_bus_from_trace_with_aux,
-    build_shard_witness_shared_cpu_bus_from_trace_with_aux_and_mem_remaps, build_shard_witness_shared_cpu_bus_with_aux,
-    CpuArithmetization, ShardWitnessAux,
-};
-use neo_memory::plain::{LutTable, PlainMemLayout};
-use neo_memory::witness::LutTableSpec;
-use neo_memory::witness::{StepInstanceBundle, StepWitnessBundle};
-use neo_memory::AffineWordAddressRemap;
 use neo_params::NeoParams;
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::PrimeCharacteristicRing;
@@ -57,8 +57,8 @@ use std::sync::Arc;
 use crate::pi_ccs::FoldingMode;
 use crate::shard::{self, CommitMixers, ShardProof as FoldRun, ShardProverContext, StepLinkingConfig};
 use crate::PiCcsError;
+use deprecated_neo_vm_trace::VmTrace;
 use neo_reductions::engines::utils;
-use neo_vm_trace::VmTrace;
 
 /// Optional application-level "output claim".
 /// (Not consumed by Π-CCS core yet; kept for API parity / future use.)
@@ -626,9 +626,9 @@ where
         cpu_arith: &A,
     ) -> Result<(), PiCcsError>
     where
-        V: neo_vm_trace::VmCpu<u64, u64, u128>,
-        Tw: neo_vm_trace::Twist<u64, u64>,
-        Sh: neo_vm_trace::Shout<u128, u64>,
+        V: deprecated_neo_vm_trace::VmCpu<u64, u64, u128>,
+        Tw: deprecated_neo_vm_trace::Twist<u64, u64>,
+        Sh: deprecated_neo_vm_trace::Shout<u128, u64>,
         A: CpuArithmetization<F, Cmt, u128>,
     {
         let (bundles, aux) = {
@@ -931,7 +931,7 @@ where
 
     /// Execute a VM for one shard and add shared-CPU-bus step bundles to this session.
     ///
-    /// This is an ergonomic wrapper around `neo_memory::builder::build_shard_witness_shared_cpu_bus_with_aux`.
+    /// This is an ergonomic wrapper around `deprecated_neo_memory::builder::build_shard_witness_shared_cpu_bus_with_aux`.
     /// It also stores auxiliary outputs (including the terminal Twist memory state) so the session
     /// can later prove output binding without the caller manually providing `final_memory_state`.
     pub fn execute_shard_shared_cpu_bus<V, A, Tw, Sh>(
@@ -949,9 +949,9 @@ where
         cpu_arith: &A,
     ) -> Result<(), PiCcsError>
     where
-        V: neo_vm_trace::VmCpu<u64, u64, u128>,
-        Tw: neo_vm_trace::Twist<u64, u64>,
-        Sh: neo_vm_trace::Shout<u128, u64>,
+        V: deprecated_neo_vm_trace::VmCpu<u64, u64, u128>,
+        Tw: deprecated_neo_vm_trace::Twist<u64, u64>,
+        Sh: deprecated_neo_vm_trace::Shout<u128, u64>,
         A: CpuArithmetization<F, Cmt, u128>,
     {
         let (bundles, aux) = build_shard_witness_shared_cpu_bus_with_aux(

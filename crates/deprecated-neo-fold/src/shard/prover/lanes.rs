@@ -14,7 +14,7 @@ pub(super) fn prove_val_lane<L, MR, MB>(
     s: &CcsStructure<F>,
     mode: &FoldingMode,
     ccs_sparse_cache: Option<&SparseCache<F>>,
-    cpu_bus: &neo_memory::cpu::BusLayout,
+    cpu_bus: &deprecated_neo_memory::cpu::BusLayout,
     ring: &ccs::RotRing,
     ell_d: usize,
     k_dec: usize,

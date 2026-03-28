@@ -116,7 +116,7 @@ Downstream consumers:
 - `neo-ajtai`: uses `Mat`, `SModuleHomomorphism`
 - `neo-fold`: uses `CcsStructure`, `CcsClaim`, `CcsWitness`, `CeClaim`, `CeWitness`, `direct_sum_*`
 - `neo-reductions`: uses `CcsStructure`, `CeClaim` for Pi_CCS/Pi_RLC/Pi_DEC
-- `neo-memory`: CCS types for memory-checking circuits
+- `deprecated-neo-memory`: CCS types for memory-checking circuits
 - `neo-spartan-bridge`, `neo-midnight-bridge`: bridge layers
 
 ## Lean Oracle Conformance
@@ -145,4 +145,4 @@ Downstream consumers:
 - Sumcheck protocol (belongs to neo-reductions layer)
 - Folding verifier (belongs to neo-fold)
 - Specific circuit designs (application-layer concern)
-- Witness generation from program traces (belongs to neo-memory)
+- Witness generation from program traces (belongs to deprecated-neo-memory)

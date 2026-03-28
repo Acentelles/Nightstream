@@ -4,13 +4,13 @@
 //! without folding/proving, for every major instruction category.
 
 use neo_ccs::relations::check_ccs_rowwise_zero;
-use neo_memory::riscv::ccs::{build_rv32_trace_wiring_ccs, rv32_trace_ccs_witness_from_exec_table, Rv32TraceCcsLayout};
-use neo_memory::riscv::exec_table::Rv32ExecTable;
-use neo_memory::riscv::lookups::{
+use deprecated_neo_memory::riscv::ccs::{build_rv32_trace_wiring_ccs, rv32_trace_ccs_witness_from_exec_table, Rv32TraceCcsLayout};
+use deprecated_neo_memory::riscv::exec_table::Rv32ExecTable;
+use deprecated_neo_memory::riscv::lookups::{
     decode_program, encode_program, BranchCondition, RiscvCpu, RiscvInstruction, RiscvMemOp, RiscvMemory, RiscvOpcode,
     RiscvShoutTables, PROG_ID,
 };
-use neo_vm_trace::trace_program;
+use deprecated_neo_vm_trace::trace_program;
 use p3_field::PrimeCharacteristicRing;
 use p3_goldilocks::Goldilocks as F;
 

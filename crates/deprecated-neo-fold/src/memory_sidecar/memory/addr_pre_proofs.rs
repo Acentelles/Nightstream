@@ -90,7 +90,7 @@ pub(crate) fn prove_instruction_lookup_addr_pre_time(
     };
 
     for (idx, (lut_inst, _lut_wit)) in step.lut_instances.iter().enumerate() {
-        neo_memory::addr::validate_shout_bit_addressing(lut_inst)?;
+        deprecated_neo_memory::addr::validate_shout_bit_addressing(lut_inst)?;
         if lut_inst.steps > pow2_cycle {
             return Err(PiCcsError::InvalidInput(format!(
                 "instruction_lookup(Route A): steps={} exceeds 2^ell_cycle={pow2_cycle}",
@@ -412,7 +412,7 @@ pub fn verify_instruction_lookup_addr_pre_time(
     let mut lane_ell_addr: Vec<u32> = Vec::with_capacity(total_lanes);
     let mut required_ell_addrs: std::collections::BTreeSet<u32> = std::collections::BTreeSet::new();
     for lut_inst in step.lut_insts.iter() {
-        neo_memory::addr::validate_shout_bit_addressing(lut_inst)?;
+        deprecated_neo_memory::addr::validate_shout_bit_addressing(lut_inst)?;
         let inst_ell_addr = lut_inst.d * lut_inst.ell;
         let inst_ell_addr_u32 = u32::try_from(inst_ell_addr)
             .map_err(|_| PiCcsError::InvalidInput("instruction_lookup: ell_addr overflows u32".into()))?;
@@ -627,7 +627,7 @@ pub fn verify_instruction_lookup_addr_pre_time(
                         })?;
                         let mut acc = K::ZERO;
                         for (i, &v) in lut_inst.table.iter().enumerate().take(pow2) {
-                            let w = neo_memory::mle::chi_at_index(r_addr, i);
+                            let w = deprecated_neo_memory::mle::chi_at_index(r_addr, i);
                             acc += K::from(v) * w;
                         }
                         acc

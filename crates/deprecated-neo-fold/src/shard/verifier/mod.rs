@@ -159,7 +159,7 @@ where
         absorb_step_memory(tr, &step.lut_insts, &step.mem_insts);
 
         let include_ob = ob_cfg.is_some() && (idx + 1 == steps.len());
-        let mut ob_state: Option<neo_memory::output_check::OutputSumcheckState> = None;
+        let mut ob_state: Option<deprecated_neo_memory::output_check::OutputSumcheckState> = None;
         let mut ob_sparse_addr_weights: Option<Vec<(Vec<K>, K)>> = None;
         let mut ob_sparse_val_offset: Option<K> = None;
         let mut ob_reg_exact_linkage_degree_bound: Option<usize> = None;
@@ -196,7 +196,7 @@ where
                     cfg.num_bits, ell_addr
                 )));
             }
-            if mem_inst.mem_id == neo_memory::riscv::lookups::REG_EXACT_ID.0 {
+            if mem_inst.mem_id == deprecated_neo_memory::riscv::lookups::REG_EXACT_ID.0 {
                 ob_reg_exact_linkage_degree_bound =
                     Some(crate::memory_sidecar::memory::RV64_REG_EXACT_LINKAGE_DEGREE_BOUND);
             }
@@ -205,9 +205,10 @@ where
             tr.append_u64s(b"output_binding/mem_idx", &[cfg.mem_idx as u64]);
             tr.append_u64s(b"output_binding/num_bits", &[cfg.num_bits as u64]);
 
-            let use_dense_output_sumcheck = cfg.num_bits <= neo_memory::output_check::OUTPUT_SUMCHECK_MAX_NUM_BITS;
+            let use_dense_output_sumcheck =
+                cfg.num_bits <= deprecated_neo_memory::output_check::OUTPUT_SUMCHECK_MAX_NUM_BITS;
             if use_dense_output_sumcheck {
-                let state = neo_memory::output_check::verify_output_sumcheck_rounds_get_state(
+                let state = deprecated_neo_memory::output_check::verify_output_sumcheck_rounds_get_state(
                     tr,
                     cfg.num_bits,
                     cfg.program_io.clone(),
@@ -804,7 +805,7 @@ where
 
         let exact_reg_output_binding_active = include_ob
             && ob_cfg
-                .map(|cfg| step.mem_insts[cfg.mem_idx].mem_id == neo_memory::riscv::lookups::REG_EXACT_ID.0)
+                .map(|cfg| step.mem_insts[cfg.mem_idx].mem_id == deprecated_neo_memory::riscv::lookups::REG_EXACT_ID.0)
                 .unwrap_or(false);
         let expected_consumed = if exact_reg_output_binding_active {
             final_values
@@ -840,7 +841,8 @@ where
         if include_ob {
             let cfg =
                 ob_cfg.ok_or_else(|| PiCcsError::InvalidInput("output binding enabled but config missing".into()))?;
-            let use_dense_output_sumcheck = cfg.num_bits <= neo_memory::output_check::OUTPUT_SUMCHECK_MAX_NUM_BITS;
+            let use_dense_output_sumcheck =
+                cfg.num_bits <= deprecated_neo_memory::output_check::OUTPUT_SUMCHECK_MAX_NUM_BITS;
 
             let inc_idx = final_values
                 .len()

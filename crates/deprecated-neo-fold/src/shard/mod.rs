@@ -24,6 +24,8 @@ pub use crate::shard_proof_types::{
     TwistProofK,
 };
 use crate::PiCcsError;
+use deprecated_neo_memory::ts_common as ts;
+use deprecated_neo_memory::witness::{StepInstanceBundle, StepWitnessBundle};
 #[cfg(target_arch = "wasm32")]
 use js_sys::Date;
 use neo_ajtai::{
@@ -33,8 +35,6 @@ use neo_ajtai::{
 use neo_ccs::traits::SModuleHomomorphism;
 use neo_ccs::{CcsStructure, CeClaim, Mat};
 use neo_math::{KExtensions, D, F, K};
-use neo_memory::ts_common as ts;
-use neo_memory::witness::{StepInstanceBundle, StepWitnessBundle};
 use neo_params::NeoParams;
 use neo_reductions::engines::optimized_engine::oracle::SparseCache;
 use neo_reductions::engines::utils;

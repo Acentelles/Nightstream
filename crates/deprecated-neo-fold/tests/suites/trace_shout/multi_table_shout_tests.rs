@@ -16,6 +16,8 @@
 
 use std::marker::PhantomData;
 
+use deprecated_neo_memory::plain::{LutTable, PlainLutTrace};
+use deprecated_neo_memory::witness::{StepInstanceBundle, StepWitnessBundle};
 use neo_ajtai::{set_global_pp, setup as ajtai_setup, AjtaiSModule, Commitment as Cmt};
 use neo_ccs::poly::SparsePoly;
 use neo_ccs::relations::{CcsClaim, CcsStructure, CcsWitness, CeClaim};
@@ -25,8 +27,6 @@ use neo_fold::pi_ccs::FoldingMode;
 use neo_fold::shard::CommitMixers;
 use neo_fold::shard::{fold_shard_prove, fold_shard_verify};
 use neo_math::{D, F, K};
-use neo_memory::plain::{LutTable, PlainLutTrace};
-use neo_memory::witness::{StepInstanceBundle, StepWitnessBundle};
 use neo_params::NeoParams;
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::PrimeCharacteristicRing;
@@ -41,7 +41,7 @@ const M_IN: usize = 0;
 /// Setup real Ajtai public parameters for tests.
 pub(crate) fn setup_ajtai_pp(m: usize, seed: u64) -> AjtaiSModule {
     let d = D;
-    let m_commit = neo_memory::ajtai::commit_cols_for_ccs_m(m);
+    let m_commit = deprecated_neo_memory::ajtai::commit_cols_for_ccs_m(m);
     if neo_ajtai::has_global_pp_for_dims(d, m_commit) {
         return AjtaiSModule::from_global_for_dims(d, m_commit).expect("from_global_for_dims");
     }
@@ -75,7 +75,7 @@ pub(crate) fn create_mcs_from_z(
     m_in: usize,
     z: Vec<F>,
 ) -> (CcsClaim<Cmt, F>, CcsWitness<F>) {
-    let Z = neo_memory::ajtai::encode_vector_balanced_to_mat(params, &z);
+    let Z = deprecated_neo_memory::ajtai::encode_vector_balanced_to_mat(params, &z);
     let c = l.commit(&Z);
 
     let x = z[..m_in].to_vec();
@@ -87,12 +87,12 @@ pub(crate) fn make_shout_instance(
     table: &LutTable<F>,
     steps: usize,
 ) -> (
-    neo_memory::witness::LutInstance<Cmt, F>,
-    neo_memory::witness::LutWitness<F>,
+    deprecated_neo_memory::witness::LutInstance<Cmt, F>,
+    deprecated_neo_memory::witness::LutWitness<F>,
 ) {
     let ell = table.n_side.trailing_zeros() as usize;
     (
-        neo_memory::witness::LutInstance {
+        deprecated_neo_memory::witness::LutInstance {
             table_id: table.table_id,
             comms: Vec::new(),
             k: table.k,
@@ -107,7 +107,7 @@ pub(crate) fn make_shout_instance(
             addr_group: None,
             selector_group: None,
         },
-        neo_memory::witness::LutWitness { mats: Vec::new() },
+        deprecated_neo_memory::witness::LutWitness { mats: Vec::new() },
     )
 }
 
@@ -116,7 +116,7 @@ pub(crate) fn write_shout_bus_step(
     bus_base: usize,
     chunk_size: usize,
     j: usize,
-    inst: &neo_memory::witness::LutInstance<Cmt, F>,
+    inst: &deprecated_neo_memory::witness::LutInstance<Cmt, F>,
     trace: &PlainLutTrace<F>,
     col_id: &mut usize,
 ) {
@@ -200,7 +200,7 @@ pub(crate) fn create_step_with_shout_bus_lanes(
     assert_eq!(steps, chunk_size);
     let ell = table.n_side.trailing_zeros() as usize;
 
-    let inst = neo_memory::witness::LutInstance::<Cmt, F> {
+    let inst = deprecated_neo_memory::witness::LutInstance::<Cmt, F> {
         table_id: table.table_id,
         comms: Vec::new(),
         k: table.k,
@@ -215,7 +215,7 @@ pub(crate) fn create_step_with_shout_bus_lanes(
         addr_group: None,
         selector_group: None,
     };
-    let wit = neo_memory::witness::LutWitness { mats: Vec::new() };
+    let wit = deprecated_neo_memory::witness::LutWitness { mats: Vec::new() };
 
     let bus_cols_total = lane_traces.len() * (inst.d * inst.ell + 2);
     let bus_base = ccs.m - bus_cols_total * chunk_size;

@@ -9,18 +9,18 @@ use neo_ccs::Mat;
 use neo_fold::pi_ccs::FoldingMode;
 use neo_fold::shard::{fold_shard_prove, fold_shard_verify};
 use neo_math::F;
-use neo_memory::cpu::build_bus_layout_for_instances_with_shout_and_twist_lanes;
-use neo_memory::riscv::ccs::{build_rv32_trace_wiring_ccs, rv32_trace_ccs_witness_from_exec_table, Rv32TraceCcsLayout};
-use neo_memory::riscv::exec_table::Rv32ExecTable;
-use neo_memory::riscv::lookups::{
+use deprecated_neo_memory::cpu::build_bus_layout_for_instances_with_shout_and_twist_lanes;
+use deprecated_neo_memory::riscv::ccs::{build_rv32_trace_wiring_ccs, rv32_trace_ccs_witness_from_exec_table, Rv32TraceCcsLayout};
+use deprecated_neo_memory::riscv::exec_table::Rv32ExecTable;
+use deprecated_neo_memory::riscv::lookups::{
     decode_program, encode_program, RiscvCpu, RiscvInstruction, RiscvMemory, RiscvOpcode, RiscvShoutTables, PROG_ID,
 };
-use neo_memory::riscv::trace::extract_shout_lanes_over_time;
-use neo_memory::witness::{LutInstance, LutTableSpec, LutWitness, StepInstanceBundle, StepWitnessBundle};
+use deprecated_neo_memory::riscv::trace::extract_shout_lanes_over_time;
+use deprecated_neo_memory::witness::{LutInstance, LutTableSpec, LutWitness, StepInstanceBundle, StepWitnessBundle};
 use neo_params::NeoParams;
 use neo_transcript::Poseidon2Transcript;
 use neo_transcript::Transcript;
-use neo_vm_trace::trace_program;
+use deprecated_neo_vm_trace::trace_program;
 use p3_field::PrimeCharacteristicRing;
 
 use crate::suite::{default_mixers, setup_ajtai_committer};
@@ -66,7 +66,7 @@ fn build_paged_shout_only_bus_zs(
     t: usize,
     ell_addr: usize,
     lanes: usize,
-    lane_data: &[neo_memory::riscv::trace::ShoutLaneOverTime],
+    lane_data: &[deprecated_neo_memory::riscv::trace::ShoutLaneOverTime],
     x_prefix: &[F],
 ) -> Result<Vec<Vec<F>>, String> {
     if x_prefix.len() != m_in {
@@ -194,7 +194,7 @@ fn riscv_trace_wiring_ccs_shared_cpu_bus_shout_xor_paged_prove_verify() {
 
     // Main CPU trace witness commitment.
     let z_cpu: Vec<F> = x.iter().copied().chain(w.iter().copied()).collect();
-    let Z_cpu = neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z_cpu);
+    let Z_cpu = deprecated_neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z_cpu);
     let c_cpu = l.commit(&Z_cpu);
     let mcs = (
         CcsClaim {
@@ -221,7 +221,7 @@ fn riscv_trace_wiring_ccs_shared_cpu_bus_shout_xor_paged_prove_verify() {
     let mut mats: Vec<Mat<F>> = Vec::with_capacity(paged_zs.len());
     let mut comms: Vec<Cmt> = Vec::with_capacity(paged_zs.len());
     for z in paged_zs {
-        let Z = neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z);
+        let Z = deprecated_neo_memory::ajtai::encode_vector_balanced_to_mat(&params, &z);
         comms.push(l.commit(&Z));
         mats.push(Z);
     }
