@@ -68,7 +68,9 @@ structure KernelSemanticClosure
     MainLaneTraceBoundary
       kernel.authenticatedTrace.chunkInput.rows
       kernel.authenticatedTrace.mainLane.preparedSteps
+      kernel.authenticatedTrace.mainLane.chunks
       kernel.authenticatedTrace.chunkInput.semanticRows
+      kernel.authenticatedTrace.mainLane.schedule
   traceLinkBoundary :
     TraceLinkBoundary
       kernel.authenticatedTrace.chunkInput.rows

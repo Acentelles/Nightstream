@@ -1,12 +1,11 @@
+import Nightstream.Rv64IM.Kernel.AcceptedPublicProof
 import Nightstream.Rv64IM.Kernel.PublicProofSchema
 
 /-!
-Owns the theorem-facing RV64IM accepted-proof artifact boundary. The primary
-object is a low-level artifact together with the exact kernel-boundary witness
-it determines. Accepted-proof soundness and public-proof statement / claims /
-kernelProof objects are always derived from that artifact by explicit Lean
-functions; the theorem boundary never stores a preassembled public projection
-or a pre-proved accepted-proof witness.
+Owns the theorem-facing RV64IM accepted-artifact boundary. The low-level
+accepted artifact is just the exported proof-bearing Rust layer. Any recovered
+exact kernel boundary witness lives in a separate theorem-owned boundary
+construction object instead of being stored on the artifact itself.
 -/
 
 namespace Nightstream.Rv64IM
@@ -21,6 +20,58 @@ structure AcceptedProofArtifact
     Artifact Statement ClaimBundle KernelProofBundle :
     Type _) [OfNat Limb 0] where
   artifact : Artifact
+
+structure AcceptedProofArtifactBoundary
+  (BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
+    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
+    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
+    PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
+    BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
+    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding
+    Artifact Statement ClaimBundle KernelProofBundle :
+    Type _) [OfNat Limb 0]
+  (acceptedArtifact :
+    AcceptedProofArtifact
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep
+      ProgramImage
+      LoweringVersion
+      RomTable
+      BytecodeTable
+      RomCommit
+      BytecodeCommit
+      Source
+      CommitmentId
+      Point
+      PolynomialId
+      Value
+      Digest
+      ExactOpeningWitness
+      OpeningRefinement
+      RowProjectionWitness
+      BridgeBinding
+      Artifact
+      Statement
+      ClaimBundle
+      KernelProofBundle) where
   exactBoundaries :
     ExactKernelBoundaries
       BytecodeAddr
@@ -60,7 +111,7 @@ structure AcceptedProofArtifact
       RowProjectionWitness
       BridgeBinding
 
-def exactKernelBoundaries_of_acceptedProofArtifact
+def exactKernelBoundaries_of_acceptedProofArtifactBoundary
   {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
     RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
     ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
@@ -69,7 +120,7 @@ def exactKernelBoundaries_of_acceptedProofArtifact
     ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding
     Artifact Statement ClaimBundle KernelProofBundle :
     Type _} [OfNat Limb 0]
-  (artifact :
+  {acceptedArtifact :
     AcceptedProofArtifact
       BytecodeAddr
       Pc
@@ -110,7 +161,50 @@ def exactKernelBoundaries_of_acceptedProofArtifact
       Artifact
       Statement
       ClaimBundle
-      KernelProofBundle) :
+      KernelProofBundle}
+  (boundary :
+    AcceptedProofArtifactBoundary
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep
+      ProgramImage
+      LoweringVersion
+      RomTable
+      BytecodeTable
+      RomCommit
+      BytecodeCommit
+      Source
+      CommitmentId
+      Point
+      PolynomialId
+      Value
+      Digest
+      ExactOpeningWitness
+      OpeningRefinement
+      RowProjectionWitness
+      BridgeBinding
+      Artifact
+      Statement
+      ClaimBundle
+      KernelProofBundle
+      acceptedArtifact) :
   ExactKernelBoundaries
     BytecodeAddr
     Pc
@@ -148,9 +242,9 @@ def exactKernelBoundaries_of_acceptedProofArtifact
     OpeningRefinement
     RowProjectionWitness
     BridgeBinding :=
-  artifact.exactBoundaries
+  boundary.exactBoundaries
 
-def acceptedProofSoundness_of_acceptedProofArtifact
+def acceptedProofSoundness_of_acceptedProofArtifactBoundary
   {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
     RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
     ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
@@ -159,7 +253,7 @@ def acceptedProofSoundness_of_acceptedProofArtifact
     ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding
     Artifact Statement ClaimBundle KernelProofBundle :
     Type _} [OfNat Limb 0]
-  (artifact :
+  {acceptedArtifact :
     AcceptedProofArtifact
       BytecodeAddr
       Pc
@@ -200,7 +294,50 @@ def acceptedProofSoundness_of_acceptedProofArtifact
       Artifact
       Statement
       ClaimBundle
-      KernelProofBundle) :
+      KernelProofBundle}
+  (boundary :
+    AcceptedProofArtifactBoundary
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep
+      ProgramImage
+      LoweringVersion
+      RomTable
+      BytecodeTable
+      RomCommit
+      BytecodeCommit
+      Source
+      CommitmentId
+      Point
+      PolynomialId
+      Value
+      Digest
+      ExactOpeningWitness
+      OpeningRefinement
+      RowProjectionWitness
+      BridgeBinding
+      Artifact
+      Statement
+      ClaimBundle
+      KernelProofBundle
+      acceptedArtifact) :
   AcceptedProofSoundness
     BytecodeAddr
     Pc
@@ -239,7 +376,7 @@ def acceptedProofSoundness_of_acceptedProofArtifact
     RowProjectionWitness
     BridgeBinding :=
   acceptedProofSoundness_of_exactKernelBoundaries
-    (exactKernelBoundaries_of_acceptedProofArtifact artifact)
+    (exactKernelBoundaries_of_acceptedProofArtifactBoundary boundary)
 
 def recomputedPublicProofSchema_of_acceptedProofArtifact
   {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
@@ -252,7 +389,7 @@ def recomputedPublicProofSchema_of_acceptedProofArtifact
     Type _}
   (project : Artifact -> PublicProofSchema Statement ClaimBundle KernelProofBundle)
   [OfNat Limb 0]
-  (artifact :
+  (acceptedArtifact :
     AcceptedProofArtifact
       BytecodeAddr
       Pc
@@ -295,7 +432,7 @@ def recomputedPublicProofSchema_of_acceptedProofArtifact
       ClaimBundle
       KernelProofBundle) :
   PublicProofSchema Statement ClaimBundle KernelProofBundle :=
-  project artifact.artifact
+  project acceptedArtifact.artifact
 
 def publicProofBoundary_of_acceptedProofArtifact
   {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
@@ -308,7 +445,7 @@ def publicProofBoundary_of_acceptedProofArtifact
     Type _}
   (project : Artifact -> PublicProofSchema Statement ClaimBundle KernelProofBundle)
   [OfNat Limb 0]
-  (artifact :
+  (acceptedArtifact :
     AcceptedProofArtifact
       BytecodeAddr
       Pc
@@ -391,10 +528,9 @@ def publicProofBoundary_of_acceptedProofArtifact
     ClaimBundle
     KernelProofBundle :=
   publicProofBoundary_of_schema
-    (recomputedPublicProofSchema_of_acceptedProofArtifact project artifact)
-    (acceptedProofSoundness_of_acceptedProofArtifact artifact)
+    (recomputedPublicProofSchema_of_acceptedProofArtifact project acceptedArtifact)
 
-def publicProofSchemaExecutionResult_of_acceptedProofArtifact
+def acceptedPublicProof_of_acceptedProofArtifactBoundary
   {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
     RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
     ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
@@ -405,7 +541,7 @@ def publicProofSchemaExecutionResult_of_acceptedProofArtifact
     Type _}
   (project : Artifact -> PublicProofSchema Statement ClaimBundle KernelProofBundle)
   [OfNat Limb 0]
-  (artifact :
+  {acceptedArtifact :
     AcceptedProofArtifact
       BytecodeAddr
       Pc
@@ -446,7 +582,189 @@ def publicProofSchemaExecutionResult_of_acceptedProofArtifact
       Artifact
       Statement
       ClaimBundle
-      KernelProofBundle) :
+      KernelProofBundle}
+  (boundary :
+    AcceptedProofArtifactBoundary
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep
+      ProgramImage
+      LoweringVersion
+      RomTable
+      BytecodeTable
+      RomCommit
+      BytecodeCommit
+      Source
+      CommitmentId
+      Point
+      PolynomialId
+      Value
+      Digest
+      ExactOpeningWitness
+      OpeningRefinement
+      RowProjectionWitness
+      BridgeBinding
+      Artifact
+      Statement
+      ClaimBundle
+      KernelProofBundle
+      acceptedArtifact) :
+  AcceptedPublicProof
+    BytecodeAddr
+    Pc
+    RegIdx
+    VirtualOpcode
+    AluOp
+    BranchOp
+    MemWidth
+    DivRemKind
+    RamAddr
+    Word
+    StateLocation
+    RegisterTimeline
+    RamTimeline
+    Limb
+    ArchitecturalInputs
+    AuthenticatedReads
+    WitnessAssignment
+    Output
+    StateEffect
+    PreparedStep
+    ProgramImage
+    LoweringVersion
+    RomTable
+    BytecodeTable
+    RomCommit
+    BytecodeCommit
+    Source
+    CommitmentId
+    Point
+    PolynomialId
+    Value
+    Digest
+    ExactOpeningWitness
+    OpeningRefinement
+    RowProjectionWitness
+    BridgeBinding
+    Statement
+    ClaimBundle
+    KernelProofBundle :=
+  { boundary := publicProofBoundary_of_acceptedProofArtifact project acceptedArtifact
+    accepted := acceptedProofSoundness_of_acceptedProofArtifactBoundary boundary }
+
+def publicProofSchemaExecutionResult_of_acceptedProofArtifactBoundary
+  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
+    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
+    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
+    PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
+    BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
+    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding
+    Artifact Statement ClaimBundle KernelProofBundle :
+    Type _}
+  (project : Artifact -> PublicProofSchema Statement ClaimBundle KernelProofBundle)
+  [OfNat Limb 0]
+  {acceptedArtifact :
+    AcceptedProofArtifact
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep
+      ProgramImage
+      LoweringVersion
+      RomTable
+      BytecodeTable
+      RomCommit
+      BytecodeCommit
+      Source
+      CommitmentId
+      Point
+      PolynomialId
+      Value
+      Digest
+      ExactOpeningWitness
+      OpeningRefinement
+      RowProjectionWitness
+      BridgeBinding
+      Artifact
+      Statement
+      ClaimBundle
+      KernelProofBundle}
+  (boundary :
+    AcceptedProofArtifactBoundary
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep
+      ProgramImage
+      LoweringVersion
+      RomTable
+      BytecodeTable
+      RomCommit
+      BytecodeCommit
+      Source
+      CommitmentId
+      Point
+      PolynomialId
+      Value
+      Digest
+      ExactOpeningWitness
+      OpeningRefinement
+      RowProjectionWitness
+      BridgeBinding
+      Artifact
+      Statement
+      ClaimBundle
+      KernelProofBundle
+      acceptedArtifact) :
   PublicProofSchemaExecutionResult
     BytecodeAddr
     Pc
@@ -487,10 +805,10 @@ def publicProofSchemaExecutionResult_of_acceptedProofArtifact
     Statement
     ClaimBundle
     KernelProofBundle
-    (recomputedPublicProofSchema_of_acceptedProofArtifact project artifact)
-    (acceptedProofSoundness_of_acceptedProofArtifact artifact) :=
+    (recomputedPublicProofSchema_of_acceptedProofArtifact project acceptedArtifact)
+    (acceptedProofSoundness_of_acceptedProofArtifactBoundary boundary) :=
   publicProofSchemaExecutionResult_of_boundary
-    (recomputedPublicProofSchema_of_acceptedProofArtifact project artifact)
-    (acceptedProofSoundness_of_acceptedProofArtifact artifact)
+    (recomputedPublicProofSchema_of_acceptedProofArtifact project acceptedArtifact)
+    (acceptedProofSoundness_of_acceptedProofArtifactBoundary boundary)
 
 end Nightstream.Rv64IM

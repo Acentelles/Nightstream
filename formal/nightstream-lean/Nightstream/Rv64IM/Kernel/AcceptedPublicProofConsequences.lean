@@ -4,9 +4,8 @@ import Nightstream.Rv64IM.Kernel.PublicProofBoundaryConsequences
 
 /-!
 Owns the proposition-level theorem surface for the canonical accepted public
-proof route. This file does not re-own the public proof object; it packages
-its three execution/public-result consequences into one explicit theorem-facing
-boundary.
+proof route. This file packages the Rust-shaped public proof boundary together
+with the accepted-proof witness that discharges it.
 -/
 
 namespace Nightstream.Rv64IM
@@ -76,9 +75,9 @@ theorem acceptedPublicProofImpliesExecutionConsequences
       proof.accepted.topLevel.kernel.authenticatedTrace.stage3Refinement.finalBoundary.sequence
       proof.accepted.topLevel.kernel.authenticatedTrace.stage3Refinement.finalBoundary.terminatingRow := by
   exact ⟨
-    executionCorrect_of_publicProofBoundary proof,
-    preparedStepExportBound_of_publicProofBoundary proof,
-    fullHaltedExecutionClaim_of_publicProofBoundary proof
+    executionCorrect_of_publicProofBoundary proof.boundary proof.accepted,
+    preparedStepExportBound_of_publicProofBoundary proof.boundary proof.accepted,
+    fullHaltedExecutionClaim_of_publicProofBoundary proof.boundary proof.accepted
   ⟩
 
 theorem exactKernelBoundariesImplyAcceptedPublicProofExecutionConsequences
@@ -170,9 +169,8 @@ theorem exactKernelBoundariesImplyAcceptedPublicProofExecutionConsequences
         Statement
         ClaimBundle
         KernelProofBundle :=
-        publicProofBoundary_of_schema
-          schema
-          (acceptedProofSoundness_of_exactKernelBoundaries boundaries)
+        { boundary := publicProofBoundary_of_schema schema
+          accepted := acceptedProofSoundness_of_exactKernelBoundaries boundaries }
   ExecutionCorrect
       proof.accepted.topLevel.kernel.authenticatedTrace.stepComposition.execution.initialState
       proof.accepted.topLevel.kernel.authenticatedTrace.stepComposition.execution.finalState
@@ -189,189 +187,13 @@ theorem exactKernelBoundariesImplyAcceptedPublicProofExecutionConsequences
       proof.accepted.topLevel.kernel.authenticatedTrace.stage3Refinement.finalBoundary.terminatingRow := by
   dsimp
   exact acceptedPublicProofImpliesExecutionConsequences
-    (publicProofBoundary_of_schema
-      schema
-      (acceptedProofSoundness_of_exactKernelBoundaries boundaries))
+    { boundary := publicProofBoundary_of_schema schema
+      accepted := acceptedProofSoundness_of_exactKernelBoundaries boundaries }
 
-theorem rv64imAcceptedPublicProofImpliesExecutionConsequences
-  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
-    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
-    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
-    PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
-    BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
-    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding
-    Rv64imProofStatement Rv64imKernelClaimBundle Rv64imKernelProofBundle :
-    Type _} [OfNat Limb 0]
-  (proof :
-    AcceptedPublicProof
-      BytecodeAddr
-      Pc
-      RegIdx
-      VirtualOpcode
-      AluOp
-      BranchOp
-      MemWidth
-      DivRemKind
-      RamAddr
-      Word
-      StateLocation
-      RegisterTimeline
-      RamTimeline
-      Limb
-      ArchitecturalInputs
-      AuthenticatedReads
-      WitnessAssignment
-      Output
-      StateEffect
-      PreparedStep
-      ProgramImage
-      LoweringVersion
-      RomTable
-      BytecodeTable
-      RomCommit
-      BytecodeCommit
-      Source
-      CommitmentId
-      Point
-      PolynomialId
-      Value
-      Digest
-      ExactOpeningWitness
-      OpeningRefinement
-      RowProjectionWitness
-      BridgeBinding
-      Rv64imProofStatement
-      Rv64imKernelClaimBundle
-      Rv64imKernelProofBundle) :
-  ExecutionCorrect
-      proof.accepted.topLevel.kernel.authenticatedTrace.stepComposition.execution.initialState
-      proof.accepted.topLevel.kernel.authenticatedTrace.stepComposition.execution.finalState
-      proof.accepted.topLevel.kernel.authenticatedTrace.stepComposition.execution.rows
-      proof.accepted.topLevel.kernel.authenticatedTrace.stepComposition.execution.preparedSteps
-      proof.accepted.topLevel.kernel.authenticatedTrace.stepComposition.execution.boundary
-      proof.accepted.topLevel.kernel.authenticatedTrace.stepComposition.execution.entrypoint
-      proof.accepted.topLevel.kernel.authenticatedTrace.stepComposition.execution.successors ∧
-    PreparedStepExportBound
-      proof.accepted.topLevel.kernel.authenticatedTrace.chunkInput.rows
-      proof.accepted.topLevel.kernel.authenticatedTrace.mainLane.preparedSteps ∧
-    FullHaltedExecutionClaim
-      proof.accepted.topLevel.kernel.authenticatedTrace.stage3Refinement.finalBoundary.sequence
-      proof.accepted.topLevel.kernel.authenticatedTrace.stage3Refinement.finalBoundary.terminatingRow := by
-  exact acceptedPublicProofImpliesExecutionConsequences proof
+abbrev rv64imAcceptedPublicProofImpliesExecutionConsequences :=
+  @acceptedPublicProofImpliesExecutionConsequences
 
-theorem exactKernelBoundariesImplyRv64imAcceptedPublicProofExecutionConsequences
-  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
-    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
-    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
-    PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
-    BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
-    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding
-    Rv64imProofStatement Rv64imKernelClaimBundle Rv64imKernelProofBundle :
-    Type _} [OfNat Limb 0]
-  (schema :
-    Rv64imPublicProofSchema
-      Rv64imProofStatement
-      Rv64imKernelClaimBundle
-      Rv64imKernelProofBundle)
-  (boundaries :
-    ExactKernelBoundaries
-      BytecodeAddr
-      Pc
-      RegIdx
-      VirtualOpcode
-      AluOp
-      BranchOp
-      MemWidth
-      DivRemKind
-      RamAddr
-      Word
-      StateLocation
-      RegisterTimeline
-      RamTimeline
-      Limb
-      ArchitecturalInputs
-      AuthenticatedReads
-      WitnessAssignment
-      Output
-      StateEffect
-      PreparedStep
-      ProgramImage
-      LoweringVersion
-      RomTable
-      BytecodeTable
-      RomCommit
-      BytecodeCommit
-      Source
-      CommitmentId
-      Point
-      PolynomialId
-      Value
-      Digest
-      ExactOpeningWitness
-      OpeningRefinement
-      RowProjectionWitness
-      BridgeBinding) :
-  let proof :
-      AcceptedPublicProof
-        BytecodeAddr
-        Pc
-        RegIdx
-        VirtualOpcode
-        AluOp
-        BranchOp
-        MemWidth
-        DivRemKind
-        RamAddr
-        Word
-        StateLocation
-        RegisterTimeline
-        RamTimeline
-        Limb
-        ArchitecturalInputs
-        AuthenticatedReads
-        WitnessAssignment
-        Output
-        StateEffect
-        PreparedStep
-        ProgramImage
-        LoweringVersion
-        RomTable
-        BytecodeTable
-        RomCommit
-        BytecodeCommit
-        Source
-        CommitmentId
-        Point
-        PolynomialId
-        Value
-        Digest
-        ExactOpeningWitness
-        OpeningRefinement
-        RowProjectionWitness
-        BridgeBinding
-        Rv64imProofStatement
-        Rv64imKernelClaimBundle
-        Rv64imKernelProofBundle :=
-        publicProofBoundary_of_schema
-          schema
-          (acceptedProofSoundness_of_exactKernelBoundaries boundaries)
-  ExecutionCorrect
-      proof.accepted.topLevel.kernel.authenticatedTrace.stepComposition.execution.initialState
-      proof.accepted.topLevel.kernel.authenticatedTrace.stepComposition.execution.finalState
-      proof.accepted.topLevel.kernel.authenticatedTrace.stepComposition.execution.rows
-      proof.accepted.topLevel.kernel.authenticatedTrace.stepComposition.execution.preparedSteps
-      proof.accepted.topLevel.kernel.authenticatedTrace.stepComposition.execution.boundary
-      proof.accepted.topLevel.kernel.authenticatedTrace.stepComposition.execution.entrypoint
-      proof.accepted.topLevel.kernel.authenticatedTrace.stepComposition.execution.successors ∧
-    PreparedStepExportBound
-      proof.accepted.topLevel.kernel.authenticatedTrace.chunkInput.rows
-      proof.accepted.topLevel.kernel.authenticatedTrace.mainLane.preparedSteps ∧
-    FullHaltedExecutionClaim
-      proof.accepted.topLevel.kernel.authenticatedTrace.stage3Refinement.finalBoundary.sequence
-      proof.accepted.topLevel.kernel.authenticatedTrace.stage3Refinement.finalBoundary.terminatingRow := by
-  dsimp
-  exact exactKernelBoundariesImplyAcceptedPublicProofExecutionConsequences
-    schema
-    boundaries
+abbrev exactKernelBoundariesImplyRv64imAcceptedPublicProofExecutionConsequences :=
+  @exactKernelBoundariesImplyAcceptedPublicProofExecutionConsequences
 
 end Nightstream.Rv64IM

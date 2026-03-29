@@ -33,7 +33,12 @@ private def runNightstreamProtocolParity : IO Bool := do
       "Nightstream.Rv64IM.AcceptedArtifactChecks",
       "Nightstream.Rv64IM.AcceptedArtifactStage3Refinement",
       "Nightstream.Rv64IM.AcceptedArtifactCompleteness",
-      "Nightstream.Rv64IM.AcceptedArtifactConstructorAudit"
+      "Nightstream.Rv64IM.AcceptedArtifactConstructorAudit",
+      "Nightstream.Rv64IM.AcceptedArtifactRootExecutionClosure",
+      "Nightstream.Rv64IM.AcceptedArtifactKernelDesignBridgeClosure",
+      "Nightstream.Rv64IM.AcceptedArtifactRootExecutionSemanticsClosure",
+      "Nightstream.Rv64IM.AcceptedArtifactBackendRefinement",
+      "Nightstream.Rv64IM.ProofCompleteAudit"
     ]
   }
   let buildStdout := buildOut.stdout.trimAscii.toString

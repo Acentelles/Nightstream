@@ -55,6 +55,8 @@ structure KernelSoundnessAccepted
   transcriptSchedule :
     KernelTranscriptSchedule
       root0Bindings
+      authenticatedTrace.mainLane.schedule
+      authenticatedTrace.mainLane.preparedSteps.length
       authenticatedTrace.stage3Refinement.stage3.rowBindings.length
       transcript
   accounting : KernelSoundnessAccounting
@@ -127,6 +129,8 @@ structure KernelSoundnessConclusion
   transcriptSchedule :
     KernelTranscriptSchedule
       root0Bindings
+      authenticatedTrace.mainLane.schedule
+      authenticatedTrace.mainLane.preparedSteps.length
       authenticatedTrace.stage3Refinement.stage3.rowBindings.length
       transcript
   accounting : KernelSoundnessAccounting
@@ -292,6 +296,8 @@ def kernelSoundness_of_authenticatedTrace
   (transcriptSchedule :
     KernelTranscriptSchedule
       root0Bindings
+      authenticatedTrace.mainLane.schedule
+      authenticatedTrace.mainLane.preparedSteps.length
       authenticatedTrace.stage3Refinement.stage3.rowBindings.length
       transcript)
   (accounting : KernelSoundnessAccounting)
@@ -652,7 +658,9 @@ theorem mainLaneTraceBoundary_of_kernelSoundness
   MainLaneTraceBoundary
     kernel.authenticatedTrace.chunkInput.rows
     kernel.authenticatedTrace.mainLane.preparedSteps
-    kernel.authenticatedTrace.chunkInput.semanticRows :=
+    kernel.authenticatedTrace.mainLane.chunks
+    kernel.authenticatedTrace.chunkInput.semanticRows
+    kernel.authenticatedTrace.mainLane.schedule :=
   mainLaneTraceBoundary_of_authenticatedChunkTrace kernel.authenticatedTrace
 
 theorem traceLinkBoundary_of_kernelSoundness
@@ -2746,6 +2754,8 @@ theorem transcriptSchedule_of_kernelSoundness
   kernel.transcript =
     transcriptEvents
       kernel.root0Bindings
+      kernel.authenticatedTrace.mainLane.schedule
+      kernel.authenticatedTrace.mainLane.preparedSteps.length
       kernel.authenticatedTrace.stage3Refinement.stage3.rowBindings.length :=
   transcriptSchedule_events kernel.transcriptSchedule
 

@@ -3,7 +3,7 @@
 ## Purpose
 
 - **What it is**: The exact-boundary constructor surface for RV64IM kernel soundness.
-- **What it is not**: It is not a replacement for `Rv64IMKernelSoundness`; it is the exact accepted-boundary entrypoint into that theorem surface.
+- **What it is not**: It is not a replacement for `Rv64IMKernelSoundness`, and it is not the full kernel-design bridge owner binding authenticated selection to root execution; it is the exact accepted-boundary entrypoint into the kernel soundness surface.
 - **Protocol role**: It packages exact program, trace, transcript, bridge, and accounting boundaries and lifts them into the canonical kernel soundness conclusion.
 
 ## Exact Boundary Package
@@ -15,7 +15,7 @@
 - conforming `root0` bindings,
 - canonical transcript schedule,
 - kernel soundness accounting,
-- exact Stage-3 bridge bindings,
+- exact Stage-3 opening-provenance bridge bindings,
 - row-binding coverage over the exact exported row-binding list.
 
 The module also owns the minimal theorem-owned constructor contract
@@ -64,4 +64,6 @@ exact kernel boundaries.
 ## Ownership
 
 This module owns only the passage from exact kernel boundaries to the canonical
-RV64IM kernel soundness surface.
+RV64IM kernel soundness surface. The stronger kernel-design bridge that binds
+authenticated selected rows, root execution, stage obligations, and kernel
+openings is a separate owner above this one.

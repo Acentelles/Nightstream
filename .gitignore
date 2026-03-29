@@ -21,3 +21,6 @@ formal/nightstream-lean/.tmp_tv_test*
 .bundle_tmp/
 .tmp/
 tmp/
+external
+docs/HyperNova.pdf.md
+.claude/skills

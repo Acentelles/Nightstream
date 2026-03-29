@@ -4,7 +4,7 @@
 
 - **What it is**: the theorem-facing RV64IM checker result surface above the accepted artifact boundary.
 - **What it is not**: it is not a digest-only parity report and it does not own the generic RV64IM soundness theorems.
-- **Protocol role**: it packages an accepted artifact together with the recovered exact kernel boundary, the recomputed public-proof projection, and the resulting execution/public-result consequences.
+- **Protocol role**: it packages an accepted artifact together with the recomputed public-proof projection and the resulting execution/public-result consequences. The checker owns the theorem-facing constructor from exact kernel boundaries into the checker result; any exact-kernel-boundary witness is used only at that constructor boundary and is not stored in either the low-level artifact or the checker result itself.
 
 ## Checker Contract
 
@@ -20,6 +20,7 @@ Acceptance means:
 - the checker uses that function to recompute the exact public-proof projection,
 - the checker rejects any artifact that omits reconstructable theorem inputs,
 - any remaining backend or accounting assumptions appear as explicit checker inputs or explicit theorem-owned side conditions, never as hidden ambient trust,
+- the theorem-facing checker constructor is driven from exact kernel boundaries directly rather than through an artifact-owned boundary wrapper,
 - the checker derives `AcceptedProofSoundness` from the reconstructed exact
   kernel boundary instead of treating it as a primitive artifact field,
 - the execution/public-result consequences are available from the discharged projection.

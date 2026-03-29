@@ -10,10 +10,11 @@
 
 `MainLaneTraceBoundary(rows, preparedSteps, chunks, semanticRows, schedule)` means:
 
+- `schedule` is a valid theorem-facing fold schedule,
 - `rows.length = semanticRows`,
 - `preparedSteps.length = semanticRows`,
 - for every `idx < semanticRows`, both `rows[idx]` and `preparedSteps[idx]` exist,
-- `chunks` is the ordered contiguous partition induced by `schedule`,
+- `chunks = ChunkLayout.layout(schedule, semanticRows)`,
 - the concatenation of `chunks` covers exactly `rows[0], …, rows[semanticRows - 1]` in order.
 
 `schedule = WholeTrace` means `chunks.length = 1` when `semanticRows > 0`.
@@ -26,7 +27,7 @@ duplicated row indices.
 
 | Lean file | Local owner |
 |---|---|
-| `Nightstream/Rv64IM/Trace/MainLaneTraceBoundary.lean` | Row/export count and index alignment |
+| `Nightstream/Rv64IM/Trace/MainLaneTraceBoundary.lean` | Row/export count, theorem-owned fold schedule, and canonical chunk partition |
 | `Nightstream/Rv64IM/Trace/MainLaneTraceBoundaryInterface.lean` | Theorem-facing re-export surface |
 
 ## Proof Obligations

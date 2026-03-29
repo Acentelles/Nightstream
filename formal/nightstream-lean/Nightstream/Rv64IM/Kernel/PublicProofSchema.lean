@@ -23,45 +23,7 @@ def publicProofBoundary_of_schema
     ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding
     Statement ClaimBundle KernelProofBundle :
     Type _} [OfNat Limb 0]
-  (schema : PublicProofSchema Statement ClaimBundle KernelProofBundle)
-  (accepted :
-    AcceptedProofSoundness
-      BytecodeAddr
-      Pc
-      RegIdx
-      VirtualOpcode
-      AluOp
-      BranchOp
-      MemWidth
-      DivRemKind
-      RamAddr
-      Word
-      StateLocation
-      RegisterTimeline
-      RamTimeline
-      Limb
-      ArchitecturalInputs
-      AuthenticatedReads
-      WitnessAssignment
-      Output
-      StateEffect
-      PreparedStep
-      ProgramImage
-      LoweringVersion
-      RomTable
-      BytecodeTable
-      RomCommit
-      BytecodeCommit
-      Source
-      CommitmentId
-      Point
-      PolynomialId
-      Value
-      Digest
-      ExactOpeningWitness
-      OpeningRefinement
-      RowProjectionWitness
-      BridgeBinding) :
+  (schema : PublicProofSchema Statement ClaimBundle KernelProofBundle) :
   PublicProofBoundary
     BytecodeAddr
     Pc
@@ -104,8 +66,7 @@ def publicProofBoundary_of_schema
     KernelProofBundle :=
   { statement := schema.statement
     claims := schema.claims
-    kernelProof := schema.kernelProof
-    accepted := accepted }
+    kernelProof := schema.kernelProof }
 
 abbrev PublicProofSchemaExecutionResult
   (BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
@@ -195,7 +156,8 @@ abbrev PublicProofSchemaExecutionResult
     Statement
     ClaimBundle
     KernelProofBundle
-    (publicProofBoundary_of_schema schema accepted)
+    (publicProofBoundary_of_schema schema)
+    accepted
 
 def publicProofSchemaExecutionResult_of_boundary
   {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
@@ -287,7 +249,9 @@ def publicProofSchemaExecutionResult_of_boundary
     KernelProofBundle
     schema
     accepted :=
-  publicProofBoundaryExecutionResult_of_boundary (publicProofBoundary_of_schema schema accepted)
+  publicProofBoundaryExecutionResult_of_boundary
+    (publicProofBoundary_of_schema schema)
+    accepted
 
 def publicProofSchemaImpliesExecutionAndPublicResult
   {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind

@@ -263,7 +263,9 @@ theorem mainLaneTraceBoundary_of_authenticatedChunkTrace
   MainLaneTraceBoundary
     trace.chunkInput.rows
     trace.mainLane.preparedSteps
-    trace.chunkInput.semanticRows := by
+    trace.mainLane.chunks
+    trace.chunkInput.semanticRows
+    trace.mainLane.schedule := by
   have hSemanticRowsEq :
       trace.mainLane.semanticRows = trace.chunkInput.semanticRows :=
     mainLaneSemanticRows_eq_chunkInput_of_authenticatedChunkTrace trace

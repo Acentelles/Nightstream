@@ -2,8 +2,8 @@ import Nightstream.Rv64IM.Kernel.PublicProofBoundary
 
 /-!
 Owns the direct execution-facing consequences exported from the Rust-shaped
-public proof boundary. This file does not re-own the boundary objects; it
-extracts the execution/public-result facts those boundary witnesses discharge.
+public proof boundary together with the accepted-proof witness that discharges
+that boundary. The boundary itself is now projection-only.
 -/
 
 namespace Nightstream.Rv64IM
@@ -58,6 +58,44 @@ def executionCorrect_of_publicProofBoundaryExecutionResult
       Statement
       ClaimBundle
       KernelProofBundle}
+  {accepted :
+    AcceptedProofSoundness
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep
+      ProgramImage
+      LoweringVersion
+      RomTable
+      BytecodeTable
+      RomCommit
+      BytecodeCommit
+      Source
+      CommitmentId
+      Point
+      PolynomialId
+      Value
+      Digest
+      ExactOpeningWitness
+      OpeningRefinement
+      RowProjectionWitness
+      BridgeBinding}
   (result :
     PublicProofBoundaryExecutionResult
       BytecodeAddr
@@ -99,7 +137,8 @@ def executionCorrect_of_publicProofBoundaryExecutionResult
       Statement
       ClaimBundle
       KernelProofBundle
-      boundary) :=
+      boundary
+      accepted) :=
   result.acceptedResult.executionCorrect
 
 def preparedStepExportBound_of_publicProofBoundaryExecutionResult
@@ -152,6 +191,44 @@ def preparedStepExportBound_of_publicProofBoundaryExecutionResult
       Statement
       ClaimBundle
       KernelProofBundle}
+  {accepted :
+    AcceptedProofSoundness
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep
+      ProgramImage
+      LoweringVersion
+      RomTable
+      BytecodeTable
+      RomCommit
+      BytecodeCommit
+      Source
+      CommitmentId
+      Point
+      PolynomialId
+      Value
+      Digest
+      ExactOpeningWitness
+      OpeningRefinement
+      RowProjectionWitness
+      BridgeBinding}
   (result :
     PublicProofBoundaryExecutionResult
       BytecodeAddr
@@ -193,7 +270,8 @@ def preparedStepExportBound_of_publicProofBoundaryExecutionResult
       Statement
       ClaimBundle
       KernelProofBundle
-      boundary) :=
+      boundary
+      accepted) :=
   result.acceptedResult.preparedStepExportBound
 
 def fullHaltedExecutionClaim_of_publicProofBoundaryExecutionResult
@@ -246,6 +324,44 @@ def fullHaltedExecutionClaim_of_publicProofBoundaryExecutionResult
       Statement
       ClaimBundle
       KernelProofBundle}
+  {accepted :
+    AcceptedProofSoundness
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep
+      ProgramImage
+      LoweringVersion
+      RomTable
+      BytecodeTable
+      RomCommit
+      BytecodeCommit
+      Source
+      CommitmentId
+      Point
+      PolynomialId
+      Value
+      Digest
+      ExactOpeningWitness
+      OpeningRefinement
+      RowProjectionWitness
+      BridgeBinding}
   (result :
     PublicProofBoundaryExecutionResult
       BytecodeAddr
@@ -287,7 +403,8 @@ def fullHaltedExecutionClaim_of_publicProofBoundaryExecutionResult
       Statement
       ClaimBundle
       KernelProofBundle
-      boundary) :=
+      boundary
+      accepted) :=
   result.acceptedResult.fullHaltedExecutionClaim
 
 def executionCorrect_of_publicProofBoundary
@@ -339,10 +456,49 @@ def executionCorrect_of_publicProofBoundary
       BridgeBinding
       Statement
       ClaimBundle
-      KernelProofBundle) :=
+      KernelProofBundle)
+  (accepted :
+    AcceptedProofSoundness
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep
+      ProgramImage
+      LoweringVersion
+      RomTable
+      BytecodeTable
+      RomCommit
+      BytecodeCommit
+      Source
+      CommitmentId
+      Point
+      PolynomialId
+      Value
+      Digest
+      ExactOpeningWitness
+      OpeningRefinement
+      RowProjectionWitness
+      BridgeBinding) :=
   executionCorrect_of_publicProofBoundaryExecutionResult
     (boundary := boundary)
-    (publicProofBoundaryImpliesExecutionAndPublicResult boundary)
+    (accepted := accepted)
+    (publicProofBoundaryImpliesExecutionAndPublicResult boundary accepted)
 
 def preparedStepExportBound_of_publicProofBoundary
   {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
@@ -393,10 +549,49 @@ def preparedStepExportBound_of_publicProofBoundary
       BridgeBinding
       Statement
       ClaimBundle
-      KernelProofBundle) :=
+      KernelProofBundle)
+  (accepted :
+    AcceptedProofSoundness
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep
+      ProgramImage
+      LoweringVersion
+      RomTable
+      BytecodeTable
+      RomCommit
+      BytecodeCommit
+      Source
+      CommitmentId
+      Point
+      PolynomialId
+      Value
+      Digest
+      ExactOpeningWitness
+      OpeningRefinement
+      RowProjectionWitness
+      BridgeBinding) :=
   preparedStepExportBound_of_publicProofBoundaryExecutionResult
     (boundary := boundary)
-    (publicProofBoundaryImpliesExecutionAndPublicResult boundary)
+    (accepted := accepted)
+    (publicProofBoundaryImpliesExecutionAndPublicResult boundary accepted)
 
 def fullHaltedExecutionClaim_of_publicProofBoundary
   {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
@@ -447,10 +642,49 @@ def fullHaltedExecutionClaim_of_publicProofBoundary
       BridgeBinding
       Statement
       ClaimBundle
-      KernelProofBundle) :=
+      KernelProofBundle)
+  (accepted :
+    AcceptedProofSoundness
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep
+      ProgramImage
+      LoweringVersion
+      RomTable
+      BytecodeTable
+      RomCommit
+      BytecodeCommit
+      Source
+      CommitmentId
+      Point
+      PolynomialId
+      Value
+      Digest
+      ExactOpeningWitness
+      OpeningRefinement
+      RowProjectionWitness
+      BridgeBinding) :=
   fullHaltedExecutionClaim_of_publicProofBoundaryExecutionResult
     (boundary := boundary)
-    (publicProofBoundaryImpliesExecutionAndPublicResult boundary)
+    (accepted := accepted)
+    (publicProofBoundaryImpliesExecutionAndPublicResult boundary accepted)
 
 def executionCorrect_of_exactKernelBoundaries_via_publicProofBoundary
   {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
@@ -504,6 +738,7 @@ def executionCorrect_of_exactKernelBoundaries_via_publicProofBoundary
       BridgeBinding) :=
   executionCorrect_of_publicProofBoundary
     (publicProofBoundary_of_exactKernelBoundaries statement claims kernelProof boundaries)
+    (acceptedProofSoundness_of_exactKernelBoundaries boundaries)
 
 def preparedStepExportBound_of_exactKernelBoundaries_via_publicProofBoundary
   {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
@@ -557,6 +792,7 @@ def preparedStepExportBound_of_exactKernelBoundaries_via_publicProofBoundary
       BridgeBinding) :=
   preparedStepExportBound_of_publicProofBoundary
     (publicProofBoundary_of_exactKernelBoundaries statement claims kernelProof boundaries)
+    (acceptedProofSoundness_of_exactKernelBoundaries boundaries)
 
 def fullHaltedExecutionClaim_of_exactKernelBoundaries_via_publicProofBoundary
   {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
@@ -610,611 +846,24 @@ def fullHaltedExecutionClaim_of_exactKernelBoundaries_via_publicProofBoundary
       BridgeBinding) :=
   fullHaltedExecutionClaim_of_publicProofBoundary
     (publicProofBoundary_of_exactKernelBoundaries statement claims kernelProof boundaries)
+    (acceptedProofSoundness_of_exactKernelBoundaries boundaries)
 
-abbrev rv64imExecutionCorrect_of_publicProofBoundaryExecutionResult
-  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
-    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
-    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
-    PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
-    BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
-    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding
-    Rv64imProofStatement Rv64imKernelClaimBundle Rv64imKernelProofBundle :
-    Type _} [OfNat Limb 0]
-  {boundary :
-    Rv64imPublicProofBoundary
-      BytecodeAddr
-      Pc
-      RegIdx
-      VirtualOpcode
-      AluOp
-      BranchOp
-      MemWidth
-      DivRemKind
-      RamAddr
-      Word
-      StateLocation
-      RegisterTimeline
-      RamTimeline
-      Limb
-      ArchitecturalInputs
-      AuthenticatedReads
-      WitnessAssignment
-      Output
-      StateEffect
-      PreparedStep
-      ProgramImage
-      LoweringVersion
-      RomTable
-      BytecodeTable
-      RomCommit
-      BytecodeCommit
-      Source
-      CommitmentId
-      Point
-      PolynomialId
-      Value
-      Digest
-      ExactOpeningWitness
-      OpeningRefinement
-      RowProjectionWitness
-      BridgeBinding
-      Rv64imProofStatement
-      Rv64imKernelClaimBundle
-      Rv64imKernelProofBundle}
-  (result :
-    Rv64imPublicProofBoundaryExecutionResult
-      BytecodeAddr
-      Pc
-      RegIdx
-      VirtualOpcode
-      AluOp
-      BranchOp
-      MemWidth
-      DivRemKind
-      RamAddr
-      Word
-      StateLocation
-      RegisterTimeline
-      RamTimeline
-      Limb
-      ArchitecturalInputs
-      AuthenticatedReads
-      WitnessAssignment
-      Output
-      StateEffect
-      PreparedStep
-      ProgramImage
-      LoweringVersion
-      RomTable
-      BytecodeTable
-      RomCommit
-      BytecodeCommit
-      Source
-      CommitmentId
-      Point
-      PolynomialId
-      Value
-      Digest
-      ExactOpeningWitness
-      OpeningRefinement
-      RowProjectionWitness
-      BridgeBinding
-      Rv64imProofStatement
-      Rv64imKernelClaimBundle
-      Rv64imKernelProofBundle
-      boundary) :=
-  executionCorrect_of_publicProofBoundaryExecutionResult (boundary := boundary) result
+abbrev rv64imExecutionCorrect_of_publicProofBoundaryExecutionResult :=
+  @executionCorrect_of_publicProofBoundaryExecutionResult
 
-abbrev rv64imPreparedStepExportBound_of_publicProofBoundaryExecutionResult
-  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
-    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
-    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
-    PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
-    BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
-    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding
-    Rv64imProofStatement Rv64imKernelClaimBundle Rv64imKernelProofBundle :
-    Type _} [OfNat Limb 0]
-  {boundary :
-    Rv64imPublicProofBoundary
-      BytecodeAddr
-      Pc
-      RegIdx
-      VirtualOpcode
-      AluOp
-      BranchOp
-      MemWidth
-      DivRemKind
-      RamAddr
-      Word
-      StateLocation
-      RegisterTimeline
-      RamTimeline
-      Limb
-      ArchitecturalInputs
-      AuthenticatedReads
-      WitnessAssignment
-      Output
-      StateEffect
-      PreparedStep
-      ProgramImage
-      LoweringVersion
-      RomTable
-      BytecodeTable
-      RomCommit
-      BytecodeCommit
-      Source
-      CommitmentId
-      Point
-      PolynomialId
-      Value
-      Digest
-      ExactOpeningWitness
-      OpeningRefinement
-      RowProjectionWitness
-      BridgeBinding
-      Rv64imProofStatement
-      Rv64imKernelClaimBundle
-      Rv64imKernelProofBundle}
-  (result :
-    Rv64imPublicProofBoundaryExecutionResult
-      BytecodeAddr
-      Pc
-      RegIdx
-      VirtualOpcode
-      AluOp
-      BranchOp
-      MemWidth
-      DivRemKind
-      RamAddr
-      Word
-      StateLocation
-      RegisterTimeline
-      RamTimeline
-      Limb
-      ArchitecturalInputs
-      AuthenticatedReads
-      WitnessAssignment
-      Output
-      StateEffect
-      PreparedStep
-      ProgramImage
-      LoweringVersion
-      RomTable
-      BytecodeTable
-      RomCommit
-      BytecodeCommit
-      Source
-      CommitmentId
-      Point
-      PolynomialId
-      Value
-      Digest
-      ExactOpeningWitness
-      OpeningRefinement
-      RowProjectionWitness
-      BridgeBinding
-      Rv64imProofStatement
-      Rv64imKernelClaimBundle
-      Rv64imKernelProofBundle
-      boundary) :=
-  preparedStepExportBound_of_publicProofBoundaryExecutionResult (boundary := boundary) result
+abbrev rv64imPreparedStepExportBound_of_publicProofBoundaryExecutionResult :=
+  @preparedStepExportBound_of_publicProofBoundaryExecutionResult
 
-abbrev rv64imFullHaltedExecutionClaim_of_publicProofBoundaryExecutionResult
-  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
-    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
-    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
-    PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
-    BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
-    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding
-    Rv64imProofStatement Rv64imKernelClaimBundle Rv64imKernelProofBundle :
-    Type _} [OfNat Limb 0]
-  {boundary :
-    Rv64imPublicProofBoundary
-      BytecodeAddr
-      Pc
-      RegIdx
-      VirtualOpcode
-      AluOp
-      BranchOp
-      MemWidth
-      DivRemKind
-      RamAddr
-      Word
-      StateLocation
-      RegisterTimeline
-      RamTimeline
-      Limb
-      ArchitecturalInputs
-      AuthenticatedReads
-      WitnessAssignment
-      Output
-      StateEffect
-      PreparedStep
-      ProgramImage
-      LoweringVersion
-      RomTable
-      BytecodeTable
-      RomCommit
-      BytecodeCommit
-      Source
-      CommitmentId
-      Point
-      PolynomialId
-      Value
-      Digest
-      ExactOpeningWitness
-      OpeningRefinement
-      RowProjectionWitness
-      BridgeBinding
-      Rv64imProofStatement
-      Rv64imKernelClaimBundle
-      Rv64imKernelProofBundle}
-  (result :
-    Rv64imPublicProofBoundaryExecutionResult
-      BytecodeAddr
-      Pc
-      RegIdx
-      VirtualOpcode
-      AluOp
-      BranchOp
-      MemWidth
-      DivRemKind
-      RamAddr
-      Word
-      StateLocation
-      RegisterTimeline
-      RamTimeline
-      Limb
-      ArchitecturalInputs
-      AuthenticatedReads
-      WitnessAssignment
-      Output
-      StateEffect
-      PreparedStep
-      ProgramImage
-      LoweringVersion
-      RomTable
-      BytecodeTable
-      RomCommit
-      BytecodeCommit
-      Source
-      CommitmentId
-      Point
-      PolynomialId
-      Value
-      Digest
-      ExactOpeningWitness
-      OpeningRefinement
-      RowProjectionWitness
-      BridgeBinding
-      Rv64imProofStatement
-      Rv64imKernelClaimBundle
-      Rv64imKernelProofBundle
-      boundary) :=
-  fullHaltedExecutionClaim_of_publicProofBoundaryExecutionResult (boundary := boundary) result
+abbrev rv64imFullHaltedExecutionClaim_of_publicProofBoundaryExecutionResult :=
+  @fullHaltedExecutionClaim_of_publicProofBoundaryExecutionResult
 
-abbrev rv64imExecutionCorrect_of_publicProofBoundary
-  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
-    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
-    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
-    PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
-    BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
-    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding
-    Rv64imProofStatement Rv64imKernelClaimBundle Rv64imKernelProofBundle :
-    Type _} [OfNat Limb 0]
-  (boundary :
-    Rv64imPublicProofBoundary
-      BytecodeAddr
-      Pc
-      RegIdx
-      VirtualOpcode
-      AluOp
-      BranchOp
-      MemWidth
-      DivRemKind
-      RamAddr
-      Word
-      StateLocation
-      RegisterTimeline
-      RamTimeline
-      Limb
-      ArchitecturalInputs
-      AuthenticatedReads
-      WitnessAssignment
-      Output
-      StateEffect
-      PreparedStep
-      ProgramImage
-      LoweringVersion
-      RomTable
-      BytecodeTable
-      RomCommit
-      BytecodeCommit
-      Source
-      CommitmentId
-      Point
-      PolynomialId
-      Value
-      Digest
-      ExactOpeningWitness
-      OpeningRefinement
-      RowProjectionWitness
-      BridgeBinding
-      Rv64imProofStatement
-      Rv64imKernelClaimBundle
-      Rv64imKernelProofBundle) :=
-  executionCorrect_of_publicProofBoundary boundary
+abbrev rv64imExecutionCorrect_of_publicProofBoundary :=
+  @executionCorrect_of_publicProofBoundary
 
-abbrev rv64imPreparedStepExportBound_of_publicProofBoundary
-  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
-    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
-    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
-    PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
-    BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
-    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding
-    Rv64imProofStatement Rv64imKernelClaimBundle Rv64imKernelProofBundle :
-    Type _} [OfNat Limb 0]
-  (boundary :
-    Rv64imPublicProofBoundary
-      BytecodeAddr
-      Pc
-      RegIdx
-      VirtualOpcode
-      AluOp
-      BranchOp
-      MemWidth
-      DivRemKind
-      RamAddr
-      Word
-      StateLocation
-      RegisterTimeline
-      RamTimeline
-      Limb
-      ArchitecturalInputs
-      AuthenticatedReads
-      WitnessAssignment
-      Output
-      StateEffect
-      PreparedStep
-      ProgramImage
-      LoweringVersion
-      RomTable
-      BytecodeTable
-      RomCommit
-      BytecodeCommit
-      Source
-      CommitmentId
-      Point
-      PolynomialId
-      Value
-      Digest
-      ExactOpeningWitness
-      OpeningRefinement
-      RowProjectionWitness
-      BridgeBinding
-      Rv64imProofStatement
-      Rv64imKernelClaimBundle
-      Rv64imKernelProofBundle) :=
-  preparedStepExportBound_of_publicProofBoundary boundary
+abbrev rv64imPreparedStepExportBound_of_publicProofBoundary :=
+  @preparedStepExportBound_of_publicProofBoundary
 
-abbrev rv64imFullHaltedExecutionClaim_of_publicProofBoundary
-  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
-    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
-    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
-    PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
-    BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
-    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding
-    Rv64imProofStatement Rv64imKernelClaimBundle Rv64imKernelProofBundle :
-    Type _} [OfNat Limb 0]
-  (boundary :
-    Rv64imPublicProofBoundary
-      BytecodeAddr
-      Pc
-      RegIdx
-      VirtualOpcode
-      AluOp
-      BranchOp
-      MemWidth
-      DivRemKind
-      RamAddr
-      Word
-      StateLocation
-      RegisterTimeline
-      RamTimeline
-      Limb
-      ArchitecturalInputs
-      AuthenticatedReads
-      WitnessAssignment
-      Output
-      StateEffect
-      PreparedStep
-      ProgramImage
-      LoweringVersion
-      RomTable
-      BytecodeTable
-      RomCommit
-      BytecodeCommit
-      Source
-      CommitmentId
-      Point
-      PolynomialId
-      Value
-      Digest
-      ExactOpeningWitness
-      OpeningRefinement
-      RowProjectionWitness
-      BridgeBinding
-      Rv64imProofStatement
-      Rv64imKernelClaimBundle
-      Rv64imKernelProofBundle) :=
-  fullHaltedExecutionClaim_of_publicProofBoundary boundary
-
-abbrev rv64imExecutionCorrect_of_exactKernelBoundaries_via_publicProofBoundary
-  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
-    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
-    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
-    PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
-    BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
-    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding
-    Rv64imProofStatement Rv64imKernelClaimBundle Rv64imKernelProofBundle :
-    Type _} [OfNat Limb 0]
-  (statement : Rv64imProofStatement)
-  (claims : Rv64imKernelClaimBundle)
-  (kernelProof : Rv64imKernelProofBundle)
-  (boundaries :
-    ExactKernelBoundaries
-      BytecodeAddr
-      Pc
-      RegIdx
-      VirtualOpcode
-      AluOp
-      BranchOp
-      MemWidth
-      DivRemKind
-      RamAddr
-      Word
-      StateLocation
-      RegisterTimeline
-      RamTimeline
-      Limb
-      ArchitecturalInputs
-      AuthenticatedReads
-      WitnessAssignment
-      Output
-      StateEffect
-      PreparedStep
-      ProgramImage
-      LoweringVersion
-      RomTable
-      BytecodeTable
-      RomCommit
-      BytecodeCommit
-      Source
-      CommitmentId
-      Point
-      PolynomialId
-      Value
-      Digest
-      ExactOpeningWitness
-      OpeningRefinement
-      RowProjectionWitness
-      BridgeBinding) :=
-  executionCorrect_of_exactKernelBoundaries_via_publicProofBoundary
-    statement
-    claims
-    kernelProof
-    boundaries
-
-abbrev rv64imPreparedStepExportBound_of_exactKernelBoundaries_via_publicProofBoundary
-  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
-    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
-    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
-    PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
-    BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
-    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding
-    Rv64imProofStatement Rv64imKernelClaimBundle Rv64imKernelProofBundle :
-    Type _} [OfNat Limb 0]
-  (statement : Rv64imProofStatement)
-  (claims : Rv64imKernelClaimBundle)
-  (kernelProof : Rv64imKernelProofBundle)
-  (boundaries :
-    ExactKernelBoundaries
-      BytecodeAddr
-      Pc
-      RegIdx
-      VirtualOpcode
-      AluOp
-      BranchOp
-      MemWidth
-      DivRemKind
-      RamAddr
-      Word
-      StateLocation
-      RegisterTimeline
-      RamTimeline
-      Limb
-      ArchitecturalInputs
-      AuthenticatedReads
-      WitnessAssignment
-      Output
-      StateEffect
-      PreparedStep
-      ProgramImage
-      LoweringVersion
-      RomTable
-      BytecodeTable
-      RomCommit
-      BytecodeCommit
-      Source
-      CommitmentId
-      Point
-      PolynomialId
-      Value
-      Digest
-      ExactOpeningWitness
-      OpeningRefinement
-      RowProjectionWitness
-      BridgeBinding) :=
-  preparedStepExportBound_of_exactKernelBoundaries_via_publicProofBoundary
-    statement
-    claims
-    kernelProof
-    boundaries
-
-abbrev rv64imFullHaltedExecutionClaim_of_exactKernelBoundaries_via_publicProofBoundary
-  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
-    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
-    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
-    PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
-    BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
-    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding
-    Rv64imProofStatement Rv64imKernelClaimBundle Rv64imKernelProofBundle :
-    Type _} [OfNat Limb 0]
-  (statement : Rv64imProofStatement)
-  (claims : Rv64imKernelClaimBundle)
-  (kernelProof : Rv64imKernelProofBundle)
-  (boundaries :
-    ExactKernelBoundaries
-      BytecodeAddr
-      Pc
-      RegIdx
-      VirtualOpcode
-      AluOp
-      BranchOp
-      MemWidth
-      DivRemKind
-      RamAddr
-      Word
-      StateLocation
-      RegisterTimeline
-      RamTimeline
-      Limb
-      ArchitecturalInputs
-      AuthenticatedReads
-      WitnessAssignment
-      Output
-      StateEffect
-      PreparedStep
-      ProgramImage
-      LoweringVersion
-      RomTable
-      BytecodeTable
-      RomCommit
-      BytecodeCommit
-      Source
-      CommitmentId
-      Point
-      PolynomialId
-      Value
-      Digest
-      ExactOpeningWitness
-      OpeningRefinement
-      RowProjectionWitness
-      BridgeBinding) :=
-  fullHaltedExecutionClaim_of_exactKernelBoundaries_via_publicProofBoundary
-    statement
-    claims
-    kernelProof
-    boundaries
+abbrev rv64imFullHaltedExecutionClaim_of_publicProofBoundary :=
+  @fullHaltedExecutionClaim_of_publicProofBoundary
 
 end Nightstream.Rv64IM
