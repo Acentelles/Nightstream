@@ -54,6 +54,8 @@ structure ExactKernelBoundaries
   transcriptSchedule :
     KernelTranscriptSchedule
       root0Bindings
+      trace.mainLane.schedule
+      trace.mainLane.preparedSteps.length
       trace.stage3Refinement.stage3.rowBindings.length
       transcript
   accounting : KernelSoundnessAccounting
@@ -256,11 +258,16 @@ theorem rowBinding_mem_stage3RowBindingEvents_iff
 
 theorem rowBinding_mem_transcriptEvents_iff
   (root0Bindings : List Root0CommitmentBinding)
+  (schedule : Nightstream.FoldSchedule)
+  (publicStepCount : Nat)
   {exportedRows j : Nat} :
-  TranscriptEvent.rowBinding j ∈ transcriptEvents root0Bindings exportedRows ↔
+  TranscriptEvent.rowBinding j ∈
+      transcriptEvents root0Bindings schedule publicStepCount exportedRows ↔
     j < exportedRows := by
-  simp [transcriptEvents, phase0Events, stage1Events, stage2Events, stage3Events,
-    stage3PrefixEvents, rowBinding_mem_stage3RowBindingEvents_iff]
+  simp [transcriptEvents, phase0Events, rootMainLaneEvents, stage1Events,
+    stage2Events, stage3Events, stage3PrefixEvents,
+    rowBinding_mem_stage3RowBindingEvents_iff,
+    rowBinding_not_mem_rootChunkScheduleFrom]
 
 def exactKernelBoundaries_of_minimalKernelInputs
   {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
@@ -364,12 +371,14 @@ def exactKernelBoundaries_of_minimalKernelInputs
   let transcript :=
     transcriptEvents
       root0Bindings
+      trace.mainLane.schedule
+      trace.mainLane.preparedSteps.length
       trace.stage3Refinement.stage3.rowBindings.length
   { programBinding := programBinding
   , trace := trace
   , root0Bindings := root0Bindings
   , transcript := transcript
-  , transcriptSchedule := ⟨root0BindingsConform, rfl⟩
+  , transcriptSchedule := ⟨root0BindingsConform, mainLaneTraceBoundary_scheduleValid trace.mainLane, rfl⟩
   , accounting := accounting
   , bridgeBindings := bridgeBindings
   , bridgeTraceBound := bridgeTraceBound
@@ -378,6 +387,8 @@ def exactKernelBoundaries_of_minimalKernelInputs
       simpa [transcript] using
         (rowBinding_mem_transcriptEvents_iff
           root0Bindings
+          (schedule := trace.mainLane.schedule)
+          (publicStepCount := trace.mainLane.preparedSteps.length)
           (exportedRows := trace.stage3Refinement.stage3.rowBindings.length)
           (j := j))
   }

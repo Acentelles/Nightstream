@@ -1,0 +1,35 @@
+import Nightstream.Rv64IM.Kernel.KernelDesignBridge
+
+namespace Nightstream.Rv64IM
+
+namespace KernelDesignBridgeInterface
+
+abbrev SelectedRowRootRoutingWitness := Nightstream.Rv64IM.SelectedRowRootRoutingWitness
+abbrev KernelDesignBridgeBound := @Nightstream.Rv64IM.KernelDesignBridgeBound
+abbrev KernelDesignBridgePackage := Nightstream.Rv64IM.KernelDesignBridgePackage
+abbrev mainLaneShared_of_kernelDesignBridge :=
+  @Nightstream.Rv64IM.mainLaneShared_of_kernelDesignBridge
+abbrev selectedRoutingWitnessAtIndex_of_kernelDesignBridge :=
+  @Nightstream.Rv64IM.selectedRoutingWitnessAtIndex_of_kernelDesignBridge
+abbrev authenticatedSelectionAtIndex_of_kernelDesignBridge :=
+  @Nightstream.Rv64IM.authenticatedSelectionAtIndex_of_kernelDesignBridge
+abbrev rootPreparedStepAtIndex_of_kernelDesignBridge :=
+  @Nightstream.Rv64IM.rootPreparedStepAtIndex_of_kernelDesignBridge
+abbrev selectedPreparedStepCoveredByChunk_of_kernelDesignBridge :=
+  @Nightstream.Rv64IM.selectedPreparedStepCoveredByChunk_of_kernelDesignBridge
+abbrev piCCS_atSelectedIndex_of_kernelDesignBridge :=
+  @Nightstream.Rv64IM.piCCS_atSelectedIndex_of_kernelDesignBridge
+abbrev piRLC_atSelectedIndex_of_kernelDesignBridge :=
+  @Nightstream.Rv64IM.piRLC_atSelectedIndex_of_kernelDesignBridge
+abbrev piDEC_atSelectedIndex_of_kernelDesignBridge :=
+  @Nightstream.Rv64IM.piDEC_atSelectedIndex_of_kernelDesignBridge
+abbrev executionCorrect_of_kernelDesignBridge :=
+  @Nightstream.Rv64IM.executionCorrect_of_kernelDesignBridge
+abbrev stage2AuthenticatedHistorySemantics_of_kernelDesignBridge :=
+  @Nightstream.Rv64IM.stage2AuthenticatedHistorySemantics_of_kernelDesignBridge
+abbrev fullHaltedExecutionClaim_of_kernelDesignBridge :=
+  @Nightstream.Rv64IM.fullHaltedExecutionClaim_of_kernelDesignBridge
+
+end KernelDesignBridgeInterface
+
+end Nightstream.Rv64IM

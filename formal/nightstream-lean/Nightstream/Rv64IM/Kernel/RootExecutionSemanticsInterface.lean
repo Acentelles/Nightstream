@@ -1,0 +1,25 @@
+import Nightstream.Rv64IM.Kernel.RootExecutionSemantics
+
+namespace Nightstream.Rv64IM
+
+namespace RootExecutionSemanticsInterface
+
+abbrev RootExecutionSemanticsPackage := Nightstream.Rv64IM.RootExecutionSemanticsPackage
+abbrev mainLaneShared_of_rootExecutionSemantics :=
+  @Nightstream.Rv64IM.mainLaneShared_of_rootExecutionSemantics
+abbrev executionCorrect_on_exactPrefix_of_rootExecutionSemantics :=
+  @Nightstream.Rv64IM.executionCorrect_on_exactPrefix_of_rootExecutionSemantics
+abbrev executionCorrect_of_rootExecutionSemantics :=
+  @Nightstream.Rv64IM.executionCorrect_of_rootExecutionSemantics
+abbrev rootExecution_scheduleValid :=
+  @Nightstream.Rv64IM.rootExecution_scheduleValid
+abbrev piCCS_atIndex_of_rootExecutionSemantics :=
+  @Nightstream.Rv64IM.piCCS_atIndex_of_rootExecutionSemantics
+abbrev piRLC_atIndex_of_rootExecutionSemantics :=
+  @Nightstream.Rv64IM.piRLC_atIndex_of_rootExecutionSemantics
+abbrev piDEC_atIndex_of_rootExecutionSemantics :=
+  @Nightstream.Rv64IM.piDEC_atIndex_of_rootExecutionSemantics
+
+end RootExecutionSemanticsInterface
+
+end Nightstream.Rv64IM

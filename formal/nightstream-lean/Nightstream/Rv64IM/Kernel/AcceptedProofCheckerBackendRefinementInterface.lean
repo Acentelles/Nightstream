@@ -1,0 +1,20 @@
+import Nightstream.Rv64IM.Kernel.AcceptedProofCheckerBackendRefinement
+
+/-!
+Interface for the theorem-facing RV64IM checker/backend-refinement join surface.
+-/
+
+namespace Nightstream.Rv64IM.AcceptedProofCheckerBackendRefinementInterface
+
+abbrev AcceptedProofCheckerBackendRefinementPackage :=
+  @Nightstream.Rv64IM.AcceptedProofCheckerBackendRefinementPackage
+abbrev acceptedProofCheckerBackendRefinementPackage_of_kernelDesignBridge :=
+  @Nightstream.Rv64IM.acceptedProofCheckerBackendRefinementPackage_of_kernelDesignBridge
+abbrev piCCS_atSelectedIndex_of_acceptedProofCheckerBackendRefinement :=
+  @Nightstream.Rv64IM.piCCS_atSelectedIndex_of_acceptedProofCheckerBackendRefinement
+abbrev piRLC_atSelectedIndex_of_acceptedProofCheckerBackendRefinement :=
+  @Nightstream.Rv64IM.piRLC_atSelectedIndex_of_acceptedProofCheckerBackendRefinement
+abbrev piDEC_atSelectedIndex_of_acceptedProofCheckerBackendRefinement :=
+  @Nightstream.Rv64IM.piDEC_atSelectedIndex_of_acceptedProofCheckerBackendRefinement
+
+end Nightstream.Rv64IM.AcceptedProofCheckerBackendRefinementInterface

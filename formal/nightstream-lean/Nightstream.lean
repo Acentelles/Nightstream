@@ -2,6 +2,7 @@ import Nightstream.ClaimedMemorySemanticsInterface
 import Nightstream.BridgeTypesInterface
 import Nightstream.ProjectionInterface
 import Nightstream.FoldScheduleInterface
+import Nightstream.ChunkLayoutInterface
 import Nightstream.FoldAdmissibilityInterface
 import Nightstream.MainLaneBridgeInterface
 import Nightstream.ShardCompositionInterface
@@ -64,9 +65,12 @@ import Nightstream.Rv64IM.Execution.SignedDivRemSoundnessInterface
 import Nightstream.Rv64IM.Execution.FinalBoundaryClaimInterface
 import Nightstream.Rv64IM.Kernel.ProgramBindingInterface
 import Nightstream.Rv64IM.Kernel.OpeningProvenanceInterface
+import Nightstream.Rv64IM.Kernel.ChunkedRootProofInterface
+import Nightstream.Rv64IM.Kernel.RootExecutionSemanticsInterface
 import Nightstream.Rv64IM.Kernel.TranscriptScheduleInterface
 import Nightstream.Rv64IM.Kernel.SoundnessAccountingInterface
 import Nightstream.Rv64IM.Kernel.BridgeBindingInterface
+import Nightstream.Rv64IM.Kernel.KernelDesignBridgeInterface
 import Nightstream.Rv64IM.Kernel.KernelSoundnessInterface
 import Nightstream.Rv64IM.Stage1.BytecodeFetchProjectionInterface
 import Nightstream.Rv64IM.Stage1.FetchDecodeBindingInterface
@@ -132,6 +136,7 @@ import Nightstream.Rv64IM.Kernel.PublicProofProjectionInterface
 import Nightstream.Rv64IM.Kernel.AcceptedProofArtifactInterface
 import Nightstream.Rv64IM.Kernel.AcceptedProofArtifactConsequencesInterface
 import Nightstream.Rv64IM.Kernel.AcceptedProofCheckerInterface
+import Nightstream.Rv64IM.Kernel.AcceptedProofCheckerBackendRefinementInterface
 import Nightstream.Rv64IM.ChecksInterface
 import Nightstream.Rv64IM.AcceptedArtifactRootLaneInterface
 import Nightstream.Rv64IM.AcceptedArtifactKernelSurfaceInterface
@@ -142,6 +147,11 @@ import Nightstream.Rv64IM.AcceptedArtifactStage3RefinementInterface
 import Nightstream.Rv64IM.AcceptedArtifactChecksInterface
 import Nightstream.Rv64IM.AcceptedArtifactCompletenessInterface
 import Nightstream.Rv64IM.AcceptedArtifactConstructorAuditInterface
+import Nightstream.Rv64IM.AcceptedArtifactKernelDesignBridgeClosureInterface
+import Nightstream.Rv64IM.AcceptedArtifactRootExecutionClosureInterface
+import Nightstream.Rv64IM.AcceptedArtifactRootExecutionSemanticsClosureInterface
+import Nightstream.Rv64IM.AcceptedArtifactBackendRefinementInterface
+import Nightstream.Rv64IM.ProofCompleteAuditInterface
 import Nightstream.Chip8.ReleaseBridgeInterface
 import Nightstream.Chip8.StagedBridgeInterface
 import Nightstream.Chip8.VmBridgeRefinementInterface

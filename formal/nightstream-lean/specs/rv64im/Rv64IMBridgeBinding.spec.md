@@ -5,6 +5,18 @@
 Defines the theorem-facing binding between Stage 3 exported prepared steps and
 the kernel opening-provenance chains that justify them.
 
+This owner is intentionally narrower than the full RV64IM kernel-design bridge.
+It owns only the Stage-3-export-to-opening-provenance alignment surface. It
+does not by itself bind:
+
+- authenticated Twist/Shout-selected rows,
+- the root main-lane execution proof,
+- Stage 1 / Stage 2 / Stage 3 obligation packages as a combined theorem object,
+- or the final kernel opening claims.
+
+Any proof-complete RV64IM closure therefore requires a later owner above this
+one that binds those surfaces into one accepted theorem boundary.
+
 ## Binding object
 
 A bridge-binding witness contains:

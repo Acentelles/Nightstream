@@ -4,7 +4,7 @@
 
 - **What it is**: The exact-boundary constructor surface for RV64IM authenticated trace closure.
 - **What it is not**: It is not a new stage-local theorem owner and it does not re-prove Stage 1 / Stage 2 / Stage 3 semantics.
-- **Protocol role**: It packages one exact family of accepted trace-local boundaries and lifts them into the canonical `AuthenticatedChunkTrace`.
+- **Protocol role**: It packages one exact family of accepted trace-local boundaries and lifts them into the canonical `AuthenticatedChunkTrace`. For proof-complete RV64IM kernel closure, the accepted execution theorem over those rows must still come from a separate root-execution-semantics owner above this module, not from summary equality and not from treating `StepComposition` as the accepted public boundary.
 
 ## Exact Boundary Package
 
@@ -56,6 +56,10 @@ From exact trace boundaries one must be able to derive:
   authenticated trace boundary.
 - the canonical exact narrow-memory RAM-side payload bundle carried by the
   exact authenticated trace boundary.
+
+For proof-complete kernel closure, the accepted execution theorem over the same
+authenticated rows must be justified by a separate theorem owner that binds the
+accepted chunk-scheduled root main-lane CCS package back to these rows.
 
 ## Ownership
 

@@ -30,10 +30,11 @@ execution object are exported, Lean must replay the source-layer input to the
 derived object and require exact equality. The accepted artifact boundary is
 only complete when those reconstructions are possible from exported data alone.
 
-At the theorem boundary, the accepted artifact carries the recovered exact
-kernel boundary witness itself. `AcceptedProofSoundness` is derived from that
-exact boundary witness inside Lean; it is not stored as a primitive artifact
-field.
+At the theorem boundary, the accepted artifact remains the low-level exported
+surface only. The recovered exact kernel boundary witness belongs to a separate
+theorem-owned boundary-construction object built from that artifact.
+`AcceptedProofSoundness` is derived from that recovered exact boundary witness
+inside Lean; it is not stored as a primitive artifact field.
 
 It does not contain a preassembled `statement / claims / kernelProof` object.
 Those public-proof objects exist only as recomputations of the artifact through
@@ -49,6 +50,6 @@ From an accepted artifact one must recover:
 
 - the exact public-proof schema projection,
 - the corresponding public-proof boundary,
-- the exact kernel boundary witness,
-- accepted-proof soundness,
+- a separate theorem-owned exact-kernel-boundary construction,
+- accepted-proof soundness derived from that construction,
 - the existing RV64IM execution/public-result consequences obtained from that soundness.

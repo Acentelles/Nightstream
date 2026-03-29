@@ -2,10 +2,10 @@ import Nightstream.Rv64IM.Kernel.AcceptedProofExecutionResult
 
 /-!
 Owns the derived theorem-facing RV64IM boundary that mirrors the public Rust
-proof API: a statement, a claim bundle, a kernel proof bundle, and the
-accepted-proof soundness witness that discharges that boundary. The accepted
-artifact boundary is now the authoritative theorem entrypoint; this file owns
-the downstream public projection only.
+proof API: a statement, a claim bundle, and a kernel proof bundle. The
+accepted-artifact boundary is now the authoritative theorem entrypoint; this
+file owns the downstream public projection only, not the accepted-proof
+witness that discharges it.
 -/
 
 namespace Nightstream.Rv64IM
@@ -22,44 +22,6 @@ structure PublicProofBoundary
   statement : Statement
   claims : ClaimBundle
   kernelProof : KernelProofBundle
-  accepted :
-    AcceptedProofSoundness
-      BytecodeAddr
-      Pc
-      RegIdx
-      VirtualOpcode
-      AluOp
-      BranchOp
-      MemWidth
-      DivRemKind
-      RamAddr
-      Word
-      StateLocation
-      RegisterTimeline
-      RamTimeline
-      Limb
-      ArchitecturalInputs
-      AuthenticatedReads
-      WitnessAssignment
-      Output
-      StateEffect
-      PreparedStep
-      ProgramImage
-      LoweringVersion
-      RomTable
-      BytecodeTable
-      RomCommit
-      BytecodeCommit
-      Source
-      CommitmentId
-      Point
-      PolynomialId
-      Value
-      Digest
-      ExactOpeningWitness
-      OpeningRefinement
-      RowProjectionWitness
-      BridgeBinding
 
 structure PublicProofBoundaryExecutionResult
   (BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
@@ -110,7 +72,45 @@ structure PublicProofBoundaryExecutionResult
       BridgeBinding
       Statement
       ClaimBundle
-      KernelProofBundle) where
+      KernelProofBundle)
+  (accepted :
+    AcceptedProofSoundness
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep
+      ProgramImage
+      LoweringVersion
+      RomTable
+      BytecodeTable
+      RomCommit
+      BytecodeCommit
+      Source
+      CommitmentId
+      Point
+      PolynomialId
+      Value
+      Digest
+      ExactOpeningWitness
+      OpeningRefinement
+      RowProjectionWitness
+      BridgeBinding) where
   acceptedResult :
     AcceptedProofExecutionResult
       BytecodeAddr
@@ -149,7 +149,7 @@ structure PublicProofBoundaryExecutionResult
       OpeningRefinement
       RowProjectionWitness
       BridgeBinding
-      boundary.accepted
+      accepted
 
 def publicProofBoundary_of_exactKernelBoundaries
   {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
@@ -163,7 +163,7 @@ def publicProofBoundary_of_exactKernelBoundaries
   (statement : Statement)
   (claims : ClaimBundle)
   (kernelProof : KernelProofBundle)
-  (boundaries :
+  (_boundaries :
     ExactKernelBoundaries
       BytecodeAddr
       Pc
@@ -243,8 +243,7 @@ def publicProofBoundary_of_exactKernelBoundaries
     KernelProofBundle :=
   { statement := statement
     claims := claims
-    kernelProof := kernelProof
-    accepted := acceptedProofSoundness_of_exactKernelBoundaries boundaries }
+    kernelProof := kernelProof }
 
 def publicProofBoundaryExecutionResult_of_boundary
   {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
@@ -295,7 +294,45 @@ def publicProofBoundaryExecutionResult_of_boundary
       BridgeBinding
       Statement
       ClaimBundle
-      KernelProofBundle) :
+      KernelProofBundle)
+  (accepted :
+    AcceptedProofSoundness
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep
+      ProgramImage
+      LoweringVersion
+      RomTable
+      BytecodeTable
+      RomCommit
+      BytecodeCommit
+      Source
+      CommitmentId
+      Point
+      PolynomialId
+      Value
+      Digest
+      ExactOpeningWitness
+      OpeningRefinement
+      RowProjectionWitness
+      BridgeBinding) :
   PublicProofBoundaryExecutionResult
     BytecodeAddr
     Pc
@@ -336,8 +373,9 @@ def publicProofBoundaryExecutionResult_of_boundary
     Statement
     ClaimBundle
     KernelProofBundle
-    boundary :=
-  { acceptedResult := acceptedProofImpliesExecutionAndPublicResult boundary.accepted }
+    boundary
+    accepted :=
+  { acceptedResult := acceptedProofImpliesExecutionAndPublicResult accepted }
 
 def publicProofBoundaryImpliesExecutionAndPublicResult
   {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
@@ -388,7 +426,45 @@ def publicProofBoundaryImpliesExecutionAndPublicResult
       BridgeBinding
       Statement
       ClaimBundle
-      KernelProofBundle) :
+      KernelProofBundle)
+  (accepted :
+    AcceptedProofSoundness
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep
+      ProgramImage
+      LoweringVersion
+      RomTable
+      BytecodeTable
+      RomCommit
+      BytecodeCommit
+      Source
+      CommitmentId
+      Point
+      PolynomialId
+      Value
+      Digest
+      ExactOpeningWitness
+      OpeningRefinement
+      RowProjectionWitness
+      BridgeBinding) :
   PublicProofBoundaryExecutionResult
     BytecodeAddr
     Pc
@@ -429,8 +505,9 @@ def publicProofBoundaryImpliesExecutionAndPublicResult
     Statement
     ClaimBundle
     KernelProofBundle
-    boundary :=
-  publicProofBoundaryExecutionResult_of_boundary boundary
+    boundary
+    accepted :=
+  publicProofBoundaryExecutionResult_of_boundary boundary accepted
 
 def publicProofBoundaryExecutionResult_of_exactKernelBoundaries
   {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
@@ -522,9 +599,11 @@ def publicProofBoundaryExecutionResult_of_exactKernelBoundaries
     Statement
     ClaimBundle
     KernelProofBundle
-    (publicProofBoundary_of_exactKernelBoundaries statement claims kernelProof boundaries) :=
+    (publicProofBoundary_of_exactKernelBoundaries statement claims kernelProof boundaries)
+    (acceptedProofSoundness_of_exactKernelBoundaries boundaries) :=
   publicProofBoundaryExecutionResult_of_boundary
     (publicProofBoundary_of_exactKernelBoundaries statement claims kernelProof boundaries)
+    (acceptedProofSoundness_of_exactKernelBoundaries boundaries)
 
 def exactKernelBoundariesImplyPublicProofExecutionAndPublicResult
   {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
@@ -616,7 +695,8 @@ def exactKernelBoundariesImplyPublicProofExecutionAndPublicResult
     Statement
     ClaimBundle
     KernelProofBundle
-    (publicProofBoundary_of_exactKernelBoundaries statement claims kernelProof boundaries) :=
+    (publicProofBoundary_of_exactKernelBoundaries statement claims kernelProof boundaries)
+    (acceptedProofSoundness_of_exactKernelBoundaries boundaries) :=
   publicProofBoundaryExecutionResult_of_exactKernelBoundaries
     statement
     claims
@@ -722,7 +802,45 @@ abbrev Rv64imPublicProofBoundaryExecutionResult
       BridgeBinding
       Rv64imProofStatement
       Rv64imKernelClaimBundle
-      Rv64imKernelProofBundle) :=
+      Rv64imKernelProofBundle)
+  (accepted :
+    AcceptedProofSoundness
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep
+      ProgramImage
+      LoweringVersion
+      RomTable
+      BytecodeTable
+      RomCommit
+      BytecodeCommit
+      Source
+      CommitmentId
+      Point
+      PolynomialId
+      Value
+      Digest
+      ExactOpeningWitness
+      OpeningRefinement
+      RowProjectionWitness
+      BridgeBinding) :=
   PublicProofBoundaryExecutionResult
     BytecodeAddr
     Pc
@@ -764,6 +882,7 @@ abbrev Rv64imPublicProofBoundaryExecutionResult
     Rv64imKernelClaimBundle
     Rv64imKernelProofBundle
     boundary
+    accepted
 
 def rv64imPublicProofBoundary_of_exactKernelBoundaries
   {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
@@ -906,7 +1025,45 @@ def rv64imPublicProofBoundaryExecutionResult_of_boundary
       BridgeBinding
       Rv64imProofStatement
       Rv64imKernelClaimBundle
-      Rv64imKernelProofBundle) :
+      Rv64imKernelProofBundle)
+  (accepted :
+    AcceptedProofSoundness
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep
+      ProgramImage
+      LoweringVersion
+      RomTable
+      BytecodeTable
+      RomCommit
+      BytecodeCommit
+      Source
+      CommitmentId
+      Point
+      PolynomialId
+      Value
+      Digest
+      ExactOpeningWitness
+      OpeningRefinement
+      RowProjectionWitness
+      BridgeBinding) :
   Rv64imPublicProofBoundaryExecutionResult
     BytecodeAddr
     Pc
@@ -947,8 +1104,9 @@ def rv64imPublicProofBoundaryExecutionResult_of_boundary
     Rv64imProofStatement
     Rv64imKernelClaimBundle
     Rv64imKernelProofBundle
-    boundary :=
-  publicProofBoundaryExecutionResult_of_boundary boundary
+    boundary
+    accepted :=
+  publicProofBoundaryExecutionResult_of_boundary boundary accepted
 
 def rv64imPublicProofBoundaryImpliesExecutionAndPublicResult
   {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
@@ -999,7 +1157,45 @@ def rv64imPublicProofBoundaryImpliesExecutionAndPublicResult
       BridgeBinding
       Rv64imProofStatement
       Rv64imKernelClaimBundle
-      Rv64imKernelProofBundle) :
+      Rv64imKernelProofBundle)
+  (accepted :
+    AcceptedProofSoundness
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep
+      ProgramImage
+      LoweringVersion
+      RomTable
+      BytecodeTable
+      RomCommit
+      BytecodeCommit
+      Source
+      CommitmentId
+      Point
+      PolynomialId
+      Value
+      Digest
+      ExactOpeningWitness
+      OpeningRefinement
+      RowProjectionWitness
+      BridgeBinding) :
   Rv64imPublicProofBoundaryExecutionResult
     BytecodeAddr
     Pc
@@ -1040,8 +1236,9 @@ def rv64imPublicProofBoundaryImpliesExecutionAndPublicResult
     Rv64imProofStatement
     Rv64imKernelClaimBundle
     Rv64imKernelProofBundle
-    boundary :=
-  publicProofBoundaryImpliesExecutionAndPublicResult boundary
+    boundary
+    accepted :=
+  publicProofBoundaryImpliesExecutionAndPublicResult boundary accepted
 
 def rv64imPublicProofBoundaryExecutionResult_of_exactKernelBoundaries
   {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
@@ -1133,7 +1330,8 @@ def rv64imPublicProofBoundaryExecutionResult_of_exactKernelBoundaries
     Rv64imProofStatement
     Rv64imKernelClaimBundle
     Rv64imKernelProofBundle
-    (rv64imPublicProofBoundary_of_exactKernelBoundaries statement claims kernelProof boundaries) :=
+    (rv64imPublicProofBoundary_of_exactKernelBoundaries statement claims kernelProof boundaries)
+    (acceptedProofSoundness_of_exactKernelBoundaries boundaries) :=
   publicProofBoundaryExecutionResult_of_exactKernelBoundaries
     statement
     claims
@@ -1230,7 +1428,8 @@ def exactKernelBoundariesImplyRv64imPublicProofExecutionAndPublicResult
     Rv64imProofStatement
     Rv64imKernelClaimBundle
     Rv64imKernelProofBundle
-    (rv64imPublicProofBoundary_of_exactKernelBoundaries statement claims kernelProof boundaries) :=
+    (rv64imPublicProofBoundary_of_exactKernelBoundaries statement claims kernelProof boundaries)
+    (acceptedProofSoundness_of_exactKernelBoundaries boundaries) :=
   rv64imPublicProofBoundaryExecutionResult_of_exactKernelBoundaries
     statement
     claims

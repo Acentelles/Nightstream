@@ -2,15 +2,15 @@ import Nightstream.Rv64IM.Kernel.PublicProofBoundary
 
 /-!
 Owns the derived theorem-facing accepted public proof projection. At this
-layer, that object is still the Rust-shaped public proof boundary
-(`statement / claims / kernelProof`) together with the accepted-proof witness
-that discharges it, but the authoritative theorem entrypoint now lives at the
-accepted-artifact boundary.
+layer, that object is the Rust-shaped public proof boundary
+(`statement / claims / kernelProof`) paired explicitly with the accepted-proof
+witness that discharges it. The authoritative theorem entrypoint still lives
+at the accepted-artifact boundary.
 -/
 
 namespace Nightstream.Rv64IM
 
-abbrev AcceptedPublicProof
+structure AcceptedPublicProof
   (BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
     RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
     ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
@@ -18,8 +18,9 @@ abbrev AcceptedPublicProof
     BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
     ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding
     Statement ClaimBundle KernelProofBundle :
-    Type _) [OfNat Limb 0] :=
-  PublicProofBoundary
+    Type _) [OfNat Limb 0] where
+  boundary :
+    PublicProofBoundary
     BytecodeAddr
     Pc
     RegIdx
@@ -59,5 +60,43 @@ abbrev AcceptedPublicProof
     Statement
     ClaimBundle
     KernelProofBundle
+  accepted :
+    AcceptedProofSoundness
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep
+      ProgramImage
+      LoweringVersion
+      RomTable
+      BytecodeTable
+      RomCommit
+      BytecodeCommit
+      Source
+      CommitmentId
+      Point
+      PolynomialId
+      Value
+      Digest
+      ExactOpeningWitness
+      OpeningRefinement
+      RowProjectionWitness
+      BridgeBinding
 
 end Nightstream.Rv64IM

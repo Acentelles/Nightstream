@@ -72,8 +72,12 @@ private theorem mainLaneTraceBoundary_of_executionRows
     MainLaneTraceBoundary
       rows
       (preparedStepsOfExecutionRows rows)
-      rows.length := by
-  refine ⟨rfl, by simp [preparedStepsOfExecutionRows], ?_⟩
+      (Nightstream.ChunkLayout.layout .wholeTrace rows.length)
+      rows.length
+      .wholeTrace := by
+  refine ⟨Nightstream.FoldSchedule.valid_wholeTrace, rfl, by simp [preparedStepsOfExecutionRows], ?_, ?_, ?_⟩
+  · rfl
+  · simpa using Nightstream.ChunkLayout.coveredRows_wholeTrace rows.length
   intro idx hIdx
   refine ⟨rows.get ⟨idx, hIdx⟩, preparedStepOfExecutionRow idx (rows.get ⟨idx, hIdx⟩), ?_, ?_⟩
   · simp [hIdx]
@@ -100,7 +104,9 @@ def recomputeLocalTraceView
       , exactActivePrefix := rfl
       }
   , mainLane :=
-      { semanticRows := rows.length
+      { schedule := .wholeTrace
+      , semanticRows := rows.length
+      , chunks := Nightstream.ChunkLayout.layout .wholeTrace rows.length
       , rows := rows
       , preparedSteps := preparedStepsOfExecutionRows rows
       , boundary := mainLaneTraceBoundary_of_executionRows rows
@@ -126,8 +132,15 @@ def recomputedMainLaneBoundaryMatchesArtifact
   let projectedSteps := recomputed.mainLane.preparedSteps.map preparedStepData
   let expectedSteps :=
     (preparedStepsOfExecutionRows artifact.derived.executionRows).map preparedStepData
+  let expectedChunkCount :=
+    Nightstream.FoldSchedule.chunkCount
+      recomputed.mainLane.schedule
+      recomputed.mainLane.semanticRows
   recomputed.mainLane.rows = artifact.derived.executionRows &&
     recomputed.mainLane.semanticRows = artifact.derived.executionRows.length &&
+    recomputed.mainLane.schedule = artifact.kernelProof.mainLane.binding.foldSchedule &&
+    recomputed.mainLane.chunks.length = expectedChunkCount &&
+    expectedChunkCount = artifact.kernelProof.mainLane.binding.chunkCount &&
     decide (projectedSteps = expectedSteps)
 
 def recomputedTraceLinkBoundaryMatchesArtifact

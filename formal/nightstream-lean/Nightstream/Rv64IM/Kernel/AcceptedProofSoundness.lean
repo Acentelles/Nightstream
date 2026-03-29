@@ -2,9 +2,9 @@ import Nightstream.Rv64IM.Kernel.TopLevelSoundness
 
 /-!
 Owns the final accepted-proof implication surface for RV64IM. This file
-packages an exact accepted kernel-boundary witness together with the derived
-top-level soundness conclusion; it does not re-own the exact-boundary or
-top-level constructions themselves.
+packages the derived top-level soundness conclusion; it does not re-own the
+exact-boundary or top-level constructions themselves, and it does not store a
+second exact-kernel-boundary witness.
 -/
 
 namespace Nightstream.Rv64IM
@@ -17,44 +17,6 @@ structure AcceptedProofSoundness
     BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
     ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding :
     Type _) [OfNat Limb 0] where
-  exactBoundaries :
-    ExactKernelBoundaries
-      BytecodeAddr
-      Pc
-      RegIdx
-      VirtualOpcode
-      AluOp
-      BranchOp
-      MemWidth
-      DivRemKind
-      RamAddr
-      Word
-      StateLocation
-      RegisterTimeline
-      RamTimeline
-      Limb
-      ArchitecturalInputs
-      AuthenticatedReads
-      WitnessAssignment
-      Output
-      StateEffect
-      PreparedStep
-      ProgramImage
-      LoweringVersion
-      RomTable
-      BytecodeTable
-      RomCommit
-      BytecodeCommit
-      Source
-      CommitmentId
-      Point
-      PolynomialId
-      Value
-      Digest
-      ExactOpeningWitness
-      OpeningRefinement
-      RowProjectionWitness
-      BridgeBinding
   topLevel :
     TopLevelSoundness
       BytecodeAddr
@@ -318,93 +280,7 @@ def acceptedProofSoundness_of_exactKernelBoundaries
     OpeningRefinement
     RowProjectionWitness
     BridgeBinding :=
-  { exactBoundaries := boundaries
-    topLevel := topLevelSoundness_of_exactKernelBoundaries boundaries }
-
-def exactKernelBoundaries_of_acceptedProofSoundness
-  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
-    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
-    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
-    PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
-    BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
-    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding :
-    Type _} [OfNat Limb 0]
-  (accepted :
-    AcceptedProofSoundness
-      BytecodeAddr
-      Pc
-      RegIdx
-      VirtualOpcode
-      AluOp
-      BranchOp
-      MemWidth
-      DivRemKind
-      RamAddr
-      Word
-      StateLocation
-      RegisterTimeline
-      RamTimeline
-      Limb
-      ArchitecturalInputs
-      AuthenticatedReads
-      WitnessAssignment
-      Output
-      StateEffect
-      PreparedStep
-      ProgramImage
-      LoweringVersion
-      RomTable
-      BytecodeTable
-      RomCommit
-      BytecodeCommit
-      Source
-      CommitmentId
-      Point
-      PolynomialId
-      Value
-      Digest
-      ExactOpeningWitness
-      OpeningRefinement
-      RowProjectionWitness
-      BridgeBinding) :
-  ExactKernelBoundaries
-    BytecodeAddr
-    Pc
-    RegIdx
-    VirtualOpcode
-    AluOp
-    BranchOp
-    MemWidth
-    DivRemKind
-    RamAddr
-    Word
-    StateLocation
-    RegisterTimeline
-    RamTimeline
-    Limb
-    ArchitecturalInputs
-    AuthenticatedReads
-    WitnessAssignment
-    Output
-    StateEffect
-    PreparedStep
-    ProgramImage
-    LoweringVersion
-    RomTable
-    BytecodeTable
-    RomCommit
-    BytecodeCommit
-    Source
-    CommitmentId
-    Point
-    PolynomialId
-    Value
-    Digest
-    ExactOpeningWitness
-    OpeningRefinement
-    RowProjectionWitness
-    BridgeBinding :=
-  accepted.exactBoundaries
+  { topLevel := topLevelSoundness_of_exactKernelBoundaries boundaries }
 
 def topLevelSoundness_of_acceptedProofSoundness
   {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind

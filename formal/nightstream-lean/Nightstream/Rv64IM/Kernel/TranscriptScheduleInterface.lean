@@ -12,6 +12,9 @@ abbrev root0CommitmentIds := Nightstream.Rv64IM.root0CommitmentIds
 abbrev root0CommitmentBindingsConform :=
   Nightstream.Rv64IM.root0CommitmentBindingsConform
 abbrev phase0Events := Nightstream.Rv64IM.phase0Events
+abbrev rootChunkRowLabelEvents := Nightstream.Rv64IM.rootChunkRowLabelEvents
+abbrev rootChunkEvents := Nightstream.Rv64IM.rootChunkEvents
+abbrev rootMainLaneEvents := Nightstream.Rv64IM.rootMainLaneEvents
 abbrev stage1Events := Nightstream.Rv64IM.stage1Events
 abbrev stage2Events := Nightstream.Rv64IM.stage2Events
 abbrev stage3PrefixEvents := Nightstream.Rv64IM.stage3PrefixEvents
@@ -23,7 +26,12 @@ abbrev challengeEvents := Nightstream.Rv64IM.challengeEvents
 abbrev ChallengeEvent := Nightstream.Rv64IM.ChallengeEvent
 abbrev root0CommitmentIds_nodup := Nightstream.Rv64IM.root0CommitmentIds_nodup
 abbrev root0CommitmentBindings_ids := @Nightstream.Rv64IM.root0CommitmentBindings_ids
+abbrev transcriptSchedule_scheduleValid :=
+  @Nightstream.Rv64IM.transcriptSchedule_scheduleValid
 abbrev transcriptSchedule_events := @Nightstream.Rv64IM.transcriptSchedule_events
+abbrev rootMainLaneEvents_prefix := @Nightstream.Rv64IM.rootMainLaneEvents_prefix
+abbrev kernelTranscriptSchedule_rootMainLane_prefix :=
+  @Nightstream.Rv64IM.kernelTranscriptSchedule_rootMainLane_prefix
 
 end TranscriptScheduleInterface
 

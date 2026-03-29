@@ -27,6 +27,16 @@ For any accepted kernel proof, the transcript is the concatenation of:
 The root commitment bindings must conform to the canonical `Root0CommitmentId`
 registry in exactly that order.
 
+The theorem-facing root main-lane chunk partition is the canonical
+`ChunkLayout.layout(schedule, publicStepCount)` induced by the explicit carried
+`FoldSchedule`. The transcript schedule is therefore parameterized by:
+
+- `root0Bindings`,
+- `schedule`,
+- `publicStepCount`,
+- `exportedRows`,
+- and the resulting `events`.
+
 ## Challenge discipline
 
 The challenge-sampling events are a distinguished subset of the transcript and
@@ -39,3 +49,7 @@ For the root main-lane theorem:
 - each chunk runs exactly one `Π_CCS`, one `Π_RLC`, and one `Π_DEC`,
 - `WholeTrace` therefore yields exactly one root fold round for the whole active trace,
 - `RowsPerChunk(1)` yields the legacy per-row fold cadence.
+
+No theorem-facing acceptance path may replace these root-chunk protocol segments
+with a digest-only summary. The transcript owner records the protocol-time slots
+that later backend-refinement owners must justify with real proof payloads.
