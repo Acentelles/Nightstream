@@ -24,10 +24,13 @@ use super::evidence::{build_kernel_stage3_digest_surfaces_from_frames, KernelSta
 #[cfg(feature = "chip8-audit")]
 use super::{build_kernel_execution_digest, verify_kernel_execution_digest, KernelCommitments};
 use super::{
-    reconstruct_trace_rows_and_aux, CommitmentId, KernelExecutionDigest, KernelMetaPub, KernelOpeningTranscriptSource,
-    KernelOpeningTranscriptSurface, KernelStepAux, SimpleKernelError, SimpleKernelOutput, SimpleKernelProof,
-    SimpleKernelPublicInput,
+    cycle_bits_and_padded_trace_length_from_row_bindings, reconstruct_trace_rows_and_aux,
+    recover_row_bindings_from_bridge_chunk_transitions, CommitmentId, KernelExecutionDigest,
+    KernelExecutionRelationWitness, KernelMetaPub, KernelOpeningTranscriptSource, KernelOpeningTranscriptSurface,
+    KernelStepAux, SimpleKernelError, SimpleKernelOutput, SimpleKernelProof, SimpleKernelPublicInput,
 };
+#[cfg(feature = "chip8-audit")]
+use crate::chip8::proof::Chip8AuditBundle;
 
 const CHIP8_SIMPLE_ROOT_PP_SEED: [u8; 32] = [
     0x09, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -342,7 +345,36 @@ pub fn build_kernel_exact_frames(
         bytes: public.program_image.clone(),
         start_pc: CHIP8_PROGRAM_START,
     };
-    let (semantic_rows, aux_data) = reconstruct_semantic_rows_and_aux(public, proof, &program)?;
+    let (semantic_rows, aux_data) =
+        reconstruct_semantic_rows_and_aux_from_meta(public, &proof.meta_pub, &proof.stage3.row_bindings, &program)?;
+    build_kernel_exact_frames_from_rows(public, semantic_rows, aux_data, &program)
+}
+
+pub fn build_kernel_exact_frames_from_relation_witness(
+    public: &SimpleKernelPublicInput,
+    relation_witness: &KernelExecutionRelationWitness,
+) -> Result<Vec<KernelExactFrame>, SimpleKernelError> {
+    let row_bindings = recover_row_bindings_from_bridge_chunk_transitions(relation_witness.bridge_chunk_transitions())?;
+    let program = Chip8Program {
+        bytes: public.program_image.clone(),
+        start_pc: CHIP8_PROGRAM_START,
+    };
+    let (_, padded_trace_length) = cycle_bits_and_padded_trace_length_from_row_bindings(&row_bindings)?;
+    let (semantic_rows, aux_data) = reconstruct_semantic_rows_and_aux_from_padded_trace_length(
+        public,
+        padded_trace_length,
+        &row_bindings,
+        &program,
+    )?;
+    build_kernel_exact_frames_from_rows(public, semantic_rows, aux_data, &program)
+}
+
+fn build_kernel_exact_frames_from_rows(
+    public: &SimpleKernelPublicInput,
+    semantic_rows: Vec<[F; WITNESS_WIDTH]>,
+    aux_data: Vec<KernelStepAux>,
+    program: &Chip8Program,
+) -> Result<Vec<KernelExactFrame>, SimpleKernelError> {
     let mut current = initial_state_from_public(public)?;
     let mut frames = Vec::with_capacity(semantic_rows.len());
 
@@ -427,9 +459,10 @@ pub fn build_kernel_release_artifact(
     public: &SimpleKernelPublicInput,
     proof: &SimpleKernelProof,
     output: &SimpleKernelOutput,
+    audit: &Chip8AuditBundle,
 ) -> Result<KernelReleaseArtifact, SimpleKernelError> {
     Ok(KernelReleaseArtifact {
-        kernel_digest: build_kernel_execution_digest(public, proof, output)?,
+        kernel_digest: build_kernel_execution_digest(public, proof, output, audit)?,
         staged_bundle: build_kernel_staged_execution_digest_bundle(public, proof, output)?,
     })
 }
@@ -439,9 +472,10 @@ pub fn verify_kernel_release_artifact(
     public: &SimpleKernelPublicInput,
     proof: &SimpleKernelProof,
     output: &SimpleKernelOutput,
+    audit: &Chip8AuditBundle,
     artifact: &KernelReleaseArtifact,
 ) -> Result<(), String> {
-    verify_kernel_execution_digest(public, proof, output, &artifact.kernel_digest)?;
+    verify_kernel_execution_digest(public, proof, output, audit, &artifact.kernel_digest)?;
     verify_kernel_staged_execution_digest_bundle(public, proof, output, &artifact.staged_bundle)?;
     Ok(())
 }
@@ -451,8 +485,9 @@ pub fn build_kernel_external_release_artifact(
     public: &SimpleKernelPublicInput,
     proof: &SimpleKernelProof,
     output: &SimpleKernelOutput,
+    audit: &Chip8AuditBundle,
 ) -> Result<KernelExternalReleaseArtifact, SimpleKernelError> {
-    let artifact = build_kernel_release_artifact(public, proof, output)?;
+    let artifact = build_kernel_release_artifact(public, proof, output, audit)?;
     let opening_transcript_source = super::transcript::build_kernel_opening_transcript_source(
         &output.kernel_opening_manifest,
         &proof.opening_refinement_summary,
@@ -517,9 +552,10 @@ pub fn verify_kernel_external_release_artifact(
     public: &SimpleKernelPublicInput,
     proof: &SimpleKernelProof,
     output: &SimpleKernelOutput,
+    audit: &Chip8AuditBundle,
     artifact: &KernelExternalReleaseArtifact,
 ) -> Result<(), String> {
-    let expected = build_kernel_external_release_artifact(public, proof, output)
+    let expected = build_kernel_external_release_artifact(public, proof, output, audit)
         .map_err(|err| format!("kernel external release artifact build failed: {err}"))?;
     if artifact != &expected {
         return Err("kernel external release artifact mismatch".into());
@@ -527,18 +563,19 @@ pub fn verify_kernel_external_release_artifact(
     Ok(())
 }
 
-fn reconstruct_semantic_rows_and_aux(
+fn reconstruct_semantic_rows_and_aux_from_meta(
     public: &SimpleKernelPublicInput,
-    proof: &SimpleKernelProof,
+    meta_pub: &KernelMetaPub,
+    row_bindings: &[RowBindingClaim],
     program: &Chip8Program,
 ) -> Result<(Vec<[F; WITNESS_WIDTH]>, Vec<KernelStepAux>), SimpleKernelError> {
-    let pad_pc_word = proof.meta_pub.pad_pc_word;
+    let pad_pc_word = meta_pub.pad_pc_word;
     let rom_table = build_rom_table(program, pad_pc_word);
     let (trace_rows, aux_data) = reconstruct_trace_rows_and_aux(
-        &proof.stage3.row_bindings,
-        proof.meta_pub.semantic_rows,
-        proof.meta_pub.padded_trace_length,
-        proof.meta_pub.cycle_bits,
+        row_bindings,
+        meta_pub.semantic_rows,
+        meta_pub.padded_trace_length,
+        meta_pub.cycle_bits,
         pad_pc_word,
         &rom_table,
         &public.initial_registers,
@@ -546,9 +583,49 @@ fn reconstruct_semantic_rows_and_aux(
         &public.initial_ram,
     )?;
     Ok((
-        trace_rows[..proof.meta_pub.semantic_rows].to_vec(),
-        aux_data[..proof.meta_pub.semantic_rows].to_vec(),
+        trace_rows[..meta_pub.semantic_rows].to_vec(),
+        aux_data[..meta_pub.semantic_rows].to_vec(),
     ))
+}
+
+fn reconstruct_semantic_rows_and_aux_from_padded_trace_length(
+    public: &SimpleKernelPublicInput,
+    padded_trace_length: usize,
+    row_bindings: &[RowBindingClaim],
+    program: &Chip8Program,
+) -> Result<(Vec<[F; WITNESS_WIDTH]>, Vec<KernelStepAux>), SimpleKernelError> {
+    let word_count = program.bytes.len() / 2;
+    let pad_pc_word = CHIP8_PROGRAM_START + word_count as u16;
+    let semantic_rows = row_bindings.len();
+    if semantic_rows == 0 {
+        return Err(SimpleKernelError::InvalidWitness(
+            "kernel export witness must contain at least one semantic row".into(),
+        ));
+    }
+    if padded_trace_length == 0 || !padded_trace_length.is_power_of_two() {
+        return Err(SimpleKernelError::InvalidWitness(format!(
+            "padded trace length {padded_trace_length} must be a nonzero power of two"
+        )));
+    }
+    if semantic_rows > padded_trace_length {
+        return Err(SimpleKernelError::InvalidWitness(format!(
+            "semantic row count {semantic_rows} exceeds padded trace length {padded_trace_length}"
+        )));
+    }
+    let cycle_bits = padded_trace_length.trailing_zeros() as usize;
+    let rom_table = build_rom_table(program, pad_pc_word);
+    let (trace_rows, aux_data) = reconstruct_trace_rows_and_aux(
+        row_bindings,
+        semantic_rows,
+        padded_trace_length,
+        cycle_bits,
+        pad_pc_word,
+        &rom_table,
+        &public.initial_registers,
+        public.initial_i,
+        &public.initial_ram,
+    )?;
+    Ok((trace_rows[..semantic_rows].to_vec(), aux_data[..semantic_rows].to_vec()))
 }
 
 fn initial_state_from_public(public: &SimpleKernelPublicInput) -> Result<Chip8State, SimpleKernelError> {

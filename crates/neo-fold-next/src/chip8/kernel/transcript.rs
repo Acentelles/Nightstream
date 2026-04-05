@@ -10,7 +10,10 @@ use crate::opening::TimeOpeningProofSummary;
 use super::joint_opening::{KernelJointOpeningFoldBucketProof, KernelJointOpeningSummary};
 use super::openings::{collect_exact_claim_witnesses, KernelExactOpeningArtifacts, KernelOpeningRefinementSummary};
 use super::openings::{opening_commitment_id_key, KernelOpeningManifest, RootOpeningManifest};
-use super::{SimpleKernelError, SimpleKernelProof};
+use super::{
+    recover_row_bindings_from_bridge_chunk_transitions, KernelExecutionRelationWitness, SimpleKernelError,
+    SimpleKernelProof,
+};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct KernelTranscriptSurface {
@@ -143,22 +146,44 @@ impl KernelOpeningTranscriptSurface {
 pub fn build_kernel_transcript_surface(
     proof: &SimpleKernelProof,
 ) -> Result<KernelTranscriptSurface, SimpleKernelError> {
-    let expected_rows: Vec<_> = (0..proof.meta_pub.semantic_rows).collect();
-    let actual_rows: Vec<_> = proof
-        .stage3
-        .row_bindings
-        .iter()
-        .map(|row| row.row_index)
-        .collect();
-    if actual_rows != expected_rows {
+    build_kernel_transcript_surface_from_row_indices(
+        proof.meta_pub.semantic_rows,
+        &proof
+            .stage3
+            .row_bindings
+            .iter()
+            .map(|row| row.row_index)
+            .collect::<Vec<_>>(),
+    )
+}
+
+pub fn build_kernel_transcript_surface_from_row_indices(
+    semantic_rows: usize,
+    row_indices: &[usize],
+) -> Result<KernelTranscriptSurface, SimpleKernelError> {
+    let expected_rows: Vec<_> = (0..semantic_rows).collect();
+    if row_indices != expected_rows.as_slice() {
         return Err(SimpleKernelError::InvalidWitness(format!(
             "kernel transcript row bindings {:?} do not match expected {:?}",
-            actual_rows, expected_rows
+            row_indices, expected_rows
         )));
     }
     Ok(KernelTranscriptSurface {
-        events: kernel_transcript_events(proof.meta_pub.semantic_rows),
+        events: kernel_transcript_events(semantic_rows),
     })
+}
+
+pub fn build_kernel_transcript_surface_from_relation_witness(
+    relation_witness: &KernelExecutionRelationWitness,
+) -> Result<KernelTranscriptSurface, SimpleKernelError> {
+    let row_bindings = recover_row_bindings_from_bridge_chunk_transitions(relation_witness.bridge_chunk_transitions())?;
+    build_kernel_transcript_surface_from_row_indices(
+        row_bindings.len(),
+        &row_bindings
+            .iter()
+            .map(|row| row.row_index)
+            .collect::<Vec<_>>(),
+    )
 }
 
 pub(crate) fn root0_commitment_ids() -> [CommitmentId; 12] {

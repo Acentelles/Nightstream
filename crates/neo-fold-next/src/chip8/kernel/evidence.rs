@@ -1,6 +1,6 @@
 //! Owns the CHIP-8 evidence boundary: Stage 3 digest surfaces, semantic evidence summaries, and the grouped execution digest.
 
-use neo_math::{from_complex, KExtensions, F, K};
+use neo_math::{KExtensions, F, K};
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::PrimeCharacteristicRing;
 
@@ -13,13 +13,19 @@ use crate::chip8::{
 };
 use crate::opening::TimeOpeningProofSummary;
 use crate::proof::StepInput;
+use crate::time_opening::prove_time_opening;
 
 use super::artifacts::build_prepared_steps_from_frames;
 use super::bridge::prepared_step_digest;
 use super::public_meta::{absorb_root0, new_simple_kernel_transcript};
 use super::{
-    build_kernel_exact_frames, CommitmentId, KernelExactFrame, SimpleKernelError, SimpleKernelOutput,
-    SimpleKernelProof, SimpleKernelPublicInput,
+    build_kernel_bridge_binding_summary, build_kernel_exact_frames, build_kernel_exact_frames_from_relation_witness,
+    build_kernel_row_projection_summary, cycle_bits_and_padded_trace_length_from_row_bindings,
+    rebuild_kernel_joint_opening_from_relation_witness, reconstruct_trace_rows_and_aux,
+    recover_row_bindings_from_bridge_chunk_transitions, simple_kernel_root_opening_manifest, time_opening_claims,
+    verify_kernel_execution_relation, CommitmentId, KernelExactFrame, KernelExecutionRelationResult,
+    KernelExecutionRelationWitness, KernelOpeningRefinementSummary, SimpleKernelError, SimpleKernelOutput,
+    SimpleKernelProof, SimpleKernelPublicInput, SimpleKernelVerifierInput,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -83,6 +89,10 @@ pub struct KernelStage3DigestSurface {
     pub prepared_step: StepInput,
 }
 
+pub(crate) struct RebuiltKernelExecutionDigestFromExport {
+    pub digest: KernelExecutionDigest,
+}
+
 impl PartialEq for KernelStage3DigestSurface {
     fn eq(&self, other: &Self) -> bool {
         self.step_idx == other.step_idx
@@ -114,7 +124,7 @@ pub(crate) fn build_kernel_stage3_digest_surfaces_from_frames(
 ) -> Result<Vec<KernelStage3DigestSurface>, SimpleKernelError> {
     let prepared_steps = build_prepared_steps_from_frames(&frames)?;
     assert_stage3_prepared_steps_match_output(&prepared_steps, &output.prepared_steps)?;
-    let (beta1, beta2, expected_shift_point) = replay_stage3_challenges(public, proof, frames)?;
+    let (beta1, beta2, expected_shift_point) = replay_stage3_challenges(public, proof)?;
     if proof.stage3.shift_proof.source_point != expected_shift_point {
         return Err(SimpleKernelError::ContinuityFailed(
             "stage3 digest shift point does not match canonical transcript replay".into(),
@@ -234,20 +244,26 @@ fn build_shift_witness(proof: &SimpleKernelProof) -> KernelStage3ShiftWitness {
 fn replay_stage3_challenges(
     public: &SimpleKernelPublicInput,
     proof: &SimpleKernelProof,
-    frames: &[KernelExactFrame],
 ) -> Result<(K, K, Vec<K>), SimpleKernelError> {
     let program = Chip8Program {
         bytes: public.program_image.clone(),
         start_pc: CHIP8_PROGRAM_START,
     };
-    let aux_data = frames
-        .iter()
-        .map(|frame| frame.kernel_aux.clone())
-        .collect::<Vec<_>>();
     let rom_table = build_rom_table(&program, proof.meta_pub.pad_pc_word);
     let decode_table = build_decode_table();
     let alu_table = build_alu_table();
     let eq4_table = build_eq4_table();
+    let (_trace_rows, aux_data) = reconstruct_trace_rows_and_aux(
+        &proof.stage3.row_bindings,
+        proof.meta_pub.semantic_rows,
+        proof.meta_pub.padded_trace_length,
+        proof.meta_pub.cycle_bits,
+        proof.meta_pub.pad_pc_word,
+        &rom_table,
+        &public.initial_registers,
+        public.initial_i,
+        &public.initial_ram,
+    )?;
 
     let mut transcript = new_simple_kernel_transcript(&public.transcript_seed);
     absorb_root0(&mut transcript, &proof.commitments, &proof.meta_pub);
@@ -270,10 +286,8 @@ fn replay_stage3_challenges(
         proof.meta_pub.cycle_bits,
         &mut transcript,
     )?;
-    let beta1 = squeeze_k(&mut transcript, b"stage3/beta1");
-    let beta2 = squeeze_k(&mut transcript, b"stage3/beta2");
-    let shift_point = squeeze_point(&mut transcript, b"stage3/r_shift", proof.meta_pub.cycle_bits);
-    Ok((beta1, beta2, shift_point))
+    let challenges = crate::chip8::stage3::sample_stage3_challenges(&mut transcript, proof.meta_pub.cycle_bits);
+    Ok((challenges.beta1, challenges.beta2, challenges.shift_point))
 }
 
 fn pair_mask(n: usize, row_index: usize) -> F {
@@ -306,19 +320,9 @@ fn assert_stage3_prepared_steps_match_output(
     Ok(())
 }
 
-fn squeeze_k<Tr: Transcript>(tr: &mut Tr, label: &'static [u8]) -> K {
-    let c0 = tr.challenge_field(label);
-    let c1 = tr.challenge_field(label);
-    from_complex(c0, c1)
-}
-
-fn squeeze_point<Tr: Transcript>(tr: &mut Tr, label: &'static [u8], n: usize) -> Vec<K> {
-    (0..n).map(|_| squeeze_k(tr, label)).collect()
-}
-
 use super::{
     KernelBridgeBindingSummary, KernelJointOpeningFoldBucketProof, KernelJointOpeningSummary, KernelOpeningManifest,
-    KernelOpeningRefinementSummary, KernelRowProjectionSummary, RootOpeningManifest,
+    KernelRowProjectionSummary, RootOpeningManifest,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -825,7 +829,11 @@ fn append_rounds(tr: &mut Poseidon2Transcript, label: &'static [u8], rounds: &[V
 
 use super::opening_commitment_id_key;
 use super::soundness_accounting::{build_kernel_error_surface, KernelErrorSurface};
-use super::transcript::{build_kernel_transcript_surface, root0_commitment_ids, KernelTranscriptSurface};
+use super::transcript::{
+    build_kernel_transcript_surface, build_kernel_transcript_surface_from_relation_witness, root0_commitment_ids,
+    KernelTranscriptSurface,
+};
+use crate::chip8::proof::Chip8AuditBundle;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct KernelTraceSurface {
@@ -985,32 +993,167 @@ pub fn build_kernel_execution_digest(
     public: &SimpleKernelPublicInput,
     proof: &SimpleKernelProof,
     output: &SimpleKernelOutput,
+    audit: &Chip8AuditBundle,
 ) -> Result<KernelExecutionDigest, SimpleKernelError> {
     let frames = build_kernel_exact_frames(public, proof)?;
     let prepared_steps = build_prepared_steps_from_frames(&frames)?;
     assert_prepared_steps_match_output(&prepared_steps, &output.prepared_steps)?;
     Ok(KernelExecutionDigest {
-        trace_surface: build_kernel_trace_surface(&frames, proof),
+        trace_surface: build_kernel_trace_surface(&frames, audit),
         export_surface: build_kernel_export_surface(&frames, &prepared_steps),
-        audit_surface: build_kernel_audit_surface(
-            &frames,
-            &output.row_projection_summary,
-            &output.bridge_binding_summary,
-            &prepared_steps,
-        )?,
+        audit_surface: build_kernel_audit_surface(&frames, audit, &prepared_steps)?,
         manifest_surface: build_kernel_manifest_surface(&output.kernel_opening_manifest, &output.root_opening_manifest),
         transcript_surface: build_kernel_transcript_surface(proof)?,
         error_surface: build_kernel_error_surface(),
     })
 }
 
+pub fn build_kernel_execution_digest_from_relation_witness(
+    public: &SimpleKernelPublicInput,
+    relation_witness: &KernelExecutionRelationWitness,
+) -> Result<KernelExecutionDigest, SimpleKernelError> {
+    let verifier_input = SimpleKernelVerifierInput { public: public.clone() };
+    let relation = verify_kernel_execution_relation(&verifier_input, relation_witness)?;
+    Ok(rebuild_kernel_execution_digest_from_execution_relation(public, relation_witness, &relation)?.digest)
+}
+
+pub(crate) fn rebuild_kernel_execution_digest_from_execution_relation(
+    public: &SimpleKernelPublicInput,
+    relation_witness: &KernelExecutionRelationWitness,
+    relation: &KernelExecutionRelationResult,
+) -> Result<RebuiltKernelExecutionDigestFromExport, SimpleKernelError> {
+    let row_bindings = recover_row_bindings_from_bridge_chunk_transitions(relation_witness.bridge_chunk_transitions())?;
+    let kernel_opening_manifest = relation.kernel_opening_manifest.clone();
+    let frames = build_kernel_exact_frames_from_relation_witness(public, relation_witness)?;
+    let prepared_steps = relation.prepared_steps.clone();
+    let frame_prepared_steps = build_prepared_steps_from_frames(&frames)?;
+    assert_prepared_steps_match_output(&frame_prepared_steps, &prepared_steps)?;
+    let opening_refinement_summary = relation.opening_refinement_summary.clone();
+    let row_projection_summary = build_kernel_row_projection_summary(
+        &kernel_opening_manifest,
+        &opening_refinement_summary,
+        &row_bindings,
+        &frames.iter().map(|frame| frame.row).collect::<Vec<_>>(),
+    )?;
+    let bridge_binding_summary = build_kernel_bridge_binding_summary(
+        &kernel_opening_manifest,
+        &opening_refinement_summary,
+        &row_bindings,
+        &prepared_steps,
+    )?;
+    let frame_rows = frames.iter().map(|frame| frame.row).collect::<Vec<_>>();
+    let frame_aux = frames
+        .iter()
+        .map(|frame| frame.kernel_aux.clone())
+        .collect::<Vec<_>>();
+    let semantic_rows = row_bindings.len();
+    let (cycle_bits, padded_trace_length) = cycle_bits_and_padded_trace_length_from_row_bindings(&row_bindings)?;
+    let program_context = super::build_kernel_program_context(public)?;
+    let expected_meta_pub = program_context.meta_pub(public, semantic_rows, padded_trace_length, cycle_bits);
+    let commitment_sets = super::build_kernel_commitment_sets_from_relation_witness(public, relation_witness)?;
+    let mut transcript = new_simple_kernel_transcript(&public.transcript_seed);
+    absorb_root0(&mut transcript, &commitment_sets.commitments(), &expected_meta_pub);
+    let mut stage1_challenge_transcript = transcript.clone();
+    let stage1 = super::build_stage1_proof_from_relation_witness(
+        relation_witness.reads(),
+        public,
+        &frame_rows,
+        &frame_aux,
+        cycle_bits,
+        &mut stage1_challenge_transcript,
+    )?;
+    crate::chip8::stage1::verify_stage1(
+        &stage1,
+        &program_context.rom_table,
+        &program_context.decode_table,
+        &program_context.alu_table,
+        &program_context.eq4_table,
+        cycle_bits,
+        Some(crate::chip8::stage1::stage1_alu_expected_claim(
+            &frame_aux,
+            &stage1.cycle_point,
+        )),
+        &mut transcript,
+    )
+    .map_err(SimpleKernelError::SumcheckFailed)?;
+    let mut stage2_challenge_transcript = transcript.clone();
+    let stage2 = super::build_stage2_proof_from_relation_witness(
+        relation_witness.twists(),
+        public,
+        &frame_rows,
+        &frame_aux,
+        cycle_bits,
+        &mut stage2_challenge_transcript,
+    )?;
+    crate::chip8::stage2::verify_stage2(
+        &stage2,
+        &public.initial_registers,
+        public.initial_i,
+        &public.initial_ram,
+        cycle_bits,
+        &mut transcript,
+    )?;
+    let mut stage3_challenge_transcript = transcript.clone();
+    let stage3_challenges =
+        crate::chip8::stage3::sample_stage3_challenges(&mut stage3_challenge_transcript, cycle_bits);
+    let stage3 = super::build_stage3_proof_from_relation_witness(
+        relation_witness.shift(),
+        &row_bindings,
+        &stage3_challenges,
+        program_context.pad_pc_word,
+    )?;
+    let root_opening_manifest = simple_kernel_root_opening_manifest();
+    let time_claims = time_opening_claims(&kernel_opening_manifest, &root_opening_manifest);
+    let time_opening_summary = prove_time_opening(&[], &time_claims)
+        .map_err(|err| SimpleKernelError::OpeningFailed(format!("kernel time-opening rebuild failed: {err}")))?;
+    let (joint_opening_summary, rebuilt_joint_opening_fold_bucket_proofs) =
+        rebuild_kernel_joint_opening_from_relation_witness(public, relation_witness)?;
+    if rebuilt_joint_opening_fold_bucket_proofs != relation.joint_opening_fold_bucket_proofs {
+        return Err(SimpleKernelError::OpeningFailed(
+            "joint opening fold bucket proofs mismatch verified execution relation".into(),
+        ));
+    }
+    let semantic_evidence_summary = build_kernel_semantic_evidence_summary(KernelSemanticEvidenceInputs {
+        stage1: &stage1,
+        stage2: &stage2,
+        stage3: &stage3,
+        kernel_opening_manifest: &kernel_opening_manifest,
+        root_opening_manifest: &root_opening_manifest,
+        time_opening_summary: &time_opening_summary,
+        opening_refinement_summary: &opening_refinement_summary,
+        joint_opening_summary: &joint_opening_summary,
+        joint_opening_fold_bucket_proofs: &relation.joint_opening_fold_bucket_proofs,
+        row_projection_summary: &row_projection_summary,
+        bridge_binding_summary: &bridge_binding_summary,
+    })?;
+    let digest = KernelExecutionDigest {
+        trace_surface: KernelTraceSurface {
+            frames: frames.clone(),
+            stage1_digest: semantic_evidence_summary.stage1_digest,
+            stage2_digest: semantic_evidence_summary.stage2_digest,
+            stage3_digest: semantic_evidence_summary.stage3_digest,
+            semantic_evidence_summary_digest: semantic_evidence_summary.digest,
+        },
+        export_surface: build_kernel_export_surface(&frames, &prepared_steps),
+        audit_surface: KernelAuditSurface {
+            row_projection_summary,
+            bridge_binding_summary,
+        },
+        manifest_surface: build_kernel_manifest_surface(&kernel_opening_manifest, &root_opening_manifest),
+        transcript_surface: build_kernel_transcript_surface_from_relation_witness(relation_witness)?,
+        error_surface: build_kernel_error_surface(),
+    };
+    Ok(RebuiltKernelExecutionDigestFromExport { digest })
+}
+
 pub fn verify_kernel_execution_digest(
     public: &SimpleKernelPublicInput,
     proof: &SimpleKernelProof,
     output: &SimpleKernelOutput,
+    audit: &Chip8AuditBundle,
     digest: &KernelExecutionDigest,
 ) -> Result<(), String> {
-    let expected = build_kernel_execution_digest(public, proof, output)
+    let expected = build_kernel_execution_digest(public, proof, output, audit)
         .map_err(|err| format!("kernel execution digest build failed: {err}"))?;
     if digest != &expected {
         return Err("kernel execution digest mismatch".into());
@@ -1018,29 +1161,35 @@ pub fn verify_kernel_execution_digest(
     Ok(())
 }
 
-fn build_kernel_trace_surface(frames: &[KernelExactFrame], proof: &SimpleKernelProof) -> KernelTraceSurface {
+fn build_kernel_trace_surface(frames: &[KernelExactFrame], audit: &Chip8AuditBundle) -> KernelTraceSurface {
     KernelTraceSurface {
         frames: frames.to_vec(),
-        stage1_digest: proof.semantic_evidence_summary.stage1_digest,
-        stage2_digest: proof.semantic_evidence_summary.stage2_digest,
-        stage3_digest: proof.semantic_evidence_summary.stage3_digest,
-        semantic_evidence_summary_digest: proof.semantic_evidence_summary.digest,
+        stage1_digest: audit.semantic_evidence_summary.stage1_digest,
+        stage2_digest: audit.semantic_evidence_summary.stage2_digest,
+        stage3_digest: audit.semantic_evidence_summary.stage3_digest,
+        semantic_evidence_summary_digest: audit.semantic_evidence_summary.digest,
     }
 }
 
-fn build_kernel_export_surface(frames: &[KernelExactFrame], prepared_steps: &[StepInput]) -> KernelExportSurface {
+pub(crate) fn build_kernel_export_surface_from_prepared_steps(prepared_steps: &[StepInput]) -> KernelExportSurface {
     KernelExportSurface {
-        semantic_rows: frames.len(),
+        semantic_rows: prepared_steps.len(),
         prepared_steps: prepared_steps.to_vec(),
     }
 }
 
+fn build_kernel_export_surface(frames: &[KernelExactFrame], prepared_steps: &[StepInput]) -> KernelExportSurface {
+    debug_assert_eq!(frames.len(), prepared_steps.len());
+    build_kernel_export_surface_from_prepared_steps(prepared_steps)
+}
+
 fn build_kernel_audit_surface(
     frames: &[KernelExactFrame],
-    row_projection_summary: &KernelRowProjectionSummary,
-    bridge_binding_summary: &KernelBridgeBindingSummary,
+    audit: &Chip8AuditBundle,
     prepared_steps: &[StepInput],
 ) -> Result<KernelAuditSurface, SimpleKernelError> {
+    let row_projection_summary = &audit.row_projection_summary;
+    let bridge_binding_summary = &audit.bridge_binding_summary;
     if row_projection_summary.projections.len() != frames.len() {
         return Err(SimpleKernelError::BridgeFailed(format!(
             "kernel audit row projection count {} != frame count {}",

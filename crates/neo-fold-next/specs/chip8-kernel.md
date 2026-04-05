@@ -11,7 +11,90 @@ Normative spec for the CHIP-8 proving kernel. Design principles:
    obligations live in explicit auxiliary protocols.
 
 Field: Goldilocks, `F = 2^64 - 2^32 + 1`.
-Extension field: `K = F[u]/(u^2 + 1)`.
+Extension field: `K = F_{q^2}`.
+
+### 0.0 SuperNeo backend contract
+
+This kernel exports semantic rows into one concrete SuperNeo-style root
+backend. That backend contract is theorem-facing and is not an implementation
+detail.
+
+Base parameters:
+
+```text
+q   = 2^64 - 2^32 + 1
+F   = F_q
+K   = F_{q^2}
+η   = 81
+Φη  = X^54 + X^27 + 1
+d   = deg(Φη) = 54
+R_F = F[X]/(Φη)
+```
+
+Norm and folding parameters are the public root-context parameters:
+
+```text
+(q, η, d, κ, m, b, k_rho, B, T, s, λ)
+```
+
+with:
+
+```text
+B = b^{k_rho}
+s = 2
+```
+
+and the Π_RLC norm-growth guard:
+
+```text
+count · T · (b - 1) < b^{k_rho} = B,
+```
+
+where `count` is the number of CE claims combined in that Π_RLC invocation.
+
+The root main-lane theorem uses the paper reduction stack:
+
+```text
+Π_SuperNeo := Π_DEC ∘ Π_RLC ∘ Π_CCS.
+```
+
+Chunk-local role split:
+
+```text
+Π_CCS : CCS(b, L)^K × CE(b, L)^k -> CE(b, L)^{K+k}
+Π_RLC : CE(b, L)^{K+k} -> CE(B, L)
+Π_DEC : CE(B, L) -> CE(b, L)^{k_rho}
+```
+
+where:
+
+- the fresh semantic rows authenticated from the CHIP-8 main lane instantiate
+  the chunk's fresh `CCS` claims,
+- the carried main claims from the previous chunk instantiate the incoming `CE`
+  claims,
+- and `Π_DEC` restores the carried norm bound from `B` back to the base bound
+  `b`.
+
+The Π_RLC challenge domain is not an arbitrary field-scalar domain. A
+conforming implementation must sample typed ring-scalar challenges
+
+```text
+ρ_i = rot(a_i) ∈ 𝒞 ⊂ R_F
+```
+
+from a strong sampling set `𝒞` fixed by the backend cyclotomic ring and small
+coefficient alphabet. For the current Goldilocks backend:
+
+```text
+𝒞 = { rot(a) : a ∈ {-2,-1,0,1,2}^d }.
+```
+
+The `PreparedStep_j` export, the bridge binding, the root context id, and any
+theorem-facing verification of root main-lane packages are bound to this
+backend contract. Replacing it with arbitrary field-scalar RLC challenges, a
+different cyclotomic ring, or a different extension field is non-conforming
+unless the public root context and all theorem statements are updated
+accordingly.
 
 ---
 
@@ -270,6 +353,8 @@ Normative v1 rule:
   each of `C_rom_table`, `C_decode_table`, `C_alu_table`, and `C_eq4_table`
   must be verifier-recomputable from that canonical table data, and the
   verifier must recompute the commitment and check equality,
+- this is a kernel-version uniform-authentication choice, not a theorem of
+  Twist/Shout,
 - a v1 `SimpleKernelProof` therefore does **not** rely on optional public-table
   binding proofs for those four tables,
 - any later protocol version that uses a non-deterministic table commitment for
@@ -2043,7 +2128,8 @@ admissible in this `simple` v1 boundary.
 `RegVal` and `RamVal` are virtual and never appear as primary `OpeningClaim`s`.
 
 `RootOpeningManifest` contains only the openings owned by the root prover
-(`Π_CCS -> Π_RLC -> Π_DEC`) after kernel handoff.
+(`Π_CCS -> Π_RLC -> Π_DEC`, with `Π_RLC` using typed ring-scalar challenges
+from the backend domain `𝒞 ⊂ R_F`) after kernel handoff.
 
 Kernel commitments and root commitments are intentionally disjoint:
 
@@ -2056,8 +2142,11 @@ Kernel commitments and root commitments are intentionally disjoint:
   combined kernel-plus-root proof object, not to the simple kernel itself.
 
 For this `simple` boundary, root-side binding is carried by the exact
-`PreparedStep_j` export and the explicit `BridgeBinding_j` leaf, not by a
-non-empty root opening manifest.
+`PreparedStep_j` export together with the exact per-row bridge theorem from
+§9.4.5-§9.4.6. An implementation may package that theorem inside a native
+chunked bridge carrier or inside an audit bundle, but it may not weaken the
+underlying obligation and it may not replace it with a non-empty root opening
+manifest.
 
 For this same `simple` boundary, "row-membership proof" means exactly the
 accepted `C_lane @ j_bits` direct opening together with its exact lower-layer
@@ -2312,11 +2401,15 @@ Normative rules:
 
 #### 9.4.3 Joint opening reduction over refined claims
 
-The current `simple` kernel boundary does not export joint-opening reduction
-artifacts. A future extended boundary may reduce refined opening claims for
-efficiency, but any such reduction must remain explicit and transcript-bound.
-The concrete mode identifier for this boundary is
-`opening_reduction_mode_id = no_post_transcript_reduction_v1`.
+The current `simple` kernel boundary may export explicit joint-opening
+claim-space summaries and family-local fold-bucket proofs as authenticated
+provenance objects over already-accepted direct openings. Those summaries do not
+change the theorem-facing opening boundary, they do not replace exact opening
+verification, and they do not by themselves constitute the later succinct
+recursive/compression proof. The concrete mode identifier for this boundary is
+`opening_reduction_mode_id = no_post_transcript_reduction_v1`, meaning no
+additional theorem-shaping post-kernel reduction beyond the explicit
+provenance-carrier objects defined in this section.
 
 This section owns only claim-space aggregation. It does **not** by itself define
 or justify a witness-space fold lane. Reducing authenticated claims in
@@ -3067,17 +3160,18 @@ SimpleKernelProof {
     exact_opening_artifacts,     // per-family exact opening witnesses for every kernel claim
     time_opening_summary,
     opening_refinement_summary,
-    joint_opening_summary,       // future extension only; absent on the simple boundary
-    joint_opening_fold_bucket_proofs, // future extension only; absent on the simple boundary
-    row_projection_summary,
-    bridge_binding_summary,
-    semantic_evidence_summary,   // optional non-normative audit digest
+    joint_opening_summary,
+    joint_opening_fold_bucket_proofs,
+    bridge_chunk_proof,
 }
 ```
 
-On the simple boundary, `joint_opening_summary` and
-`joint_opening_fold_bucket_proofs` must be omitted entirely. This accepted
-boundary exports no claim-space summaries and no family-local fold carriers.
+On the simple boundary, `joint_opening_summary`,
+`joint_opening_fold_bucket_proofs`, and `bridge_chunk_proof` are present as
+authenticated provenance / packaging objects over already-owned theorem-facing
+surfaces. None of them replaces the exact-opening requirement or the per-row
+bridge theorem from §9.4.5-§9.4.6, and none of them is by itself the later
+succinct recursive/compression proof.
 
 ```text
 KernelMetaPub {
@@ -3137,7 +3231,7 @@ Normative relation-shaping mode identifiers for this `simple` boundary:
 | `init_mode_id` | `authenticated_nonzero_init` | Stage-2 `Val` chains use authenticated initial register/RAM surfaces directly, as specified in §6.8 |
 | `lowering_convention_id` | `chip8_microstep_pre_post_v1` | the exact row-granular lowering and same-row visibility discipline from §3.4, including separate register/RAM timelines and `Fx55/Fx65` burst decomposition |
 | `table_auth_mode_id` | `committed_public_tables_v1` | fetch/decode/ALU/Eq4 table authentication is carried by the exact committed public-table openings listed under the Stage-1 table-auth rule; verifier-local evaluators are cross-checks only |
-| `opening_reduction_mode_id` | `no_post_transcript_reduction_v1` | the simple boundary exports no claim-space reduction summaries and no family-local fold carriers |
+| `opening_reduction_mode_id` | `no_post_transcript_reduction_v1` | the simple boundary may export explicit claim-space reduction summaries and family-local fold-bucket provenance carriers, but no additional theorem-shaping reduction and no later succinct verifier |
 
 These mode identifiers are not free-form debug labels. Under the current
 `protocol_version_id`, any other value is non-conforming.
@@ -3207,18 +3301,25 @@ SimpleKernelOutput {
     public_steps: Vec<PreparedStepInstance>,
     kernel_opening_manifest: KernelOpeningManifest,
     root_opening_manifest: RootOpeningManifest,
-    joint_opening_fold_bucket_proofs, // future extension only; absent on the simple boundary
-    row_projection_summary,
-    bridge_binding_summary,
-    semantic_evidence_summary,   // optional non-normative audit digest
+    joint_opening_fold_bucket_proofs,
 }
 ```
 
 `SimpleKernelProof` is the proof-side accepted-opening surface. It carries
 `exact_opening_artifacts`, `time_opening_summary`,
-`opening_refinement_summary`, and, on future non-simple boundaries, any
-claim-space reduction summaries. `SimpleKernelOutput` is the bridge / audit
-export surface. It does not duplicate the proof-side accepted-opening artifacts.
+`opening_refinement_summary`, claim-space reduction summaries, and the native
+chunk bridge package. `SimpleKernelOutput` is the bridge handoff surface for the
+root prover plus the native public-step export surface. It does not duplicate
+the proof-side accepted-opening artifacts.
+
+If an implementation exposes an explicit audit API, that audit surface owns:
+
+- `KernelRowProjectionSummary`,
+- `KernelBridgeBindingSummary`,
+- `KernelSemanticEvidenceSummary`.
+
+Those three objects are not first-class fields of `SimpleKernelOutput` on the
+simple boundary.
 
 Normative boundary rules:
 
@@ -3236,26 +3337,21 @@ Normative boundary rules:
   On the simple-kernel boundary it must be empty.
 - `SimpleKernelProof.exact_opening_artifacts` must be sufficient to authenticate
   every direct kernel opening claim in `kernel_opening_manifest`.
-- `SimpleKernelProof.opening_refinement_summary`, and, on any future non-simple
-  boundary, `SimpleKernelProof.joint_opening_summary`,
-  any materialized `joint_opening_fold_bucket_proofs` export surface,
-  `SimpleKernelOutput.row_projection_summary`,
-  `SimpleKernelOutput.bridge_binding_summary`, and
-  `SimpleKernelOutput.semantic_evidence_summary` are audit/provenance objects
+- `SimpleKernelProof.opening_refinement_summary`,
+  `SimpleKernelProof.joint_opening_summary`,
+  `SimpleKernelProof.joint_opening_fold_bucket_proofs`, and
+  `SimpleKernelProof.bridge_chunk_proof` are provenance / packaging objects
   only; none of them introduces a new commitment family or replaces the
   lower-layer exact opening requirement.
-- on the simple boundary, `SimpleKernelProof.joint_opening_summary` and
-  any materialized `joint_opening_fold_bucket_proofs` export surface must be
-  absent.
-- `row_projection_summary` and `bridge_binding_summary` are canonical ordered
-  summary trees over the exact per-row `RowProjectionWitness_j` and
-  `BridgeBinding_j` leaves for `j ∈ [0, N)`, with verifier-accessible row-index
-  mapping.
-- `semantic_evidence_summary` is an optional non-normative audit digest over the
-  already-owned theorem-facing semantic surfaces. It may summarize the Stage-2
-  temporal seeds, the chunk-global temporal support package, and the Stage-3
-  `pc` support path, but the strong theorem from §4.3a must never depend on this
-  digest as if it were a standalone proof object.
+- if an implementation exposes `KernelRowProjectionSummary` and
+  `KernelBridgeBindingSummary`, they must be canonical ordered summary trees
+  over the exact per-row `RowProjectionWitness_j` and `BridgeBinding_j` leaves
+  for `j ∈ [0, N)`, with verifier-accessible row-index mapping.
+- if an implementation exposes `KernelSemanticEvidenceSummary`, it is an
+  optional audit digest over already-owned theorem-facing semantic surfaces. It
+  may summarize the Stage-2 temporal seeds, the chunk-global temporal support
+  package, and the Stage-3 `pc` support path, but the strong theorem from §4.3a
+  must never depend on this digest as if it were a standalone proof object.
 - the exact kernel boundary above must be sufficient, together with the public
   chunk input from §9.5, to recover the accepted-kernel theorem package and the
   strong execution conclusion of §4.3a without any extra external temporal-
@@ -3423,15 +3519,16 @@ Normative rule for `RootEncode`:
 - `Z_j` is the canonical norm-bounded witness representation consumed by the root
   prover for that row, defined here as follows:
   1. let `m = 24`;
-  2. let `cols = ceil(m / D)`;
-  3. form the canonical padded witness vector
+  2. let `D := d = 54`, the SuperNeo ring degree fixed by `Φ81(X) = X^54 + X^27 + 1`;
+  3. let `cols = ceil(m / D)`;
+  4. form the canonical padded witness vector
      `z_pad = [z_j[0], z_j[1], ..., z_j[23], 0, ..., 0] ∈ F^{cols * D}`,
      where padding zeros are appended only at the tail until the length is
      exactly `cols * D`;
-  4. reshape `z_pad` into a `D × cols` matrix by columns:
+  5. reshape `z_pad` into a `D × cols` matrix by columns:
      the entry at row `r ∈ [0, D)` and column `c ∈ [0, cols)` is
      `z_pad[c * D + r]`;
-  5. apply the canonical Ajtai witness encoding induced by the public
+  6. apply the canonical Ajtai witness encoding induced by the public
      `root_params` to that `D × cols` matrix to obtain `Z_j`.
 - Equivalently, `Z_j ∈ F^{D × ceil(24 / D)}` with the column-major placement of
   the padded semantic row fixed exactly by the previous rule.
@@ -3823,12 +3920,13 @@ Auditor-facing prerequisite table:
 
 ## 14. Bridge Binding Mechanism
 
-For `simple.rs` v1, the chosen mechanism is **explicit row-opening proofs
-against `C_lane`**, not the aggregate identity `C_lane = Σ_j c_j`.
+For `simple.rs` v1, the soundness-carrying bridge theorem is still **explicit
+row-opening authentication against `C_lane`**, not the aggregate identity
+`C_lane = Σ_j c_j`.
 
 Rationale: unless the commitment layer exposes a formally specified linear row
-decomposition that the verifier can check, the bridge must prove each exported
-row's membership in `C_lane` via column openings at that row index.
+decomposition that the verifier can check, the bridge must authenticate each
+exported row's membership in `C_lane` via column openings at that row index.
 
 Concretely, for each exported semantic row `j ∈ [0, N)`, the bridge owns a
 `RowBindingClaim` instance:
@@ -3847,41 +3945,89 @@ cycle-bit order used by `C_lane`, and the claimed row data are the 23 committed
 non-fixed lane-column values opened from `C_lane` at that point,
 and `z_j[0] = ONE = 1` is inserted as a fixed constant by the verifier.
 
-Bridge verifier algorithm for row `j`:
+The mandatory per-row bridge theorem for row `j` is:
 
 1. Verify the batched opening of the 23 committed non-fixed lane columns at
    `j_bits` under `C_lane`.
 2. Recover the opened semantic row `z_j` by prepending the fixed coordinate
    `ONE = 1`.
 3. Compute `RootEncode(z_j) = (w_j, Z_j)` exactly as in §11.2, using the
-   canonical SuperNeo packed witness encoding for `Z_j`.
+   canonical root witness parameters fixed by `vm_spec`.
 4. Check `PreparedStep_j.witness.Z = Z_j`.
 5. Recompute `c_j = Ajtai_commit(Z_j)`.
 6. Check `c_j = PreparedStep_j.mcs.c`.
 7. Check `PreparedStep_j.witness.w = w_j`.
 8. Check `PreparedStep_j.mcs.x = [F::ONE]` and `PreparedStep_j.mcs.m_in = 1`.
+9. Check that `RowProjectionWitness_j` and `BridgeBinding_j` share one exact
+   `AcceptedDirectOpening` for the row-binding opening, not merely the same row
+   index or matching digests.
 
 Only after those checks may the root prover consume `PreparedStep_j` for the
 main-lane CCS proof.
 
-Batching rule:
+### 14.1 Native chunk packaging on the current simple boundary
 
-- The bridge may batch the 23 committed non-fixed lane-column openings for a
-  single row at `j_bits`.
-- The v1 chunk rule is:
-  - one batched opening object per exported semantic row `j ∈ [0, N)`,
-    covering all 23 committed non-fixed lane columns at `j_bits`,
-  - no additional chunk-level bridge batch across distinct row-binding claims.
-- A verifier must still be able to recover the specific opened row `z_j` for
-  every exported `PreparedStep_j`.
+The current simple boundary is allowed to package those per-row obligations into
+a native chunk carrier:
 
-Verifier-cost note:
+```text
+Chip8BridgeChunkProofBundle {
+    fold_schedule,
+    chunk_claims,
+    chunk_witnesses,
+    row_projection_summary_digest,
+    bridge_binding_summary_digest,
+    final_state,
+    digest,
+}
+```
 
-- this v1 bridge is intentionally linear in the number of exported semantic
-  rows;
-- any later recursive wrapper, folded bridge, or succinct outer proof that
-  amortizes those row-by-row checks is outside the simple-kernel theorem
-  surface and must be introduced explicitly by a later owner.
+with canonical fold schedule:
+
+```text
+FoldSchedule::RowsPerChunk(2)
+```
+
+Normative rules:
+
+- chunk packaging does not replace the per-row theorem above;
+- chunk packaging does not merge distinct row-binding openings into one new
+  direct opening claim;
+- the verifier must still be able to recover one exact row-binding theorem per
+  exported row and one exact `PreparedStep_j` handoff per exported row;
+- any change to the chunk schedule requires an explicitly versioned export /
+  recursive boundary update; it must not be inferred from caller-chosen chunk
+  layout.
+
+### 14.2 Native verification model on the current simple boundary
+
+The current simple boundary may verify the chunk package by native
+reconstruction from already-authenticated theorem-facing surfaces:
+
+- authenticated `RowBindingClaim_j` values,
+- canonical semantic rows `z_j`,
+- canonical `PreparedStep_j` values,
+- the ordered row-projection and bridge-binding summaries derived from them.
+
+That native reconstruction model is conforming only because it still reduces to
+the exact per-row theorem above. It is a packaging boundary, not a new proof
+system.
+
+### 14.3 Constraint on any later witness-backed or succinct bridge
+
+Any later witness-backed bridge relation, recursive wrapper, or succinct outer
+proof is conforming only if it preserves exactly the same theorem:
+
+- the same exact accepted-opening identity reused across row projection and
+  bridge binding,
+- the same canonical `RootEncode(z_j)` image under fixed `root_params`,
+- the same exact `PreparedStep_j.witness.{w, Z}` equality checks,
+- the same exact `Ajtai_commit(Z_j) = PreparedStep_j.mcs.c` check,
+- the same exact `mcs.x = [1]` and `m_in = 1` check.
+
+Such a later owner may replace native reconstruction with a private-witness
+relation or a succinct verifier, but it may not weaken the bridge theorem to a
+mere digest-consistency claim.
 
 ---
 
@@ -3912,11 +4058,13 @@ following are true.
    `Fx55/Fx65` burst state. A kernel that supports carry-in or carry-out burst
    state must add explicit boundary fields and is outside this spec.
 8. Booleanity is explicitly proved; Ajtai norm bounds do not substitute for it.
-9. In this v1 spec, table evaluations are always separately authenticated under
-   the appropriate table commitments (`C_rom_table`, `C_decode_table`,
-   `C_alu_table`, `C_eq4_table`) and those commitments are always absorbed into
-   `root0`. Direct verifier-computable evaluators may be used only as
-   cross-checks; they do not replace the committed table surfaces.
+9. In this v1 spec, public-table evaluations are authenticated under the
+   appropriate table commitments (`C_rom_table`, `C_decode_table`,
+   `C_alu_table`, `C_eq4_table`) and those commitments are absorbed into
+   `root0` as one uniform-authentication choice. This is stricter than the
+   minimum Twist/Shout requirement and is not itself a theorem of the paper.
+   Direct verifier-computable evaluators may still be used as cross-checks, but
+   they do not replace the committed table surfaces under this version.
 10. The bridge's row-binding claim uses explicit row-opening proofs against
    `C_lane`, one row at a time for semantic rows `j ∈ [0, N)`, and the verifier
    recomputes the exported main-lane commitment from each opened row via the

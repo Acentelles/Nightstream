@@ -10,10 +10,10 @@ use crate::chip8::tables::ROM_ADDR_BITS;
 
 use super::proof::Stage1ShoutProof;
 use super::{
-    build_onehot_witness, handoff_values_at_cycle, lane_values_at_cycle, mle_eval_k, mle_eval_k_be, mle_eval_many_k,
-    mle_eval_many_k_be, partial_eval_at_cycle, sample_challenge, sample_challenge_vec, stage1_decode_claim,
-    stage1_eq4_claim, stage1_fetch_claim, stage1_linkage_terms, BooleanityOracle, DecodeConsistencyOracle,
-    HammingWeightOracle, ShoutChannelProof, ShoutCoreOracle, DECODE_TABLE_COLUMNS,
+    build_alu_mixed_table, build_onehot_witness, handoff_values_at_cycle, lane_values_at_cycle, mle_eval_k,
+    mle_eval_k_be, mle_eval_many_k, mle_eval_many_k_be, partial_eval_at_cycle, sample_challenge, sample_challenge_vec,
+    stage1_decode_claim, stage1_eq4_claim, stage1_fetch_claim, stage1_linkage_terms, BooleanityOracle,
+    DecodeConsistencyOracle, HammingWeightOracle, ShoutChannelProof, ShoutCoreOracle, DECODE_TABLE_COLUMNS,
 };
 
 pub fn stage1_alu_expected_claim(aux: &[KernelStepAux], cycle_point: &[K]) -> K {
@@ -78,22 +78,6 @@ fn prove_shout_channel<Tr: Transcript>(
         read_values_at_cycle: vec![rv_at_r],
         table_opening_values: Vec::new(),
     })
-}
-
-fn build_alu_mixed_table(alu_add8lo: &[F]) -> Vec<F> {
-    debug_assert_eq!(alu_add8lo.len(), 1 << 16);
-    let size = 1usize << 18;
-    let mut table = vec![F::ZERO; size];
-
-    for lhs in 0u64..256 {
-        for rhs in 0u64..256 {
-            let base = (lhs << 8) | rhs;
-            table[(1u64 << 16 | base) as usize] = F::from_u64(lhs);
-            table[(2u64 << 16 | base) as usize] = if lhs == rhs { F::ONE } else { F::ZERO };
-            table[(3u64 << 16 | base) as usize] = alu_add8lo[(lhs * 256 + rhs) as usize];
-        }
-    }
-    table
 }
 
 struct ShoutCoreOracleK {

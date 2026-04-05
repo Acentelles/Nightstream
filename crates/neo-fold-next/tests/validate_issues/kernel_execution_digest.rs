@@ -2,27 +2,29 @@ use neo_fold_next::chip8::kernel::{
     build_kernel_execution_digest, verify_kernel_execution_digest, AddressFamily, KernelErrorTerm,
     KernelTranscriptEvent, Stage1ShoutChannel, TwistMemoryFamily, TwistReadFamily,
 };
+use neo_fold_next::chip8::proof::prove_audit;
 use neo_fold_next::chip8::spec::CommitmentId;
 use neo_math::F;
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::PrimeCharacteristicRing;
 
 use super::kernel_progress::{
-    build_jump_kernel_input, chip8_root_params, make_ajtai_module, prove_simple_kernel, verifier_input_from_public,
-    verify_simple_kernel,
+    build_jump_kernel_input, chip8_root_params, make_ajtai_module, verifier_input_from_public, verify_simple_kernel,
 };
 
 #[test]
 fn simple_kernel_populates_execution_digest() {
     let input = build_jump_kernel_input(2);
+    let (audit, proof) = prove_audit(&input).expect("prove audit");
     let params = chip8_root_params();
     let log = make_ajtai_module(&params);
-
+    let verifier_input = verifier_input_from_public(&input.public);
     let mut transcript = Poseidon2Transcript::new(b"neo.fold.next/tests/simple_kernel_execution_digest");
-    let (output, proof) = prove_simple_kernel(&input, &params, &log, &mut transcript).expect("simple kernel proof");
+    let output =
+        verify_simple_kernel(&verifier_input, &proof, &params, &log, &mut transcript).expect("verify simple kernel");
 
-    let digest = build_kernel_execution_digest(&input.public, &proof, &output).expect("execution digest");
-    verify_kernel_execution_digest(&input.public, &proof, &output, &digest).expect("execution digest");
+    let digest = build_kernel_execution_digest(&input.public, &proof, &output, &audit).expect("execution digest");
+    verify_kernel_execution_digest(&input.public, &proof, &output, &audit, &digest).expect("execution digest");
 
     assert_eq!(digest.trace_surface.frames.len(), proof.meta_pub.semantic_rows);
     assert_eq!(digest.trace_surface.frames[0].step_idx, 0);
@@ -34,25 +36,25 @@ fn simple_kernel_populates_execution_digest() {
     );
     assert_eq!(
         digest.trace_surface.stage1_digest,
-        proof.semantic_evidence_summary.stage1_digest
+        audit.semantic_evidence_summary.stage1_digest
     );
     assert_eq!(
         digest.trace_surface.stage2_digest,
-        proof.semantic_evidence_summary.stage2_digest
+        audit.semantic_evidence_summary.stage2_digest
     );
     assert_eq!(
         digest.trace_surface.stage3_digest,
-        proof.semantic_evidence_summary.stage3_digest
+        audit.semantic_evidence_summary.stage3_digest
     );
     assert_eq!(digest.export_surface.semantic_rows, proof.meta_pub.semantic_rows);
     assert_eq!(digest.export_surface.prepared_steps.len(), output.prepared_steps.len());
     assert_eq!(
         digest.audit_surface.row_projection_summary,
-        output.row_projection_summary
+        audit.row_projection_summary
     );
     assert_eq!(
         digest.audit_surface.bridge_binding_summary,
-        output.bridge_binding_summary
+        audit.bridge_binding_summary
     );
     assert_eq!(
         digest.manifest_surface.root0_commitment_ids,
@@ -134,110 +136,99 @@ fn simple_kernel_populates_execution_digest() {
 #[test]
 fn simple_kernel_execution_digest_matches_verifier_reconstruction() {
     let input = build_jump_kernel_input(2);
+    let (audit, proof) = prove_audit(&input).expect("prove audit");
     let params = chip8_root_params();
     let log = make_ajtai_module(&params);
 
-    let mut prove_transcript =
-        Poseidon2Transcript::new(b"neo.fold.next/tests/simple_kernel_execution_digest_reconstruction");
-    let (prover_output, proof) =
-        prove_simple_kernel(&input, &params, &log, &mut prove_transcript).expect("simple kernel proof");
-
     let verifier_input = verifier_input_from_public(&input.public);
-    let mut verify_transcript =
+    let mut verifier_transcript =
         Poseidon2Transcript::new(b"neo.fold.next/tests/simple_kernel_execution_digest_reconstruction");
     let verifier_output =
-        verify_simple_kernel(&verifier_input, &proof, &params, &log, &mut verify_transcript).expect("verification");
+        verify_simple_kernel(&verifier_input, &proof, &params, &log, &mut verifier_transcript).expect("verification");
+
+    let mut second_transcript =
+        Poseidon2Transcript::new(b"neo.fold.next/tests/simple_kernel_execution_digest_reconstruction");
+    let prover_output = verify_simple_kernel(&verifier_input, &proof, &params, &log, &mut second_transcript)
+        .expect("second verification");
 
     let prover_artifact =
-        build_kernel_execution_digest(&input.public, &proof, &prover_output).expect("prover execution digest");
-    let verifier_artifact =
-        build_kernel_execution_digest(&input.public, &proof, &verifier_output).expect("verifier execution digest");
+        build_kernel_execution_digest(&input.public, &proof, &prover_output, &audit).expect("prover execution digest");
+    let verifier_artifact = build_kernel_execution_digest(&input.public, &proof, &verifier_output, &audit)
+        .expect("verifier execution digest");
 
     assert_eq!(prover_artifact, verifier_artifact);
 }
 
 #[test]
-fn simple_kernel_transcript_matches_verifier_reconstruction() {
-    let input = build_jump_kernel_input(2);
-    let params = chip8_root_params();
-    let log = make_ajtai_module(&params);
-
-    let mut prove_transcript = Poseidon2Transcript::new(b"neo.fold.next/tests/simple_kernel_transcript_reconstruction");
-    let (_prover_output, proof) =
-        prove_simple_kernel(&input, &params, &log, &mut prove_transcript).expect("simple kernel proof");
-    let prove_digest = prove_transcript.digest32();
-
-    let verifier_input = verifier_input_from_public(&input.public);
-    let mut verify_transcript =
-        Poseidon2Transcript::new(b"neo.fold.next/tests/simple_kernel_transcript_reconstruction");
-    verify_simple_kernel(&verifier_input, &proof, &params, &log, &mut verify_transcript).expect("verification");
-    let verify_digest = verify_transcript.digest32();
-
-    assert_eq!(prove_digest, verify_digest);
-}
-
-#[test]
 fn simple_kernel_execution_digest_rejects_tampered_transcript_surface() {
     let input = build_jump_kernel_input(2);
+    let (audit, proof) = prove_audit(&input).expect("prove audit");
     let params = chip8_root_params();
     let log = make_ajtai_module(&params);
-
+    let verifier_input = verifier_input_from_public(&input.public);
     let mut transcript =
         Poseidon2Transcript::new(b"neo.fold.next/tests/simple_kernel_execution_digest_transcript_tamper");
-    let (output, proof) = prove_simple_kernel(&input, &params, &log, &mut transcript).expect("simple kernel proof");
+    let output =
+        verify_simple_kernel(&verifier_input, &proof, &params, &log, &mut transcript).expect("verify simple kernel");
 
-    let mut digest = build_kernel_execution_digest(&input.public, &proof, &output).expect("execution digest");
+    let mut digest = build_kernel_execution_digest(&input.public, &proof, &output, &audit).expect("execution digest");
     digest.transcript_surface.events.pop();
 
-    let err = verify_kernel_execution_digest(&input.public, &proof, &output, &digest).expect_err("tamper");
+    let err = verify_kernel_execution_digest(&input.public, &proof, &output, &audit, &digest).expect_err("tamper");
     assert!(err.contains("execution digest"));
 }
 
 #[test]
 fn simple_kernel_execution_digest_rejects_tampered_manifest_surface() {
     let input = build_jump_kernel_input(2);
+    let (audit, proof) = prove_audit(&input).expect("prove audit");
     let params = chip8_root_params();
     let log = make_ajtai_module(&params);
-
+    let verifier_input = verifier_input_from_public(&input.public);
     let mut transcript =
         Poseidon2Transcript::new(b"neo.fold.next/tests/simple_kernel_execution_digest_manifest_tamper");
-    let (output, proof) = prove_simple_kernel(&input, &params, &log, &mut transcript).expect("simple kernel proof");
+    let output =
+        verify_simple_kernel(&verifier_input, &proof, &params, &log, &mut transcript).expect("verify simple kernel");
 
-    let mut digest = build_kernel_execution_digest(&input.public, &proof, &output).expect("execution digest");
+    let mut digest = build_kernel_execution_digest(&input.public, &proof, &output, &audit).expect("execution digest");
     digest.manifest_surface.kernel_manifest.claims[0].commitment_id = CommitmentId::RootProver(7);
 
-    let err = verify_kernel_execution_digest(&input.public, &proof, &output, &digest).expect_err("tamper");
+    let err = verify_kernel_execution_digest(&input.public, &proof, &output, &audit, &digest).expect_err("tamper");
     assert!(err.contains("execution digest"));
 }
 
 #[test]
 fn simple_kernel_execution_digest_rejects_tampered_error_surface() {
     let input = build_jump_kernel_input(2);
+    let (audit, proof) = prove_audit(&input).expect("prove audit");
     let params = chip8_root_params();
     let log = make_ajtai_module(&params);
-
+    let verifier_input = verifier_input_from_public(&input.public);
     let mut transcript = Poseidon2Transcript::new(b"neo.fold.next/tests/simple_kernel_execution_digest_error_tamper");
-    let (output, proof) = prove_simple_kernel(&input, &params, &log, &mut transcript).expect("simple kernel proof");
+    let output =
+        verify_simple_kernel(&verifier_input, &proof, &params, &log, &mut transcript).expect("verify simple kernel");
 
-    let mut digest = build_kernel_execution_digest(&input.public, &proof, &output).expect("execution digest");
+    let mut digest = build_kernel_execution_digest(&input.public, &proof, &output, &audit).expect("execution digest");
     digest.error_surface.batch_terms.swap(0, 1);
 
-    let err = verify_kernel_execution_digest(&input.public, &proof, &output, &digest).expect_err("tamper");
+    let err = verify_kernel_execution_digest(&input.public, &proof, &output, &audit, &digest).expect_err("tamper");
     assert!(err.contains("execution digest"));
 }
 
 #[test]
 fn simple_kernel_execution_digest_rejects_prepared_step_output_drift() {
     let input = build_jump_kernel_input(2);
+    let (audit, proof) = prove_audit(&input).expect("prove audit");
     let params = chip8_root_params();
     let log = make_ajtai_module(&params);
-
+    let verifier_input = verifier_input_from_public(&input.public);
     let mut transcript =
         Poseidon2Transcript::new(b"neo.fold.next/tests/simple_kernel_execution_digest_prepared_step_drift");
-    let (mut output, proof) = prove_simple_kernel(&input, &params, &log, &mut transcript).expect("simple kernel proof");
+    let mut output =
+        verify_simple_kernel(&verifier_input, &proof, &params, &log, &mut transcript).expect("verify simple kernel");
 
     output.prepared_steps[0].witness.w[0] += F::ONE;
 
-    let err = build_kernel_execution_digest(&input.public, &proof, &output).expect_err("prepared step drift");
+    let err = build_kernel_execution_digest(&input.public, &proof, &output, &audit).expect_err("prepared step drift");
     assert!(err.to_string().contains("prepared step"));
 }

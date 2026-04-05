@@ -8,6 +8,7 @@ use crate::chip8::spec::{
     COL_X_IDX, COL_Y_IDX,
 };
 
+#[derive(Clone, Debug)]
 pub struct ShoutChannelProof {
     pub addr_point: Vec<K>,
     pub sumcheck_rounds: Vec<Vec<K>>,
@@ -17,6 +18,7 @@ pub struct ShoutChannelProof {
     pub table_opening_values: Vec<K>,
 }
 
+#[derive(Clone, Debug)]
 pub struct Stage1ShoutProof {
     pub cycle_point: Vec<K>,
     pub fetch_proof: ShoutChannelProof,
@@ -25,6 +27,12 @@ pub struct Stage1ShoutProof {
     pub eq4_proof: ShoutChannelProof,
     pub decode_handoff_values: Vec<K>,
     pub lane_values_at_lookup: Vec<K>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ShoutChannelExecutionProof {
+    pub sumcheck_rounds: Vec<Vec<K>>,
+    pub addr_correctness_rounds: Vec<Vec<K>>,
 }
 
 pub const STAGE1_LANE_OPEN_COLS: [usize; 17] = [

@@ -4,6 +4,8 @@
 mod artifacts;
 mod bridge;
 mod evidence;
+mod execution_relation;
+mod export_relation;
 mod joint_opening;
 mod lane_commitment;
 mod openings;
@@ -18,8 +20,12 @@ use super::spec::{Chip8Program, CommitmentId, CHIP8_PROGRAM_START, COL_PC};
 use super::tables::{build_alu_table, build_decode_table, build_eq4_table, build_rom_table};
 use super::{stage1, stage2, stage3};
 use crate::time_opening::{prove_time_opening, verify_time_opening};
+pub(crate) use artifacts::build_prepared_step_from_row_binding;
 pub use artifacts::chip8_simple_root_params;
-pub use artifacts::{build_kernel_exact_frames, KernelExactFrame, KernelFrameDecodeView};
+pub(crate) use artifacts::SimpleKernelRootContext;
+pub use artifacts::{
+    build_kernel_exact_frames, build_kernel_exact_frames_from_relation_witness, KernelExactFrame, KernelFrameDecodeView,
+};
 #[cfg(feature = "chip8-audit")]
 pub use artifacts::{
     build_kernel_external_release_artifact, build_kernel_release_artifact, verify_kernel_external_release_artifact,
@@ -31,27 +37,48 @@ pub use artifacts::{
     KernelDigestPublicSurface, KernelExecutionResultSurface, KernelStage1DigestSurface, KernelStage2DigestSurface,
     KernelStagedExecutionDigest, KernelStagedExecutionDigestBundle,
 };
-use artifacts::{build_prepared_step_from_row_binding, SimpleKernelRootContext};
+pub use bridge::chip8_bridge_state_seed;
 pub use bridge::prepared_step_digest;
-use bridge::{
-    build_kernel_bridge_binding_summary, build_kernel_row_projection_summary, recover_prepared_steps_from_row_bindings,
+use bridge::recover_prepared_steps_from_row_bindings;
+pub(crate) use bridge::{
+    advance_chip8_bridge_state, build_chip8_bridge_final_state_from_auths, build_kernel_bridge_binding_summary,
+    build_kernel_bridge_chunk_auth_sources, build_kernel_bridge_row_auths, build_kernel_row_projection_summary,
+    recover_row_bindings_from_bridge_chunk_transitions,
 };
-use bridge::{verify_kernel_bridge_binding_summary, verify_kernel_row_projection_summary};
 pub use bridge::{
+    build_chip8_bridge_chunk_proof_bundle, verify_chip8_bridge_chunk_proof_bundle, Chip8BridgeChunkClaim,
+    Chip8BridgeChunkProofBundle, Chip8BridgeChunkRelationWitness, Chip8BridgeChunkWitness, Chip8BridgeRowWitness,
     KernelBridgeBindingClaim, KernelBridgeBindingSummary, KernelRowProjection, KernelRowProjectionSummary,
+    CHIP8_BRIDGE_FOLD_SCHEDULE, CHIP8_BRIDGE_ROWS_PER_CHUNK,
 };
+pub(crate) use bridge::{verify_kernel_bridge_binding_summary, verify_kernel_row_projection_summary};
+pub(crate) use evidence::verify_kernel_semantic_evidence_summary;
 pub use evidence::KernelSemanticEvidenceSummary;
 pub use evidence::{
-    build_kernel_execution_digest, verify_kernel_execution_digest, KernelAuditSurface, KernelExecutionDigest,
-    KernelExportSurface, KernelManifestSurface, KernelTraceSurface,
+    build_kernel_execution_digest, build_kernel_execution_digest_from_relation_witness, verify_kernel_execution_digest,
+    KernelAuditSurface, KernelExecutionDigest, KernelExportSurface, KernelManifestSurface, KernelTraceSurface,
 };
-use evidence::{
-    build_kernel_semantic_evidence_summary, verify_kernel_semantic_evidence_summary, KernelSemanticEvidenceInputs,
-};
+pub(crate) use evidence::{build_kernel_semantic_evidence_summary, KernelSemanticEvidenceInputs};
 pub use evidence::{
     build_kernel_stage3_digest_surfaces, verify_kernel_stage3_digest_surfaces, KernelStage3CurrentRow,
     KernelStage3DigestSurface, KernelStage3LaneColumn, KernelStage3RowClaim, KernelStage3ShiftClaim,
     KernelStage3ShiftWitness, KernelStage3ShiftedColumn,
+};
+pub use execution_relation::{
+    build_chip8_bridge_final_state_from_relation_witness,
+    build_kernel_opening_refinement_summary_from_relation_witness, rebuild_kernel_joint_opening_from_relation_witness,
+    rebuild_kernel_opening_manifest_from_relation_witness, verify_kernel_execution_relation,
+    verify_kernel_execution_relation_output, Chip8BridgeChunkHandoff, Chip8PreparedStepBridgeBinding,
+    KernelExecutionRelationResult, VerifiedKernelChunkHandoff,
+};
+pub(crate) use execution_relation::{
+    build_kernel_commitment_sets_from_relation_witness, build_stage1_proof_from_relation_witness,
+    build_stage2_proof_from_relation_witness, build_stage3_proof_from_relation_witness,
+};
+pub(crate) use export_relation::{
+    build_kernel_export_relation_digest_from_verified_execution_relation,
+    build_kernel_export_relation_result_from_execution_relation, verify_kernel_export_relation,
+    KernelExportRelationResult,
 };
 use joint_opening::{build_kernel_joint_opening_fold_bucket_proofs, verify_kernel_joint_opening_fold_bucket_proofs};
 use joint_opening::{build_kernel_joint_opening_summary, verify_kernel_joint_opening_summary};
@@ -70,8 +97,10 @@ pub use lane_commitment::{
 use neo_math::F;
 pub(crate) use openings::{
     as_time_opening_claim, build_kernel_opening_manifest, is_kernel_commitment_id, is_root_commitment_id,
-    kernel_opening_claim_cmp, normalize_opening_pairs, normalize_polynomial_ids, opening_commitment_id_key,
-    time_opening_claims,
+    kernel_opening_claim_cmp, kernel_read_opening_surface, kernel_read_opening_surface_from_execution,
+    kernel_shift_opening_surface, kernel_shift_opening_surface_from_execution, kernel_twist_opening_surface,
+    kernel_twist_opening_surface_from_execution, normalize_opening_pairs, normalize_polynomial_ids,
+    opening_commitment_id_key, time_opening_claims,
 };
 use openings::{build_kernel_opening_refinement_summary, verify_kernel_opening_refinement_summary};
 pub use openings::{KernelOpeningClaim, KernelOpeningManifest, KernelOpeningSource, RootOpeningManifest};
@@ -93,14 +122,42 @@ pub use transcript::{
 };
 pub use transcript::{KernelTranscriptEvent, KernelTranscriptSurface};
 pub use types::{
-    KernelCommitments, KernelStepAux, SimpleKernelError, SimpleKernelOutput, SimpleKernelProof,
-    SimpleKernelProverInput, SimpleKernelPublicInput, SimpleKernelVerifierInput, SimpleKernelWitness,
+    KernelCommitments, KernelExecutionRelationWitness, KernelReadWitness, KernelShiftWitness, KernelStepAux,
+    KernelTwistWitness, SimpleKernelError, SimpleKernelOutput, SimpleKernelProof, SimpleKernelProverInput,
+    SimpleKernelPublicInput, SimpleKernelVerifierInput, SimpleKernelWitness,
 };
 pub(crate) use verify_artifact::{authenticate_kernel_openings, pad_semantic_witness, reconstruct_trace_rows_and_aux};
 pub(crate) use verify_common::{
     assert_manifest_canonical, assert_root_manifest_canonical, batch_values, expect_digest32, expect_equal_k,
     expect_equal_k_slice, find_manifest_claim, replay_sumcheck_unchecked, split_round_groups, verify_sumcheck_known,
 };
+
+pub fn simple_kernel_root_opening_manifest() -> RootOpeningManifest {
+    RootOpeningManifest::new()
+}
+
+pub(crate) fn cycle_bits_and_padded_trace_length_from_row_bindings(
+    row_bindings: &[stage3::RowBindingClaim],
+) -> Result<(usize, usize), SimpleKernelError> {
+    let first = row_bindings.first().ok_or_else(|| {
+        SimpleKernelError::InvalidWitness("kernel proof must contain at least one semantic row".into())
+    })?;
+    let cycle_bits = first.row_bits.len();
+    for row_binding in row_bindings.iter().skip(1) {
+        if row_binding.row_bits.len() != cycle_bits {
+            return Err(SimpleKernelError::InvalidWitness(format!(
+                "row {} has {} row bits, expected {}",
+                row_binding.row_index,
+                row_binding.row_bits.len(),
+                cycle_bits
+            )));
+        }
+    }
+    let padded_trace_length = 1usize.checked_shl(cycle_bits as u32).ok_or_else(|| {
+        SimpleKernelError::InvalidWitness(format!("cycle_bits {cycle_bits} does not fit in padded trace length"))
+    })?;
+    Ok((cycle_bits, padded_trace_length))
+}
 
 struct KernelProgramContext {
     word_count: usize,
@@ -235,15 +292,18 @@ pub fn prove_simple_kernel(
     let active_rows = semantic_rows;
     let stage3_proof = stage3::prove_stage3(&trace_rows, active_rows, cycle_bits, &mut transcript)?;
 
+    let read_openings = kernel_read_opening_surface(&stage1_proof);
+    let twist_openings = kernel_twist_opening_surface(&stage2_proof);
+    let shift_openings = kernel_shift_opening_surface(&stage3_proof);
     let manifest = build_kernel_opening_manifest(
         &aux_data,
         active_rows,
         cycle_bits,
-        &stage1_proof,
-        &stage2_proof,
-        &stage3_proof,
+        &read_openings,
+        &twist_openings,
+        &shift_openings,
     );
-    let root_opening_manifest = RootOpeningManifest::new();
+    let root_opening_manifest = simple_kernel_root_opening_manifest();
     let opening_proofs = KernelOpeningProofSets::build(
         root_params,
         &trace_rows,
@@ -273,12 +333,6 @@ pub fn prove_simple_kernel(
             semantic_rows
         )));
     }
-    let row_projection_summary = build_kernel_row_projection_summary(
-        &manifest,
-        &opening_refinement_summary,
-        &stage3_proof.row_bindings,
-        &input.witness.semantic_trace_rows,
-    )?;
     let prepared_steps: Vec<_> = stage3_proof
         .row_bindings
         .iter()
@@ -288,12 +342,8 @@ pub fn prove_simple_kernel(
         .iter()
         .map(crate::proof::StepInput::instance)
         .collect();
-    let bridge_binding_summary = build_kernel_bridge_binding_summary(
-        &manifest,
-        &opening_refinement_summary,
-        &stage3_proof.row_bindings,
-        &prepared_steps,
-    )?;
+    let bridge_chunk_proof =
+        build_chip8_bridge_chunk_proof_bundle(&manifest, &opening_refinement_summary, &stage3_proof.row_bindings)?;
     let joint_opening_fold_bucket_proofs =
         build_kernel_joint_opening_fold_bucket_proofs(meta_pub.padded_trace_length, &joint_opening_summary)?;
     emit_kernel_opening_artifacts_to_transcript(
@@ -306,19 +356,6 @@ pub fn prove_simple_kernel(
         &joint_opening_fold_bucket_proofs,
         commitment_sets.exact_opening_artifacts(&opening_proofs),
     )?;
-    let semantic_evidence_summary = build_kernel_semantic_evidence_summary(KernelSemanticEvidenceInputs {
-        stage1: &stage1_proof,
-        stage2: &stage2_proof,
-        stage3: &stage3_proof,
-        kernel_opening_manifest: &manifest,
-        root_opening_manifest: &root_opening_manifest,
-        time_opening_summary: &time_opening_summary,
-        opening_refinement_summary: &opening_refinement_summary,
-        joint_opening_summary: &joint_opening_summary,
-        joint_opening_fold_bucket_proofs: &joint_opening_fold_bucket_proofs,
-        row_projection_summary: &row_projection_summary,
-        bridge_binding_summary: &bridge_binding_summary,
-    })?;
 
     let KernelCommitmentSets {
         lane_commitments,
@@ -355,9 +392,6 @@ pub fn prove_simple_kernel(
         kernel_opening_manifest: manifest.clone(),
         root_opening_manifest: root_opening_manifest.clone(),
         joint_opening_fold_bucket_proofs: joint_opening_fold_bucket_proofs.clone(),
-        row_projection_summary: row_projection_summary.clone(),
-        bridge_binding_summary: bridge_binding_summary.clone(),
-        semantic_evidence_summary: semantic_evidence_summary.clone(),
     };
 
     let proof = SimpleKernelProof {
@@ -395,9 +429,7 @@ pub fn prove_simple_kernel(
         opening_refinement_summary,
         joint_opening_summary,
         joint_opening_fold_bucket_proofs,
-        row_projection_summary,
-        bridge_binding_summary,
-        semantic_evidence_summary,
+        bridge_chunk_proof,
         time_opening_summary,
     };
 
@@ -565,13 +597,16 @@ pub fn verify_simple_kernel(
         &program_context.alu_table,
         &program_context.eq4_table,
     )?;
+    let read_openings = kernel_read_opening_surface(&proof.stage1);
+    let twist_openings = kernel_twist_opening_surface(&proof.stage2);
+    let shift_openings = kernel_shift_opening_surface(&proof.stage3);
     let expected_kernel_manifest = build_kernel_opening_manifest(
         &aux_data,
         semantic_rows,
         cycle_bits,
-        &proof.stage1,
-        &proof.stage2,
-        &proof.stage3,
+        &read_openings,
+        &twist_openings,
+        &shift_openings,
     );
     expect_digest32(
         proof.kernel_opening_manifest.digest,
@@ -589,19 +624,11 @@ pub fn verify_simple_kernel(
         .iter()
         .map(crate::proof::StepInput::instance)
         .collect();
-    verify_kernel_row_projection_summary(
+    verify_chip8_bridge_chunk_proof_bundle(
         &proof.kernel_opening_manifest,
         &proof.opening_refinement_summary,
         &proof.stage3.row_bindings,
-        &trace_rows[..semantic_rows],
-        &proof.row_projection_summary,
-    )?;
-    verify_kernel_bridge_binding_summary(
-        &proof.kernel_opening_manifest,
-        &proof.opening_refinement_summary,
-        &proof.stage3.row_bindings,
-        &prepared_steps,
-        &proof.bridge_binding_summary,
+        &proof.bridge_chunk_proof,
     )?;
     emit_kernel_opening_artifacts_to_transcript(
         &mut transcript,
@@ -613,22 +640,6 @@ pub fn verify_simple_kernel(
         &proof.joint_opening_fold_bucket_proofs,
         proof_exact_opening_artifacts(proof),
     )?;
-    verify_kernel_semantic_evidence_summary(
-        KernelSemanticEvidenceInputs {
-            stage1: &proof.stage1,
-            stage2: &proof.stage2,
-            stage3: &proof.stage3,
-            kernel_opening_manifest: &proof.kernel_opening_manifest,
-            root_opening_manifest: &proof.root_opening_manifest,
-            time_opening_summary: &proof.time_opening_summary,
-            opening_refinement_summary: &proof.opening_refinement_summary,
-            joint_opening_summary: &proof.joint_opening_summary,
-            joint_opening_fold_bucket_proofs: &proof.joint_opening_fold_bucket_proofs,
-            row_projection_summary: &proof.row_projection_summary,
-            bridge_binding_summary: &proof.bridge_binding_summary,
-        },
-        &proof.semantic_evidence_summary,
-    )?;
 
     Ok(SimpleKernelOutput {
         prepared_steps,
@@ -636,8 +647,19 @@ pub fn verify_simple_kernel(
         kernel_opening_manifest: proof.kernel_opening_manifest.clone(),
         root_opening_manifest: proof.root_opening_manifest.clone(),
         joint_opening_fold_bucket_proofs: proof.joint_opening_fold_bucket_proofs.clone(),
-        row_projection_summary: proof.row_projection_summary.clone(),
-        bridge_binding_summary: proof.bridge_binding_summary.clone(),
-        semantic_evidence_summary: proof.semantic_evidence_summary.clone(),
     })
+}
+
+pub fn build_chip8_bridge_final_state_from_bridge_source(
+    manifest: &KernelOpeningManifest,
+    row_bindings: &[stage3::RowBindingClaim],
+    opening_refinement_summary: &KernelOpeningRefinementSummary,
+) -> Result<[u8; 32], SimpleKernelError> {
+    if row_bindings.is_empty() {
+        return Err(SimpleKernelError::BridgeFailed(
+            "bridge source must contain at least one row".into(),
+        ));
+    }
+    let bridge_row_auths = build_kernel_bridge_row_auths(manifest, &opening_refinement_summary, row_bindings)?;
+    build_chip8_bridge_final_state_from_auths(&bridge_row_auths, row_bindings)
 }

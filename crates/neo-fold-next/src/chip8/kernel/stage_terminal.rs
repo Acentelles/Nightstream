@@ -16,9 +16,15 @@ const ROM_ADDR_BITS: usize = 11;
 const ADDR_REG_BITS: usize = 5;
 const ADDR_RAM_BITS: usize = 13;
 
-pub(crate) use stage1::verify_kernel_stage1_sumcheck_terminals;
-pub(crate) use stage2::verify_kernel_stage2_sumcheck_terminals;
-pub(crate) use stage3::verify_kernel_stage3_sumcheck_terminal;
+pub(crate) use stage1::{
+    verify_kernel_stage1_sumcheck_terminals, verify_kernel_stage1_sumcheck_terminals_from_execution,
+};
+pub(crate) use stage2::{
+    verify_kernel_stage2_sumcheck_terminals, verify_kernel_stage2_sumcheck_terminals_from_execution,
+};
+pub(crate) use stage3::{
+    verify_kernel_stage3_sumcheck_terminal, verify_kernel_stage3_sumcheck_terminal_from_execution,
+};
 
 fn sample_k<Tr: Transcript>(tr: &mut Tr, label: &'static [u8]) -> K {
     let c0 = tr.challenge_field(label);

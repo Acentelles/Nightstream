@@ -18,8 +18,9 @@ use super::common::{
     mle_eval_flat_k_at_point_be, partial_eval_flat_k_at_addr_be, prove_address_correctness,
     prove_cycle_product_relation, read_port_claim, squeeze_k, squeeze_point, stage2_address_claims, write_port_claim,
 };
-use super::proof::{AddressCorrectnessProof, CycleProductProof, Stage2TwistProof};
+use super::proof::{AddressCorrectnessProof, CycleProductProof, Stage2RegisterExecutionProof};
 use super::transcript::verify_stage2_address_correctness_transcript;
+use super::Stage2DerivedExecutionSurface;
 
 pub(crate) struct Stage2RegisterProofArtifacts {
     pub gamma_reg: K,
@@ -229,89 +230,93 @@ pub(crate) fn prove_register_subsystem<Tr: Transcript>(
     })
 }
 
-pub(crate) fn verify_register_subsystem<Tr: Transcript>(
-    proof: &Stage2TwistProof,
+pub(crate) fn verify_register_execution<Tr: Transcript>(
+    register: &Stage2RegisterExecutionProof,
+    surface: &Stage2DerivedExecutionSurface,
     initial_registers: &[u8; 16],
     initial_i: u16,
     cycle_bits: usize,
     transcript: &mut Tr,
 ) -> Result<(), SimpleKernelError> {
-    let lane = &proof.lane_values_at_twist;
-    let handoff = &proof.handoff_values_at_twist;
+    let lane = &surface.lane_values_at_twist;
+    let handoff = &surface.handoff_values_at_twist;
 
     let expected_gamma_reg = squeeze_k(transcript, b"stage2/gamma_reg");
-    if proof.gamma_reg != expected_gamma_reg {
+    if surface.gamma_reg != expected_gamma_reg {
         return Err(SimpleKernelError::OpeningFailed("stage2 gamma_reg mismatch".into()));
     }
-    let reg_rw_claim = proof.link_claims.wv_reg
-        + proof.gamma_reg * proof.link_claims.rv_x
-        + proof.gamma_reg * proof.gamma_reg * proof.link_claims.rv_y
-        + proof.gamma_reg * proof.gamma_reg * proof.gamma_reg * proof.link_claims.rv_i;
+    let reg_rw_claim = surface.link_claims.wv_reg
+        + surface.gamma_reg * surface.link_claims.rv_x
+        + surface.gamma_reg * surface.gamma_reg * surface.link_claims.rv_y
+        + surface.gamma_reg * surface.gamma_reg * surface.gamma_reg * surface.link_claims.rv_i;
     transcript.append_fields(b"stage2/reg_rw_claim", &reg_rw_claim.as_coeffs());
     verify_sumcheck_known(
         transcript,
         3,
         reg_rw_claim,
-        &proof.reg_rw_batched_rounds,
+        &register.reg_rw_batched_rounds,
         "stage2 register read/write",
     )?;
     let expected_reg_addr_point = squeeze_point(transcript, b"stage2/r_addr_reg", ADDR_REG_BITS);
-    if proof.reg_addr_point != expected_reg_addr_point {
+    if surface.reg_addr_point != expected_reg_addr_point {
         return Err(SimpleKernelError::OpeningFailed(
             "stage2 reg addr point mismatch".into(),
         ));
     }
-    let reg_init_at_point = mle_eval_fk_be(&initial_reg_values(initial_registers, initial_i), &proof.reg_addr_point);
-    if proof.reg_val_at_point - reg_init_at_point != proof.reg_val_from_inc_claim {
+    let reg_init_at_point = mle_eval_fk_be(
+        &initial_reg_values(initial_registers, initial_i),
+        &surface.reg_addr_point,
+    );
+    if surface.reg_val_at_point - reg_init_at_point != surface.reg_val_from_inc_claim {
         return Err(SimpleKernelError::OpeningFailed(
             "stage2 register val-from-inc anchor mismatch".into(),
         ));
     }
-    transcript.append_fields(b"stage2/reg_val_inc_claim", &proof.reg_val_from_inc_claim.as_coeffs());
+    transcript.append_fields(b"stage2/reg_val_inc_claim", &surface.reg_val_from_inc_claim.as_coeffs());
     verify_sumcheck_known(
         transcript,
         3,
-        proof.reg_val_from_inc_claim,
-        &proof.reg_val_from_inc_rounds,
+        surface.reg_val_from_inc_claim,
+        &register.reg_val_from_inc_rounds,
         "stage2 register val-from-inc",
     )?;
     transcript.append_fields(
         b"stage2/reg_ra_y_target/claim",
-        &proof.reg_ra_y_target_proof.claim.as_coeffs(),
+        &surface.reg_ra_y_target_claim.as_coeffs(),
     );
     verify_sumcheck_known(
         transcript,
         3,
-        proof.reg_ra_y_target_proof.claim,
-        &proof.reg_ra_y_target_proof.rounds,
+        surface.reg_ra_y_target_claim,
+        &register.reg_ra_y_target_rounds,
         "stage2 register ra_y target",
     )?;
     transcript.append_fields(
         b"stage2/reg_wa_x_addr_target/claim",
-        &proof.reg_wa_addr_target_proof.claim.as_coeffs(),
+        &surface.reg_wa_addr_target_claim.as_coeffs(),
     );
     verify_sumcheck_known(
         transcript,
         3,
-        proof.reg_wa_addr_target_proof.claim,
-        &proof.reg_wa_addr_target_proof.rounds,
+        surface.reg_wa_addr_target_claim,
+        &register.reg_wa_addr_target_rounds,
         "stage2 register wa-address target",
     )?;
-    let reg_wa_mapped_claim = proof.reg_wa_addr_target_proof.claim + lane[9] * K::from(F::from_u64(16u64));
+    let reg_wa_mapped_claim = surface.reg_wa_addr_target_claim + lane[9] * K::from(F::from_u64(16u64));
     let (mapped_reg_claims, raw_reg_claims, _, _) = stage2_address_claims(
         lane,
         handoff,
-        proof.reg_ra_y_target_proof.claim,
+        surface.reg_ra_y_target_claim,
         reg_wa_mapped_claim,
         K::ZERO,
         K::ZERO,
     );
-    if proof.reg_addr_correctness.len() != 4 {
+    if register.reg_addr_correctness.len() != 4 {
         return Err(SimpleKernelError::SumcheckFailed(
             "stage2 register address correctness proof count must be 4".into(),
         ));
     }
-    for (idx, addr_proof) in proof.reg_addr_correctness.iter().enumerate() {
+    for (idx, addr_proof) in register.reg_addr_correctness.iter().enumerate() {
         verify_stage2_address_correctness_transcript(
             transcript,
             addr_proof,
@@ -323,6 +328,26 @@ pub(crate) fn verify_register_subsystem<Tr: Transcript>(
         )?;
     }
     Ok(())
+}
+
+pub(crate) fn reconstruct_reg_value_at_point(
+    aux: &[KernelStepAux],
+    initial_registers: &[u8; 16],
+    initial_i: u16,
+    cycle_bits: usize,
+    cycle_point: &[K],
+    reg_addr_point: &[K],
+) -> K {
+    let trace_len = 1usize << cycle_bits;
+    let reg_val = compute_reg_val(trace_len, aux, initial_registers, initial_i);
+    let mut reg_val_flat = vec![K::ZERO; (1usize << ADDR_REG_BITS) * trace_len];
+    for (addr, addr_values) in reg_val.iter().enumerate() {
+        let base = addr * trace_len;
+        for (cycle, &value) in addr_values.iter().enumerate() {
+            reg_val_flat[base + cycle] = K::from(value);
+        }
+    }
+    mle_eval_flat_k_at_point_be(&reg_val_flat, reg_addr_point, cycle_point, trace_len)
 }
 
 fn initial_reg_values(initial_registers: &[u8; 16], initial_i: u16) -> Vec<F> {

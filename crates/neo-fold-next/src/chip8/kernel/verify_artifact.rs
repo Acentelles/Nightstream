@@ -16,7 +16,9 @@ use crate::chip8::tables::{
 use crate::chip8::{
     stage1::{DECODE_HANDOFF_POLY_IDS, STAGE1_LANE_OPEN_COLS},
     stage2::{RAM_TWIST_POLY_IDS, REG_TWIST_POLY_IDS, STAGE2_LANE_OPEN_COLS},
-    stage3::{RowBindingClaim, STAGE3_FINAL_BOUNDARY_COLS, STAGE3_SHIFT_OPEN_COLS, STAGE3_START_BOUNDARY_COLS},
+    stage3::{
+        RowBindingClaim, Stage3Proof, STAGE3_FINAL_BOUNDARY_COLS, STAGE3_SHIFT_OPEN_COLS, STAGE3_START_BOUNDARY_COLS,
+    },
 };
 
 use super::artifacts::build_semantic_row_from_row_binding;
@@ -161,33 +163,57 @@ pub(crate) fn authenticate_kernel_openings(
     alu_table: &[F],
     eq4_table: &[F],
 ) -> Result<(), SimpleKernelError> {
-    let manifest = &proof.kernel_opening_manifest;
+    authenticate_kernel_openings_from_execution(
+        &proof.stage1,
+        &proof.stage2,
+        &proof.stage3,
+        &proof.kernel_opening_manifest,
+        trace_rows,
+        aux,
+        rom_table,
+        decode_table,
+        alu_table,
+        eq4_table,
+    )
+}
 
-    let stage1_lane = lane_values_at_point(trace_rows, &STAGE1_LANE_OPEN_COLS, &proof.stage1.cycle_point);
+pub(crate) fn authenticate_kernel_openings_from_execution(
+    stage1: &crate::chip8::stage1::Stage1ShoutProof,
+    stage2: &crate::chip8::stage2::Stage2TwistProof,
+    stage3: &Stage3Proof,
+    manifest: &KernelOpeningManifest,
+    trace_rows: &[[F; WITNESS_WIDTH]],
+    aux: &[KernelStepAux],
+    rom_table: &[F],
+    decode_table: &[Vec<F>],
+    alu_table: &[F],
+    eq4_table: &[F],
+) -> Result<(), SimpleKernelError> {
+    let stage1_lane = lane_values_at_point(trace_rows, &STAGE1_LANE_OPEN_COLS, &stage1.cycle_point);
     expect_equal_k_slice(
-        &proof.stage1.lane_values_at_lookup,
+        &stage1.lane_values_at_lookup,
         &stage1_lane,
         "stage1 lane opening values",
     )?;
     authenticate_manifest_values(
         manifest,
         CommitmentId::Lane,
-        &proof.stage1.cycle_point,
+        &stage1.cycle_point,
         &lane_poly_ids(&STAGE1_LANE_OPEN_COLS),
         &stage1_lane,
         "stage1 lane opening",
     )?;
 
-    let stage1_handoff = decode_handoff_values_at_point(aux, &proof.stage1.cycle_point);
+    let stage1_handoff = decode_handoff_values_at_point(aux, &stage1.cycle_point);
     expect_equal_k_slice(
-        &proof.stage1.decode_handoff_values,
+        &stage1.decode_handoff_values,
         &stage1_handoff,
         "stage1 decode handoff values",
     )?;
     authenticate_manifest_values(
         manifest,
         CommitmentId::DecodeHandoff,
-        &proof.stage1.cycle_point,
+        &stage1.cycle_point,
         &DECODE_HANDOFF_POLY_IDS,
         &stage1_handoff,
         "stage1 decode handoff opening",
@@ -204,92 +230,76 @@ pub(crate) fn authenticate_kernel_openings(
     let ram_ra_addrs: Vec<_> = aux.iter().map(|step| step.ram_ra_addr).collect();
     let ram_wa_addrs: Vec<_> = aux.iter().map(|step| step.ram_wa_addr).collect();
 
-    let fetch_ra = open_onehot_at_point_be(
-        &fetch_addrs,
-        &proof.stage1.fetch_proof.addr_point,
-        &proof.stage1.cycle_point,
-    );
+    let fetch_ra = open_onehot_at_point_be(&fetch_addrs, &stage1.fetch_proof.addr_point, &stage1.cycle_point);
     expect_equal_k(
-        proof.stage1.fetch_proof.address_opening_value,
+        stage1.fetch_proof.address_opening_value,
         fetch_ra,
         "stage1 fetch address opening value",
     )?;
     authenticate_manifest_values(
         manifest,
         CommitmentId::FetchRa,
-        &concat_points(&proof.stage1.fetch_proof.addr_point, &proof.stage1.cycle_point),
+        &concat_points(&stage1.fetch_proof.addr_point, &stage1.cycle_point),
         &[0],
         &[fetch_ra],
         "stage1 fetch address opening",
     )?;
 
-    let decode_ra = open_onehot_at_point_be(
-        &decode_addrs,
-        &proof.stage1.decode_proof.addr_point,
-        &proof.stage1.cycle_point,
-    );
+    let decode_ra = open_onehot_at_point_be(&decode_addrs, &stage1.decode_proof.addr_point, &stage1.cycle_point);
     expect_equal_k(
-        proof.stage1.decode_proof.address_opening_value,
+        stage1.decode_proof.address_opening_value,
         decode_ra,
         "stage1 decode address opening value",
     )?;
     authenticate_manifest_values(
         manifest,
         CommitmentId::DecodeRa,
-        &concat_points(&proof.stage1.decode_proof.addr_point, &proof.stage1.cycle_point),
+        &concat_points(&stage1.decode_proof.addr_point, &stage1.cycle_point),
         &[0],
         &[decode_ra],
         "stage1 decode address opening",
     )?;
 
-    let alu_ra = open_onehot_at_point_be(
-        &alu_addrs,
-        &proof.stage1.alu_proof.addr_point,
-        &proof.stage1.cycle_point,
-    );
+    let alu_ra = open_onehot_at_point_be(&alu_addrs, &stage1.alu_proof.addr_point, &stage1.cycle_point);
     expect_equal_k(
-        proof.stage1.alu_proof.address_opening_value,
+        stage1.alu_proof.address_opening_value,
         alu_ra,
         "stage1 ALU address opening value",
     )?;
     authenticate_manifest_values(
         manifest,
         CommitmentId::AluRa,
-        &concat_points(&proof.stage1.alu_proof.addr_point, &proof.stage1.cycle_point),
+        &concat_points(&stage1.alu_proof.addr_point, &stage1.cycle_point),
         &[0],
         &[alu_ra],
         "stage1 ALU address opening",
     )?;
 
-    let eq4_ra = open_onehot_at_point_be(
-        &eq4_addrs,
-        &proof.stage1.eq4_proof.addr_point,
-        &proof.stage1.cycle_point,
-    );
+    let eq4_ra = open_onehot_at_point_be(&eq4_addrs, &stage1.eq4_proof.addr_point, &stage1.cycle_point);
     expect_equal_k(
-        proof.stage1.eq4_proof.address_opening_value,
+        stage1.eq4_proof.address_opening_value,
         eq4_ra,
         "stage1 Eq4 address opening value",
     )?;
     authenticate_manifest_values(
         manifest,
         CommitmentId::Eq4Ra,
-        &concat_points(&proof.stage1.eq4_proof.addr_point, &proof.stage1.cycle_point),
+        &concat_points(&stage1.eq4_proof.addr_point, &stage1.cycle_point),
         &[0],
         &[eq4_ra],
         "stage1 Eq4 address opening",
     )?;
 
-    let rom_open = vec![mle_eval_vec_be(rom_table, &proof.stage1.fetch_proof.addr_point)];
+    let rom_open = vec![mle_eval_vec_be(rom_table, &stage1.fetch_proof.addr_point)];
     expect_equal_k_slice(
-        &proof.stage1.fetch_proof.table_opening_values,
+        &stage1.fetch_proof.table_opening_values,
         &rom_open,
         "stage1 ROM table opening values",
     )?;
     authenticate_manifest_values(
         manifest,
         CommitmentId::RomTable,
-        &proof.stage1.fetch_proof.addr_point,
+        &stage1.fetch_proof.addr_point,
         &[0],
         &rom_open,
         "stage1 ROM table opening",
@@ -297,10 +307,10 @@ pub(crate) fn authenticate_kernel_openings(
 
     let decode_open: Vec<_> = decode_table
         .iter()
-        .map(|column| mle_eval_vec_be(column, &proof.stage1.decode_proof.addr_point))
+        .map(|column| mle_eval_vec_be(column, &stage1.decode_proof.addr_point))
         .collect();
     expect_equal_k_slice(
-        &proof.stage1.decode_proof.table_opening_values,
+        &stage1.decode_proof.table_opening_values,
         &decode_open,
         "stage1 decode table opening values",
     )?;
@@ -308,67 +318,63 @@ pub(crate) fn authenticate_kernel_openings(
     authenticate_manifest_values(
         manifest,
         CommitmentId::DecodeTable,
-        &proof.stage1.decode_proof.addr_point,
+        &stage1.decode_proof.addr_point,
         &decode_poly_ids,
         &decode_open,
         "stage1 decode table opening",
     )?;
 
-    let alu_table_open = vec![mle_eval_vec_be(alu_table, &proof.stage1.alu_proof.addr_point[2..])];
+    let alu_table_open = vec![mle_eval_vec_be(alu_table, &stage1.alu_proof.addr_point[2..])];
     expect_equal_k_slice(
-        &proof.stage1.alu_proof.table_opening_values,
+        &stage1.alu_proof.table_opening_values,
         &alu_table_open,
         "stage1 ALU table opening values",
     )?;
     authenticate_manifest_values(
         manifest,
         CommitmentId::AluTable,
-        &proof.stage1.alu_proof.addr_point[2..],
+        &stage1.alu_proof.addr_point[2..],
         &[0],
         &alu_table_open,
         "stage1 ALU table opening",
     )?;
 
-    let eq4_table_open = vec![mle_eval_vec_be(eq4_table, &proof.stage1.eq4_proof.addr_point)];
+    let eq4_table_open = vec![mle_eval_vec_be(eq4_table, &stage1.eq4_proof.addr_point)];
     expect_equal_k_slice(
-        &proof.stage1.eq4_proof.table_opening_values,
+        &stage1.eq4_proof.table_opening_values,
         &eq4_table_open,
         "stage1 Eq4 table opening values",
     )?;
     authenticate_manifest_values(
         manifest,
         CommitmentId::Eq4Table,
-        &proof.stage1.eq4_proof.addr_point,
+        &stage1.eq4_proof.addr_point,
         &[0],
         &eq4_table_open,
         "stage1 Eq4 table opening",
     )?;
 
-    let stage2_lane = lane_values_at_point(trace_rows, &STAGE2_LANE_OPEN_COLS, &proof.stage2.cycle_point);
-    expect_equal_k_slice(
-        &proof.stage2.lane_values_at_twist,
-        &stage2_lane,
-        "stage2 lane opening values",
-    )?;
+    let stage2_lane = lane_values_at_point(trace_rows, &STAGE2_LANE_OPEN_COLS, &stage2.cycle_point);
+    expect_equal_k_slice(&stage2.lane_values_at_twist, &stage2_lane, "stage2 lane opening values")?;
     authenticate_manifest_values(
         manifest,
         CommitmentId::Lane,
-        &proof.stage2.cycle_point,
+        &stage2.cycle_point,
         &lane_poly_ids(&STAGE2_LANE_OPEN_COLS),
         &stage2_lane,
         "stage2 lane opening",
     )?;
 
-    let stage2_handoff = decode_handoff_values_at_point(aux, &proof.stage2.cycle_point);
+    let stage2_handoff = decode_handoff_values_at_point(aux, &stage2.cycle_point);
     expect_equal_k_slice(
-        &proof.stage2.handoff_values_at_twist,
+        &stage2.handoff_values_at_twist,
         &stage2_handoff,
         "stage2 decode handoff values",
     )?;
     authenticate_manifest_values(
         manifest,
         CommitmentId::DecodeHandoff,
-        &proof.stage2.cycle_point,
+        &stage2.cycle_point,
         &DECODE_HANDOFF_POLY_IDS,
         &stage2_handoff,
         "stage2 decode handoff opening",
@@ -377,17 +383,17 @@ pub(crate) fn authenticate_kernel_openings(
     let reg_open = vec![
         mle_eval_vec(
             &aux.iter().map(|step| step.reg_inc).collect::<Vec<_>>(),
-            &proof.stage2.cycle_point,
+            &stage2.cycle_point,
         ),
-        open_onehot_at_point_be(&reg_ra_x_addrs, &proof.stage2.reg_addr_point, &proof.stage2.cycle_point),
-        open_onehot_at_point_be(&reg_ra_y_addrs, &proof.stage2.reg_addr_point, &proof.stage2.cycle_point),
-        open_onehot_at_point_be(&reg_ra_i_addrs, &proof.stage2.reg_addr_point, &proof.stage2.cycle_point),
-        open_onehot_at_point_be(&reg_wa_addrs, &proof.stage2.reg_addr_point, &proof.stage2.cycle_point),
+        open_onehot_at_point_be(&reg_ra_x_addrs, &stage2.reg_addr_point, &stage2.cycle_point),
+        open_onehot_at_point_be(&reg_ra_y_addrs, &stage2.reg_addr_point, &stage2.cycle_point),
+        open_onehot_at_point_be(&reg_ra_i_addrs, &stage2.reg_addr_point, &stage2.cycle_point),
+        open_onehot_at_point_be(&reg_wa_addrs, &stage2.reg_addr_point, &stage2.cycle_point),
     ];
     authenticate_manifest_values(
         manifest,
         CommitmentId::RegTwist,
-        &concat_points(&proof.stage2.reg_addr_point, &proof.stage2.cycle_point),
+        &concat_points(&stage2.reg_addr_point, &stage2.cycle_point),
         &REG_TWIST_POLY_IDS,
         &reg_open,
         "stage2 register twist opening",
@@ -396,44 +402,40 @@ pub(crate) fn authenticate_kernel_openings(
     let ram_open = vec![
         mle_eval_vec(
             &aux.iter().map(|step| step.ram_inc).collect::<Vec<_>>(),
-            &proof.stage2.cycle_point,
+            &stage2.cycle_point,
         ),
-        open_onehot_at_point_be(&ram_ra_addrs, &proof.stage2.ram_addr_point, &proof.stage2.cycle_point),
-        open_onehot_at_point_be(&ram_wa_addrs, &proof.stage2.ram_addr_point, &proof.stage2.cycle_point),
+        open_onehot_at_point_be(&ram_ra_addrs, &stage2.ram_addr_point, &stage2.cycle_point),
+        open_onehot_at_point_be(&ram_wa_addrs, &stage2.ram_addr_point, &stage2.cycle_point),
     ];
     authenticate_manifest_values(
         manifest,
         CommitmentId::RamTwist,
-        &concat_points(&proof.stage2.ram_addr_point, &proof.stage2.cycle_point),
+        &concat_points(&stage2.ram_addr_point, &stage2.cycle_point),
         &RAM_TWIST_POLY_IDS,
         &ram_open,
         "stage2 RAM twist opening",
     )?;
 
-    let stage3_shift = lane_values_at_point(
-        trace_rows,
-        &STAGE3_SHIFT_OPEN_COLS,
-        &proof.stage3.shift_proof.source_point,
-    );
+    let stage3_shift = lane_values_at_point(trace_rows, &STAGE3_SHIFT_OPEN_COLS, &stage3.shift_proof.source_point);
     expect_equal_k_slice(
-        &proof.stage3.shift_opening_values,
+        &stage3.shift_opening_values,
         &stage3_shift,
         "stage3 shift opening values",
     )?;
     authenticate_manifest_values(
         manifest,
         CommitmentId::Lane,
-        &proof.stage3.shift_proof.source_point,
+        &stage3.shift_proof.source_point,
         &lane_poly_ids(&STAGE3_SHIFT_OPEN_COLS),
         &stage3_shift,
         "stage3 shift opening",
     )?;
 
-    let cycle_bits = proof.stage3.shift_proof.source_point.len();
+    let cycle_bits = stage3.shift_proof.source_point.len();
     let start_point = vec![K::ZERO; cycle_bits];
     let stage3_start = lane_values_at_point(trace_rows, &STAGE3_START_BOUNDARY_COLS, &start_point);
     expect_equal_k_slice(
-        &proof.stage3.start_boundary_values,
+        &stage3.start_boundary_values,
         &stage3_start,
         "stage3 start-boundary values",
     )?;
@@ -446,10 +448,10 @@ pub(crate) fn authenticate_kernel_openings(
         "stage3 start-boundary opening",
     )?;
 
-    let final_point = bits_point(proof.stage3.row_bindings.len() - 1, cycle_bits);
+    let final_point = bits_point(stage3.row_bindings.len() - 1, cycle_bits);
     let stage3_final = lane_values_at_point(trace_rows, &STAGE3_FINAL_BOUNDARY_COLS, &final_point);
     expect_equal_k_slice(
-        &proof.stage3.final_boundary_values,
+        &stage3.final_boundary_values,
         &stage3_final,
         "stage3 final-boundary values",
     )?;

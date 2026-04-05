@@ -10,8 +10,8 @@ use crate::chip8::spec::{COL_BURST_LAST, COL_IS_MEMOP, COL_PC, COL_PC_NEXT, COL_
 
 use super::{
     build_shifted_batched_col, compute_shift_value, eval_pair_mask, excluded_current_tail, excluded_shift_tail,
-    index_to_bits_le, mle_eval_fk, squeeze_k, squeeze_point, LaneShiftOracle, LaneShiftProof, RowBindingClaim,
-    Stage3Proof,
+    index_to_bits_le, mle_eval_fk, sample_stage3_challenges, squeeze_k, LaneShiftOracle, LaneShiftProof,
+    RowBindingClaim, Stage3Proof,
 };
 
 /// Prove Stage 3: LaneShift reduction, continuity check, start-boundary, row-binding.
@@ -34,9 +34,10 @@ pub fn prove_stage3<Tr: Transcript>(
         )));
     }
 
-    let beta1 = squeeze_k(transcript, b"stage3/beta1");
-    let beta2 = squeeze_k(transcript, b"stage3/beta2");
-    let r_shift = squeeze_point(transcript, b"stage3/r_shift", cycle_bits);
+    let challenges = sample_stage3_challenges(transcript, cycle_bits);
+    let beta1 = challenges.beta1;
+    let beta2 = challenges.beta2;
+    let r_shift = challenges.shift_point;
     let eq = crate::chip8::poly::build_eq_table(&r_shift);
 
     let shift_pc = compute_shift_value(trace_rows, COL_PC, &eq, t);

@@ -155,23 +155,35 @@ pub fn prove_stage2<Tr: Transcript>(
     let reg_y = lane_values_at_twist[1];
     let i_reg = lane_values_at_twist[3];
 
-    let linkage_terms = [
-        reg_proof.rv_x_claim - reg_x,
-        reg_proof.rv_y_claim - reg_y,
-        reg_proof.rv_i_claim - i_reg,
-        reg_proof.wv_reg_claim - (reg_write_x_target_proof.claim + reg_write_i_target_proof.claim),
-        ram_proof.rv_ram_claim - ram_read_target_proof.claim,
-        ram_proof.wv_ram_claim - ram_write_target_proof.claim,
-        ram_write_matches_x_zero_proof.claim,
-        ram_idle_mem_zero_proof.claim,
-    ];
-    let mut linkage_batch_value = K::ZERO;
-    let mut gamma_power = K::ONE;
-    for term in linkage_terms {
-        linkage_batch_value += gamma_power * term;
-        gamma_power *= gamma_twist_link;
-    }
+    let linkage_batch_value = super::compute_linkage_batch_value(
+        &Stage2LinkClaims {
+            rv_x: reg_proof.rv_x_claim,
+            rv_y: reg_proof.rv_y_claim,
+            rv_i: reg_proof.rv_i_claim,
+            wv_reg: reg_proof.wv_reg_claim,
+            rv_ram: ram_proof.rv_ram_claim,
+            wv_ram: ram_proof.wv_ram_claim,
+        },
+        gamma_twist_link,
+        &reg_write_x_target_proof,
+        &reg_write_i_target_proof,
+        &ram_read_target_proof,
+        &ram_write_target_proof,
+        &ram_write_matches_x_zero_proof,
+        &ram_idle_mem_zero_proof,
+        &lane_values_at_twist,
+    );
     if linkage_batch_value != K::ZERO {
+        let linkage_terms = [
+            reg_proof.rv_x_claim - reg_x,
+            reg_proof.rv_y_claim - reg_y,
+            reg_proof.rv_i_claim - i_reg,
+            reg_proof.wv_reg_claim - (reg_write_x_target_proof.claim + reg_write_i_target_proof.claim),
+            ram_proof.rv_ram_claim - ram_read_target_proof.claim,
+            ram_proof.wv_ram_claim - ram_write_target_proof.claim,
+            ram_write_matches_x_zero_proof.claim,
+            ram_idle_mem_zero_proof.claim,
+        ];
         let failing_terms: Vec<usize> = linkage_terms
             .iter()
             .enumerate()
