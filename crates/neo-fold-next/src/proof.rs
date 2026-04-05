@@ -418,7 +418,6 @@ impl PublicStatement {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FinalProof {
     pub session: RunProof,
-    pub statement_digest: [u8; 32],
     pub proof_digest: [u8; 32],
 }
 

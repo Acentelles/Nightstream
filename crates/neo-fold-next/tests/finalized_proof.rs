@@ -180,3 +180,39 @@ fn packaged_proof_rejects_tampered_statement() {
         .expect_err("tampered packaged proof must fail");
     assert!(format!("{err}").contains("final statement digest"));
 }
+
+#[test]
+fn packaged_proof_rejects_swapped_self_consistent_statement() {
+    let params = NeoParams::goldilocks_auto_r1cs_ccs(D).expect("params");
+    let ccs = identity_ccs(D);
+    let log = ToyModule;
+
+    let packaged_a = prove_and_package(
+        FoldingMode::Optimized,
+        FoldSchedule::RowsPerChunk(1),
+        &params,
+        &ccs,
+        vec![make_step(&log, 17, "step0"), make_step(&log, 41, "step1")],
+        &log,
+        mixers(),
+    )
+    .expect("prove packaged run A");
+
+    let packaged_b = prove_and_package(
+        FoldingMode::Optimized,
+        FoldSchedule::RowsPerChunk(1),
+        &params,
+        &ccs,
+        vec![make_step(&log, 19, "step0"), make_step(&log, 43, "step1")],
+        &log,
+        mixers(),
+    )
+    .expect("prove packaged run B");
+
+    let mut packaged = packaged_a;
+    packaged.statement = packaged_b.statement;
+
+    let err = verify_packaged(FoldingMode::Optimized, &params, &ccs, &packaged, mixers())
+        .expect_err("swapped self-consistent statement must fail");
+    assert!(format!("{err}").contains("final proof digest"));
+}

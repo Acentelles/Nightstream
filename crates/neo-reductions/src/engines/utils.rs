@@ -417,6 +417,108 @@ where
     Ok(())
 }
 
+/// Validate that replay/prove ME outputs are aligned with their corresponding public inputs.
+pub fn validate_me_outputs_against_inputs<Ff>(
+    s: &CcsStructure<Ff>,
+    params: &NeoParams,
+    mcs_list: &[CcsClaim<Cmt, Ff>],
+    me_inputs: &[CeClaim<Cmt, Ff, K>],
+    me_outputs: &[CeClaim<Cmt, Ff, K>],
+    r_prime: &[K],
+    s_col_prime: &[K],
+) -> Result<(), PiCcsError>
+where
+    Ff: Field + PrimeCharacteristicRing + Copy,
+    K: From<Ff>,
+{
+    let d_pad = D.next_power_of_two();
+    let want_outputs = mcs_list
+        .len()
+        .checked_add(me_inputs.len())
+        .ok_or_else(|| PiCcsError::ProtocolError("mcs_list.len() + me_inputs.len() overflow".into()))?;
+    if me_outputs.len() != want_outputs {
+        return Err(PiCcsError::InvalidInput(format!(
+            "split Π_CCS: me_outputs.len()={}, expected {} (= |mcs_list| + |me_inputs|)",
+            me_outputs.len(),
+            want_outputs
+        )));
+    }
+
+    for (idx, out) in me_outputs.iter().enumerate() {
+        if out.r.as_slice() != r_prime {
+            return Err(PiCcsError::ProtocolError(format!(
+                "split Π_CCS: me_outputs[{idx}].r does not match FE r'"
+            )));
+        }
+        if out.s_col.as_slice() != s_col_prime {
+            return Err(PiCcsError::ProtocolError(format!(
+                "split Π_CCS: me_outputs[{idx}].s_col does not match NC s'"
+            )));
+        }
+        if out.y_zcol.len() != d_pad {
+            return Err(PiCcsError::ProtocolError(format!(
+                "split Π_CCS: me_outputs[{idx}].y_zcol.len()={}, expected {}",
+                out.y_zcol.len(),
+                d_pad
+            )));
+        }
+
+        if idx < mcs_list.len() {
+            let inst = &mcs_list[idx];
+            if out.c != inst.c {
+                return Err(PiCcsError::ProtocolError(format!(
+                    "split Π_CCS: me_outputs[{idx}].c does not match mcs_list[{idx}].c"
+                )));
+            }
+            if out.m_in != inst.m_in {
+                return Err(PiCcsError::ProtocolError(format!(
+                    "split Π_CCS: me_outputs[{idx}].m_in={}, expected {}",
+                    out.m_in, inst.m_in
+                )));
+            }
+            if inst.x.len() != inst.m_in {
+                return Err(PiCcsError::InvalidInput(format!(
+                    "split Π_CCS: mcs_list[{idx}].x.len()={}, expected m_in={}",
+                    inst.x.len(),
+                    inst.m_in
+                )));
+            }
+            if out.X.rows() != D || out.X.cols() != inst.m_in {
+                return Err(PiCcsError::ProtocolError(format!(
+                    "split Π_CCS: me_outputs[{idx}].X shape mismatch (got {}×{}, expected {}×{})",
+                    out.X.rows(),
+                    out.X.cols(),
+                    D,
+                    inst.m_in
+                )));
+            }
+        } else {
+            let me_idx = idx - mcs_list.len();
+            let inp = &me_inputs[me_idx];
+            if out.c != inp.c {
+                return Err(PiCcsError::ProtocolError(format!(
+                    "split Π_CCS: me_outputs[{idx}].c does not match me_inputs[{me_idx}].c"
+                )));
+            }
+            if out.m_in != inp.m_in {
+                return Err(PiCcsError::ProtocolError(format!(
+                    "split Π_CCS: me_outputs[{idx}].m_in={}, expected {}",
+                    out.m_in, inp.m_in
+                )));
+            }
+            if out.X != inp.X {
+                return Err(PiCcsError::ProtocolError(format!(
+                    "split Π_CCS: me_outputs[{idx}].X does not match me_inputs[{me_idx}].X"
+                )));
+            }
+        }
+    }
+
+    validate_ct_constant_term(s, params, me_outputs)?;
+    validate_mcs_output_x_recomposition(params, s.m, mcs_list, me_outputs)?;
+    Ok(())
+}
+
 /// Sample challenges α, β, γ from transcript
 pub fn sample_challenges(tr: &mut Poseidon2Transcript, ell_d: usize, ell: usize) -> Result<Challenges, PiCcsError> {
     tr.append_message(b"neo/ccs/chals/v1", b"");

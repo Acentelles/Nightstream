@@ -7,32 +7,18 @@
 
 use neo_ajtai::Commitment;
 use neo_ccs::traits::SModuleHomomorphism;
-use neo_ccs::{CcsStructure, Mat};
-use neo_math::{F, K};
+use neo_ccs::CcsStructure;
+use neo_math::F;
 use neo_params::NeoParams;
-use neo_reductions::api::{
-    dec_children_with_commit, prove, rlc_with_commit, sample_rot_rhos_n_typed, split_b_matrix_k_with_nonzero_flags,
-    FoldingMode, PiCcsProof, RotRing,
-};
-use neo_reductions::engines::utils;
+use neo_reductions::api::FoldingMode;
 use neo_reductions::error::PiCcsError;
-use neo_reductions::optimized_engine::{optimized_prove_with_cache_and_perf, OptimizedStructureCache};
-use neo_reductions::pi_rlc_dec::OptimizedRlcDec;
+use neo_reductions::optimized_engine::OptimizedStructureCache;
 use neo_transcript::Poseidon2Transcript;
-use p3_field::PrimeCharacteristicRing;
-use std::time::Instant;
 
-use crate::proof::{Carry, ChunkInput, ChunkProof, ChunkProvePerf, ChunkResult, PiDecArtifact, PiRlcArtifact};
+use crate::chunk_relation::compute_chunk_relation_with_perf;
+use crate::proof::{Carry, ChunkInput, ChunkProvePerf, ChunkResult};
 
-#[derive(Clone, Copy)]
-pub struct CommitmentMixers<MR, MB>
-where
-    MR: Fn(&[Mat<F>], &[Commitment]) -> Commitment + Clone + Copy,
-    MB: Fn(&[Commitment], u32) -> Commitment + Clone + Copy,
-{
-    pub mix_rhos_commits: MR,
-    pub combine_b_pows: MB,
-}
+pub use crate::chunk_relation::{ChunkRelationArtifacts, CommitmentMixers};
 
 pub struct ShardProver;
 
@@ -50,7 +36,7 @@ impl ShardProver {
     ) -> Result<ChunkResult, PiCcsError>
     where
         L: SModuleHomomorphism<F, Commitment> + Sync,
-        MR: Fn(&[Mat<F>], &[Commitment]) -> Commitment + Clone + Copy,
+        MR: Fn(&[neo_ccs::Mat<F>], &[Commitment]) -> Commitment + Clone + Copy,
         MB: Fn(&[Commitment], u32) -> Commitment + Clone + Copy,
     {
         Ok(Self::prove_chunk_with_perf(mode, tr, params, s, chunk, incoming_main, log, mixers, optimized_cache)?.0)
@@ -69,288 +55,11 @@ impl ShardProver {
     ) -> Result<(ChunkResult, ChunkProvePerf), PiCcsError>
     where
         L: SModuleHomomorphism<F, Commitment> + Sync,
-        MR: Fn(&[Mat<F>], &[Commitment]) -> Commitment + Clone + Copy,
+        MR: Fn(&[neo_ccs::Mat<F>], &[Commitment]) -> Commitment + Clone + Copy,
         MB: Fn(&[Commitment], u32) -> Commitment + Clone + Copy,
     {
-        let total_started = Instant::now();
-        validate_main_carry("prove_chunk", incoming_main)?;
-        validate_chunk_input(chunk)?;
-        append_chunk_transcript(tr, chunk);
-
-        let prepare_inputs_started = Instant::now();
-        let fresh_claims = chunk
-            .steps
-            .iter()
-            .map(|step| step.mcs.clone())
-            .collect::<Vec<_>>();
-        let fresh_witnesses = chunk
-            .steps
-            .iter()
-            .map(|step| step.witness.clone())
-            .collect::<Vec<_>>();
-        let prepare_inputs_ms = prepare_inputs_started.elapsed().as_secs_f64() * 1_000.0;
-
-        let ccs_started = Instant::now();
-        let (ccs_outputs, ccs_proof, ccs_perf) = if matches!(mode, FoldingMode::Optimized) {
-            let cache = optimized_cache.ok_or_else(|| {
-                PiCcsError::InvalidInput("missing optimized structure cache for optimized prove_chunk".into())
-            })?;
-            optimized_prove_with_cache_and_perf(
-                tr,
-                params,
-                s,
-                &fresh_claims,
-                &fresh_witnesses,
-                &incoming_main.claims,
-                &incoming_main.witnesses,
-                log,
-                cache,
-            )?
-        } else {
-            let (ccs_outputs, ccs_proof) = prove(
-                mode.clone(),
-                tr,
-                params,
-                s,
-                &fresh_claims,
-                &fresh_witnesses,
-                &incoming_main.claims,
-                &incoming_main.witnesses,
-                log,
-            )?;
-            (
-                ccs_outputs,
-                ccs_proof,
-                neo_reductions::optimized_engine::PiCcsProvePerf::default(),
-            )
-        };
-        let ccs_ms = ccs_started.elapsed().as_secs_f64() * 1_000.0;
-        validate_ccs_outputs(chunk, incoming_main, &ccs_outputs, &ccs_proof)?;
-
-        let dims_started = Instant::now();
-        let dims = utils::build_dims_and_policy(params, s)?;
-        let dims_ms = dims_started.elapsed().as_secs_f64() * 1_000.0;
-        let rlc_rhos = sample_rlc_rhos(tr, params, ccs_outputs.len())?;
-
-        let rlc_prepare_started = Instant::now();
-        let mut rlc_inputs_wit = Vec::with_capacity(chunk.steps.len() + incoming_main.witnesses.len());
-        rlc_inputs_wit.extend(chunk.steps.iter().map(|step| step.witness.Z.clone()));
-        rlc_inputs_wit.extend(incoming_main.witnesses.iter().cloned());
-        let rlc_prepare_ms = rlc_prepare_started.elapsed().as_secs_f64() * 1_000.0;
-
-        let rlc_started = Instant::now();
-        let (parent, z_mix) = rlc_with_commit(
-            mode.clone(),
-            s,
-            params,
-            &rlc_rhos,
-            &ccs_outputs,
-            &rlc_inputs_wit,
-            dims.ell_d,
-            mixers.mix_rhos_commits,
-        )?;
-        let rlc_ms = rlc_started.elapsed().as_secs_f64() * 1_000.0;
-
-        let k_dec = params.k_rho as usize;
-        let dec_split_started = Instant::now();
-        let (z_split, digit_nonzero) = split_b_matrix_k_with_nonzero_flags(&z_mix, k_dec, params.b)?;
-        let dec_split_ms = dec_split_started.elapsed().as_secs_f64() * 1_000.0;
-        let dec_commit_started = Instant::now();
-        let child_commitments = commit_split_children(log, &z_split, &digit_nonzero)?;
-        let dec_commit_ms = dec_commit_started.elapsed().as_secs_f64() * 1_000.0;
-        let dec_started = Instant::now();
-        let (children, ok_y, ok_x, ok_c) = if matches!(mode, FoldingMode::Optimized) {
-            let cache = optimized_cache.ok_or_else(|| {
-                PiCcsError::InvalidInput("missing optimized structure cache for optimized DEC".into())
-            })?;
-            OptimizedRlcDec::dec_children_with_commit_cached(
-                s,
-                params,
-                &parent,
-                &z_split,
-                dims.ell_d,
-                &child_commitments,
-                mixers.combine_b_pows,
-                Some(cache.sparse()),
-            )
-        } else {
-            dec_children_with_commit(
-                mode,
-                s,
-                params,
-                &parent,
-                &z_split,
-                dims.ell_d,
-                &child_commitments,
-                mixers.combine_b_pows,
-            )
-        };
-        let dec_ms = dec_started.elapsed().as_secs_f64() * 1_000.0;
-        if !(ok_y && ok_x && ok_c) {
-            return Err(PiCcsError::ProtocolError(format!(
-                "Π_DEC public checks failed for chunk starting at {}: y={}, X={}, c={}",
-                chunk.start_index, ok_y, ok_x, ok_c
-            )));
-        }
-
-        let ccs_output_count = ccs_outputs.len();
-        let dec_children = children.len();
-        let result = ChunkResult {
-            proof: ChunkProof {
-                chunk: chunk.public(),
-                ccs_outputs,
-                ccs_proof,
-                rlc: PiRlcArtifact { rhos: rlc_rhos, parent },
-                dec: PiDecArtifact {
-                    children: children.clone(),
-                },
-            },
-            next_main: Carry {
-                claims: children,
-                witnesses: z_split,
-            },
-        };
-        let perf = ChunkProvePerf {
-            start_index: chunk.start_index,
-            fresh_steps: chunk.steps.len(),
-            incoming_main_claims: incoming_main.claims.len(),
-            ccs_outputs: ccs_output_count,
-            dec_children,
-            prepare_inputs_ms,
-            ccs_bind_ms: ccs_perf.bind_ms,
-            ccs_sample_challenges_ms: ccs_perf.sample_challenges_ms,
-            ccs_fe_sumcheck_ms: ccs_perf.fe_sumcheck_ms,
-            ccs_nc_sumcheck_ms: ccs_perf.nc_sumcheck_ms,
-            ccs_output_materialize_ms: ccs_perf.output_materialize_ms,
-            ccs_ms,
-            dims_ms,
-            rlc_prepare_ms,
-            rlc_ms,
-            dec_split_ms,
-            dec_commit_ms,
-            dec_ms,
-            total_ms: total_started.elapsed().as_secs_f64() * 1_000.0,
-        };
-
-        Ok((result, perf))
+        let (computation, perf) =
+            compute_chunk_relation_with_perf(mode, tr, params, s, chunk, incoming_main, log, mixers, optimized_cache)?;
+        Ok((computation.into_chunk_result(chunk), perf))
     }
-}
-
-fn append_chunk_transcript(tr: &mut Poseidon2Transcript, chunk: &ChunkInput) {
-    if chunk.steps.len() == 1 {
-        tr.append_u64s(b"neo.fold.next/step_index", &[chunk.start_index as u64]);
-        return;
-    }
-
-    tr.append_u64s(
-        b"neo.fold.next/chunk_meta",
-        &[chunk.start_index as u64, chunk.steps.len() as u64],
-    );
-}
-
-fn validate_main_carry(context: &str, carry: &Carry) -> Result<(), PiCcsError> {
-    if carry.claims.len() != carry.witnesses.len() {
-        return Err(PiCcsError::InvalidInput(format!(
-            "{context}: |claims|={} != |witnesses|={}",
-            carry.claims.len(),
-            carry.witnesses.len()
-        )));
-    }
-    Ok(())
-}
-
-fn validate_ccs_outputs(
-    chunk: &ChunkInput,
-    incoming_main: &Carry,
-    ccs_outputs: &[neo_ccs::CeClaim<Commitment, F, K>],
-    ccs_proof: &PiCcsProof,
-) -> Result<(), PiCcsError> {
-    let expected = chunk
-        .steps
-        .len()
-        .checked_add(incoming_main.claims.len())
-        .ok_or_else(|| PiCcsError::InvalidInput("Π_CCS output count overflow".into()))?;
-    if ccs_outputs.len() != expected {
-        return Err(PiCcsError::ProtocolError(format!(
-            "Π_CCS returned {} outputs for chunk starting at {}, expected {}",
-            ccs_outputs.len(),
-            chunk.start_index,
-            expected
-        )));
-    }
-    let digest: [u8; 32] = ccs_proof
-        .header_digest
-        .as_slice()
-        .try_into()
-        .map_err(|_| PiCcsError::ProtocolError("Π_CCS header digest must be 32 bytes".into()))?;
-    for (idx, out) in ccs_outputs.iter().enumerate() {
-        if out.fold_digest != digest {
-            return Err(PiCcsError::ProtocolError(format!(
-                "Π_CCS output[{idx}] fold_digest mismatch for chunk starting at {}",
-                chunk.start_index
-            )));
-        }
-    }
-    Ok(())
-}
-
-fn validate_chunk_input(chunk: &ChunkInput) -> Result<(), PiCcsError> {
-    if chunk.steps.is_empty() {
-        return Err(PiCcsError::InvalidInput(
-            "chunk prove requires at least one fresh step".into(),
-        ));
-    }
-    Ok(())
-}
-
-fn sample_rlc_rhos(
-    tr: &mut Poseidon2Transcript,
-    params: &NeoParams,
-    input_count: usize,
-) -> Result<Vec<neo_reductions::api::RotRho>, PiCcsError> {
-    let ring = RotRing::goldilocks();
-    sample_rot_rhos_n_typed(tr, params, &ring, input_count)
-}
-
-fn commit_split_children<L>(log: &L, z_split: &[Mat<F>], digit_nonzero: &[bool]) -> Result<Vec<Commitment>, PiCcsError>
-where
-    L: SModuleHomomorphism<F, Commitment> + Sync,
-{
-    if z_split.len() != digit_nonzero.len() {
-        return Err(PiCcsError::InvalidInput(format!(
-            "DEC split mismatch: |Z_split|={} != |digit_nonzero|={}",
-            z_split.len(),
-            digit_nonzero.len()
-        )));
-    }
-    if z_split.is_empty() {
-        return Err(PiCcsError::InvalidInput(
-            "DEC requires at least one child witness".into(),
-        ));
-    }
-
-    let zero = log.commit(&Mat::zero(z_split[0].rows(), z_split[0].cols(), F::ZERO));
-    let mut child_commitments = vec![zero.clone(); z_split.len()];
-    let nonzero_idx: Vec<usize> = digit_nonzero
-        .iter()
-        .enumerate()
-        .filter_map(|(idx, &nz)| nz.then_some(idx))
-        .collect();
-    if nonzero_idx.is_empty() {
-        return Ok(child_commitments);
-    }
-
-    let mats: Vec<&Mat<F>> = nonzero_idx.iter().map(|&idx| &z_split[idx]).collect();
-    let commits = log.commit_many(&mats);
-    if commits.len() != mats.len() {
-        return Err(PiCcsError::ProtocolError(format!(
-            "DEC commit_many returned {} commitments for {} matrices",
-            commits.len(),
-            mats.len()
-        )));
-    }
-    for (pos, &idx) in nonzero_idx.iter().enumerate() {
-        child_commitments[idx] = commits[pos].clone();
-    }
-    Ok(child_commitments)
 }
