@@ -418,6 +418,113 @@ The canonical theorem-facing sources are the per-module
 [Chip8LeanAggregate.md](/Users/nicolasarqueros/starstream/develop/nightstream-clean-up/formal/nightstream-lean/specs/chip8/Chip8LeanAggregate.md)
 is only a convenience reading aid.
 
+### RV64IM Current Boundary And Missing Catch Path
+
+This package also contains substantial RV64IM work, but the current RV64IM
+story is materially different from the CHIP-8 closure story above.
+
+The RV64IM Lean modules already prove theorem-facing semantic facts such as:
+
+- exact opcode-family consequences above `StepCompositionProofPackage`
+- exact word-level arithmetic results for native ALU, word-shift, multiply,
+  div/rem, narrow-memory, and control-flow families
+- final execution consequences from an accepted proof boundary
+
+The important boundary object is:
+
+- `Nightstream/Rv64IM/Kernel/ExactKernelBoundaries.lean`
+
+That object packages the exact trace/kernel witnesses needed to derive the
+canonical RV64IM kernel conclusion. Downstream theorems such as
+`AcceptedPublicProofConsequences` then prove execution correctness from that
+exact-boundary object.
+
+This is the key limitation of the current RV64IM architecture:
+
+- Lean proves `if ExactKernelBoundaries exists, then the semantic theorem follows`
+- Lean does **not** yet prove that the current exported Rust RV64IM public-proof
+  artifact itself carries enough theorem-bearing data to construct
+  `ExactKernelBoundaries`
+
+The accepted artifact is still summary-shaped at the theorem boundary. Digest
+parity and replay parity are useful, but they are not the same thing as having
+the theorem-bearing bridge payloads that let Lean reject a missing binding edge
+in the actual exported proof object.
+
+The current RV64IM audit modules make this explicit:
+
+- `Nightstream/Rv64IM/Kernel/RequiredRootExecutionSemanticsSurface.lean`
+- `Nightstream/Rv64IM/AcceptedArtifactRootExecutionSemanticsClosure.lean`
+- `Nightstream/Rv64IM/Kernel/RequiredKernelDesignBridgeSurface.lean`
+- `Nightstream/Rv64IM/AcceptedArtifactKernelDesignBridgeClosure.lean`
+
+Today those audit surfaces intentionally report the missing theorem-bearing
+exports instead of pretending the bridge is closed. In particular, the current
+RV64IM accepted artifact does **not** yet expose:
+
+- row-local `RootEncode(z_j)` witness surfaces for authenticated root rows
+- theorem-bearing row-local CCS acceptance objects for the chunk that owns each
+  row under the carried `FoldSchedule`
+- a theorem-bearing refinement from accepted row-local root execution objects
+  back to RV64IM `ExecutionCorrect`
+- authenticated selected-row payloads rather than only selected-opening
+  digests/summaries
+- selected-row prepared-step bindings owned by the theorem boundary
+- schedule-owned selected-row to chunk-routing bindings owned by the theorem
+  boundary
+- theorem-bearing Stage-1 obligation payloads
+- theorem-bearing Stage-2 obligation payloads
+- theorem-bearing Stage-3 obligation payloads
+- kernel-opening provenance chains rather than only digest bundles
+
+That is why Lean did not catch the recent RV64IM soundness hole earlier. The
+current proof stack is still strong enough to prove abstract semantic theorems
+above an assumed exact-boundary witness, while the concrete Rust export surface
+below that witness remains too summary-shaped to force Lean to reconstruct and
+check the missing binding edges.
+
+### RV64IM Required Design Change
+
+If the goal is for Lean to catch this class of bug, the architecture must move
+the accepted RV64IM artifact boundary from "digest summaries plus replay" to
+"theorem-bearing evidence or Lean-reconstructible low-level inputs".
+
+For every protocol-binding RV64IM fact, exactly one of these must be true:
+
+- the Rust artifact exports the concrete witness/proof object that the Lean
+  theorem consumes directly
+- or the Rust artifact exports enough lower-level canonical inputs that Lean can
+  rebuild the theorem-facing object itself and prove equality against the
+  exported boundary
+
+In practice, that means:
+
+- Stage 1 must export the semantic-input binding objects that tie lookup/helper
+  obligations to committed row operands and decode metadata, not only row
+  summaries and output digests
+- Stage 2 must export theorem-bearing Twist payloads and linkage objects, not
+  only history summaries
+- Stage 3 must export theorem-bearing continuity / row-binding / prepared-step
+  bridge objects, not only summaries
+- the root lane must export row-local root-encoding witnesses, row-local CCS
+  acceptance objects, and the refinement path back to execution semantics
+- kernel openings must carry provenance chains that connect authenticated
+  selections and direct openings back to the theorem-owned stage objects
+
+The package policy for RV64IM should therefore be:
+
+- parity checks are necessary but never sufficient
+- replay from source is necessary but never sufficient
+- an RV64IM proof boundary is only "Lean-catch capable" when the closure audits
+  above can be made constructive instead of hard-failing on missing theorem
+  surfaces
+
+The practical objective is not to formalize more abstract semantics first. The
+practical objective is to lower the theorem boundary until the concrete exported
+RV64IM artifact is rich enough that a missing semantic-input binding, missing
+stage obligation, or missing provenance edge becomes a Lean-visible failure at
+artifact construction time.
+
 ## Commands
 
 ```bash

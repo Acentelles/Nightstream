@@ -13,7 +13,10 @@ This owner must expose:
 - one package carrying an accepted checker result,
 - one `KernelDesignBridgePackage` over the same authenticated trace,
 - one explicit proof that the checker's authenticated trace is exactly `authenticatedChunkTrace_of_exactBoundaries` of the bridge package's exact trace,
-- and selected-row consequences showing that every routed selected row is backed by theorem-bearing `Π_CCS`, `Π_RLC`, and `Π_DEC` statements.
+- selected-row consequences showing that every routed selected row is backed by theorem-bearing `Π_CCS`, `Π_RLC`, and `Π_DEC` statements,
+- direct selected-row consequences showing that the exact schedule-owned routed chunk carries those `Π_CCS / Π_RLC / Π_DEC` statements,
+- one schedule-owned chunk-index consequence showing that every selected prepared step is owned by the exact chunk index chosen by the carried fold schedule,
+- and a schedule-owned routing consequence showing that every selected prepared step is routed to the exact root chunk chosen by the carried fold schedule, not merely to an arbitrary chunk that contains the row.
 
 ## Ownership
 

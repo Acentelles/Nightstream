@@ -4,6 +4,8 @@ import Nightstream.Rv64IM.AcceptedArtifactKernelReplay
 import Nightstream.Rv64IM.AcceptedArtifactLocalTrace
 import Nightstream.Rv64IM.AcceptedArtifactTemporalReplay
 import Nightstream.Rv64IM.AcceptedArtifactStage3Refinement
+import Nightstream.Rv64IM.AcceptedArtifactStepComposition
+import Nightstream.Rv64IM.AcceptedArtifactSoundnessAccounting
 import Nightstream.Rv64IM.AcceptedArtifactRootLane
 import Nightstream.Rv64IM.AcceptedArtifactChecks
 import Nightstream.Rv64IM.Checks
@@ -103,8 +105,8 @@ private def executionRowsPresent (artifact : AcceptedProofArtifactView) : Bool :
   | some derived => !derived.executionRows.isEmpty
   | none => false
 
-private def transcriptEventsPresent (_artifact : AcceptedProofArtifactView) : Bool :=
-  false
+private def transcriptEventsPresent (artifact : AcceptedProofArtifactView) : Bool :=
+  !artifact.transcript.events.isEmpty
 
 private def mainLaneProofPresent (artifact : AcceptedProofArtifactView) : Bool :=
   artifact.kernelProof.mainLane.binding.rootLaneColumnsDigest ≠ [] &&
@@ -158,12 +160,19 @@ private def root0ClaimPresent (artifact : AcceptedProofArtifactView) : Bool :=
     artifact.exportedClaims.root0.terminal.digest ≠ [] &&
     artifact.exportedClaims.root0.digest ≠ []
 
-private def programBindingInputsPresent (_artifact : AcceptedProofArtifactView) : Bool :=
-  false
+private def programBindingInputsPresent (artifact : AcceptedProofArtifactView) : Bool :=
+  sourceCasePresent artifact &&
+    artifact.exportedStatement.rootParamsId ≠ [] &&
+    artifact.exportedStatement.initialPc = artifact.source.startPc
 
 private def kernelOpeningWitnessBundlePresent
-    (_artifact : AcceptedProofArtifactView) : Bool :=
-  false
+    (artifact : AcceptedProofArtifactView) : Bool :=
+  artifact.kernelProof.kernelOpening.openingDigest ≠ [] &&
+    artifact.kernelProof.kernelOpening.bindings.claimDigest ≠ [] &&
+    artifact.kernelProof.kernelOpening.bindings.bindingsDigest ≠ [] &&
+    artifact.kernelProof.kernelOpening.bindings.preparedStepsDigest ≠ [] &&
+    artifact.kernelProof.kernelOpening.digest ≠ [] &&
+    artifact.kernelOpeningBundle.digest ≠ []
 
 private def preparedStepExportsPresent
     (artifact : AcceptedProofArtifactView) : Bool :=
@@ -195,20 +204,72 @@ private def fullRootLaneRowsPresent
   | none => false
 
 private def exactOpeningWitnessesPresent
-    (_artifact : AcceptedProofArtifactView) : Bool :=
-  false
+    (artifact : AcceptedProofArtifactView) : Bool :=
+  let opening := artifact.kernelOpeningBundle
+  opening.digest ≠ [] &&
+    opening.digest = artifact.kernelProof.kernelOpening.openingDigest &&
+    opening.claim.digest = artifact.kernelProof.kernelOpening.bindings.claimDigest &&
+    opening.bindings.digest = artifact.kernelProof.kernelOpening.bindings.bindingsDigest &&
+    opening.preparedSteps.digest =
+      artifact.kernelProof.kernelOpening.bindings.preparedStepsDigest &&
+    opening.bindings.claim = opening.claim.bindings &&
+    opening.preparedSteps.claim = opening.claim.preparedSteps &&
+    opening.bindings.packaged.statementDigest ≠ [] &&
+    opening.bindings.packaged.proofDigest ≠ [] &&
+    opening.preparedSteps.packaged.statementDigest ≠ [] &&
+    opening.preparedSteps.packaged.proofDigest ≠ [] &&
+    opening.claim.bindings.bindingCount =
+      artifact.rootExecution.preparedStepBindings.bindingCount &&
+    opening.claim.preparedSteps.preparedStepCount =
+      artifact.rootExecution.preparedStepBindings.bindingCount &&
+    opening.claim.bindings.preparedStepBindingsDigest =
+      artifact.rootExecution.preparedStepBindings.digest &&
+    opening.claim.preparedSteps.executionDigest =
+      artifact.exportedStatement.executionDigest &&
+    opening.claim.preparedSteps.finalStateDigest =
+      artifact.exportedStatement.finalStateDigest &&
+    opening.claim.preparedSteps.transcriptFinalDigest =
+      artifact.exportedStatement.transcriptFinalDigest &&
+    opening.claim.preparedSteps.finalPc = artifact.exportedStatement.finalPc &&
+    opening.claim.preparedSteps.halted = artifact.exportedStatement.halted
 
 private def root0BindingsPresent
-    (_artifact : AcceptedProofArtifactView) : Bool :=
-  false
+    (artifact : AcceptedProofArtifactView) : Bool :=
+  root0ClaimPresent artifact
 
 private def bridgeProvenanceChainsPresent
-    (_artifact : AcceptedProofArtifactView) : Bool :=
-  false
+    (artifact : AcceptedProofArtifactView) : Bool :=
+  let opening := artifact.kernelOpeningBundle
+  opening.digest ≠ [] &&
+    opening.claim.bindings.stageClaimBundleDigest =
+      artifact.kernelProof.stageClaims.summary.claimBundleDigest &&
+    opening.claim.bindings.stagePackageBundleDigest =
+      artifact.kernelProof.stagePackages.summary.packageBundleDigest &&
+    opening.claim.bindings.stage1PackageDigest =
+      artifact.kernelProof.stagePackages.summary.stage1Digest &&
+    opening.claim.bindings.stage2PackageDigest =
+      artifact.kernelProof.stagePackages.summary.stage2Digest &&
+    opening.claim.bindings.stage3PackageDigest =
+      artifact.kernelProof.stagePackages.summary.stage3Digest &&
+    artifact.kernelProof.stagePackages.summary.stage1Digest =
+      artifact.stage1.selectedOpening.digest &&
+    artifact.kernelProof.stagePackages.summary.stage2Digest =
+      artifact.stage2.selectedOpening.digest &&
+    artifact.kernelProof.stagePackages.summary.stage3Digest =
+      artifact.stage3.selectedOpening.digest &&
+    opening.claim.bindings.preparedStepBindingsDigest =
+      artifact.rootExecution.preparedStepBindings.digest &&
+    opening.claim.bindings.stage1RowCount = artifact.stage1.rowBindings.length &&
+    opening.claim.bindings.stage2RegisterReadCount =
+      artifact.stage2.registerReads.length &&
+    opening.claim.bindings.stage2RegisterWriteCount =
+      artifact.stage2.registerWrites.length &&
+    opening.claim.bindings.stage2RamEventCount = artifact.stage2.ramEvents.length &&
+    opening.claim.bindings.stage3ContinuityCount = artifact.stage3.continuity.length
 
 private def soundnessAccountingPresent
-    (_artifact : AcceptedProofArtifactView) : Bool :=
-  false
+    (artifact : AcceptedProofArtifactView) : Bool :=
+  soundnessAccountingSurfaceMatchesCanonical artifact.soundnessAccounting
 
 private def acceptedArtifactTheoremFieldPresentCached
     (artifact : AcceptedProofArtifactView)
@@ -222,7 +283,7 @@ private def acceptedArtifactTheoremFieldPresentCached
   let recomputedLocalTrace := recomputeLocalTraceView artifact
   let recoveredTemporalReplay := recoverTemporalReplay? artifact
   let recoveredStage3Refinement := recoverStage3Refinement? artifact
-  let transcriptEventsPresent := false
+  let transcriptEventsPresent := !artifact.transcript.events.isEmpty
   let preparedStepExportsPresent :=
     let recomputedRootLane := recomputeRootLaneView artifact.derived.executionRows
     !recomputedLocalTrace.mainLane.preparedSteps.isEmpty &&
@@ -238,10 +299,12 @@ private def acceptedArtifactTheoremFieldPresentCached
         !derived.executionRows.isEmpty &&
           recomputedRootLaneProtocolBindingsMatchArtifact recomputedRootLane artifact
     | none => false
-  let exactOpeningWitnessesPresent := false
-  let root0BindingsPresent := false
-  let bridgeProvenanceChainsPresent := false
-  let soundnessAccountingPresent := false
+  let exactOpeningWitnessesPresentNow := exactOpeningWitnessesPresent artifact
+  let root0BindingsPresent := root0ClaimPresent artifact
+  let bridgeProvenanceChainsPresentNow := bridgeProvenanceChainsPresent artifact
+  let recomputedStepComposition := recomputeStepCompositionSurfaceView artifact
+  let soundnessAccountingPresent :=
+    soundnessAccountingSurfaceMatchesCanonical artifact.soundnessAccounting
   match field with
   | .sourceCase => sourceCasePresent artifact
   | .executionRows => executionRowsPresent
@@ -258,7 +321,8 @@ private def acceptedArtifactTheoremFieldPresentCached
       executionRowsPresent &&
         recomputedTraceLinkBoundaryMatchesArtifact recomputedLocalTrace artifact &&
         recomputedStageWitnessProjectionMatchesArtifact recomputedKernelSurface artifact
-  | .stepCompositionProof => false
+  | .stepCompositionProof =>
+      recomputedStepCompositionSurfaceMatchesArtifact recomputedStepComposition artifact
   | .temporalConsistency =>
       match recoveredTemporalReplay with
       | some recovered =>
@@ -282,8 +346,8 @@ private def acceptedArtifactTheoremFieldPresentCached
   | .root0Bindings => root0BindingsPresent
   | .programBindingInputs => programBindingInputsPresent artifact
   | .kernelOpeningWitnesses => kernelOpeningWitnessBundlePresent artifact
-  | .exactOpeningWitnesses => exactOpeningWitnessesPresent
-  | .bridgeProvenanceChains => bridgeProvenanceChainsPresent
+  | .exactOpeningWitnesses => exactOpeningWitnessesPresentNow
+  | .bridgeProvenanceChains => bridgeProvenanceChainsPresentNow
 
 def acceptedArtifactTheoremFieldPresent
     (artifact : AcceptedProofArtifactView)

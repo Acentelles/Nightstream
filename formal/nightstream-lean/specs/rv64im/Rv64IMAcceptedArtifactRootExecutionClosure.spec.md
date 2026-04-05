@@ -11,6 +11,7 @@
 - Lean can replay execution rows from the exported source case.
 - Lean can recompute the root-lane protocol bindings from those replayed rows and match them exactly against the exported artifact.
 - Fold schedule, public-step count, and chunk layout align across the exported root/main-lane surfaces.
+- Lean can recompute the schedule-owned owning root chunk for every replayed row under the carried fold schedule, including `rowsPerChunk k` multi-chunk schedules.
 - The artifact exposes theorem-bearing chunk and main-lane backend payload surfaces rather than digest-only summaries.
 - The artifact carries enough structure to reconstruct the SuperNeo contexts and theorem statements required by `ChunkedRootProofPackage`.
 - Acceptance fails if any of those fields are missing, malformed, or only summary-shaped.

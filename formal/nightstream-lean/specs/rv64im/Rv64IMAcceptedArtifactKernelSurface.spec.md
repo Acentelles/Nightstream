@@ -43,3 +43,8 @@ The component exposes:
   transcript events.
 - The theorem-facing acceptance lane may use the exported trace/stage bundles
   only as parity targets, never as authoritative inputs.
+- Exact kernel-surface recomputation is not an execution proof and may not
+  substitute for the root main-lane execution-semantics owner.
+- Exact kernel-surface recomputation is not a bridge theorem and may not
+  substitute for theorem-bearing authenticated selected-row, stage, or kernel
+  opening objects.

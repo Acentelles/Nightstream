@@ -131,4 +131,44 @@ theorem chunkedRootProof_wholeTrace_singleChunk
       simpa [hSchedule]
     _ = 1 := FoldSchedule.chunkCount_wholeTrace pkg.mainLane.semanticRows
 
+theorem owningChunkIndex_lt_chunkProofCount_of_rowIndex
+  {Row PreparedStep : Type _}
+  {pkg : ChunkedRootProofPackage Row PreparedStep}
+  {rowIndex : Nat}
+  (hRow : rowIndex < pkg.mainLane.semanticRows) :
+  Nightstream.ChunkLayout.chunkIndexOf pkg.mainLane.schedule rowIndex <
+    pkg.chunkProofs.length := by
+  have hLayout :
+      Nightstream.ChunkLayout.chunkIndexOf pkg.mainLane.schedule rowIndex <
+        FoldSchedule.chunkCount pkg.mainLane.schedule pkg.mainLane.semanticRows :=
+    Nightstream.ChunkLayout.chunkIndexOf_lt_chunkCount_of_lt_preparedStepCount
+      (chunkedRootProof_scheduleValid pkg)
+      hRow
+  simpa [chunkedRootProof_chunkCount pkg] using hLayout
+
+theorem backendPackageAtOwningChunkIndex_of_rowIndex
+  {Row PreparedStep : Type _}
+  {pkg : ChunkedRootProofPackage Row PreparedStep}
+  {rowIndex : Nat}
+  (hRow : rowIndex < pkg.mainLane.semanticRows) :
+  ∃ backendPkg,
+    pkg.chunkProofs[Nightstream.ChunkLayout.chunkIndexOf pkg.mainLane.schedule rowIndex]? =
+        some backendPkg ∧
+      backendPkg.chunkIndex =
+        Nightstream.ChunkLayout.chunkIndexOf pkg.mainLane.schedule rowIndex ∧
+      pkg.mainLane.chunks[
+          Nightstream.ChunkLayout.chunkIndexOf pkg.mainLane.schedule rowIndex]? =
+        some backendPkg.chunk := by
+  let chunkIndex := Nightstream.ChunkLayout.chunkIndexOf pkg.mainLane.schedule rowIndex
+  have hChunk :
+      chunkIndex < pkg.mainLane.chunks.length := by
+    have hLayout :
+        chunkIndex <
+          FoldSchedule.chunkCount pkg.mainLane.schedule pkg.mainLane.semanticRows :=
+      Nightstream.ChunkLayout.chunkIndexOf_lt_chunkCount_of_lt_preparedStepCount
+        (chunkedRootProof_scheduleValid pkg)
+        hRow
+    simpa [mainLaneTraceBoundary_chunksLength pkg.mainLane] using hLayout
+  simpa [chunkIndex] using backendPackageAtIndex_of_chunkedRootProof (pkg := pkg) hChunk
+
 end Nightstream.Rv64IM

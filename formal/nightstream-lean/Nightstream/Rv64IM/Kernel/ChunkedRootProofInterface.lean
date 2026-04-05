@@ -24,6 +24,10 @@ abbrev piDEC_atIndex_of_chunkedRootProof :=
   @Nightstream.Rv64IM.piDEC_atIndex_of_chunkedRootProof
 abbrev chunkedRootProof_wholeTrace_singleChunk :=
   @Nightstream.Rv64IM.chunkedRootProof_wholeTrace_singleChunk
+abbrev owningChunkIndex_lt_chunkProofCount_of_rowIndex :=
+  @Nightstream.Rv64IM.owningChunkIndex_lt_chunkProofCount_of_rowIndex
+abbrev backendPackageAtOwningChunkIndex_of_rowIndex :=
+  @Nightstream.Rv64IM.backendPackageAtOwningChunkIndex_of_rowIndex
 
 end ChunkedRootProofInterface
 

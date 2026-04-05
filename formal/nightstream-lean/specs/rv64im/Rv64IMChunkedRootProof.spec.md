@@ -25,6 +25,7 @@ The package therefore owns the theorem-facing root execution surface:
 - execution semantics are justified by the chunked root main-lane CCS / SuperNeo proof route,
 - fold cadence is explicit,
 - `WholeTrace` is the one-chunk special case,
+- `RowsPerChunk(k)` is equally first-class, with every row routed to an in-bounds owning chunk index under the carried schedule,
 - and no theorem-facing acceptance path may replace per-chunk backend statements with digest-only summaries.
 
 ## Theorem Targets
@@ -36,6 +37,8 @@ The package therefore owns the theorem-facing root execution surface:
 - `piCCS_atIndex_of_chunkedRootProof`
 - `piRLC_atIndex_of_chunkedRootProof`
 - `piDEC_atIndex_of_chunkedRootProof`
+- `owningChunkIndex_lt_chunkProofCount_of_rowIndex`
+- `backendPackageAtOwningChunkIndex_of_rowIndex`
 
 ## Dependency and Consumer Map
 

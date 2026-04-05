@@ -31,7 +31,9 @@ Each routed witness must contain:
 - one kernel opening provenance witness for the exported row-binding index,
 - one root-main-lane prepared step at that same exported index,
 - a proof that the provenance-chain prepared step is exactly that root prepared step,
-- one routed root chunk proof package,
+- the canonical root chunk index induced by the carried fold schedule and that prepared step's row index,
+- one routed root chunk proof package at exactly that canonical chunk index,
+- a proof that the routed backend package is aligned with the main-lane chunk at that same index,
 - and a proof that the routed prepared-step row index is covered by that chunk's canonical row-label list.
 
 ## Required Consequences
@@ -40,7 +42,8 @@ From the bridge package one must be able to derive:
 
 - every exported Stage 3 row-binding index has one authenticated opening witness at that same index,
 - every such authenticated selected row is bound to one root-main-lane prepared step,
-- every such prepared step is routed to one chunk carrying `Π_CCS`, `Π_RLC`, and `Π_DEC`,
+- every such prepared step is routed to the unique chunk selected by the explicit fold schedule and that chunk carries `Π_CCS`, `Π_RLC`, and `Π_DEC`,
+- direct selected-row consequences expose that exact schedule-owned routed chunk and its `Π_CCS / Π_RLC / Π_DEC` statements in one theorem step,
 - the exact trace execution theorem still holds on the same authenticated rows,
 - Stage 2 authenticated-history semantics still hold on the same authenticated rows,
 - and the exact Stage 3 halted-execution consequence still holds on the same authenticated rows.

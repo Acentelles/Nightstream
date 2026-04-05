@@ -282,4 +282,195 @@ theorem piDEC_atIndex_of_rootExecutionSemantics
       Nightstream.SuperNeoPiDECKnowledgeStatement backendPkg.protocolTarget :=
   piDEC_atIndex_of_chunkedRootProof (pkg := pkg.root) hJ
 
+theorem owningChunkIndex_lt_rootChunkCount_of_rowIndex
+  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
+    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
+    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect :
+    Type _} [OfNat Limb 0]
+  {pkg :
+    RootExecutionSemanticsPackage
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect}
+  {rowIndex : Nat}
+  (hRow : rowIndex < pkg.trace.mainLane.semanticRows) :
+  Nightstream.ChunkLayout.chunkIndexOf pkg.root.mainLane.schedule rowIndex <
+    pkg.root.chunkProofs.length := by
+  have hRootRow :
+      rowIndex < pkg.root.mainLane.semanticRows := by
+    simpa [pkg.mainLaneShared] using hRow
+  exact owningChunkIndex_lt_chunkProofCount_of_rowIndex (pkg := pkg.root) hRootRow
+
+theorem rootExecution_backendPackageAtOwningChunkIndex_of_rowIndex
+  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
+    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
+    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect :
+    Type _} [OfNat Limb 0]
+  {pkg :
+    RootExecutionSemanticsPackage
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect}
+  {rowIndex : Nat}
+  (hRow : rowIndex < pkg.trace.mainLane.semanticRows) :
+  ∃ backendPkg,
+    pkg.root.chunkProofs[
+        Nightstream.ChunkLayout.chunkIndexOf pkg.root.mainLane.schedule rowIndex]? =
+      some backendPkg ∧
+      backendPkg.chunkIndex =
+        Nightstream.ChunkLayout.chunkIndexOf pkg.root.mainLane.schedule rowIndex ∧
+      pkg.root.mainLane.chunks[
+          Nightstream.ChunkLayout.chunkIndexOf pkg.root.mainLane.schedule rowIndex]? =
+        some backendPkg.chunk := by
+  have hRootRow :
+      rowIndex < pkg.root.mainLane.semanticRows := by
+    simpa [pkg.mainLaneShared] using hRow
+  exact backendPackageAtOwningChunkIndex_of_rowIndex (pkg := pkg.root) hRootRow
+
+theorem piCCS_atOwningChunkIndex_of_rowIndex_of_rootExecutionSemantics
+  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
+    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
+    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect :
+    Type _} [OfNat Limb 0]
+  {pkg :
+    RootExecutionSemanticsPackage
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect}
+  {rowIndex : Nat}
+  (hRow : rowIndex < pkg.trace.mainLane.semanticRows) :
+  ∃ backendPkg,
+    pkg.root.chunkProofs[
+        Nightstream.ChunkLayout.chunkIndexOf pkg.root.mainLane.schedule rowIndex]? =
+      some backendPkg ∧
+      Nightstream.SuperNeoPiCCSStrongStatement backendPkg.protocolTarget := by
+  rcases rootExecution_backendPackageAtOwningChunkIndex_of_rowIndex
+      (pkg := pkg) hRow with
+    ⟨backendPkg, hPkg, _, _⟩
+  exact ⟨backendPkg, hPkg, backendPkg.piCCSStrong⟩
+
+theorem piRLC_atOwningChunkIndex_of_rowIndex_of_rootExecutionSemantics
+  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
+    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
+    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect :
+    Type _} [OfNat Limb 0]
+  {pkg :
+    RootExecutionSemanticsPackage
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect}
+  {rowIndex : Nat}
+  (hRow : rowIndex < pkg.trace.mainLane.semanticRows) :
+  ∃ backendPkg,
+    pkg.root.chunkProofs[
+        Nightstream.ChunkLayout.chunkIndexOf pkg.root.mainLane.schedule rowIndex]? =
+      some backendPkg ∧
+      Nightstream.SuperNeoPiRLCWeakStatement backendPkg.protocolTarget := by
+  rcases rootExecution_backendPackageAtOwningChunkIndex_of_rowIndex
+      (pkg := pkg) hRow with
+    ⟨backendPkg, hPkg, _, _⟩
+  exact ⟨backendPkg, hPkg, backendPkg.piRLCWeak⟩
+
+theorem piDEC_atOwningChunkIndex_of_rowIndex_of_rootExecutionSemantics
+  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
+    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
+    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect :
+    Type _} [OfNat Limb 0]
+  {pkg :
+    RootExecutionSemanticsPackage
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect}
+  {rowIndex : Nat}
+  (hRow : rowIndex < pkg.trace.mainLane.semanticRows) :
+  ∃ backendPkg,
+    pkg.root.chunkProofs[
+        Nightstream.ChunkLayout.chunkIndexOf pkg.root.mainLane.schedule rowIndex]? =
+      some backendPkg ∧
+      Nightstream.SuperNeoPiDECKnowledgeStatement backendPkg.protocolTarget := by
+  rcases piRLC_atOwningChunkIndex_of_rowIndex_of_rootExecutionSemantics
+      (pkg := pkg) hRow with
+    ⟨backendPkg, hPkg, hPiRLC⟩
+  exact ⟨backendPkg, hPkg, SuperNeo.PiDECInterface.piDEC_of_weak hPiRLC⟩
+
 end Nightstream.Rv64IM

@@ -1,3 +1,5 @@
+mod accepted_artifact_vectors;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -10,6 +12,11 @@ use neo_fold_next::rv64im::{
 };
 use neo_fold_next::rv64im::kernel::{
     RootLaneCommitmentSetSummary, RootLaneCommitmentSummaryArtifact,
+};
+
+use accepted_artifact_vectors::{
+    accepted_proof_artifact_dir, accepted_proof_case_path, build_accepted_proof_cases,
+    render_accepted_artifact_case_module, render_accepted_proof_corpus_module,
 };
 
 #[derive(Clone)]
@@ -613,7 +620,7 @@ pub(crate) fn render_derived_case(case: &Rv64imParityDerivedCase) -> String {
 
 fn render_proof_statement(statement: &rv64::Rv64imProofStatement) -> String {
     format!(
-        "{{\n  rootParamsId := {}\n  , foldSchedule := {}\n  , chunkCount := {}\n  , stageClaimsDigest := {}\n  , stagePackagesDigest := {}\n  , kernelOpeningDigest := {}\n  , preparedStepBindingsDigest := {}\n  , executionDigest := {}\n  , finalStateDigest := {}\n  , transcriptFinalDigest := {}\n  , mainLaneSurfaceDigest := {}\n  , rootLaneColumnsDigest := {}\n  , publicStepCount := {}\n  , finalPc := {}\n  , halted := {}\n  , digest := {}\n}}",
+        "{{\n  rootParamsId := {}\n  , foldSchedule := {}\n  , chunkCount := {}\n  , stageClaimsDigest := {}\n  , stagePackagesDigest := {}\n  , kernelOpeningDigest := {}\n  , preparedStepBindingsDigest := {}\n  , executionDigest := {}\n  , finalStateDigest := {}\n  , transcriptFinalDigest := {}\n  , mainLaneSurfaceDigest := {}\n  , rootLaneColumnsDigest := {}\n  , publicStepCount := {}\n  , initialPc := {}\n  , finalPc := {}\n  , halted := {}\n  , digest := {}\n}}",
         render_u8_list(&statement.root_params_id),
         render_fold_schedule(&statement.fold_schedule),
         statement.chunk_count,
@@ -627,6 +634,7 @@ fn render_proof_statement(statement: &rv64::Rv64imProofStatement) -> String {
         render_u8_list(&statement.main_lane_surface_digest),
         render_u8_list(&statement.root_lane_columns_digest),
         statement.public_step_count,
+        statement.initial_pc,
         statement.final_pc,
         render_bool(statement.halted),
         render_u8_list(&statement.digest),
@@ -1120,6 +1128,7 @@ fn reset_generated_dirs() {
         generated_dir().join("Cases"),
         generated_dir().join("Index"),
         public_proof_vector_dir(),
+        accepted_proof_artifact_dir(),
     ] {
         if path.exists() {
             fs::remove_dir_all(&path).expect("remove stale generated directory");
@@ -1130,6 +1139,7 @@ fn reset_generated_dirs() {
 fn main() {
     let cases = build_all_parity_cases().expect("build RV64IM parity cases");
     let public_proof_cases = build_public_proof_cases(&cases);
+    let accepted_proof_cases = build_accepted_proof_cases(&cases, &public_proof_cases);
     reset_generated_dirs();
 
     for (source, derived) in &cases {
@@ -1269,15 +1279,26 @@ fn main() {
             render_public_proof_case_module(case),
         );
     }
+    for case in &accepted_proof_cases {
+        write_file(
+            &accepted_proof_case_path(&case.name),
+            render_accepted_artifact_case_module(case),
+        );
+    }
     write_file(
         &public_proof_vector_dir().join("Corpus.lean"),
         render_public_proof_corpus_module(&public_proof_cases),
     );
+    write_file(
+        &accepted_proof_artifact_dir().join("Corpus.lean"),
+        render_accepted_proof_corpus_module(&accepted_proof_cases),
+    );
 
     println!(
-        "wrote RV64IM parity artifacts for {} cases and {} public proof vectors to {}",
+        "wrote RV64IM parity artifacts for {} cases, {} public proof vectors, and {} accepted proof artifacts to {}",
         cases.len(),
         public_proof_cases.len(),
+        accepted_proof_cases.len(),
         generated_dir().display()
     );
 }

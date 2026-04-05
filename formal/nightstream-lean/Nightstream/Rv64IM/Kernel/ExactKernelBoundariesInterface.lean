@@ -41,6 +41,16 @@ abbrev rowBinding_mem_stage3RowBindingEvents_iff :=
   @Nightstream.Rv64IM.rowBinding_mem_stage3RowBindingEvents_iff
 abbrev rowBinding_mem_transcriptEvents_iff :=
   @Nightstream.Rv64IM.rowBinding_mem_transcriptEvents_iff
+abbrev rootChunkStart_mem_transcript_of_exactKernelBoundaries :=
+  @Nightstream.Rv64IM.rootChunkStart_mem_transcript_of_exactKernelBoundaries
+abbrev rootChunkPiCCS_mem_transcript_of_exactKernelBoundaries :=
+  @Nightstream.Rv64IM.rootChunkPiCCS_mem_transcript_of_exactKernelBoundaries
+abbrev rootChunkPiRLC_mem_transcript_of_exactKernelBoundaries :=
+  @Nightstream.Rv64IM.rootChunkPiRLC_mem_transcript_of_exactKernelBoundaries
+abbrev rootChunkPiDEC_mem_transcript_of_exactKernelBoundaries :=
+  @Nightstream.Rv64IM.rootChunkPiDEC_mem_transcript_of_exactKernelBoundaries
+abbrev rootChunkRowLabel_mem_transcript_of_exactKernelBoundaries :=
+  @Nightstream.Rv64IM.rootChunkRowLabel_mem_transcript_of_exactKernelBoundaries
 abbrev exactKernelBoundaries_of_minimalKernelInputs :=
   @Nightstream.Rv64IM.exactKernelBoundaries_of_minimalKernelInputs
 abbrev exactKernelBoundaries_of_minimalKernelInputPackage :=

@@ -28,11 +28,20 @@ $$
 |\mathrm{layout}(s, n)| = \mathrm{chunkCount}(s, n).
 $$
 
+- Every row index is routed by the schedule to an in-bounds chunk index:
+
+$$
+i < n \implies \mathrm{chunkIndexOf}(s, i) < \mathrm{chunkCount}(s, n).
+$$
+
 ## Theorem Targets
 
+- `ChunkLayout.chunkIndexOf`
 - `ChunkLayout.layout_wholeTrace`
 - `ChunkLayout.layout_length_eq_chunkCount`
 - `ChunkLayout.coveredRows_wholeTrace`
+- `ChunkLayout.chunkIndexOf_wholeTrace`
+- `ChunkLayout.chunkIndexOf_lt_chunkCount_of_lt_preparedStepCount`
 
 ## Dependency and Consumer Map
 

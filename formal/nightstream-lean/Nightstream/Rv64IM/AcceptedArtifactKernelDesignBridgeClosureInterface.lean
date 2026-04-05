@@ -22,6 +22,10 @@ abbrev kernelDesignBridgeRustExportBlockers :=
   Nightstream.Rv64IM.kernelDesignBridgeRustExportBlockers
 abbrev uniqueKernelDesignBridgeRustExportBlockers :=
   Nightstream.Rv64IM.uniqueKernelDesignBridgeRustExportBlockers
+abbrev requiredKernelDesignBridgeRustExportBlockers :=
+  Nightstream.Rv64IM.requiredKernelDesignBridgeRustExportBlockers
+abbrev uniqueRequiredKernelDesignBridgeRustExportBlockers :=
+  Nightstream.Rv64IM.uniqueRequiredKernelDesignBridgeRustExportBlockers
 abbrev Rv64imKernelDesignBridgeClosureReport :=
   Nightstream.Rv64IM.Rv64imKernelDesignBridgeClosureReport
 abbrev rv64imAcceptedArtifactKernelDesignBridgeClosureChecks :=

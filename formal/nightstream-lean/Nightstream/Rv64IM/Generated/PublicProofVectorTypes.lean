@@ -23,6 +23,7 @@ structure ProofStatementView where
   mainLaneSurfaceDigest : List Byte
   rootLaneColumnsDigest : List Byte
   publicStepCount : Nat
+  initialPc : Nat
   finalPc : Nat
   halted : Bool
   digest : List Byte

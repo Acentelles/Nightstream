@@ -6,6 +6,7 @@ import Nightstream.Rv64IM.AcceptedArtifactKernelDesignBridgeClosure
 import Nightstream.Rv64IM.AcceptedArtifactRootExecutionClosure
 import Nightstream.Rv64IM.AcceptedArtifactRootExecutionSemanticsClosure
 import Nightstream.Rv64IM.Kernel.AcceptedProofCheckerBackendRefinement
+import Nightstream.Rv64IM.Kernel.RequiredProofCompleteRustExportSurface
 
 /-!
 Top-level RV64IM proof-completeness audit. This owner is intentionally harsher
@@ -21,6 +22,13 @@ inductive ProofCompleteStaticField where
   | mainLaneTraceBoundaryCarriesSchedule
   | transcriptScheduleCarriesRootChunkEvents
   | rootExecutionSemanticsOwnerAboveExactTrace
+  | requiredBackendPayloadSurfaceOwner
+  | requiredRootExecutionSemanticsSurfaceOwner
+  | requiredKernelDesignBridgeSurfaceOwner
+  | requiredProofCompleteRustExportSurfaceOwner
+  | rootExecutionSemanticsExportSurfacePresent
+  | kernelDesignBridgeExportSurfacePresent
+  | proofCompleteRustExportContractPresent
   | acceptedArtifactNoStoredExactBoundaryWitness
   | acceptedProofSoundnessNoStoredExactBoundaryWitness
   | acceptedProofCheckerNoStoredExactBoundaryWitness
@@ -43,6 +51,20 @@ def proofCompleteStaticFieldName : ProofCompleteStaticField → String
       "transcript_schedule_carries_root_chunk_events"
   | .rootExecutionSemanticsOwnerAboveExactTrace =>
       "root_execution_semantics_owner_above_exact_trace"
+  | .requiredBackendPayloadSurfaceOwner =>
+      "required_backend_payload_surface_owner"
+  | .requiredRootExecutionSemanticsSurfaceOwner =>
+      "required_root_execution_semantics_surface_owner"
+  | .requiredKernelDesignBridgeSurfaceOwner =>
+      "required_kernel_design_bridge_surface_owner"
+  | .requiredProofCompleteRustExportSurfaceOwner =>
+      "required_proof_complete_rust_export_surface_owner"
+  | .rootExecutionSemanticsExportSurfacePresent =>
+      "root_execution_semantics_export_surface_present"
+  | .kernelDesignBridgeExportSurfacePresent =>
+      "kernel_design_bridge_export_surface_present"
+  | .proofCompleteRustExportContractPresent =>
+      "proof_complete_rust_export_contract_present"
   | .acceptedArtifactNoStoredExactBoundaryWitness =>
       "accepted_artifact_no_stored_exact_boundary_witness"
   | .acceptedProofSoundnessNoStoredExactBoundaryWitness =>
@@ -72,6 +94,13 @@ def requiredProofCompleteStaticFields : List ProofCompleteStaticField :=
   , .mainLaneTraceBoundaryCarriesSchedule
   , .transcriptScheduleCarriesRootChunkEvents
   , .rootExecutionSemanticsOwnerAboveExactTrace
+  , .requiredBackendPayloadSurfaceOwner
+  , .requiredRootExecutionSemanticsSurfaceOwner
+  , .requiredKernelDesignBridgeSurfaceOwner
+  , .requiredProofCompleteRustExportSurfaceOwner
+  , .rootExecutionSemanticsExportSurfacePresent
+  , .kernelDesignBridgeExportSurfacePresent
+  , .proofCompleteRustExportContractPresent
   , .acceptedArtifactNoStoredExactBoundaryWitness
   , .acceptedProofSoundnessNoStoredExactBoundaryWitness
   , .acceptedProofCheckerNoStoredExactBoundaryWitness
@@ -91,6 +120,16 @@ def proofCompleteStaticFieldPresent : ProofCompleteStaticField → Bool
   | .mainLaneTraceBoundaryCarriesSchedule => true
   | .transcriptScheduleCarriesRootChunkEvents => true
   | .rootExecutionSemanticsOwnerAboveExactTrace => true
+  | .requiredBackendPayloadSurfaceOwner => true
+  | .requiredRootExecutionSemanticsSurfaceOwner => true
+  | .requiredKernelDesignBridgeSurfaceOwner => true
+  | .requiredProofCompleteRustExportSurfaceOwner => true
+  | .rootExecutionSemanticsExportSurfacePresent =>
+      validGeneratedRv64imRequiredProofCompleteRootExecutionSemanticsSurfaceCases
+  | .kernelDesignBridgeExportSurfacePresent =>
+      validGeneratedRv64imRequiredProofCompleteKernelDesignBridgeSurfaceCases
+  | .proofCompleteRustExportContractPresent =>
+      validGeneratedRv64imRequiredProofCompleteRustExportCases
   | .acceptedArtifactNoStoredExactBoundaryWitness => true
   | .acceptedProofSoundnessNoStoredExactBoundaryWitness => true
   | .acceptedProofCheckerNoStoredExactBoundaryWitness => true
@@ -101,7 +140,7 @@ def proofCompleteStaticFieldPresent : ProofCompleteStaticField → Bool
   | .bridgeTheoremBindsStageObligations => true
   | .bridgeTheoremBindsKernelOpenings => true
   | .backendPayloadSurfaceNotSummaryOnly =>
-      uniqueBackendRefinementRustExportBlockers.isEmpty
+      validGeneratedRv64imRequiredProofCompleteBackendSurfaceCases
   | .acceptedCheckerOwnsBackendRefinement => true
 
 def proofCompleteStaticChecks : List (String × Bool) :=
@@ -120,6 +159,7 @@ def proofCompleteCaseAccepted (artifact : Generated.AcceptedProofArtifactView) :
     theoremCompleteAcceptedArtifact artifact &&
     exactTraceBoundaryConstructible artifact &&
     exactKernelBoundaryConstructible artifact &&
+    requiredProofCompleteRustExportSurfacePresent artifact &&
     rootExecutionClosureAccepted artifact &&
     rootExecutionSemanticsClosureAccepted artifact &&
     kernelDesignBridgeClosureAccepted artifact &&
@@ -132,13 +172,113 @@ private def appendUniqueStrings
 
 def proofCompleteRustExportBlockers
     (artifact : Generated.AcceptedProofArtifactView) : List String :=
-  let acc := appendUniqueStrings [] (rootExecutionSemanticsRustExportBlockers artifact)
-  let acc := appendUniqueStrings acc (kernelDesignBridgeRustExportBlockers artifact)
-  appendUniqueStrings acc (backendRefinementRustExportBlockers artifact)
+  requiredProofCompleteRustExportBlockers artifact
+
+def proofCompleteBackendRustExportBlockers
+    (artifact : Generated.AcceptedProofArtifactView) : List String :=
+  requiredProofCompleteBackendRustExportBlockers artifact
+
+def proofCompleteRootExecutionSemanticsRustExportBlockers
+    (artifact : Generated.AcceptedProofArtifactView) : List String :=
+  requiredProofCompleteRootExecutionSemanticsRustExportBlockers artifact
+
+def proofCompleteKernelDesignBridgeRustExportBlockers
+    (artifact : Generated.AcceptedProofArtifactView) : List String :=
+  requiredProofCompleteKernelDesignBridgeRustExportBlockers artifact
 
 def uniqueProofCompleteRustExportBlockers : List String :=
-  Generated.AcceptedProofArtifacts.cases.foldl
-    (fun acc artifact => appendUniqueStrings acc (proofCompleteRustExportBlockers artifact))
+  uniqueRequiredProofCompleteRustExportBlockers
+
+def uniqueProofCompleteBackendRustExportBlockers : List String :=
+  uniqueRequiredProofCompleteBackendRustExportBlockers
+
+def uniqueProofCompleteRequiredBackendPayloadFields : List String :=
+  uniqueRequiredProofCompleteBackendMissingFields
+
+def uniqueProofCompleteRequiredRootExecutionSemanticsFields : List String :=
+  uniqueRequiredProofCompleteRootExecutionSemanticsMissingFields
+
+def uniqueProofCompleteRequiredKernelDesignBridgeFields : List String :=
+  uniqueRequiredProofCompleteKernelDesignBridgeMissingFields
+
+def uniqueProofCompleteRequiredRustExportFields : List String :=
+  uniqueMissingRequiredProofCompleteRustExportFields
+
+def validProofCompleteRequiredBackendPayloadSurface : Bool :=
+  validGeneratedRv64imRequiredProofCompleteBackendSurfaceCases
+
+def validProofCompleteRequiredRootExecutionSemanticsSurface : Bool :=
+  validGeneratedRv64imRequiredProofCompleteRootExecutionSemanticsSurfaceCases
+
+def validProofCompleteRequiredKernelDesignBridgeSurface : Bool :=
+  validGeneratedRv64imRequiredProofCompleteKernelDesignBridgeSurfaceCases
+
+def validProofCompleteRequiredRustExportSurface : Bool :=
+  validGeneratedRv64imRequiredProofCompleteRustExportCases
+
+def uniqueProofCompleteRootExecutionSemanticsRustExportBlockers : List String :=
+  uniqueRequiredProofCompleteRootExecutionSemanticsRustExportBlockers
+
+def uniqueProofCompleteKernelDesignBridgeRustExportBlockers : List String :=
+  uniqueRequiredProofCompleteKernelDesignBridgeRustExportBlockers
+
+def proofCompleteStaticFieldMissingRequiredFields :
+    ProofCompleteStaticField → List String
+  | .backendPayloadSurfaceNotSummaryOnly =>
+      uniqueProofCompleteRequiredBackendPayloadFields
+  | .rootExecutionSemanticsExportSurfacePresent =>
+      uniqueProofCompleteRequiredRootExecutionSemanticsFields
+  | .kernelDesignBridgeExportSurfacePresent =>
+      uniqueProofCompleteRequiredKernelDesignBridgeFields
+  | .proofCompleteRustExportContractPresent =>
+      uniqueProofCompleteRequiredRustExportFields
+  | _ => []
+
+def proofCompleteStaticFieldRustExportBlockers :
+    ProofCompleteStaticField → List String
+  | .backendPayloadSurfaceNotSummaryOnly =>
+      uniqueProofCompleteBackendRustExportBlockers
+  | .rootExecutionSemanticsExportSurfacePresent =>
+      uniqueProofCompleteRootExecutionSemanticsRustExportBlockers
+  | .kernelDesignBridgeExportSurfacePresent =>
+      uniqueProofCompleteKernelDesignBridgeRustExportBlockers
+  | .proofCompleteRustExportContractPresent =>
+      uniqueProofCompleteRustExportBlockers
+  | _ => []
+
+structure ProofCompleteStaticFailureReport where
+  field : String
+  missingRequiredFields : List String
+  rustExportBlockers : List String
+deriving Repr
+
+def proofCompleteStaticFailureReports : List ProofCompleteStaticFailureReport :=
+  requiredProofCompleteStaticFields.filterMap fun field =>
+    if proofCompleteStaticFieldPresent field then
+      none
+    else
+      some
+        { field := proofCompleteStaticFieldName field
+        , missingRequiredFields :=
+            proofCompleteStaticFieldMissingRequiredFields field
+        , rustExportBlockers :=
+            proofCompleteStaticFieldRustExportBlockers field
+        }
+
+def uniqueProofCompleteStaticFailureMissingRequiredFields : List String :=
+  requiredProofCompleteStaticFields.foldl (fun acc field =>
+    if proofCompleteStaticFieldPresent field then
+      acc
+    else
+      appendUniqueStrings acc (proofCompleteStaticFieldMissingRequiredFields field))
+    []
+
+def uniqueProofCompleteStaticFailureRustExportBlockers : List String :=
+  requiredProofCompleteStaticFields.foldl (fun acc field =>
+    if proofCompleteStaticFieldPresent field then
+      acc
+    else
+      appendUniqueStrings acc (proofCompleteStaticFieldRustExportBlockers field))
     []
 
 def uniqueProofCompleteClosureBlockers : List String :=
@@ -150,6 +290,10 @@ structure Rv64imProofCompleteReport where
   completenessAccepted : Bool
   exactTraceAccepted : Bool
   exactKernelAccepted : Bool
+  requiredBackendPayloadSurfaceAccepted : Bool
+  requiredRootExecutionSemanticsSurfaceAccepted : Bool
+  requiredKernelDesignBridgeSurfaceAccepted : Bool
+  requiredRustExportSurfaceAccepted : Bool
   rootExecutionAccepted : Bool
   rootExecutionSemanticsAccepted : Bool
   kernelDesignBridgeAccepted : Bool
@@ -161,6 +305,13 @@ structure Rv64imProofCompleteReport where
   missingCompletenessFields : List String
   missingTraceSlots : List String
   missingKernelSlots : List String
+  missingRequiredBackendPayloadFields : List String
+  missingRequiredRootExecutionSemanticsFields : List String
+  missingRequiredKernelDesignBridgeFields : List String
+  missingRequiredProofCompleteRustExportFields : List String
+  backendRustExportBlockers : List String
+  rootExecutionSemanticsRustExportBlockers : List String
+  kernelDesignBridgeRustExportBlockers : List String
   rustExportBlockers : List String
 deriving Repr
 
@@ -172,11 +323,20 @@ def validGeneratedRv64imProofCompleteCases : Bool :=
 
 def rv64imProofCompleteReports : List Rv64imProofCompleteReport :=
   Generated.AcceptedProofArtifacts.cases.map fun artifact =>
+    let requiredRustExportReport := requiredProofCompleteRustExportReport artifact
     { name := artifact.name
     , parityAccepted := checkAcceptedArtifactCase artifact
     , completenessAccepted := theoremCompleteAcceptedArtifact artifact
     , exactTraceAccepted := exactTraceBoundaryConstructible artifact
     , exactKernelAccepted := exactKernelBoundaryConstructible artifact
+    , requiredBackendPayloadSurfaceAccepted :=
+        requiredRustExportReport.backendSurfacePresent
+    , requiredRootExecutionSemanticsSurfaceAccepted :=
+        requiredRustExportReport.rootExecutionSemanticsSurfacePresent
+    , requiredKernelDesignBridgeSurfaceAccepted :=
+        requiredRustExportReport.kernelDesignBridgeSurfacePresent
+    , requiredRustExportSurfaceAccepted :=
+        requiredRustExportReport.aggregateSurfacePresent
     , rootExecutionAccepted := rootExecutionClosureAccepted artifact
     , rootExecutionSemanticsAccepted := rootExecutionSemanticsClosureAccepted artifact
     , kernelDesignBridgeAccepted := kernelDesignBridgeClosureAccepted artifact
@@ -188,7 +348,21 @@ def rv64imProofCompleteReports : List Rv64imProofCompleteReport :=
     , missingCompletenessFields := missingAcceptedArtifactTheoremFields artifact
     , missingTraceSlots := missingExactTraceConstructorSlots artifact
     , missingKernelSlots := missingExactKernelConstructorSlots artifact
-    , rustExportBlockers := proofCompleteRustExportBlockers artifact
+    , missingRequiredBackendPayloadFields :=
+        requiredRustExportReport.missingBackendFields
+    , missingRequiredRootExecutionSemanticsFields :=
+        requiredRustExportReport.missingRootExecutionSemanticsFields
+    , missingRequiredKernelDesignBridgeFields :=
+        requiredRustExportReport.missingKernelDesignBridgeFields
+    , missingRequiredProofCompleteRustExportFields :=
+        requiredRustExportReport.missing
+    , backendRustExportBlockers :=
+        requiredRustExportReport.backendRustExportBlockers
+    , rootExecutionSemanticsRustExportBlockers :=
+        requiredRustExportReport.rootExecutionSemanticsRustExportBlockers
+    , kernelDesignBridgeRustExportBlockers :=
+        requiredRustExportReport.kernelDesignBridgeRustExportBlockers
+    , rustExportBlockers := requiredRustExportReport.rustExportBlockers
     }
 
 def validRv64imProofCompleteClosure : Bool :=

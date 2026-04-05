@@ -53,3 +53,11 @@ For the root main-lane theorem:
 No theorem-facing acceptance path may replace these root-chunk protocol segments
 with a digest-only summary. The transcript owner records the protocol-time slots
 that later backend-refinement owners must justify with real proof payloads.
+
+The transcript owner must also expose direct slot-membership consequences for
+the canonical chunk layout: if a chunk appears at index `j` in
+`ChunkLayout.layout(schedule, publicStepCount)`, then its exact
+`rootChunkStart`, `rootChunkPiCCS`, `rootChunkPiRLC`, and `rootChunkPiDEC`
+events occur in `rootMainLaneEvents(schedule, publicStepCount)`, and any row
+label carried by that chunk occurs as the corresponding `rootChunkRowLabel`
+event in that same transcript prefix.

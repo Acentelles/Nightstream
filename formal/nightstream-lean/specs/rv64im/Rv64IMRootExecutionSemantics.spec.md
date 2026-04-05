@@ -31,6 +31,9 @@ From the package one must be able to derive:
 - `ExecutionCorrect` on the exact authenticated prefix,
 - `ExecutionCorrect` on the underlying step-composition rows and prepared steps,
 - the explicit fold-schedule validity and chunk-count facts carried by the root package,
+- an explicit in-bounds owning-chunk routing fact for every authenticated row index under that schedule,
+- the theorem-bearing backend package at the owning chunk index for every authenticated row index under that schedule,
+- direct `Π_CCS / Π_RLC / Π_DEC` consequences at the owning chunk index for every authenticated row index under that schedule,
 - and per-chunk `Π_CCS / Π_RLC / Π_DEC` consequences through the chunked root owner.
 
 ## Ownership

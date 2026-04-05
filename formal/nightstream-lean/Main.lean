@@ -23,44 +23,26 @@ private def checkProofImportWall : IO Bool := do
       IO.println out.stderr.trimAscii.toString
     pure false
 
+private def printProcessOutput (out : IO.Process.Output) : IO Unit := do
+  let stdout := out.stdout.trimAscii.toString
+  let stderr := out.stderr.trimAscii.toString
+  if !stdout.isEmpty then
+    IO.println stdout
+  if !stderr.isEmpty then
+    IO.println stderr
+
+private def runProcessChecked (cmd : String) (args : Array String) : IO Bool := do
+  let out ← IO.Process.output { cmd := cmd, args := args }
+  printProcessOutput out
+  pure (out.exitCode == 0)
+
 private def runNightstreamProtocolParity : IO Bool := do
-  let buildOut ← IO.Process.output {
-    cmd := "lake"
-    args := #[
-      "build",
-      "Nightstream.Chip8.Checks",
-      "Nightstream.Rv64IM.Checks",
-      "Nightstream.Rv64IM.AcceptedArtifactChecks",
-      "Nightstream.Rv64IM.AcceptedArtifactStage3Refinement",
-      "Nightstream.Rv64IM.AcceptedArtifactCompleteness",
-      "Nightstream.Rv64IM.AcceptedArtifactConstructorAudit",
-      "Nightstream.Rv64IM.AcceptedArtifactRootExecutionClosure",
-      "Nightstream.Rv64IM.AcceptedArtifactKernelDesignBridgeClosure",
-      "Nightstream.Rv64IM.AcceptedArtifactRootExecutionSemanticsClosure",
-      "Nightstream.Rv64IM.AcceptedArtifactBackendRefinement",
-      "Nightstream.Rv64IM.ProofCompleteAudit"
-    ]
-  }
-  let buildStdout := buildOut.stdout.trimAscii.toString
-  let buildStderr := buildOut.stderr.trimAscii.toString
-  unless buildStdout.isEmpty do
-    IO.println buildStdout
-  unless buildStderr.isEmpty do
-    IO.eprintln buildStderr
-  if buildOut.exitCode ≠ 0 then
+  let okBuild ←
+    runProcessChecked "lake" #["build", "Nightstream.CheckCli"]
+  if !okBuild then
     pure false
   else
-    let out ← IO.Process.output {
-      cmd := "lake"
-      args := #["env", "lean", "--run", "CheckCli.lean"]
-    }
-    let stdout := out.stdout.trimAscii.toString
-    let stderr := out.stderr.trimAscii.toString
-    unless stdout.isEmpty do
-      IO.println stdout
-    unless stderr.isEmpty do
-      IO.eprintln stderr
-    pure (out.exitCode == 0)
+    runProcessChecked "lake" #["env", "lean", "--run", "CheckCli.lean"]
 
 def main : IO UInt32 := do
   let okProofImportWall ← checkProofImportWall
