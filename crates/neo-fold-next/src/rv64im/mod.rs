@@ -2,7 +2,11 @@
 
 pub mod builder;
 pub mod ccs;
+mod chunk_relation;
+pub mod decider;
+pub mod decider_relation;
 pub mod execute;
+pub mod final_relation;
 pub mod isa;
 pub mod kernel;
 pub mod layout;
@@ -15,6 +19,16 @@ pub mod tables;
 mod trace_expand;
 
 pub use builder::{build_program, Rv64ProgramBuild};
+pub use decider::{
+    build_rv64im_spartan2_decider_target, prove_rv64im_spartan2_decider,
+    prove_rv64im_spartan2_decider_from_public_proof, setup_rv64im_spartan2_decider,
+    setup_rv64im_spartan2_decider_from_public_proof, verify_rv64im_spartan2_decider,
+    verify_rv64im_spartan2_decider_from_public_proof,
+};
+pub use decider_relation::{
+    build_rv64im_decider_relation, validate_rv64im_decider_relation_surface, verify_rv64im_decider_relation,
+    Rv64imDeciderRelation,
+};
 pub use isa::{
     decode_instruction, encode_add, encode_addi, encode_addiw, encode_addw, encode_and, encode_andi, encode_auipc,
     encode_beq, encode_bge, encode_bgeu, encode_blt, encode_bltu, encode_bne, encode_div, encode_divu, encode_divuw,
@@ -27,23 +41,28 @@ pub use isa::{
     Rv64Program, Rv64State,
 };
 pub use kernel::{
-    aligned_memory_focus_manifest, build_aligned_memory_focus_parity_case, build_all_parity_cases,
-    build_control_flow_beq_parity_case, build_control_flow_bge_parity_case, build_control_flow_bgeu_parity_case,
-    build_control_flow_blt_parity_case, build_control_flow_bltu_parity_case, build_control_flow_bne_parity_case,
-    build_control_flow_focus_parity_case, build_control_flow_jal_parity_case, build_control_flow_jalr_parity_case,
-    build_main_lane_surface, build_multiply_high_parity_case, build_multiply_low_parity_case,
-    build_narrow_memory_load_parity_case, build_narrow_memory_store_parity_case, build_native_alu_focus_parity_case,
-    build_native_logic_compare_parity_case, build_native_shift_parity_case, build_native_upper_parity_case,
-    build_native_word_arith_parity_case, build_native_word_shift_parity_case, build_parity_case_from_source,
-    build_rv64im_audit_witness_bundle, build_signed_divrem_parity_case, build_simple_kernel_witness,
-    build_simple_kernel_witness_with_perf, build_unsigned_divrem_parity_case, build_vertical_slice_parity_case,
-    control_flow_beq_manifest, control_flow_bge_manifest, control_flow_bgeu_manifest, control_flow_blt_manifest,
-    control_flow_bltu_manifest, control_flow_bne_manifest, control_flow_focus_manifest, control_flow_jal_manifest,
-    control_flow_jalr_manifest, multiply_high_manifest, multiply_low_manifest, narrow_memory_load_manifest,
-    narrow_memory_store_manifest, native_alu_focus_manifest, native_logic_compare_manifest, native_shift_manifest,
-    native_upper_manifest, native_word_arith_manifest, native_word_shift_manifest, parity_source_cases,
-    prepared_step_digest, prove_packaged_simple_kernel, prove_packaged_simple_kernel_with_perf,
-    prove_root_main_lane_packaged_proof_with_perf, prove_root_main_lane_run_proof_with_perf, prove_rv64im_audit_proof,
+    aligned_memory_focus_manifest, audit_rv64im_accepted_proof_against_input,
+    audit_rv64im_accepted_proof_against_input_with_perf, build_aligned_memory_focus_parity_case,
+    build_all_parity_cases, build_control_flow_beq_parity_case, build_control_flow_bge_parity_case,
+    build_control_flow_bgeu_parity_case, build_control_flow_blt_parity_case, build_control_flow_bltu_parity_case,
+    build_control_flow_bne_parity_case, build_control_flow_focus_parity_case, build_control_flow_jal_parity_case,
+    build_control_flow_jalr_parity_case, build_main_lane_surface, build_multiply_high_parity_case,
+    build_multiply_low_parity_case, build_narrow_memory_load_parity_case, build_narrow_memory_store_parity_case,
+    build_native_alu_focus_parity_case, build_native_logic_compare_parity_case, build_native_shift_parity_case,
+    build_native_upper_parity_case, build_native_word_arith_parity_case, build_native_word_shift_parity_case,
+    build_parity_case_from_source, build_rv64im_accepted_proof_artifact, build_rv64im_audit_bundle,
+    build_rv64im_audit_witness_bundle, build_rv64im_kernel_export_relation, build_rv64im_kernel_export_witness,
+    build_signed_divrem_parity_case, build_simple_kernel_witness, build_simple_kernel_witness_with_perf,
+    build_unsigned_divrem_parity_case, build_vertical_slice_parity_case, control_flow_beq_manifest,
+    control_flow_bge_manifest, control_flow_bgeu_manifest, control_flow_blt_manifest, control_flow_bltu_manifest,
+    control_flow_bne_manifest, control_flow_focus_manifest, control_flow_jal_manifest, control_flow_jalr_manifest,
+    multiply_high_manifest, multiply_low_manifest, narrow_memory_load_manifest, narrow_memory_store_manifest,
+    native_alu_focus_manifest, native_logic_compare_manifest, native_shift_manifest, native_upper_manifest,
+    native_word_arith_manifest, native_word_shift_manifest, parity_source_cases, prepared_step_digest,
+    prove_packaged_simple_kernel, prove_packaged_simple_kernel_with_perf,
+    prove_root_main_lane_packaged_proof_with_perf, prove_root_main_lane_run_proof_with_perf,
+    prove_rv64im_accepted_proof, prove_rv64im_accepted_proof_with_options,
+    prove_rv64im_accepted_proof_with_options_and_perf, prove_rv64im_accepted_proof_with_perf, prove_rv64im_audit_proof,
     prove_rv64im_audit_proof_with_perf, prove_rv64im_public_proof, prove_rv64im_public_proof_with_options,
     prove_rv64im_public_proof_with_options_and_perf, prove_rv64im_public_proof_with_perf, prove_simple_kernel,
     public_step_digest, public_step_family_digest, rv64im_ajtai_mixers, rv64im_simple_root_context_id,
@@ -51,28 +70,32 @@ pub use kernel::{
     validate_rv64im_public_proof_against_input, validate_rv64im_public_proof_against_input_with_perf,
     verify_packaged_simple_kernel, verify_packaged_simple_kernel_with_perf,
     verify_root_main_lane_packaged_proof_with_public_rows, verify_root_main_lane_run_proof_with_public_rows,
-    verify_rv64im_audit_proof, verify_rv64im_audit_proof_with_perf, verify_rv64im_public_proof,
-    verify_rv64im_public_proof_with_perf, verify_simple_kernel, verify_simple_kernel_with_perf,
-    vertical_slice_manifest, AjtaiFamilyKind, AjtaiObjectId, AjtaiOpeningId, ExactStageVectorBuildPerf,
-    KernelBindingOpeningClaim, KernelBindingOpeningPoints, KernelBindingPackagedOpeningProof,
-    KernelOpeningBundleBuildPerf, KernelOpeningBundleVerifyPerf, KernelPreparedStepOpeningClaim,
-    KernelPreparedStepOpeningPoints, KernelPreparedStepPackagedOpeningProof, MainLaneFamilySummary, OpeningAccumulator,
-    OpeningAccumulatorStats, OpeningAliasError, OpeningPointLabel, PackagedOpeningBuildPerf,
-    PackagedSimpleKernelVerifyPerf, PreparedStepBinding, PreparedStepBindingSummary, RootLaneColumns,
+    verify_rv64im_accepted_proof, verify_rv64im_accepted_proof_with_perf, verify_rv64im_audit_proof,
+    verify_rv64im_audit_proof_with_perf, verify_rv64im_kernel_export_relation, verify_rv64im_kernel_export_witness,
+    verify_rv64im_public_proof, verify_rv64im_public_proof_with_perf, verify_simple_kernel,
+    verify_simple_kernel_with_perf, vertical_slice_manifest, AjtaiFamilyKind, AjtaiObjectId, AjtaiOpeningId,
+    ExactStageVectorBuildPerf, KernelBindingOpeningClaim, KernelBindingOpeningPoints,
+    KernelBindingPackagedOpeningProof, KernelOpeningBundleBuildPerf, KernelOpeningBundleVerifyPerf,
+    KernelPreparedStepOpeningClaim, KernelPreparedStepOpeningPoints, KernelPreparedStepPackagedOpeningProof,
+    KernelSoundnessAccountingSurface, MainLaneFamilySummary, OpeningAccumulator, OpeningAccumulatorStats,
+    OpeningAliasError, OpeningPointLabel, PackagedOpeningBuildPerf, PackagedSimpleKernelVerifyPerf,
+    PreparedStepBinding, PreparedStepBindingSummary, RootExecutionBundle, RootLaneColumns,
     RootLaneCommitmentSetSummary, RootLaneCommitmentSummaryArtifact, RootMainLaneRunProofProvePerf,
-    RootMainLaneRunProofVerifyPerf, Rv64imAcceptedProofClaim, Rv64imAcceptedProofMainLaneBinding,
-    Rv64imAcceptedProofStatementBinding, Rv64imAcceptedProofTerminalBinding, Rv64imJointOpeningClaim,
-    Rv64imKernelClaimBundle, Rv64imKernelClaimProofBundle, Rv64imKernelClaimSummaryBundle,
-    Rv64imKernelClaimSummaryProofBundle, Rv64imKernelClaimTerminalBundle, Rv64imKernelOpeningBindingBundle,
-    Rv64imKernelOpeningClaim, Rv64imKernelOpeningProofBundle, Rv64imKernelOpeningSummaryBundle,
-    Rv64imKernelProofBundle, Rv64imKernelSummary, Rv64imMainLaneClaim, Rv64imMainLaneClaimBinding,
-    Rv64imMainLaneProofBinding, Rv64imMainLaneProofBundle, Rv64imMainLaneProofSummaryBundle, Rv64imMainLaneSurface,
-    Rv64imParityCaseManifest, Rv64imParityDerivedCase, Rv64imParitySourceCase, Rv64imProof, Rv64imProofInput,
-    Rv64imProofProvePerf, Rv64imProofStatement, Rv64imProofWitnessBundle, Rv64imPublicProofOptions,
-    Rv64imPublicProofVerifyPerf, Rv64imRoot0Claim, Rv64imStageClaimDigestBundle, Rv64imStageClaimProofBundle,
-    Rv64imStageClaimSummaryProofBundle, Rv64imStagePackageDigestBundle, Rv64imStagePackageProofBundle,
-    Rv64imStagePackageSummaryProofBundle, Rv64imStageWitnessProjectionBundle, Rv64imStageWitnessProofBundle,
-    Rv64imStageWitnessSummaryBundle, Rv64imTraceProjectionBundle, Rv64imTraceProofBundle, Rv64imTraceShapeBundle,
+    RootMainLaneRunProofVerifyPerf, RootSemanticRow, RowChunkRoute, Rv64imAcceptedProofArtifact,
+    Rv64imAcceptedProofClaim, Rv64imAcceptedProofMainLaneBinding, Rv64imAcceptedProofStatementBinding,
+    Rv64imAcceptedProofTerminalBinding, Rv64imAuditBundle, Rv64imChunkBridgeRelationWitness, Rv64imChunkExportSurface,
+    Rv64imJointOpeningClaim, Rv64imKernelChunkExportWitness, Rv64imKernelClaimBundle, Rv64imKernelClaimProofBundle,
+    Rv64imKernelClaimSummaryBundle, Rv64imKernelClaimSummaryProofBundle, Rv64imKernelClaimTerminalBundle,
+    Rv64imKernelExportRelation, Rv64imKernelExportWitness, Rv64imKernelOpeningBindingBundle, Rv64imKernelOpeningClaim,
+    Rv64imKernelOpeningProofBundle, Rv64imKernelOpeningSummaryBundle, Rv64imKernelProofBundle, Rv64imKernelSummary,
+    Rv64imMainLaneClaim, Rv64imMainLaneClaimBinding, Rv64imMainLaneProofBinding, Rv64imMainLaneProofBundle,
+    Rv64imMainLaneProofSummaryBundle, Rv64imMainLaneSurface, Rv64imParityCaseManifest, Rv64imParityDerivedCase,
+    Rv64imParitySourceCase, Rv64imProof, Rv64imProofInput, Rv64imProofProvePerf, Rv64imProofStatement,
+    Rv64imProofWitnessBundle, Rv64imPublicProofOptions, Rv64imPublicProofVerifyPerf, Rv64imRoot0Claim,
+    Rv64imStageClaimDigestBundle, Rv64imStageClaimProofBundle, Rv64imStageClaimSummaryProofBundle,
+    Rv64imStagePackageDigestBundle, Rv64imStagePackageProofBundle, Rv64imStagePackageSummaryProofBundle,
+    Rv64imStageWitnessProjectionBundle, Rv64imStageWitnessProofBundle, Rv64imStageWitnessSummaryBundle,
+    Rv64imTraceProjectionBundle, Rv64imTraceProofBundle, Rv64imTraceShapeBundle, Rv64imVerifiedKernelChunkHandoff,
     SelectedOpeningRef, SimpleKernelAuditOutput, SimpleKernelBuildPerf, SimpleKernelError,
     SimpleKernelKernelClaimBundle, SimpleKernelMainLaneArtifact, SimpleKernelMainLaneBinding,
     SimpleKernelOpeningBundle, SimpleKernelOpeningClaim, SimpleKernelOutput, SimpleKernelPackagedProof,
@@ -80,15 +103,27 @@ pub use kernel::{
     SimpleKernelStagePackageBundle, SimpleKernelStageWitnessBundle, SimpleKernelTraceWitness,
     SimpleKernelVerifierInput, SimpleKernelVerifyPerf, Stage1ArtifactSurface, Stage1CanonicalRowBundle,
     Stage1ClaimSurface, Stage1OpeningPoints, Stage1PackagedOpeningProof, Stage1SelectedOpeningClaim,
-    Stage2ArtifactSurface, Stage2CanonicalFamilyBundle, Stage2ClaimSurface, Stage2OpeningPoints,
-    Stage2PackagedOpeningProof, Stage2SelectedOpeningClaim, Stage3ArtifactSurface, Stage3CanonicalContinuityBundle,
-    Stage3ClaimSurface, Stage3OpeningPoints, Stage3PackagedOpeningProof, Stage3SelectedOpeningClaim,
-    StageClaimBundleBuildPerf, StageDigestCommitment, StagePackageBundleBuildPerf, StagePackageBundleVerifyPerf,
-    TranscriptArtifactSurface, TranscriptClaimSurface, TranscriptCursorSnapshot, TranscriptEventKind,
-    TranscriptEventRecord, TranscriptRecord,
+    Stage1VerifiedClaims, Stage2ArtifactSurface, Stage2CanonicalFamilyBundle, Stage2ClaimSurface, Stage2OpeningPoints,
+    Stage2PackagedOpeningProof, Stage2SelectedOpeningClaim, Stage2VerifiedClaims, Stage3ArtifactSurface,
+    Stage3CanonicalContinuityBundle, Stage3ClaimSurface, Stage3OpeningPoints, Stage3PackagedOpeningProof,
+    Stage3SelectedOpeningClaim, Stage3VerifiedClaims, StageClaimBundleBuildPerf, StageDigestCommitment,
+    StagePackageBundleBuildPerf, StagePackageBundleVerifyPerf, StepCompositionSurface, TranscriptArtifactSurface,
+    TranscriptChallenges, TranscriptClaimSurface, TranscriptCursorSnapshot, TranscriptEventKind, TranscriptEventRecord,
+    TranscriptRecord, VerifierClaimAccumulator,
 };
 pub use lower::{Rv64ExpandedRow, Rv64TraceOpcode, Rv64TraceVirtualOpcode};
 pub use perf_case::{
     build_mixed_opcode_perf_source_case, mixed_opcode_perf_expected_x1, RV64IM_MIXED_OPCODE_PERF_BLOCK_LEN,
     RV64IM_MIXED_OPCODE_PERF_DEFAULT_N,
+};
+pub use stage1::{
+    build_sem_inputs, build_stage1_proof_bundle, sem_in_digest, sem_in_from_row, sem_inputs_digest, AluShoutProof,
+    BranchShoutProof, BytecodeShoutProof, SemIn, Stage1AddressCorrectnessProof, Stage1LinkageProof, Stage1ProofBundle,
+};
+pub use stage2::{
+    build_stage2_proof_bundle, RamTwistProof, RegisterTwistProof, Stage2LinkageProof, Stage2ProofBundle,
+    Stage2SemanticsProof, Stage2TemporalContext,
+};
+pub use stage3::{
+    build_stage3_proof_bundle, PcAdjacentBridge, Stage3LinkageProof, Stage3ProofBundle, Stage3SemanticsProof,
 };

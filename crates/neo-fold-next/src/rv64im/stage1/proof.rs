@@ -3,11 +3,16 @@
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use serde::{Deserialize, Serialize};
 
-use crate::rv64im::kernel::{family_word, opcode_word, trace_virtual_opcode_word};
+use crate::rv64im::kernel::{
+    family_word, opcode_word, trace_virtual_opcode_word, Stage1ArtifactSurface, Stage1PackagedOpeningProof,
+};
 use crate::rv64im::lower::{Rv64ExpandedRow, Rv64TraceVirtualOpcode};
 use crate::rv64im::tables::Rv64FamilyTag;
 
 use crate::rv64im::isa::Rv64Opcode;
+
+use super::semantic_inputs::{build_sem_inputs, sem_inputs_digest, SemIn};
+use super::semantics::{build_stage1_semantics_proof, Stage1SemanticsProof};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Stage1RowBinding {
@@ -37,6 +42,66 @@ pub struct Stage1RowBinding {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Stage1Summary {
     pub rows: Vec<Stage1RowBinding>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BytecodeShoutProof {
+    pub rows_digest: [u8; 32],
+    pub packaged_digest: [u8; 32],
+    pub digest: [u8; 32],
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct AluShoutProof {
+    pub sem_inputs_digest: [u8; 32],
+    pub effect_trace_index: u64,
+    pub commit_trace_index: u64,
+    pub digest: [u8; 32],
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BranchShoutProof {
+    pub sem_inputs_digest: [u8; 32],
+    pub first_trace_index: u64,
+    pub last_trace_index: u64,
+    pub digest: [u8; 32],
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Stage1AddressCorrectnessProof {
+    pub row_count: u64,
+    pub effect_row_count: u64,
+    pub commit_row_count: u64,
+    pub real_row_count: u64,
+    pub preserves_x0_count: u64,
+    pub rows_digest: [u8; 32],
+    pub digest: [u8; 32],
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Stage1LinkageProof {
+    pub rows_digest: [u8; 32],
+    pub sem_inputs_digest: [u8; 32],
+    pub mix: u64,
+    pub first_trace_index: u64,
+    pub effect_trace_index: u64,
+    pub commit_trace_index: u64,
+    pub last_trace_index: u64,
+    pub digest: [u8; 32],
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Stage1ProofBundle {
+    pub sem_inputs: Vec<SemIn>,
+    pub row_bindings: Vec<Stage1RowBinding>,
+    pub bytecode: BytecodeShoutProof,
+    pub alu: AluShoutProof,
+    pub branch: BranchShoutProof,
+    pub semantics: Stage1SemanticsProof,
+    pub address_correctness: Stage1AddressCorrectnessProof,
+    pub linkage: Stage1LinkageProof,
+    pub selected_opening: Stage1PackagedOpeningProof,
+    pub digest: [u8; 32],
 }
 
 pub(crate) fn stage1_row_words(row: &Stage1RowBinding) -> [u64; 23] {
@@ -104,5 +169,220 @@ pub fn build_stage1_summary(rows: &[Rv64ExpandedRow]) -> Stage1Summary {
                 preserves_x0: row.rd == 0 || !row.writes_rd,
             })
             .collect(),
+    }
+}
+
+impl BytecodeShoutProof {
+    pub(crate) fn expected_digest(&self) -> [u8; 32] {
+        let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/stage1_bytecode_shout_proof");
+        tr.append_message(b"rv64im/stage1_bytecode_shout_proof/rows_digest", &self.rows_digest);
+        tr.append_message(
+            b"rv64im/stage1_bytecode_shout_proof/packaged_digest",
+            &self.packaged_digest,
+        );
+        tr.digest32()
+    }
+}
+
+impl AluShoutProof {
+    pub(crate) fn expected_digest(&self) -> [u8; 32] {
+        let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/stage1_alu_shout_proof");
+        tr.append_message(
+            b"rv64im/stage1_alu_shout_proof/sem_inputs_digest",
+            &self.sem_inputs_digest,
+        );
+        tr.append_u64s(
+            b"rv64im/stage1_alu_shout_proof/meta",
+            &[self.effect_trace_index, self.commit_trace_index],
+        );
+        tr.digest32()
+    }
+}
+
+impl BranchShoutProof {
+    pub(crate) fn expected_digest(&self) -> [u8; 32] {
+        let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/stage1_branch_shout_proof");
+        tr.append_message(
+            b"rv64im/stage1_branch_shout_proof/sem_inputs_digest",
+            &self.sem_inputs_digest,
+        );
+        tr.append_u64s(
+            b"rv64im/stage1_branch_shout_proof/meta",
+            &[self.first_trace_index, self.last_trace_index],
+        );
+        tr.digest32()
+    }
+}
+
+impl Stage1AddressCorrectnessProof {
+    pub(crate) fn expected_digest(&self) -> [u8; 32] {
+        let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/stage1_address_correctness_proof");
+        tr.append_message(
+            b"rv64im/stage1_address_correctness_proof/rows_digest",
+            &self.rows_digest,
+        );
+        tr.append_u64s(
+            b"rv64im/stage1_address_correctness_proof/meta",
+            &[
+                self.row_count,
+                self.effect_row_count,
+                self.commit_row_count,
+                self.real_row_count,
+                self.preserves_x0_count,
+            ],
+        );
+        tr.digest32()
+    }
+}
+
+impl Stage1LinkageProof {
+    pub(crate) fn expected_digest(&self) -> [u8; 32] {
+        let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/stage1_linkage_proof");
+        tr.append_message(b"rv64im/stage1_linkage_proof/rows_digest", &self.rows_digest);
+        tr.append_message(
+            b"rv64im/stage1_linkage_proof/sem_inputs_digest",
+            &self.sem_inputs_digest,
+        );
+        tr.append_u64s(
+            b"rv64im/stage1_linkage_proof/meta",
+            &[
+                self.mix,
+                self.first_trace_index,
+                self.effect_trace_index,
+                self.commit_trace_index,
+                self.last_trace_index,
+            ],
+        );
+        tr.digest32()
+    }
+}
+
+impl Stage1ProofBundle {
+    pub(crate) fn expected_digest(&self) -> [u8; 32] {
+        let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/stage1_proof_bundle");
+        tr.append_message(b"rv64im/stage1_proof_bundle/bytecode", &self.bytecode.digest);
+        tr.append_message(b"rv64im/stage1_proof_bundle/alu", &self.alu.digest);
+        tr.append_message(b"rv64im/stage1_proof_bundle/branch", &self.branch.digest);
+        tr.append_message(b"rv64im/stage1_proof_bundle/semantics", &self.semantics.digest);
+        tr.append_message(
+            b"rv64im/stage1_proof_bundle/address_correctness",
+            &self.address_correctness.digest,
+        );
+        tr.append_message(b"rv64im/stage1_proof_bundle/linkage", &self.linkage.digest);
+        tr.append_message(
+            b"rv64im/stage1_proof_bundle/selected_opening",
+            &self.selected_opening.digest,
+        );
+        tr.append_u64s(
+            b"rv64im/stage1_proof_bundle/meta",
+            &[self.sem_inputs.len() as u64, self.row_bindings.len() as u64],
+        );
+        tr.digest32()
+    }
+}
+
+pub fn build_stage1_proof_bundle(
+    rows: &[Rv64ExpandedRow],
+    summary: &Stage1Summary,
+    artifact: &Stage1ArtifactSurface,
+    selected_opening: &Stage1PackagedOpeningProof,
+) -> Stage1ProofBundle {
+    let sem_inputs = build_sem_inputs(rows);
+    let sem_inputs_digest = sem_inputs_digest(&sem_inputs);
+    let first_trace_index = summary
+        .rows
+        .first()
+        .map(|row| row.trace_index as u64)
+        .unwrap_or(0);
+    let effect_trace_index = summary
+        .rows
+        .iter()
+        .find(|row| row.is_effect_row)
+        .map(|row| row.trace_index as u64)
+        .unwrap_or(0);
+    let commit_trace_index = summary
+        .rows
+        .iter()
+        .find(|row| row.is_commit_row)
+        .map(|row| row.trace_index as u64)
+        .unwrap_or(0);
+    let last_trace_index = summary
+        .rows
+        .last()
+        .map(|row| row.trace_index as u64)
+        .unwrap_or(0);
+
+    let bytecode = BytecodeShoutProof {
+        rows_digest: artifact.rows.rows_digest,
+        packaged_digest: selected_opening.digest,
+        digest: [0; 32],
+    };
+    let bytecode = BytecodeShoutProof {
+        digest: bytecode.expected_digest(),
+        ..bytecode
+    };
+    let alu = AluShoutProof {
+        sem_inputs_digest,
+        effect_trace_index,
+        commit_trace_index,
+        digest: [0; 32],
+    };
+    let alu = AluShoutProof {
+        digest: alu.expected_digest(),
+        ..alu
+    };
+    let branch = BranchShoutProof {
+        sem_inputs_digest,
+        first_trace_index,
+        last_trace_index,
+        digest: [0; 32],
+    };
+    let branch = BranchShoutProof {
+        digest: branch.expected_digest(),
+        ..branch
+    };
+    let address_correctness = Stage1AddressCorrectnessProof {
+        row_count: artifact.claim.row_count as u64,
+        effect_row_count: artifact.claim.effect_row_count as u64,
+        commit_row_count: artifact.claim.commit_row_count as u64,
+        real_row_count: artifact.claim.real_row_count as u64,
+        preserves_x0_count: artifact.claim.preserves_x0_count as u64,
+        rows_digest: artifact.rows.rows_digest,
+        digest: [0; 32],
+    };
+    let address_correctness = Stage1AddressCorrectnessProof {
+        digest: address_correctness.expected_digest(),
+        ..address_correctness
+    };
+    let semantics = build_stage1_semantics_proof(&sem_inputs, &summary.rows);
+    let linkage = Stage1LinkageProof {
+        rows_digest: artifact.rows.rows_digest,
+        sem_inputs_digest,
+        mix: artifact.claim.mix,
+        first_trace_index,
+        effect_trace_index,
+        commit_trace_index,
+        last_trace_index,
+        digest: [0; 32],
+    };
+    let linkage = Stage1LinkageProof {
+        digest: linkage.expected_digest(),
+        ..linkage
+    };
+    let bundle = Stage1ProofBundle {
+        sem_inputs,
+        row_bindings: summary.rows.clone(),
+        bytecode,
+        alu,
+        branch,
+        semantics,
+        address_correctness,
+        linkage,
+        selected_opening: selected_opening.clone(),
+        digest: [0; 32],
+    };
+    Stage1ProofBundle {
+        digest: bundle.expected_digest(),
+        ..bundle
     }
 }

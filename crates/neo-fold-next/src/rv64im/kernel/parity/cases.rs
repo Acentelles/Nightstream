@@ -1055,7 +1055,7 @@ fn flatten_registers(values: &[u64; RV64_REGISTER_COUNT]) -> Vec<u64> {
     values.to_vec()
 }
 
-fn digest_source_case(source: &Rv64imParitySourceCase) -> [u8; 32] {
+pub(crate) fn rv64im_source_case_digest(source: &Rv64imParitySourceCase) -> [u8; 32] {
     append_u64_matrix_digest(
         b"neo.fold.next/rv64im/source_digest_v1",
         &[
@@ -1113,7 +1113,7 @@ pub(super) fn build_kernel_transcript_and_summary_from_parts(
     stage3: &Stage3Summary,
     final_state: &Rv64State,
 ) -> (TranscriptRecord, Rv64imKernelSummary) {
-    let root0_digest = digest_source_case(source);
+    let root0_digest = rv64im_source_case_digest(source);
     let stage1_digest = append_u64_matrix_digest(
         b"neo.fold.next/rv64im/stage1_digest_v1",
         &[(b"stage1/rows", flatten_stage1(stage1))],

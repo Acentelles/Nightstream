@@ -202,12 +202,6 @@ fn validate_public_bundle_digests(proof: &Rv64imProof) -> Result<(), SimpleKerne
             "RV64IM stage-claim summary bundle does not match the carried stage claims".into(),
         ));
     }
-    if proof.kernel.stage_claims.packaged.proof.statement_digest != proof.kernel.stage_claims.packaged.statement.digest
-    {
-        return Err(SimpleKernelError::Bridge(
-            "RV64IM stage-claim packaged proof digests are inconsistent".into(),
-        ));
-    }
     verify_stage_claim_packaged_proof(&proof.kernel.stage_claims.claims, &proof.kernel.stage_claims.packaged)?;
     if proof.kernel.stage_packages.summary.digest != proof.kernel.stage_packages.summary.expected_digest() {
         return Err(SimpleKernelError::Bridge(
@@ -255,13 +249,6 @@ fn validate_public_bundle_digests(proof: &Rv64imProof) -> Result<(), SimpleKerne
             "RV64IM kernel-claim summary bundle does not match the carried kernel claims".into(),
         ));
     }
-    if proof.kernel.kernel_claims.packaged.proof.statement_digest
-        != proof.kernel.kernel_claims.packaged.statement.digest
-    {
-        return Err(SimpleKernelError::Bridge(
-            "RV64IM kernel-claim packaged proof digests are inconsistent".into(),
-        ));
-    }
     verify_kernel_claim_packaged_proof(&proof.kernel.kernel_claims.claims, &proof.kernel.kernel_claims.packaged)?;
     if proof.kernel.root_lane_columns.object.expected_digest() != proof.kernel.root_lane_columns.object.digest {
         return Err(SimpleKernelError::Bridge(
@@ -304,7 +291,6 @@ fn validate_public_bundle_digests(proof: &Rv64imProof) -> Result<(), SimpleKerne
     }
     if proof.kernel.main_lane.statement_digest != proof.kernel.main_lane.packaged.statement.digest
         || proof.kernel.main_lane.proof_digest != proof.kernel.main_lane.packaged.proof.proof_digest
-        || proof.kernel.main_lane.packaged.proof.statement_digest != proof.kernel.main_lane.packaged.statement.digest
     {
         return Err(SimpleKernelError::Bridge(
             "RV64IM main-lane packaged proof digests are inconsistent".into(),
@@ -334,6 +320,14 @@ fn validate_public_bundle_digests(proof: &Rv64imProof) -> Result<(), SimpleKerne
 
 fn validate_public_bundle_bindings(proof: &Rv64imProof) -> Result<(), SimpleKernelError> {
     let derived_main_lane_surface = build_main_lane_surface(&proof.kernel.root_lane_columns);
+    let expected_initial_pc = proof
+        .witness
+        .trace
+        .trace
+        .execution_rows
+        .first()
+        .map(|row| row.pc)
+        .unwrap_or(proof.statement.final_pc);
     if proof.claim.joint_opening.binding.proof_statement_digest != proof.statement.digest
         || proof.claim.joint_opening.binding.main_lane_claim_digest != proof.claim.main_lane.digest
         || proof
@@ -367,6 +361,7 @@ fn validate_public_bundle_bindings(proof: &Rv64imProof) -> Result<(), SimpleKern
         || proof.statement.execution_digest != proof.kernel.trace.execution_digest()
         || proof.statement.final_state_digest != proof.kernel.kernel_claims.final_state_digest()
         || proof.statement.transcript_final_digest != proof.kernel.kernel_claims.transcript_final_digest()
+        || proof.statement.initial_pc != expected_initial_pc
         || proof.statement.final_pc != proof.kernel.kernel_claims.final_pc()
         || proof.statement.halted != proof.kernel.kernel_claims.halted()
         || proof.statement.main_lane_surface_digest != derived_main_lane_surface.digest
@@ -870,6 +865,7 @@ fn finalize_public_proof_verify_with_perf(
     ))
 }
 
+#[allow(dead_code)]
 pub(super) fn verify_public_kernel_output_from_public_proof_with_perf(
     proof: &Rv64imProof,
 ) -> Result<(PublicSimpleKernelOutput, Rv64imPublicProofVerifyPerf), SimpleKernelError> {
@@ -956,10 +952,26 @@ pub(super) fn validate_public_proof_against_input_with_perf(
     proof: &Rv64imProof,
 ) -> Result<Rv64imPublicProofVerifyPerf, SimpleKernelError> {
     let total_started = Instant::now();
+    if proof.statement.initial_pc != input.source.start_pc {
+        return Err(SimpleKernelError::Bridge(
+            "RV64IM public proof initial pc does not match the public input entrypoint".into(),
+        ));
+    }
     let ((_, sidecar), mut perf) = verify_kernel_output_from_public_proof_with_perf(proof)?;
     let kernel_build_started = Instant::now();
     let ((_, rebuilt_sidecar), mut public_kernel_build) = rebuild_public_kernel_from_input(input, proof)?;
     public_kernel_build.total_ms = millis_since(kernel_build_started);
+    let rebuilt_initial_pc = rebuilt_sidecar
+        .trace
+        .execution_rows
+        .first()
+        .map(|row| row.pc)
+        .unwrap_or(proof.statement.final_pc);
+    if proof.statement.initial_pc != rebuilt_initial_pc {
+        return Err(SimpleKernelError::Bridge(
+            "RV64IM public proof initial pc does not match the canonical build from public input".into(),
+        ));
+    }
     if sidecar.trace != rebuilt_sidecar.trace || sidecar.stages != rebuilt_sidecar.stages {
         return Err(SimpleKernelError::Bridge(
             "RV64IM public proof witness does not match the canonical build from public input".into(),

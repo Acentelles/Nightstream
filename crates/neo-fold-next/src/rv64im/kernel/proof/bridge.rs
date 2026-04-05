@@ -289,6 +289,13 @@ pub(super) fn proof_from_public_kernel_and_artifact(
     let stage_packages = witness.stage_packages.clone();
     let kernel_opening = witness.kernel_opening.clone();
     let kernel_claims = witness.kernel_claims.clone();
+    let initial_pc = witness
+        .trace
+        .trace
+        .execution_rows
+        .first()
+        .map(|row| row.pc)
+        .unwrap_or(kernel_claims.final_pc());
     let statement = Rv64imProofStatement {
         root_params_id: rv64im_simple_root_context_id(),
         fold_schedule: main_lane.binding.fold_schedule,
@@ -303,6 +310,7 @@ pub(super) fn proof_from_public_kernel_and_artifact(
         main_lane_surface_digest: main_lane_surface.digest,
         root_lane_columns_digest: kernel.root_lane_columns.digest,
         public_step_count: kernel.root_lane_columns.time_len,
+        initial_pc,
         final_pc: kernel_claims.final_pc(),
         halted: kernel_claims.halted(),
         digest: [0; 32],

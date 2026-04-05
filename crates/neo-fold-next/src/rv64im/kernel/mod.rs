@@ -13,10 +13,18 @@ mod lane_family;
 mod main_lane_artifact;
 #[path = "main_lane/surface.rs"]
 mod main_lane_surface;
+#[path = "proof/accepted.rs"]
+mod proof_accepted;
 #[path = "proof/api.rs"]
 mod proof_api;
 #[path = "proof/bridge.rs"]
 mod proof_bridge;
+#[path = "proof/completeness.rs"]
+mod proof_completeness;
+#[path = "proof/export_relation.rs"]
+mod proof_export_relation;
+#[path = "proof/staged_verify.rs"]
+mod proof_staged_verify;
 #[path = "proof/verify.rs"]
 mod proof_verify;
 #[path = "proof/witness.rs"]
@@ -81,17 +89,36 @@ pub use perf_diagnostics::{
     SimpleKernelBuildPerf, SimpleKernelVerifyPerf, StageClaimBundleBuildPerf, StagePackageBundleBuildPerf,
     StagePackageBundleVerifyPerf,
 };
+pub use proof_accepted::{Rv64imAcceptedProofArtifact, Rv64imAuditBundle};
 pub use proof_api::{
-    build_rv64im_audit_witness_bundle, prove_rv64im_audit_proof, prove_rv64im_audit_proof_with_perf,
-    prove_rv64im_public_proof, prove_rv64im_public_proof_with_options, prove_rv64im_public_proof_with_options_and_perf,
-    prove_rv64im_public_proof_with_perf, validate_rv64im_public_proof_against_input,
-    validate_rv64im_public_proof_against_input_with_perf, verify_rv64im_audit_proof,
+    audit_rv64im_accepted_proof_against_input, audit_rv64im_accepted_proof_against_input_with_perf,
+    build_rv64im_accepted_proof_artifact, build_rv64im_audit_bundle, build_rv64im_audit_witness_bundle,
+    prove_rv64im_accepted_proof, prove_rv64im_accepted_proof_with_options,
+    prove_rv64im_accepted_proof_with_options_and_perf, prove_rv64im_accepted_proof_with_perf, prove_rv64im_audit_proof,
+    prove_rv64im_audit_proof_with_perf, prove_rv64im_public_proof, prove_rv64im_public_proof_with_options,
+    prove_rv64im_public_proof_with_options_and_perf, prove_rv64im_public_proof_with_perf,
+    validate_rv64im_public_proof_against_input, validate_rv64im_public_proof_against_input_with_perf,
+    verify_rv64im_accepted_proof, verify_rv64im_accepted_proof_with_perf, verify_rv64im_audit_proof,
     verify_rv64im_audit_proof_with_perf, verify_rv64im_public_proof, verify_rv64im_public_proof_with_perf,
     Rv64imAcceptedProofClaim, Rv64imAcceptedProofMainLaneBinding, Rv64imAcceptedProofStatementBinding,
     Rv64imAcceptedProofTerminalBinding, Rv64imJointOpeningClaim, Rv64imKernelClaimBundle, Rv64imKernelOpeningClaim,
     Rv64imKernelProofBundle, Rv64imMainLaneClaim, Rv64imMainLaneClaimBinding, Rv64imMainLaneProofBinding,
     Rv64imMainLaneProofBundle, Rv64imMainLaneProofSummaryBundle, Rv64imProof, Rv64imProofInput, Rv64imProofStatement,
     Rv64imPublicProofOptions, Rv64imRoot0Claim,
+};
+pub use proof_completeness::{KernelSoundnessAccountingSurface, StepCompositionSurface};
+pub use proof_export_relation::{
+    build_rv64im_kernel_export_relation, build_rv64im_kernel_export_witness, verify_rv64im_kernel_export_relation,
+    verify_rv64im_kernel_export_witness, Rv64imChunkBridgeRelationWitness, Rv64imChunkExportSurface,
+    Rv64imKernelChunkExportWitness, Rv64imKernelExportRelation, Rv64imKernelExportWitness,
+    Rv64imVerifiedKernelChunkHandoff,
+};
+pub(crate) use proof_export_relation::{
+    build_rv64im_kernel_export_relation_from_artifact, build_rv64im_kernel_export_seam_from_accepted_artifact,
+    rv64im_public_chunk_digest, verify_rv64im_kernel_export_witness_with_output, Rv64imKernelExportRelationResult,
+};
+pub use proof_staged_verify::{
+    Stage1VerifiedClaims, Stage2VerifiedClaims, Stage3VerifiedClaims, TranscriptChallenges, VerifierClaimAccumulator,
 };
 pub use proof_witness::{
     Rv64imKernelClaimProofBundle, Rv64imKernelClaimSummaryBundle, Rv64imKernelClaimSummaryProofBundle,
@@ -107,6 +134,11 @@ pub use root_lane_commitment::{
     build_root_lane_commitment_artifact, verify_root_lane_commitment_artifact, RootLaneCommitmentArtifact,
     RootLaneCommitmentSet, RootLaneCommitmentSetSummary, RootLaneCommitmentSummaryArtifact, RootLaneOpeningProof,
 };
+pub use root_lane_witness::{
+    RootExecutionBundle, RootExecutionSemanticsRefinement, RootExecutionSemanticsRefinementSummary,
+    RootRowLocalCcsAcceptance, RootRowLocalCcsAcceptanceSummary, RootSemanticRow, RowChunkRoute,
+};
+pub(crate) use simple::rv64im_cached_root_main_lane_context;
 pub use simple::{
     build_simple_kernel_witness, build_simple_kernel_witness_with_perf, prove_packaged_simple_kernel,
     prove_packaged_simple_kernel_with_perf, prove_root_main_lane_packaged_proof_with_perf,

@@ -3,7 +3,10 @@
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use serde::{Deserialize, Serialize};
 
+use crate::rv64im::kernel::{RootExecutionBundle, Stage3ArtifactSurface, Stage3PackagedOpeningProof};
 use crate::rv64im::lower::Rv64ExpandedRow;
+
+use super::semantics::Stage3SemanticsProof;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ContinuityEvent {
@@ -19,6 +22,31 @@ pub struct ContinuityEvent {
 pub struct Stage3Summary {
     pub continuity: Vec<ContinuityEvent>,
     pub halted: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PcAdjacentBridge {
+    pub continuity: Vec<ContinuityEvent>,
+    pub halted: bool,
+    pub continuity_digest: [u8; 32],
+    pub digest: [u8; 32],
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Stage3LinkageProof {
+    pub continuity_family_digest: [u8; 32],
+    pub continuity_mix: u64,
+    pub packaged_digest: [u8; 32],
+    pub digest: [u8; 32],
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Stage3ProofBundle {
+    pub bridge: PcAdjacentBridge,
+    pub semantics: Stage3SemanticsProof,
+    pub linkage: Stage3LinkageProof,
+    pub selected_opening: Stage3PackagedOpeningProof,
+    pub digest: [u8; 32],
 }
 
 pub(crate) fn continuity_event_words(event: &ContinuityEvent) -> [u64; 6] {
@@ -66,5 +94,109 @@ pub fn build_stage3_summary(rows: &[Rv64ExpandedRow]) -> Stage3Summary {
     Stage3Summary {
         halted: real_rows.last().is_some_and(|row| row.halted),
         continuity,
+    }
+}
+
+fn continuity_digest(events: &[ContinuityEvent]) -> [u8; 32] {
+    let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/stage3_pc_adjacent_bridge");
+    tr.append_u64s(b"rv64im/stage3_pc_adjacent_bridge/len", &[events.len() as u64]);
+    for event in events {
+        tr.append_message(
+            b"rv64im/stage3_pc_adjacent_bridge/event",
+            &continuity_event_digest(event),
+        );
+    }
+    tr.digest32()
+}
+
+impl PcAdjacentBridge {
+    pub(crate) fn expected_digest(&self) -> [u8; 32] {
+        let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/stage3_pc_adjacent_bridge_bundle");
+        tr.append_message(
+            b"rv64im/stage3_pc_adjacent_bridge_bundle/continuity_digest",
+            &self.continuity_digest,
+        );
+        tr.append_u64s(
+            b"rv64im/stage3_pc_adjacent_bridge_bundle/meta",
+            &[self.continuity.len() as u64, self.halted as u64],
+        );
+        tr.digest32()
+    }
+}
+
+impl Stage3LinkageProof {
+    pub(crate) fn expected_digest(&self) -> [u8; 32] {
+        let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/stage3_linkage_proof");
+        tr.append_message(
+            b"rv64im/stage3_linkage_proof/continuity_family_digest",
+            &self.continuity_family_digest,
+        );
+        tr.append_message(b"rv64im/stage3_linkage_proof/packaged_digest", &self.packaged_digest);
+        tr.append_u64s(b"rv64im/stage3_linkage_proof/meta", &[self.continuity_mix]);
+        tr.digest32()
+    }
+}
+
+impl Stage3ProofBundle {
+    pub(crate) fn expected_digest(&self) -> [u8; 32] {
+        let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/stage3_proof_bundle");
+        tr.append_message(b"rv64im/stage3_proof_bundle/bridge", &self.bridge.digest);
+        tr.append_message(b"rv64im/stage3_proof_bundle/semantics", &self.semantics.digest);
+        tr.append_message(b"rv64im/stage3_proof_bundle/linkage", &self.linkage.digest);
+        tr.append_message(
+            b"rv64im/stage3_proof_bundle/selected_opening",
+            &self.selected_opening.digest,
+        );
+        tr.digest32()
+    }
+}
+
+pub fn build_stage3_proof_bundle(
+    summary: &Stage3Summary,
+    artifact: &Stage3ArtifactSurface,
+    root_execution: &RootExecutionBundle,
+    stage2_temporal_digest: [u8; 32],
+    initial_pc: u64,
+    final_pc: u64,
+    selected_opening: &Stage3PackagedOpeningProof,
+) -> Stage3ProofBundle {
+    let bridge = PcAdjacentBridge {
+        continuity: summary.continuity.clone(),
+        halted: summary.halted,
+        continuity_digest: continuity_digest(&summary.continuity),
+        digest: [0; 32],
+    };
+    let bridge = PcAdjacentBridge {
+        digest: bridge.expected_digest(),
+        ..bridge
+    };
+    let semantics = Stage3SemanticsProof::new(
+        bridge.continuity_digest,
+        root_execution,
+        stage2_temporal_digest,
+        initial_pc,
+        final_pc,
+        &summary.continuity,
+    );
+    let linkage = Stage3LinkageProof {
+        continuity_family_digest: artifact.continuity.continuity_digest,
+        continuity_mix: artifact.claim.continuity_mix,
+        packaged_digest: selected_opening.digest,
+        digest: [0; 32],
+    };
+    let linkage = Stage3LinkageProof {
+        digest: linkage.expected_digest(),
+        ..linkage
+    };
+    let bundle = Stage3ProofBundle {
+        bridge,
+        semantics,
+        linkage,
+        selected_opening: selected_opening.clone(),
+        digest: [0; 32],
+    };
+    Stage3ProofBundle {
+        digest: bundle.expected_digest(),
+        ..bundle
     }
 }

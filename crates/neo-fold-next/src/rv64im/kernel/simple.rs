@@ -334,6 +334,13 @@ fn cached_root_main_lane_ccs() -> Result<&'static CcsStructure<F>, SimpleKernelE
         .map_err(|err| SimpleKernelError::Proof(err.clone()))
 }
 
+pub(crate) fn rv64im_cached_root_main_lane_context(
+) -> Result<(&'static NeoParams, &'static AjtaiSModule, &'static CcsStructure<F>), SimpleKernelError> {
+    let root_context = cached_simple_kernel_root_context()?;
+    let ccs = cached_root_main_lane_ccs()?;
+    Ok((root_context.params(), root_context.log(), ccs))
+}
+
 pub fn rv64im_simple_root_params() -> NeoParams {
     let mut params = NeoParams::goldilocks_auto_r1cs_ccs(RV64IM_ROOT_ROW_WIDTH).expect("valid RV64IM root params");
     params.k_rho = SIMPLE_KERNEL_K_RHO;
@@ -743,6 +750,17 @@ fn build_prepared_step_binding_summary(
         last_binding_digest,
         digest: tr.digest32(),
     })
+}
+
+pub(crate) fn materialize_prepared_step_binding_summary(
+    rows: &[Rv64ExpandedRow],
+    root_lane_columns: &RootLaneColumns,
+) -> Result<PreparedStepBindingSummary, SimpleKernelError> {
+    let semantic_rows = rows
+        .iter()
+        .map(semantic_row_from_execution_row)
+        .collect::<Vec<_>>();
+    build_prepared_step_binding_summary(rows, &semantic_rows, root_lane_columns, true)
 }
 
 pub(super) fn build_public_root_lane_witness_and_binding_summary(

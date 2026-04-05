@@ -7,10 +7,14 @@ use std::time::Instant;
 use crate::proof::{FoldSchedule, PackagedProof};
 
 use super::main_lane_artifact::build_simple_kernel_main_lane_artifact_from_summary;
+use super::proof_accepted::{
+    accepted_proof_artifact_from_legacy_proof, audit_bundle_from_legacy_proof, Rv64imAcceptedProofArtifact,
+    Rv64imAuditBundle,
+};
 use super::proof_bridge::proof_from_public_kernel_and_artifact;
+use super::proof_staged_verify::verify_accepted_proof_artifact_with_perf;
 use super::proof_verify::{
     validate_public_proof_against_input_with_perf, verify_kernel_output_from_public_proof_with_perf,
-    verify_public_kernel_output_from_public_proof_with_perf,
 };
 use super::proof_witness::{
     proof_witness_bundle_from_public_kernel_and_trace_stages, Rv64imKernelClaimProofBundle,
@@ -42,6 +46,7 @@ pub struct Rv64imProofStatement {
     pub main_lane_surface_digest: [u8; 32],
     pub root_lane_columns_digest: [u8; 32],
     pub public_step_count: u64,
+    pub initial_pc: u64,
     pub final_pc: u64,
     pub halted: bool,
     pub digest: [u8; 32],
@@ -265,6 +270,7 @@ impl Rv64imProofStatement {
             &[
                 self.chunk_count,
                 self.public_step_count,
+                self.initial_pc,
                 self.final_pc,
                 self.halted as u64,
             ],
@@ -604,6 +610,16 @@ pub fn build_rv64im_audit_witness_bundle(
     proof_witness_bundle_from_public_kernel_and_trace_stages(&public, &sidecar.trace, &sidecar.stages)
 }
 
+pub fn build_rv64im_accepted_proof_artifact(
+    proof: &Rv64imProof,
+) -> Result<Rv64imAcceptedProofArtifact, SimpleKernelError> {
+    accepted_proof_artifact_from_legacy_proof(proof)
+}
+
+pub fn build_rv64im_audit_bundle(proof: &Rv64imProof) -> Rv64imAuditBundle {
+    audit_bundle_from_legacy_proof(proof)
+}
+
 fn prove_rv64im_public_proof_and_sidecar_with_perf(
     input: &Rv64imProofInput,
     options: Rv64imPublicProofOptions,
@@ -648,6 +664,13 @@ pub fn prove_rv64im_public_proof(input: &Rv64imProofInput) -> Result<Rv64imProof
     Ok(proof)
 }
 
+pub fn prove_rv64im_accepted_proof(
+    input: &Rv64imProofInput,
+) -> Result<(Rv64imAcceptedProofArtifact, Rv64imAuditBundle), SimpleKernelError> {
+    let ((artifact, audit), _) = prove_rv64im_accepted_proof_with_perf(input)?;
+    Ok((artifact, audit))
+}
+
 pub fn prove_rv64im_public_proof_with_options(
     input: &Rv64imProofInput,
     options: Rv64imPublicProofOptions,
@@ -656,10 +679,24 @@ pub fn prove_rv64im_public_proof_with_options(
     Ok(proof)
 }
 
+pub fn prove_rv64im_accepted_proof_with_options(
+    input: &Rv64imProofInput,
+    options: Rv64imPublicProofOptions,
+) -> Result<(Rv64imAcceptedProofArtifact, Rv64imAuditBundle), SimpleKernelError> {
+    let ((artifact, audit), _) = prove_rv64im_accepted_proof_with_options_and_perf(input, options)?;
+    Ok((artifact, audit))
+}
+
 pub fn prove_rv64im_public_proof_with_perf(
     input: &Rv64imProofInput,
 ) -> Result<(Rv64imProof, Rv64imProofProvePerf), SimpleKernelError> {
     prove_rv64im_public_proof_with_options_and_perf(input, Rv64imPublicProofOptions::default())
+}
+
+pub fn prove_rv64im_accepted_proof_with_perf(
+    input: &Rv64imProofInput,
+) -> Result<((Rv64imAcceptedProofArtifact, Rv64imAuditBundle), Rv64imProofProvePerf), SimpleKernelError> {
+    prove_rv64im_accepted_proof_with_options_and_perf(input, Rv64imPublicProofOptions::default())
 }
 
 pub fn prove_rv64im_public_proof_with_options_and_perf(
@@ -668,6 +705,16 @@ pub fn prove_rv64im_public_proof_with_options_and_perf(
 ) -> Result<(Rv64imProof, Rv64imProofProvePerf), SimpleKernelError> {
     let ((_, _), proof, perf) = prove_rv64im_public_proof_and_sidecar_with_perf(input, options)?;
     Ok((proof, perf))
+}
+
+pub fn prove_rv64im_accepted_proof_with_options_and_perf(
+    input: &Rv64imProofInput,
+    options: Rv64imPublicProofOptions,
+) -> Result<((Rv64imAcceptedProofArtifact, Rv64imAuditBundle), Rv64imProofProvePerf), SimpleKernelError> {
+    let ((_, _), proof, perf) = prove_rv64im_public_proof_and_sidecar_with_perf(input, options)?;
+    let artifact = build_rv64im_accepted_proof_artifact(&proof)?;
+    let audit = build_rv64im_audit_bundle(&proof);
+    Ok(((artifact, audit), perf))
 }
 
 pub fn prove_rv64im_audit_proof(
@@ -689,11 +736,21 @@ pub fn verify_rv64im_public_proof(proof: &Rv64imProof) -> Result<(), SimpleKerne
     verify_rv64im_public_proof_with_perf(proof).map(|_| ())
 }
 
+pub fn verify_rv64im_accepted_proof(artifact: &Rv64imAcceptedProofArtifact) -> Result<(), SimpleKernelError> {
+    verify_rv64im_accepted_proof_with_perf(artifact).map(|_| ())
+}
+
 pub fn verify_rv64im_public_proof_with_perf(
     proof: &Rv64imProof,
 ) -> Result<Rv64imPublicProofVerifyPerf, SimpleKernelError> {
-    let (_, perf) = verify_public_kernel_output_from_public_proof_with_perf(proof)?;
-    Ok(perf)
+    let artifact = build_rv64im_accepted_proof_artifact(proof)?;
+    verify_rv64im_accepted_proof_with_perf(&artifact)
+}
+
+pub fn verify_rv64im_accepted_proof_with_perf(
+    artifact: &Rv64imAcceptedProofArtifact,
+) -> Result<Rv64imPublicProofVerifyPerf, SimpleKernelError> {
+    verify_accepted_proof_artifact_with_perf(artifact)
 }
 
 pub fn validate_rv64im_public_proof_against_input(
@@ -703,11 +760,58 @@ pub fn validate_rv64im_public_proof_against_input(
     validate_rv64im_public_proof_against_input_with_perf(input, proof).map(|_| ())
 }
 
+fn legacy_proof_from_accepted_artifact(
+    artifact: &Rv64imAcceptedProofArtifact,
+    audit: &Rv64imAuditBundle,
+) -> Rv64imProof {
+    let kernel = Rv64imKernelProofBundle {
+        root_params_id: artifact.statement.root_params_id,
+        trace: audit.witness.trace.projection(),
+        stages: audit.witness.stages.projection_bundle(),
+        stage_claims: artifact.stage_claims.clone(),
+        stage_packages: artifact.stage_packages.clone(),
+        kernel_opening: artifact.kernel_opening.clone(),
+        kernel_claims: artifact.kernel_claims.clone(),
+        root_lane_columns: artifact.root_lane_columns.clone(),
+        root_lane_commitment: artifact.root_lane_commitment.clone(),
+        main_lane: artifact.main_lane.clone(),
+        digest: [0; 32],
+    };
+    let kernel = Rv64imKernelProofBundle {
+        digest: kernel.expected_digest(),
+        ..kernel
+    };
+    Rv64imProof {
+        claim: artifact.claim.clone(),
+        statement: artifact.statement.clone(),
+        kernel,
+        witness: audit.witness.clone(),
+    }
+}
+
+pub fn audit_rv64im_accepted_proof_against_input(
+    input: &Rv64imProofInput,
+    artifact: &Rv64imAcceptedProofArtifact,
+    audit: &Rv64imAuditBundle,
+) -> Result<(), SimpleKernelError> {
+    audit_rv64im_accepted_proof_against_input_with_perf(input, artifact, audit).map(|_| ())
+}
+
 pub fn validate_rv64im_public_proof_against_input_with_perf(
     input: &Rv64imProofInput,
     proof: &Rv64imProof,
 ) -> Result<Rv64imPublicProofVerifyPerf, SimpleKernelError> {
     validate_public_proof_against_input_with_perf(input, proof)
+}
+
+pub fn audit_rv64im_accepted_proof_against_input_with_perf(
+    input: &Rv64imProofInput,
+    artifact: &Rv64imAcceptedProofArtifact,
+    audit: &Rv64imAuditBundle,
+) -> Result<Rv64imPublicProofVerifyPerf, SimpleKernelError> {
+    verify_rv64im_accepted_proof(artifact)?;
+    let proof = legacy_proof_from_accepted_artifact(artifact, audit);
+    validate_public_proof_against_input_with_perf(input, &proof)
 }
 
 pub fn verify_rv64im_audit_proof(proof: &Rv64imProof) -> Result<Rv64imProofWitnessBundle, SimpleKernelError> {

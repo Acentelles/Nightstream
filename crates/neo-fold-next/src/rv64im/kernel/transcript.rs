@@ -36,6 +36,96 @@ pub struct TranscriptRecord {
     pub events: Vec<TranscriptEventRecord>,
 }
 
+fn append_bytes(tr: &mut Poseidon2Transcript, len_label: &'static [u8], value_label: &'static [u8], bytes: &[u8]) {
+    tr.append_u64s(len_label, &[bytes.len() as u64]);
+    tr.append_message(value_label, bytes);
+}
+
+fn append_cursor_snapshot(tr: &mut Poseidon2Transcript, prefix: &'static [u8], snapshot: &TranscriptCursorSnapshot) {
+    let (state_label, absorbed_label): (&'static [u8], &'static [u8]) =
+        if prefix == b"rv64im/transcript_record/event/cursor_before" {
+            (
+                b"rv64im/transcript_record/event/cursor_before/state",
+                b"rv64im/transcript_record/event/cursor_before/absorbed",
+            )
+        } else {
+            (
+                b"rv64im/transcript_record/event/cursor_after/state",
+                b"rv64im/transcript_record/event/cursor_after/absorbed",
+            )
+        };
+    tr.append_u64s(state_label, &snapshot.state_words);
+    tr.append_u64s(absorbed_label, &[snapshot.absorbed as u64]);
+}
+
+impl TranscriptRecord {
+    pub fn expected_digest(&self) -> [u8; 32] {
+        let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/transcript_record");
+        append_bytes(
+            &mut tr,
+            b"rv64im/transcript_record/app_label_len",
+            b"rv64im/transcript_record/app_label",
+            &self.app_label,
+        );
+        tr.append_u64s(b"rv64im/transcript_record/event_count", &[self.events.len() as u64]);
+        for event in &self.events {
+            let kind = match event.kind {
+                TranscriptEventKind::AppendMessage => 0u64,
+                TranscriptEventKind::AppendU64s => 1u64,
+                TranscriptEventKind::ChallengeField => 2u64,
+                TranscriptEventKind::Digest32 => 3u64,
+            };
+            tr.append_u64s(b"rv64im/transcript_record/event/kind", &[kind]);
+            append_bytes(
+                &mut tr,
+                b"rv64im/transcript_record/event/label_len",
+                b"rv64im/transcript_record/event/label",
+                &event.label,
+            );
+            append_bytes(
+                &mut tr,
+                b"rv64im/transcript_record/event/message_len",
+                b"rv64im/transcript_record/event/message",
+                &event.message,
+            );
+            tr.append_u64s(b"rv64im/transcript_record/event/u64_count", &[event.u64s.len() as u64]);
+            if !event.u64s.is_empty() {
+                tr.append_u64s(b"rv64im/transcript_record/event/u64s", &event.u64s);
+            }
+            append_cursor_snapshot(
+                &mut tr,
+                b"rv64im/transcript_record/event/cursor_before",
+                &event.cursor_before,
+            );
+            append_cursor_snapshot(
+                &mut tr,
+                b"rv64im/transcript_record/event/cursor_after",
+                &event.cursor_after,
+            );
+            match event.challenge_output {
+                Some(challenge) => {
+                    tr.append_u64s(b"rv64im/transcript_record/event/has_challenge", &[1]);
+                    tr.append_u64s(b"rv64im/transcript_record/event/challenge", &[challenge]);
+                }
+                None => tr.append_u64s(b"rv64im/transcript_record/event/has_challenge", &[0]),
+            }
+            match event.digest_output {
+                Some(digest) => {
+                    tr.append_u64s(b"rv64im/transcript_record/event/has_digest", &[1]);
+                    append_bytes(
+                        &mut tr,
+                        b"rv64im/transcript_record/event/digest_len",
+                        b"rv64im/transcript_record/event/digest",
+                        &digest,
+                    );
+                }
+                None => tr.append_u64s(b"rv64im/transcript_record/event/has_digest", &[0]),
+            }
+        }
+        tr.digest32()
+    }
+}
+
 pub struct LoggingTranscript {
     inner: Poseidon2Transcript,
     app_label: Vec<u8>,

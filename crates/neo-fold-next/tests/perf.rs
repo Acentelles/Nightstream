@@ -4,6 +4,8 @@ use std::collections::BTreeSet;
 use std::env;
 use std::time::Instant;
 
+use serde::Serialize;
+
 use neo_fold_next::proof::{FoldSchedule, PackagedProof};
 use neo_fold_next::rv64im::ccs::{rv64im_root_main_lane_ccs, RV64IM_ROOT_PUBLIC_INPUTS, RV64IM_ROOT_ROW_WIDTH};
 use neo_fold_next::rv64im::layout::RV64_REGISTER_COUNT;
@@ -120,6 +122,12 @@ struct ExactStagePerfRow<'a> {
     opening_prove_ms: f64,
 }
 
+#[derive(Clone, Copy)]
+struct SerializedSizeRow<'a> {
+    label: &'a str,
+    bytes: usize,
+}
+
 fn perf_opcode_count_from_env() -> usize {
     match env::var("NS_DEBUG_N") {
         Ok(raw) => raw.parse().expect("NS_DEBUG_N must parse as usize"),
@@ -200,6 +208,36 @@ fn print_timing_table(rows: &[(&str, f64)], opcode_count: usize, execution_rows:
             per_unit(*ms, execution_rows),
         );
     }
+}
+
+fn serialized_size_bytes<T: Serialize>(value: &T) -> usize {
+    bincode::serialize(value)
+        .expect("serialize perf snapshot component")
+        .len()
+}
+
+fn bytes_to_kib(bytes: usize) -> f64 {
+    bytes as f64 / 1024.0
+}
+
+fn print_serialized_size_table(rows: &[SerializedSizeRow<'_>], total_bytes: usize) {
+    print_section("Serialized Proof Sizes");
+    println!("  {:28} {:>12} {:>12} {:>10}", "component", "bytes", "KiB", "% total");
+    for row in rows {
+        println!(
+            "  {:28} {:>12} {:>12.3} {:>10.2}",
+            row.label,
+            row.bytes,
+            bytes_to_kib(row.bytes),
+            if total_bytes == 0 {
+                0.0
+            } else {
+                row.bytes as f64 * 100.0 / total_bytes as f64
+            }
+        );
+    }
+    println!();
+    println!("  note: nested component rows are standalone bincode sizes and do not sum to the total");
 }
 
 fn exact_stage_path_is_live(rows: &[ExactStagePerfRow<'_>]) -> bool {
@@ -1241,6 +1279,90 @@ fn rv64im_mixed_opcode_perf_snapshot() {
         selected_opening_labels.len(),
     );
     let exact_stage_rows = exact_stage_perf_rows(&output, &build_perf);
+    let serialized_sizes = [
+        SerializedSizeRow {
+            label: "proof.total",
+            bytes: serialized_size_bytes(&proof),
+        },
+        SerializedSizeRow {
+            label: "proof.statement",
+            bytes: serialized_size_bytes(&proof.statement),
+        },
+        SerializedSizeRow {
+            label: "proof.claim",
+            bytes: serialized_size_bytes(&proof.claim),
+        },
+        SerializedSizeRow {
+            label: "proof.kernel",
+            bytes: serialized_size_bytes(&proof.kernel),
+        },
+        SerializedSizeRow {
+            label: "proof.witness",
+            bytes: serialized_size_bytes(&proof.witness),
+        },
+        SerializedSizeRow {
+            label: "kernel.trace",
+            bytes: serialized_size_bytes(&proof.kernel.trace),
+        },
+        SerializedSizeRow {
+            label: "kernel.stages",
+            bytes: serialized_size_bytes(&proof.kernel.stages),
+        },
+        SerializedSizeRow {
+            label: "kernel.stage_claims",
+            bytes: serialized_size_bytes(&proof.kernel.stage_claims),
+        },
+        SerializedSizeRow {
+            label: "kernel.stage_packages",
+            bytes: serialized_size_bytes(&proof.kernel.stage_packages),
+        },
+        SerializedSizeRow {
+            label: "kernel.kernel_opening",
+            bytes: serialized_size_bytes(&proof.kernel.kernel_opening),
+        },
+        SerializedSizeRow {
+            label: "kernel.kernel_claims",
+            bytes: serialized_size_bytes(&proof.kernel.kernel_claims),
+        },
+        SerializedSizeRow {
+            label: "kernel.main_lane",
+            bytes: serialized_size_bytes(&proof.kernel.main_lane),
+        },
+        SerializedSizeRow {
+            label: "kernel.root_lane_columns",
+            bytes: serialized_size_bytes(&proof.kernel.root_lane_columns),
+        },
+        SerializedSizeRow {
+            label: "kernel.root_lane_commitment",
+            bytes: serialized_size_bytes(&proof.kernel.root_lane_commitment),
+        },
+        SerializedSizeRow {
+            label: "witness.trace",
+            bytes: serialized_size_bytes(&proof.witness.trace),
+        },
+        SerializedSizeRow {
+            label: "witness.stages",
+            bytes: serialized_size_bytes(&proof.witness.stages),
+        },
+        SerializedSizeRow {
+            label: "witness.stage_claims",
+            bytes: serialized_size_bytes(&proof.witness.stage_claims),
+        },
+        SerializedSizeRow {
+            label: "witness.stage_packages",
+            bytes: serialized_size_bytes(&proof.witness.stage_packages),
+        },
+        SerializedSizeRow {
+            label: "witness.kernel_opening",
+            bytes: serialized_size_bytes(&proof.witness.kernel_opening),
+        },
+        SerializedSizeRow {
+            label: "witness.kernel_claims",
+            bytes: serialized_size_bytes(&proof.witness.kernel_claims),
+        },
+    ];
+    let proof_total_bytes = serialized_sizes[0].bytes;
+    let proof_total_kib = bytes_to_kib(proof_total_bytes);
 
     assert_eq!(build.rows, output.trace.execution_rows);
     assert_eq!(build.final_state.pc, output.kernel_claims.kernel.final_pc);
@@ -1451,6 +1573,7 @@ fn rv64im_mixed_opcode_perf_snapshot() {
     print_opening_surface_totals(opening_totals, opcode_count, execution_row_count);
     print_opening_reuse_proxy(&output);
     print_opening_label_summary(&selected_opening_labels);
+    print_serialized_size_table(&serialized_sizes, proof_total_bytes);
     print_root_main_lane_verify_breakdown(&verify_perf);
     print_verify_breakdown(
         "Theorem Verify Breakdown",
@@ -1489,6 +1612,10 @@ fn rv64im_mixed_opcode_perf_snapshot() {
     );
     print_kv("proof witness build time", format!("{prove_witness_ms:.3} ms"));
     print_kv("verified witness build time", format!("{verify_witness_ms:.3} ms"));
+    print_kv(
+        "current public proof size",
+        format!("{proof_total_bytes} bytes ({proof_total_kib:.3} KiB)"),
+    );
     print_kv("total end-to-end time", format!("{end_to_end_ms:.3} ms"));
     print_kv(
         "prove main-lane subphase",

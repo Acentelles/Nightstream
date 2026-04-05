@@ -86,6 +86,7 @@ fn rv64im_proves_and_verifies_fresh_ten_opcode_program() {
         }]
     );
 
+    assert_eq!(proof.statement.initial_pc, START_PC);
     assert_eq!(proof.statement.final_pc, derived.kernel.final_pc);
     assert!(proof.statement.halted);
     assert_eq!(proof.statement.final_state_digest, derived.kernel.final_state_digest);

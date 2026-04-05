@@ -13,7 +13,88 @@ Normative spec for the RV64IM proving kernel. Design principles:
    VM-specific semantics above a shared generic SuperNeo backend.
 
 Field: Goldilocks, `F = 2^64 - 2^32 + 1`.
-Extension field: `K = F[u]/(u^2 + 1)`.
+Extension field: `K = F_{q^2}`.
+
+### 0.0 SuperNeo backend contract
+
+This kernel sits above one concrete SuperNeo-style backend. The backend contract
+is theorem-facing and is not an implementation detail.
+
+Base parameters:
+
+```text
+q   = 2^64 - 2^32 + 1
+F   = F_q
+K   = F_{q^2}
+η   = 81
+Φη  = X^54 + X^27 + 1
+d   = deg(Φη) = 54
+R_F = F[X]/(Φη)
+```
+
+Norm and folding parameters are the public root-context parameters:
+
+```text
+(q, η, d, κ, m, b, k_rho, B, T, s, λ)
+```
+
+with:
+
+```text
+B = b^{k_rho}
+s = 2
+```
+
+and the Π_RLC norm-growth guard:
+
+```text
+count · T · (b - 1) < b^{k_rho} = B,
+```
+
+where `count` is the number of CE claims combined in that Π_RLC invocation.
+
+The root main-lane theorem uses the paper reduction stack:
+
+```text
+Π_SuperNeo := Π_DEC ∘ Π_RLC ∘ Π_CCS.
+```
+
+Chunk-local role split:
+
+```text
+Π_CCS : CCS(b, L)^K × CE(b, L)^k -> CE(b, L)^{K+k}
+Π_RLC : CE(b, L)^{K+k} -> CE(B, L)
+Π_DEC : CE(B, L) -> CE(b, L)^{k_rho}
+```
+
+where:
+
+- the fresh semantic rows authenticated from the root lane instantiate the
+  chunk’s fresh `CCS` claims,
+- the carried main claims from the previous chunk instantiate the incoming `CE`
+  claims,
+- and `Π_DEC` restores the carried norm bound from `B` back to the base bound
+  `b`.
+
+The Π_RLC challenge domain is not an arbitrary field-scalar domain. A
+conforming implementation must sample typed ring-scalar challenges
+
+```text
+ρ_i = rot(a_i) ∈ 𝒞 ⊂ R_F
+```
+
+from a strong sampling set `𝒞` fixed by the backend cyclotomic ring and small
+coefficient alphabet. For the current Goldilocks backend:
+
+```text
+𝒞 = { rot(a) : a ∈ {-2,-1,0,1,2}^d }.
+```
+
+The root theorem package, root context id, and all theorem-facing verification
+of root main-lane packages are bound to this backend contract. Replacing it with
+arbitrary field-scalar RLC challenges, a different cyclotomic ring, or a
+different extension field is non-conforming unless the public root context and
+all theorem statements are updated accordingly.
 
 ### 0.1 Limb representation
 
@@ -306,10 +387,16 @@ A table MLE must either:
 
 Normative rule for this kernel:
 
-- In v1, the ROM table, per-program expanded bytecode table, ALU subtables, and
-  branch-condition table are always committed and absorbed into `root0`.
-- Direct verifier-computable evaluators may be used as cross-checks but do not
-  make commitments optional.
+- In this v1 kernel, the ROM table, per-program expanded bytecode table, ALU
+  subtables, and branch-condition table are all committed and absorbed into
+  `root0` as one uniform-authentication choice.
+- This is a kernel-version simplification, not a theorem of Twist/Shout.
+- A future conforming kernel version may authenticate a read-only table by a
+  direct verifier-computable evaluator instead of a commitment, but only if the
+  exact public table object remains fixed in the theorem package and the
+  resulting opening boundary is updated accordingly.
+- Direct verifier-computable evaluators may be used as cross-checks in v1 but do
+  not make commitments optional under this version of the spec.
 
 ---
 
@@ -2475,7 +2562,8 @@ For each chunk `q`, the root theorem runs exactly:
 
 - one `Π_CCS` over the fresh semantic rows in that chunk plus the carried CE
   claims from the previous chunk,
-- one `Π_RLC`,
+- one `Π_RLC` using transcript-derived ring-scalar challenges
+  `ρ_i ∈ 𝒞 ⊂ R_F`,
 - one `Π_DEC`.
 
 `RowsPerChunk(1)` is therefore the legacy per-row fold cadence. The theorem-
@@ -2858,9 +2946,12 @@ Normative rules:
 3. the schedule partitions the active semantic interval `[0, N)` into one
    ordered contiguous chunk list,
 4. each chunk runs exactly one `Π_CCS`, one `Π_RLC`, and one `Π_DEC`,
-5. `WholeTrace` means one root fold round for the entire active semantic
+5. each chunk’s `Π_RLC` samples typed ring-scalar challenges `ρ_i ∈ 𝒞 ⊂ R_F`
+   from the carried backend challenge domain; arbitrary field-scalar mixing is
+   non-conforming,
+6. `WholeTrace` means one root fold round for the entire active semantic
    interval,
-6. `RowsPerChunk(1)` reproduces the legacy per-row root fold cadence.
+7. `RowsPerChunk(1)` reproduces the legacy per-row root fold cadence.
 
 Normative rule for `RootEncode`:
 
@@ -2870,14 +2961,15 @@ Normative rule for `RootEncode`:
 - `Z_j` is the canonical norm-bounded witness representation consumed by the
   root prover for that row, defined as follows:
   1. let `m = 38`,
-  2. let `cols = ceil(m / D)`,
-  3. form the canonical padded witness vector
+  2. let `D := d = 54`, the SuperNeo ring degree fixed by `Φ81(X) = X^54 + X^27 + 1`,
+  3. let `cols = ceil(m / D)`,
+  4. form the canonical padded witness vector
      `z_pad = [z_j[0], z_j[1], ..., z_j[37], 0, ..., 0] ∈ F^{cols * D}`,
      where padding zeros are appended only at the tail until the length is
      exactly `cols * D`,
-  4. reshape `z_pad` into a `D × cols` matrix by columns: the entry at row
+  5. reshape `z_pad` into a `D × cols` matrix by columns: the entry at row
      `r ∈ [0, D)` and column `c ∈ [0, cols)` is `z_pad[c * D + r]`,
-  5. apply the canonical Ajtai witness encoding induced by the public
+  6. apply the canonical Ajtai witness encoding induced by the public
      `root_params` to that `D × cols` matrix to obtain `Z_j`,
 - equivalently, `Z_j ∈ F^{D × ceil(38 / D)}` with the column-major placement of
   the padded semantic row fixed exactly by the previous rule,
@@ -3180,7 +3272,9 @@ An RV64IM integration may claim conformance to this spec only if:
    `JUMP_TARGET` on `JAL`, taken branch, or `JALR` rows satisfies
    `Align(4, JUMP_TARGET) = 1`.
 10. Booleanity is explicitly proved; Ajtai norm bounds do not substitute.
-11. All tables are committed and absorbed into `root0`.
+11. In this v1 kernel, all read-only tables are committed and absorbed into
+    `root0` as one uniform-authentication choice. This is stricter than the
+    minimum Twist/Shout requirement and is not itself a theorem of the paper.
 12. The bridge uses canonical selected openings against one committed root lane
     family object `C_lane`; repeated work on the same `(family, point)` aliases
     to one authenticated opening surface rather than spawning one fresh

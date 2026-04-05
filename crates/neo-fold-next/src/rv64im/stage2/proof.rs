@@ -4,9 +4,13 @@ use neo_transcript::{Poseidon2Transcript, Transcript};
 use serde::{Deserialize, Serialize};
 
 use crate::rv64im::isa::Rv64Opcode;
-use crate::rv64im::kernel::{family_word, ram_access_kind_word, register_read_role_word};
+use crate::rv64im::kernel::{
+    family_word, ram_access_kind_word, register_read_role_word, Stage2ArtifactSurface, Stage2PackagedOpeningProof,
+};
 use crate::rv64im::lower::{Rv64ExpandedRow, Rv64TraceVirtualOpcode};
 use crate::rv64im::tables::Rv64FamilyTag;
+
+use super::semantics::Stage2SemanticsProof;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum RegisterReadRole {
@@ -64,6 +68,70 @@ pub struct Stage2Summary {
     pub register_writes: Vec<RegisterWriteEvent>,
     pub ram_events: Vec<RamEvent>,
     pub twist_links: Vec<TwistLinkEvent>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RegisterTwistProof {
+    pub reads: Vec<RegisterReadEvent>,
+    pub writes: Vec<RegisterWriteEvent>,
+    pub timeline_digest: [u8; 32],
+    pub digest: [u8; 32],
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RamTwistProof {
+    pub events: Vec<RamEvent>,
+    pub timeline_digest: [u8; 32],
+    pub digest: [u8; 32],
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Stage2TemporalContext {
+    pub twist_links: Vec<TwistLinkEvent>,
+    pub register_timeline_digest: [u8; 32],
+    pub ram_timeline_digest: [u8; 32],
+    pub twist_links_digest: [u8; 32],
+    pub digest: [u8; 32],
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Stage2LinkageProof {
+    pub register_reads_family_digest: [u8; 32],
+    pub register_writes_family_digest: [u8; 32],
+    pub ram_events_family_digest: [u8; 32],
+    pub twist_links_family_digest: [u8; 32],
+    pub reg_mix: u64,
+    pub ram_mix: u64,
+    pub packaged_digest: [u8; 32],
+    pub digest: [u8; 32],
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Stage2ProofBundle {
+    pub register: RegisterTwistProof,
+    pub ram: RamTwistProof,
+    pub temporal: Stage2TemporalContext,
+    pub semantics: Stage2SemanticsProof,
+    pub linkage: Stage2LinkageProof,
+    pub selected_opening: Stage2PackagedOpeningProof,
+    pub digest: [u8; 32],
+}
+
+pub(crate) fn canonical_ram_addr(row: &Rv64ExpandedRow, addr: u64) -> u64 {
+    match row.trace_opcode {
+        Some(
+            Rv64Opcode::Lb
+            | Rv64Opcode::Lbu
+            | Rv64Opcode::Lh
+            | Rv64Opcode::Lhu
+            | Rv64Opcode::Lw
+            | Rv64Opcode::Lwu
+            | Rv64Opcode::Sb
+            | Rv64Opcode::Sh
+            | Rv64Opcode::Sw,
+        ) => addr & !0x7,
+        _ => addr,
+    }
 }
 
 pub(crate) fn register_read_words(event: &RegisterReadEvent) -> [u64; 5] {
@@ -164,7 +232,7 @@ pub(crate) fn twist_link_event_digest(event: &TwistLinkEvent) -> [u8; 32] {
     tr.digest32()
 }
 
-fn row_reads_rs1(row: &Rv64ExpandedRow) -> bool {
+pub(super) fn row_reads_rs1(row: &Rv64ExpandedRow) -> bool {
     matches!(
         row.trace_opcode,
         Some(
@@ -228,7 +296,7 @@ fn row_reads_rs1(row: &Rv64ExpandedRow) -> bool {
     ) || row.trace_virtual_opcode.is_some()
 }
 
-fn row_reads_rs2(row: &Rv64ExpandedRow) -> bool {
+pub(super) fn row_reads_rs2(row: &Rv64ExpandedRow) -> bool {
     matches!(
         row.trace_opcode,
         Some(
@@ -334,7 +402,7 @@ pub fn build_stage2_summary(rows: &[Rv64ExpandedRow]) -> Stage2Summary {
                     trace_index: row.trace_index,
                     step_index: row.step_index,
                     kind,
-                    addr,
+                    addr: canonical_ram_addr(row, addr),
                     previous: before,
                     next,
                 };
@@ -358,5 +426,195 @@ pub fn build_stage2_summary(rows: &[Rv64ExpandedRow]) -> Stage2Summary {
         register_writes,
         ram_events,
         twist_links,
+    }
+}
+
+fn digest_event_sequence(label: &'static [u8], digests: impl IntoIterator<Item = [u8; 32]>, len: usize) -> [u8; 32] {
+    let mut tr = Poseidon2Transcript::new(label);
+    tr.append_u64s(b"meta", &[len as u64]);
+    for digest in digests {
+        tr.append_message(b"entry", &digest);
+    }
+    tr.digest32()
+}
+
+impl RegisterTwistProof {
+    pub(crate) fn expected_digest(&self) -> [u8; 32] {
+        let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/stage2_register_twist_proof");
+        tr.append_message(
+            b"rv64im/stage2_register_twist_proof/timeline_digest",
+            &self.timeline_digest,
+        );
+        tr.append_u64s(
+            b"rv64im/stage2_register_twist_proof/meta",
+            &[self.reads.len() as u64, self.writes.len() as u64],
+        );
+        tr.digest32()
+    }
+}
+
+impl RamTwistProof {
+    pub(crate) fn expected_digest(&self) -> [u8; 32] {
+        let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/stage2_ram_twist_proof");
+        tr.append_message(b"rv64im/stage2_ram_twist_proof/timeline_digest", &self.timeline_digest);
+        tr.append_u64s(b"rv64im/stage2_ram_twist_proof/meta", &[self.events.len() as u64]);
+        tr.digest32()
+    }
+}
+
+impl Stage2TemporalContext {
+    pub(crate) fn expected_digest(&self) -> [u8; 32] {
+        let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/stage2_temporal_context");
+        tr.append_message(
+            b"rv64im/stage2_temporal_context/register_timeline_digest",
+            &self.register_timeline_digest,
+        );
+        tr.append_message(
+            b"rv64im/stage2_temporal_context/ram_timeline_digest",
+            &self.ram_timeline_digest,
+        );
+        tr.append_message(
+            b"rv64im/stage2_temporal_context/twist_links_digest",
+            &self.twist_links_digest,
+        );
+        tr.append_u64s(b"rv64im/stage2_temporal_context/meta", &[self.twist_links.len() as u64]);
+        tr.digest32()
+    }
+}
+
+impl Stage2LinkageProof {
+    pub(crate) fn expected_digest(&self) -> [u8; 32] {
+        let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/stage2_linkage_proof");
+        tr.append_message(
+            b"rv64im/stage2_linkage_proof/register_reads_family_digest",
+            &self.register_reads_family_digest,
+        );
+        tr.append_message(
+            b"rv64im/stage2_linkage_proof/register_writes_family_digest",
+            &self.register_writes_family_digest,
+        );
+        tr.append_message(
+            b"rv64im/stage2_linkage_proof/ram_events_family_digest",
+            &self.ram_events_family_digest,
+        );
+        tr.append_message(
+            b"rv64im/stage2_linkage_proof/twist_links_family_digest",
+            &self.twist_links_family_digest,
+        );
+        tr.append_message(b"rv64im/stage2_linkage_proof/packaged_digest", &self.packaged_digest);
+        tr.append_u64s(b"rv64im/stage2_linkage_proof/meta", &[self.reg_mix, self.ram_mix]);
+        tr.digest32()
+    }
+}
+
+impl Stage2ProofBundle {
+    pub(crate) fn expected_digest(&self) -> [u8; 32] {
+        let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/stage2_proof_bundle");
+        tr.append_message(b"rv64im/stage2_proof_bundle/register", &self.register.digest);
+        tr.append_message(b"rv64im/stage2_proof_bundle/ram", &self.ram.digest);
+        tr.append_message(b"rv64im/stage2_proof_bundle/temporal", &self.temporal.digest);
+        tr.append_message(b"rv64im/stage2_proof_bundle/semantics", &self.semantics.digest);
+        tr.append_message(b"rv64im/stage2_proof_bundle/linkage", &self.linkage.digest);
+        tr.append_message(
+            b"rv64im/stage2_proof_bundle/selected_opening",
+            &self.selected_opening.digest,
+        );
+        tr.digest32()
+    }
+}
+
+pub(crate) fn register_timeline_digest(reads: &[RegisterReadEvent], writes: &[RegisterWriteEvent]) -> [u8; 32] {
+    digest_event_sequence(
+        b"neo.fold.next/rv64im/stage2_register_timeline",
+        reads
+            .iter()
+            .map(register_read_event_digest)
+            .chain(writes.iter().map(register_write_event_digest)),
+        reads.len() + writes.len(),
+    )
+}
+
+pub(crate) fn ram_timeline_digest(events: &[RamEvent]) -> [u8; 32] {
+    digest_event_sequence(
+        b"neo.fold.next/rv64im/stage2_ram_timeline",
+        events.iter().map(ram_event_digest),
+        events.len(),
+    )
+}
+
+pub(crate) fn twist_links_timeline_digest(events: &[TwistLinkEvent]) -> [u8; 32] {
+    digest_event_sequence(
+        b"neo.fold.next/rv64im/stage2_twist_links",
+        events.iter().map(twist_link_event_digest),
+        events.len(),
+    )
+}
+
+pub fn build_stage2_proof_bundle(
+    summary: &Stage2Summary,
+    artifact: &Stage2ArtifactSurface,
+    selected_opening: &Stage2PackagedOpeningProof,
+) -> Stage2ProofBundle {
+    let register_timeline_digest = register_timeline_digest(&summary.register_reads, &summary.register_writes);
+    let ram_timeline_digest = ram_timeline_digest(&summary.ram_events);
+    let twist_links_digest = twist_links_timeline_digest(&summary.twist_links);
+
+    let register = RegisterTwistProof {
+        reads: summary.register_reads.clone(),
+        writes: summary.register_writes.clone(),
+        timeline_digest: register_timeline_digest,
+        digest: [0; 32],
+    };
+    let register = RegisterTwistProof {
+        digest: register.expected_digest(),
+        ..register
+    };
+    let ram = RamTwistProof {
+        events: summary.ram_events.clone(),
+        timeline_digest: ram_timeline_digest,
+        digest: [0; 32],
+    };
+    let ram = RamTwistProof {
+        digest: ram.expected_digest(),
+        ..ram
+    };
+    let temporal = Stage2TemporalContext {
+        twist_links: summary.twist_links.clone(),
+        register_timeline_digest,
+        ram_timeline_digest,
+        twist_links_digest,
+        digest: [0; 32],
+    };
+    let temporal = Stage2TemporalContext {
+        digest: temporal.expected_digest(),
+        ..temporal
+    };
+    let semantics = Stage2SemanticsProof::new(summary);
+    let linkage = Stage2LinkageProof {
+        register_reads_family_digest: artifact.families.register_reads_digest,
+        register_writes_family_digest: artifact.families.register_writes_digest,
+        ram_events_family_digest: artifact.families.ram_events_digest,
+        twist_links_family_digest: artifact.families.twist_links_digest,
+        reg_mix: artifact.claim.reg_mix,
+        ram_mix: artifact.claim.ram_mix,
+        packaged_digest: selected_opening.digest,
+        digest: [0; 32],
+    };
+    let linkage = Stage2LinkageProof {
+        digest: linkage.expected_digest(),
+        ..linkage
+    };
+    let bundle = Stage2ProofBundle {
+        register,
+        ram,
+        temporal,
+        semantics,
+        linkage,
+        selected_opening: selected_opening.clone(),
+        digest: [0; 32],
+    };
+    Stage2ProofBundle {
+        digest: bundle.expected_digest(),
+        ..bundle
     }
 }
