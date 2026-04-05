@@ -1607,13 +1607,13 @@ checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 [[package]]
 name = "spartan2"
 version = "0.4.0"
-source = "git+https://github.com/nicarq/Spartan2.git?rev=8dc993b15def74029f86ea24b89ad7946504c80b#8dc993b15def74029f86ea24b89ad7946504c80b"
 dependencies = [
  "bellpepper",
  "bellpepper-core",
  "bincode",
  "bitvec",
  "byteorder",
+ "cfg-if",
  "digest",
  "ff",
  "flate2",
@@ -1621,8 +1621,10 @@ dependencies = [
  "getrandom 0.2.16",
  "group",
  "halo2curves",
+ "hex",
  "itertools 0.14.0",
  "js-sys",
+ "neo-params",
  "num-bigint 0.4.6",
  "num-integer",
  "num-traits",
@@ -1631,11 +1633,13 @@ dependencies = [
  "p3-goldilocks 0.3.0",
  "p3-poseidon2 0.3.0",
  "p3-symmetric 0.3.0",
+ "proptest",
  "rand 0.9.2",
  "rand_chacha",
  "rand_core 0.6.4",
  "rayon",
  "serde",
+ "sha2",
  "sha3",
  "subtle",
  "thiserror 2.0.17",
