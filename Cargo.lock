@@ -759,6 +759,7 @@ dependencies = [
 name = "neo-fold-next"
 version = "0.1.0"
 dependencies = [
+ "bellpepper-core",
  "bincode",
  "neo-ajtai",
  "neo-ccs",
@@ -771,6 +772,8 @@ dependencies = [
  "rand_chacha",
  "serde",
  "serde_json",
+ "spartan2",
+ "thiserror 2.0.17",
 ]
 
 [[package]]
@@ -841,6 +844,10 @@ dependencies = [
  "rand_chacha",
  "serde",
 ]
+
+[[package]]
+name = "nstream-midnight-bridge"
+version = "0.1.0"
 
 [[package]]
 name = "nu-ansi-term"

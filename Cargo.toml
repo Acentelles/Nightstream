@@ -3,6 +3,7 @@ members = [
   "crates/neo-params", 
   "crates/neo-math", 
   # Implementation crates
+  "crates/nstream-midnight-bridge",
   "crates/neo-transcript",
   "crates/neo-ajtai",
   "crates/neo-ccs",

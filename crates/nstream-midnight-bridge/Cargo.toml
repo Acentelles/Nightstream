@@ -1,0 +1,13 @@
+[package]
+name = "nstream-midnight-bridge"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+license = "MIT"
+description = "Midnight outer-compression bridge for theorem-facing neo-fold-next proof exports."
+
+[dependencies]
+
+[lints]
+workspace = true
