@@ -4,7 +4,10 @@ use neo_ajtai::Commitment;
 use neo_ccs::{poly::SparsePoly, poly::Term, CcsStructure, CeClaim, Mat};
 use neo_math::{D, F, K};
 use neo_params::NeoParams;
-use neo_reductions::api::{dec_children_with_commit, rlc_public, rlc_with_commit, verify_dec_public, FoldingMode};
+use neo_reductions::api::{
+    dec_children_with_commit, rlc_public, rlc_public_matches_verified_inputs_with_perf, rlc_public_matches_with_perf,
+    rlc_with_commit, verify_dec_public, FoldingMode,
+};
 use neo_reductions::common::{compute_y_from_Z_and_r, left_mul_acc};
 use p3_field::PrimeCharacteristicRing;
 
@@ -205,6 +208,94 @@ fn rlc_with_commit_k4_matches_public_recompute_and_detects_rho_tamper() {
     )
     .expect("rlc_public tampered rho");
     assert_ne!(parent_tampered, parent, "tampered ρ must change the RLC parent");
+}
+
+#[test]
+fn rlc_public_verified_inputs_fast_path_matches_full_public_check() {
+    let params = NeoParams::goldilocks_127();
+    let ell_d = D.next_power_of_two().trailing_zeros() as usize;
+    let s = build_structure(D, D);
+    let m_in = 2usize;
+    let r = vec![k(5); 6];
+
+    let mut Zs = Vec::new();
+    let mut me_inputs = Vec::new();
+    for i in 0..4usize {
+        let Z = make_z(2200 + i as u64 * 97, s.m);
+        let c = make_commitment(&params, 3300 + i as u64);
+        me_inputs.push(build_me_from_z(
+            &params,
+            &s,
+            &Z,
+            &r,
+            ell_d,
+            m_in,
+            c,
+            4400 + i as u64 * 10,
+        ));
+        Zs.push(Z);
+    }
+
+    let rhos = vec![diag_rho(1), diag_rho(3), diag_rho(4), diag_rho(7)];
+    let rhos_typed = typed_rhos(&params, &rhos);
+    let (parent, _) = rlc_with_commit(
+        FoldingMode::Optimized,
+        &s,
+        &params,
+        &rhos_typed,
+        &me_inputs,
+        &Zs,
+        ell_d,
+        mix_commitments_from_rhos,
+    )
+    .expect("optimized rlc_with_commit");
+
+    let (full_ok, _) = rlc_public_matches_with_perf(
+        &s,
+        &params,
+        &rhos_typed,
+        &me_inputs,
+        &parent,
+        mix_commitments_from_rhos,
+        ell_d,
+    )
+    .expect("full rlc_public_matches_with_perf");
+    let (verified_ok, _) = rlc_public_matches_verified_inputs_with_perf(
+        &s,
+        &params,
+        &rhos_typed,
+        &me_inputs,
+        &parent,
+        mix_commitments_from_rhos,
+        ell_d,
+    )
+    .expect("verified-inputs rlc_public_matches_with_perf");
+    assert_eq!(verified_ok, full_ok, "fast path must agree on valid verified inputs");
+    assert!(verified_ok, "valid verified inputs must satisfy the public RLC check");
+
+    let rhos_tampered = typed_rhos(&params, &[diag_rho(9), diag_rho(3), diag_rho(4), diag_rho(7)]);
+    let (full_bad, _) = rlc_public_matches_with_perf(
+        &s,
+        &params,
+        &rhos_tampered,
+        &me_inputs,
+        &parent,
+        mix_commitments_from_rhos,
+        ell_d,
+    )
+    .expect("full tampered rlc_public_matches_with_perf");
+    let (verified_bad, _) = rlc_public_matches_verified_inputs_with_perf(
+        &s,
+        &params,
+        &rhos_tampered,
+        &me_inputs,
+        &parent,
+        mix_commitments_from_rhos,
+        ell_d,
+    )
+    .expect("verified-inputs tampered rlc_public_matches_with_perf");
+    assert_eq!(verified_bad, full_bad, "fast path must agree on tampered rho checks");
+    assert!(!verified_bad, "tampered rho must fail the public RLC check");
 }
 
 #[cfg(feature = "paper-exact")]

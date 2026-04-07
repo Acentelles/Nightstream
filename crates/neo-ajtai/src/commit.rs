@@ -520,10 +520,7 @@ pub fn commit_row_major_seeded_many(
             {
                 if chunk_seeds.len() == 1 {
                     let mut rng = ChaCha8Rng::from_seed(chunk_seeds[0]);
-                    let mut base_cols = vec![[Fq::ZERO; D]; m];
-                    for col in base_cols.iter_mut() {
-                        *col = sample_uniform_rq_coeffs(&mut rng);
-                    }
+                    let base_cols: Vec<[Fq; D]> = (0..m).map(|_| sample_uniform_rq_coeffs(&mut rng)).collect();
 
                     if allow_parallel && n > 1 {
                         (0..n)
@@ -832,27 +829,35 @@ pub fn verify_split_open(pp: &PP<RqEl>, c: &Commitment, b: u32, c_is: &[Commitme
 }
 
 /// S-homomorphism: ρ·L(Z) = L(ρ·Z).  We expose helpers for left-multiplying commitments.
-pub fn s_mul_add(acc: &mut Commitment, rho_ring: &RqEl, c: &Commitment) {
+pub fn s_mul_add_from_rot_col(acc: &mut Commitment, first_rot_col: &[Fq; D], c: &Commitment) {
     let d = c.d;
     let kappa = c.kappa;
     debug_assert_eq!(d, D, "Ajtai commitment columns must have D rows");
     debug_assert_eq!(acc.d, d);
     debug_assert_eq!(acc.kappa, kappa);
 
-    let mut rot_col = cf(*rho_ring);
+    let (acc_cols, acc_rem) = acc.data.as_chunks_mut::<D>();
+    let (c_cols, c_rem) = c.data.as_chunks::<D>();
+    debug_assert!(acc_rem.is_empty(), "accumulator commitment columns must be D-wide");
+    debug_assert!(c_rem.is_empty(), "input commitment columns must be D-wide");
+    debug_assert_eq!(acc_cols.len(), kappa);
+    debug_assert_eq!(c_cols.len(), kappa);
+
+    let mut rot_col = *first_rot_col;
     let mut nxt = [Fq::ZERO; D];
     for t in 0..D {
-        for col in 0..kappa {
-            let scalar = c.data[col * d + t];
-            let dst: &mut [Fq; D] = acc
-                .col_mut(col)
-                .try_into()
-                .expect("commitment column length should be d");
-            acc_mul_add_inplace(dst, &rot_col, scalar);
+        for (dst, src) in acc_cols.iter_mut().zip(c_cols.iter()) {
+            acc_mul_add_inplace(dst, &rot_col, src[t]);
         }
         rot_step(&rot_col, &mut nxt);
         rot_col = nxt;
     }
+}
+
+/// S-homomorphism: ρ·L(Z) = L(ρ·Z).  We expose helpers for left-multiplying commitments.
+pub fn s_mul_add(acc: &mut Commitment, rho_ring: &RqEl, c: &Commitment) {
+    let rot_col = cf(*rho_ring);
+    s_mul_add_from_rot_col(acc, &rot_col, c);
 }
 
 /// Add a field-scalar multiple of a commitment into an accumulator.

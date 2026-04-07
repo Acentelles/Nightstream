@@ -37,7 +37,7 @@ rayon = { workspace = true }
 rayon = { workspace = true }
 
 [dev-dependencies]
-proptest = "1.7"
+proptest = "1.6.0"
 serde_json = { workspace = true }
 p3-symmetric = "0.4.1"
 rand_chacha = "0.9"

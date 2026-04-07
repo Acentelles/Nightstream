@@ -68,6 +68,13 @@ pub struct PiCcsReplayOutputs {
 }
 
 #[derive(Debug, Clone)]
+pub struct PiCcsReplayWitnessOutputs {
+    pub me_outputs: Vec<neo_ccs::CeClaim<neo_ajtai::Commitment, neo_math::F, neo_math::K>>,
+    pub replay_proof: PiCcsReplayProofWitness,
+    pub perf: PiCcsProvePerf,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PiCcsReplayProofWitness {
     pub sumcheck_rounds: Vec<Vec<K>>,
     pub sumcheck_rounds_nc: Vec<Vec<K>>,
@@ -77,6 +84,12 @@ pub struct PiCcsReplayProofWitness {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct PiCcsVerifyPerf {
     pub bind_ms: f64,
+    pub bind_header_instances_ms: f64,
+    pub bind_header_prefix_ms: f64,
+    pub bind_header_poly_ms: f64,
+    pub bind_header_public_instances_ms: f64,
+    pub bind_me_inputs_ms: f64,
+    pub bind_sample_challenges_ms: f64,
     pub fe_sumcheck_ms: f64,
     pub nc_sumcheck_ms: f64,
     pub output_checks_ms: f64,
@@ -212,11 +225,16 @@ impl PiCcsReplayProofWitness {
 // Re-export optimized prove/verify entrypoints as the main interface
 pub use prove::optimized_prove as pi_ccs_prove;
 pub use prove::optimized_prove_with_cache;
+pub use prove::optimized_prove_with_cache_and_instance_digest_and_perf;
 pub use prove::optimized_prove_with_cache_and_perf;
+pub use prove::optimized_replay_outputs_with_cache_and_instance_digest_and_perf;
 pub use prove::optimized_replay_outputs_with_cache_and_perf;
 pub use prove::optimized_replay_terminal_state_with_cache_and_perf;
+pub use prove::optimized_replay_witness_with_cache_and_instance_digest_and_perf;
+pub use prove::optimized_replay_witness_with_cache_and_perf;
 pub use verify::optimized_verify as pi_ccs_verify;
 pub use verify::optimized_verify_with_cache;
+pub use verify::optimized_verify_with_cache_and_instance_digest_and_perf;
 pub use verify::optimized_verify_with_cache_and_perf;
 
 /// Wrapper for simple case (k=1, no ME inputs)

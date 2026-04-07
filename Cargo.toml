@@ -55,7 +55,7 @@ blake3 = "1.5"
 
 # Benches & tests
 criterion = { version = "0.6", features = ["html_reports"] }
-proptest = "1.7"
+proptest = "1.6.0"
 
 # For sha256 test
 bellpepper = "0.4.1"
@@ -85,6 +85,8 @@ edition = "2021"
 version = "0.1.0"
 authors = ["Nico Arqueros (Shinkai Labs) <nico@shinkai.com>"]
 rust-version = "1.88"
+license = "Apache-2.0"
+repository = "https://github.com/LFDT-Nightstream/Nightstream"
 
 [workspace.lints.clippy]
 # Allow older-style format strings (prefer explicit for complex error messages)

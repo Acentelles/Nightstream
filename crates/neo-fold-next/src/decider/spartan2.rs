@@ -29,6 +29,14 @@ use crate::finalize::{
 };
 use crate::proof::FoldSchedule;
 
+mod public_relation_shell;
+
+pub use public_relation_shell::{
+    prove_spartan2_public_relation_shell, setup_spartan2_public_relation_shell, verify_spartan2_public_relation_shell,
+    Spartan2PublicRelationShellError, Spartan2PublicRelationShellProof, Spartan2PublicRelationShellProverKey,
+    Spartan2PublicRelationShellSnark, Spartan2PublicRelationShellVerifierKey,
+};
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Spartan2DeciderStatement {
     pub public_statement_digest: [u8; 32],
@@ -105,7 +113,7 @@ pub type Spartan2BackendBindingShellProverKey = spartan2::spartan::SpartanProver
 pub type Spartan2BackendBindingShellVerifierKey =
     spartan2::spartan::SpartanVerifierKey<Spartan2BackendBindingShellEngine>;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Spartan2PublicTargetShellProof {
     pub snark_data: Vec<u8>,
 }
@@ -116,7 +124,7 @@ impl Spartan2PublicTargetShellProof {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Spartan2BackendBindingShellProof {
     pub snark_data: Vec<u8>,
 }
@@ -129,21 +137,39 @@ impl Spartan2BackendBindingShellProof {
 
 pub struct Spartan2DeciderProverKey {
     shape: Spartan2DeciderShape,
-    backend: Spartan2BackendBindingShellProverKey,
+    backend: Spartan2PublicTargetShellProverKey,
 }
 
 pub struct Spartan2DeciderVerifierKey {
     shape: Spartan2DeciderShape,
-    backend: Spartan2BackendBindingShellVerifierKey,
+    backend: Spartan2PublicTargetShellVerifierKey,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+impl Spartan2DeciderVerifierKey {
+    pub fn shape_digest(&self) -> [u8; 32] {
+        self.shape.digest()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Spartan2DeciderProof {
     pub shape_digest: [u8; 32],
     pub snark_data: Vec<u8>,
 }
 
 impl Spartan2DeciderProof {
+    pub fn digest(&self) -> [u8; 32] {
+        let mut tr = Poseidon2Transcript::new(b"neo.fold.next/decider/spartan2/proof");
+        tr.append_message(b"neo.fold.next/decider/spartan2/proof/version", b"v1");
+        tr.append_message(b"neo.fold.next/decider/spartan2/proof/shape_digest", &self.shape_digest);
+        tr.append_u64s(
+            b"neo.fold.next/decider/spartan2/proof/snark_bytes_len",
+            &[self.snark_data.len() as u64],
+        );
+        tr.append_message(b"neo.fold.next/decider/spartan2/proof/snark_bytes", &self.snark_data);
+        tr.digest32()
+    }
+
     pub fn snark_bytes_len(&self) -> usize {
         self.snark_data.len()
     }
@@ -295,14 +321,14 @@ fn backend_semantic_digest_fields(
         packed_bytes_field_len(32)
             + 1
             + chunk_summaries.len() * FixedShapeChunkSummary::packed_field_len()
-            + witness.packed_fields().len(),
+            + POSEIDON2_DIGEST_LEN,
     );
     extend_packed_bytes_as_fields(&mut preimage, relation_digest);
     preimage.push(F::from_u64(chunk_count));
     for summary in chunk_summaries {
         preimage.extend(summary.packed_fields());
     }
-    preimage.extend(witness.packed_fields());
+    preimage.extend(witness.digest_fields());
     poseidon2_hash(&preimage)
 }
 
@@ -389,6 +415,35 @@ impl Spartan2DeciderRelation {
         }
     }
 
+    pub fn backend_shape(&self) -> Spartan2DeciderShape {
+        Spartan2DeciderShape {
+            base_component_count: self.base_component_digests.len(),
+            chunk_transition_count: self.chunk_transition_bindings.len(),
+        }
+    }
+
+    pub fn backend_relation(&self) -> Spartan2DeciderBackendRelation {
+        Spartan2DeciderBackendRelation {
+            statement: Spartan2DeciderStatement {
+                public_statement_digest: self.public_statement_digest,
+                relation_digest: self.relation_digest,
+                final_proof_digest: self.final_proof_digest,
+                initial_handle_digest: self.initial_handle_digest,
+                terminal_handle_digest: self.terminal_handle_digest,
+                fold_schedule: self.fold_schedule,
+                chunk_count: self.chunk_summaries.len() as u64,
+                semantic_step_count: self.semantic_step_count,
+                chunk_summaries: self.chunk_summaries.clone(),
+            },
+            witness: Spartan2DeciderBackendWitness {
+                base_component_count: self.base_component_digests.len() as u64,
+                chunk_transition_count: self.chunk_transition_bindings.len() as u64,
+                base_component_digests: self.base_component_digests.clone(),
+                chunk_transition_bindings: self.chunk_transition_bindings.clone(),
+            },
+        }
+    }
+
     fn expected_final_proof_digest(&self) -> [u8; 32] {
         digest_fixed_shape_final_proof(
             &self.relation_digest,
@@ -433,6 +488,34 @@ pub fn build_spartan2_decider_relation(
         chunk_transition_bindings,
         digest: [0; 32],
     };
+    relation.digest = relation.expected_digest();
+    Ok(relation)
+}
+
+pub fn build_spartan2_self_bound_decider_relation(
+    public_statement_digest: [u8; 32],
+    relation_digest: [u8; 32],
+    initial_handle_digest: [F; FIXED_SHAPE_DIGEST_FIELD_LEN],
+    fold_schedule: FoldSchedule,
+    semantic_step_count: u64,
+    chunk_summaries: Vec<FixedShapeChunkSummary>,
+    base_component_digests: Vec<[u8; 32]>,
+    chunk_transition_digests: Vec<[u8; 32]>,
+) -> Result<Spartan2DeciderRelation, Spartan2DeciderError> {
+    let mut relation = build_spartan2_decider_relation(
+        public_statement_digest,
+        relation_digest,
+        [0; 32],
+        initial_handle_digest,
+        [F::ZERO; FIXED_SHAPE_DIGEST_FIELD_LEN],
+        fold_schedule,
+        semantic_step_count,
+        chunk_summaries,
+        base_component_digests,
+        chunk_transition_digests,
+    )?;
+    relation.terminal_handle_digest = relation.expected_terminal_handle_digest();
+    relation.final_proof_digest = relation.expected_final_proof_digest();
     relation.digest = relation.expected_digest();
     Ok(relation)
 }
@@ -787,6 +870,21 @@ impl Spartan2DeciderTarget {
         }
     }
 
+    pub fn relation(&self) -> Result<Spartan2DeciderRelation, Spartan2DeciderError> {
+        build_spartan2_decider_relation(
+            self.statement.public_statement_digest,
+            self.statement.relation_digest,
+            self.statement.final_proof_digest,
+            self.statement.initial_handle_digest,
+            self.statement.terminal_handle_digest,
+            self.statement.fold_schedule,
+            self.statement.semantic_step_count,
+            self.statement.chunk_summaries.clone(),
+            self.witness.base_component_digests.clone(),
+            transition_witness_digests(&self.witness.chunk_transition_bindings),
+        )
+    }
+
     pub fn public_io(&self) -> Vec<F> {
         let mut out = self.statement.public_io();
         out.extend(self.witness.public_io());
@@ -910,7 +1008,8 @@ pub fn verify_spartan2_backend_binding_shell(
 pub fn setup_spartan2_decider(
     shape: &Spartan2DeciderShape,
 ) -> Result<(Spartan2DeciderProverKey, Spartan2DeciderVerifierKey), Spartan2DeciderError> {
-    let (pk, vk) = setup_spartan2_backend_binding_shell(shape)?;
+    let (pk, vk) = setup_spartan2_public_target_shell(shape)
+        .map_err(|err| Spartan2DeciderError::Backend(Spartan2BackendBindingShellError::Setup(err.to_string())))?;
     Ok((
         Spartan2DeciderProverKey {
             shape: shape.clone(),
@@ -930,8 +1029,13 @@ pub fn prove_spartan2_decider(
     if target.shape() != pk.shape {
         return Err(Spartan2DeciderError::ShapeMismatch);
     }
-    let relation = target.backend_relation();
-    let backend = prove_spartan2_backend_binding_shell(&pk.backend, &relation)?;
+    let relation = target
+        .relation()
+        .map_err(|err| Spartan2DeciderError::RelationSurface(err.to_string()))?;
+    validate_spartan2_decider_relation_surface(&relation)
+        .map_err(|err| Spartan2DeciderError::RelationSurface(err.to_string()))?;
+    let backend = prove_spartan2_public_target_shell(&pk.backend, target)
+        .map_err(|err| Spartan2DeciderError::Backend(Spartan2BackendBindingShellError::Prove(err.to_string())))?;
     Ok(Spartan2DeciderProof {
         shape_digest: pk.shape.digest(),
         snark_data: backend.snark_data,
@@ -949,14 +1053,19 @@ pub fn verify_spartan2_decider(
     if proof.shape_digest != vk.shape.digest() {
         return Err(Spartan2DeciderError::ShapeDigestMismatch);
     }
-    let relation = target.backend_relation();
-    verify_spartan2_backend_binding_shell(
+    let relation = target
+        .relation()
+        .map_err(|err| Spartan2DeciderError::RelationSurface(err.to_string()))?;
+    validate_spartan2_decider_relation_surface(&relation)
+        .map_err(|err| Spartan2DeciderError::RelationSurface(err.to_string()))?;
+    verify_spartan2_public_target_shell(
         &vk.backend,
-        &relation,
-        &Spartan2BackendBindingShellProof {
+        target,
+        &Spartan2PublicTargetShellProof {
             snark_data: proof.snark_data.clone(),
         },
-    )?;
+    )
+    .map_err(|err| Spartan2DeciderError::Backend(Spartan2BackendBindingShellError::Verify(err.to_string())))?;
     Ok(())
 }
 
@@ -1316,7 +1425,7 @@ impl SpartanCircuit<Spartan2BackendBindingShellEngine> for Spartan2BackendBindin
             );
         }
         let mut semantic_preimage = Vec::with_capacity(
-            (relation_digest_end - relation_digest_offset) + 1 + (summary_end - summary_offset) + private_witness.len(),
+            (relation_digest_end - relation_digest_offset) + 1 + (summary_end - summary_offset) + digest.len(),
         );
         semantic_preimage.extend(
             public_inputs[relation_digest_offset..relation_digest_end]
@@ -1325,7 +1434,7 @@ impl SpartanCircuit<Spartan2BackendBindingShellEngine> for Spartan2BackendBindin
         );
         semantic_preimage.push(public_chunk_count.clone());
         semantic_preimage.extend(public_inputs[summary_offset..summary_end].iter().cloned());
-        semantic_preimage.extend(private_witness.iter().cloned());
+        semantic_preimage.extend(digest.iter().cloned());
         let semantic_digest =
             hash_packed_goldilocks_fields(cs.namespace(|| "backend_semantic_digest"), &semantic_preimage)?;
         for (idx, digest_value) in semantic_digest.into_iter().enumerate() {

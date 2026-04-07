@@ -7,7 +7,8 @@
 
 use crate::error::PiCcsError;
 use crate::optimized_engine::{
-    PiCcsProof, PiCcsProofVariant, PiCcsProvePerf, PiCcsReplayOutputs, PiCcsReplayTerminalState,
+    PiCcsProof, PiCcsProofVariant, PiCcsProvePerf, PiCcsReplayOutputs, PiCcsReplayProofWitness,
+    PiCcsReplayTerminalState, PiCcsReplayWitnessOutputs,
 };
 use crate::sumcheck::RoundOracle;
 use neo_ajtai::Commitment as Cmt;
@@ -112,6 +113,48 @@ pub fn optimized_prove_with_cache_and_perf<L: neo_ccs::traits::SModuleHomomorphi
         me_witnesses,
         log,
         cache,
+        None,
+        ReplayTraceMode::Prove,
+    )?;
+    let rounds = rounds.expect("optimized prove trace must capture proof rounds");
+
+    let mut proof = PiCcsProof::new(rounds.sumcheck_rounds, Some(rounds.initial_sum));
+    proof.variant = PiCcsProofVariant::SplitNcV1;
+    proof.sumcheck_challenges = [terminal_state.row_chals.clone(), terminal_state.alpha_prime.clone()].concat();
+    proof.sumcheck_rounds_nc = rounds.sumcheck_rounds_nc;
+    proof.sc_initial_sum_nc = Some(rounds.initial_sum_nc);
+    proof.sumcheck_challenges_nc = [terminal_state.s_col.clone(), terminal_state.alpha_prime_nc.clone()].concat();
+    proof.challenges_public = terminal_state.challenges_public.clone();
+    proof.sumcheck_final = terminal_state.sumcheck_final;
+    proof.sumcheck_final_nc = terminal_state.sumcheck_final_nc;
+    proof.header_digest = terminal_state.fold_digest.to_vec();
+
+    Ok((terminal_state.me_outputs, proof, terminal_state.perf))
+}
+
+pub fn optimized_prove_with_cache_and_instance_digest_and_perf<L: neo_ccs::traits::SModuleHomomorphism<F, Cmt>>(
+    tr: &mut Poseidon2Transcript,
+    params: &NeoParams,
+    s: &CcsStructure<F>,
+    mcs_list: &[CcsClaim<Cmt, F>],
+    mcs_witnesses: &[CcsWitness<F>],
+    me_inputs: &[CeClaim<Cmt, F, K>],
+    me_witnesses: &[Mat<F>],
+    public_instance_digest: [F; 4],
+    log: &L,
+    cache: &OptimizedStructureCache,
+) -> Result<(Vec<CeClaim<Cmt, F, K>>, PiCcsProof, PiCcsProvePerf), PiCcsError> {
+    let (terminal_state, rounds) = run_optimized_replay_with_cache_and_perf(
+        tr,
+        params,
+        s,
+        mcs_list,
+        mcs_witnesses,
+        me_inputs,
+        me_witnesses,
+        log,
+        cache,
+        Some(public_instance_digest),
         ReplayTraceMode::Prove,
     )?;
     let rounds = rounds.expect("optimized prove trace must capture proof rounds");
@@ -151,6 +194,7 @@ pub fn optimized_replay_terminal_state_with_cache_and_perf<L: neo_ccs::traits::S
         me_witnesses,
         log,
         cache,
+        None,
         ReplayTraceMode::TerminalState,
     )?;
     validate_replay_terminal_state(params, s, mcs_list, me_inputs, &terminal_state)?;
@@ -186,6 +230,115 @@ pub fn optimized_replay_outputs_with_cache_and_perf<L: neo_ccs::traits::SModuleH
     })
 }
 
+pub fn optimized_replay_outputs_with_cache_and_instance_digest_and_perf<
+    L: neo_ccs::traits::SModuleHomomorphism<F, Cmt>,
+>(
+    tr: &mut Poseidon2Transcript,
+    params: &NeoParams,
+    s: &CcsStructure<F>,
+    mcs_list: &[CcsClaim<Cmt, F>],
+    mcs_witnesses: &[CcsWitness<F>],
+    me_inputs: &[CeClaim<Cmt, F, K>],
+    me_witnesses: &[Mat<F>],
+    public_instance_digest: [F; 4],
+    log: &L,
+    cache: &OptimizedStructureCache,
+) -> Result<PiCcsReplayOutputs, PiCcsError> {
+    let (terminal_state, _rounds) = run_optimized_replay_with_cache_and_perf(
+        tr,
+        params,
+        s,
+        mcs_list,
+        mcs_witnesses,
+        me_inputs,
+        me_witnesses,
+        log,
+        cache,
+        Some(public_instance_digest),
+        ReplayTraceMode::TerminalState,
+    )?;
+    Ok(PiCcsReplayOutputs {
+        me_outputs: terminal_state.me_outputs,
+        fold_digest: terminal_state.fold_digest,
+        perf: terminal_state.perf,
+    })
+}
+
+pub fn optimized_replay_witness_with_cache_and_perf<L: neo_ccs::traits::SModuleHomomorphism<F, Cmt>>(
+    tr: &mut Poseidon2Transcript,
+    params: &NeoParams,
+    s: &CcsStructure<F>,
+    mcs_list: &[CcsClaim<Cmt, F>],
+    mcs_witnesses: &[CcsWitness<F>],
+    me_inputs: &[CeClaim<Cmt, F, K>],
+    me_witnesses: &[Mat<F>],
+    log: &L,
+    cache: &OptimizedStructureCache,
+) -> Result<PiCcsReplayWitnessOutputs, PiCcsError> {
+    let (terminal_state, rounds) = run_optimized_replay_with_cache_and_perf(
+        tr,
+        params,
+        s,
+        mcs_list,
+        mcs_witnesses,
+        me_inputs,
+        me_witnesses,
+        log,
+        cache,
+        None,
+        ReplayTraceMode::Prove,
+    )?;
+    let rounds = rounds.expect("optimized replay-witness trace must capture proof rounds");
+    Ok(PiCcsReplayWitnessOutputs {
+        me_outputs: terminal_state.me_outputs,
+        replay_proof: PiCcsReplayProofWitness {
+            sumcheck_rounds: rounds.sumcheck_rounds,
+            sumcheck_rounds_nc: rounds.sumcheck_rounds_nc,
+            header_digest: terminal_state.fold_digest,
+        },
+        perf: terminal_state.perf,
+    })
+}
+
+pub fn optimized_replay_witness_with_cache_and_instance_digest_and_perf<
+    L: neo_ccs::traits::SModuleHomomorphism<F, Cmt>,
+>(
+    tr: &mut Poseidon2Transcript,
+    params: &NeoParams,
+    s: &CcsStructure<F>,
+    mcs_list: &[CcsClaim<Cmt, F>],
+    mcs_witnesses: &[CcsWitness<F>],
+    me_inputs: &[CeClaim<Cmt, F, K>],
+    me_witnesses: &[Mat<F>],
+    public_instance_digest: [F; 4],
+    log: &L,
+    cache: &OptimizedStructureCache,
+) -> Result<PiCcsReplayWitnessOutputs, PiCcsError> {
+    let (terminal_state, rounds) = run_optimized_replay_with_cache_and_perf(
+        tr,
+        params,
+        s,
+        mcs_list,
+        mcs_witnesses,
+        me_inputs,
+        me_witnesses,
+        log,
+        cache,
+        Some(public_instance_digest),
+        ReplayTraceMode::Prove,
+    )?;
+    let rounds = rounds.expect("optimized replay-witness trace must capture proof rounds");
+    Ok(PiCcsReplayWitnessOutputs {
+        me_outputs: terminal_state.me_outputs,
+        replay_proof: PiCcsReplayProofWitness {
+            sumcheck_rounds: rounds.sumcheck_rounds,
+            sumcheck_rounds_nc: rounds.sumcheck_rounds_nc,
+            header_digest: terminal_state.fold_digest,
+        },
+        perf: terminal_state.perf,
+    })
+}
+
 fn run_optimized_replay_with_cache_and_perf<L: neo_ccs::traits::SModuleHomomorphism<F, Cmt>>(
     tr: &mut Poseidon2Transcript,
     params: &NeoParams,
@@ -196,6 +349,7 @@ fn run_optimized_replay_with_cache_and_perf<L: neo_ccs::traits::SModuleHomomorph
     me_witnesses: &[Mat<F>],
     log: &L,
     cache: &OptimizedStructureCache,
+    public_instance_digest: Option<[F; 4]>,
     mode: ReplayTraceMode,
 ) -> Result<(PiCcsReplayTerminalState, Option<OptimizedProofRounds>), PiCcsError> {
     let total_started = std::time::Instant::now();
@@ -220,7 +374,18 @@ fn run_optimized_replay_with_cache_and_perf<L: neo_ccs::traits::SModuleHomomorph
     // Dims + transcript binding
     let bind_started = std::time::Instant::now();
     let dims = utils::build_dims_and_policy(params, s)?;
-    utils::bind_header_and_instances_with_digest(tr, params, s, mcs_list, dims, cache.mat_digest())?;
+    if let Some(public_instance_digest) = public_instance_digest {
+        utils::bind_header_and_instance_digest_with_digest(
+            tr,
+            params,
+            s,
+            dims,
+            cache.mat_digest(),
+            &public_instance_digest,
+        )?;
+    } else {
+        utils::bind_header_and_instances_with_digest(tr, params, s, mcs_list, dims, cache.mat_digest())?;
+    }
     utils::bind_me_inputs(tr, me_inputs)?;
     let bind_ms = bind_started.elapsed().as_secs_f64() * 1_000.0;
 

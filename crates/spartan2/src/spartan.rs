@@ -142,6 +142,68 @@ pub struct R1CSSNARK<E: Engine> {
   claim_inner_sum: E::Scalar, // ← NEW: correct inner sum-check claim
 }
 
+/// Serialized byte sizes for the major components of an `R1CSSNARK`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct R1CSSNarkSerializedSizeBreakdown {
+  /// Serialized size of the full SNARK object.
+  pub total: usize,
+  /// Serialized size of the carried split R1CS instance.
+  pub instance: usize,
+  /// Serialized size of the outer sumcheck proof.
+  pub outer_sumcheck: usize,
+  /// Serialized size of the three outer claims tuple.
+  pub outer_claims: usize,
+  /// Serialized size of the inner sumcheck proof.
+  pub inner_sumcheck: usize,
+  /// Serialized size of the carried witness evaluation.
+  pub eval_w: usize,
+  /// Serialized size of the PCS evaluation argument.
+  pub eval_arg: usize,
+  /// Serialized size of the final inner sum claim.
+  pub inner_sum_claim: usize,
+}
+
+impl R1CSSNarkSerializedSizeBreakdown {
+  /// Returns the measured components as label/byte pairs for reporting.
+  pub fn measured_components(&self) -> [(&'static str, usize); 7] {
+    [
+      ("instance", self.instance),
+      ("outer_sumcheck", self.outer_sumcheck),
+      ("outer_claims", self.outer_claims),
+      ("inner_sumcheck", self.inner_sumcheck),
+      ("eval_w", self.eval_w),
+      ("eval_arg", self.eval_arg),
+      ("inner_sum_claim", self.inner_sum_claim),
+    ]
+  }
+}
+
+impl<E: Engine> R1CSSNARK<E> {
+  /// Measures the serialized size of the SNARK and its major carried components.
+  pub fn serialized_size_breakdown(
+    &self,
+  ) -> Result<R1CSSNarkSerializedSizeBreakdown, SpartanError> {
+    let encode = |label: &'static str, bytes: Result<Vec<u8>, _>| -> Result<usize, SpartanError> {
+      bytes
+        .map(|bytes| bytes.len())
+        .map_err(|err| SpartanError::InternalError {
+          reason: format!("failed to serialize {label}: {err}"),
+        })
+    };
+
+    Ok(R1CSSNarkSerializedSizeBreakdown {
+      total: encode("snark", bincode::serialize(self))?,
+      instance: encode("instance", bincode::serialize(&self.U))?,
+      outer_sumcheck: encode("outer_sumcheck", bincode::serialize(&self.sc_proof_outer))?,
+      outer_claims: encode("outer_claims", bincode::serialize(&self.claims_outer))?,
+      inner_sumcheck: encode("inner_sumcheck", bincode::serialize(&self.sc_proof_inner))?,
+      eval_w: encode("eval_w", bincode::serialize(&self.eval_W))?,
+      eval_arg: encode("eval_arg", bincode::serialize(&self.eval_arg))?,
+      inner_sum_claim: encode("inner_sum_claim", bincode::serialize(&self.claim_inner_sum))?,
+    })
+  }
+}
+
 impl<E: Engine> R1CSSNARKTrait<E> for R1CSSNARK<E> {
   type ProverKey = SpartanProverKey<E>;
   type VerifierKey = SpartanVerifierKey<E>;

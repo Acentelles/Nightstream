@@ -18,7 +18,7 @@ pub struct HashMlePcsP3<E: Engine> {
 
 impl<E> PCSEngineTrait<E> for HashMlePcsP3<E>
 where
-  E: Engine<Scalar = crate::provider::goldi::F>,
+  E: Engine<Scalar = crate::provider::goldi::F> + super::merkle_mle_pc::CompactHashMleDigest,
 {
   type CommitmentKey = HashMleCommitmentKey<E>;
   type VerifierKey = HashMleVerifierKey<E>;
@@ -441,9 +441,53 @@ where
 mod tests {
   use super::*;
   use crate::provider::GoldilocksP3MerkleMleEngine as E;
+  use rand::{Rng, SeedableRng, rngs::StdRng};
 
   #[test]
   fn width_is_binary_p3() {
     assert_eq!(<HashMlePcsP3<E> as PCSEngineTrait<E>>::width(), 2);
+  }
+
+  #[test]
+  fn serialized_argument_roundtrips_p3() {
+    let m = 6usize;
+    let n = 1usize << m;
+    let mut rng = StdRng::seed_from_u64(19);
+    let poly: Vec<<E as Engine>::Scalar> = (0..n)
+      .map(|_| <E as Engine>::Scalar::from(rng.random::<u64>()))
+      .collect();
+    let point: Vec<<E as Engine>::Scalar> = (0..m)
+      .map(|_| <E as Engine>::Scalar::from(rng.random::<u64>()))
+      .collect();
+
+    let (ck, vk) = <HashMlePcsP3<E> as PCSEngineTrait<E>>::setup(b"serde_p3", n);
+    let blind = <HashMlePcsP3<E> as PCSEngineTrait<E>>::blind(&ck, n);
+    let com = <HashMlePcsP3<E> as PCSEngineTrait<E>>::commit(&ck, &poly, &blind, false).unwrap();
+
+    let mut tr_prove = <E as Engine>::TE::new(b"serde_p3");
+    let (eval, arg) = <HashMlePcsP3<E> as PCSEngineTrait<E>>::prove(
+      &ck,
+      &mut tr_prove,
+      &com,
+      &poly,
+      &blind,
+      &point,
+    )
+    .unwrap();
+
+    let encoded = bincode::serialize(&arg).expect("serialize p3 evaluation argument");
+    let decoded: HashMleEvaluationArgument<E> =
+      bincode::deserialize(&encoded).expect("deserialize p3 evaluation argument");
+
+    let mut tr_verify = <E as Engine>::TE::new(b"serde_p3");
+    <HashMlePcsP3<E> as PCSEngineTrait<E>>::verify(
+      &vk,
+      &mut tr_verify,
+      &com,
+      &point,
+      &eval,
+      &decoded,
+    )
+    .unwrap();
   }
 }

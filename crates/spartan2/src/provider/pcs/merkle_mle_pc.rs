@@ -18,8 +18,14 @@ use crate::{
 };
 use ff::PrimeField;
 use rayon::prelude::*;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::marker::PhantomData;
+
+#[path = "merkle_mle_pc_compact.rs"]
+mod merkle_mle_pc_compact;
+
+pub(crate) use merkle_mle_pc_compact::CompactHashMleDigest;
+use merkle_mle_pc_compact::{CompactHashMleEvaluationArgument, compact_eval_arg, expand_eval_arg};
 
 /// Draw an unbiased index from transcript for sampling
 pub fn draw_index<E: Engine>(
@@ -147,8 +153,7 @@ impl<E: Engine> Default for HashMleBlind<E> {
 pub const K_SAMPLES_PER_ROUND: usize = 48;
 
 /// Evaluation argument: per-round pair openings and the next-layer single opening.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(bound = "")]
+#[derive(Clone, Debug)]
 pub struct HashMleEvaluationArgument<E: Engine> {
   /// Layer roots carried here to avoid bloating the commitment
   pub layer_roots: Vec<MerkleRoot>, // len = m+1
@@ -159,6 +164,33 @@ pub struct HashMleEvaluationArgument<E: Engine> {
   /// Sample openings to link consecutive layers (prevents forged layer attacks)
   /// samples\[i\] contains K_SAMPLES_PER_ROUND random checks linking layer i to layer i+1
   pub samples: Vec<Vec<SampleOpening<E>>>, // len = m, each inner vec has K_SAMPLES_PER_ROUND elements
+}
+
+impl<E> Serialize for HashMleEvaluationArgument<E>
+where
+  E: CompactHashMleDigest,
+  E::Scalar: Serialize,
+{
+  fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+  where
+    S: Serializer,
+  {
+    compact_eval_arg(self).serialize(serializer)
+  }
+}
+
+impl<'de, E> Deserialize<'de> for HashMleEvaluationArgument<E>
+where
+  E: CompactHashMleDigest,
+  E::Scalar: Deserialize<'de>,
+{
+  fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+  where
+    D: Deserializer<'de>,
+  {
+    let compact = CompactHashMleEvaluationArgument::<E>::deserialize(deserializer)?;
+    expand_eval_arg(compact).map_err(serde::de::Error::custom)
+  }
 }
 
 /// A single round of the Hash-MLE evaluation argument
@@ -329,7 +361,7 @@ pub struct HashMlePCS<E: Engine> {
   _p: PhantomData<E>,
 }
 
-impl<E: Engine> PCSEngineTrait<E> for HashMlePCS<E> {
+impl<E: Engine + CompactHashMleDigest> PCSEngineTrait<E> for HashMlePCS<E> {
   type CommitmentKey = HashMleCommitmentKey<E>;
   type VerifierKey = HashMleVerifierKey<E>;
   type Commitment = HashMleCommitment<E>;
@@ -965,6 +997,39 @@ mod tests {
     // cross-check against direct MLE evaluation
     let mle = MultilinearPolynomial::new(poly.clone());
     assert_eq!(eval, mle.evaluate(&point));
+  }
+
+  #[test]
+  fn serialized_argument_roundtrips() {
+    let m = 6usize;
+    let n = 1usize << m;
+    let mut rng = StdRng::seed_from_u64(11);
+    let poly: Vec<<E as Engine>::Scalar> = (0..n).map(|_| rand_scalar(&mut rng)).collect();
+    let point: Vec<<E as Engine>::Scalar> = (0..m).map(|_| rand_scalar(&mut rng)).collect();
+
+    let (ck, vk) = <HashMlePCS<E> as PCSEngineTrait<E>>::setup(b"serde", n);
+    let blind = HashMleBlind::<E>::default();
+    let com = <HashMlePCS<E> as PCSEngineTrait<E>>::commit(&ck, &poly, &blind, false).unwrap();
+
+    let mut tr_prove = <E as Engine>::TE::new(b"serde");
+    let (eval, arg) =
+      <HashMlePCS<E> as PCSEngineTrait<E>>::prove(&ck, &mut tr_prove, &com, &poly, &blind, &point)
+        .unwrap();
+
+    let encoded = bincode::serialize(&arg).expect("serialize evaluation argument");
+    let decoded: HashMleEvaluationArgument<E> =
+      bincode::deserialize(&encoded).expect("deserialize evaluation argument");
+
+    let mut tr_verify = <E as Engine>::TE::new(b"serde");
+    <HashMlePCS<E> as PCSEngineTrait<E>>::verify(
+      &vk,
+      &mut tr_verify,
+      &com,
+      &point,
+      &eval,
+      &decoded,
+    )
+    .unwrap();
   }
 
   #[test]

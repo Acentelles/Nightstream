@@ -57,6 +57,46 @@ pub fn optimized_verify_with_cache_and_perf(
     proof: &PiCcsProof,
     cache: &OptimizedStructureCache,
 ) -> Result<(bool, PiCcsVerifyPerf), PiCcsError> {
+    optimized_verify_with_cache_and_public_instance_digest_impl(
+        tr, params, s, mcs_list, me_inputs, me_outputs, proof, cache, None,
+    )
+}
+
+pub fn optimized_verify_with_cache_and_instance_digest_and_perf(
+    tr: &mut Poseidon2Transcript,
+    params: &NeoParams,
+    s: &CcsStructure<F>,
+    mcs_list: &[CcsClaim<Cmt, F>],
+    me_inputs: &[CeClaim<Cmt, F, K>],
+    me_outputs: &[CeClaim<Cmt, F, K>],
+    proof: &PiCcsProof,
+    cache: &OptimizedStructureCache,
+    public_instance_digest: [F; 4],
+) -> Result<(bool, PiCcsVerifyPerf), PiCcsError> {
+    optimized_verify_with_cache_and_public_instance_digest_impl(
+        tr,
+        params,
+        s,
+        mcs_list,
+        me_inputs,
+        me_outputs,
+        proof,
+        cache,
+        Some(public_instance_digest),
+    )
+}
+
+fn optimized_verify_with_cache_and_public_instance_digest_impl(
+    tr: &mut Poseidon2Transcript,
+    params: &NeoParams,
+    s: &CcsStructure<F>,
+    mcs_list: &[CcsClaim<Cmt, F>],
+    me_inputs: &[CeClaim<Cmt, F, K>],
+    me_outputs: &[CeClaim<Cmt, F, K>],
+    proof: &PiCcsProof,
+    cache: &OptimizedStructureCache,
+    public_instance_digest: Option<[F; 4]>,
+) -> Result<(bool, PiCcsVerifyPerf), PiCcsError> {
     let total_started = std::time::Instant::now();
     if mcs_list.is_empty() {
         return Err(PiCcsError::InvalidInput("optimized_verify: empty mcs_list".into()));
@@ -64,10 +104,27 @@ pub fn optimized_verify_with_cache_and_perf(
 
     let bind_started = std::time::Instant::now();
     let dims = utils::build_dims_and_policy(params, s)?;
-    utils::bind_header_and_instances_with_digest(tr, params, s, mcs_list, dims, cache.mat_digest())?;
+    let bind_header_instances_started = std::time::Instant::now();
+    let bind_header_perf = if let Some(public_instance_digest) = public_instance_digest {
+        utils::bind_header_and_instance_digest_with_digest(
+            tr,
+            params,
+            s,
+            dims,
+            cache.mat_digest(),
+            &public_instance_digest,
+        )?
+    } else {
+        utils::bind_header_and_instances_with_digest(tr, params, s, mcs_list, dims, cache.mat_digest())?
+    };
+    let bind_header_instances_ms = bind_header_instances_started.elapsed().as_secs_f64() * 1_000.0;
+    let bind_me_inputs_started = std::time::Instant::now();
     utils::bind_me_inputs(tr, me_inputs)?;
+    let bind_me_inputs_ms = bind_me_inputs_started.elapsed().as_secs_f64() * 1_000.0;
+    let bind_sample_challenges_started = std::time::Instant::now();
     let mut ch = utils::sample_challenges(tr, dims.ell_d, dims.ell)?;
     ch.beta_m = utils::sample_beta_m(tr, dims.ell_m)?;
+    let bind_sample_challenges_ms = bind_sample_challenges_started.elapsed().as_secs_f64() * 1_000.0;
     let bind_ms = bind_started.elapsed().as_secs_f64() * 1_000.0;
 
     // Compute the public claimed sum T from ME inputs and α
@@ -195,6 +252,12 @@ pub fn optimized_verify_with_cache_and_perf(
 
     let perf = PiCcsVerifyPerf {
         bind_ms,
+        bind_header_instances_ms,
+        bind_header_prefix_ms: bind_header_perf.prefix_ms,
+        bind_header_poly_ms: bind_header_perf.poly_ms,
+        bind_header_public_instances_ms: bind_header_perf.public_instances_ms,
+        bind_me_inputs_ms,
+        bind_sample_challenges_ms,
         fe_sumcheck_ms,
         nc_sumcheck_ms,
         output_checks_ms,
