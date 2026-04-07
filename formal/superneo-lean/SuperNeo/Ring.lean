@@ -346,7 +346,8 @@ theorem rawConvCoeff_zero
         constructor
         · decide
         · simpa using d_pos
-      simp [hIn]
+      have hdNe : d ≠ 0 := Nat.ne_of_gt d_pos
+      simp [hIn, hdNe]
     · have hInFalse : ¬ (i ≤ 0 ∧ 0 - i < d) := by
         intro h
         exact h0 (Nat.eq_zero_of_le_zero h.1)
@@ -561,9 +562,11 @@ private theorem sum_sub_sum_add_sum_split (a b c d e f : F) :
         = (a + b) + (-(c + d)) + (e + f) := by
             simp [Lean.Grind.Fin.sub_eq_add_neg]
     _ = (a + b) + ((-c) + (-d)) + (e + f) := by
-          simp [neg_add_distrib]
+          rw [neg_add_distrib]
     _ = (a + ((-c) + e)) + (b + ((-d) + f)) := by
-          simp [Lean.Grind.Fin.add_assoc, Lean.Grind.Fin.add_comm, f_add_left_comm]
+          have hComm : (-d : F) + (-c : F) = (-c : F) + (-d : F) := by
+            exact Lean.Grind.Fin.add_comm (n := Goldilocks.q) (-d) (-c)
+          simp [Lean.Grind.Fin.add_assoc, Lean.Grind.Fin.add_comm, f_add_left_comm, hComm]
     _ = (a - c + e) + (b - d + f) := by
           simp [Lean.Grind.Fin.sub_eq_add_neg, Lean.Grind.Fin.add_assoc]
 

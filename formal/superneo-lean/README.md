@@ -39,7 +39,7 @@ The module structure mirrors the paper's four main sections.
 
 | Barrel | Paper section | Re-exports |
 |---|---|---|
-| `SuperNeo/Primitives.lean` | Section 4 (Preliminaries) | Goldilocks, Field, Dimensions, Ring, CoeffMaps, Norm, Decomp, EqPoly, MLE, SumCheck, PolyLemmas, Interp, Parameters |
+| `SuperNeo/Primitives.lean` | Section 4 (Preliminaries) | Goldilocks, Field, ExtensionField, ExtensionMLE, ExtensionSumCheck, Dimensions, Ring, CoeffMaps, Norm, Decomp, EqPoly, MLE, SumCheck, PolyLemmas, Interp, Parameters |
 | `SuperNeo/EmbeddingTheory.lean` | Section 5 (Embedding + Eval Hom) | Embedding, Thm3Core, BarLift, MatrixTransform, EvalLink, ModuleHom, EvalHom |
 | `SuperNeo/SecurityModel.lean` | Section 6 + Appendix C security | InteractiveReductions, ProofSystem/{Types,Security,Negligible,Lattice,LatticePaper,LatticeReductions}, InvertibilityAxioms, InvertibilityGoldilocks, SamplingSet |
 | `SuperNeo/FoldingProtocol.lean` | Section 7 (Folding scheme) | ProofSystem/{ConstraintSystem,SumCheck,Folding}, ProtocolRelations, ProtocolSection71Data, ProtocolSection71Context, PiCCS, PiRLC, PiDEC, ArithmeticBundle, ArithmeticObligations, ProtocolTarget, ProtocolTargetData, ProtocolMathTarget, ProtocolTheorem, ProofSystem/Protocol |
@@ -48,6 +48,9 @@ The module structure mirrors the paper's four main sections.
 
 - `SuperNeo/Goldilocks.lean`: Goldilocks field constants
 - `SuperNeo/Field.lean`: Goldilocks modular arithmetic implementation
+- `SuperNeo/ExtensionField.lean`: quadratic extension-field carrier used by opening convergence
+- `SuperNeo/ExtensionMLE.lean`: extension-field equality polynomial and MLE evaluator surfaces
+- `SuperNeo/ExtensionSumCheck.lean`: extension-field Definition-6 sum-check scaffold surface
 - `SuperNeo/Dimensions.lean`: concrete `η`, `d`, and shape helpers
 - `SuperNeo/Ring.lean`: ring multiplication/reduction, `ct`, bar-block mat-vec
 - `SuperNeo/CoeffMaps.lean`: `cf` / `cf⁻¹` map definitions and round-trips
@@ -212,6 +215,37 @@ matter for interpreting older discussions, intermediate branches, and future ext
 - The active native Goldilocks / `paperCarrier`-difference route is now proof-complete end-to-end through `S7.6`.
 - All tracked milestone rows are now `Done (Proof-Complete)`.
 - Any remaining work is optional library generalization or cleanup outside the tracked paper-faithful milestone set.
+
+## Opening-Convergence Follow-On Frontier
+
+The tracked SuperNeo milestone set is closed, but there is one important
+follow-on theorem frontier now that `opening-convergence-lean` has reached its
+own local closure:
+
+- the existing SumCheck formalization is still base-field (`SuperNeo.F`) only
+- Nightstream opening convergence Phase 1 is over the extension field
+  `SuperNeo.KExt`
+
+The first two prerequisite layers are now in place:
+
+1. `SuperNeo/ExtensionField.lean` provides the quadratic extension carrier,
+2. `SuperNeo/ExtensionMLE.lean` provides the extension-field MLE/equality +
+   linearity layer,
+3. `SuperNeo/ExtensionSumCheck.lean` provides the extension-field
+   Definition-6 protocol surface and verifier-side acceptance scaffold.
+
+So the next paper-faithful closure target is the **soundness/completeness
+closure of extension-field SumCheck**:
+
+1. accepted-transcript to claim-truth closure over `SuperNeo.KExt`,
+2. the terminal-value / honest-table theorem needed to replace the carried
+   `sumcheckTerminalCorrect` hypothesis in `opening-convergence-lean`,
+3. the proof-system-level generalization or specialization needed to connect
+   that closure into `ProofSystem/SumCheck/General.lean`
+
+This is not a regression in the tracked SuperNeo milestone table. It is a new
+consumer-driven generalization frontier opened by the now-closed
+opening-convergence package.
 
 ## Reader Guide
 
