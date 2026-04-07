@@ -12,13 +12,13 @@ use neo_fold_next::chip8::{
 };
 use neo_fold_next::proof::{partition_step_inputs, ChunkInput};
 use neo_fold_next::vm::VmSpec;
-use neo_fold_next::witness_layout::commit_cols_for_ccs_m;
+use neo_fold_next::witness_layout::commit_cols_for_full_width;
 use neo_math::D;
 use neo_reductions::engines::utils::{build_dims_and_policy, shared_me_input_r};
 use neo_reductions::optimized_engine::{
     optimized_prove_with_cache_and_perf, optimized_replay_outputs_with_cache_and_perf,
-    optimized_replay_terminal_state_with_cache_and_perf, rhs_terminal_identity_fe_with_k_mcs, rhs_terminal_identity_nc,
-    OptimizedStructureCache,
+    optimized_replay_terminal_state_with_cache_and_perf, optimized_replay_witness_with_cache_and_perf,
+    rhs_terminal_identity_fe_with_k_mcs, rhs_terminal_identity_nc, OptimizedStructureCache,
 };
 use neo_reductions::paper_exact_engine::q_eval_at_ext_point_fe_paper_exact_with_inputs;
 use neo_transcript::{Poseidon2Transcript, Transcript};
@@ -44,7 +44,7 @@ fn chip8_first_chunk_replay_terminal_fe_identity_matches_witness_q() {
     let structure = &vm.core_ccs_spec().structure;
     let params = chip8_simple_root_params();
     let cache = OptimizedStructureCache::build(structure).expect("optimized structure cache");
-    let log = AjtaiSModule::from_global_for_dims(D, commit_cols_for_ccs_m(WITNESS_WIDTH))
+    let log = AjtaiSModule::from_global_for_dims(D, commit_cols_for_full_width(WITNESS_WIDTH))
         .expect("Ajtai log from CHIP-8 root context");
 
     let chunks = partition_step_inputs(CHIP8_BRIDGE_FOLD_SCHEDULE, output.prepared_steps.clone())
@@ -160,6 +160,32 @@ fn chip8_first_chunk_replay_terminal_fe_identity_matches_witness_q() {
     assert_eq!(proof.sumcheck_challenges_nc, replay_nc_chals);
     assert_eq!(proof.sumcheck_final, state.sumcheck_final);
     assert_eq!(proof.sumcheck_final_nc, state.sumcheck_final_nc);
+
+    let mut tr_replay_witness = Poseidon2Transcript::new(b"neo.fold.next/session");
+    append_chunk_transcript(&mut tr_replay_witness, chunk);
+    let replay_witness_outputs = optimized_replay_witness_with_cache_and_perf(
+        &mut tr_replay_witness,
+        &params,
+        structure,
+        &fresh_claims,
+        &fresh_witnesses,
+        &me_inputs,
+        &[],
+        &log,
+        &cache,
+    )
+    .expect("optimized replay witness");
+
+    assert_eq!(replay_witness_outputs.me_outputs, prove_outputs);
+    assert_eq!(replay_witness_outputs.replay_proof.header_digest, proof_digest);
+    assert_eq!(
+        replay_witness_outputs.replay_proof.sumcheck_rounds,
+        proof.sumcheck_rounds
+    );
+    assert_eq!(
+        replay_witness_outputs.replay_proof.sumcheck_rounds_nc,
+        proof.sumcheck_rounds_nc
+    );
 }
 
 #[test]

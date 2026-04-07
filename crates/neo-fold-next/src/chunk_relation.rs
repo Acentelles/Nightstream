@@ -18,15 +18,21 @@ use neo_reductions::api::{
 use neo_reductions::engines::utils::{self, me_digest_poseidon};
 use neo_reductions::error::PiCcsError;
 use neo_reductions::optimized_engine::{
-    optimized_prove_with_cache_and_perf, optimized_replay_outputs_with_cache_and_perf, OptimizedStructureCache,
-    PiCcsReplayProofWitness,
+    optimized_prove_with_cache_and_instance_digest_and_perf,
+    optimized_replay_outputs_with_cache_and_instance_digest_and_perf,
+    optimized_replay_witness_with_cache_and_instance_digest_and_perf, OptimizedStructureCache, PiCcsReplayProofWitness,
 };
 use neo_reductions::pi_rlc_dec::OptimizedRlcDec;
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::PrimeCharacteristicRing;
+use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
 use std::time::Instant;
 
-use crate::proof::{Carry, ChunkInput, ChunkProof, ChunkProvePerf, ChunkResult, PiDecArtifact, PiRlcArtifact};
+use crate::finalize::public_chunk_digest;
+use crate::proof::{
+    Carry, ChunkInput, ChunkProof, ChunkProvePerf, ChunkResult, PiDecArtifact, PiRlcArtifact, PublicChunk,
+};
 
 #[derive(Clone, Copy)]
 pub struct CommitmentMixers<MR, MB>
@@ -49,21 +55,23 @@ pub struct ChunkRelationResult {
     pub artifacts: ChunkRelationArtifacts,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ChunkReplayWitness {
     pub ccs_outputs: Vec<CeClaim<Commitment, F, K>>,
     pub ccs_replay_proof: PiCcsReplayProofWitness,
 }
 
 struct ChunkPreparedInputs {
+    start_index: usize,
+    fresh_step_count: usize,
     fresh_claims: Vec<CcsClaim<Commitment, F>>,
     fresh_witnesses: Vec<CcsWitness<F>>,
+    public_chunk_digest: [F; 4],
     prepare_inputs_ms: f64,
 }
 
 struct CcsTransitionState {
     ccs_outputs: Vec<CeClaim<Commitment, F, K>>,
-    rlc_rhos: Vec<neo_reductions::api::RotRho>,
     parent: CeClaim<Commitment, F, K>,
     children: Vec<CeClaim<Commitment, F, K>>,
     z_split: Vec<Mat<F>>,
@@ -76,54 +84,92 @@ pub(crate) struct ChunkComputation {
 
 impl CcsTransitionState {
     fn into_relation_result(self) -> Result<ChunkRelationResult, PiCcsError> {
-        let relation_digest = relation_digest(&self.ccs_outputs, &self.parent, &self.children);
-        Ok(ChunkRelationResult {
-            next_main: Carry {
-                claims: self.children,
-                witnesses: self.z_split,
-            },
-            artifacts: ChunkRelationArtifacts { relation_digest },
-        })
+        Ok(chunk_relation_result_from_transition(self))
     }
 }
 
 impl ChunkComputation {
-    pub(crate) fn replay_witness(&self) -> Result<ChunkReplayWitness, PiCcsError> {
-        Ok(ChunkReplayWitness {
-            ccs_outputs: self.transition.ccs_outputs.clone(),
-            ccs_replay_proof: PiCcsReplayProofWitness::from_proof(&self.ccs_proof)?,
-        })
-    }
-
-    pub(crate) fn into_relation_result(self) -> Result<ChunkRelationResult, PiCcsError> {
-        self.transition.into_relation_result()
-    }
-
     pub(crate) fn into_chunk_result(self, chunk: &ChunkInput) -> ChunkResult {
-        let CcsTransitionState {
+        chunk_result_from_transition(self.transition, chunk.public(), self.ccs_proof)
+    }
+}
+
+fn chunk_result_from_transition(
+    transition: CcsTransitionState,
+    public_chunk: PublicChunk,
+    ccs_proof: neo_reductions::api::PiCcsProof,
+) -> ChunkResult {
+    let CcsTransitionState {
+        ccs_outputs,
+        parent,
+        children,
+        z_split,
+        ..
+    } = transition;
+    let relation_digest = chunk_relation_digest(&ccs_outputs, &parent, &children);
+    ChunkResult {
+        proof: ChunkProof {
+            chunk: public_chunk,
+            relation_digest,
             ccs_outputs,
-            rlc_rhos,
-            parent,
-            children,
-            z_split,
-            ..
-        } = self.transition;
-        ChunkResult {
-            proof: ChunkProof {
-                chunk: chunk.public(),
-                ccs_outputs,
-                ccs_proof: self.ccs_proof,
-                rlc: PiRlcArtifact { rhos: rlc_rhos, parent },
-                dec: PiDecArtifact {
-                    children: children.clone(),
-                },
+            ccs_proof,
+            rlc: PiRlcArtifact { parent },
+            dec: PiDecArtifact {
+                children: children.clone(),
             },
+        },
+        next_main: Carry {
+            claims: children,
+            witnesses: z_split,
+        },
+    }
+}
+
+fn chunk_fresh_witness_mats<'a>(fresh_witnesses: &'a [CcsWitness<F>]) -> impl Iterator<Item = Mat<F>> + 'a {
+    fresh_witnesses.iter().map(|witness| witness.Z.clone())
+}
+
+fn chunk_relation_result_from_transition(transition: CcsTransitionState) -> ChunkRelationResult {
+    let CcsTransitionState {
+        ccs_outputs,
+        parent,
+        children,
+        z_split,
+    } = transition;
+    let relation_digest = chunk_relation_digest(&ccs_outputs, &parent, &children);
+    ChunkRelationResult {
+        next_main: Carry {
+            claims: children,
+            witnesses: z_split,
+        },
+        artifacts: ChunkRelationArtifacts { relation_digest },
+    }
+}
+
+fn chunk_replay_witness_and_result_from_parts(
+    transition: CcsTransitionState,
+    ccs_replay_proof: PiCcsReplayProofWitness,
+) -> (ChunkReplayWitness, ChunkRelationResult) {
+    let CcsTransitionState {
+        ccs_outputs,
+        parent,
+        children,
+        z_split,
+    } = transition;
+    let relation_digest = chunk_relation_digest(&ccs_outputs, &parent, &children);
+    (
+        ChunkReplayWitness {
+            ccs_outputs,
+            ccs_replay_proof,
+        },
+        ChunkRelationResult {
             next_main: Carry {
                 claims: children,
                 witnesses: z_split,
             },
-        }
-    }
+            artifacts: ChunkRelationArtifacts { relation_digest },
+        },
+    )
 }
 
 pub fn replay_chunk_relation<L, MR, MB>(
@@ -160,9 +206,40 @@ where
     MR: Fn(&[Mat<F>], &[Commitment]) -> Commitment + Clone + Copy,
     MB: Fn(&[Commitment], u32) -> Commitment + Clone + Copy,
 {
-    let prepared = prepare_chunk_ccs_inputs(tr, chunk, incoming_main)?;
+    verify_chunk_relation_with_witness_and_instance_digest(
+        tr,
+        params,
+        s,
+        chunk,
+        incoming_main,
+        replay_witness,
+        log,
+        mixers,
+        optimized_cache,
+        None,
+    )
+}
+
+pub(crate) fn verify_chunk_relation_with_witness_and_instance_digest<L, MR, MB>(
+    tr: &mut Poseidon2Transcript,
+    params: &NeoParams,
+    s: &CcsStructure<F>,
+    chunk: &ChunkInput,
+    incoming_main: &Carry,
+    replay_witness: &ChunkReplayWitness,
+    log: &L,
+    mixers: CommitmentMixers<MR, MB>,
+    optimized_cache: &OptimizedStructureCache,
+    public_chunk_instance_digest: Option<[F; 4]>,
+) -> Result<ChunkRelationResult, PiCcsError>
+where
+    L: SModuleHomomorphism<F, Commitment> + Sync,
+    MR: Fn(&[Mat<F>], &[Commitment]) -> Commitment + Clone + Copy,
+    MB: Fn(&[Commitment], u32) -> Commitment + Clone + Copy,
+{
+    let prepared = prepare_chunk_ccs_inputs(tr, chunk, incoming_main, public_chunk_instance_digest)?;
     let ccs_proof = replay_witness.ccs_replay_proof.to_pi_ccs_proof();
-    let (ok, _perf) = neo_reductions::optimized_engine::optimized_verify_with_cache_and_perf(
+    let (ok, _perf) = neo_reductions::optimized_engine::optimized_verify_with_cache_and_instance_digest_and_perf(
         tr,
         params,
         s,
@@ -171,6 +248,7 @@ where
         &replay_witness.ccs_outputs,
         &ccs_proof,
         optimized_cache,
+        prepared.public_chunk_digest,
     )?;
     if !ok {
         return Err(PiCcsError::ProtocolError(
@@ -190,12 +268,14 @@ where
         tr,
         params,
         s,
-        chunk,
+        prepared.start_index,
+        prepared.fresh_step_count,
         incoming_main,
         log,
         mixers,
         Some(optimized_cache),
         prepared.prepare_inputs_ms,
+        &prepared.fresh_witnesses,
         replay_witness.ccs_outputs.clone(),
         fold_digest,
         neo_reductions::optimized_engine::PiCcsProvePerf::default(),
@@ -224,6 +304,91 @@ where
     Ok((transition.into_relation_result()?, perf))
 }
 
+pub(crate) fn compute_chunk_replay_witness_and_relation_with_perf<L, MR, MB>(
+    tr: &mut Poseidon2Transcript,
+    params: &NeoParams,
+    s: &CcsStructure<F>,
+    chunk: &ChunkInput,
+    incoming_main: &Carry,
+    log: &L,
+    mixers: CommitmentMixers<MR, MB>,
+    optimized_cache: &OptimizedStructureCache,
+) -> Result<((ChunkReplayWitness, ChunkRelationResult), ChunkProvePerf), PiCcsError>
+where
+    L: SModuleHomomorphism<F, Commitment> + Sync,
+    MR: Fn(&[Mat<F>], &[Commitment]) -> Commitment + Clone + Copy,
+    MB: Fn(&[Commitment], u32) -> Commitment + Clone + Copy,
+{
+    compute_chunk_replay_witness_and_relation_with_instance_digest_and_perf(
+        tr,
+        params,
+        s,
+        chunk,
+        incoming_main,
+        log,
+        mixers,
+        optimized_cache,
+        None,
+    )
+}
+
+pub(crate) fn compute_chunk_replay_witness_and_relation_with_instance_digest_and_perf<L, MR, MB>(
+    tr: &mut Poseidon2Transcript,
+    params: &NeoParams,
+    s: &CcsStructure<F>,
+    chunk: &ChunkInput,
+    incoming_main: &Carry,
+    log: &L,
+    mixers: CommitmentMixers<MR, MB>,
+    optimized_cache: &OptimizedStructureCache,
+    public_chunk_instance_digest: Option<[F; 4]>,
+) -> Result<((ChunkReplayWitness, ChunkRelationResult), ChunkProvePerf), PiCcsError>
+where
+    L: SModuleHomomorphism<F, Commitment> + Sync,
+    MR: Fn(&[Mat<F>], &[Commitment]) -> Commitment + Clone + Copy,
+    MB: Fn(&[Commitment], u32) -> Commitment + Clone + Copy,
+{
+    let total_started = Instant::now();
+    let prepared = prepare_chunk_ccs_inputs(tr, chunk, incoming_main, public_chunk_instance_digest)?;
+    let ccs_started = Instant::now();
+    let replay = optimized_replay_witness_with_cache_and_instance_digest_and_perf(
+        tr,
+        params,
+        s,
+        &prepared.fresh_claims,
+        &prepared.fresh_witnesses,
+        &incoming_main.claims,
+        &incoming_main.witnesses,
+        prepared.public_chunk_digest,
+        log,
+        optimized_cache,
+    )?;
+    let ccs_ms = ccs_started.elapsed().as_secs_f64() * 1_000.0;
+    let (transition, perf) = finish_chunk_transition_with_perf(
+        total_started,
+        FoldingMode::Optimized,
+        tr,
+        params,
+        s,
+        prepared.start_index,
+        prepared.fresh_step_count,
+        incoming_main,
+        log,
+        mixers,
+        Some(optimized_cache),
+        prepared.prepare_inputs_ms,
+        &prepared.fresh_witnesses,
+        replay.me_outputs,
+        replay.replay_proof.header_digest,
+        replay.perf,
+        ccs_ms,
+    )?;
+    Ok((
+        chunk_replay_witness_and_result_from_parts(transition, replay.replay_proof),
+        perf,
+    ))
+}
+
 pub(crate) fn compute_chunk_relation_with_perf<L, MR, MB>(
     mode: FoldingMode,
     tr: &mut Poseidon2Transcript,
@@ -241,13 +406,13 @@ where
     MB: Fn(&[Commitment], u32) -> Commitment + Clone + Copy,
 {
     let total_started = Instant::now();
-    let prepared = prepare_chunk_ccs_inputs(tr, chunk, incoming_main)?;
+    let prepared = prepare_chunk_ccs_inputs(tr, chunk, incoming_main, None)?;
     let ccs_started = Instant::now();
     let (ccs_outputs, ccs_proof, ccs_perf) = if matches!(mode, FoldingMode::Optimized) {
         let cache = optimized_cache.ok_or_else(|| {
             PiCcsError::InvalidInput("missing optimized structure cache for optimized chunk relation".into())
         })?;
-        optimized_prove_with_cache_and_perf(
+        optimized_prove_with_cache_and_instance_digest_and_perf(
             tr,
             params,
             s,
@@ -255,6 +420,7 @@ where
             &prepared.fresh_witnesses,
             &incoming_main.claims,
             &incoming_main.witnesses,
+            prepared.public_chunk_digest,
             log,
             cache,
         )?
@@ -284,12 +450,14 @@ where
         tr,
         params,
         s,
-        chunk,
+        prepared.start_index,
+        prepared.fresh_step_count,
         incoming_main,
         log,
         mixers,
         optimized_cache,
         prepared.prepare_inputs_ms,
+        &prepared.fresh_witnesses,
         ccs_outputs,
         fold_digest,
         ccs_perf,
@@ -314,9 +482,9 @@ where
     MB: Fn(&[Commitment], u32) -> Commitment + Clone + Copy,
 {
     let total_started = Instant::now();
-    let prepared = prepare_chunk_ccs_inputs(tr, chunk, incoming_main)?;
+    let prepared = prepare_chunk_ccs_inputs(tr, chunk, incoming_main, None)?;
     let ccs_started = Instant::now();
-    let replay = optimized_replay_outputs_with_cache_and_perf(
+    let replay = optimized_replay_outputs_with_cache_and_instance_digest_and_perf(
         tr,
         params,
         s,
@@ -324,6 +492,7 @@ where
         &prepared.fresh_witnesses,
         &incoming_main.claims,
         &incoming_main.witnesses,
+        prepared.public_chunk_digest,
         log,
         optimized_cache,
     )?;
@@ -334,12 +503,14 @@ where
         tr,
         params,
         s,
-        chunk,
+        prepared.start_index,
+        prepared.fresh_step_count,
         incoming_main,
         log,
         mixers,
         Some(optimized_cache),
         prepared.prepare_inputs_ms,
+        &prepared.fresh_witnesses,
         replay.me_outputs,
         replay.fold_digest,
         replay.perf,
@@ -351,6 +522,7 @@ fn prepare_chunk_ccs_inputs(
     tr: &mut Poseidon2Transcript,
     chunk: &ChunkInput,
     incoming_main: &Carry,
+    public_chunk_instance_digest: Option<[F; 4]>,
 ) -> Result<ChunkPreparedInputs, PiCcsError> {
     validate_main_carry("replay_chunk_relation", incoming_main)?;
     validate_chunk_input(chunk)?;
@@ -367,9 +539,13 @@ fn prepare_chunk_ccs_inputs(
         .iter()
         .map(|step| step.witness.clone())
         .collect::<Vec<_>>();
+    let public_chunk_digest = public_chunk_instance_digest.unwrap_or_else(|| public_chunk_digest(&chunk.public()));
     Ok(ChunkPreparedInputs {
+        start_index: chunk.start_index,
+        fresh_step_count: chunk.steps.len(),
         fresh_claims,
         fresh_witnesses,
+        public_chunk_digest,
         prepare_inputs_ms: prepare_inputs_started.elapsed().as_secs_f64() * 1_000.0,
     })
 }
@@ -381,12 +557,14 @@ fn finish_chunk_transition_with_perf<L, MR, MB>(
     tr: &mut Poseidon2Transcript,
     params: &NeoParams,
     s: &CcsStructure<F>,
-    chunk: &ChunkInput,
+    chunk_start_index: usize,
+    fresh_step_count: usize,
     incoming_main: &Carry,
     log: &L,
     mixers: CommitmentMixers<MR, MB>,
     optimized_cache: Option<&OptimizedStructureCache>,
     prepare_inputs_ms: f64,
+    fresh_witnesses: &[CcsWitness<F>],
     ccs_outputs: Vec<CeClaim<Commitment, F, K>>,
     fold_digest: [u8; 32],
     ccs_perf: neo_reductions::optimized_engine::PiCcsProvePerf,
@@ -397,7 +575,13 @@ where
     MR: Fn(&[Mat<F>], &[Commitment]) -> Commitment + Clone + Copy,
     MB: Fn(&[Commitment], u32) -> Commitment + Clone + Copy,
 {
-    validate_ccs_outputs(chunk, incoming_main, &ccs_outputs, fold_digest)?;
+    validate_ccs_outputs(
+        chunk_start_index,
+        fresh_step_count,
+        incoming_main,
+        &ccs_outputs,
+        fold_digest,
+    )?;
 
     let dims_started = Instant::now();
     let dims = utils::build_dims_and_policy(params, s)?;
@@ -405,8 +589,8 @@ where
     let rlc_rhos = sample_rlc_rhos(tr, params, ccs_outputs.len())?;
 
     let rlc_prepare_started = Instant::now();
-    let mut rlc_inputs_wit = Vec::with_capacity(chunk.steps.len() + incoming_main.witnesses.len());
-    rlc_inputs_wit.extend(chunk.steps.iter().map(|step| step.witness.Z.clone()));
+    let mut rlc_inputs_wit = Vec::with_capacity(fresh_step_count + incoming_main.witnesses.len());
+    rlc_inputs_wit.extend(chunk_fresh_witness_mats(fresh_witnesses));
     rlc_inputs_wit.extend(incoming_main.witnesses.iter().cloned());
     let rlc_prepare_ms = rlc_prepare_started.elapsed().as_secs_f64() * 1_000.0;
 
@@ -460,7 +644,7 @@ where
     if !(ok_y && ok_x && ok_c) {
         return Err(PiCcsError::ProtocolError(format!(
             "Π_DEC public checks failed for chunk starting at {}: y={}, X={}, c={}",
-            chunk.start_index, ok_y, ok_x, ok_c
+            chunk_start_index, ok_y, ok_x, ok_c
         )));
     }
 
@@ -468,14 +652,13 @@ where
     let dec_children = children.len();
     let transition = CcsTransitionState {
         ccs_outputs,
-        rlc_rhos,
         parent,
         children,
         z_split,
     };
     let perf = ChunkProvePerf {
-        start_index: chunk.start_index,
-        fresh_steps: chunk.steps.len(),
+        start_index: chunk_start_index,
+        fresh_steps: fresh_step_count,
         incoming_main_claims: incoming_main.claims.len(),
         ccs_outputs: ccs_output_count,
         dec_children,
@@ -521,21 +704,20 @@ fn validate_main_carry(context: &str, carry: &Carry) -> Result<(), PiCcsError> {
 }
 
 fn validate_ccs_outputs(
-    chunk: &ChunkInput,
+    chunk_start_index: usize,
+    fresh_step_count: usize,
     incoming_main: &Carry,
     ccs_outputs: &[CeClaim<Commitment, F, K>],
     fold_digest: [u8; 32],
 ) -> Result<(), PiCcsError> {
-    let expected = chunk
-        .steps
-        .len()
+    let expected = fresh_step_count
         .checked_add(incoming_main.claims.len())
         .ok_or_else(|| PiCcsError::InvalidInput("Π_CCS output count overflow".into()))?;
     if ccs_outputs.len() != expected {
         return Err(PiCcsError::ProtocolError(format!(
             "Π_CCS returned {} outputs for chunk starting at {}, expected {}",
             ccs_outputs.len(),
-            chunk.start_index,
+            chunk_start_index,
             expected
         )));
     }
@@ -543,7 +725,7 @@ fn validate_ccs_outputs(
         if out.fold_digest != fold_digest {
             return Err(PiCcsError::ProtocolError(format!(
                 "Π_CCS output[{idx}] fold_digest mismatch for chunk starting at {}",
-                chunk.start_index
+                chunk_start_index
             )));
         }
     }
@@ -619,7 +801,7 @@ where
     Ok(child_commitments)
 }
 
-fn relation_digest(
+pub(crate) fn chunk_relation_digest(
     ccs_outputs: &[neo_ccs::CeClaim<Commitment, F, K>],
     parent: &neo_ccs::CeClaim<Commitment, F, K>,
     children: &[neo_ccs::CeClaim<Commitment, F, K>],
@@ -629,11 +811,8 @@ fn relation_digest(
         b"neo.fold.next/chunk_relation_digest/counts",
         &[ccs_outputs.len() as u64, children.len() as u64],
     );
-    for claim in ccs_outputs {
-        tr.append_fields(
-            b"neo.fold.next/chunk_relation_digest/ccs_output",
-            &me_digest_poseidon(claim),
-        );
+    for digest in claim_digests(ccs_outputs) {
+        tr.append_fields(b"neo.fold.next/chunk_relation_digest/ccs_output", &digest);
     }
     tr.append_fields(
         b"neo.fold.next/chunk_relation_digest/rlc_parent",
@@ -646,4 +825,23 @@ fn relation_digest(
         );
     }
     tr.digest32()
+}
+
+pub(crate) fn claim_digests(claims: &[CeClaim<Commitment, F, K>]) -> Vec<[F; 4]> {
+    #[cfg(not(target_arch = "wasm32"))]
+    let allow_parallel = rayon::current_num_threads() > 1 && rayon::current_thread_index().is_none();
+    #[cfg(target_arch = "wasm32")]
+    let _allow_parallel = false;
+
+    #[cfg(not(target_arch = "wasm32"))]
+    if allow_parallel && claims.len() >= 8 {
+        return claims.par_iter().map(me_digest_poseidon).collect();
+    }
+
+    let mut digests = Vec::with_capacity(claims.len());
+    let mut scratch = Vec::<F>::with_capacity(2048);
+    for claim in claims {
+        digests.push(utils::me_digest_poseidon_into(&mut scratch, claim));
+    }
+    digests
 }

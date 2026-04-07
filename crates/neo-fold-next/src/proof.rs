@@ -12,7 +12,7 @@
 use neo_ajtai::Commitment;
 use neo_ccs::{CcsClaim, CcsWitness, CeClaim, Mat};
 use neo_math::{F, K};
-use neo_reductions::api::{PiCcsProof, RotRho};
+use neo_reductions::api::PiCcsProof;
 use neo_reductions::error::PiCcsError;
 use serde::{Deserialize, Serialize};
 
@@ -116,7 +116,6 @@ impl Carry {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PiRlcArtifact {
-    pub rhos: Vec<RotRho>,
     pub parent: CeClaim<Commitment, F, K>,
 }
 
@@ -128,6 +127,7 @@ pub struct PiDecArtifact {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ChunkProof {
     pub chunk: PublicChunk,
+    pub relation_digest: [u8; 32],
     pub ccs_outputs: Vec<CeClaim<Commitment, F, K>>,
     pub ccs_proof: PiCcsProof,
     pub rlc: PiRlcArtifact,
@@ -270,6 +270,12 @@ pub struct ChunkVerifyPerf {
     pub dec_children: usize,
     pub prepare_inputs_ms: f64,
     pub ccs_bind_ms: f64,
+    pub ccs_bind_header_instances_ms: f64,
+    pub ccs_bind_header_prefix_ms: f64,
+    pub ccs_bind_header_poly_ms: f64,
+    pub ccs_bind_header_public_instances_ms: f64,
+    pub ccs_bind_me_inputs_ms: f64,
+    pub ccs_bind_sample_challenges_ms: f64,
     pub ccs_fe_sumcheck_ms: f64,
     pub ccs_nc_sumcheck_ms: f64,
     pub ccs_output_checks_ms: f64,
@@ -278,6 +284,15 @@ pub struct ChunkVerifyPerf {
     pub digest_checks_ms: f64,
     pub dims_ms: f64,
     pub rlc_challenge_ms: f64,
+    pub rlc_rho_mats_ms: f64,
+    pub rlc_rho_k_lift_ms: f64,
+    pub rlc_x_ms: f64,
+    pub rlc_y_ms: f64,
+    pub rlc_y_zcol_ms: f64,
+    pub rlc_aux_ms: f64,
+    pub rlc_commitment_collect_ms: f64,
+    pub rlc_commitment_mix_ms: f64,
+    pub rlc_commitment_ms: f64,
     pub rlc_ms: f64,
     pub dec_ms: f64,
     pub total_ms: f64,
@@ -328,6 +343,48 @@ impl RunVerifyPerf {
         self.chunks.iter().map(|chunk| chunk.ccs_bind_ms).sum()
     }
 
+    pub fn ccs_bind_header_instances_ms(&self) -> f64 {
+        self.chunks
+            .iter()
+            .map(|chunk| chunk.ccs_bind_header_instances_ms)
+            .sum()
+    }
+
+    pub fn ccs_bind_header_prefix_ms(&self) -> f64 {
+        self.chunks
+            .iter()
+            .map(|chunk| chunk.ccs_bind_header_prefix_ms)
+            .sum()
+    }
+
+    pub fn ccs_bind_header_poly_ms(&self) -> f64 {
+        self.chunks
+            .iter()
+            .map(|chunk| chunk.ccs_bind_header_poly_ms)
+            .sum()
+    }
+
+    pub fn ccs_bind_header_public_instances_ms(&self) -> f64 {
+        self.chunks
+            .iter()
+            .map(|chunk| chunk.ccs_bind_header_public_instances_ms)
+            .sum()
+    }
+
+    pub fn ccs_bind_me_inputs_ms(&self) -> f64 {
+        self.chunks
+            .iter()
+            .map(|chunk| chunk.ccs_bind_me_inputs_ms)
+            .sum()
+    }
+
+    pub fn ccs_bind_sample_challenges_ms(&self) -> f64 {
+        self.chunks
+            .iter()
+            .map(|chunk| chunk.ccs_bind_sample_challenges_ms)
+            .sum()
+    }
+
     pub fn ccs_fe_sumcheck_ms(&self) -> f64 {
         self.chunks
             .iter()
@@ -363,6 +420,54 @@ impl RunVerifyPerf {
 
     pub fn rlc_challenge_ms(&self) -> f64 {
         self.chunks.iter().map(|chunk| chunk.rlc_challenge_ms).sum()
+    }
+
+    pub fn rlc_x_ms(&self) -> f64 {
+        self.chunks.iter().map(|chunk| chunk.rlc_x_ms).sum()
+    }
+
+    pub fn rlc_rho_mats_ms(&self) -> f64 {
+        self.chunks.iter().map(|chunk| chunk.rlc_rho_mats_ms).sum()
+    }
+
+    pub fn rlc_rho_k_lift_ms(&self) -> f64 {
+        self.chunks
+            .iter()
+            .map(|chunk| chunk.rlc_rho_k_lift_ms)
+            .sum()
+    }
+
+    pub fn rlc_y_ms(&self) -> f64 {
+        self.chunks.iter().map(|chunk| chunk.rlc_y_ms).sum()
+    }
+
+    pub fn rlc_y_zcol_ms(&self) -> f64 {
+        self.chunks.iter().map(|chunk| chunk.rlc_y_zcol_ms).sum()
+    }
+
+    pub fn rlc_aux_ms(&self) -> f64 {
+        self.chunks.iter().map(|chunk| chunk.rlc_aux_ms).sum()
+    }
+
+    pub fn rlc_commitment_collect_ms(&self) -> f64 {
+        self.chunks
+            .iter()
+            .map(|chunk| chunk.rlc_commitment_collect_ms)
+            .sum()
+    }
+
+    pub fn rlc_commitment_mix_ms(&self) -> f64 {
+        self.chunks
+            .iter()
+            .map(|chunk| chunk.rlc_commitment_mix_ms)
+            .sum()
+    }
+
+    pub fn rlc_commitment_ms(&self) -> f64 {
+        self.chunks
+            .iter()
+            .map(|chunk| chunk.rlc_commitment_ms)
+            .sum()
     }
 
     pub fn rlc_ms(&self) -> f64 {

@@ -1,7 +1,7 @@
 //! Focused tests for the witness-owned RV64IM kernel export seam.
 
 use neo_fold_next::rv64im::{
-    build_rv64im_kernel_export_relation, build_rv64im_kernel_export_witness, parity_source_cases,
+    build_rv64im_kernel_export_relation, build_rv64im_kernel_export_witness, parity_source_cases, prepared_step_digest,
     prove_rv64im_public_proof, verify_rv64im_kernel_export_witness, Rv64imProofInput,
 };
 
@@ -31,6 +31,25 @@ fn rv64im_kernel_export_witness_round_trip() {
         .chunk_handoffs
         .iter()
         .all(|chunk| chunk.digest != [0; 32]));
+    for chunk in &witness.chunk_handoffs {
+        assert_eq!(chunk.bridge_handoff.step_bindings.len(), chunk.chunk_input.steps.len());
+        for (chunk_local_index, (binding, step)) in chunk
+            .bridge_handoff
+            .step_bindings
+            .iter()
+            .zip(chunk.chunk_input.steps.iter())
+            .enumerate()
+        {
+            assert_eq!(
+                binding.logical_index,
+                (chunk.chunk_input.start_index + chunk_local_index) as u64
+            );
+            assert_eq!(binding.prepared_step_digest, prepared_step_digest(step));
+            assert_ne!(binding.row_binding_digest, [0; 32]);
+            assert_ne!(binding.row_opening_digest, [0; 32]);
+            assert_ne!(binding.digest, [0; 32]);
+        }
+    }
 
     verify_rv64im_kernel_export_witness(&relation, &witness).expect("verify kernel export witness");
 }
@@ -50,15 +69,13 @@ fn rv64im_kernel_export_witness_rejects_tampered_chunk_input() {
 }
 
 #[test]
-fn rv64im_kernel_export_witness_rejects_tampered_bridge_witness() {
+fn rv64im_kernel_export_witness_rejects_tampered_bridge_handoff() {
     let input = proof_input("control_flow_jal_skip_ecall");
     let proof = prove_rv64im_public_proof(&input).expect("prove rv64im public proof");
     let relation = build_rv64im_kernel_export_relation(&proof).expect("build kernel export relation");
     let mut witness = build_rv64im_kernel_export_witness(&proof).expect("build kernel export witness");
-    witness.chunk_handoffs[0]
-        .bridge_witness
-        .row_chunk_route_digests[0][0] ^= 1;
+    witness.chunk_handoffs[0].bridge_handoff.step_bindings[0].prepared_step_digest[0] ^= 1;
 
-    let err = verify_rv64im_kernel_export_witness(&relation, &witness).expect_err("tampered bridge witness must fail");
+    let err = verify_rv64im_kernel_export_witness(&relation, &witness).expect_err("tampered bridge handoff must fail");
     assert!(format!("{err}").contains("bridge") || format!("{err}").contains("digest"));
 }

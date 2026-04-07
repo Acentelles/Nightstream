@@ -2,10 +2,11 @@
 
 use neo_fold_next::proof::FoldSchedule;
 use neo_fold_next::rv64im::{
-    build_main_lane_surface, parity_source_cases, prove_rv64im_audit_proof as prove_rv64im_proof,
-    prove_rv64im_public_proof, prove_rv64im_public_proof_with_options, validate_rv64im_public_proof_against_input,
-    verify_rv64im_audit_proof as verify_rv64im_proof, verify_rv64im_public_proof, Rv64imProofInput,
-    Rv64imPublicProofOptions,
+    build_main_lane_surface, build_rv64im_accepted_proof_artifact,
+    build_rv64im_kernel_export_source_from_accepted_artifact, parity_source_cases,
+    prove_rv64im_audit_proof as prove_rv64im_proof, prove_rv64im_public_proof, prove_rv64im_public_proof_with_options,
+    validate_rv64im_public_proof_against_input, verify_rv64im_audit_proof as verify_rv64im_proof,
+    verify_rv64im_kernel_export_source, verify_rv64im_public_proof, Rv64imProofInput, Rv64imPublicProofOptions,
 };
 use neo_fold_next::rv64im::{
     Rv64imKernelClaimProofBundle, Rv64imKernelProofBundle, Rv64imStageClaimDigestBundle, Rv64imStageClaimProofBundle,
@@ -473,6 +474,34 @@ fn rv64im_proof_rejects_tampered_kernel_opening_proof() {
         .proof_digest[0] ^= 1;
 
     verify_rv64im_proof(&proof).expect_err("tampered kernel opening packaged proof must fail");
+}
+
+#[test]
+fn rv64im_kernel_export_source_roundtrip_matches_accepted_artifact() {
+    let input = proof_input("control_flow_jal_skip_ecall");
+
+    let (_, proof) = prove_rv64im_proof(&input).expect("prove rv64im proof");
+    let accepted_artifact = build_rv64im_accepted_proof_artifact(&proof).expect("build rv64im accepted artifact");
+    let source = build_rv64im_kernel_export_source_from_accepted_artifact(&accepted_artifact)
+        .expect("build rv64im kernel export source");
+
+    verify_rv64im_kernel_export_source(&source).expect("verify rv64im kernel export source");
+    assert_ne!(source.digest, [0; 32]);
+    assert_eq!(source.root_execution.digest, accepted_artifact.root_execution.digest);
+}
+
+#[test]
+fn rv64im_kernel_export_source_rejects_tampered_digest() {
+    let input = proof_input("control_flow_jal_skip_ecall");
+
+    let (_, proof) = prove_rv64im_proof(&input).expect("prove rv64im proof");
+    let accepted_artifact = build_rv64im_accepted_proof_artifact(&proof).expect("build rv64im accepted artifact");
+    let mut source = build_rv64im_kernel_export_source_from_accepted_artifact(&accepted_artifact)
+        .expect("build rv64im kernel export source");
+
+    source.digest[0] ^= 1;
+    let err = verify_rv64im_kernel_export_source(&source).expect_err("tampered source digest must fail");
+    assert!(format!("{err}").contains("kernel export source"));
 }
 
 #[test]

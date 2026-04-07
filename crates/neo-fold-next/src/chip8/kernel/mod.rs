@@ -76,10 +76,11 @@ pub(crate) use execution_relation::{
     build_stage2_proof_from_relation_witness, build_stage3_proof_from_relation_witness,
 };
 pub(crate) use export_relation::{
-    build_kernel_export_relation_digest_from_verified_execution_relation,
-    build_kernel_export_relation_result_from_execution_relation, verify_kernel_export_relation,
-    KernelExportRelationResult,
+    build_kernel_export_proof_from_verified_execution_relation,
+    build_kernel_export_relation_digest_from_verified_execution_relation, verify_kernel_export_proof,
+    verify_kernel_export_relation, KernelExportRelationResult,
 };
+pub use export_relation::{KernelExportChunkHandoff, KernelExportProof};
 use joint_opening::{build_kernel_joint_opening_fold_bucket_proofs, verify_kernel_joint_opening_fold_bucket_proofs};
 use joint_opening::{build_kernel_joint_opening_summary, verify_kernel_joint_opening_summary};
 pub use joint_opening::{KernelJointOpeningFoldBucketProof, KernelJointOpeningFoldShape};

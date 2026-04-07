@@ -22,7 +22,7 @@ use super::proof_witness::{
     Rv64imStagePackageProofBundle, Rv64imStageWitnessProjectionBundle, Rv64imTraceProjectionBundle,
 };
 use super::simple::{
-    build_public_simple_kernel_output_and_witness_with_perf, build_root_main_lane_packaged_proof_with_perf,
+    build_public_simple_kernel_output_and_witness_with_perf, prove_root_main_lane_packaged_proof_with_perf,
 };
 use super::{
     RootLaneColumns, RootLaneCommitmentSummaryArtifact, Rv64imProofProvePerf, Rv64imPublicProofVerifyPerf,
@@ -195,8 +195,6 @@ impl Default for Rv64imPublicProofOptions {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Rv64imMainLaneProofBundle {
     pub binding: Rv64imMainLaneProofBinding,
-    pub statement_digest: [u8; 32],
-    pub proof_digest: [u8; 32],
     pub packaged: PackagedProof,
     pub digest: [u8; 32],
 }
@@ -231,7 +229,11 @@ pub struct Rv64imProof {
 }
 
 impl Rv64imProofStatement {
-    pub(super) fn expected_digest(&self) -> [u8; 32] {
+    pub fn recompute_digest(&self) -> [u8; 32] {
+        self.expected_digest()
+    }
+
+    pub(crate) fn expected_digest(&self) -> [u8; 32] {
         let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/proof_statement");
         tr.append_message(b"rv64im/proof_statement/root_params_id", &self.root_params_id);
         tr.append_u64s(
@@ -511,9 +513,12 @@ impl Rv64imMainLaneProofBundle {
         tr.append_message(b"rv64im/main_lane_proof_bundle/binding_digest", &self.binding.digest);
         tr.append_message(
             b"rv64im/main_lane_proof_bundle/statement_digest",
-            &self.statement_digest,
+            &self.packaged.statement.digest,
         );
-        tr.append_message(b"rv64im/main_lane_proof_bundle/proof_digest", &self.proof_digest);
+        tr.append_message(
+            b"rv64im/main_lane_proof_bundle/proof_digest",
+            &self.packaged.proof.proof_digest,
+        );
         tr.digest32()
     }
 
@@ -538,11 +543,11 @@ impl Rv64imMainLaneProofBundle {
     }
 
     pub fn statement_digest(&self) -> [u8; 32] {
-        self.statement_digest
+        self.packaged.statement.digest
     }
 
     pub fn proof_digest(&self) -> [u8; 32] {
-        self.proof_digest
+        self.packaged.proof.proof_digest
     }
 
     pub fn summary(&self) -> Rv64imMainLaneProofSummaryBundle {
@@ -643,7 +648,7 @@ fn prove_rv64im_public_proof_and_sidecar_with_perf(
         options.root_fold_schedule,
     )?;
     let (root_main_lane, root_main_lane_perf) =
-        build_root_main_lane_packaged_proof_with_perf(&sidecar.trace.execution_rows, options.root_fold_schedule)?;
+        prove_root_main_lane_packaged_proof_with_perf(&sidecar.trace.execution_rows, options.root_fold_schedule)?;
     let main_lane_ms = main_lane_started.elapsed().as_secs_f64() * 1_000.0;
     let export_started = Instant::now();
     let witness = proof_witness_bundle_from_public_kernel_and_trace_stages(&kernel, &sidecar.trace, &sidecar.stages)?;

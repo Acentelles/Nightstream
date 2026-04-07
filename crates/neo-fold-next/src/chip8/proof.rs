@@ -12,15 +12,15 @@ use crate::chip8::final_relation::{
 };
 use crate::chip8::kernel::{
     build_kernel_bridge_binding_summary, build_kernel_exact_frames,
-    build_kernel_export_relation_digest_from_verified_execution_relation,
-    build_kernel_export_relation_result_from_execution_relation, build_kernel_row_projection_summary,
+    build_kernel_export_proof_from_verified_execution_relation,
+    build_kernel_export_relation_digest_from_verified_execution_relation, build_kernel_row_projection_summary,
     build_kernel_semantic_evidence_summary, prove_simple_kernel, verify_kernel_bridge_binding_summary,
     verify_kernel_execution_relation, verify_kernel_export_relation, verify_kernel_row_projection_summary,
     verify_kernel_semantic_evidence_summary, verify_simple_kernel, Chip8PreparedStepBridgeBinding,
-    KernelBridgeBindingSummary, KernelExecutionRelationWitness, KernelExportRelationResult, KernelRowProjectionSummary,
-    KernelSemanticEvidenceInputs, KernelSemanticEvidenceSummary, SimpleKernelError, SimpleKernelProof,
-    SimpleKernelProverInput, SimpleKernelPublicInput, SimpleKernelRootContext, SimpleKernelVerifierInput,
-    CHIP8_BRIDGE_FOLD_SCHEDULE, CHIP8_BRIDGE_ROWS_PER_CHUNK,
+    KernelBridgeBindingSummary, KernelExecutionRelationResult, KernelExecutionRelationWitness, KernelExportProof,
+    KernelRowProjectionSummary, KernelSemanticEvidenceInputs, KernelSemanticEvidenceSummary, SimpleKernelError,
+    SimpleKernelProof, SimpleKernelProverInput, SimpleKernelPublicInput, SimpleKernelRootContext,
+    SimpleKernelVerifierInput, CHIP8_BRIDGE_FOLD_SCHEDULE, CHIP8_BRIDGE_ROWS_PER_CHUNK,
 };
 use crate::chip8::{Chip8State, Chip8VmSpec};
 use crate::finalize::FixedShapeChunkSummary;
@@ -77,13 +77,13 @@ pub struct Chip8FoldedStatement {
 }
 
 pub struct Chip8FoldedProof {
-    pub kernel_export: KernelExecutionRelationWitness,
+    pub kernel_export: KernelExportProof,
     pub steps: Vec<Chip8ChunkTransitionWitness>,
 }
 
 pub struct Chip8FinalProof {
     pub proof_digest: [u8; 32],
-    pub kernel_export: KernelExecutionRelationWitness,
+    pub kernel_export: KernelExportProof,
     pub chunk_summaries: Vec<FixedShapeChunkSummary>,
     pub steps: Vec<Chip8ChunkTransitionWitness>,
 }
@@ -105,16 +105,22 @@ struct Chip8FoldedBuildOutput {
 
 struct BuiltKernelExport {
     relation_digest: [u8; 32],
-    proof: KernelExecutionRelationWitness,
-    verified: KernelExportRelationResult,
+    proof: KernelExportProof,
+    verified_native: KernelExecutionRelationResult,
 }
 
 pub fn prove_kernel_export(
     input: &SimpleKernelProverInput,
 ) -> Result<([u8; 32], KernelExecutionRelationWitness), SimpleKernelError> {
     let (_output, native_proof) = prove_simple_kernel(input)?;
-    let built = build_kernel_export(&input.public, native_proof)?;
-    Ok((built.relation_digest, built.proof))
+    let witness = split_kernel_export_witness(native_proof)?;
+    let verifier_input = SimpleKernelVerifierInput {
+        public: input.public.clone(),
+    };
+    let verified_relation = verify_kernel_execution_relation(&verifier_input, &witness)?;
+    let relation_digest =
+        build_kernel_export_relation_digest_from_verified_execution_relation(&verified_relation, &witness);
+    Ok((relation_digest, witness))
 }
 
 pub fn verify_kernel_export(
@@ -296,7 +302,7 @@ fn build_folded_statement(input: &SimpleKernelProverInput) -> Result<Chip8Folded
     let built_kernel_export = build_kernel_export(&input.public, native_kernel_proof)?;
     let kernel_relation_digest = built_kernel_export.relation_digest;
     let kernel_export = built_kernel_export.proof;
-    let verified_kernel = built_kernel_export.verified;
+    let verified_kernel = built_kernel_export.verified_native;
     let final_state = public_machine_state(&verified_kernel.final_state);
     let vm = Chip8VmSpec::default();
     let root_context = SimpleKernelRootContext::new()?;
@@ -339,13 +345,13 @@ fn build_kernel_export(
 ) -> Result<BuiltKernelExport, SimpleKernelError> {
     let witness = split_kernel_export_witness(native_proof)?;
     let verifier_input = SimpleKernelVerifierInput { public: public.clone() };
-    let verified_relation = verify_kernel_execution_relation(&verifier_input, &witness)?;
-    let relation_digest =
-        build_kernel_export_relation_digest_from_verified_execution_relation(&verified_relation, &witness);
+    let verified_native = verify_kernel_execution_relation(&verifier_input, &witness)?;
+    let (proof, _verified_compact, relation_digest) =
+        build_kernel_export_proof_from_verified_execution_relation(public, &verified_native);
     Ok(BuiltKernelExport {
         relation_digest,
-        proof: witness,
-        verified: build_kernel_export_relation_result_from_execution_relation(verified_relation),
+        proof,
+        verified_native,
     })
 }
 
@@ -359,10 +365,17 @@ fn public_machine_state(state: &Chip8State) -> Chip8PublicMachineState {
 }
 
 pub(crate) fn statement_digest(statement: &Chip8Statement) -> [u8; 32] {
+    let public_io_digest = public_io_digest(&statement.public, &statement.final_state);
     let mut tr = Poseidon2Transcript::new(b"neo.fold.next/chip8/statement");
-    append_public_input(&mut tr, &statement.public);
-    append_public_machine_state(&mut tr, &statement.final_state);
+    tr.append_message(b"neo.fold.next/chip8/statement/public_io_digest", &public_io_digest);
     tr.append_message(b"neo.fold.next/chip8/statement/folded_digest", &statement.folded.digest);
+    tr.digest32()
+}
+
+pub(crate) fn public_io_digest(public: &SimpleKernelPublicInput, final_state: &Chip8PublicMachineState) -> [u8; 32] {
+    let mut tr = Poseidon2Transcript::new(b"neo.fold.next/chip8/public_io");
+    append_public_input(&mut tr, public);
+    append_public_machine_state(&mut tr, final_state);
     tr.digest32()
 }
 

@@ -15,6 +15,7 @@ pub mod chip8;
 pub mod chunk_relation;
 pub mod decider;
 pub mod finalize;
+pub mod nightstream;
 pub mod opening;
 pub mod proof;
 pub mod prover;

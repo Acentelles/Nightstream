@@ -2974,7 +2974,7 @@ Normative rule for `RootEncode`:
 - equivalently, `Z_j ∈ F^{D × ceil(38 / D)}` with the column-major placement of
   the padded semantic row fixed exactly by the previous rule,
 - any implementation helper such as
-  `encode_vector_for_ccs_m(root_params, 38, z_j)` is conforming only if it
+  `encode_vector_for_full_width(root_params, 38, z_j)` is conforming only if it
   produces exactly that same `Z_j`.
 
 ### 11.3 R1CS → CCS conversion

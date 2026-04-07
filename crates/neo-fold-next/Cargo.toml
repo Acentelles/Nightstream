@@ -22,6 +22,7 @@ neo-transcript = { path = "../neo-transcript" }
 bincode = { workspace = true }
 bellpepper-core = { workspace = true }
 p3-field = { workspace = true }
+rayon = { workspace = true }
 serde = { workspace = true }
 spartan2 = { workspace = true }
 thiserror = { workspace = true }

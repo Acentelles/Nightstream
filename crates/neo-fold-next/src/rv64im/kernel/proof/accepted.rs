@@ -27,6 +27,7 @@ use super::simple::{
     SimpleKernelError,
 };
 use super::{RootLaneColumns, RootLaneCommitmentSummaryArtifact, TranscriptRecord};
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Rv64imAcceptedProofArtifact {
     pub claim: Rv64imKernelClaimBundle,

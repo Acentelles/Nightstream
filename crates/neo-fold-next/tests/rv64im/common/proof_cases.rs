@@ -201,6 +201,52 @@ pub fn refresh_stage1_semantic_digests(artifact: &mut Rv64imAcceptedProofArtifac
     let sem_inputs_digest = sem_inputs_digest(&artifact.stage1.sem_inputs);
     let row_bindings_digest = artifact.stage1.semantics.row_bindings_digest;
 
+    let mut alu_tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/stage1_alu_shout_proof");
+    alu_tr.append_message(b"rv64im/stage1_alu_shout_proof/sem_inputs_digest", &sem_inputs_digest);
+    alu_tr.append_u64s(
+        b"rv64im/stage1_alu_shout_proof/meta",
+        &[
+            artifact.stage1.alu.effect_trace_index,
+            artifact.stage1.alu.commit_trace_index,
+        ],
+    );
+    artifact.stage1.alu.sem_inputs_digest = sem_inputs_digest;
+    artifact.stage1.alu.digest = alu_tr.digest32();
+
+    let mut branch_tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/stage1_branch_shout_proof");
+    branch_tr.append_message(
+        b"rv64im/stage1_branch_shout_proof/sem_inputs_digest",
+        &sem_inputs_digest,
+    );
+    branch_tr.append_u64s(
+        b"rv64im/stage1_branch_shout_proof/meta",
+        &[
+            artifact.stage1.branch.first_trace_index,
+            artifact.stage1.branch.last_trace_index,
+        ],
+    );
+    artifact.stage1.branch.sem_inputs_digest = sem_inputs_digest;
+    artifact.stage1.branch.digest = branch_tr.digest32();
+
+    let mut linkage_tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/stage1_linkage_proof");
+    linkage_tr.append_message(
+        b"rv64im/stage1_linkage_proof/rows_digest",
+        &artifact.stage1.linkage.rows_digest,
+    );
+    linkage_tr.append_message(b"rv64im/stage1_linkage_proof/sem_inputs_digest", &sem_inputs_digest);
+    linkage_tr.append_u64s(
+        b"rv64im/stage1_linkage_proof/meta",
+        &[
+            artifact.stage1.linkage.mix,
+            artifact.stage1.linkage.first_trace_index,
+            artifact.stage1.linkage.effect_trace_index,
+            artifact.stage1.linkage.commit_trace_index,
+            artifact.stage1.linkage.last_trace_index,
+        ],
+    );
+    artifact.stage1.linkage.sem_inputs_digest = sem_inputs_digest;
+    artifact.stage1.linkage.digest = linkage_tr.digest32();
+
     let mut semantics_tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/stage1_semantics_proof");
     semantics_tr.append_message(b"rv64im/stage1_semantics_proof/sem_inputs_digest", &sem_inputs_digest);
     semantics_tr.append_message(

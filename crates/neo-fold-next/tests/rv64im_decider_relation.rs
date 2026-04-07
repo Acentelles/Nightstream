@@ -35,10 +35,7 @@ fn rv64im_decider_relation_round_trip() {
     assert_eq!(relation.fold_schedule, statement.folded.fold_schedule);
     assert_eq!(relation.semantic_step_count, statement.folded.semantic_step_count);
     assert_eq!(relation.chunk_summaries, final_proof.chunk_summaries);
-    assert_eq!(
-        relation.base_component_digests,
-        vec![artifact.digest, final_proof.kernel_export.digest]
-    );
+    assert_eq!(relation.base_component_digests, vec![final_proof.kernel_export.digest]);
     assert_eq!(
         relation.chunk_transition_bindings.len(),
         statement.folded.chunk_count as usize

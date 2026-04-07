@@ -144,6 +144,17 @@ pub(crate) fn register_read_words(event: &RegisterReadEvent) -> [u64; 5] {
     ]
 }
 
+pub fn register_read_word_width() -> usize {
+    register_read_words(&RegisterReadEvent {
+        trace_index: 0,
+        step_index: 0,
+        role: RegisterReadRole::Rs1,
+        reg: 0,
+        value: 0,
+    })
+    .len()
+}
+
 pub(crate) fn register_write_words(event: &RegisterWriteEvent) -> [u64; 5] {
     [
         event.trace_index as u64,
@@ -152,6 +163,17 @@ pub(crate) fn register_write_words(event: &RegisterWriteEvent) -> [u64; 5] {
         event.previous,
         event.next,
     ]
+}
+
+pub fn register_write_word_width() -> usize {
+    register_write_words(&RegisterWriteEvent {
+        trace_index: 0,
+        step_index: 0,
+        reg: 0,
+        previous: 0,
+        next: 0,
+    })
+    .len()
 }
 
 pub(crate) fn ram_event_words(event: &RamEvent) -> [u64; 6] {
@@ -165,6 +187,18 @@ pub(crate) fn ram_event_words(event: &RamEvent) -> [u64; 6] {
     ]
 }
 
+pub fn ram_event_word_width() -> usize {
+    ram_event_words(&RamEvent {
+        trace_index: 0,
+        step_index: 0,
+        kind: RamAccessKind::Read,
+        addr: 0,
+        previous: 0,
+        next: 0,
+    })
+    .len()
+}
+
 pub(crate) fn twist_link_words(event: &TwistLinkEvent) -> [u64; 6] {
     [
         event.trace_index as u64,
@@ -176,59 +210,63 @@ pub(crate) fn twist_link_words(event: &TwistLinkEvent) -> [u64; 6] {
     ]
 }
 
+pub fn twist_link_word_width() -> usize {
+    twist_link_words(&TwistLinkEvent {
+        trace_index: 0,
+        step_index: 0,
+        family: Rv64FamilyTag::NativeAlu,
+        routed_write_value: None,
+        routed_memory_before: None,
+        routed_memory_after: None,
+    })
+    .len()
+}
+
+fn register_read_timeline_words(event: &RegisterReadEvent) -> [u64; 9] {
+    let words = register_read_words(event);
+    [1u64, words[0], words[1], words[2], words[3], words[4], 0u64, 0u64, 0u64]
+}
+
+fn register_write_timeline_words(event: &RegisterWriteEvent) -> [u64; 9] {
+    let words = register_write_words(event);
+    [0u64, 1u64, words[0], words[1], words[2], words[3], words[4], 0u64, 0u64]
+}
+
+fn ram_timeline_words(event: &RamEvent) -> [u64; 10] {
+    let words = ram_event_words(event);
+    [
+        0u64, 0u64, 1u64, words[0], words[1], words[2], words[3], words[4], words[5], 0u64,
+    ]
+}
+
+fn twist_link_timeline_words(event: &TwistLinkEvent) -> [u64; 10] {
+    let words = twist_link_words(event);
+    [
+        0u64, 0u64, 0u64, 1u64, words[0], words[1], words[2], words[3], words[4], words[5],
+    ]
+}
+
 pub(crate) fn register_read_event_digest(event: &RegisterReadEvent) -> [u8; 32] {
     let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/stage2_selected_register_read");
-    tr.append_u64s_iter(
-        b"stage2/read",
-        9,
-        std::iter::once(1u64)
-            .chain(register_read_words(event).into_iter())
-            .chain(std::iter::once(0u64))
-            .chain(std::iter::once(0u64))
-            .chain(std::iter::once(0u64)),
-    );
+    tr.append_u64s(b"stage2/read", &register_read_timeline_words(event));
     tr.digest32()
 }
 
 pub(crate) fn register_write_event_digest(event: &RegisterWriteEvent) -> [u8; 32] {
     let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/stage2_selected_register_write");
-    tr.append_u64s_iter(
-        b"stage2/write",
-        9,
-        std::iter::once(0u64)
-            .chain(std::iter::once(1u64))
-            .chain(register_write_words(event).into_iter())
-            .chain(std::iter::once(0u64))
-            .chain(std::iter::once(0u64)),
-    );
+    tr.append_u64s(b"stage2/write", &register_write_timeline_words(event));
     tr.digest32()
 }
 
 pub(crate) fn ram_event_digest(event: &RamEvent) -> [u8; 32] {
     let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/stage2_selected_ram_event");
-    tr.append_u64s_iter(
-        b"stage2/ram",
-        10,
-        std::iter::once(0u64)
-            .chain(std::iter::once(0u64))
-            .chain(std::iter::once(1u64))
-            .chain(ram_event_words(event).into_iter())
-            .chain(std::iter::once(0u64)),
-    );
+    tr.append_u64s(b"stage2/ram", &ram_timeline_words(event));
     tr.digest32()
 }
 
 pub(crate) fn twist_link_event_digest(event: &TwistLinkEvent) -> [u8; 32] {
     let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/stage2_selected_twist_link");
-    tr.append_u64s_iter(
-        b"stage2/twist",
-        10,
-        std::iter::once(0u64)
-            .chain(std::iter::once(0u64))
-            .chain(std::iter::once(0u64))
-            .chain(std::iter::once(1u64))
-            .chain(twist_link_words(event).into_iter()),
-    );
+    tr.append_u64s(b"stage2/twist", &twist_link_timeline_words(event));
     tr.digest32()
 }
 
@@ -429,15 +467,6 @@ pub fn build_stage2_summary(rows: &[Rv64ExpandedRow]) -> Stage2Summary {
     }
 }
 
-fn digest_event_sequence(label: &'static [u8], digests: impl IntoIterator<Item = [u8; 32]>, len: usize) -> [u8; 32] {
-    let mut tr = Poseidon2Transcript::new(label);
-    tr.append_u64s(b"meta", &[len as u64]);
-    for digest in digests {
-        tr.append_message(b"entry", &digest);
-    }
-    tr.digest32()
-}
-
 impl RegisterTwistProof {
     pub(crate) fn expected_digest(&self) -> [u8; 32] {
         let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/stage2_register_twist_proof");
@@ -463,22 +492,36 @@ impl RamTwistProof {
 }
 
 impl Stage2TemporalContext {
-    pub(crate) fn expected_digest(&self) -> [u8; 32] {
+    pub(crate) fn expected_digest_from_parts(
+        register_timeline_digest: [u8; 32],
+        ram_timeline_digest: [u8; 32],
+        twist_links_digest: [u8; 32],
+        twist_link_count: usize,
+    ) -> [u8; 32] {
         let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/stage2_temporal_context");
         tr.append_message(
             b"rv64im/stage2_temporal_context/register_timeline_digest",
-            &self.register_timeline_digest,
+            &register_timeline_digest,
         );
         tr.append_message(
             b"rv64im/stage2_temporal_context/ram_timeline_digest",
-            &self.ram_timeline_digest,
+            &ram_timeline_digest,
         );
         tr.append_message(
             b"rv64im/stage2_temporal_context/twist_links_digest",
-            &self.twist_links_digest,
+            &twist_links_digest,
         );
-        tr.append_u64s(b"rv64im/stage2_temporal_context/meta", &[self.twist_links.len() as u64]);
+        tr.append_u64s(b"rv64im/stage2_temporal_context/meta", &[twist_link_count as u64]);
         tr.digest32()
+    }
+
+    pub(crate) fn expected_digest(&self) -> [u8; 32] {
+        Self::expected_digest_from_parts(
+            self.register_timeline_digest,
+            self.ram_timeline_digest,
+            self.twist_links_digest,
+            self.twist_links.len(),
+        )
     }
 }
 
@@ -524,30 +567,39 @@ impl Stage2ProofBundle {
 }
 
 pub(crate) fn register_timeline_digest(reads: &[RegisterReadEvent], writes: &[RegisterWriteEvent]) -> [u8; 32] {
-    digest_event_sequence(
-        b"neo.fold.next/rv64im/stage2_register_timeline",
+    let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/stage2_register_timeline");
+    tr.append_u64s(b"meta", &[(reads.len() + writes.len()) as u64]);
+    tr.append_u64s_iter(
+        b"entries",
+        reads.len() * 9 + writes.len() * 9,
         reads
             .iter()
-            .map(register_read_event_digest)
-            .chain(writes.iter().map(register_write_event_digest)),
-        reads.len() + writes.len(),
-    )
+            .flat_map(register_read_timeline_words)
+            .chain(writes.iter().flat_map(register_write_timeline_words)),
+    );
+    tr.digest32()
 }
 
 pub(crate) fn ram_timeline_digest(events: &[RamEvent]) -> [u8; 32] {
-    digest_event_sequence(
-        b"neo.fold.next/rv64im/stage2_ram_timeline",
-        events.iter().map(ram_event_digest),
-        events.len(),
-    )
+    let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/stage2_ram_timeline");
+    tr.append_u64s(b"meta", &[events.len() as u64]);
+    tr.append_u64s_iter(
+        b"entries",
+        events.len() * 10,
+        events.iter().flat_map(ram_timeline_words),
+    );
+    tr.digest32()
 }
 
 pub(crate) fn twist_links_timeline_digest(events: &[TwistLinkEvent]) -> [u8; 32] {
-    digest_event_sequence(
-        b"neo.fold.next/rv64im/stage2_twist_links",
-        events.iter().map(twist_link_event_digest),
-        events.len(),
-    )
+    let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/stage2_twist_links");
+    tr.append_u64s(b"meta", &[events.len() as u64]);
+    tr.append_u64s_iter(
+        b"entries",
+        events.len() * 10,
+        events.iter().flat_map(twist_link_timeline_words),
+    );
+    tr.digest32()
 }
 
 pub fn build_stage2_proof_bundle(
@@ -589,7 +641,13 @@ pub fn build_stage2_proof_bundle(
         digest: temporal.expected_digest(),
         ..temporal
     };
-    let semantics = Stage2SemanticsProof::new(summary);
+    let semantics = Stage2SemanticsProof::from_surface_digests(
+        artifact.families.register_reads_digest,
+        artifact.families.register_writes_digest,
+        artifact.families.ram_events_digest,
+        artifact.families.twist_links_digest,
+        summary,
+    );
     let linkage = Stage2LinkageProof {
         register_reads_family_digest: artifact.families.register_reads_digest,
         register_writes_family_digest: artifact.families.register_writes_digest,

@@ -15,16 +15,18 @@ use crate::chip8::chunk_relation::{
     verify_chip8_chunk_relation_with_witness, Chip8ChunkReplayWitness, Chip8ReplayRoundWitness,
 };
 use crate::chip8::kernel::{
-    chip8_bridge_state_seed, verify_kernel_export_relation, KernelExecutionRelationWitness, KernelExportRelationResult,
-    SimpleKernelError, SimpleKernelRootContext, VerifiedKernelChunkHandoff, CHIP8_BRIDGE_FOLD_SCHEDULE,
-    CHIP8_BRIDGE_ROWS_PER_CHUNK,
+    chip8_bridge_state_seed, verify_kernel_export_proof, KernelExportChunkHandoff, KernelExportProof,
+    KernelExportRelationResult, SimpleKernelError, SimpleKernelRootContext, VerifiedKernelChunkHandoff,
+    CHIP8_BRIDGE_FOLD_SCHEDULE, CHIP8_BRIDGE_ROWS_PER_CHUNK,
 };
 use crate::chip8::proof::{
     AccumulatorHandle, Chip8ChunkTransitionWitness, Chip8FinalProof, Chip8FoldedProof, Chip8FoldedStatement,
     Chip8MainChunkTransitionWitness, Chip8RecursiveAccumulator, CHIP8_MAIN_CARRY_WIDTH,
 };
 use crate::chip8::Chip8VmSpec;
-use crate::chunk_relation::{compute_chunk_relation_with_perf, ChunkReplayWitness, CommitmentMixers};
+use crate::chunk_relation::{
+    compute_chunk_replay_witness_and_relation_with_perf, ChunkReplayWitness, CommitmentMixers,
+};
 use crate::finalize::{digest_fixed_shape_final_proof, fixed_shape_recursive_seed, FixedShapeChunkSummary};
 use crate::proof::{Carry, ChunkInput, PublicChunk, StepInput};
 use crate::vm::VmSpec;
@@ -83,8 +85,7 @@ where
     for (chunk_index, handoff) in chunk_handoffs.iter().enumerate() {
         let chunk_input = &handoff.chunk_input;
         let public_chunk = &handoff.public_chunk;
-        let (computation, _perf) = compute_chunk_relation_with_perf(
-            neo_reductions::api::FoldingMode::Optimized,
+        let ((replay_witness, proved), _perf) = compute_chunk_replay_witness_and_relation_with_perf(
             &mut transcript,
             params,
             structure,
@@ -92,16 +93,10 @@ where
             &accumulator.main,
             log,
             ajtai_mixers(),
-            Some(&optimized_cache),
+            &optimized_cache,
         )
         .map_err(run_error)?;
-        let main_transition = chunk_transition_main_witness(
-            params,
-            structure,
-            chunk_input,
-            computation.replay_witness().map_err(run_error)?,
-        )?;
-        let proved = computation.into_relation_result().map_err(run_error)?;
+        let main_transition = chunk_transition_main_witness(params, structure, chunk_input, replay_witness)?;
         let relation_artifacts = synthesize_chip8_chunk_relation_artifacts(
             public_chunk,
             proved.artifacts,
@@ -204,7 +199,7 @@ pub(crate) fn folded_statement_digest(folded: &Chip8FoldedStatement) -> [u8; 32]
 fn verify_folded_statement_components_with_output(
     public: &crate::chip8::kernel::SimpleKernelPublicInput,
     folded: &Chip8FoldedStatement,
-    kernel_export: &KernelExecutionRelationWitness,
+    kernel_export: &KernelExportProof,
     steps: &[Chip8ChunkTransitionWitness],
 ) -> Result<(KernelExportRelationResult, Vec<FixedShapeChunkSummary>), SimpleKernelError> {
     if folded.fold_schedule != CHIP8_BRIDGE_FOLD_SCHEDULE {
@@ -222,7 +217,7 @@ fn verify_folded_statement_components_with_output(
             "folded statement digest mismatch".into(),
         ));
     }
-    let verified_kernel = verify_kernel_export_relation(
+    let verified_kernel = verify_kernel_export_proof(
         public,
         folded.fold_schedule,
         folded.kernel_relation_digest,
@@ -231,7 +226,7 @@ fn verify_folded_statement_components_with_output(
     let verified_semantic_step_count: usize = verified_kernel
         .chunk_handoffs
         .iter()
-        .map(|handoff| handoff.chunk_input.steps.len())
+        .map(|handoff| handoff.public_chunk.steps.len())
         .sum();
     if folded.semantic_step_count as usize != verified_semantic_step_count {
         return Err(SimpleKernelError::BridgeFailed(
@@ -329,7 +324,7 @@ fn verify_chunk_transition<L>(
     structure: &CcsStructure<F>,
     optimized_cache: &OptimizedStructureCache,
     log: &L,
-    chunk_handoffs: &[VerifiedKernelChunkHandoff],
+    chunk_handoffs: &[KernelExportChunkHandoff],
 ) -> Result<(Carry, AccumulatorHandle, [u8; 32], [u8; 32]), SimpleKernelError>
 where
     L: SModuleHomomorphism<F, Commitment> + Sync,
@@ -435,7 +430,7 @@ fn chip8_main_carry_claims(
 
 pub(crate) fn final_proof_digest(
     folded: &Chip8FoldedStatement,
-    kernel_export: &KernelExecutionRelationWitness,
+    kernel_export: &KernelExportProof,
     chunk_summaries: &[FixedShapeChunkSummary],
     steps: &[Chip8ChunkTransitionWitness],
 ) -> [u8; 32] {
@@ -449,31 +444,8 @@ pub(crate) fn final_proof_digest(
     )
 }
 
-pub(crate) fn kernel_export_witness_digest(witness: &KernelExecutionRelationWitness) -> [u8; 32] {
-    let mut tr = Poseidon2Transcript::new(b"neo.fold.next/chip8/kernel_export_witness");
-    tr.append_message(
-        b"neo.fold.next/chip8/kernel_export_witness/reads",
-        &kernel_read_witness_digest(witness.reads()),
-    );
-    tr.append_message(
-        b"neo.fold.next/chip8/kernel_export_witness/twists",
-        &kernel_twist_witness_digest(witness.twists()),
-    );
-    tr.append_message(
-        b"neo.fold.next/chip8/kernel_export_witness/shift",
-        &kernel_shift_witness_digest(witness.shift()),
-    );
-    tr.append_u64s(
-        b"neo.fold.next/chip8/kernel_export_witness/bridge_count",
-        &[witness.bridge_chunk_transitions().len() as u64],
-    );
-    for transition in witness.bridge_chunk_transitions() {
-        tr.append_message(
-            b"neo.fold.next/chip8/kernel_export_witness/bridge_transition",
-            &transition.expected_digest(),
-        );
-    }
-    tr.digest32()
+pub(crate) fn kernel_export_proof_digest(proof: &KernelExportProof) -> [u8; 32] {
+    proof.digest
 }
 
 pub(crate) fn final_proof_component_digests(proof: &Chip8FinalProof) -> Chip8FinalProofComponentDigests {
@@ -481,217 +453,13 @@ pub(crate) fn final_proof_component_digests(proof: &Chip8FinalProof) -> Chip8Fin
 }
 
 fn chip8_final_proof_component_digests_from_parts(
-    kernel_export: &KernelExecutionRelationWitness,
+    kernel_export: &KernelExportProof,
     steps: &[Chip8ChunkTransitionWitness],
 ) -> Chip8FinalProofComponentDigests {
     Chip8FinalProofComponentDigests {
-        kernel_export_digest: kernel_export_witness_digest(kernel_export),
+        kernel_export_digest: kernel_export_proof_digest(kernel_export),
         chunk_transition_digests: steps.iter().map(chunk_transition_witness_digest).collect(),
     }
-}
-
-fn kernel_read_witness_digest(reads: &crate::chip8::kernel::KernelReadWitness) -> [u8; 32] {
-    let mut tr = Poseidon2Transcript::new(b"neo.fold.next/chip8/kernel_read_witness");
-    tr.append_message(
-        b"neo.fold.next/chip8/kernel_read_witness/fetch",
-        &shout_channel_execution_digest(reads.fetch()),
-    );
-    tr.append_message(
-        b"neo.fold.next/chip8/kernel_read_witness/decode",
-        &shout_channel_execution_digest(reads.decode()),
-    );
-    tr.append_message(
-        b"neo.fold.next/chip8/kernel_read_witness/alu",
-        &shout_channel_execution_digest(reads.alu()),
-    );
-    tr.append_message(
-        b"neo.fold.next/chip8/kernel_read_witness/eq4",
-        &shout_channel_execution_digest(reads.eq4()),
-    );
-    tr.digest32()
-}
-
-fn shout_channel_execution_digest(proof: &crate::chip8::stage1::ShoutChannelExecutionProof) -> [u8; 32] {
-    let mut tr = Poseidon2Transcript::new(b"neo.fold.next/chip8/shout_channel_execution");
-    append_k_rounds(
-        &mut tr,
-        b"neo.fold.next/chip8/shout_channel_execution/sumcheck",
-        &proof.sumcheck_rounds,
-    );
-    append_k_rounds(
-        &mut tr,
-        b"neo.fold.next/chip8/shout_channel_execution/addr_correctness",
-        &proof.addr_correctness_rounds,
-    );
-    tr.digest32()
-}
-
-fn kernel_twist_witness_digest(twists: &crate::chip8::kernel::KernelTwistWitness) -> [u8; 32] {
-    let mut tr = Poseidon2Transcript::new(b"neo.fold.next/chip8/kernel_twist_witness");
-    tr.append_message(
-        b"neo.fold.next/chip8/kernel_twist_witness/register",
-        &stage2_register_execution_digest(twists.register()),
-    );
-    tr.append_message(
-        b"neo.fold.next/chip8/kernel_twist_witness/memory",
-        &stage2_ram_execution_digest(twists.memory()),
-    );
-    tr.digest32()
-}
-
-fn stage2_register_execution_digest(proof: &crate::chip8::stage2::Stage2RegisterExecutionProof) -> [u8; 32] {
-    let mut tr = Poseidon2Transcript::new(b"neo.fold.next/chip8/stage2_register_execution");
-    append_k_rounds(
-        &mut tr,
-        b"neo.fold.next/chip8/stage2_register_execution/rw_batched",
-        &proof.reg_rw_batched_rounds,
-    );
-    append_k_rounds(
-        &mut tr,
-        b"neo.fold.next/chip8/stage2_register_execution/val_from_inc",
-        &proof.reg_val_from_inc_rounds,
-    );
-    tr.append_u64s(
-        b"neo.fold.next/chip8/stage2_register_execution/addr_correctness_count",
-        &[proof.reg_addr_correctness.len() as u64],
-    );
-    for addr in &proof.reg_addr_correctness {
-        tr.append_message(
-            b"neo.fold.next/chip8/stage2_register_execution/addr_correctness",
-            &address_correctness_digest(addr),
-        );
-    }
-    append_k_rounds(
-        &mut tr,
-        b"neo.fold.next/chip8/stage2_register_execution/ra_y_target",
-        &proof.reg_ra_y_target_rounds,
-    );
-    append_k_rounds(
-        &mut tr,
-        b"neo.fold.next/chip8/stage2_register_execution/wa_addr_target",
-        &proof.reg_wa_addr_target_rounds,
-    );
-    append_k_rounds(
-        &mut tr,
-        b"neo.fold.next/chip8/stage2_register_execution/write_x_target",
-        &proof.reg_write_x_target_rounds,
-    );
-    append_k_rounds(
-        &mut tr,
-        b"neo.fold.next/chip8/stage2_register_execution/write_i_target",
-        &proof.reg_write_i_target_rounds,
-    );
-    tr.digest32()
-}
-
-fn stage2_ram_execution_digest(proof: &crate::chip8::stage2::Stage2RamExecutionProof) -> [u8; 32] {
-    let mut tr = Poseidon2Transcript::new(b"neo.fold.next/chip8/stage2_ram_execution");
-    append_k_rounds(
-        &mut tr,
-        b"neo.fold.next/chip8/stage2_ram_execution/rw_batched",
-        &proof.ram_rw_batched_rounds,
-    );
-    append_k_rounds(
-        &mut tr,
-        b"neo.fold.next/chip8/stage2_ram_execution/val_from_inc",
-        &proof.ram_val_from_inc_rounds,
-    );
-    append_k_rounds(
-        &mut tr,
-        b"neo.fold.next/chip8/stage2_ram_execution/raf_read",
-        &proof.ram_raf_read_rounds,
-    );
-    append_k_rounds(
-        &mut tr,
-        b"neo.fold.next/chip8/stage2_ram_execution/raf_write",
-        &proof.ram_raf_write_rounds,
-    );
-    append_k_rounds(
-        &mut tr,
-        b"neo.fold.next/chip8/stage2_ram_execution/read_target",
-        &proof.ram_read_target_rounds,
-    );
-    append_k_rounds(
-        &mut tr,
-        b"neo.fold.next/chip8/stage2_ram_execution/write_target",
-        &proof.ram_write_target_rounds,
-    );
-    append_k_rounds(
-        &mut tr,
-        b"neo.fold.next/chip8/stage2_ram_execution/write_matches_x_zero",
-        &proof.ram_write_matches_x_zero_rounds,
-    );
-    append_k_rounds(
-        &mut tr,
-        b"neo.fold.next/chip8/stage2_ram_execution/idle_mem_zero",
-        &proof.ram_idle_mem_zero_rounds,
-    );
-    tr.append_u64s(
-        b"neo.fold.next/chip8/stage2_ram_execution/addr_correctness_count",
-        &[proof.ram_addr_correctness.len() as u64],
-    );
-    for addr in &proof.ram_addr_correctness {
-        tr.append_message(
-            b"neo.fold.next/chip8/stage2_ram_execution/addr_correctness",
-            &address_correctness_digest(addr),
-        );
-    }
-    tr.digest32()
-}
-
-fn address_correctness_digest(proof: &crate::chip8::stage2::AddressCorrectnessProof) -> [u8; 32] {
-    let mut tr = Poseidon2Transcript::new(b"neo.fold.next/chip8/address_correctness_execution");
-    append_k_rounds(
-        &mut tr,
-        b"neo.fold.next/chip8/address_correctness_execution/booleanity",
-        &proof.booleanity_rounds,
-    );
-    append_k_rounds(
-        &mut tr,
-        b"neo.fold.next/chip8/address_correctness_execution/hamming",
-        &proof.hamming_weight_rounds,
-    );
-    append_k_rounds(
-        &mut tr,
-        b"neo.fold.next/chip8/address_correctness_execution/decode",
-        &proof.decode_consistency_rounds,
-    );
-    append_k_rounds(
-        &mut tr,
-        b"neo.fold.next/chip8/address_correctness_execution/raw",
-        &proof.raw_address_rounds,
-    );
-    tr.digest32()
-}
-
-fn kernel_shift_witness_digest(shift: &crate::chip8::kernel::KernelShiftWitness) -> [u8; 32] {
-    let mut tr = Poseidon2Transcript::new(b"neo.fold.next/chip8/kernel_shift_witness");
-    append_k_rounds(
-        &mut tr,
-        b"neo.fold.next/chip8/kernel_shift_witness/reduction",
-        shift.reduction_rounds(),
-    );
-    tr.digest32()
-}
-
-fn append_k_rounds(tr: &mut Poseidon2Transcript, label: &'static [u8], rounds: &[Vec<neo_math::K>]) {
-    tr.append_u64s(b"neo.fold.next/chip8/proof_digest/round_count", &[rounds.len() as u64]);
-    for round in rounds {
-        append_k_values(tr, label, round);
-    }
-}
-
-fn append_k_values(tr: &mut Poseidon2Transcript, label: &'static [u8], values: &[neo_math::K]) {
-    tr.append_u64s(b"neo.fold.next/chip8/proof_digest/k_len", &[values.len() as u64]);
-    let coeffs_per_elem = values
-        .first()
-        .map(|value| value.as_coeffs().len())
-        .unwrap_or(0);
-    tr.append_fields_iter(
-        label,
-        values.len().saturating_mul(coeffs_per_elem),
-        values.iter().flat_map(|value| value.as_coeffs()),
-    );
 }
 
 pub(crate) fn chunk_transition_witness_digest(step: &Chip8ChunkTransitionWitness) -> [u8; 32] {

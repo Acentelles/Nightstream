@@ -1,13 +1,33 @@
 //! Performance/debugging reports for the current RV64IM proof path.
 
+#[path = "support/chip8.rs"]
+mod chip8_support;
+
 use std::collections::BTreeSet;
 use std::env;
 use std::time::Instant;
 
 use serde::Serialize;
 
+use neo_fold_next::chip8::decider::{prove_chip8_spartan2_decider, setup_chip8_spartan2_decider};
+use neo_fold_next::chip8::proof::prove_recursive as prove_chip8_recursive;
+use neo_fold_next::nightstream::chip8::{
+    build_chip8_nightstream_from_recursive_proof, verify_chip8_nightstream_from_recursive_proof,
+};
+use neo_fold_next::nightstream::rv64im::{
+    build_rv64im_nightstream_from_public_proof_with_perf, build_rv64im_side_terminal_public_target,
+    build_rv64im_side_terminal_relation_witness_from_accepted_artifact,
+    build_rv64im_side_terminal_witness_artifact_from_accepted_artifact,
+    prove_rv64im_side_terminal_backend_binding_shell, prove_rv64im_side_terminal_public_relation_shell,
+    prove_rv64im_side_terminal_public_target_shell, setup_rv64im_side_terminal_backend_binding_shell,
+    setup_rv64im_side_terminal_public_relation_shell, setup_rv64im_side_terminal_public_target_shell,
+    verify_rv64im_nightstream_with_perf, verify_rv64im_side_terminal_backend_binding_shell,
+    verify_rv64im_side_terminal_public_relation_shell, verify_rv64im_side_terminal_public_target_shell,
+    Rv64imSideTerminalBackendProof,
+};
 use neo_fold_next::proof::{FoldSchedule, PackagedProof};
 use neo_fold_next::rv64im::ccs::{rv64im_root_main_lane_ccs, RV64IM_ROOT_PUBLIC_INPUTS, RV64IM_ROOT_ROW_WIDTH};
+use neo_fold_next::rv64im::final_relation::prove_rv64im_final_statement_from_accepted;
 use neo_fold_next::rv64im::layout::RV64_REGISTER_COUNT;
 use neo_fold_next::rv64im::stage1::build_stage1_summary;
 use neo_fold_next::rv64im::stage2::{build_stage2_summary, RamAccessKind, RegisterReadRole};
@@ -15,13 +35,16 @@ use neo_fold_next::rv64im::stage3::build_stage3_summary;
 use neo_fold_next::rv64im::tables::Rv64FamilyTag;
 use neo_fold_next::rv64im::{
     build_mixed_opcode_perf_source_case, build_parity_case_from_source, build_program,
-    build_rv64im_audit_witness_bundle as build_rv64im_proof_witness, build_simple_kernel_witness_with_perf,
-    mixed_opcode_perf_expected_x1, prove_rv64im_public_proof_with_perf, rv64im_simple_root_params,
-    validate_rv64im_public_proof_against_input_with_perf, verify_rv64im_audit_proof as verify_rv64im_proof,
-    verify_rv64im_public_proof_with_perf, OpeningAccumulator, OpeningAccumulatorStats, OpeningPointLabel, Rv64Program,
-    Rv64State, Rv64imProofInput, SimpleKernelBuildPerf, RV64IM_MIXED_OPCODE_PERF_BLOCK_LEN,
-    RV64IM_MIXED_OPCODE_PERF_DEFAULT_N,
+    build_rv64im_accepted_proof_artifact, build_rv64im_audit_witness_bundle as build_rv64im_proof_witness,
+    build_rv64im_kernel_export_source_from_accepted_artifact, build_rv64im_opening_bundle_from_accepted_artifact,
+    build_simple_kernel_witness_with_perf, mixed_opcode_perf_expected_x1, prove_rv64im_public_proof_with_perf,
+    prove_rv64im_spartan2_decider_from_public_proof, rv64im_simple_root_params,
+    setup_rv64im_spartan2_decider_from_public_proof, validate_rv64im_public_proof_against_input_with_perf,
+    verify_rv64im_audit_proof as verify_rv64im_proof, verify_rv64im_public_proof_with_perf, OpeningAccumulator,
+    OpeningAccumulatorStats, OpeningPointLabel, Rv64Program, Rv64State, Rv64imProofInput, SimpleKernelBuildPerf,
+    RV64IM_MIXED_OPCODE_PERF_BLOCK_LEN, RV64IM_MIXED_OPCODE_PERF_DEFAULT_N,
 };
+use neo_fold_next::time_opening::prove_time_opening;
 
 const FAMILY_ORDER: [Rv64FamilyTag; 7] = [
     Rv64FamilyTag::NativeAlu,
@@ -169,6 +192,10 @@ fn per_unit(ms: f64, units: usize) -> f64 {
     } else {
         ms / units as f64
     }
+}
+
+fn format_ms_per_opcode(ms: f64, opcode_count: usize) -> String {
+    format!("{ms:.3} ms ({:.4} ms/op)", per_unit(ms, opcode_count))
 }
 
 fn print_section(title: &str) {
@@ -672,6 +699,38 @@ fn print_root_main_lane_verify_breakdown(perf: &neo_fold_next::rv64im::Rv64imPub
     );
     println!(
         "  {:26} {:>12.3}",
+        "Π_CCS bind header",
+        perf.root_main_lane.session.ccs_bind_header_instances_ms()
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "Π_CCS bind prefix",
+        perf.root_main_lane.session.ccs_bind_header_prefix_ms()
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "Π_CCS bind poly",
+        perf.root_main_lane.session.ccs_bind_header_poly_ms()
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "Π_CCS bind public inst",
+        perf.root_main_lane
+            .session
+            .ccs_bind_header_public_instances_ms()
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "Π_CCS bind me_inputs",
+        perf.root_main_lane.session.ccs_bind_me_inputs_ms()
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "Π_CCS bind challenges",
+        perf.root_main_lane.session.ccs_bind_sample_challenges_ms()
+    );
+    println!(
+        "  {:26} {:>12.3}",
         "Π_CCS FE sumcheck",
         perf.root_main_lane.session.ccs_fe_sumcheck_ms()
     );
@@ -700,6 +759,43 @@ fn print_root_main_lane_verify_breakdown(perf: &neo_fold_next::rv64im::Rv64imPub
         "  {:26} {:>12.3}",
         "Π_RLC challenge",
         perf.root_main_lane.session.rlc_challenge_ms()
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "Π_RLC rho mats",
+        perf.root_main_lane.session.rlc_rho_mats_ms()
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "Π_RLC rho k lift",
+        perf.root_main_lane.session.rlc_rho_k_lift_ms()
+    );
+    println!("  {:26} {:>12.3}", "Π_RLC X", perf.root_main_lane.session.rlc_x_ms());
+    println!("  {:26} {:>12.3}", "Π_RLC y", perf.root_main_lane.session.rlc_y_ms());
+    println!(
+        "  {:26} {:>12.3}",
+        "Π_RLC y_zcol",
+        perf.root_main_lane.session.rlc_y_zcol_ms()
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "Π_RLC aux",
+        perf.root_main_lane.session.rlc_aux_ms()
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "Π_RLC commitment collect",
+        perf.root_main_lane.session.rlc_commitment_collect_ms()
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "Π_RLC commitment mix",
+        perf.root_main_lane.session.rlc_commitment_mix_ms()
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "Π_RLC commitment",
+        perf.root_main_lane.session.rlc_commitment_ms()
     );
     println!("  {:26} {:>12.3}", "Π_RLC", perf.root_main_lane.session.rlc_ms());
     println!("  {:26} {:>12.3}", "Π_DEC", perf.root_main_lane.session.dec_ms());
@@ -849,8 +945,10 @@ fn print_verify_breakdown(
         ("public_claim_digests", perf.public_claim_digests_ms),
         ("public_bundle_digests", perf.public_bundle_digests_ms),
         ("public_bundle_bindings", perf.public_bundle_bindings_ms),
-        ("root_main_lane_proof", perf.root_main_lane_proof_ms),
+        ("native_stage_bundle_verify", perf.native_stage_bundle_verify_ms),
         ("stage_package_verify", perf.stage_package_verify_ms),
+        ("root_execution_verify", perf.root_execution_verify_ms),
+        ("root_main_lane_proof", perf.root_main_lane_proof_ms),
         ("kernel_opening_verify", perf.kernel_opening_verify_ms),
         ("summary_consistency", perf.summary_consistency_ms),
     ] {
@@ -904,6 +1002,123 @@ fn print_verify_breakdown(
     } else {
         println!();
         println!("  theorem verify uses the carried proof witness; no public-kernel replay runs in this path");
+        if perf.accepted_stage_package.total_ms > 0.0 {
+            println!();
+            println!("  {:26} {:>12}", "accepted stage subphase", "wall ms");
+            println!(
+                "  {:26} {:>12.3}",
+                "stage1_verify", perf.accepted_stage_package.stage1_ms
+            );
+            if perf.accepted_stage_package.stage1_breakdown.total_ms > 0.0 {
+                println!();
+                println!("  {:26} {:>12}", "accepted stage1 subphase", "wall ms");
+                println!(
+                    "  {:26} {:>12.3}",
+                    "stage1_sem_inputs_surface",
+                    perf.accepted_stage_package
+                        .stage1_breakdown
+                        .sem_inputs_surface_ms
+                );
+                println!(
+                    "  {:26} {:>12.3}",
+                    "stage1_semantics_verify",
+                    perf.accepted_stage_package
+                        .stage1_breakdown
+                        .semantics_verify_ms
+                );
+                println!(
+                    "  {:26} {:>12.3}",
+                    "stage1_row_bindings_surface",
+                    perf.accepted_stage_package
+                        .stage1_breakdown
+                        .row_bindings_surface_ms
+                );
+                println!(
+                    "  {:26} {:>12.3}",
+                    "stage1_surface_digest_checks",
+                    perf.accepted_stage_package
+                        .stage1_breakdown
+                        .surface_digest_checks_ms
+                );
+                println!(
+                    "  {:26} {:>12.3}",
+                    "stage1_selected_opening",
+                    perf.accepted_stage_package
+                        .stage1_breakdown
+                        .selected_opening_ms
+                );
+            }
+            println!(
+                "  {:26} {:>12.3}",
+                "stage2_verify", perf.accepted_stage_package.stage2_ms
+            );
+            println!(
+                "  {:26} {:>12.3}",
+                "stage3_verify", perf.accepted_stage_package.stage3_ms
+            );
+            if perf.accepted_stage_package.stage2_breakdown.total_ms > 0.0 {
+                println!();
+                println!("  {:26} {:>12}", "accepted stage2 subphase", "wall ms");
+                println!(
+                    "  {:26} {:>12.3}",
+                    "stage2_semantics", perf.accepted_stage_package.stage2_breakdown.semantics_ms
+                );
+                println!(
+                    "  {:26} {:>12.3}",
+                    "stage2_temporal", perf.accepted_stage_package.stage2_breakdown.temporal_ms
+                );
+                println!(
+                    "  {:26} {:>12.3}",
+                    "stage2_family_digests",
+                    perf.accepted_stage_package
+                        .stage2_breakdown
+                        .family_digests_ms
+                );
+                println!(
+                    "  {:26} {:>12.3}",
+                    "stage2_selected_opening",
+                    perf.accepted_stage_package
+                        .stage2_breakdown
+                        .selected_opening_ms
+                );
+            }
+        }
+        if perf.accepted_root_execution.total_ms > 0.0 {
+            println!();
+            println!("  {:26} {:>12}", "accepted root-execution subphase", "wall ms");
+            println!(
+                "  {:26} {:>12.3}",
+                "preflight", perf.accepted_root_execution.preflight_ms
+            );
+            println!(
+                "  {:26} {:>12.3}",
+                "semantic_rows", perf.accepted_root_execution.semantic_rows_ms
+            );
+            println!(
+                "  {:26} {:>12.3}",
+                "statement_chunk_layout", perf.accepted_root_execution.statement_chunk_layout_ms
+            );
+            println!(
+                "  {:26} {:>12.3}",
+                "prepared_step_bindings", perf.accepted_root_execution.prepared_step_bindings_ms
+            );
+            println!(
+                "  {:26} {:>12.3}",
+                "kernel_claim_bindings", perf.accepted_root_execution.kernel_claim_bindings_ms
+            );
+            println!(
+                "  {:26} {:>12.3}",
+                "row_chunk_routes", perf.accepted_root_execution.row_chunk_routes_ms
+            );
+            println!(
+                "  {:26} {:>12.3}",
+                "row_local_ccs_acceptance", perf.accepted_root_execution.row_local_ccs_acceptance_ms
+            );
+            println!(
+                "  {:26} {:>12.3}",
+                "semantics_refinement", perf.accepted_root_execution.semantics_refinement_ms
+            );
+        }
     }
 }
 
@@ -1196,8 +1411,138 @@ fn rv64im_mixed_opcode_perf_snapshot() {
     let verify_replay_started = Instant::now();
     let verify_replay_perf = validate_rv64im_public_proof_against_input_with_perf(&input, &proof)
         .expect("validate rv64im public proof against input");
-    let verify_replay_ms = millis_since(verify_replay_started);
-    let end_to_end_ms = millis_since(end_to_end_started);
+    let _ = millis_since(verify_replay_started);
+
+    let accepted_started = Instant::now();
+    let accepted_artifact = build_rv64im_accepted_proof_artifact(&proof).expect("build rv64im accepted artifact");
+    let accepted_ms = millis_since(accepted_started);
+
+    let final_started = Instant::now();
+    let (final_statement, _final_proof) =
+        prove_rv64im_final_statement_from_accepted(&accepted_artifact).expect("prove rv64im final statement");
+    let _final_ms = millis_since(final_started);
+    let kernel_export_source = build_rv64im_kernel_export_source_from_accepted_artifact(&accepted_artifact)
+        .expect("build rv64im kernel export source");
+    let side_terminal_witness = build_rv64im_side_terminal_relation_witness_from_accepted_artifact(&accepted_artifact);
+    let side_terminal_witness_artifact =
+        build_rv64im_side_terminal_witness_artifact_from_accepted_artifact(&accepted_artifact)
+            .expect("build rv64im side-terminal witness artifact");
+
+    let decider_setup_started = Instant::now();
+    let (decider_pk, decider_vk) =
+        setup_rv64im_spartan2_decider_from_public_proof(&proof).expect("setup rv64im spartan2 decider");
+    let decider_setup_ms = millis_since(decider_setup_started);
+
+    let decider_prove_started = Instant::now();
+    let decider_proof =
+        prove_rv64im_spartan2_decider_from_public_proof(&decider_pk, &proof).expect("prove rv64im spartan2 decider");
+    let decider_prove_ms = millis_since(decider_prove_started);
+
+    let ((nightstream_statement, nightstream_proof), nightstream_build_perf) =
+        build_rv64im_nightstream_from_public_proof_with_perf(&proof).expect("build rv64im nightstream proof");
+    let nightstream_build_ms = nightstream_build_perf.total_ms;
+    let nightstream_opening_bundle =
+        build_rv64im_opening_bundle_from_accepted_artifact(&accepted_artifact).expect("build rv64im opening bundle");
+    let public_statement = proof.statement.clone();
+
+    let nightstream_verify_perf = verify_rv64im_nightstream_with_perf(
+        &nightstream_statement,
+        &nightstream_proof,
+        proof.statement.root_params_id,
+        &decider_vk,
+        &decider_proof,
+        &public_statement,
+    )
+    .expect("verify rv64im nightstream proof");
+    let nightstream_verify_ms = nightstream_verify_perf.total_ms;
+    let side_terminal_shell_target =
+        build_rv64im_side_terminal_public_target(&nightstream_statement, &nightstream_proof, &public_statement)
+            .expect("build rv64im side-terminal public target");
+
+    let side_terminal_shell_setup_started = Instant::now();
+    let (side_terminal_shell_pk, side_terminal_shell_vk) =
+        setup_rv64im_side_terminal_public_target_shell(&nightstream_statement, &nightstream_proof, &public_statement)
+            .expect("setup rv64im side-terminal public-target shell");
+    let side_terminal_shell_setup_ms = millis_since(side_terminal_shell_setup_started);
+
+    let side_terminal_shell_prove_started = Instant::now();
+    let side_terminal_shell = prove_rv64im_side_terminal_public_target_shell(
+        &side_terminal_shell_pk,
+        &nightstream_statement,
+        &nightstream_proof,
+        &public_statement,
+    )
+    .expect("prove rv64im side-terminal public-target shell");
+    let side_terminal_shell_prove_ms = millis_since(side_terminal_shell_prove_started);
+
+    let side_terminal_shell_verify_started = Instant::now();
+    verify_rv64im_side_terminal_public_target_shell(
+        &side_terminal_shell_vk,
+        &nightstream_statement,
+        &nightstream_proof,
+        &public_statement,
+        &side_terminal_shell,
+    )
+    .expect("verify rv64im side-terminal public-target shell");
+    let side_terminal_shell_verify_ms = millis_since(side_terminal_shell_verify_started);
+
+    let side_terminal_relation_shell_setup_started = Instant::now();
+    let (side_terminal_relation_shell_pk, side_terminal_relation_shell_vk) =
+        setup_rv64im_side_terminal_public_relation_shell(&nightstream_statement, &nightstream_proof, &public_statement)
+            .expect("setup rv64im side-terminal public-relation shell");
+    let side_terminal_relation_shell_setup_ms = millis_since(side_terminal_relation_shell_setup_started);
+
+    let side_terminal_relation_shell_prove_started = Instant::now();
+    let side_terminal_relation_shell = prove_rv64im_side_terminal_public_relation_shell(
+        &side_terminal_relation_shell_pk,
+        &nightstream_statement,
+        &nightstream_proof,
+        &public_statement,
+    )
+    .expect("prove rv64im side-terminal public-relation shell");
+    let side_terminal_relation_shell_prove_ms = millis_since(side_terminal_relation_shell_prove_started);
+
+    let side_terminal_relation_shell_verify_started = Instant::now();
+    verify_rv64im_side_terminal_public_relation_shell(
+        &side_terminal_relation_shell_vk,
+        &nightstream_statement,
+        &nightstream_proof,
+        &public_statement,
+        &side_terminal_relation_shell,
+    )
+    .expect("verify rv64im side-terminal public-relation shell");
+    let side_terminal_relation_shell_verify_ms = millis_since(side_terminal_relation_shell_verify_started);
+
+    let side_terminal_backend_shell_setup_started = Instant::now();
+    let (side_terminal_backend_shell_pk, side_terminal_backend_shell_vk) =
+        setup_rv64im_side_terminal_backend_binding_shell(&nightstream_statement, &nightstream_proof, &public_statement)
+            .expect("setup rv64im side-terminal backend-binding shell");
+    let side_terminal_backend_shell_setup_ms = millis_since(side_terminal_backend_shell_setup_started);
+
+    let side_terminal_backend_shell_prove_started = Instant::now();
+    let side_terminal_backend_shell = prove_rv64im_side_terminal_backend_binding_shell(
+        &side_terminal_backend_shell_pk,
+        &nightstream_statement,
+        &nightstream_proof,
+        &public_statement,
+    )
+    .expect("prove rv64im side-terminal backend-binding shell");
+    let side_terminal_backend_shell_prove_ms = millis_since(side_terminal_backend_shell_prove_started);
+    let side_terminal_backend_proof = Rv64imSideTerminalBackendProof {
+        shape_digest: side_terminal_shell_target.shape().digest(),
+        snark_data: side_terminal_backend_shell.snark_data.clone(),
+    };
+
+    let side_terminal_backend_shell_verify_started = Instant::now();
+    verify_rv64im_side_terminal_backend_binding_shell(
+        &side_terminal_backend_shell_vk,
+        &nightstream_statement,
+        &nightstream_proof,
+        &public_statement,
+        &side_terminal_backend_shell,
+    )
+    .expect("verify rv64im side-terminal backend-binding shell");
+    let side_terminal_backend_shell_verify_ms = millis_since(side_terminal_backend_shell_verify_started);
 
     let prove_witness_started = Instant::now();
     let proved_witness = build_rv64im_proof_witness(&input).expect("build rv64im proof witness");
@@ -1293,6 +1638,18 @@ fn rv64im_mixed_opcode_perf_snapshot() {
             bytes: serialized_size_bytes(&proof.claim),
         },
         SerializedSizeRow {
+            label: "claim.accepted.terminal",
+            bytes: serialized_size_bytes(&proof.claim.accepted.terminal),
+        },
+        SerializedSizeRow {
+            label: "claim.opening.terminal",
+            bytes: serialized_size_bytes(&proof.claim.opening.terminal),
+        },
+        SerializedSizeRow {
+            label: "claim.root0.terminal",
+            bytes: serialized_size_bytes(&proof.claim.root0.terminal),
+        },
+        SerializedSizeRow {
             label: "proof.kernel",
             bytes: serialized_size_bytes(&proof.kernel),
         },
@@ -1313,16 +1670,64 @@ fn rv64im_mixed_opcode_perf_snapshot() {
             bytes: serialized_size_bytes(&proof.kernel.stage_claims),
         },
         SerializedSizeRow {
+            label: "kernel.stage_claims.summary",
+            bytes: serialized_size_bytes(&proof.kernel.stage_claims.summary),
+        },
+        SerializedSizeRow {
+            label: "kernel.stage_claims.packaged",
+            bytes: serialized_size_bytes(&proof.kernel.stage_claims.packaged),
+        },
+        SerializedSizeRow {
             label: "kernel.stage_packages",
             bytes: serialized_size_bytes(&proof.kernel.stage_packages),
+        },
+        SerializedSizeRow {
+            label: "kernel.stage_packages.summary",
+            bytes: serialized_size_bytes(&proof.kernel.stage_packages.summary),
+        },
+        SerializedSizeRow {
+            label: "kernel.stage_packages.stage1.packaged",
+            bytes: serialized_size_bytes(&proof.kernel.stage_packages.packages.stage1.packaged),
+        },
+        SerializedSizeRow {
+            label: "kernel.stage_packages.stage2.packaged",
+            bytes: serialized_size_bytes(&proof.kernel.stage_packages.packages.stage2.packaged),
+        },
+        SerializedSizeRow {
+            label: "kernel.stage_packages.stage3.packaged",
+            bytes: serialized_size_bytes(&proof.kernel.stage_packages.packages.stage3.packaged),
         },
         SerializedSizeRow {
             label: "kernel.kernel_opening",
             bytes: serialized_size_bytes(&proof.kernel.kernel_opening),
         },
         SerializedSizeRow {
+            label: "kernel.kernel_opening.bindings",
+            bytes: serialized_size_bytes(&proof.kernel.kernel_opening.bindings),
+        },
+        SerializedSizeRow {
+            label: "kernel.kernel_opening.bindings.packaged",
+            bytes: serialized_size_bytes(&proof.kernel.kernel_opening.opening.bindings.packaged),
+        },
+        SerializedSizeRow {
+            label: "kernel.kernel_opening.prepared_steps.packaged",
+            bytes: serialized_size_bytes(&proof.kernel.kernel_opening.opening.prepared_steps.packaged),
+        },
+        SerializedSizeRow {
             label: "kernel.kernel_claims",
             bytes: serialized_size_bytes(&proof.kernel.kernel_claims),
+        },
+        SerializedSizeRow {
+            label: "kernel.kernel_claims.summary",
+            bytes: serialized_size_bytes(&proof.kernel.kernel_claims.summary),
+        },
+        SerializedSizeRow {
+            label: "kernel.kernel_claims.summary.terminal",
+            bytes: serialized_size_bytes(&proof.kernel.kernel_claims.summary.terminal),
+        },
+        SerializedSizeRow {
+            label: "kernel.kernel_claims.packaged",
+            bytes: serialized_size_bytes(&proof.kernel.kernel_claims.packaged),
         },
         SerializedSizeRow {
             label: "kernel.main_lane",
@@ -1335,6 +1740,10 @@ fn rv64im_mixed_opcode_perf_snapshot() {
         SerializedSizeRow {
             label: "kernel.root_lane_commitment",
             bytes: serialized_size_bytes(&proof.kernel.root_lane_commitment),
+        },
+        SerializedSizeRow {
+            label: "kernel_export.source",
+            bytes: serialized_size_bytes(&kernel_export_source),
         },
         SerializedSizeRow {
             label: "witness.trace",
@@ -1361,8 +1770,51 @@ fn rv64im_mixed_opcode_perf_snapshot() {
             bytes: serialized_size_bytes(&proof.witness.kernel_claims),
         },
     ];
+    let accepted_artifact_total_bytes = serialized_size_bytes(&accepted_artifact);
+    let final_statement_bytes = serialized_size_bytes(&final_statement);
+    let decider_proof_bytes = serialized_size_bytes(&decider_proof);
+    let nightstream_serialized_sizes = [
+        SerializedSizeRow {
+            label: "nightstream.total",
+            bytes: serialized_size_bytes(&(nightstream_statement.clone(), nightstream_proof.clone())),
+        },
+        SerializedSizeRow {
+            label: "nightstream.statement",
+            bytes: serialized_size_bytes(&nightstream_statement),
+        },
+        SerializedSizeRow {
+            label: "nightstream.proof",
+            bytes: serialized_size_bytes(&nightstream_proof),
+        },
+        SerializedSizeRow {
+            label: "nightstream.main_decider_proof",
+            bytes: serialized_size_bytes(&nightstream_proof.main_decider_proof),
+        },
+        SerializedSizeRow {
+            label: "nightstream.main_residual_proof",
+            bytes: serialized_size_bytes(&nightstream_proof.main_residual_proof),
+        },
+        SerializedSizeRow {
+            label: "nightstream.side_terminal_artifact",
+            bytes: serialized_size_bytes(&nightstream_proof.side_terminal_artifact),
+        },
+        SerializedSizeRow {
+            label: "nightstream.side_proof_artifact",
+            bytes: serialized_size_bytes(&nightstream_proof.side_proof_artifact),
+        },
+        SerializedSizeRow {
+            label: "nightstream.opening_artifact",
+            bytes: serialized_size_bytes(&nightstream_proof.opening_artifact),
+        },
+        SerializedSizeRow {
+            label: "nightstream.linkage_artifact",
+            bytes: serialized_size_bytes(&nightstream_proof.linkage_artifact),
+        },
+    ];
     let proof_total_bytes = serialized_sizes[0].bytes;
     let proof_total_kib = bytes_to_kib(proof_total_bytes);
+    let nightstream_total_bytes = nightstream_serialized_sizes[0].bytes;
+    let nightstream_total_kib = bytes_to_kib(nightstream_total_bytes);
 
     assert_eq!(build.rows, output.trace.execution_rows);
     assert_eq!(build.final_state.pc, output.kernel_claims.kernel.final_pc);
@@ -1441,6 +1893,10 @@ fn rv64im_mixed_opcode_perf_snapshot() {
         output.kernel_claims.kernel.final_memory[0].addr,
         source.initial_memory[0].addr
     );
+    assert_eq!(
+        nightstream_statement.public_io_digest,
+        final_statement.public_statement_digest
+    );
 
     print_section("RV64IM Mixed Opcode Perf Snapshot");
     print_kv("ns_debug_n (non-halt ops)", opcode_count);
@@ -1481,12 +1937,419 @@ fn rv64im_mixed_opcode_perf_snapshot() {
             ("build_simple_kernel", build_ms),
             ("prove_rv64im_public_proof", prove_ms),
             ("verify_rv64im_public_proof", verify_ms),
+            ("build_rv64im_accepted_artifact", accepted_ms),
+            (
+                "prove_rv64im_final_statement",
+                nightstream_build_perf.final_statement_ms,
+            ),
+            ("setup_rv64im_spartan2_decider", decider_setup_ms),
+            ("prove_rv64im_spartan2_decider", decider_prove_ms),
+            ("build_rv64im_nightstream", nightstream_build_ms),
+            ("verify_rv64im_nightstream", nightstream_verify_ms),
+            ("setup_rv64im_side_terminal_shell", side_terminal_shell_setup_ms),
+            ("prove_rv64im_side_terminal_shell", side_terminal_shell_prove_ms),
+            ("verify_rv64im_side_terminal_shell", side_terminal_shell_verify_ms),
+            (
+                "setup_rv64im_side_terminal_relation_shell",
+                side_terminal_relation_shell_setup_ms,
+            ),
+            (
+                "prove_rv64im_side_terminal_relation_shell",
+                side_terminal_relation_shell_prove_ms,
+            ),
+            (
+                "verify_rv64im_side_terminal_relation_shell",
+                side_terminal_relation_shell_verify_ms,
+            ),
+            (
+                "setup_rv64im_side_terminal_backend_shell",
+                side_terminal_backend_shell_setup_ms,
+            ),
+            (
+                "prove_rv64im_side_terminal_backend_shell",
+                side_terminal_backend_shell_prove_ms,
+            ),
+            (
+                "verify_rv64im_side_terminal_backend_shell",
+                side_terminal_backend_shell_verify_ms,
+            ),
             ("build_rv64im_proof_witness", prove_witness_ms),
             ("verify_rv64im_proof_witness", verify_witness_ms),
         ],
         opcode_count,
         execution_row_count,
     );
+
+    let recursive_relation_core_ms = nightstream_build_perf.final_statement_recursive_prepare_inputs_ms
+        + nightstream_build_perf.final_statement_recursive_ccs_ms
+        + nightstream_build_perf.final_statement_recursive_dims_ms
+        + nightstream_build_perf.final_statement_recursive_rlc_prepare_ms
+        + nightstream_build_perf.final_statement_recursive_rlc_ms
+        + nightstream_build_perf.final_statement_recursive_dec_split_ms
+        + nightstream_build_perf.final_statement_recursive_dec_commit_ms
+        + nightstream_build_perf.final_statement_recursive_dec_ms;
+    let recursive_wrapper_ms =
+        (nightstream_build_perf.final_statement_recursive_proof_ms - recursive_relation_core_ms).max(0.0);
+
+    print_section("Nightstream Build Breakdown");
+    println!("  {:26} {:>12}", "phase", "wall ms");
+    println!(
+        "  {:26} {:>12.3}",
+        "build_rv64im_accepted_artifact", nightstream_build_perf.accepted_artifact_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "prove_rv64im_final_statement", nightstream_build_perf.final_statement_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "final.kernel_export", nightstream_build_perf.final_statement_kernel_export_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "final.recursive_proof", nightstream_build_perf.final_statement_recursive_proof_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "recursive.prepare_inputs", nightstream_build_perf.final_statement_recursive_prepare_inputs_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "recursive.ccs", nightstream_build_perf.final_statement_recursive_ccs_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "recursive.ccs_bind", nightstream_build_perf.final_statement_recursive_ccs_bind_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "recursive.ccs_sample", nightstream_build_perf.final_statement_recursive_ccs_sample_challenges_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "recursive.ccs_fe_sumcheck", nightstream_build_perf.final_statement_recursive_ccs_fe_sumcheck_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "recursive.ccs_nc_sumcheck", nightstream_build_perf.final_statement_recursive_ccs_nc_sumcheck_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "recursive.ccs_output", nightstream_build_perf.final_statement_recursive_ccs_output_materialize_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "recursive.dims", nightstream_build_perf.final_statement_recursive_dims_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "recursive.rlc_prepare", nightstream_build_perf.final_statement_recursive_rlc_prepare_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "recursive.rlc", nightstream_build_perf.final_statement_recursive_rlc_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "recursive.dec_split", nightstream_build_perf.final_statement_recursive_dec_split_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "recursive.dec_commit", nightstream_build_perf.final_statement_recursive_dec_commit_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "recursive.dec", nightstream_build_perf.final_statement_recursive_dec_ms
+    );
+    println!("  {:26} {:>12.3}", "recursive.wrapper", recursive_wrapper_ms);
+    println!(
+        "  {:26} {:>12.3}",
+        "final.folded_digest", nightstream_build_perf.final_statement_folded_digest_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "final.final_proof", nightstream_build_perf.final_statement_final_proof_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "final.statement_digest", nightstream_build_perf.final_statement_statement_digest_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "side_proof_bundle", nightstream_build_perf.side_proof_bundle_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "verified_seams", nightstream_build_perf.verified_seams.total_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "local.final_surface_guard", nightstream_build_perf.verified_seams.final_surface_guard_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "verified.decider_relation", nightstream_build_perf.verified_seams.decider_relation_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "verified.linkage_claims", nightstream_build_perf.verified_seams.linkage_claims_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "verified.main_decider_proof", nightstream_build_perf.verified_seams.main_decider_proof_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "verified.main_residual_proof", nightstream_build_perf.verified_seams.main_residual_proof_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "verified.linkage_artifact", nightstream_build_perf.verified_seams.linkage_artifact_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "verified.linkage_root", nightstream_build_perf.verified_seams.linkage_root_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "verified.statement", nightstream_build_perf.verified_seams.statement_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "verified.bind_side_bundle", nightstream_build_perf.verified_seams.bind_side_bundle_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "verified.phase0_opening_artifact",
+        nightstream_build_perf
+            .verified_seams
+            .opening_phase0_artifact_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "phase0.claim_witnesses",
+        nightstream_build_perf
+            .verified_seams
+            .opening_phase0_claim_witnesses_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "phase0.relation_artifact",
+        nightstream_build_perf
+            .verified_seams
+            .opening_phase0_relation_artifact_ms
+    );
+    for (label, value) in [
+        (
+            "phase0.pack_columns",
+            nightstream_build_perf
+                .verified_seams
+                .opening_phase0_packed_columns_ms,
+        ),
+        (
+            "phase0.commit_vector",
+            nightstream_build_perf
+                .verified_seams
+                .opening_phase0_commitment_vector_ms,
+        ),
+        (
+            "phase0.commit_params",
+            nightstream_build_perf
+                .verified_seams
+                .opening_phase0_commitment_params_ms,
+        ),
+        (
+            "phase0.commit_committer",
+            nightstream_build_perf
+                .verified_seams
+                .opening_phase0_commitment_committer_ms,
+        ),
+        (
+            "phase0.commit_mats",
+            nightstream_build_perf
+                .verified_seams
+                .opening_phase0_commitment_mats_ms,
+        ),
+        (
+            "phase0.commit_many",
+            nightstream_build_perf
+                .verified_seams
+                .opening_phase0_commitment_commit_many_ms,
+        ),
+        (
+            "phase0.commit_root",
+            nightstream_build_perf
+                .verified_seams
+                .opening_phase0_commitment_root_ms,
+        ),
+        (
+            "phase0.object_id",
+            nightstream_build_perf
+                .verified_seams
+                .opening_phase0_opened_object_id_ms,
+        ),
+        (
+            "phase0.object_total",
+            nightstream_build_perf
+                .verified_seams
+                .opening_phase0_opened_object_total_ms,
+        ),
+        (
+            "phase0.bind_digest",
+            nightstream_build_perf
+                .verified_seams
+                .opening_phase0_binding_digest_ms,
+        ),
+        (
+            "phase0.point",
+            nightstream_build_perf
+                .verified_seams
+                .opening_phase0_point_derivation_ms,
+        ),
+        (
+            "phase0.payload_eval",
+            nightstream_build_perf
+                .verified_seams
+                .opening_phase0_payload_eval_ms,
+        ),
+        (
+            "phase0.claim_build",
+            nightstream_build_perf
+                .verified_seams
+                .opening_phase0_claim_build_ms,
+        ),
+        (
+            "phase0.slot_total",
+            nightstream_build_perf
+                .verified_seams
+                .opening_phase0_slot_claims_total_ms,
+        ),
+    ] {
+        println!("  {:26} {:>12.3}", label, value);
+    }
+    println!(
+        "  {:26} {:>12.3}",
+        "verified.side_proof_artifact", nightstream_build_perf.verified_seams.side_proof_artifact_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "verified.opening_artifact", nightstream_build_perf.verified_seams.opening_artifact_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "opening.convergence_total",
+        nightstream_build_perf
+            .verified_seams
+            .opening_convergence_total_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "opening.phase1",
+        nightstream_build_perf
+            .verified_seams
+            .opening_convergence_phase1_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "opening.phase2",
+        nightstream_build_perf
+            .verified_seams
+            .opening_convergence_phase2_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "opening.final_targets",
+        nightstream_build_perf
+            .verified_seams
+            .opening_convergence_final_openings_ms
+    );
+    for (label, value) in [
+        (
+            "opening.targets.map",
+            nightstream_build_perf
+                .verified_seams
+                .opening_convergence_final_openings_witness_map_ms,
+        ),
+        (
+            "opening.targets.rep",
+            nightstream_build_perf
+                .verified_seams
+                .opening_convergence_final_openings_representative_ms,
+        ),
+        (
+            "opening.targets.commit",
+            nightstream_build_perf
+                .verified_seams
+                .opening_convergence_final_openings_commitment_validate_ms,
+        ),
+        (
+            "opening.targets.obj_digest",
+            nightstream_build_perf
+                .verified_seams
+                .opening_convergence_final_openings_opened_commitment_digest_ms,
+        ),
+        (
+            "opening.targets.proof_digest",
+            nightstream_build_perf
+                .verified_seams
+                .opening_convergence_final_openings_opening_proof_digest_ms,
+        ),
+        (
+            "opening.targets.target",
+            nightstream_build_perf
+                .verified_seams
+                .opening_convergence_final_openings_target_build_ms,
+        ),
+    ] {
+        println!("  {:26} {:>12.3}", label, value);
+    }
+    println!(
+        "  {:26} {:>12.3}",
+        "opening.digest",
+        nightstream_build_perf
+            .verified_seams
+            .opening_convergence_digest_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "opening.wrap",
+        nightstream_build_perf
+            .verified_seams
+            .opening_artifact_wrap_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "verified.side_terminal_artifact",
+        nightstream_build_perf
+            .verified_seams
+            .side_terminal_artifact_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "verified.side_terminal.prepare",
+        nightstream_build_perf
+            .verified_seams
+            .side_terminal_prepare_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "verified.side_terminal.setup",
+        nightstream_build_perf
+            .verified_seams
+            .side_terminal_backend_shell_setup_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "verified.side_terminal.prove",
+        nightstream_build_perf
+            .verified_seams
+            .side_terminal_backend_proof_ms
+    );
+    println!(
+        "  {:26} {:>12.3}",
+        "verified.proof_binding_root", nightstream_build_perf.verified_seams.proof_binding_root_ms
+    );
+    println!("  {:26} {:>12.3}", "total", nightstream_build_perf.total_ms);
 
     print_section("CCS / Constraint Shape");
     print_kv("root_row_width", RV64IM_ROOT_ROW_WIDTH);
@@ -1574,6 +2437,168 @@ fn rv64im_mixed_opcode_perf_snapshot() {
     print_opening_reuse_proxy(&output);
     print_opening_label_summary(&selected_opening_labels);
     print_serialized_size_table(&serialized_sizes, proof_total_bytes);
+    print_section("Nightstream Published Boundary");
+    print_kv(
+        "accepted_artifact_size",
+        format!(
+            "{accepted_artifact_total_bytes} bytes ({:.3} KiB)",
+            bytes_to_kib(accepted_artifact_total_bytes)
+        ),
+    );
+    print_kv(
+        "final_statement_size",
+        format!(
+            "{final_statement_bytes} bytes ({:.3} KiB)",
+            bytes_to_kib(final_statement_bytes)
+        ),
+    );
+    print_kv(
+        "kernel_export_source_size",
+        format!(
+            "{} bytes ({:.3} KiB)",
+            serialized_size_bytes(&kernel_export_source),
+            bytes_to_kib(serialized_size_bytes(&kernel_export_source))
+        ),
+    );
+    print_kv(
+        "spartan_decider_proof_size",
+        format!(
+            "{decider_proof_bytes} bytes ({:.3} KiB)",
+            bytes_to_kib(decider_proof_bytes)
+        ),
+    );
+    print_kv(
+        "nightstream_main_decider_proof_size",
+        format!(
+            "{} bytes ({:.3} KiB)",
+            serialized_size_bytes(&nightstream_proof.main_decider_proof),
+            bytes_to_kib(serialized_size_bytes(&nightstream_proof.main_decider_proof))
+        ),
+    );
+    let opening_group_count = prove_time_opening(&[], &nightstream_opening_bundle.claims)
+        .expect("rebuild opening summary for perf output")
+        .groups
+        .len();
+    print_kv("opening_group_count", opening_group_count);
+    print_kv("opening_claim_count", nightstream_opening_bundle.claims.len());
+    print_serialized_size_table(&nightstream_serialized_sizes, nightstream_total_bytes);
+    print_section("Below-Export Side Terminal Shell");
+    print_kv(
+        "side_terminal_shell_base_components",
+        side_terminal_shell_target.shape().base_component_count,
+    );
+    print_kv(
+        "side_terminal_shell_chunk_transitions",
+        side_terminal_shell_target.shape().chunk_transition_count,
+    );
+    print_kv(
+        "side_terminal_shell_public_io",
+        side_terminal_shell_target.public_io().len(),
+    );
+    print_kv(
+        "side_terminal_shell_backend_public_io",
+        side_terminal_shell_target.backend_public_io().len(),
+    );
+    print_kv(
+        "side_terminal_shell_size",
+        format!(
+            "{} bytes ({:.3} KiB)",
+            serialized_size_bytes(&side_terminal_shell),
+            bytes_to_kib(serialized_size_bytes(&side_terminal_shell))
+        ),
+    );
+    print_section("Below-Export Side Terminal Relation Shell");
+    print_kv(
+        "side_terminal_relation_shell_base_components",
+        side_terminal_shell_target.shape().base_component_count,
+    );
+    print_kv(
+        "side_terminal_relation_shell_chunk_transitions",
+        side_terminal_shell_target.shape().chunk_transition_count,
+    );
+    print_kv(
+        "side_terminal_relation_shell_public_io",
+        side_terminal_shell_target.public_io().len(),
+    );
+    print_kv(
+        "side_terminal_relation_shell_backend_public_io",
+        side_terminal_shell_target.backend_public_io().len(),
+    );
+    print_kv(
+        "side_terminal_relation_shell_size",
+        format!(
+            "{} bytes ({:.3} KiB)",
+            serialized_size_bytes(&side_terminal_relation_shell),
+            bytes_to_kib(serialized_size_bytes(&side_terminal_relation_shell))
+        ),
+    );
+    print_section("Below-Export Side Terminal Backend Binding Shell");
+    print_kv(
+        "side_terminal_backend_shell_base_components",
+        side_terminal_shell_target.shape().base_component_count,
+    );
+    print_kv(
+        "side_terminal_backend_shell_chunk_transitions",
+        side_terminal_shell_target.shape().chunk_transition_count,
+    );
+    print_kv(
+        "side_terminal_backend_shell_public_io",
+        side_terminal_shell_target.backend_public_io().len(),
+    );
+    print_kv(
+        "side_terminal_backend_shell_size",
+        format!(
+            "{} bytes ({:.3} KiB)",
+            serialized_size_bytes(&side_terminal_backend_shell),
+            bytes_to_kib(serialized_size_bytes(&side_terminal_backend_shell))
+        ),
+    );
+    print_section("Below-Export Side Terminal Backend Proof");
+    print_kv(
+        "side_terminal_backend_proof_shape_digest",
+        format!("{:?}", side_terminal_backend_proof.shape_digest),
+    );
+    print_kv(
+        "side_terminal_backend_proof_digest",
+        format!("{:?}", side_terminal_backend_proof.digest()),
+    );
+    print_kv(
+        "side_terminal_backend_proof_size",
+        format!(
+            "{} bytes ({:.3} KiB)",
+            serialized_size_bytes(&side_terminal_backend_proof),
+            bytes_to_kib(serialized_size_bytes(&side_terminal_backend_proof))
+        ),
+    );
+    print_kv(
+        "side_terminal_artifact_size",
+        format!(
+            "{} bytes ({:.3} KiB)",
+            serialized_size_bytes(&nightstream_proof.side_terminal_artifact),
+            bytes_to_kib(serialized_size_bytes(&nightstream_proof.side_terminal_artifact))
+        ),
+    );
+    print_section("Below-Export Side Terminal Native Witness");
+    print_kv(
+        "side_terminal_witness_digest",
+        format!("{:?}", side_terminal_witness.digest()),
+    );
+    print_kv(
+        "side_terminal_witness_size",
+        format!(
+            "{} bytes ({:.3} KiB)",
+            serialized_size_bytes(&side_terminal_witness),
+            bytes_to_kib(serialized_size_bytes(&side_terminal_witness))
+        ),
+    );
+    print_kv(
+        "side_terminal_witness_artifact_size",
+        format!(
+            "{} bytes ({:.3} KiB)",
+            serialized_size_bytes(&side_terminal_witness_artifact),
+            bytes_to_kib(serialized_size_bytes(&side_terminal_witness_artifact))
+        ),
+    );
     print_root_main_lane_verify_breakdown(&verify_perf);
     print_verify_breakdown(
         "Theorem Verify Breakdown",
@@ -1588,40 +2613,260 @@ fn rv64im_mixed_opcode_perf_snapshot() {
         execution_row_count,
     );
 
+    let full_benchmark_wall_ms = millis_since(end_to_end_started);
+
     let total_executed_opcodes = build.executed_steps.len();
     let unique_opcode_labels = collect_unique_opcode_labels(&build);
+    let published_prove_before_spartan_ms = prove_ms + nightstream_build_ms;
+    let published_prove_before_spartan_amortized_ms = prove_ms
+        + (nightstream_build_ms
+            - nightstream_build_perf
+                .verified_seams
+                .side_terminal_backend_shell_setup_ms)
+            .max(0.0);
+    let spartan_setup_ms = decider_setup_ms;
+    let spartan_prove_ms = decider_prove_ms;
+    let published_verify_before_spartan_ms = nightstream_verify_perf.before_spartan_ms();
+    let spartan_verify_ms = nightstream_verify_perf.spartan_decider_ms;
+    let published_pipeline_total_ms = spartan_setup_ms
+        + published_prove_before_spartan_ms
+        + spartan_prove_ms
+        + published_verify_before_spartan_ms
+        + spartan_verify_ms;
+    let benchmark_extras_ms = (full_benchmark_wall_ms - published_pipeline_total_ms).max(0.0);
     print_section("Final Summary");
     print_kv(
         "total opcodes",
         format!("{total_executed_opcodes} ({unique_opcode_labels})"),
     );
-    print_kv("total public proving time", format!("{prove_ms:.3} ms"));
-    print_kv(
-        "public proving time (avg) per opcode",
-        format!("{:.4} ms", per_unit(prove_ms, total_executed_opcodes)),
-    );
-    print_kv("total public verifying time", format!("{verify_ms:.3} ms"));
-    print_kv(
-        "public verifying time (avg) per opcode",
-        format!("{:.4} ms", per_unit(verify_ms, total_executed_opcodes)),
-    );
-    print_kv("public verify + replay time", format!("{verify_replay_ms:.3} ms"));
-    print_kv(
-        "public verify + replay time (avg) per opcode",
-        format!("{:.4} ms", per_unit(verify_replay_ms, total_executed_opcodes)),
-    );
-    print_kv("proof witness build time", format!("{prove_witness_ms:.3} ms"));
-    print_kv("verified witness build time", format!("{verify_witness_ms:.3} ms"));
     print_kv(
         "current public proof size",
         format!("{proof_total_bytes} bytes ({proof_total_kib:.3} KiB)"),
     );
-    print_kv("total end-to-end time", format!("{end_to_end_ms:.3} ms"));
     print_kv(
-        "prove main-lane subphase",
+        "nightstream published size",
+        format!("{nightstream_total_bytes} bytes ({nightstream_total_kib:.3} KiB)"),
+    );
+
+    print_section("Published Pipeline");
+    print_kv(
+        "Spartan setup/keygen",
+        format_ms_per_opcode(spartan_setup_ms, total_executed_opcodes),
+    );
+    print_kv(
+        "proving before Spartan",
+        format_ms_per_opcode(published_prove_before_spartan_ms, total_executed_opcodes),
+    );
+    print_kv(
+        "proving before Spartan (amortized side-terminal shell setup)",
+        format_ms_per_opcode(published_prove_before_spartan_amortized_ms, total_executed_opcodes),
+    );
+    print_kv(
+        "Spartan proving",
+        format_ms_per_opcode(spartan_prove_ms, total_executed_opcodes),
+    );
+    print_kv(
+        "verifying before Spartan",
+        format_ms_per_opcode(published_verify_before_spartan_ms, total_executed_opcodes),
+    );
+    print_kv(
+        "Spartan verifying",
+        format_ms_per_opcode(spartan_verify_ms, total_executed_opcodes),
+    );
+    print_kv(
+        "published pipeline total",
+        format_ms_per_opcode(published_pipeline_total_ms, total_executed_opcodes),
+    );
+
+    print_section("Before-Spartan Breakdown");
+    print_kv(
+        "public proof proving (native pre-Spartan)",
+        format_ms_per_opcode(prove_ms, total_executed_opcodes),
+    );
+    print_kv(
+        "nightstream build (post-public theorem work, non-Spartan)",
+        format_ms_per_opcode(nightstream_build_ms, total_executed_opcodes),
+    );
+    print_kv(
+        "  amortized after side-terminal shell setup",
+        format_ms_per_opcode(
+            (nightstream_build_ms
+                - nightstream_build_perf
+                    .verified_seams
+                    .side_terminal_backend_shell_setup_ms)
+                .max(0.0),
+            total_executed_opcodes,
+        ),
+    );
+    print_kv(
+        "  final statement kernel export",
+        format_ms_per_opcode(
+            nightstream_build_perf.final_statement_kernel_export_ms,
+            total_executed_opcodes,
+        ),
+    );
+    print_kv(
+        "  final statement recursive proof",
+        format_ms_per_opcode(
+            nightstream_build_perf.final_statement_recursive_proof_ms,
+            total_executed_opcodes,
+        ),
+    );
+    print_kv(
+        "    recursive prepare_inputs",
+        format_ms_per_opcode(
+            nightstream_build_perf.final_statement_recursive_prepare_inputs_ms,
+            total_executed_opcodes,
+        ),
+    );
+    print_kv(
+        "    recursive ccs",
+        format_ms_per_opcode(
+            nightstream_build_perf.final_statement_recursive_ccs_ms,
+            total_executed_opcodes,
+        ),
+    );
+    print_kv(
+        "    recursive rlc",
+        format_ms_per_opcode(
+            nightstream_build_perf.final_statement_recursive_rlc_ms,
+            total_executed_opcodes,
+        ),
+    );
+    print_kv(
+        "    recursive dec",
+        format_ms_per_opcode(
+            nightstream_build_perf.final_statement_recursive_dec_ms,
+            total_executed_opcodes,
+        ),
+    );
+    print_kv(
+        "    recursive wrapper",
+        format_ms_per_opcode(recursive_wrapper_ms, total_executed_opcodes),
+    );
+    print_kv(
+        "  final statement local packaging",
+        format_ms_per_opcode(
+            nightstream_build_perf.final_statement_final_proof_ms
+                + nightstream_build_perf.final_statement_statement_digest_ms
+                + nightstream_build_perf.final_statement_folded_digest_ms,
+            total_executed_opcodes,
+        ),
+    );
+
+    print_section("Benchmark Extras");
+    print_kv(
+        "diagnostics and extra benchmark work",
+        format_ms_per_opcode(benchmark_extras_ms, total_executed_opcodes),
+    );
+    print_kv(
+        "includes",
+        "public verify/replay, audit witness path, side-terminal shell diagnostics".to_string(),
+    );
+    print_kv(
+        "full benchmark wall time",
+        format_ms_per_opcode(full_benchmark_wall_ms, total_executed_opcodes),
+    );
+}
+
+#[test]
+#[ignore = "performance/debugging snapshot; run with --release -- --ignored --nocapture"]
+fn chip8_nightstream_perf_snapshot() {
+    let input = chip8_support::build_jump_kernel_input(4);
+
+    let recursive_started = Instant::now();
+    let (recursive_statement, final_proof) = prove_chip8_recursive(&input).expect("prove chip8 recursive");
+    let recursive_ms = millis_since(recursive_started);
+
+    let decider_setup_started = Instant::now();
+    let (decider_pk, _decider_vk) =
+        setup_chip8_spartan2_decider(&recursive_statement, &final_proof).expect("setup chip8 spartan2 decider");
+    let decider_setup_ms = millis_since(decider_setup_started);
+
+    let decider_prove_started = Instant::now();
+    let decider_proof = prove_chip8_spartan2_decider(&decider_pk, &recursive_statement, &final_proof)
+        .expect("prove chip8 spartan2 decider");
+    let decider_prove_ms = millis_since(decider_prove_started);
+
+    let nightstream_build_started = Instant::now();
+    let (nightstream_statement, nightstream_proof) =
+        build_chip8_nightstream_from_recursive_proof(&recursive_statement, &final_proof)
+            .expect("build chip8 nightstream proof");
+    let nightstream_build_ms = millis_since(nightstream_build_started);
+
+    let nightstream_verify_started = Instant::now();
+    verify_chip8_nightstream_from_recursive_proof(
+        &recursive_statement,
+        &final_proof,
+        &nightstream_statement,
+        &nightstream_proof,
+    )
+    .expect("verify chip8 nightstream proof");
+    let nightstream_verify_ms = millis_since(nightstream_verify_started);
+
+    let decider_proof_bytes = serialized_size_bytes(&decider_proof);
+    let nightstream_serialized_sizes = [
+        SerializedSizeRow {
+            label: "nightstream.total",
+            bytes: serialized_size_bytes(&(nightstream_statement.clone(), nightstream_proof.clone())),
+        },
+        SerializedSizeRow {
+            label: "nightstream.statement",
+            bytes: serialized_size_bytes(&nightstream_statement),
+        },
+        SerializedSizeRow {
+            label: "nightstream.proof",
+            bytes: serialized_size_bytes(&nightstream_proof),
+        },
+        SerializedSizeRow {
+            label: "nightstream.main_decider_proof",
+            bytes: serialized_size_bytes(&nightstream_proof.main_decider_proof),
+        },
+        SerializedSizeRow {
+            label: "nightstream.main_residual_proof",
+            bytes: serialized_size_bytes(&nightstream_proof.main_residual_proof),
+        },
+    ];
+    let nightstream_total_bytes = nightstream_serialized_sizes[0].bytes;
+
+    print_section("CHIP-8 Nightstream Perf Snapshot");
+    print_kv("semantic_rows", input.witness.semantic_trace_rows.len());
+    print_kv("chunk_count", recursive_statement.folded.chunk_count);
+    print_kv("semantic_step_count", recursive_statement.folded.semantic_step_count);
+    print_kv(
+        "fold_schedule",
+        format_fold_schedule(recursive_statement.folded.fold_schedule),
+    );
+    print_kv("final_pc_word", recursive_statement.final_state.pc_word);
+
+    print_timing_table(
+        &[
+            ("prove_chip8_recursive", recursive_ms),
+            ("setup_chip8_spartan2_decider", decider_setup_ms),
+            ("prove_chip8_spartan2_decider", decider_prove_ms),
+            ("build_chip8_nightstream", nightstream_build_ms),
+            ("verify_chip8_nightstream", nightstream_verify_ms),
+        ],
+        recursive_statement.folded.semantic_step_count as usize,
+        recursive_statement.folded.semantic_step_count as usize,
+    );
+
+    print_section("Nightstream Published Boundary");
+    print_kv(
+        "spartan_decider_proof_size",
         format!(
-            "kernel_build={:.3} ms main_lane={:.3} ms export={:.3} ms",
-            prove_perf.simple_kernel.total_ms, prove_perf.main_lane_ms, prove_perf.public_export_ms
+            "{decider_proof_bytes} bytes ({:.3} KiB)",
+            bytes_to_kib(decider_proof_bytes)
+        ),
+    );
+    print_serialized_size_table(&nightstream_serialized_sizes, nightstream_total_bytes);
+
+    print_section("Final Summary");
+    print_kv(
+        "nightstream published size",
+        format!(
+            "{nightstream_total_bytes} bytes ({:.3} KiB)",
+            bytes_to_kib(nightstream_total_bytes)
         ),
     );
 }

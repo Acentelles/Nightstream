@@ -42,7 +42,7 @@ fn rv64im_kernel_export_relation_rejects_tampered_chunk_surface() {
     let input = proof_input("control_flow_jal_skip_ecall");
     let proof = prove_rv64im_public_proof(&input).expect("prove rv64im public proof");
     let mut relation = build_rv64im_kernel_export_relation(&proof).expect("build kernel export relation");
-    relation.chunk_surfaces[0].bridge_digest[0] ^= 1;
+    relation.chunk_surfaces[0].bridge_handoff_digest[0] ^= 1;
 
     let err = verify_rv64im_kernel_export_relation(&relation, &proof).expect_err("tampered chunk surface must fail");
     assert!(format!("{err}").contains("kernel export relation") || format!("{err}").contains("digest"));

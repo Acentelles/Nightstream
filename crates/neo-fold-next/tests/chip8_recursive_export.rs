@@ -5,8 +5,8 @@ use neo_fold_next::chip8::kernel::{
     build_chip8_bridge_chunk_proof_bundle, prepared_step_digest, verify_kernel_execution_relation,
 };
 use neo_fold_next::chip8::proof::{
-    prove_final_statement, prove_folded_statement, prove_recursive, verify_final_statement, verify_folded_statement,
-    verify_recursive,
+    prove_final_statement, prove_folded_statement, prove_kernel_export, prove_recursive, verify_final_statement,
+    verify_folded_statement, verify_recursive,
 };
 use neo_math::F;
 use p3_field::PrimeCharacteristicRing;
@@ -40,39 +40,54 @@ fn chip8_recursive_chain_verifies_multi_chunk_execution() {
 fn chip8_recursive_bridge_transitions_are_derived_from_relation_witness() {
     let input = chip8_support::build_jump_kernel_input(4);
     let (_statement, proof) = prove_recursive(&input).expect("prove recursive");
+    let (_relation_digest, native_export) = prove_kernel_export(&input).expect("prove native kernel export");
 
     let verified = verify_kernel_execution_relation(
         &chip8_support::verifier_input_from_public(&input.public),
-        &proof.kernel_export,
+        &native_export,
     )
     .expect("verify kernel execution relation");
     let rebuilt_bundle = build_chip8_bridge_chunk_proof_bundle(
         &verified.kernel_opening_manifest,
         &verified.opening_refinement_summary,
-        &proof
-            .kernel_export
+        &native_export
             .bridge_chunk_transitions()
             .iter()
             .flat_map(|transition| transition.row_slots.iter().flatten())
             .map(|row| row.row_binding.clone())
             .collect::<Vec<_>>(),
     )
-    .expect("rebuild bridge bundle from export witness");
+    .expect("rebuild bridge bundle from native export witness");
 
-    assert_eq!(rebuilt_bundle.chunk_transitions.len(), proof.steps.len());
-    for (chunk_index, transition) in rebuilt_bundle.chunk_transitions.iter().enumerate() {
-        let active_row_count = transition
-            .row_slots
+    assert_eq!(proof.kernel_export.chunk_handoffs.len(), proof.steps.len());
+    assert_eq!(
+        rebuilt_bundle.chunk_transitions.len(),
+        proof.kernel_export.chunk_handoffs.len()
+    );
+    for (chunk_index, compact_handoff) in proof.kernel_export.chunk_handoffs.iter().enumerate() {
+        let verified_handoff = &verified.chunk_handoffs[chunk_index];
+        assert_eq!(
+            compact_handoff.public_chunk.start_index,
+            verified_handoff.public_chunk.start_index
+        );
+        assert_eq!(
+            compact_handoff.public_chunk.steps.len(),
+            verified_handoff.public_chunk.steps.len()
+        );
+        assert_eq!(compact_handoff.bridge_handoff, verified_handoff.bridge_handoff);
+        let active_row_count = compact_handoff
+            .bridge_handoff
+            .step_bindings
             .iter()
             .take_while(|slot| slot.is_some())
             .count();
-        let first_row_index = transition
-            .row_slots
+        let first_row_index = compact_handoff
+            .bridge_handoff
+            .step_bindings
             .iter()
             .flatten()
             .next()
-            .expect("active bridge row")
-            .row_binding
+            .expect("active compact bridge binding")
             .row_index;
         assert_eq!(first_row_index, chunk_index * 2);
         assert_eq!(active_row_count, 2);
@@ -312,14 +327,15 @@ fn chip8_recursive_proof_envelope_rejects_tampered_kernel_relation_digest() {
 fn chip8_recursive_proof_envelope_rejects_tampered_kernel_bridge_row_bits() {
     let input = chip8_support::build_jump_kernel_input(4);
     let (statement, mut proof) = prove_recursive(&input).expect("prove recursive");
-    let row_bits = &mut proof.kernel_export.bridge_chunk_transitions_mut()[0].row_slots[0]
+    let row_binding_digest = &mut proof.kernel_export.chunk_handoffs[0]
+        .bridge_handoff
+        .step_bindings[0]
         .as_mut()
-        .expect("active bridge row")
-        .row_binding
-        .row_bits;
-    row_bits[0] = !row_bits[0];
+        .expect("active compact bridge binding")
+        .row_binding_claim_digest;
+    row_binding_digest[0] ^= 1;
 
-    let err = verify_recursive(&statement, &proof).expect_err("tampered bridge row bits must fail");
+    let err = verify_recursive(&statement, &proof).expect_err("tampered compact bridge binding must fail");
     assert!(format!("{err}").contains("bridge") || format!("{err}").contains("row"));
 }
 
@@ -327,10 +343,11 @@ fn chip8_recursive_proof_envelope_rejects_tampered_kernel_bridge_row_bits() {
 fn chip8_recursive_proof_envelope_rejects_tampered_kernel_bridge_source() {
     let input = chip8_support::build_jump_kernel_input(4);
     let (statement, mut proof) = prove_recursive(&input).expect("prove recursive");
-    proof.kernel_export.bridge_chunk_transitions_mut()[0].row_slots[0]
+    proof.kernel_export.chunk_handoffs[0]
+        .bridge_handoff
+        .step_bindings[0]
         .as_mut()
-        .expect("active bridge row")
-        .row_binding
+        .expect("active compact bridge binding")
         .row_index ^= 1;
 
     let err = verify_recursive(&statement, &proof).expect_err("tampered kernel bridge source must fail");

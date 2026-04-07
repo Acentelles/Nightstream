@@ -94,9 +94,21 @@ pub fn stage1_row_bindings_digest(rows: &[Stage1RowBinding]) -> [u8; 32] {
 }
 
 pub fn build_stage1_semantics_proof(sem_inputs: &[SemIn], rows: &[Stage1RowBinding]) -> Stage1SemanticsProof {
+    build_stage1_semantics_proof_from_digests(
+        sem_inputs_digest(sem_inputs),
+        stage1_row_bindings_digest(rows),
+        sem_inputs,
+    )
+}
+
+pub(crate) fn build_stage1_semantics_proof_from_digests(
+    sem_inputs_digest: [u8; 32],
+    row_bindings_digest: [u8; 32],
+    sem_inputs: &[SemIn],
+) -> Stage1SemanticsProof {
     let proof = Stage1SemanticsProof {
-        sem_inputs_digest: sem_inputs_digest(sem_inputs),
-        row_bindings_digest: stage1_row_bindings_digest(rows),
+        sem_inputs_digest,
+        row_bindings_digest,
         sequence_count: sem_inputs
             .iter()
             .filter(|row| row.is_first_in_sequence)

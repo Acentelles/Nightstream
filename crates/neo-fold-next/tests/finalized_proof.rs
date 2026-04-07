@@ -216,3 +216,57 @@ fn packaged_proof_rejects_swapped_self_consistent_statement() {
         .expect_err("swapped self-consistent statement must fail");
     assert!(format!("{err}").contains("final proof digest"));
 }
+
+#[test]
+fn packaged_proof_rejects_tampered_parent_relation_fields_at_digest_boundary() {
+    let params = NeoParams::goldilocks_auto_r1cs_ccs(D).expect("params");
+    let ccs = identity_ccs(D);
+    let log = ToyModule;
+    let steps = vec![make_step(&log, 23, "step0"), make_step(&log, 47, "step1")];
+
+    let mut packaged = prove_and_package(
+        FoldingMode::Optimized,
+        FoldSchedule::RowsPerChunk(1),
+        &params,
+        &ccs,
+        steps,
+        &log,
+        mixers(),
+    )
+    .expect("prove packaged run");
+
+    let parent = &mut packaged.proof.session.chunks[0].rlc.parent;
+    assert!(!parent.ct.is_empty(), "expected parent ct output");
+    parent.ct[0] += neo_math::K::ONE;
+
+    let err = verify_packaged(FoldingMode::Optimized, &params, &ccs, &packaged, mixers())
+        .expect_err("tampered parent relation fields must fail");
+    assert!(format!("{err}").contains("final proof digest"));
+}
+
+#[test]
+fn packaged_proof_rejects_tampered_child_relation_fields_at_digest_boundary() {
+    let params = NeoParams::goldilocks_auto_r1cs_ccs(D).expect("params");
+    let ccs = identity_ccs(D);
+    let log = ToyModule;
+    let steps = vec![make_step(&log, 29, "step0"), make_step(&log, 53, "step1")];
+
+    let mut packaged = prove_and_package(
+        FoldingMode::Optimized,
+        FoldSchedule::RowsPerChunk(1),
+        &params,
+        &ccs,
+        steps,
+        &log,
+        mixers(),
+    )
+    .expect("prove packaged run");
+
+    let child = &mut packaged.proof.session.chunks[0].dec.children[0];
+    assert!(!child.ct.is_empty(), "expected child ct output");
+    child.ct[0] += neo_math::K::ONE;
+
+    let err = verify_packaged(FoldingMode::Optimized, &params, &ccs, &packaged, mixers())
+        .expect_err("tampered child relation fields must fail");
+    assert!(format!("{err}").contains("final proof digest"));
+}

@@ -18,7 +18,7 @@ use crate::chip8::tables::{
     build_rom_table, decode_to_output, flatten_alu_key, flatten_eq4_key, OperandSelector, RAM_SINK_ADDR, REG_SINK_ADDR,
 };
 use crate::proof::StepInput;
-use crate::witness_layout::{commit_cols_for_ccs_m, encode_vector_for_ccs_m};
+use crate::witness_layout::{commit_cols_for_full_width, encode_vector_for_full_width};
 
 use super::evidence::{build_kernel_stage3_digest_surfaces_from_frames, KernelStage3DigestSurface};
 #[cfg(feature = "chip8-audit")]
@@ -181,7 +181,7 @@ impl KernelExactFrame {
 impl SimpleKernelRootContext {
     pub(crate) fn new() -> Result<Self, SimpleKernelError> {
         let params = chip8_simple_root_params();
-        let m = commit_cols_for_ccs_m(WITNESS_WIDTH);
+        let m = commit_cols_for_full_width(WITNESS_WIDTH);
         set_global_pp_seeded(D, params.kappa as usize, m, CHIP8_SIMPLE_ROOT_PP_SEED).map_err(|err| {
             SimpleKernelError::BridgeFailed(format!("canonical CHIP-8 root seed setup failed: {err}"))
         })?;
@@ -227,7 +227,7 @@ pub(crate) fn chip8_simple_root_context_id() -> [u8; 32] {
             params.s as u64,
             params.lambda as u64,
             WITNESS_WIDTH as u64,
-            commit_cols_for_ccs_m(WITNESS_WIDTH) as u64,
+            commit_cols_for_full_width(WITNESS_WIDTH) as u64,
         ],
     );
     tr.append_message(b"neo.fold.next/chip8/root_context/seed", &CHIP8_SIMPLE_ROOT_PP_SEED);
@@ -239,7 +239,7 @@ pub(crate) fn root_encode_semantic_row(
     semantic_row: &[F; WITNESS_WIDTH],
 ) -> Result<(Vec<F>, Mat<F>), SimpleKernelError> {
     let witness = semantic_row[1..].to_vec();
-    let packed = encode_vector_for_ccs_m(root_context.params(), WITNESS_WIDTH, semantic_row)
+    let packed = encode_vector_for_full_width(root_context.params(), WITNESS_WIDTH, semantic_row)
         .map_err(SimpleKernelError::BridgeFailed)?;
     Ok((witness, packed))
 }

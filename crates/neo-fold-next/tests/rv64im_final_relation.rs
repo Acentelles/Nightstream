@@ -6,8 +6,9 @@ use neo_fold_next::rv64im::final_relation::{
     verify_rv64im_final_statement, verify_rv64im_folded_statement,
 };
 use neo_fold_next::rv64im::{
-    parity_source_cases, prove_rv64im_accepted_proof, prove_rv64im_accepted_proof_with_options, Rv64imProofInput,
-    Rv64imPublicProofOptions,
+    build_rv64im_accepted_proof_artifact, build_rv64im_kernel_export_source_from_accepted_artifact,
+    build_rv64im_kernel_export_witness, parity_source_cases, prove_rv64im_accepted_proof,
+    prove_rv64im_accepted_proof_with_options, prove_rv64im_public_proof, Rv64imProofInput, Rv64imPublicProofOptions,
 };
 
 fn source_case(name: &str) -> neo_fold_next::rv64im::Rv64imParitySourceCase {
@@ -54,12 +55,32 @@ fn rv64im_final_statement_round_trip() {
 }
 
 #[test]
+fn rv64im_final_statement_kernel_export_matches_public_export_components() {
+    let input = proof_input("control_flow_jal_skip_ecall");
+    let proof = prove_rv64im_public_proof(&input).expect("prove rv64im public proof");
+    let artifact = build_rv64im_accepted_proof_artifact(&proof).expect("build accepted rv64im artifact");
+    let (_statement, final_proof) =
+        prove_rv64im_final_statement_from_accepted(&artifact).expect("prove rv64im final statement");
+
+    let expected_source =
+        build_rv64im_kernel_export_source_from_accepted_artifact(&artifact).expect("build export source");
+    let expected_witness = build_rv64im_kernel_export_witness(&proof).expect("build export witness");
+
+    assert_eq!(final_proof.kernel_export.source.digest, expected_source.digest);
+    assert_eq!(
+        final_proof.kernel_export.source.public_statement_digest(),
+        expected_source.public_statement_digest()
+    );
+    assert_eq!(final_proof.kernel_export.witness.digest, expected_witness.digest);
+}
+
+#[test]
 fn rv64im_final_statement_rejects_tampered_accepted_artifact() {
     let input = proof_input("control_flow_jal_skip_ecall");
     let (artifact, _audit) = prove_rv64im_accepted_proof(&input).expect("prove accepted rv64im proof");
     let (statement, mut proof) =
         prove_rv64im_final_statement_from_accepted(&artifact).expect("prove rv64im final statement");
-    proof.accepted_artifact.root_execution.digest[0] ^= 1;
+    proof.kernel_export.source.root_execution.digest[0] ^= 1;
 
     let err = verify_rv64im_final_statement(&statement, &proof)
         .expect_err("tampered accepted artifact must fail final verification");
@@ -77,6 +98,148 @@ fn rv64im_final_statement_rejects_tampered_chunk_replay_witness() {
     let err = verify_rv64im_final_statement(&statement, &proof)
         .expect_err("tampered replay witness must fail final verification");
     assert!(format!("{err}").contains("final proof digest") || format!("{err}").contains("chunk"));
+}
+
+#[test]
+fn rv64im_final_statement_rejects_tampered_bridge_binding() {
+    let input = proof_input("control_flow_jal_skip_ecall");
+    let (artifact, _audit) = prove_rv64im_accepted_proof(&input).expect("prove accepted rv64im proof");
+    let (statement, mut proof) =
+        prove_rv64im_final_statement_from_accepted(&artifact).expect("prove rv64im final statement");
+    proof.kernel_export.witness.chunk_handoffs[0]
+        .bridge_handoff
+        .step_bindings[0]
+        .prepared_step_digest[0] ^= 1;
+
+    let err = verify_rv64im_final_statement(&statement, &proof)
+        .expect_err("tampered bridge binding must fail final verification");
+    assert!(
+        format!("{err}").contains("final proof digest")
+            || format!("{err}").contains("bridge")
+            || format!("{err}").contains("chunk transition")
+    );
+}
+
+#[test]
+fn rv64im_final_statement_rejects_tampered_transcript_surface() {
+    let input = proof_input("control_flow_jal_skip_ecall");
+    let (artifact, _audit) = prove_rv64im_accepted_proof(&input).expect("prove accepted rv64im proof");
+    let (statement, mut proof) =
+        prove_rv64im_final_statement_from_accepted(&artifact).expect("prove rv64im final statement");
+    proof
+        .kernel_export
+        .source
+        .transcript
+        .initial_state
+        .registers[0] ^= 1;
+
+    let err = verify_rv64im_final_statement(&statement, &proof)
+        .expect_err("tampered transcript surface must fail final verification");
+    assert!(format!("{err}").contains("transcript") || format!("{err}").contains("digest"));
+}
+
+#[test]
+fn rv64im_final_statement_rejects_tampered_transcript_mix_surface() {
+    let input = proof_input("control_flow_jal_skip_ecall");
+    let (artifact, _audit) = prove_rv64im_accepted_proof(&input).expect("prove accepted rv64im proof");
+    let (statement, mut proof) =
+        prove_rv64im_final_statement_from_accepted(&artifact).expect("prove rv64im final statement");
+    proof.kernel_export.source.transcript.challenges.stage1_mix ^= 1;
+
+    let err = verify_rv64im_final_statement(&statement, &proof)
+        .expect_err("tampered transcript mix surface must fail final verification");
+    assert!(format!("{err}").contains("transcript") || format!("{err}").contains("digest"));
+}
+
+#[test]
+fn rv64im_final_statement_rejects_tampered_root_execution_rows() {
+    let input = proof_input("control_flow_jal_skip_ecall");
+    let (artifact, _audit) = prove_rv64im_accepted_proof(&input).expect("prove accepted rv64im proof");
+    let (statement, mut proof) =
+        prove_rv64im_final_statement_from_accepted(&artifact).expect("prove rv64im final statement");
+    proof.kernel_export.source.root_execution.execution_rows[0].next_pc ^= 1;
+    proof.kernel_export.source.root_execution.digest = proof.kernel_export.source.root_execution.expected_digest();
+
+    let err = verify_rv64im_final_statement(&statement, &proof)
+        .expect_err("tampered root execution rows must fail final verification");
+    assert!(
+        format!("{err}").contains("root execution")
+            || format!("{err}").contains("stage")
+            || format!("{err}").contains("digest")
+    );
+}
+
+#[test]
+fn rv64im_final_statement_rejects_tampered_export_kernel_claim_surface() {
+    let input = proof_input("control_flow_jal_skip_ecall");
+    let (artifact, _audit) = prove_rv64im_accepted_proof(&input).expect("prove accepted rv64im proof");
+    let (statement, mut proof) =
+        prove_rv64im_final_statement_from_accepted(&artifact).expect("prove rv64im final statement");
+    proof.kernel_export.source.kernel_claims.final_state_digest[0] ^= 1;
+
+    let err = verify_rv64im_final_statement(&statement, &proof)
+        .expect_err("tampered export kernel claim surface must fail final verification");
+    assert!(
+        format!("{err}").contains("final state")
+            || format!("{err}").contains("execution")
+            || format!("{err}").contains("digest")
+            || format!("{err}").contains("kernel opening")
+    );
+}
+
+#[test]
+fn rv64im_final_statement_rejects_tampered_export_terminal_row_endpoint() {
+    let input = proof_input("control_flow_jal_skip_ecall");
+    let (artifact, _audit) = prove_rv64im_accepted_proof(&input).expect("prove accepted rv64im proof");
+    let (statement, mut proof) =
+        prove_rv64im_final_statement_from_accepted(&artifact).expect("prove rv64im final statement");
+    let last_row = proof
+        .kernel_export
+        .source
+        .root_execution
+        .execution_rows
+        .last_mut()
+        .expect("root execution must carry a terminal row");
+    last_row.next_pc ^= 1;
+    proof.kernel_export.source.root_execution.digest = proof.kernel_export.source.root_execution.expected_digest();
+
+    let err = verify_rv64im_final_statement(&statement, &proof)
+        .expect_err("tampered export terminal row endpoint must fail final verification");
+    assert!(
+        format!("{err}").contains("root execution")
+            || format!("{err}").contains("final pc")
+            || format!("{err}").contains("kernel opening")
+            || format!("{err}").contains("stage3")
+            || format!("{err}").contains("root execution")
+            || format!("{err}").contains("digest")
+    );
+}
+
+#[test]
+fn rv64im_final_statement_rejects_tampered_export_main_lane_surface() {
+    let input = proof_input("control_flow_jal_skip_ecall");
+    let (artifact, _audit) = prove_rv64im_accepted_proof(&input).expect("prove accepted rv64im proof");
+    let (statement, mut proof) =
+        prove_rv64im_final_statement_from_accepted(&artifact).expect("prove rv64im final statement");
+    proof
+        .kernel_export
+        .source
+        .main_lane
+        .packaged
+        .statement
+        .chunks[0]
+        .start_index ^= 1;
+
+    let err = verify_rv64im_final_statement(&statement, &proof)
+        .expect_err("tampered export main-lane surface must fail final verification");
+    assert!(
+        format!("{err}").contains("main-lane")
+            || format!("{err}").contains("digest")
+            || format!("{err}").contains("public chunk")
+            || format!("{err}").contains("packaged proof")
+            || format!("{err}").contains("row-to-chunk routing"),
+        "{err}"
+    );
 }
 
 #[test]

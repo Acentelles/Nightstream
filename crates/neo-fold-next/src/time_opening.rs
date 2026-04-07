@@ -8,8 +8,8 @@ use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::PrimeCharacteristicRing;
 
 use crate::opening::{
-    OpeningClaim, OpeningDomain, OpeningSource, TimeOpeningGroupSummary, TimeOpeningProofSummary,
-    TimeOpeningUnificationProof,
+    OpeningClaim, OpeningDomain, OpeningSource, TimeOpeningCompactProof, TimeOpeningGroupSummary,
+    TimeOpeningProofSummary, TimeOpeningUnificationProof,
 };
 use crate::proof::RunProof;
 
@@ -57,11 +57,7 @@ pub fn main_lane_opening_claims(session: &RunProof) -> Result<Vec<OpeningClaim>,
         }
         tr.append_u64s(
             b"neo.fold.next/time_opening/chunk_fold_meta",
-            &[
-                chunk.ccs_outputs.len() as u64,
-                chunk.dec.children.len() as u64,
-                chunk.rlc.rhos.len() as u64,
-            ],
+            &[chunk.ccs_outputs.len() as u64, chunk.dec.children.len() as u64],
         );
         let point = chunk
             .ccs_outputs
@@ -121,6 +117,17 @@ pub fn prove_time_opening(
     })
 }
 
+pub fn prove_time_opening_compact(
+    main_lane_claims: &[OpeningClaim],
+    extension_claims: &[OpeningClaim],
+) -> Result<TimeOpeningCompactProof, PiCcsError> {
+    let manifest = build_manifest(main_lane_claims, extension_claims)?;
+    let reduction = build_reduction(&manifest);
+    Ok(TimeOpeningCompactProof {
+        unification: prove_opening_unification(&reduction)?,
+    })
+}
+
 pub fn verify_time_opening(
     main_lane_claims: &[OpeningClaim],
     extension_claims: &[OpeningClaim],
@@ -159,6 +166,40 @@ pub fn verify_time_opening(
         return Err(PiCcsError::ProtocolError("time-opening proof digest mismatch".into()));
     }
     Ok(())
+}
+
+pub fn verify_time_opening_compact(
+    main_lane_claims: &[OpeningClaim],
+    extension_claims: &[OpeningClaim],
+    proof: &TimeOpeningCompactProof,
+) -> Result<(), PiCcsError> {
+    let manifest = build_manifest(main_lane_claims, extension_claims)?;
+    let reduction = build_reduction(&manifest);
+    verify_opening_unification(&reduction, &proof.unification)
+}
+
+pub fn time_opening_compact_proof_digest(proof: &TimeOpeningCompactProof) -> [u8; 32] {
+    let mut tr = Poseidon2Transcript::new(b"neo.fold.next/time_opening/compact_proof");
+    tr.append_fields(
+        b"neo.fold.next/time_opening/compact_proof/claimed_sum",
+        &proof.unification.claimed_sum.as_coeffs(),
+    );
+    tr.append_u64s(
+        b"neo.fold.next/time_opening/compact_proof/meta",
+        &[
+            proof.unification.round_polys.len() as u64,
+            proof.unification.r_unify.len() as u64,
+        ],
+    );
+    for round in &proof.unification.round_polys {
+        append_k_vec(&mut tr, b"neo.fold.next/time_opening/compact_proof/round", round);
+    }
+    append_k_vec(
+        &mut tr,
+        b"neo.fold.next/time_opening/compact_proof/selector_point",
+        &proof.unification.r_unify,
+    );
+    tr.digest32()
 }
 
 fn digest_opening_proof(reduction: &OpeningReduction, unification: &TimeOpeningUnificationProof) -> [u8; 32] {
@@ -328,14 +369,14 @@ fn build_reduction_groups(manifest: &OpeningManifest) -> Vec<OpeningReductionGro
     let mut start = 0usize;
     while start < manifest.claims.len() {
         let first = &manifest.claims[start];
+        let first_family_tag = reduction_family_tag(first);
         let mut end = start + 1;
         while end < manifest.claims.len() {
             let next = &manifest.claims[end];
-            if next.source != first.source
-                || next.ordinal != first.ordinal
-                || next.domain != first.domain
-                || next.point != first.point
-            {
+            if next.source != first.source || next.domain != first.domain || next.point != first.point {
+                break;
+            }
+            if reduction_family_tag(next) != first_family_tag {
                 break;
             }
             end += 1;
@@ -357,6 +398,13 @@ fn build_reduction_groups(manifest: &OpeningManifest) -> Vec<OpeningReductionGro
         start = end;
     }
     groups
+}
+
+fn reduction_family_tag(claim: &OpeningClaim) -> Option<u64> {
+    match claim.source {
+        OpeningSource::Chip8Kernel | OpeningSource::Chip8Root => Some(claim.ordinal),
+        OpeningSource::MainLane | OpeningSource::Rv64imKernel => None,
+    }
 }
 
 fn digest_reduction_group(
@@ -877,6 +925,7 @@ fn opening_source_tag(source: OpeningSource) -> u64 {
         OpeningSource::MainLane => 1,
         OpeningSource::Chip8Kernel => 2,
         OpeningSource::Chip8Root => 3,
+        OpeningSource::Rv64imKernel => 4,
     }
 }
 

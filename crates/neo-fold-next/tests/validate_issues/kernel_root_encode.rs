@@ -1,5 +1,5 @@
 use neo_fold_next::chip8::spec::WITNESS_WIDTH;
-use neo_fold_next::witness_layout::decode_vector_for_ccs_m;
+use neo_fold_next::witness_layout::decode_vector_for_full_width;
 use neo_math::F;
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::PrimeCharacteristicRing;
@@ -22,6 +22,7 @@ fn simple_kernel_root_encode_matches_canonical_semantic_row() {
     assert_eq!(prepared.witness.w, expected_row[1..].to_vec());
     assert_eq!(prepared.witness.w.len(), WITNESS_WIDTH - 1);
 
-    let decoded = decode_vector_for_ccs_m(&params, WITNESS_WIDTH, &prepared.witness.Z).expect("decode root witness");
+    let decoded =
+        decode_vector_for_full_width(&params, WITNESS_WIDTH, &prepared.witness.Z).expect("decode root witness");
     assert_eq!(decoded, expected_row.to_vec());
 }

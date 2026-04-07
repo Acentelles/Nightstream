@@ -9,7 +9,7 @@ use super::proof_witness::{
     verify_kernel_claim_packaged_proof, verify_stage_claim_packaged_proof,
 };
 use super::simple::{
-    build_public_simple_kernel_output_and_witness_with_perf, verify_root_main_lane_packaged_proof_with_perf,
+    build_public_simple_kernel_output_and_witness_with_perf, verify_root_main_lane_packaged_proof_with_public_rows,
     PublicSimpleKernelOutput, PublicSimpleKernelWitnessSidecar,
 };
 use super::stage_artifacts::verify_public_kernel_opening_bundle_with_perf;
@@ -287,13 +287,6 @@ fn validate_public_bundle_digests(proof: &Rv64imProof) -> Result<(), SimpleKerne
     if proof.kernel.main_lane.binding.digest != proof.kernel.main_lane.binding.expected_digest() {
         return Err(SimpleKernelError::Bridge(
             "RV64IM main-lane proof binding digest mismatch".into(),
-        ));
-    }
-    if proof.kernel.main_lane.statement_digest != proof.kernel.main_lane.packaged.statement.digest
-        || proof.kernel.main_lane.proof_digest != proof.kernel.main_lane.packaged.proof.proof_digest
-    {
-        return Err(SimpleKernelError::Bridge(
-            "RV64IM main-lane packaged proof digests are inconsistent".into(),
         ));
     }
     if proof.kernel.main_lane.digest != proof.kernel.main_lane.expected_digest() {
@@ -822,7 +815,7 @@ fn finalize_public_proof_verify_with_perf(
     total_started: Instant,
 ) -> Result<(PublicSimpleKernelOutput, Rv64imPublicProofVerifyPerf), SimpleKernelError> {
     let root_main_lane_started = Instant::now();
-    let root_main_lane = verify_root_main_lane_packaged_proof_with_perf(
+    let root_main_lane = verify_root_main_lane_packaged_proof_with_public_rows(
         &sidecar.trace.execution_rows,
         &proof.kernel.main_lane.packaged,
     )?;
@@ -854,10 +847,14 @@ fn finalize_public_proof_verify_with_perf(
             public_claim_digests_ms: 0.0,
             public_bundle_digests_ms: 0.0,
             public_bundle_bindings_ms: 0.0,
+            native_stage_bundle_verify_ms: 0.0,
             public_kernel_build,
+            root_execution_verify_ms: 0.0,
             root_main_lane_proof_ms,
             root_main_lane,
             stage_package_verify_ms,
+            accepted_stage_package: Default::default(),
+            accepted_root_execution: Default::default(),
             kernel_opening_verify_ms,
             summary_consistency_ms,
             total_ms: millis_since(total_started),

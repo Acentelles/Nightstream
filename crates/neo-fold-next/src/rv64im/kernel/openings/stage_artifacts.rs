@@ -21,7 +21,7 @@ use crate::rv64im::stage1::Stage1Summary;
 use crate::rv64im::stage2::Stage2Summary;
 use crate::rv64im::stage3::Stage3Summary;
 use crate::vm::r1cs_builder::R1csBuilder;
-use crate::witness_layout::{commit_cols_for_ccs_m, encode_vector_for_ccs_m};
+use crate::witness_layout::{commit_cols_for_full_width, encode_vector_for_full_width};
 
 use super::{
     artifacts::Rv64imKernelSummary,
@@ -41,11 +41,10 @@ use super::{
     stage1_canonical::{build_stage1_artifact_parts, Stage1CanonicalRowBundle},
     stage2_canonical::{build_stage2_artifact_parts, Stage2CanonicalFamilyBundle},
     stage3_canonical::{build_stage3_artifact_parts, Stage3CanonicalContinuityBundle},
-    transcript::TranscriptRecord,
-    RootLaneCommitmentArtifact, RootLaneCommitmentSummaryArtifact,
+    RootLaneCommitmentArtifact, RootLaneCommitmentSummaryArtifact, VerifiedTranscriptSurface,
 };
 
-pub(super) const RV64IM_SELECTED_OPENING_LAYOUT_V1: u64 = 1;
+pub(crate) const RV64IM_SELECTED_OPENING_LAYOUT_V1: u64 = 1;
 const EXACT_VECTOR_PACKAGE_LIMB_BITS: u32 = 16;
 const EXACT_VECTOR_PACKAGE_LIMB_COUNT: usize = 64 / EXACT_VECTOR_PACKAGE_LIMB_BITS as usize;
 const EXACT_VECTOR_PACKAGE_K_RHO: u32 = 24;
@@ -290,7 +289,7 @@ impl TranscriptArtifactSurface {
 }
 
 impl SimpleKernelStageClaimBundle {
-    fn expected_digest(&self) -> [u8; 32] {
+    pub(crate) fn expected_digest(&self) -> [u8; 32] {
         let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/stage_claim_bundle");
         tr.append_message(b"rv64im/stage_claim_bundle/stage1", &self.stage1.expected_digest());
         tr.append_message(b"rv64im/stage_claim_bundle/stage2", &self.stage2.expected_digest());
@@ -313,7 +312,7 @@ impl ExactVectorPackageContext {
             .map_err(|err| SimpleKernelError::Bridge(format!("{label} exact package params failed: {err}")))?;
         params.k_rho = EXACT_VECTOR_PACKAGE_K_RHO;
         params.B = EXACT_VECTOR_PACKAGE_B;
-        let m = commit_cols_for_ccs_m(full_width);
+        let m = commit_cols_for_full_width(full_width);
         let want_kappa = params.kappa as usize;
         if has_global_pp_for_dims(D, m) {
             if let Ok((kappa, registered_seed)) = get_global_pp_seeded_params_for_dims(D, m) {
@@ -390,7 +389,7 @@ fn build_exact_vector_package_step_with_context(
     let mut full_vector = Vec::with_capacity(logical_values.len() + 1);
     full_vector.push(F::ONE);
     full_vector.extend_from_slice(logical_values);
-    let packed = encode_vector_for_ccs_m(context.params(), full_vector.len(), &full_vector)
+    let packed = encode_vector_for_full_width(context.params(), full_vector.len(), &full_vector)
         .map_err(|err| SimpleKernelError::Bridge(format!("{label} exact package encoding failed: {err}")))?;
     Ok(StepInput {
         label: label.into(),
@@ -453,6 +452,18 @@ fn build_kernel_prepared_step_opening_package_step(
     build_exact_vector_package_step("rv64im/kernel_opening_bundle/prepared_steps", &logical_values)
 }
 
+pub(crate) fn build_kernel_binding_opening_public_step(
+    claim: &KernelBindingOpeningClaim,
+) -> Result<PublicStep, SimpleKernelError> {
+    Ok(build_kernel_binding_opening_package_step(claim)?.instance())
+}
+
+pub(crate) fn build_kernel_prepared_step_opening_public_step(
+    claim: &KernelPreparedStepOpeningClaim,
+) -> Result<PublicStep, SimpleKernelError> {
+    Ok(build_kernel_prepared_step_opening_package_step(claim)?.instance())
+}
+
 fn packaged_single_step_matches(packaged: &PackagedProof, expected: &PublicStep) -> bool {
     packaged.statement.chunks.len() == 1
         && packaged.statement.chunks[0].start_index == 0
@@ -460,7 +471,25 @@ fn packaged_single_step_matches(packaged: &PackagedProof, expected: &PublicStep)
         && same_public_step(&packaged.statement.chunks[0].steps[0], expected)
 }
 
-pub(super) fn build_claim_packaged_proof(label: &str, words: &[u64]) -> Result<PackagedProof, SimpleKernelError> {
+fn verify_claim_packaged_cryptography(
+    label: &str,
+    words: &[u64],
+    packaged: &PackagedProof,
+) -> Result<(), SimpleKernelError> {
+    let context_label = format!("{label}/selected_claim_package");
+    let logical_values = u64_vector_to_field_limbs(words);
+    let context = exact_vector_package_context(logical_values.len(), &context_label)?;
+    verify_packaged(
+        FoldingMode::Optimized,
+        context.params(),
+        context.ccs(),
+        packaged,
+        rv64im_ajtai_mixers(),
+    )?;
+    Ok(())
+}
+
+pub(crate) fn build_claim_packaged_proof(label: &str, words: &[u64]) -> Result<PackagedProof, SimpleKernelError> {
     let context_label = format!("{label}/selected_claim_package");
     let logical_values = u64_vector_to_field_limbs(words);
     let context = exact_vector_package_context(logical_values.len(), &context_label)?;
@@ -476,32 +505,38 @@ pub(super) fn build_claim_packaged_proof(label: &str, words: &[u64]) -> Result<P
     )?)
 }
 
-pub(super) fn verify_claim_packaged_proof(
+pub(crate) fn build_claim_packaged_public_step(label: &str, words: &[u64]) -> Result<PublicStep, SimpleKernelError> {
+    let context_label = format!("{label}/selected_claim_package");
+    let logical_values = u64_vector_to_field_limbs(words);
+    let context = exact_vector_package_context(logical_values.len(), &context_label)?;
+    let step = build_exact_vector_package_step_with_context(&context_label, &logical_values, context.as_ref())?;
+    Ok(step.instance())
+}
+
+pub(crate) fn verify_claim_packaged_public_step(
     label: &str,
     words: &[u64],
     packaged: &PackagedProof,
 ) -> Result<(), SimpleKernelError> {
-    let context_label = format!("{label}/selected_claim_package");
-    let logical_values = u64_vector_to_field_limbs(words);
-    let context = exact_vector_package_context(logical_values.len(), &context_label)?;
-    let expected_step =
-        build_exact_vector_package_step_with_context(&context_label, &logical_values, context.as_ref())?;
-    if !packaged_single_step_matches(packaged, &expected_step.instance()) {
+    let expected_step = build_claim_packaged_public_step(label, words)?;
+    if !packaged_single_step_matches(packaged, &expected_step) {
         return Err(SimpleKernelError::Bridge(format!(
             "{label} selected-claim package public step mismatch"
         )));
     }
-    verify_packaged(
-        FoldingMode::Optimized,
-        context.params(),
-        context.ccs(),
-        packaged,
-        rv64im_ajtai_mixers(),
-    )?;
     Ok(())
 }
 
-pub(super) fn verify_stage1_packaged_opening_proof(
+pub(crate) fn verify_claim_packaged_proof(
+    label: &str,
+    words: &[u64],
+    packaged: &PackagedProof,
+) -> Result<(), SimpleKernelError> {
+    verify_claim_packaged_public_step(label, words, packaged)?;
+    verify_claim_packaged_cryptography(label, words, packaged)
+}
+
+pub(crate) fn verify_stage1_packaged_opening_public_step(
     stage_package: &Stage1PackagedOpeningProof,
     expected_claim: &Stage1SelectedOpeningClaim,
 ) -> Result<(), SimpleKernelError> {
@@ -515,10 +550,10 @@ pub(super) fn verify_stage1_packaged_opening_proof(
             "rv64im/stage1 selected-claim package claim mismatch".into(),
         ));
     }
-    verify_claim_packaged_proof("rv64im/stage1", &expected_claim.claim_words(), &stage_package.packaged)
+    verify_claim_packaged_public_step("rv64im/stage1", &expected_claim.claim_words(), &stage_package.packaged)
 }
 
-pub(super) fn verify_stage2_packaged_opening_proof(
+pub(crate) fn verify_stage2_packaged_opening_public_step(
     stage_package: &Stage2PackagedOpeningProof,
     expected_claim: &Stage2SelectedOpeningClaim,
 ) -> Result<(), SimpleKernelError> {
@@ -532,10 +567,10 @@ pub(super) fn verify_stage2_packaged_opening_proof(
             "rv64im/stage2 selected-claim package claim mismatch".into(),
         ));
     }
-    verify_claim_packaged_proof("rv64im/stage2", &expected_claim.claim_words(), &stage_package.packaged)
+    verify_claim_packaged_public_step("rv64im/stage2", &expected_claim.claim_words(), &stage_package.packaged)
 }
 
-pub(super) fn verify_stage3_packaged_opening_proof(
+pub(crate) fn verify_stage3_packaged_opening_public_step(
     stage_package: &Stage3PackagedOpeningProof,
     expected_claim: &Stage3SelectedOpeningClaim,
 ) -> Result<(), SimpleKernelError> {
@@ -549,46 +584,113 @@ pub(super) fn verify_stage3_packaged_opening_proof(
             "rv64im/stage3 selected-claim package claim mismatch".into(),
         ));
     }
-    verify_claim_packaged_proof("rv64im/stage3", &expected_claim.claim_words(), &stage_package.packaged)
+    verify_claim_packaged_public_step("rv64im/stage3", &expected_claim.claim_words(), &stage_package.packaged)
 }
 
-fn build_kernel_opening_claim(
+pub(super) fn verify_stage1_packaged_opening_proof(
+    stage_package: &Stage1PackagedOpeningProof,
+    expected_claim: &Stage1SelectedOpeningClaim,
+) -> Result<(), SimpleKernelError> {
+    verify_stage1_packaged_opening_public_step(stage_package, expected_claim)?;
+    verify_claim_packaged_cryptography("rv64im/stage1", &expected_claim.claim_words(), &stage_package.packaged)
+}
+
+pub(super) fn verify_stage2_packaged_opening_proof(
+    stage_package: &Stage2PackagedOpeningProof,
+    expected_claim: &Stage2SelectedOpeningClaim,
+) -> Result<(), SimpleKernelError> {
+    verify_stage2_packaged_opening_public_step(stage_package, expected_claim)?;
+    verify_claim_packaged_cryptography("rv64im/stage2", &expected_claim.claim_words(), &stage_package.packaged)
+}
+
+pub(super) fn verify_stage3_packaged_opening_proof(
+    stage_package: &Stage3PackagedOpeningProof,
+    expected_claim: &Stage3SelectedOpeningClaim,
+) -> Result<(), SimpleKernelError> {
+    verify_stage3_packaged_opening_public_step(stage_package, expected_claim)?;
+    verify_claim_packaged_cryptography("rv64im/stage3", &expected_claim.claim_words(), &stage_package.packaged)
+}
+
+pub(crate) fn build_kernel_opening_claim_from_parts(
     stage_claims: &SimpleKernelStageClaimBundle,
     stage_packages: &SimpleKernelStagePackageBundle,
-    kernel_claims: &SimpleKernelKernelClaimBundle,
+    prepared_step_bindings_digest: [u8; 32],
+    binding_count: u64,
+    first_binding_digest: Option<[u8; 32]>,
+    last_binding_digest: Option<[u8; 32]>,
+    execution_digest: [u8; 32],
+    final_state_digest: [u8; 32],
+    transcript_final_digest: [u8; 32],
+    final_pc: u64,
+    halted: bool,
     prepared_step_count: u64,
     first_prepared_step: Option<SelectedOpeningRef>,
     last_prepared_step: Option<SelectedOpeningRef>,
 ) -> SimpleKernelOpeningClaim {
-    let binding_object = selected_opening_object(
-        AjtaiFamilyKind::KernelBindings,
-        kernel_claims.prepared_step_bindings.digest,
-    );
-    let first_binding = kernel_claims
-        .prepared_step_bindings
-        .first_binding_digest
-        .map(|digest| selected_opening_ref(&binding_object, 0, digest));
-    let last_binding = kernel_claims
-        .prepared_step_bindings
-        .last_binding_digest
-        .map(|digest| {
-            selected_opening_ref(
-                &binding_object,
-                kernel_claims
-                    .prepared_step_bindings
-                    .binding_count
-                    .saturating_sub(1) as u64,
-                digest,
-            )
-        });
+    build_kernel_opening_claim_from_compact_stage_package_digests(
+        stage_claims,
+        stage_packages.digest,
+        stage_packages.stage1.digest,
+        stage_packages.stage2.digest,
+        stage_packages.stage3.digest,
+        prepared_step_bindings_digest,
+        binding_count,
+        first_binding_digest,
+        last_binding_digest,
+        execution_digest,
+        final_state_digest,
+        transcript_final_digest,
+        final_pc,
+        halted,
+        prepared_step_count,
+        first_prepared_step,
+        last_prepared_step,
+    )
+}
+
+fn stage_package_bundle_digest_from_digests(
+    stage1_package_digest: [u8; 32],
+    stage2_package_digest: [u8; 32],
+    stage3_package_digest: [u8; 32],
+) -> [u8; 32] {
+    let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/stage_package_bundle");
+    tr.append_message(b"rv64im/stage_package_bundle/stage1", &stage1_package_digest);
+    tr.append_message(b"rv64im/stage_package_bundle/stage2", &stage2_package_digest);
+    tr.append_message(b"rv64im/stage_package_bundle/stage3", &stage3_package_digest);
+    tr.digest32()
+}
+
+fn build_kernel_opening_claim_from_compact_stage_package_digests(
+    stage_claims: &SimpleKernelStageClaimBundle,
+    stage_package_bundle_digest: [u8; 32],
+    stage1_package_digest: [u8; 32],
+    stage2_package_digest: [u8; 32],
+    stage3_package_digest: [u8; 32],
+    prepared_step_bindings_digest: [u8; 32],
+    binding_count: u64,
+    first_binding_digest: Option<[u8; 32]>,
+    last_binding_digest: Option<[u8; 32]>,
+    execution_digest: [u8; 32],
+    final_state_digest: [u8; 32],
+    transcript_final_digest: [u8; 32],
+    final_pc: u64,
+    halted: bool,
+    prepared_step_count: u64,
+    first_prepared_step: Option<SelectedOpeningRef>,
+    last_prepared_step: Option<SelectedOpeningRef>,
+) -> SimpleKernelOpeningClaim {
+    let binding_object = selected_opening_object(AjtaiFamilyKind::KernelBindings, prepared_step_bindings_digest);
+    let first_binding = first_binding_digest.map(|digest| selected_opening_ref(&binding_object, 0, digest));
+    let last_binding = last_binding_digest
+        .map(|digest| selected_opening_ref(&binding_object, binding_count.saturating_sub(1), digest));
     let binding_claim = KernelBindingOpeningClaim {
         stage_claim_bundle_digest: stage_claims.digest,
-        stage_package_bundle_digest: stage_packages.digest,
-        stage1_package_digest: stage_packages.stage1.digest,
-        stage2_package_digest: stage_packages.stage2.digest,
-        stage3_package_digest: stage_packages.stage3.digest,
-        prepared_step_bindings_digest: kernel_claims.prepared_step_bindings.digest,
-        binding_count: kernel_claims.prepared_step_bindings.binding_count,
+        stage_package_bundle_digest,
+        stage1_package_digest,
+        stage2_package_digest,
+        stage3_package_digest,
+        prepared_step_bindings_digest,
+        binding_count,
         stage1_row_count: stage_claims.stage1.claim.row_count as u64,
         stage2_register_read_count: stage_claims.stage2.claim.register_read_count as u64,
         stage2_register_write_count: stage_claims.stage2.claim.register_write_count as u64,
@@ -601,12 +703,12 @@ fn build_kernel_opening_claim(
         digest: [0; 32],
     };
     let prepared_step_claim = KernelPreparedStepOpeningClaim {
-        execution_digest: kernel_claims.kernel.execution_digest,
-        final_state_digest: kernel_claims.kernel.final_state_digest,
-        transcript_final_digest: kernel_claims.kernel.transcript_final_digest,
+        execution_digest,
+        final_state_digest,
+        transcript_final_digest,
         prepared_step_count,
-        final_pc: kernel_claims.kernel.final_pc,
-        halted: kernel_claims.kernel.halted,
+        final_pc,
+        halted,
         points: KernelPreparedStepOpeningPoints {
             first_prepared_step,
             last_prepared_step,
@@ -628,6 +730,69 @@ fn build_kernel_opening_claim(
         digest: claim.expected_digest(),
         ..claim
     }
+}
+
+pub(crate) fn build_public_kernel_opening_claim_from_compact_surfaces(
+    stage_claims: &SimpleKernelStageClaimBundle,
+    stage1_package_digest: [u8; 32],
+    stage2_package_digest: [u8; 32],
+    stage3_package_digest: [u8; 32],
+    prepared_step_bindings_digest: [u8; 32],
+    binding_count: u64,
+    first_binding_digest: Option<[u8; 32]>,
+    last_binding_digest: Option<[u8; 32]>,
+    execution_digest: [u8; 32],
+    final_state_digest: [u8; 32],
+    transcript_final_digest: [u8; 32],
+    final_pc: u64,
+    halted: bool,
+    root_lane_commitment: &RootLaneCommitmentSummaryArtifact,
+) -> SimpleKernelOpeningClaim {
+    build_kernel_opening_claim_from_compact_stage_package_digests(
+        stage_claims,
+        stage_package_bundle_digest_from_digests(stage1_package_digest, stage2_package_digest, stage3_package_digest),
+        stage1_package_digest,
+        stage2_package_digest,
+        stage3_package_digest,
+        prepared_step_bindings_digest,
+        binding_count,
+        first_binding_digest,
+        last_binding_digest,
+        execution_digest,
+        final_state_digest,
+        transcript_final_digest,
+        final_pc,
+        halted,
+        root_lane_commitment.time_len,
+        root_lane_commitment.first_selected_row(),
+        root_lane_commitment.last_selected_row(),
+    )
+}
+
+fn build_kernel_opening_claim(
+    stage_claims: &SimpleKernelStageClaimBundle,
+    stage_packages: &SimpleKernelStagePackageBundle,
+    kernel_claims: &SimpleKernelKernelClaimBundle,
+    prepared_step_count: u64,
+    first_prepared_step: Option<SelectedOpeningRef>,
+    last_prepared_step: Option<SelectedOpeningRef>,
+) -> SimpleKernelOpeningClaim {
+    build_kernel_opening_claim_from_parts(
+        stage_claims,
+        stage_packages,
+        kernel_claims.prepared_step_bindings.digest,
+        kernel_claims.prepared_step_bindings.binding_count,
+        kernel_claims.prepared_step_bindings.first_binding_digest,
+        kernel_claims.prepared_step_bindings.last_binding_digest,
+        kernel_claims.kernel.execution_digest,
+        kernel_claims.kernel.final_state_digest,
+        kernel_claims.kernel.transcript_final_digest,
+        kernel_claims.kernel.final_pc,
+        kernel_claims.kernel.halted,
+        prepared_step_count,
+        first_prepared_step,
+        last_prepared_step,
+    )
 }
 
 fn build_kernel_opening_claim_from_commitment(
@@ -748,10 +913,9 @@ fn build_kernel_opening_proof_with_perf(
     ))
 }
 
-fn verify_kernel_opening_proof_with_perf(
+pub(crate) fn verify_kernel_opening_proof_public_steps(
     bundle: &SimpleKernelOpeningBundle,
-) -> Result<KernelOpeningBundleVerifyPerf, SimpleKernelError> {
-    let total_started = Instant::now();
+) -> Result<(), SimpleKernelError> {
     if bundle.claim.digest != bundle.claim.expected_digest() {
         return Err(SimpleKernelError::Bridge(
             "RV64IM kernel opening claim digest mismatch".into(),
@@ -778,20 +942,6 @@ fn verify_kernel_opening_proof_with_perf(
             "RV64IM kernel binding opening package public step mismatch".into(),
         ));
     }
-    let bindings_context = ExactVectorPackageContext::new(
-        expected_bindings_step.witness.w.len(),
-        EXACT_STAGE_PP_SEED,
-        "rv64im/kernel_opening_bundle/bindings",
-    )?;
-    let bindings_started = Instant::now();
-    verify_packaged(
-        FoldingMode::Optimized,
-        bindings_context.params(),
-        bindings_context.ccs(),
-        &bundle.bindings.packaged,
-        rv64im_ajtai_mixers(),
-    )?;
-
     if bundle.prepared_steps.digest != bundle.prepared_steps.expected_digest() {
         return Err(SimpleKernelError::Bridge(
             "RV64IM kernel prepared-step opening package digest mismatch".into(),
@@ -811,6 +961,30 @@ fn verify_kernel_opening_proof_with_perf(
             "RV64IM kernel prepared-step opening package public step mismatch".into(),
         ));
     }
+    Ok(())
+}
+
+fn verify_kernel_opening_proof_with_perf(
+    bundle: &SimpleKernelOpeningBundle,
+) -> Result<KernelOpeningBundleVerifyPerf, SimpleKernelError> {
+    let total_started = Instant::now();
+    verify_kernel_opening_proof_public_steps(bundle)?;
+    let expected_bindings_step = build_kernel_binding_opening_package_step(&bundle.claim.bindings)?;
+    let bindings_context = ExactVectorPackageContext::new(
+        expected_bindings_step.witness.w.len(),
+        EXACT_STAGE_PP_SEED,
+        "rv64im/kernel_opening_bundle/bindings",
+    )?;
+    let bindings_started = Instant::now();
+    verify_packaged(
+        FoldingMode::Optimized,
+        bindings_context.params(),
+        bindings_context.ccs(),
+        &bundle.bindings.packaged,
+        rv64im_ajtai_mixers(),
+    )?;
+
+    let expected_prepared_steps_step = build_kernel_prepared_step_opening_package_step(&bundle.claim.prepared_steps)?;
     let prepared_steps_context = ExactVectorPackageContext::new(
         expected_prepared_steps_step.witness.w.len(),
         EXACT_STAGE_PP_SEED,
@@ -860,6 +1034,38 @@ pub(super) fn build_public_kernel_opening_bundle_with_perf(
     ))
 }
 
+pub(super) fn build_public_kernel_opening_bundle_from_export_parts_with_perf(
+    stage_claims: &SimpleKernelStageClaimBundle,
+    stage_packages: &SimpleKernelStagePackageBundle,
+    prepared_step_bindings_digest: [u8; 32],
+    binding_count: u64,
+    first_binding_digest: Option<[u8; 32]>,
+    last_binding_digest: Option<[u8; 32]>,
+    execution_digest: [u8; 32],
+    final_state_digest: [u8; 32],
+    transcript_final_digest: [u8; 32],
+    final_pc: u64,
+    halted: bool,
+    root_lane_commitment: &RootLaneCommitmentSummaryArtifact,
+) -> Result<(SimpleKernelOpeningBundle, KernelOpeningBundleBuildPerf), SimpleKernelError> {
+    build_kernel_opening_proof_with_perf(build_kernel_opening_claim_from_parts(
+        stage_claims,
+        stage_packages,
+        prepared_step_bindings_digest,
+        binding_count,
+        first_binding_digest,
+        last_binding_digest,
+        execution_digest,
+        final_state_digest,
+        transcript_final_digest,
+        final_pc,
+        halted,
+        root_lane_commitment.time_len,
+        root_lane_commitment.first_selected_row(),
+        root_lane_commitment.last_selected_row(),
+    ))
+}
+
 pub(super) fn verify_kernel_opening_bundle_with_perf(
     bundle: &SimpleKernelOpeningBundle,
     stage_claims: &SimpleKernelStageClaimBundle,
@@ -904,48 +1110,95 @@ pub(super) fn verify_public_kernel_opening_bundle_with_perf(
     Ok(perf)
 }
 
+pub(crate) fn verify_public_kernel_opening_bundle_from_export_parts_with_perf(
+    bundle: &SimpleKernelOpeningBundle,
+    stage_claims: &SimpleKernelStageClaimBundle,
+    stage_packages: &SimpleKernelStagePackageBundle,
+    prepared_step_bindings_digest: [u8; 32],
+    binding_count: u64,
+    first_binding_digest: Option<[u8; 32]>,
+    last_binding_digest: Option<[u8; 32]>,
+    execution_digest: [u8; 32],
+    final_state_digest: [u8; 32],
+    transcript_final_digest: [u8; 32],
+    final_pc: u64,
+    halted: bool,
+    root_lane_commitment: &RootLaneCommitmentSummaryArtifact,
+) -> Result<KernelOpeningBundleVerifyPerf, SimpleKernelError> {
+    let claim_started = Instant::now();
+    let expected_claim = build_kernel_opening_claim_from_parts(
+        stage_claims,
+        stage_packages,
+        prepared_step_bindings_digest,
+        binding_count,
+        first_binding_digest,
+        last_binding_digest,
+        execution_digest,
+        final_state_digest,
+        transcript_final_digest,
+        final_pc,
+        halted,
+        root_lane_commitment.time_len,
+        root_lane_commitment.first_selected_row(),
+        root_lane_commitment.last_selected_row(),
+    );
+    let claim_rebuild_ms = millis_since(claim_started);
+    if bundle.claim != expected_claim {
+        return Err(SimpleKernelError::Bridge("RV64IM kernel opening claim mismatch".into()));
+    }
+    let mut perf = verify_kernel_opening_proof_with_perf(bundle)?;
+    perf.claim_rebuild_ms = claim_rebuild_ms;
+    perf.total_ms += claim_rebuild_ms;
+    Ok(perf)
+}
+
 pub(super) fn build_stage_claim_bundle_from_parts(
     stage1_summary: &Stage1Summary,
     stage2_summary: &Stage2Summary,
     stage3_summary: &Stage3Summary,
-    transcript: &TranscriptRecord,
+    transcript_event_count: usize,
     kernel: &Rv64imKernelSummary,
 ) -> Result<SimpleKernelStageClaimBundle, SimpleKernelError> {
     Ok(build_stage_claim_bundle_from_parts_with_perf(
         stage1_summary,
         stage2_summary,
         stage3_summary,
-        transcript,
+        transcript_event_count,
         kernel,
     )?
     .0)
 }
 
-pub(super) fn build_stage_claim_bundle_from_parts_with_perf(
+fn build_stage_claim_bundle_from_surface_parts_with_perf(
     stage1_summary: &Stage1Summary,
     stage2_summary: &Stage2Summary,
     stage3_summary: &Stage3Summary,
-    transcript: &TranscriptRecord,
-    kernel: &Rv64imKernelSummary,
+    transcript_event_count: usize,
+    execution_digest: [u8; 32],
+    stage1_mix: u64,
+    stage2_reg_mix: u64,
+    stage2_ram_mix: u64,
+    stage3_continuity_mix: u64,
+    kernel_final_mix: u64,
+    transcript_final_digest: [u8; 32],
 ) -> Result<(SimpleKernelStageClaimBundle, StageClaimBundleBuildPerf), SimpleKernelError> {
     let total_started = Instant::now();
 
     let stage1_perf = ExactStageVectorBuildPerf::default();
-    let (stage1_rows, stage1_claim) = build_stage1_artifact_parts(stage1_summary, kernel.stage1_mix);
+    let (stage1_rows, stage1_claim) = build_stage1_artifact_parts(stage1_summary, stage1_mix);
     let stage1 = Stage1ArtifactSurface {
         rows: stage1_rows,
         claim: stage1_claim,
     };
 
     let stage2_perf = ExactStageVectorBuildPerf::default();
-    let (stage2_families, stage2_claim) =
-        build_stage2_artifact_parts(stage2_summary, kernel.stage2_reg_mix, kernel.stage2_ram_mix);
+    let (stage2_families, stage2_claim) = build_stage2_artifact_parts(stage2_summary, stage2_reg_mix, stage2_ram_mix);
     let stage2 = Stage2ArtifactSurface {
         families: stage2_families,
         claim: stage2_claim,
     };
 
-    let (stage3_continuity, stage3_claim) = build_stage3_artifact_parts(stage3_summary, kernel.stage3_continuity_mix);
+    let (stage3_continuity, stage3_claim) = build_stage3_artifact_parts(stage3_summary, stage3_continuity_mix);
     let stage3 = Stage3ArtifactSurface {
         continuity: stage3_continuity,
         claim: stage3_claim,
@@ -953,12 +1206,12 @@ pub(super) fn build_stage_claim_bundle_from_parts_with_perf(
 
     let transcript = TranscriptArtifactSurface {
         commitment: StageDigestCommitment {
-            digest: kernel.transcript_final_digest,
+            digest: transcript_final_digest,
         },
         claim: TranscriptClaimSurface {
-            final_digest: kernel.transcript_final_digest,
-            event_count: transcript.events.len(),
-            kernel_final_mix: kernel.kernel_final_mix,
+            final_digest: transcript_final_digest,
+            event_count: transcript_event_count,
+            kernel_final_mix,
         },
     };
 
@@ -967,7 +1220,7 @@ pub(super) fn build_stage_claim_bundle_from_parts_with_perf(
         stage2,
         stage3,
         transcript,
-        execution_digest: kernel.execution_digest,
+        execution_digest,
         digest: [0; 32],
     };
     let claims = SimpleKernelStageClaimBundle {
@@ -983,4 +1236,65 @@ pub(super) fn build_stage_claim_bundle_from_parts_with_perf(
             total_ms: millis_since(total_started),
         },
     ))
+}
+
+pub(super) fn build_stage_claim_bundle_from_parts_with_perf(
+    stage1_summary: &Stage1Summary,
+    stage2_summary: &Stage2Summary,
+    stage3_summary: &Stage3Summary,
+    transcript_event_count: usize,
+    kernel: &Rv64imKernelSummary,
+) -> Result<(SimpleKernelStageClaimBundle, StageClaimBundleBuildPerf), SimpleKernelError> {
+    build_stage_claim_bundle_from_surface_parts_with_perf(
+        stage1_summary,
+        stage2_summary,
+        stage3_summary,
+        transcript_event_count,
+        kernel.execution_digest,
+        kernel.stage1_mix,
+        kernel.stage2_reg_mix,
+        kernel.stage2_ram_mix,
+        kernel.stage3_continuity_mix,
+        kernel.kernel_final_mix,
+        kernel.transcript_final_digest,
+    )
+}
+
+pub(super) fn build_stage_claim_bundle_from_export_parts(
+    stage1_summary: &Stage1Summary,
+    stage2_summary: &Stage2Summary,
+    stage3_summary: &Stage3Summary,
+    transcript: &VerifiedTranscriptSurface,
+    execution_digest: [u8; 32],
+) -> Result<SimpleKernelStageClaimBundle, SimpleKernelError> {
+    Ok(build_stage_claim_bundle_from_export_parts_with_perf(
+        stage1_summary,
+        stage2_summary,
+        stage3_summary,
+        transcript,
+        execution_digest,
+    )?
+    .0)
+}
+
+pub(super) fn build_stage_claim_bundle_from_export_parts_with_perf(
+    stage1_summary: &Stage1Summary,
+    stage2_summary: &Stage2Summary,
+    stage3_summary: &Stage3Summary,
+    transcript: &VerifiedTranscriptSurface,
+    execution_digest: [u8; 32],
+) -> Result<(SimpleKernelStageClaimBundle, StageClaimBundleBuildPerf), SimpleKernelError> {
+    build_stage_claim_bundle_from_surface_parts_with_perf(
+        stage1_summary,
+        stage2_summary,
+        stage3_summary,
+        transcript.event_count,
+        execution_digest,
+        transcript.challenges.stage1_mix,
+        transcript.challenges.stage2_reg_mix,
+        transcript.challenges.stage2_ram_mix,
+        transcript.challenges.stage3_continuity_mix,
+        transcript.challenges.kernel_final_mix,
+        transcript.final_digest,
+    )
 }

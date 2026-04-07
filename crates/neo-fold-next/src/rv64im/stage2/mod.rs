@@ -4,7 +4,8 @@ mod proof;
 mod semantics;
 
 pub use proof::{
-    build_stage2_proof_bundle, build_stage2_summary, RamAccessKind, RamEvent, RamTwistProof, RegisterReadEvent,
+    build_stage2_proof_bundle, build_stage2_summary, ram_event_word_width, register_read_word_width,
+    register_write_word_width, twist_link_word_width, RamAccessKind, RamEvent, RamTwistProof, RegisterReadEvent,
     RegisterReadRole, RegisterTwistProof, RegisterWriteEvent, Stage2LinkageProof, Stage2ProofBundle, Stage2Summary,
     Stage2TemporalContext, TwistLinkEvent,
 };
@@ -16,5 +17,5 @@ pub(crate) use proof::{
 pub use semantics::Stage2SemanticsProof;
 pub(crate) use semantics::{
     ram_events_family_digest, register_reads_family_digest, register_writes_family_digest, twist_links_family_digest,
-    verify_stage2_semantics,
+    verify_stage2_semantics_from_events,
 };

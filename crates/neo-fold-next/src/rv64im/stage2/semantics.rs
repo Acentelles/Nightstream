@@ -34,11 +34,27 @@ pub struct Stage2SemanticsProof {
 
 impl Stage2SemanticsProof {
     pub(crate) fn new(summary: &Stage2Summary) -> Self {
+        Self::from_surface_digests(
+            register_reads_family_digest(&summary.register_reads),
+            register_writes_family_digest(&summary.register_writes),
+            ram_events_family_digest(&summary.ram_events),
+            twist_links_family_digest(&summary.twist_links),
+            summary,
+        )
+    }
+
+    pub(crate) fn from_surface_digests(
+        register_reads_family_digest: [u8; 32],
+        register_writes_family_digest: [u8; 32],
+        ram_events_family_digest: [u8; 32],
+        twist_links_family_digest: [u8; 32],
+        summary: &Stage2Summary,
+    ) -> Self {
         let proof = Self {
-            register_reads_family_digest: register_reads_family_digest(&summary.register_reads),
-            register_writes_family_digest: register_writes_family_digest(&summary.register_writes),
-            ram_events_family_digest: ram_events_family_digest(&summary.ram_events),
-            twist_links_family_digest: twist_links_family_digest(&summary.twist_links),
+            register_reads_family_digest,
+            register_writes_family_digest,
+            ram_events_family_digest,
+            twist_links_family_digest,
             row_count: summary.twist_links.len() as u64,
             register_event_count: (summary.register_reads.len() + summary.register_writes.len()) as u64,
             ram_event_count: summary.ram_events.len() as u64,
@@ -132,13 +148,16 @@ pub(crate) fn twist_links_family_digest(events: &[TwistLinkEvent]) -> [u8; 32] {
     tr.digest32()
 }
 
-pub fn verify_stage2_semantics(
+pub fn verify_stage2_semantics_from_events(
     rows: &[Rv64ExpandedRow],
-    summary: &Stage2Summary,
+    register_reads: &[RegisterReadEvent],
+    register_writes: &[RegisterWriteEvent],
+    ram_events: &[RamEvent],
+    twist_links: &[TwistLinkEvent],
     initial_registers: &[u64; RV64_REGISTER_COUNT],
     initial_memory: &[MemoryWord],
 ) -> Result<(), String> {
-    if rows.len() != summary.twist_links.len() {
+    if rows.len() != twist_links.len() {
         return Err("stage2 twist-link row count mismatch".into());
     }
 
@@ -168,12 +187,11 @@ pub fn verify_stage2_semantics(
             }
         }
 
-        let twist = &summary.twist_links[row_index];
+        let twist = &twist_links[row_index];
         verify_twist_link(row, twist)?;
 
         if row_reads_rs1(row) {
-            let event = summary
-                .register_reads
+            let event = register_reads
                 .get(read_index)
                 .ok_or_else(|| format!("stage2 missing rs1 read event for trace index {}", row.trace_index))?;
             verify_register_read(
@@ -189,8 +207,7 @@ pub fn verify_stage2_semantics(
         }
 
         if row_reads_rs2(row) {
-            let event = summary
-                .register_reads
+            let event = register_reads
                 .get(read_index)
                 .ok_or_else(|| format!("stage2 missing rs2 read event for trace index {}", row.trace_index))?;
             verify_register_read(
@@ -206,8 +223,7 @@ pub fn verify_stage2_semantics(
         }
 
         if let Some(addr) = row.effective_addr {
-            let event = summary
-                .ram_events
+            let event = ram_events
                 .get(ram_index)
                 .ok_or_else(|| format!("stage2 missing RAM event for trace index {}", row.trace_index))?;
             verify_ram_event(row, event, canonical_ram_addr(row, addr), &mut memory)?;
@@ -220,8 +236,7 @@ pub fn verify_stage2_semantics(
         }
 
         if row.writes_rd {
-            let event = summary
-                .register_writes
+            let event = register_writes
                 .get(write_index)
                 .ok_or_else(|| format!("stage2 missing register write for trace index {}", row.trace_index))?;
             verify_register_write(row, event, &mut registers, &mut temp_written_this_step)?;
@@ -229,10 +244,7 @@ pub fn verify_stage2_semantics(
         }
     }
 
-    if read_index != summary.register_reads.len()
-        || write_index != summary.register_writes.len()
-        || ram_index != summary.ram_events.len()
-    {
+    if read_index != register_reads.len() || write_index != register_writes.len() || ram_index != ram_events.len() {
         return Err("stage2 event cursors did not consume the full summary".into());
     }
 

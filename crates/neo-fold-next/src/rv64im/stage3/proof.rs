@@ -60,6 +60,18 @@ pub(crate) fn continuity_event_words(event: &ContinuityEvent) -> [u64; 6] {
     ]
 }
 
+pub fn continuity_event_word_width() -> usize {
+    continuity_event_words(&ContinuityEvent {
+        step_index: 0,
+        pc: 0,
+        next_pc: 0,
+        successor_pc: None,
+        final_step: false,
+        continuity_holds: true,
+    })
+    .len()
+}
+
 pub(crate) fn continuity_event_digest(event: &ContinuityEvent) -> [u8; 32] {
     let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/stage3_selected_continuity");
     tr.append_u64s_iter(

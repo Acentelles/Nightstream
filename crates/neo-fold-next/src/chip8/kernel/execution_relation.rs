@@ -107,6 +107,38 @@ impl Chip8PreparedStepBridgeBinding {
     }
 }
 
+impl Chip8BridgeChunkHandoff {
+    pub fn expected_digest(&self) -> [u8; 32] {
+        let mut tr = Poseidon2Transcript::new(b"neo.fold.next/chip8/bridge_chunk_handoff");
+        tr.append_message(
+            b"neo.fold.next/chip8/bridge_chunk_handoff/previous_state",
+            &self.previous_state,
+        );
+        tr.append_message(b"neo.fold.next/chip8/bridge_chunk_handoff/next_state", &self.next_state);
+        tr.append_message(
+            b"neo.fold.next/chip8/bridge_chunk_handoff/witness_digest",
+            &self.witness_digest,
+        );
+        tr.append_u64s(
+            b"neo.fold.next/chip8/bridge_chunk_handoff/slot_count",
+            &[self.step_bindings.len() as u64],
+        );
+        for binding in &self.step_bindings {
+            tr.append_u64s(
+                b"neo.fold.next/chip8/bridge_chunk_handoff/binding_present",
+                &[binding.is_some() as u64],
+            );
+            if let Some(binding) = binding {
+                tr.append_message(
+                    b"neo.fold.next/chip8/bridge_chunk_handoff/binding_digest",
+                    &binding.expected_digest(),
+                );
+            }
+        }
+        tr.digest32()
+    }
+}
+
 struct KernelExecutionRelationContext {
     row_bindings: Vec<RowBindingClaim>,
     semantic_rows: usize,

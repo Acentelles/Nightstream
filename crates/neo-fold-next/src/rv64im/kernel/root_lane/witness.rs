@@ -2,14 +2,30 @@
 
 use neo_math::F;
 use neo_transcript::{Poseidon2Transcript, Transcript};
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::proof::PublicStatement;
 use crate::rv64im::ccs::{semantic_row_from_execution_row, RV64IM_ROOT_ROW_WIDTH};
-use crate::rv64im::Rv64ExpandedRow;
+use crate::rv64im::{public_step_digest, Rv64ExpandedRow};
 
-use super::public_step_digest;
-use super::simple::{PreparedStepBindingSummary, SimpleKernelError};
+use super::simple::{
+    prepared_step_binding_digest, selected_opening_ref_digest, PreparedStepBindingSummary, SimpleKernelError,
+};
+use super::RootLaneColumns;
+
+fn allow_parallel_root_execution_build(count: usize) -> bool {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        rayon::current_num_threads() > 1 && rayon::current_thread_index().is_none() && count >= 32
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = count;
+        false
+    }
+}
 
 pub(crate) fn next_power_of_two_len(len: usize) -> usize {
     len.max(1).next_power_of_two()
@@ -163,22 +179,6 @@ impl RootSemanticRow {
     }
 }
 
-impl RowChunkRoute {
-    pub fn expected_digest(&self) -> [u8; 32] {
-        let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/root_execution_row_chunk_route");
-        tr.append_u64s(
-            b"rv64im/root_execution_row_chunk_route/meta",
-            &[
-                self.logical_index,
-                self.chunk_index,
-                self.chunk_start_index,
-                self.chunk_local_index,
-            ],
-        );
-        tr.digest32()
-    }
-}
-
 impl RootRowLocalCcsAcceptance {
     pub fn expected_digest(&self) -> [u8; 32] {
         let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/root_row_local_ccs_acceptance");
@@ -204,6 +204,17 @@ impl RootRowLocalCcsAcceptance {
             &self.public_step_digest,
         );
         tr.digest32()
+    }
+}
+
+impl RowChunkRoute {
+    pub fn expected_digest(&self) -> [u8; 32] {
+        root_execution_row_chunk_route_digest(
+            self.logical_index,
+            self.chunk_index,
+            self.chunk_start_index,
+            self.chunk_local_index,
+        )
     }
 }
 
@@ -391,23 +402,39 @@ pub(crate) fn build_root_lane_witness(rows: &[Rv64ExpandedRow]) -> RootLaneWitne
 }
 
 pub(crate) fn build_root_execution_semantic_rows(rows: &[Rv64ExpandedRow]) -> Vec<RootSemanticRow> {
-    rows.iter()
-        .map(|row| {
-            let semantic_row = semantic_row_from_execution_row(row);
-            let semantic_values = semantic_row.to_vec();
-            let digest = root_lane_row_digest(row.trace_index as u64, &semantic_row);
-            let row = RootSemanticRow {
-                trace_index: row.trace_index,
-                values: semantic_values,
-                row_digest: digest,
-                digest: [0; 32],
-            };
-            RootSemanticRow {
-                digest: row.expected_digest(),
-                ..row
-            }
-        })
-        .collect()
+    if allow_parallel_root_execution_build(rows.len()) {
+        rows.par_iter()
+            .map(|row| {
+                let semantic_row = semantic_row_from_execution_row(row);
+                let semantic_row = RootSemanticRow {
+                    trace_index: row.trace_index,
+                    values: semantic_row.to_vec(),
+                    row_digest: root_lane_row_digest(row.trace_index as u64, &semantic_row),
+                    digest: [0; 32],
+                };
+                RootSemanticRow {
+                    digest: semantic_row.expected_digest(),
+                    ..semantic_row
+                }
+            })
+            .collect()
+    } else {
+        rows.iter()
+            .map(|row| {
+                let semantic_row = semantic_row_from_execution_row(row);
+                let semantic_row = RootSemanticRow {
+                    trace_index: row.trace_index,
+                    values: semantic_row.to_vec(),
+                    row_digest: root_lane_row_digest(row.trace_index as u64, &semantic_row),
+                    digest: [0; 32],
+                };
+                RootSemanticRow {
+                    digest: semantic_row.expected_digest(),
+                    ..semantic_row
+                }
+            })
+            .collect()
+    }
 }
 
 pub(crate) fn root_execution_semantic_rows_digest(rows: &[RootSemanticRow]) -> [u8; 32] {
@@ -416,6 +443,20 @@ pub(crate) fn root_execution_semantic_rows_digest(rows: &[RootSemanticRow]) -> [
     for row in rows {
         tr.append_message(b"rv64im/root_execution_semantic_rows/row", &row.digest);
     }
+    tr.digest32()
+}
+
+pub(crate) fn root_execution_row_chunk_route_digest(
+    logical_index: u64,
+    chunk_index: u64,
+    chunk_start_index: u64,
+    chunk_local_index: u64,
+) -> [u8; 32] {
+    let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/root_execution_row_chunk_route");
+    tr.append_u64s(
+        b"rv64im/root_execution_row_chunk_route/meta",
+        &[logical_index, chunk_index, chunk_start_index, chunk_local_index],
+    );
     tr.digest32()
 }
 
@@ -429,23 +470,64 @@ pub(crate) fn root_execution_row_chunk_routes_digest(routes: &[RowChunkRoute]) -
 }
 
 pub(crate) fn build_root_execution_row_chunk_routes(statement: &PublicStatement) -> Vec<RowChunkRoute> {
-    let mut routes = Vec::with_capacity(statement.public_step_count());
-    for (chunk_index, chunk) in statement.chunks.iter().enumerate() {
-        for (chunk_local_index, _) in chunk.steps.iter().enumerate() {
-            let route = RowChunkRoute {
-                logical_index: (chunk.start_index + chunk_local_index) as u64,
-                chunk_index: chunk_index as u64,
-                chunk_start_index: chunk.start_index as u64,
-                chunk_local_index: chunk_local_index as u64,
-                digest: [0; 32],
-            };
-            routes.push(RowChunkRoute {
-                digest: route.expected_digest(),
-                ..route
-            });
+    let route_count = statement.chunks.iter().map(|chunk| chunk.steps.len()).sum();
+    if allow_parallel_root_execution_build(route_count) && statement.chunks.len() > 1 {
+        let chunk_routes = statement
+            .chunks
+            .par_iter()
+            .enumerate()
+            .map(|(chunk_index, chunk)| {
+                let mut routes = Vec::with_capacity(chunk.steps.len());
+                for (chunk_local_index, _) in chunk.steps.iter().enumerate() {
+                    let logical_index = (chunk.start_index + chunk_local_index) as u64;
+                    let chunk_index = chunk_index as u64;
+                    let chunk_start_index = chunk.start_index as u64;
+                    let chunk_local_index = chunk_local_index as u64;
+                    routes.push(RowChunkRoute {
+                        logical_index,
+                        chunk_index,
+                        chunk_start_index,
+                        chunk_local_index,
+                        digest: root_execution_row_chunk_route_digest(
+                            logical_index,
+                            chunk_index,
+                            chunk_start_index,
+                            chunk_local_index,
+                        ),
+                    });
+                }
+                routes
+            })
+            .collect::<Vec<_>>();
+        let mut routes = Vec::with_capacity(route_count);
+        for chunk_routes in chunk_routes {
+            routes.extend(chunk_routes);
         }
+        routes
+    } else {
+        let mut routes = Vec::with_capacity(route_count);
+        for (chunk_index, chunk) in statement.chunks.iter().enumerate() {
+            for (chunk_local_index, _) in chunk.steps.iter().enumerate() {
+                let logical_index = (chunk.start_index + chunk_local_index) as u64;
+                let chunk_index = chunk_index as u64;
+                let chunk_start_index = chunk.start_index as u64;
+                let chunk_local_index = chunk_local_index as u64;
+                routes.push(RowChunkRoute {
+                    logical_index,
+                    chunk_index,
+                    chunk_start_index,
+                    chunk_local_index,
+                    digest: root_execution_row_chunk_route_digest(
+                        logical_index,
+                        chunk_index,
+                        chunk_start_index,
+                        chunk_local_index,
+                    ),
+                });
+            }
+        }
+        routes
     }
-    routes
 }
 
 pub(crate) fn root_execution_public_step_digests(statement: &PublicStatement) -> Vec<[u8; 32]> {
@@ -454,6 +536,355 @@ pub(crate) fn root_execution_public_step_digests(statement: &PublicStatement) ->
         .iter()
         .flat_map(|chunk| chunk.steps.iter().map(public_step_digest))
         .collect()
+}
+
+pub(crate) fn validate_root_execution_semantic_rows(
+    rows: &[Rv64ExpandedRow],
+    semantic_rows: &[RootSemanticRow],
+    semantic_rows_digest: [u8; 32],
+) -> Result<(), SimpleKernelError> {
+    if semantic_rows.len() != rows.len() {
+        return Err(SimpleKernelError::Bridge(
+            "RV64IM root execution semantic rows do not match the carried execution rows".into(),
+        ));
+    }
+
+    let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/root_execution_semantic_rows");
+    tr.append_u64s(b"rv64im/root_execution_semantic_rows/len", &[rows.len() as u64]);
+    for (row, semantic_row) in rows.iter().zip(semantic_rows.iter()) {
+        let expected_values = semantic_row_from_execution_row(row);
+        if semantic_row.trace_index != row.trace_index
+            || semantic_row.values.as_slice() != expected_values.as_slice()
+            || semantic_row.row_digest != root_lane_row_digest(row.trace_index as u64, &expected_values)
+            || semantic_row.digest != semantic_row.expected_digest()
+        {
+            return Err(SimpleKernelError::Bridge(
+                "RV64IM root execution semantic-row digest mismatch".into(),
+            ));
+        }
+        tr.append_message(b"rv64im/root_execution_semantic_rows/row", &semantic_row.digest);
+    }
+
+    if semantic_rows_digest != tr.digest32() {
+        return Err(SimpleKernelError::Bridge(
+            "RV64IM root execution semantic-row digest mismatch".into(),
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_prepared_step_binding_summary(
+    rows: &[Rv64ExpandedRow],
+    semantic_rows: &[RootSemanticRow],
+    root_lane_columns: &RootLaneColumns,
+    prepared_step_bindings: &PreparedStepBindingSummary,
+) -> Result<(), SimpleKernelError> {
+    if semantic_rows.len() != rows.len()
+        || prepared_step_bindings.binding_count != prepared_step_bindings.bindings.len() as u64
+        || prepared_step_bindings.bindings.len() != rows.len()
+    {
+        return Err(SimpleKernelError::Bridge(
+            "RV64IM root execution prepared-step bindings mismatch".into(),
+        ));
+    }
+
+    let mut binding_tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/prepared_step_binding_summary");
+    binding_tr.append_u64s(
+        b"rv64im/prepared_step_binding_summary/len",
+        &[prepared_step_bindings.bindings.len() as u64],
+    );
+    let mut first_binding_digest = None;
+    let mut last_binding_digest = None;
+
+    for (logical_index, ((row, semantic_row), binding)) in rows
+        .iter()
+        .zip(semantic_rows.iter())
+        .zip(prepared_step_bindings.bindings.iter())
+        .enumerate()
+    {
+        let expected_values = semantic_row_from_execution_row(row);
+        let expected_row_digest = root_lane_row_digest(logical_index as u64, &expected_values);
+        let expected_row_opening_digest = selected_opening_ref_digest(
+            root_lane_columns.object.digest,
+            logical_index as u64,
+            expected_row_digest,
+        );
+        let expected_binding_digest = prepared_step_binding_digest(logical_index, row.trace_index, &expected_values);
+        if semantic_row.trace_index != row.trace_index
+            || binding.trace_index != row.trace_index
+            || binding.row_digest != expected_row_digest
+            || binding.row_opening_digest != expected_row_opening_digest
+            || binding.digest != expected_binding_digest
+        {
+            return Err(SimpleKernelError::Bridge(
+                "RV64IM root execution prepared-step bindings mismatch".into(),
+            ));
+        }
+
+        if first_binding_digest.is_none() {
+            first_binding_digest = Some(binding.digest);
+        }
+        last_binding_digest = Some(binding.digest);
+        binding_tr.append_message(b"rv64im/prepared_step_binding_summary/binding_digest", &binding.digest);
+    }
+    if prepared_step_bindings.first_binding_digest != first_binding_digest
+        || prepared_step_bindings.last_binding_digest != last_binding_digest
+        || prepared_step_bindings.digest != binding_tr.digest32()
+    {
+        return Err(SimpleKernelError::Bridge(
+            "RV64IM root execution prepared-step bindings mismatch".into(),
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_root_execution_row_chunk_routes(
+    routes: &[RowChunkRoute],
+    row_chunk_routes_digest: [u8; 32],
+) -> Result<(), SimpleKernelError> {
+    for (logical_index, route) in routes.iter().enumerate() {
+        if route.logical_index != logical_index as u64 || route.digest != route.expected_digest() {
+            return Err(SimpleKernelError::Bridge(
+                "RV64IM root execution row-to-chunk routing mismatch".into(),
+            ));
+        }
+    }
+    if row_chunk_routes_digest != root_execution_row_chunk_routes_digest(routes) {
+        return Err(SimpleKernelError::Bridge(
+            "RV64IM root execution row-to-chunk routing mismatch".into(),
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_root_execution_main_lane_chunk_layout(
+    statement: &PublicStatement,
+    row_chunk_routes: &[RowChunkRoute],
+) -> Result<(), SimpleKernelError> {
+    let mut route_index = 0usize;
+    for (chunk_index, chunk) in statement.chunks.iter().enumerate() {
+        if chunk.steps.is_empty() {
+            return Err(SimpleKernelError::Bridge(
+                "RV64IM root execution main-lane layout carries an empty public chunk".into(),
+            ));
+        }
+        for chunk_local_index in 0..chunk.steps.len() {
+            let route = row_chunk_routes.get(route_index).ok_or_else(|| {
+                SimpleKernelError::Bridge(
+                    "RV64IM root execution row-to-chunk routing ended before covering the verified main-lane statement"
+                        .into(),
+                )
+            })?;
+            if route.logical_index != (chunk.start_index + chunk_local_index) as u64
+                || route.chunk_index != chunk_index as u64
+                || route.chunk_start_index != chunk.start_index as u64
+                || route.chunk_local_index != chunk_local_index as u64
+            {
+                return Err(SimpleKernelError::Bridge(
+                    "RV64IM root execution row-to-chunk routing does not match the verified main-lane statement layout"
+                        .into(),
+                ));
+            }
+            route_index += 1;
+        }
+    }
+
+    if route_index != row_chunk_routes.len() {
+        return Err(SimpleKernelError::Bridge(
+            "RV64IM root execution row-to-chunk routing exceeds the verified main-lane statement layout".into(),
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_root_row_local_ccs_acceptance_summary(
+    prepared_step_bindings: &PreparedStepBindingSummary,
+    row_chunk_routes: &[RowChunkRoute],
+    public_step_digests: &[[u8; 32]],
+    summary: &RootRowLocalCcsAcceptanceSummary,
+) -> Result<(), SimpleKernelError> {
+    let acceptance_len = summary.acceptances.len();
+    if summary.acceptance_count != acceptance_len as u64
+        || acceptance_len != prepared_step_bindings.bindings.len()
+        || acceptance_len != row_chunk_routes.len()
+        || acceptance_len != public_step_digests.len()
+    {
+        return Err(SimpleKernelError::Bridge(
+            "RV64IM root execution row-local CCS acceptance mismatch".into(),
+        ));
+    }
+
+    let first_acceptance_digest = summary
+        .acceptances
+        .first()
+        .map(|acceptance| acceptance.digest);
+    let last_acceptance_digest = summary
+        .acceptances
+        .last()
+        .map(|acceptance| acceptance.digest);
+    if summary.first_acceptance_digest != first_acceptance_digest
+        || summary.last_acceptance_digest != last_acceptance_digest
+    {
+        return Err(SimpleKernelError::Bridge(
+            "RV64IM root execution row-local CCS acceptance mismatch".into(),
+        ));
+    }
+
+    let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/root_row_local_ccs_acceptance_summary");
+    tr.append_u64s(
+        b"rv64im/root_row_local_ccs_acceptance_summary/meta",
+        &[summary.acceptance_count, acceptance_len as u64],
+    );
+    tr.append_u64s(
+        b"rv64im/root_row_local_ccs_acceptance_summary/first_present",
+        &[first_acceptance_digest.is_some() as u64],
+    );
+    if let Some(digest) = &first_acceptance_digest {
+        tr.append_message(
+            b"rv64im/root_row_local_ccs_acceptance_summary/first_acceptance_digest",
+            digest,
+        );
+    }
+    tr.append_u64s(
+        b"rv64im/root_row_local_ccs_acceptance_summary/last_present",
+        &[last_acceptance_digest.is_some() as u64],
+    );
+    if let Some(digest) = &last_acceptance_digest {
+        tr.append_message(
+            b"rv64im/root_row_local_ccs_acceptance_summary/last_acceptance_digest",
+            digest,
+        );
+    }
+    for (logical_index, (((binding, route), public_step_digest), acceptance)) in prepared_step_bindings
+        .bindings
+        .iter()
+        .zip(row_chunk_routes.iter())
+        .zip(public_step_digests.iter())
+        .zip(summary.acceptances.iter())
+        .enumerate()
+    {
+        if route.logical_index != logical_index as u64
+            || acceptance.trace_index != binding.trace_index
+            || acceptance.logical_index != route.logical_index
+            || acceptance.row_digest != binding.row_digest
+            || acceptance.row_opening_digest != binding.row_opening_digest
+            || acceptance.prepared_step_binding_digest != binding.digest
+            || acceptance.row_chunk_route_digest != route.digest
+            || acceptance.public_step_digest != *public_step_digest
+            || acceptance.digest != acceptance.expected_digest()
+        {
+            return Err(SimpleKernelError::Bridge(
+                "RV64IM root execution row-local CCS acceptance mismatch".into(),
+            ));
+        }
+        tr.append_message(
+            b"rv64im/root_row_local_ccs_acceptance_summary/acceptance_digest",
+            &acceptance.digest,
+        );
+    }
+
+    if summary.digest != tr.digest32() {
+        return Err(SimpleKernelError::Bridge(
+            "RV64IM root execution row-local CCS acceptance mismatch".into(),
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_root_execution_semantics_refinement_summary(
+    semantic_rows: &[RootSemanticRow],
+    prepared_step_bindings: &PreparedStepBindingSummary,
+    row_local_ccs_acceptance: &RootRowLocalCcsAcceptanceSummary,
+    public_step_digests: &[[u8; 32]],
+    summary: &RootExecutionSemanticsRefinementSummary,
+) -> Result<(), SimpleKernelError> {
+    let refinement_len = summary.refinements.len();
+    if summary.refinement_count != refinement_len as u64
+        || refinement_len != semantic_rows.len()
+        || refinement_len != prepared_step_bindings.bindings.len()
+        || refinement_len != row_local_ccs_acceptance.acceptances.len()
+        || refinement_len != public_step_digests.len()
+    {
+        return Err(SimpleKernelError::Bridge(
+            "RV64IM root execution semantics refinement mismatch".into(),
+        ));
+    }
+
+    let first_refinement_digest = summary
+        .refinements
+        .first()
+        .map(|refinement| refinement.digest);
+    let last_refinement_digest = summary
+        .refinements
+        .last()
+        .map(|refinement| refinement.digest);
+    if summary.first_refinement_digest != first_refinement_digest
+        || summary.last_refinement_digest != last_refinement_digest
+    {
+        return Err(SimpleKernelError::Bridge(
+            "RV64IM root execution semantics refinement mismatch".into(),
+        ));
+    }
+
+    let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/root_execution_semantics_refinement_summary");
+    tr.append_u64s(
+        b"rv64im/root_execution_semantics_refinement_summary/meta",
+        &[summary.refinement_count, refinement_len as u64],
+    );
+    tr.append_u64s(
+        b"rv64im/root_execution_semantics_refinement_summary/first_present",
+        &[first_refinement_digest.is_some() as u64],
+    );
+    if let Some(digest) = &first_refinement_digest {
+        tr.append_message(
+            b"rv64im/root_execution_semantics_refinement_summary/first_refinement_digest",
+            digest,
+        );
+    }
+    tr.append_u64s(
+        b"rv64im/root_execution_semantics_refinement_summary/last_present",
+        &[last_refinement_digest.is_some() as u64],
+    );
+    if let Some(digest) = &last_refinement_digest {
+        tr.append_message(
+            b"rv64im/root_execution_semantics_refinement_summary/last_refinement_digest",
+            digest,
+        );
+    }
+
+    for ((((semantic_row, binding), acceptance), public_step_digest), refinement) in semantic_rows
+        .iter()
+        .zip(prepared_step_bindings.bindings.iter())
+        .zip(row_local_ccs_acceptance.acceptances.iter())
+        .zip(public_step_digests.iter())
+        .zip(summary.refinements.iter())
+    {
+        if semantic_row.trace_index != binding.trace_index
+            || semantic_row.trace_index != acceptance.trace_index
+            || refinement.trace_index != semantic_row.trace_index
+            || refinement.logical_index != acceptance.logical_index
+            || refinement.semantic_row_digest != semantic_row.digest
+            || refinement.row_local_ccs_acceptance_digest != acceptance.digest
+            || refinement.prepared_step_binding_digest != binding.digest
+            || refinement.public_step_digest != *public_step_digest
+            || refinement.digest != refinement.expected_digest()
+        {
+            return Err(SimpleKernelError::Bridge(
+                "RV64IM root execution semantics refinement mismatch".into(),
+            ));
+        }
+        tr.append_message(
+            b"rv64im/root_execution_semantics_refinement_summary/refinement_digest",
+            &refinement.digest,
+        );
+    }
+
+    if summary.digest != tr.digest32() {
+        return Err(SimpleKernelError::Bridge(
+            "RV64IM root execution semantics refinement mismatch".into(),
+        ));
+    }
+    Ok(())
 }
 
 pub(crate) fn build_root_row_local_ccs_acceptance_summary(
@@ -499,6 +930,7 @@ pub(crate) fn build_root_row_local_ccs_acceptance_summary(
             ..acceptance
         });
     }
+
     let summary = RootRowLocalCcsAcceptanceSummary {
         acceptance_count: acceptances.len() as u64,
         first_acceptance_digest: acceptances.first().map(|acceptance| acceptance.digest),
@@ -564,6 +996,7 @@ pub(crate) fn build_root_execution_semantics_refinement_summary(
             ..refinement
         });
     }
+
     let summary = RootExecutionSemanticsRefinementSummary {
         refinement_count: refinements.len() as u64,
         first_refinement_digest: refinements.first().map(|refinement| refinement.digest),

@@ -12,16 +12,33 @@ use neo_params::NeoParams;
 use neo_reductions::api::FoldingMode;
 use neo_reductions::engines::utils::me_digest_poseidon_into;
 use neo_reductions::error::PiCcsError;
+use neo_reductions::optimized_engine::OptimizedStructureCache;
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
 use serde::{Deserialize, Serialize};
 
+use crate::chunk_relation::chunk_relation_digest;
 use crate::proof::{
     ChunkProof, FinalProof, FoldSchedule, PackagedProof, PublicChunk, PublicStatement, PublicStep, RunProof,
     RunVerifyPerf,
 };
 use crate::prover::CommitmentMixers;
-use crate::run::{verify_chunks, verify_chunks_with_perf};
+use crate::run::{
+    verify_chunks, verify_chunks_with_perf_and_cache, verify_chunks_with_precomputed_chunk_digests_and_perf_and_cache,
+};
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct PackagedVerifyPerf {
+    pub statement_digest_ms: f64,
+    pub chunk_digests_ms: f64,
+    pub final_main_claim_digests_ms: f64,
+    pub statement_hash_ms: f64,
+    pub schedule_checks_ms: f64,
+    pub proof_digest_ms: f64,
+    pub final_claim_match_ms: f64,
+    pub session: RunVerifyPerf,
+    pub total_ms: f64,
+}
 
 #[inline]
 fn extend_packed_bytes_as_fields(dst: &mut Vec<F>, bytes: &[u8]) {
@@ -328,31 +345,39 @@ fn public_chunk_digest_fields_into(
     poseidon_digest_fields(chunk_scratch)
 }
 
-fn ce_claim_ref_digest_fields(claim: &CeClaim<Commitment, F, K>) -> [F; 4] {
-    let mut digest_input = Vec::<F>::with_capacity(32);
-    extend_packed_bytes_as_fields(&mut digest_input, b"neo.fold.next/finalize/ce_claim_ref_digest/v1");
-    extend_packed_bytes_as_fields(&mut digest_input, &claim.fold_digest);
-    digest_input.push(F::from_u64(claim.m_in as u64));
-    digest_input.push(F::from_u64(claim.u_offset as u64));
-    digest_input.push(F::from_u64(claim.u_len as u64));
-    poseidon_digest_fields(&digest_input)
-}
-
 fn chunk_proof_compact_digest_fields(chunk: &ChunkProof, public_chunk_digest: [F; 4]) -> [F; 4] {
+    let relation_digest = digest32_as_fields(chunk_relation_digest(
+        &chunk.ccs_outputs,
+        &chunk.rlc.parent,
+        &chunk.dec.children,
+    ));
     let mut digest_input = Vec::<F>::with_capacity(128 + (chunk.chunk.steps.len() * 4));
     extend_packed_bytes_as_fields(
         &mut digest_input,
-        b"neo.fold.next/finalize/chunk_proof_compact_digest/v1",
+        b"neo.fold.next/finalize/chunk_proof_compact_digest/v2",
     );
     digest_input.extend_from_slice(&public_chunk_digest);
     digest_input.push(F::from_u64(chunk.ccs_outputs.len() as u64));
-    digest_input.push(F::from_u64(chunk.rlc.rhos.len() as u64));
     digest_input.push(F::from_u64(chunk.dec.children.len() as u64));
     extend_packed_bytes_as_fields(&mut digest_input, &chunk.ccs_proof.header_digest);
-    digest_input.extend_from_slice(&ce_claim_ref_digest_fields(&chunk.rlc.parent));
-    for child in &chunk.dec.children {
-        digest_input.extend_from_slice(&ce_claim_ref_digest_fields(child));
-    }
+    digest_input.extend_from_slice(&relation_digest);
+    poseidon_digest_fields(&digest_input)
+}
+
+fn chunk_proof_compact_digest_fields_from_carried_relation_digest(
+    chunk: &ChunkProof,
+    public_chunk_digest: [F; 4],
+) -> [F; 4] {
+    let mut digest_input = Vec::<F>::with_capacity(128 + (chunk.chunk.steps.len() * 4));
+    extend_packed_bytes_as_fields(
+        &mut digest_input,
+        b"neo.fold.next/finalize/chunk_proof_compact_digest/v2",
+    );
+    digest_input.extend_from_slice(&public_chunk_digest);
+    digest_input.push(F::from_u64(chunk.ccs_outputs.len() as u64));
+    digest_input.push(F::from_u64(chunk.dec.children.len() as u64));
+    extend_packed_bytes_as_fields(&mut digest_input, &chunk.ccs_proof.header_digest);
+    digest_input.extend_from_slice(&digest32_as_fields(chunk.relation_digest));
     poseidon_digest_fields(&digest_input)
 }
 
@@ -372,7 +397,14 @@ fn public_chunk_digests(chunks: &[PublicChunk]) -> Vec<[F; 4]> {
     digests
 }
 
-fn final_main_claim_digests(final_main_claims: &[CeClaim<Commitment, F, K>]) -> Vec<[F; 4]> {
+pub(crate) fn public_chunk_digest(chunk: &PublicChunk) -> [F; 4] {
+    let mut claim_scratch = Vec::<F>::with_capacity(256);
+    let mut step_scratch = Vec::<F>::with_capacity(96);
+    let mut chunk_scratch = Vec::<F>::new();
+    public_chunk_digest_fields_into(chunk, &mut claim_scratch, &mut step_scratch, &mut chunk_scratch)
+}
+
+pub(crate) fn final_main_claim_digests(final_main_claims: &[CeClaim<Commitment, F, K>]) -> Vec<[F; 4]> {
     let mut digests = Vec::with_capacity(final_main_claims.len());
     let mut scratch = Vec::<F>::with_capacity(2048);
     for claim in final_main_claims {
@@ -381,7 +413,7 @@ fn final_main_claim_digests(final_main_claims: &[CeClaim<Commitment, F, K>]) -> 
     digests
 }
 
-fn digest_public_statement_from_digests(
+pub(crate) fn digest_public_statement_from_digests(
     schedule: FoldSchedule,
     chunk_digests: &[[F; 4]],
     final_main_claim_digests: &[[F; 4]],
@@ -415,6 +447,33 @@ fn digest_final_proof_from_chunk_digests(
     session: &RunProof,
     public_chunk_digests: &[[F; 4]],
 ) -> [u8; 32] {
+    digest_final_proof_from_chunk_digests_with(
+        statement_digest,
+        session,
+        public_chunk_digests,
+        chunk_proof_compact_digest_fields,
+    )
+}
+
+fn digest_final_proof_from_carried_chunk_relation_digests(
+    statement_digest: &[u8; 32],
+    session: &RunProof,
+    public_chunk_digests: &[[F; 4]],
+) -> [u8; 32] {
+    digest_final_proof_from_chunk_digests_with(
+        statement_digest,
+        session,
+        public_chunk_digests,
+        chunk_proof_compact_digest_fields_from_carried_relation_digest,
+    )
+}
+
+fn digest_final_proof_from_chunk_digests_with(
+    statement_digest: &[u8; 32],
+    session: &RunProof,
+    public_chunk_digests: &[[F; 4]],
+    compact_digest: fn(&ChunkProof, [F; 4]) -> [F; 4],
+) -> [u8; 32] {
     let mut tr = Poseidon2Transcript::new(b"neo.fold.next/final_proof");
     tr.append_message(b"neo.fold.next/final_proof/version", b"v4");
     tr.append_message(b"neo.fold.next/final_proof/statement_digest", statement_digest);
@@ -434,7 +493,7 @@ fn digest_final_proof_from_chunk_digests(
             .chunks
             .iter()
             .zip(public_chunk_digests.iter())
-            .flat_map(|(chunk, public_chunk_digest)| chunk_proof_compact_digest_fields(chunk, *public_chunk_digest)),
+            .flat_map(|(chunk, public_chunk_digest)| compact_digest(chunk, *public_chunk_digest)),
     );
     tr.digest32()
 }
@@ -543,7 +602,8 @@ pub fn package_session_proof(chunks: Vec<PublicChunk>, session: RunProof) -> Res
     let final_main_claim_digests = final_main_claim_digests(&session.final_main_claims);
     let statement_digest =
         digest_public_statement_from_digests(session.fold_schedule, &chunk_digests, &final_main_claim_digests);
-    let proof_digest = digest_final_proof_from_chunk_digests(&statement_digest, &session, &chunk_digests);
+    let proof_digest =
+        digest_final_proof_from_carried_chunk_relation_digests(&statement_digest, &session, &chunk_digests);
 
     Ok(PackagedProof {
         statement: PublicStatement {
@@ -590,6 +650,229 @@ where
     Ok((verified, perf.expect("verify perf requested")))
 }
 
+pub fn verify_finalized_session_with_perf_and_cache<MR, MB>(
+    mode: FoldingMode,
+    params: &NeoParams,
+    s: &CcsStructure<F>,
+    packaged: &PackagedProof,
+    mixers: CommitmentMixers<MR, MB>,
+    provided_cache: Option<&OptimizedStructureCache>,
+) -> Result<(Vec<CeClaim<Commitment, F, K>>, RunVerifyPerf), PiCcsError>
+where
+    MR: Fn(&[Mat<F>], &[Commitment]) -> Commitment + Clone + Copy,
+    MB: Fn(&[Commitment], u32) -> Commitment + Clone + Copy,
+{
+    let (verified, perf) =
+        verify_finalized_session_inner_with_cache(mode, params, s, packaged, mixers, true, provided_cache)?;
+    Ok((verified, perf.expect("verify perf requested")))
+}
+
+pub(crate) fn verify_finalized_session_with_detailed_perf_and_cache<MR, MB>(
+    mode: FoldingMode,
+    params: &NeoParams,
+    s: &CcsStructure<F>,
+    packaged: &PackagedProof,
+    mixers: CommitmentMixers<MR, MB>,
+    provided_cache: Option<&OptimizedStructureCache>,
+) -> Result<(Vec<CeClaim<Commitment, F, K>>, PackagedVerifyPerf), PiCcsError>
+where
+    MR: Fn(&[Mat<F>], &[Commitment]) -> Commitment + Clone + Copy,
+    MB: Fn(&[Commitment], u32) -> Commitment + Clone + Copy,
+{
+    let total_started = std::time::Instant::now();
+
+    let statement_digest_started = std::time::Instant::now();
+    let chunk_digests_started = std::time::Instant::now();
+    let chunk_digests = public_chunk_digests(&packaged.statement.chunks);
+    let chunk_digests_ms = chunk_digests_started.elapsed().as_secs_f64() * 1_000.0;
+    let final_main_claim_digests_started = std::time::Instant::now();
+    let final_main_claim_digests = final_main_claim_digests(&packaged.statement.final_main_claims);
+    let final_main_claim_digests_ms = final_main_claim_digests_started.elapsed().as_secs_f64() * 1_000.0;
+    let statement_hash_started = std::time::Instant::now();
+    let expected_statement_digest = digest_public_statement_from_digests(
+        packaged.statement.fold_schedule,
+        &chunk_digests,
+        &final_main_claim_digests,
+    );
+    if packaged.statement.digest != expected_statement_digest {
+        return Err(PiCcsError::ProtocolError("final statement digest mismatch".into()));
+    }
+    let statement_hash_ms = statement_hash_started.elapsed().as_secs_f64() * 1_000.0;
+    let statement_digest_ms = statement_digest_started.elapsed().as_secs_f64() * 1_000.0;
+
+    let schedule_checks_started = std::time::Instant::now();
+    let public_step_count = packaged
+        .statement
+        .chunks
+        .iter()
+        .map(|chunk| chunk.steps.len())
+        .sum();
+    if packaged.statement.chunk_count as usize != packaged.statement.chunks.len() {
+        return Err(PiCcsError::ProtocolError(
+            "final statement chunk_count does not match chunk list".into(),
+        ));
+    }
+    validate_chunk_schedule(
+        packaged.statement.fold_schedule,
+        packaged.statement.chunks.len(),
+        public_step_count,
+    )?;
+    if packaged.proof.session.fold_schedule != packaged.statement.fold_schedule {
+        return Err(PiCcsError::ProtocolError(
+            "final proof schedule does not match public statement schedule".into(),
+        ));
+    }
+    let schedule_checks_ms = schedule_checks_started.elapsed().as_secs_f64() * 1_000.0;
+
+    let proof_digest_started = std::time::Instant::now();
+    let expected_digest =
+        digest_final_proof_from_chunk_digests(&packaged.statement.digest, &packaged.proof.session, &chunk_digests);
+    if packaged.proof.proof_digest != expected_digest {
+        return Err(PiCcsError::ProtocolError("final proof digest mismatch".into()));
+    }
+    let proof_digest_ms = proof_digest_started.elapsed().as_secs_f64() * 1_000.0;
+
+    let (verified, session) = verify_chunks_with_perf_and_cache(
+        mode,
+        params,
+        s,
+        &packaged.statement.chunks,
+        &packaged.proof.session,
+        mixers,
+        provided_cache,
+    )?;
+
+    let final_claim_match_started = std::time::Instant::now();
+    if verified != packaged.statement.final_main_claims {
+        return Err(PiCcsError::ProtocolError(
+            "final public statement claims do not match verified output".into(),
+        ));
+    }
+    let final_claim_match_ms = final_claim_match_started.elapsed().as_secs_f64() * 1_000.0;
+
+    Ok((
+        verified,
+        PackagedVerifyPerf {
+            statement_digest_ms,
+            chunk_digests_ms,
+            final_main_claim_digests_ms,
+            statement_hash_ms,
+            schedule_checks_ms,
+            proof_digest_ms,
+            final_claim_match_ms,
+            session,
+            total_ms: total_started.elapsed().as_secs_f64() * 1_000.0,
+        },
+    ))
+}
+
+pub(crate) fn verify_finalized_session_with_precomputed_chunk_digests_and_detailed_perf_and_cache<MR, MB>(
+    mode: FoldingMode,
+    params: &NeoParams,
+    s: &CcsStructure<F>,
+    packaged: &PackagedProof,
+    public_chunk_digests: &[[F; 4]],
+    mixers: CommitmentMixers<MR, MB>,
+    provided_cache: Option<&OptimizedStructureCache>,
+) -> Result<(Vec<CeClaim<Commitment, F, K>>, PackagedVerifyPerf), PiCcsError>
+where
+    MR: Fn(&[Mat<F>], &[Commitment]) -> Commitment + Clone + Copy,
+    MB: Fn(&[Commitment], u32) -> Commitment + Clone + Copy,
+{
+    let total_started = std::time::Instant::now();
+
+    if packaged.statement.chunks.len() != public_chunk_digests.len() {
+        return Err(PiCcsError::ProtocolError(
+            "precomputed chunk digests do not match packaged statement layout".into(),
+        ));
+    }
+
+    let statement_digest_started = std::time::Instant::now();
+    let final_main_claim_digests_started = std::time::Instant::now();
+    let final_main_claim_digests = final_main_claim_digests(&packaged.statement.final_main_claims);
+    let final_main_claim_digests_ms = final_main_claim_digests_started.elapsed().as_secs_f64() * 1_000.0;
+    let statement_hash_started = std::time::Instant::now();
+    let expected_statement_digest = digest_public_statement_from_digests(
+        packaged.statement.fold_schedule,
+        public_chunk_digests,
+        &final_main_claim_digests,
+    );
+    if packaged.statement.digest != expected_statement_digest {
+        return Err(PiCcsError::ProtocolError("final statement digest mismatch".into()));
+    }
+    let statement_hash_ms = statement_hash_started.elapsed().as_secs_f64() * 1_000.0;
+    let statement_digest_ms = statement_digest_started.elapsed().as_secs_f64() * 1_000.0;
+
+    let schedule_checks_started = std::time::Instant::now();
+    let public_step_count = packaged
+        .statement
+        .chunks
+        .iter()
+        .map(|chunk| chunk.steps.len())
+        .sum();
+    if packaged.statement.chunk_count as usize != packaged.statement.chunks.len() {
+        return Err(PiCcsError::ProtocolError(
+            "final statement chunk_count does not match chunk list".into(),
+        ));
+    }
+    validate_chunk_schedule(
+        packaged.statement.fold_schedule,
+        packaged.statement.chunks.len(),
+        public_step_count,
+    )?;
+    if packaged.proof.session.fold_schedule != packaged.statement.fold_schedule {
+        return Err(PiCcsError::ProtocolError(
+            "final proof schedule does not match public statement schedule".into(),
+        ));
+    }
+    let schedule_checks_ms = schedule_checks_started.elapsed().as_secs_f64() * 1_000.0;
+
+    let proof_digest_started = std::time::Instant::now();
+    let expected_digest = digest_final_proof_from_carried_chunk_relation_digests(
+        &packaged.statement.digest,
+        &packaged.proof.session,
+        public_chunk_digests,
+    );
+    if packaged.proof.proof_digest != expected_digest {
+        return Err(PiCcsError::ProtocolError("final proof digest mismatch".into()));
+    }
+    let proof_digest_ms = proof_digest_started.elapsed().as_secs_f64() * 1_000.0;
+
+    let (verified, session) = verify_chunks_with_precomputed_chunk_digests_and_perf_and_cache(
+        mode,
+        params,
+        s,
+        &packaged.statement.chunks,
+        &packaged.proof.session,
+        public_chunk_digests,
+        mixers,
+        provided_cache,
+    )?;
+
+    let final_claim_match_started = std::time::Instant::now();
+    if verified != packaged.statement.final_main_claims {
+        return Err(PiCcsError::ProtocolError(
+            "final public statement claims do not match verified output".into(),
+        ));
+    }
+    let final_claim_match_ms = final_claim_match_started.elapsed().as_secs_f64() * 1_000.0;
+
+    Ok((
+        verified,
+        PackagedVerifyPerf {
+            statement_digest_ms,
+            chunk_digests_ms: 0.0,
+            final_main_claim_digests_ms,
+            statement_hash_ms,
+            schedule_checks_ms,
+            proof_digest_ms,
+            final_claim_match_ms,
+            session,
+            total_ms: total_started.elapsed().as_secs_f64() * 1_000.0,
+        },
+    ))
+}
+
 fn verify_finalized_session_inner<MR, MB>(
     mode: FoldingMode,
     params: &NeoParams,
@@ -597,6 +880,22 @@ fn verify_finalized_session_inner<MR, MB>(
     packaged: &PackagedProof,
     mixers: CommitmentMixers<MR, MB>,
     with_perf: bool,
+) -> Result<(Vec<CeClaim<Commitment, F, K>>, Option<RunVerifyPerf>), PiCcsError>
+where
+    MR: Fn(&[Mat<F>], &[Commitment]) -> Commitment + Clone + Copy,
+    MB: Fn(&[Commitment], u32) -> Commitment + Clone + Copy,
+{
+    verify_finalized_session_inner_with_cache(mode, params, s, packaged, mixers, with_perf, None)
+}
+
+fn verify_finalized_session_inner_with_cache<MR, MB>(
+    mode: FoldingMode,
+    params: &NeoParams,
+    s: &CcsStructure<F>,
+    packaged: &PackagedProof,
+    mixers: CommitmentMixers<MR, MB>,
+    with_perf: bool,
+    provided_cache: Option<&OptimizedStructureCache>,
 ) -> Result<(Vec<CeClaim<Commitment, F, K>>, Option<RunVerifyPerf>), PiCcsError>
 where
     MR: Fn(&[Mat<F>], &[Commitment]) -> Commitment + Clone + Copy,
@@ -641,13 +940,14 @@ where
     }
 
     let (verified, perf) = if with_perf {
-        let (verified, perf) = verify_chunks_with_perf(
+        let (verified, perf) = verify_chunks_with_perf_and_cache(
             mode,
             params,
             s,
             &packaged.statement.chunks,
             &packaged.proof.session,
             mixers,
+            provided_cache,
         )?;
         (verified, Some(perf))
     } else {

@@ -1,8 +1,11 @@
 use crate::common::proof_cases::{
     alu_input, branch_input, divu_input, expect_accepted_verify_failure, memory_input, prove_accepted,
-    refresh_soundness_accounting_surface_digest, refresh_stage1_semantic_digests, refresh_stage3_semantic_digests,
+    refresh_accepted_artifact_digest, refresh_soundness_accounting_surface_digest, refresh_stage1_semantic_digests,
+    refresh_stage3_semantic_digests,
 };
 use neo_fold_next::rv64im::{verify_rv64im_accepted_proof, Rv64Opcode};
+use neo_math::F;
+use p3_field::PrimeCharacteristicRing;
 
 #[test]
 fn redteam_semantic_input_substitution_fails_without_rebuild() {
@@ -39,7 +42,7 @@ fn redteam_register_history_forgery_fails() {
     let input = memory_input();
     let (mut artifact, _) = prove_accepted(&input);
     artifact.stage2.register.writes[0].next ^= 1;
-    expect_accepted_verify_failure(&artifact, "stage2 event surface mismatch");
+    expect_accepted_verify_failure(&artifact, "stage2 register write surface mismatch");
 }
 
 #[test]
@@ -47,7 +50,7 @@ fn redteam_ram_history_forgery_fails() {
     let input = memory_input();
     let (mut artifact, _) = prove_accepted(&input);
     artifact.stage2.ram.events[0].previous ^= 1;
-    expect_accepted_verify_failure(&artifact, "stage2 event surface mismatch");
+    expect_accepted_verify_failure(&artifact, "stage2 RAM event surface mismatch");
 }
 
 #[test]
@@ -75,10 +78,20 @@ fn redteam_provenance_tamper_fails() {
 }
 
 #[test]
+fn redteam_public_chunk_digest_replay_tamper_fails() {
+    let input = alu_input();
+    let (mut artifact, _) = prove_accepted(&input);
+    artifact.root_execution.public_chunk_digests[0][0] += F::from_u64(1);
+    artifact.root_execution.digest = artifact.root_execution.expected_digest();
+    refresh_accepted_artifact_digest(&mut artifact);
+    expect_accepted_verify_failure(&artifact, "final statement digest mismatch");
+}
+
+#[test]
 fn redteam_rebuild_dependence_check_fails_without_audit_mode() {
     let input = alu_input();
     let (mut artifact, _) = prove_accepted(&input);
-    artifact.root_execution.prepared_step_bindings.bindings[0].row_opening_digest = [0x5A; 32];
+    artifact.root_execution.prepared_step_bindings.bindings[0].row_digest = [0x5A; 32];
     assert!(
         verify_rv64im_accepted_proof(&artifact).is_err(),
         "accepted verification must fail without relying on rebuild"

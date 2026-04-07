@@ -3532,7 +3532,7 @@ Normative rule for `RootEncode`:
      `root_params` to that `D × cols` matrix to obtain `Z_j`.
 - Equivalently, `Z_j ∈ F^{D × ceil(24 / D)}` with the column-major placement of
   the padded semantic row fixed exactly by the previous rule.
-- Any implementation helper such as `encode_vector_for_ccs_m(root_params, 24, z_j)`
+- Any implementation helper such as `encode_vector_for_full_width(root_params, 24, z_j)`
   is conforming only if it implements exactly this algorithm.
 - Balanced base-`b` digit decomposition is a later NC/range-check view of the
   packed witness. It is **not** part of `RootEncode`.

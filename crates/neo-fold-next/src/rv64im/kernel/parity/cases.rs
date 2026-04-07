@@ -1085,7 +1085,7 @@ pub(crate) fn rv64im_source_case_digest(source: &Rv64imParitySourceCase) -> [u8;
     )
 }
 
-fn digest_rows(rows: &[Rv64ExpandedRow]) -> [u8; 32] {
+pub(crate) fn digest_rows(rows: &[Rv64ExpandedRow]) -> [u8; 32] {
     let mut sections = Vec::with_capacity(rows.len());
     for row in rows {
         sections.push((b"execution/row".as_slice(), flatten_row(row)));

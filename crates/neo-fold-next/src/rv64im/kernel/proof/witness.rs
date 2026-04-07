@@ -11,7 +11,7 @@ use super::{
     SimpleKernelKernelClaimBundle, SimpleKernelOpeningBundle, SimpleKernelStageClaimBundle,
     SimpleKernelStagePackageBundle, SimpleKernelStageWitnessBundle, SimpleKernelTraceWitness,
 };
-use crate::proof::PackagedProof;
+use crate::proof::{PackagedProof, PublicStep};
 use crate::rv64im::lower::Rv64ExpandedRow;
 use crate::rv64im::stage1::Stage1Summary;
 use crate::rv64im::stage2::Stage2Summary;
@@ -77,6 +77,13 @@ pub struct Rv64imKernelClaimSummaryBundle {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Rv64imKernelClaimSummaryProofBundle {
     pub summary: Rv64imKernelClaimSummaryBundle,
+    pub digest: [u8; 32],
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Rv64imKernelExportClaimProof {
+    pub final_state_digest: [u8; 32],
+    pub packaged: PackagedProof,
     pub digest: [u8; 32],
 }
 
@@ -238,30 +245,59 @@ fn stage_claim_bundle_words(claims: &SimpleKernelStageClaimBundle) -> Vec<u64> {
     words
 }
 
-fn kernel_claim_bundle_words(claims: &SimpleKernelKernelClaimBundle) -> Vec<u64> {
+pub(crate) fn kernel_claim_words_from_components(
+    prepared_step_bindings_digest: [u8; 32],
+    binding_count: u64,
+    first_binding_digest: Option<[u8; 32]>,
+    last_binding_digest: Option<[u8; 32]>,
+    root0_digest: [u8; 32],
+    execution_digest: [u8; 32],
+    final_state_digest: [u8; 32],
+    transcript_final_digest: [u8; 32],
+    final_pc: u64,
+    halted: bool,
+) -> Vec<u64> {
     let mut words = Vec::with_capacity(28);
-    words.extend(digest_to_words(claims.prepared_step_bindings.digest));
-    words.extend([
-        claims.prepared_step_bindings.binding_count,
-        claims.prepared_step_bindings.first_binding_digest.is_some() as u64,
-    ]);
-    if let Some(first) = claims.prepared_step_bindings.first_binding_digest {
+    words.extend(digest_to_words(prepared_step_bindings_digest));
+    words.extend([binding_count, first_binding_digest.is_some() as u64]);
+    if let Some(first) = first_binding_digest {
         words.extend(digest_to_words(first));
     } else {
         words.extend([0; 4]);
     }
-    words.extend([claims.prepared_step_bindings.last_binding_digest.is_some() as u64]);
-    if let Some(last) = claims.prepared_step_bindings.last_binding_digest {
+    words.extend([last_binding_digest.is_some() as u64]);
+    if let Some(last) = last_binding_digest {
         words.extend(digest_to_words(last));
     } else {
         words.extend([0; 4]);
     }
-    words.extend(digest_to_words(claims.kernel.root0_digest));
-    words.extend(digest_to_words(claims.kernel.execution_digest));
-    words.extend(digest_to_words(claims.kernel.final_state_digest));
-    words.extend(digest_to_words(claims.kernel.transcript_final_digest));
-    words.extend([claims.kernel.final_pc, claims.kernel.halted as u64]);
+    words.extend(digest_to_words(root0_digest));
+    words.extend(digest_to_words(execution_digest));
+    words.extend(digest_to_words(final_state_digest));
+    words.extend(digest_to_words(transcript_final_digest));
+    words.extend([final_pc, halted as u64]);
     words
+}
+
+fn kernel_export_claim_words_from_components(final_state_digest: [u8; 32]) -> Vec<u64> {
+    let mut words = Vec::with_capacity(4);
+    words.extend(digest_to_words(final_state_digest));
+    words
+}
+
+fn kernel_claim_bundle_words(claims: &SimpleKernelKernelClaimBundle) -> Vec<u64> {
+    kernel_claim_words_from_components(
+        claims.prepared_step_bindings.digest,
+        claims.prepared_step_bindings.binding_count,
+        claims.prepared_step_bindings.first_binding_digest,
+        claims.prepared_step_bindings.last_binding_digest,
+        claims.kernel.root0_digest,
+        claims.kernel.execution_digest,
+        claims.kernel.final_state_digest,
+        claims.kernel.transcript_final_digest,
+        claims.kernel.final_pc,
+        claims.kernel.halted,
+    )
 }
 
 fn packaged_claim_proof_digest(label: &'static [u8], summary_digest: [u8; 32], packaged: &PackagedProof) -> [u8; 32] {
@@ -285,6 +321,15 @@ pub(crate) fn verify_stage_claim_packaged_proof(
     verify_claim_packaged_proof("rv64im/stage_claim_bundle", &stage_claim_bundle_words(claims), packaged)
 }
 
+pub(crate) fn build_stage_claim_packaged_public_step(
+    claims: &SimpleKernelStageClaimBundle,
+) -> Result<PublicStep, SimpleKernelError> {
+    super::stage_artifacts::build_claim_packaged_public_step(
+        "rv64im/stage_claim_bundle",
+        &stage_claim_bundle_words(claims),
+    )
+}
+
 pub(crate) fn build_kernel_claim_packaged_proof(
     claims: &SimpleKernelKernelClaimBundle,
 ) -> Result<PackagedProof, SimpleKernelError> {
@@ -298,6 +343,46 @@ pub(crate) fn verify_kernel_claim_packaged_proof(
     verify_claim_packaged_proof(
         "rv64im/kernel_claim_bundle",
         &kernel_claim_bundle_words(claims),
+        packaged,
+    )
+}
+
+pub(crate) fn build_kernel_claim_packaged_public_step_from_compact_surfaces(
+    prepared_step_bindings_digest: [u8; 32],
+    binding_count: u64,
+    first_binding_digest: Option<[u8; 32]>,
+    last_binding_digest: Option<[u8; 32]>,
+    root0_digest: [u8; 32],
+    execution_digest: [u8; 32],
+    final_state_digest: [u8; 32],
+    transcript_final_digest: [u8; 32],
+    final_pc: u64,
+    halted: bool,
+) -> Result<PublicStep, SimpleKernelError> {
+    super::stage_artifacts::build_claim_packaged_public_step(
+        "rv64im/kernel_claim_bundle",
+        &kernel_claim_words_from_components(
+            prepared_step_bindings_digest,
+            binding_count,
+            first_binding_digest,
+            last_binding_digest,
+            root0_digest,
+            execution_digest,
+            final_state_digest,
+            transcript_final_digest,
+            final_pc,
+            halted,
+        ),
+    )
+}
+
+pub(crate) fn verify_kernel_export_claim_packaged_proof(
+    claims: &Rv64imKernelExportClaimProof,
+    packaged: &PackagedProof,
+) -> Result<(), SimpleKernelError> {
+    verify_claim_packaged_proof(
+        "rv64im/kernel_export_claim_bundle",
+        &kernel_export_claim_words_from_components(claims.final_state_digest()),
         packaged,
     )
 }
@@ -536,6 +621,47 @@ impl Rv64imKernelClaimProofBundle {
             ..summary
         }
     }
+}
+
+impl Rv64imKernelExportClaimProof {
+    pub(crate) fn summary_digest(&self) -> [u8; 32] {
+        let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/kernel_export_claim_terminal");
+        tr.append_message(
+            b"rv64im/kernel_export_claim_terminal/final_state_digest",
+            &self.final_state_digest,
+        );
+        tr.digest32()
+    }
+
+    pub(crate) fn expected_digest(&self) -> [u8; 32] {
+        packaged_claim_proof_digest(
+            b"neo.fold.next/rv64im/kernel_export_claim_proof",
+            self.summary_digest(),
+            &self.packaged,
+        )
+    }
+
+    pub fn final_state_digest(&self) -> [u8; 32] {
+        self.final_state_digest
+    }
+}
+
+pub(crate) fn kernel_export_claim_proof_from_bundle(
+    bundle: &Rv64imKernelClaimProofBundle,
+) -> Result<Rv64imKernelExportClaimProof, SimpleKernelError> {
+    let packaged = build_claim_packaged_proof(
+        "rv64im/kernel_export_claim_bundle",
+        &kernel_export_claim_words_from_components(bundle.final_state_digest()),
+    )?;
+    let proof = Rv64imKernelExportClaimProof {
+        final_state_digest: bundle.final_state_digest(),
+        packaged,
+        digest: [0; 32],
+    };
+    Ok(Rv64imKernelExportClaimProof {
+        digest: proof.expected_digest(),
+        ..proof
+    })
 }
 
 impl Rv64imStageClaimDigestBundle {

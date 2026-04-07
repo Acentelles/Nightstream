@@ -12,7 +12,7 @@ use crate::rv64im::tables::Rv64FamilyTag;
 use crate::rv64im::isa::Rv64Opcode;
 
 use super::semantic_inputs::{build_sem_inputs, sem_inputs_digest, SemIn};
-use super::semantics::{build_stage1_semantics_proof, Stage1SemanticsProof};
+use super::semantics::{build_stage1_semantics_proof_from_digests, Stage1SemanticsProof};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Stage1RowBinding {
@@ -134,6 +134,33 @@ pub(crate) fn stage1_row_words(row: &Stage1RowBinding) -> [u64; 23] {
     ]
 }
 
+pub fn stage1_row_word_width() -> usize {
+    stage1_row_words(&Stage1RowBinding {
+        trace_index: 0,
+        step_index: 0,
+        sequence_index: 0,
+        fetch_pc: 0,
+        fetched_word: 0,
+        opcode: Rv64Opcode::Addi,
+        trace_opcode: None,
+        trace_virtual_opcode: None,
+        family: Rv64FamilyTag::NativeAlu,
+        next_pc: 0,
+        alu_result: 0,
+        effective_addr: None,
+        writes_rd: false,
+        rd: 0,
+        rd_after: 0,
+        is_first_in_sequence: false,
+        virtual_sequence_remaining: None,
+        is_effect_row: false,
+        is_commit_row: false,
+        is_real: false,
+        preserves_x0: true,
+    })
+    .len()
+}
+
 pub(crate) fn stage1_row_digest(row: &Stage1RowBinding) -> [u8; 32] {
     let words = stage1_row_words(row);
     let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/stage1_selected_row");
@@ -141,34 +168,35 @@ pub(crate) fn stage1_row_digest(row: &Stage1RowBinding) -> [u8; 32] {
     tr.digest32()
 }
 
+pub(crate) fn stage1_row_binding_from_row(row: &Rv64ExpandedRow) -> Stage1RowBinding {
+    Stage1RowBinding {
+        trace_index: row.trace_index,
+        step_index: row.step_index,
+        sequence_index: row.sequence_index,
+        fetch_pc: row.pc,
+        fetched_word: row.word,
+        opcode: row.opcode,
+        trace_opcode: row.trace_opcode,
+        trace_virtual_opcode: row.trace_virtual_opcode,
+        family: row.family,
+        next_pc: row.next_pc,
+        alu_result: row.alu_result,
+        effective_addr: row.effective_addr,
+        writes_rd: row.writes_rd,
+        rd: row.rd,
+        rd_after: row.rd_after,
+        is_first_in_sequence: row.is_first_in_sequence,
+        virtual_sequence_remaining: row.virtual_sequence_remaining,
+        is_effect_row: row.is_effect_row,
+        is_commit_row: row.is_commit_row,
+        is_real: row.is_real,
+        preserves_x0: row.rd == 0 || !row.writes_rd,
+    }
+}
+
 pub fn build_stage1_summary(rows: &[Rv64ExpandedRow]) -> Stage1Summary {
     Stage1Summary {
-        rows: rows
-            .iter()
-            .map(|row| Stage1RowBinding {
-                trace_index: row.trace_index,
-                step_index: row.step_index,
-                sequence_index: row.sequence_index,
-                fetch_pc: row.pc,
-                fetched_word: row.word,
-                opcode: row.opcode,
-                trace_opcode: row.trace_opcode,
-                trace_virtual_opcode: row.trace_virtual_opcode,
-                family: row.family,
-                next_pc: row.next_pc,
-                alu_result: row.alu_result,
-                effective_addr: row.effective_addr,
-                writes_rd: row.writes_rd,
-                rd: row.rd,
-                rd_after: row.rd_after,
-                is_first_in_sequence: row.is_first_in_sequence,
-                virtual_sequence_remaining: row.virtual_sequence_remaining,
-                is_effect_row: row.is_effect_row,
-                is_commit_row: row.is_commit_row,
-                is_real: row.is_real,
-                preserves_x0: row.rd == 0 || !row.writes_rd,
-            })
-            .collect(),
+        rows: rows.iter().map(stage1_row_binding_from_row).collect(),
     }
 }
 
@@ -354,7 +382,8 @@ pub fn build_stage1_proof_bundle(
         digest: address_correctness.expected_digest(),
         ..address_correctness
     };
-    let semantics = build_stage1_semantics_proof(&sem_inputs, &summary.rows);
+    let semantics =
+        build_stage1_semantics_proof_from_digests(sem_inputs_digest, artifact.rows.rows_digest, &sem_inputs);
     let linkage = Stage1LinkageProof {
         rows_digest: artifact.rows.rows_digest,
         sem_inputs_digest,
