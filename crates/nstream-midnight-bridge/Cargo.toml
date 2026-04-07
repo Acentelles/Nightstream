@@ -8,6 +8,15 @@ license = "MIT"
 description = "Midnight outer-compression bridge for theorem-facing neo-fold-next proof exports."
 
 [dependencies]
+base-crypto = { package = "midnight-base-crypto", path = "../../external/midnight-ledger/base-crypto" }
+bincode.workspace = true
+coin-structure = { package = "midnight-coin-structure", path = "../../external/midnight-ledger/coin-structure" }
+neo-fold-next = { path = "../neo-fold-next" }
+serialize = { package = "midnight-serialize", path = "../../external/midnight-ledger/serialize" }
+storage = { package = "midnight-storage", path = "../../external/midnight-ledger/storage" }
+thiserror.workspace = true
+transient-crypto = { package = "midnight-transient-crypto", path = "../../external/midnight-ledger/transient-crypto" }
+zkir = { package = "midnight-zkir", path = "../../external/midnight-ledger/zkir" }
 
 [lints]
 workspace = true

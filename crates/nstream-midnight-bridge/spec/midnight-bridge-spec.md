@@ -3,13 +3,14 @@
 ## 1. Scope
 
 `nstream-midnight-bridge` owns the final Midnight proof backend for theorem-facing
-RV64IM exports produced by `neo-fold-next`.
+RV64IM Nightstream exports produced by `neo-fold-next`.
 
 Its job is:
 
-- take the recursive/export artifact defined by
-  `crates/neo-fold-next/specs/riscv-recursive-proof.md`,
-- encode the verifier for that artifact as a Midnight circuit,
+- take the frozen public Nightstream boundary exported by
+  `crates/neo-fold-next/src/nightstream/mod.rs` and
+  `crates/neo-fold-next/src/nightstream/rv64im.rs`,
+- encode the verifier for that boundary as a Midnight circuit,
 - lower that circuit to a form accepted by unmodified `external/midnight-ledger`,
 - and emit Midnight prover/verifier material plus a final Midnight proof.
 
@@ -19,7 +20,8 @@ It does not own:
 - the SuperNeo backend contract,
 - the inner folding relation,
 - the recursive proof construction inside `neo-fold-next`,
-- or the current proof-complete RV64IM transport object.
+- the public Nightstream theorem boundary itself,
+- or the current proof-complete RV64IM transport object as a final theorem input.
 
 ## 2. Fixed External Constraints
 
@@ -38,23 +40,52 @@ The bridge is constrained by the current Midnight stack.
 
 Consequences:
 
-- `neo-fold-next` should stop at the recursive/export artifact.
+- `neo-fold-next` should stop at the public Nightstream boundary.
 - `nstream-midnight-bridge` is the outer compression backend.
 - The bridge must lower its verifier relation to accepted ZKIR.
 - The bridge must not require ledger/runtime/proof-server patches.
+- Any wider RV64IM proof material still required today belongs to the
+  bridge-private witness, not to the public theorem input.
 
 ## 3. Bridge Input From `neo-fold-next`
 
-The bridge input is the theorem-facing recursive/export artifact, not the current
-proof-complete public transport.
+The bridge input is the theorem-facing public Nightstream boundary, not the
+legacy proof-complete RV64IM transport object.
 
-The bridge consumes:
+For RV64IM v1, the public theorem-facing bridge input is:
 
-- the canonical semantic statement, currently
-  `stmt_RV64IM := (dig(P), n, z_0, z_n)` or the approved output projection
-  variant from `riscv-recursive-proof.md`,
-- the recursive/export proof artifact produced by `neo-fold-next`,
-- and any minimal public terminal handle that the recursive backend requires.
+- `NightstreamStatement`
+- and the Midnight chain-owned binding input if the contract path requires one
+
+The first Midnight prototype should expose only a fixed public image of that
+statement:
+
+- `bridge_version`
+- `nightstream_statement_digest`
+- and the Midnight chain-owned binding input if the contract path requires one
+
+The bridge may additionally consume a **bridge-private witness** sufficient to
+justify that public statement under the current verifier relation.
+
+Until a narrower bridge-private carrier is frozen, that private witness should
+include:
+
+- canonical `NightstreamStatement` encoding,
+- backend-specific compact `Rv64imNightstreamProof`,
+- bridge-private proof-binding and linkage consistency claims derived from the
+  verified RV64IM seam,
+- and current backend-accounted RV64IM proof material sufficient to derive and
+  justify those claims
+
+That wider witness may be derived from or include material such as:
+
+- `Rv64imProof`
+- `Rv64imAcceptedProofArtifact`
+- verified final-statement / final-proof seam material
+- separate backend-accounted Spartan proof material
+
+Those wider objects are permitted only as bridge-private witness. They are not
+final theorem inputs and must not widen the public Nightstream boundary.
 
 The bridge does not consume as final theorem inputs:
 
@@ -63,6 +94,7 @@ The bridge does not consume as final theorem inputs:
 - root lane columns,
 - raw trace rows,
 - witness-side duplication,
+- separate backend-accounted proof material,
 - or any other proof-complete audit sidecars.
 
 ## 4. Neo-Side Ground Truth
@@ -109,32 +141,48 @@ side.
 So the exported theorem being bridged is the full public-coin SuperNeo reduction
 path over the fixed RV64IM root CCS, not just “29 equations per step.”
 
-### 4.3 Current public RV64IM proof surface
+### 4.3 Current RV64IM public proof surfaces
 
-Current `Rv64imProof` export is still proof-complete transport. Its public
-digests and witness duplication are transitional bridge/audit surfaces only.
+The current RV64IM public Nightstream surface is the compact carried boundary in:
 
-The bridge must treat those as implementation artifacts unless
-`riscv-recursive-proof.md` explicitly preserves a minimal subset in the final
-recursive/export statement.
+- `crates/neo-fold-next/src/nightstream/mod.rs`
+- `crates/neo-fold-next/src/nightstream/rv64im.rs`
+
+That public surface is already theorem-facing and compact.
+
+The current `Rv64imProof` export remains proof-complete transport. Its public
+digests, packaged proofs, and witness duplication are transitional bridge/audit
+surfaces only.
+
+The bridge must therefore treat:
+
+- `NightstreamStatement` as the public theorem input,
+- `Rv64imNightstreamProof` as backend-specific private witness material,
+- and `Rv64imProof` plus any accepted/final seam expansions as bridge-private
+  implementation material unless a narrower carrier is frozen explicitly.
 
 ## 5. Bridge Theorem
 
 The bridge proves:
 
-> the recursive/export artifact produced by `neo-fold-next` verifies under the
-> Nightstream export relation, therefore the claimed RV64IM execution statement
-> holds.
+> the carried RV64IM Nightstream boundary exported by `neo-fold-next`
+> verifies under the current Nightstream verifier relation, therefore the
+> claimed RV64IM execution statement holds.
 
 Operationally:
 
-- `neo-fold-next` owns the inner folding relation and the recursive/export proof,
+- `neo-fold-next` owns the inner folding relation and the compact Nightstream
+  public boundary,
 - `nstream-midnight-bridge` owns only the outer Midnight verifier circuit for
-  that artifact,
+  that boundary,
 - the final portable proof is the Midnight proof emitted by this crate.
 
 The bridge must not re-prove the full RV64IM execution relation directly.
 Its circuit is verifier-sized, not execution-sized.
+
+If the current Nightstream verifier still requires wider backend-accounted proof
+material to justify the compact carried boundary, that material shall enter only
+as bridge-private witness.
 
 ## 6. Required Midnight Output
 
@@ -150,6 +198,51 @@ The bridge must emit artifacts consumable by unmodified Midnight tooling:
 
 The default compatibility target is proof-server and contract usage through the
 existing Midnight interfaces, not a custom side channel.
+
+For chain-facing install paths, the bridge may mirror Midnight verifier-key
+wrapper wire formats locally when doing so avoids importing larger ledger-side
+assembly machinery into this crate. The public Nightstream theorem boundary
+still remains unchanged.
+
+For RV64IM v1, the bridge may also own the typed operands of verifier-key
+installation, such as the entry-point wrapper and the versioned verifier-key
+insert object, so deploy/update callers do not pass raw tagged bytes around.
+
+For the same RV64IM v1 contract path, the bridge may also own a typed unsigned
+verifier-key insert-update payload carrying the contract address, maintenance
+counter, and insert operand. This is a bridge-owned client/install helper, not a
+claim that `nstream-midnight-bridge` owns the full signed Midnight maintenance
+transaction format.
+
+That RV64IM v1 unsigned install/update helper may still own the exact Midnight
+`data_to_sign` preimage for the verifier-key insert path, so external signers
+can sign the canonical maintenance bytes without reconstructing tagged storage
+state outside the bridge namespace.
+
+For the same RV64IM v1 path, the bridge may also own canonical signature
+attachment and exact signed maintenance-update bytes for that verifier-key
+insert object, as long as this remains a chain/install helper and not a new
+public theorem-facing Nightstream surface.
+
+For that same signed RV64IM v1 install path, the bridge may also own the exact
+reverse parse from `contract-maintenance-update[v1]` bytes back into the typed
+verifier-key insert update object, so deploy/update callers do not interpret
+chain-facing maintenance bytes outside this namespace.
+
+For the same RV64IM v1 contract path, the bridge may also own the exact
+`contract-action[v6]` `Maintain` wrapper over that signed verifier-key insert
+update, so submission callers do not assemble or decode chain-facing contract
+action bytes outside this namespace.
+
+If the local client path wants a submission helper, it should remain narrow:
+the bridge may own a typed submit-request wrapper over those exact action bytes
+plus transport error normalization, while leaving chain response semantics as
+opaque receipt bytes until a real external submission contract is frozen.
+
+That narrow submit helper may accept either the exact `Maintain` action object
+or the signed verifier-key insert update directly, as long as the bridge
+internally owns the `contract-action[v6]` wrapping step and emits the same
+exact action bytes in both cases.
 
 ## 7. ZKIR Target
 
@@ -170,28 +263,32 @@ The bridge must not depend on a custom serialized relation type.
 
 ## 8. Circuit Boundary
 
-The Midnight circuit owns only the verification of the Nightstream recursive
-artifact.
+The Midnight circuit owns only the verification of the compact RV64IM
+Nightstream boundary using bridge-private witness material as needed.
 
 It must verify, at minimum:
 
-- statement encoding is well-formed,
-- the recursive/export proof bytes decode correctly,
-- the Nightstream verifier relation accepts,
-- the claimed public statement matches the verifier output,
-- any minimal public terminal handle is bound if the recursive backend requires
-  it.
+- the private `NightstreamStatement` encoding is well-formed,
+- the private `Rv64imNightstreamProof` encoding is well-formed,
+- the public `nightstream_statement_digest` matches the private statement,
+- the Nightstream verifier relation accepts for that private boundary,
+- the verified statement matches the private statement,
+- bridge-private proof-binding claims are internally consistent and match the
+  carried private statement / proof fields,
+- bridge-private linkage claims are internally consistent and match the carried
+  private statement / proof fields,
+- and any required Midnight chain binding input is bound.
 
 It must not:
 
 - reconstruct RV64IM execution rows,
-- replay the proof-complete current bridge sidecars,
+- widen the public theorem input with proof-complete current bridge sidecars,
 - or translate the full Neo root CCS into Midnight constraints.
 
 The correct boundary is:
 
 ```text
-Nightstream recursive/export verifier -> Midnight circuit -> Midnight proof
+Nightstream public boundary + bridge-private witness -> Midnight circuit -> Midnight proof
 ```
 
 not:
@@ -202,49 +299,117 @@ Neo RV64IM execution relation -> Midnight circuit
 
 ### 8.1 First Prototype Boundary
 
-The first bridge prototype shall mirror the generic SuperNeo verifier spine in
-`crates/neo-fold-next/src/verifier.rs`, not the current RV64IM proof-complete
-verifier in `crates/neo-fold-next/src/rv64im/kernel/proof/verify.rs`.
+The first bridge prototype shall mirror the current exported RV64IM Nightstream
+verifier relation in:
 
-Specifically, the first bridge unit should be a chunk verifier over:
+- `crates/neo-fold-next/src/nightstream/rv64im.rs`
+  - `verify_rv64im_nightstream(...)`
+  - plus the bridge-owned `root_params_id -> verifier_context_digest` compatibility check
 
-- `PublicChunk`
-- incoming carried `CE` claims
-- `ChunkProof`
+not a separate chunk-verifier prototype over `PublicChunk` and `ChunkProof`.
 
-where `ChunkProof` owns:
+For the current Rust reference / ZKIR-v2 bring-up, the first verifier-shaped
+IR is allowed to check only explicit bridge-owned consistency relations that do
+not change the Nightstream hash theorem. In particular, it should check:
 
-- `Π_CCS` outputs and `PiCcsProof`,
-- `Π_RLC` public artifact,
-- `Π_DEC` public artifact.
+- `bridge_version == 1`
+- public `nightstream_statement_digest` words equal a bridge-private statement
+  digest witness
+- private `NightstreamStatement.proof_binding_root` equals a bridge-private
+  proof-binding root witness
+- bridge-private proof-binding claim digests equal the corresponding carried
+  private `Rv64imNightstreamProof` digests
+- private `NightstreamStatement.verifier_context_digest` equals a
+  bridge-private verifier-context digest witness derived from the carried
+  `root_params_id`
+- private `NightstreamStatement.fold_schedule` equals a bridge-private
+  fold-schedule witness derived from the verified RV64IM final seam
+- private `NightstreamStatement.public_io_digest` equals private
+  `Rv64imMainResidualProof.public_statement_digest`
+- private `Rv64imMainResidualProof.kernel_export_proof_digest` equals the
+  bridge-private linkage anchor digest
+- private `NightstreamStatement.linkage_root` equals a bridge-private
+  linkage-root witness
+- private `NightstreamStatement.chunk_summaries[*].public_chunk_digest` equals
+  the bridge-private linkage public-chunk digests
+- private `NightstreamStatement.chunk_summaries[*].chunk_relation_digest`
+  equals the bridge-private chunk-transition claimed relation digests
+- private `Rv64imMainResidualProof.chunk_transition_digests[*]` equals the
+  bridge-private chunk-transition witness digests
+- private `NightstreamStatement.chunk_summaries[*].start_index` forms a
+  contiguous partition from zero under the carried `public_step_count` values
+- private `NightstreamStatement.chunk_summaries.len()` equals private
+  `Rv64imMainResidualProof.chunk_transition_digests.len()`
+- private `NightstreamStatement.semantic_step_count` equals the sum of private
+  `chunk_summaries[*].public_step_count`
+- and all transcript lanes are fully consumed by the IR
+
+It must not pretend to recompute the Poseidon2 Nightstream digests with a
+different hash family. Exact hash-faithful recomputation is a later closure
+step, not something to fake inside the first prototype.
+
+Specifically, the first bridge unit should take as **public** input:
+
+- `bridge_version`
+- `nightstream_statement_digest`
+- Midnight chain binding input if required
+
+and as **private** witness:
+
+- canonical `NightstreamStatement` encoding,
+- backend-specific compact `Rv64imNightstreamProof`,
+- a bridge-private carrier sufficient to reconstruct the accepted artifact and
+  verified final seam required by the current Nightstream verifier relation,
+- any auxiliary arithmetic witness needed by Midnight gadgets
 
 The initial Midnight circuit should therefore mirror only these checks:
 
-1. chunk metadata and transcript prelude,
-2. `Π_CCS` verification,
-3. `header_digest` and `fold_digest` consistency,
-4. `Π_RLC` challenge replay and public parent recomputation,
-5. `Π_DEC` public verification,
-6. expected next-carried-claim binding.
+1. `NightstreamStatement` decoding plus explicit equality against a
+   bridge-private `statement_digest_hint`,
+2. bridge-private verifier-context and fold-schedule consistency with the
+   carried statement,
+3. bridge-private proof-binding-claims consistency with the carried statement
+   and carried compact proof,
+4. main residual/public statement consistency,
+5. bridge-private linkage-root and linkage-claims consistency with the carried
+   statement and linkage artifact,
+6. bridge-private chunk-transition binding consistency with the carried
+   statement and carried residual proof,
+7. contiguous fixed-shape chunk layout consistency inside the carried
+   statement,
+8. main residual/kernel-export consistency with the bridge-private linkage
+   anchor digest,
+9. chunk-count / semantic-step-count consistency across the carried private
+   boundary,
+10. full transcript-lane consumption,
+11. and required chain binding-input consistency.
+    For the local RV64IM v1 prototype, this means `binding_input` equals the
+    first canonical field-word of `nightstream_statement_digest`, enforced by
+    the bridge preimage verifier rather than the first IR.
 
 It shall not mirror in the first prototype:
 
-- current RV64IM packaged-proof verification,
-- current stage package / kernel opening / root-lane audit surfaces,
-- or the current proof/witness bundle digest web.
+- raw RV64IM execution rows,
+- the full root CCS directly,
+- or any proof-complete transport field as public theorem input.
 
 ## 9. Public and Private Data Mapping
 
-This crate must define a stable mapping from the Nightstream artifact into
+This crate must define a stable mapping from the Nightstream public boundary
+plus bridge-private witness into
 Midnight's `ProofPreimage`.
 
 Required roles:
 
 - `inputs`
-  - field encoding of the theorem-facing Nightstream statement
-  - plus any minimal public terminal handle
+  - `bridge_version`
+  - `nightstream_statement_digest`
+  - plus the chain-owned binding input if required
 - `private_transcript`
-  - serialized recursive/export proof bytes
+  - bridge-private consistency claims
+  - canonical `NightstreamStatement` encoding
+  - canonical backend-specific compact proof encoding
+  - serialized wider bridge-private witness bytes
   - plus any bridge-private auxiliary witness needed by the ZKIR verifier
 - `public_transcript_inputs`
   - empty unless the chosen ZKIR verifier architecture requires them
@@ -254,31 +419,62 @@ Required roles:
   - `None` unless the chosen ZKIR verifier architecture requires it
 - `binding_input`
   - Midnight chain-owned binding input as supplied by the existing contract path
+  - for the local RV64IM v1 prototype, it must equal the first canonical
+    field-word of `nightstream_statement_digest`
+  - any serialized proof-server request must carry this value inside the
+    embedded `ProofPreimage`
+  - the bridge-owned `/prove` request helper must leave the optional
+    binding-input override slot empty
+  - the bridge-owned `/check` request helper must serialize only
+    `(proof-preimage-versioned, Option<wrapped-ir>)`, with no extra binding
+    override channel
+  - bridge-owned `/check` and `/prove` helpers should take bridge-owned request
+    policy objects that choose resolver-backed vs embedded material, not raw
+    `Option` knobs or caller-managed key-lookup policy at the outer API
+    boundary
+  - bridge-owned client adapters should then map those policies into typed
+    `/prove` and `/check` requests so callers do not assemble route strings and
+    serialized bodies by hand
+  - bridge-owned client adapters should also parse `/prove` and `/check`
+    responses back into typed bridge-owned response objects, so callers do not
+    decode `proof-versioned` or check-output vectors outside this namespace
 - `key_location`
   - stable versioned namespace for bridge keys
+  - for the RV64IM v1 bridge, it must equal
+    `nstream-midnight-bridge/rv64im/nightstream/v1`
 
-This mapping must be versioned explicitly. A change in recursive proof encoding,
-statement encoding, or public handle layout must change the bridge version.
+This mapping must be versioned explicitly. A change in public Nightstream
+encoding, bridge-private witness encoding, or chain binding layout must change
+the bridge version.
 
 ### 9.1 First Prototype Mapping
 
-For the first chunk-verifier prototype, the split should be:
+For the first RV64IM prototype, the split should be:
 
 - `inputs`
   - bridge version,
-  - chunk statement digest,
-  - incoming-carried-claim digest,
-  - expected output / next-carried-claim digest
+  - fixed field-vector encoding of `nightstream_statement_digest`,
+  - no additional public replay of chain binding input; the local RV64IM v1
+    prototype derives `binding_input` from the first canonical field-word of
+    `nightstream_statement_digest`
 - `private_transcript`
-  - fixed field-vector encoding of `PublicChunk`,
-  - fixed field-vector encoding of incoming carried claims,
-  - fixed field-vector encoding of `ChunkProof`,
+  - fixed field-vector encoding of bridge-private consistency claims
+    - statement digest hint
+    - proof-binding consistency claims
+    - linkage consistency claims
+  - fixed field-vector encoding of `NightstreamStatement`
+  - fixed field-vector encoding of `Rv64imNightstreamProof`
+  - fixed or versioned bytes-to-field encoding of the wider bridge-private witness
   - auxiliary arithmetic witness needed by Goldilocks and `K` gadgets
 
-The first prototype should avoid exposing raw `ChunkProof` structure as public
-inputs except for compact statement digests. The Midnight circuit should
-recompute those digests from the private structured witness and constrain them
-to match the public inputs.
+The first prototype should avoid exposing any wider proof-complete transport
+structure as public input. If the bridge-private witness initially contains
+`Rv64imProof` or `Rv64imAcceptedProofArtifact`, the Midnight circuit should
+derive bridge-private consistency claims from that wider witness natively and
+constrain the carried private `NightstreamStatement` / `Rv64imNightstreamProof`
+to match those claims inside the IR. Exact Poseidon2 hash-faithful digest
+recomputation of `proof_binding_root` and `linkage_root` is a later closure
+step, not part of the first prototype.
 
 ## 10. Hashing Boundary
 
@@ -323,13 +519,13 @@ The removed bridge is reference material only for:
 
 | Step | Work | Output |
 |---|---|---|
-| 1 | Implement a minimal chunk-verifier reference boundary over `PublicChunk` + incoming carried claims + `ChunkProof`. | First bridge unit with fixed public/private split. |
-| 2 | Define canonical field encoding for that chunk verifier's public digests and private witness vectors. | Stable prototype input layout. |
-| 3 | Implement the chunk verifier relation in Rust first as a typed reference verifier over the encoded payload. | Reference verifier for circuit cross-checks. |
-| 4 | Lower that chunk verifier relation to ZKIR v2. | `IrSource` generator or checked-in IR artifact. |
+| 1 | Implement a minimal Nightstream-boundary reference unit over `nightstream_statement_digest` plus private `NightstreamStatement` + `Rv64imNightstreamProof` + bridge-private witness. | First bridge unit with fixed public/private split. |
+| 2 | Define canonical field encoding for that unit's public digest and private witness vectors. | Stable prototype input layout. |
+| 3 | Implement the current RV64IM Nightstream verifier relation in Rust first as a typed reference verifier over the encoded payload. | Reference verifier for circuit cross-checks. |
+| 4 | Lower that verifier relation to ZKIR v2. | `IrSource` generator or checked-in IR artifact. |
 | 5 | Generate `ProvingKeyMaterial` for the prototype bridge circuit. | Midnight-native prover key, verifier key, and IR source. |
 | 6 | Prove locally through Midnight proof-server using the prototype bridge preimage. | Passing `/check` and `/prove` smoke tests. |
-| 7 | Generalize from the prototype unit to the final recursive/export artifact consumed from `neo-fold-next`. | Versioned final bridge input contract. |
+| 7 | Shrink the bridge-private witness toward a narrower verifier-owned carrier without changing the public Nightstream boundary. | Versioned final bridge input contract. |
 | 8 | Install the verifier key on a contract entry point and prove a real contract path on local Midnight infrastructure. | End-to-end contract verification. |
 | 9 | Add size and cost measurements for bridge proof generation and verification. | Feasibility gate for chain use. |
 
@@ -337,28 +533,29 @@ The removed bridge is reference material only for:
 
 The bridge is complete only when all of the following are true:
 
-1. `neo-fold-next` exports a recursive/theorem-facing artifact without
-   proof-complete sidecars as the final public proof.
-2. `nstream-midnight-bridge` converts that artifact into Midnight
+1. `neo-fold-next` exports the compact public Nightstream boundary as the final
+   theorem-facing public proof for RV64IM.
+2. `nstream-midnight-bridge` converts that boundary plus any required
+   bridge-private witness into Midnight
    `ProvingKeyMaterial` and `ProofPreimage`.
 3. Midnight proof-server can prove and check the bridge circuit without any
    ledger modifications.
 4. A verifier key for the bridge circuit can be installed for a contract entry
    point.
 5. A contract path can accept the resulting Midnight proof.
-6. The bridged public statement remains the Nightstream theorem, not a replay of
-   current Neo transport digests.
+6. The bridged public statement remains the compact Nightstream theorem boundary,
+   not a replay of current Neo proof-complete transport digests.
 
 ## 14. Immediate Next Work
 
 The next implementation tasks are:
 
-1. define the first bridge unit as a chunk verifier over `PublicChunk`,
-   incoming carried claims, and `ChunkProof`,
-2. choose the field-vector encoding for that prototype witness inside Midnight,
-3. build a minimal typed reference verifier for the prototype unit in
+1. define the first bridge unit over public `nightstream_statement_digest`
+   plus private `NightstreamStatement`, `Rv64imNightstreamProof`, and bridge-private witness,
+2. choose the field-vector encoding for that public digest and private witness inside Midnight,
+3. build a typed reference verifier for the current RV64IM Nightstream relation in
    `nstream-midnight-bridge`,
 4. add a first ZKIR smoke test proving that verifier-shaped prototype through
    Midnight proof-server,
-5. then freeze the final recursive/export artifact that `neo-fold-next` will
-   hand to the bridge.
+5. then freeze the narrowest bridge-private witness carrier that still proves
+   the compact public Nightstream boundary without widening it.
