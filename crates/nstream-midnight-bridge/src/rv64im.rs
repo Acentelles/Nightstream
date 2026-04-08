@@ -16,7 +16,9 @@ pub use proof_server::*;
 use neo_fold_next::finalize::FixedShapeChunkSummary;
 use neo_fold_next::nightstream::rv64im::{
     build_rv64im_main_residual_proof, rv64im_nightstream_linkage_root, rv64im_verifier_context_digest,
-    verify_rv64im_linkage_artifact, verify_rv64im_nightstream, Rv64imMainResidualProof, Rv64imNightstreamProof,
+    verify_rv64im_linkage_artifact, verify_rv64im_main_decider_proof, verify_rv64im_main_residual_proof,
+    verify_rv64im_opening_artifact_from_side_proof_bundle, verify_rv64im_side_proof_artifact,
+    verify_rv64im_side_terminal_proof_artifact, Rv64imMainResidualProof, Rv64imNightstreamProof,
 };
 use neo_fold_next::nightstream::{nightstream_proof_binding_root, NightstreamProofBindingInputs, NightstreamStatement};
 use neo_fold_next::proof::FoldSchedule;
@@ -98,6 +100,7 @@ pub struct Rv64imNightstreamBridgeProofBindingClaims {
     pub main_residual_folded_statement_digest: [u8; 32],
     pub main_residual_final_proof_digest: [u8; 32],
     pub main_residual_kernel_export_proof_digest: [u8; 32],
+    pub side_terminal_artifact_digest: [u8; 32],
     pub side_proof_artifact_digest: [u8; 32],
     pub opening_artifact_digest: [u8; 32],
     pub linkage_artifact_digest: [u8; 32],
@@ -208,7 +211,40 @@ pub fn verify_rv64im_nightstream_bridge_input(
                 .into(),
         )));
     }
-    verify_rv64im_nightstream(private_witness.statement, private_witness.proof)?;
+    let artifact = build_rv64im_accepted_proof_artifact(private_witness.proof_complete_transport)?;
+    let (final_statement, final_proof) = prove_rv64im_final_statement_from_accepted(&artifact)?;
+    verify_rv64im_main_residual_proof(
+        &final_statement,
+        &final_proof,
+        &private_witness.proof.main_residual_proof,
+    )?;
+    verify_rv64im_main_decider_proof(
+        &final_statement,
+        &final_proof,
+        &private_witness.proof.main_decider_proof,
+    )?;
+    verify_rv64im_linkage_artifact(&final_statement, &final_proof, &private_witness.proof.linkage_artifact)?;
+    let side_bundle = verify_rv64im_side_proof_artifact(&private_witness.proof.side_proof_artifact)?;
+    if side_bundle.statement_core_digest != private_witness.statement.core_digest() {
+        return Err(Rv64imBridgeError::Nightstream(SimpleKernelError::Bridge(
+            "RV64IM Nightstream side-proof artifact does not match the carried statement core".into(),
+        )));
+    }
+    verify_rv64im_opening_artifact_from_side_proof_bundle(
+        &private_witness.proof_complete_transport.statement,
+        &side_bundle,
+        &private_witness.proof.opening_artifact,
+    )?;
+    verify_rv64im_side_terminal_proof_artifact(
+        private_witness.statement,
+        &private_witness
+            .proof
+            .main_residual_proof
+            .bridge_handoff_digests,
+        &private_witness.proof_complete_transport.statement,
+        &side_bundle,
+        &private_witness.proof.side_terminal_artifact,
+    )?;
     let private_claims = build_rv64im_nightstream_bridge_private_claims(private_witness)?;
     verify_rv64im_nightstream_bridge_private_claims(&private_claims, private_witness)?;
     Ok(())
@@ -225,6 +261,7 @@ fn build_rv64im_nightstream_bridge_private_claims(
     let proof_binding_inputs = NightstreamProofBindingInputs {
         main_decider_proof_digest: private_witness.proof.main_decider_proof.expected_digest(),
         main_residual_proof_digest: private_witness.proof.main_residual_proof.expected_digest(),
+        side_terminal_artifact_digest: private_witness.proof.side_terminal_artifact.digest,
         side_proof_artifact_digest: private_witness.proof.side_proof_artifact.digest,
         opening_artifact_digest: private_witness.proof.opening_artifact.digest,
         linkage_artifact_digest: private_witness.proof.linkage_artifact.digest,
@@ -273,6 +310,7 @@ fn build_rv64im_nightstream_bridge_private_claims(
                         "main residual proof is missing the kernel export component digest".into(),
                     )
                 })?,
+            side_terminal_artifact_digest: private_witness.proof.side_terminal_artifact.digest,
             side_proof_artifact_digest: private_witness.proof.side_proof_artifact.digest,
             opening_artifact_digest: private_witness.proof.opening_artifact.digest,
             linkage_artifact_digest: private_witness.proof.linkage_artifact.digest,
@@ -386,6 +424,11 @@ fn verify_rv64im_nightstream_bridge_private_claims(
     {
         return Err(Rv64imBridgeError::PrivateClaims(
             "main_residual_kernel_export_proof_digest does not match the carried proof".into(),
+        ));
+    }
+    if claims.proof_binding.side_terminal_artifact_digest != private_witness.proof.side_terminal_artifact.digest {
+        return Err(Rv64imBridgeError::PrivateClaims(
+            "side_terminal_artifact_digest does not match the carried proof".into(),
         ));
     }
     if claims.proof_binding.side_proof_artifact_digest != private_witness.proof.side_proof_artifact.digest {
@@ -748,6 +791,10 @@ pub fn build_rv64im_nightstream_verifier_ir_v2(
     for index in &mut proof_binding_residual_kernel_export_digest_indices {
         *index = builder.private_input();
     }
+    let mut proof_binding_side_terminal_artifact_digest_indices = [0u32; DIGEST32_FIELD_WORDS];
+    for index in &mut proof_binding_side_terminal_artifact_digest_indices {
+        *index = builder.private_input();
+    }
     let mut proof_binding_side_artifact_digest_indices = [0u32; DIGEST32_FIELD_WORDS];
     for index in &mut proof_binding_side_artifact_digest_indices {
         *index = builder.private_input();
@@ -888,6 +935,10 @@ pub fn build_rv64im_nightstream_verifier_ir_v2(
         }
         residual_chunk_transition_digest_indices.push(digest_indices);
     }
+    let mut proof_side_terminal_artifact_digest_indices = [0u32; DIGEST32_FIELD_WORDS];
+    for index in &mut proof_side_terminal_artifact_digest_indices {
+        *index = builder.private_input();
+    }
     let mut proof_side_artifact_digest_indices = [0u32; DIGEST32_FIELD_WORDS];
     for index in &mut proof_side_artifact_digest_indices {
         *index = builder.private_input();
@@ -948,6 +999,12 @@ pub fn build_rv64im_nightstream_verifier_ir_v2(
     for (proof_index, claim_index) in residual_kernel_export_digest_indices
         .iter()
         .zip(proof_binding_residual_kernel_export_digest_indices.iter())
+    {
+        builder.assert_equal(*proof_index, *claim_index);
+    }
+    for (proof_index, claim_index) in proof_side_terminal_artifact_digest_indices
+        .iter()
+        .zip(proof_binding_side_terminal_artifact_digest_indices.iter())
     {
         builder.assert_equal(*proof_index, *claim_index);
     }
@@ -1179,6 +1236,7 @@ fn encode_rv64im_nightstream_bridge_proof_binding_claims_fields(
     encode_digest32_field_words(out, claims.main_residual_folded_statement_digest);
     encode_digest32_field_words(out, claims.main_residual_final_proof_digest);
     encode_digest32_field_words(out, claims.main_residual_kernel_export_proof_digest);
+    encode_digest32_field_words(out, claims.side_terminal_artifact_digest);
     encode_digest32_field_words(out, claims.side_proof_artifact_digest);
     encode_digest32_field_words(out, claims.opening_artifact_digest);
     encode_digest32_field_words(out, claims.linkage_artifact_digest);
@@ -1214,6 +1272,11 @@ fn decode_rv64im_nightstream_bridge_proof_binding_claims_fields(
             words,
             cursor,
             "bridge proof binding main_residual_kernel_export_proof_digest",
+        )?,
+        side_terminal_artifact_digest: decode_digest32_field_words(
+            words,
+            cursor,
+            "bridge proof binding side_terminal_artifact_digest",
         )?,
         side_proof_artifact_digest: decode_digest32_field_words(
             words,

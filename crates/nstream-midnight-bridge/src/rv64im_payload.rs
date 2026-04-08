@@ -62,6 +62,7 @@ pub(super) fn encode_rv64im_nightstream_proof_fields(
 ) -> Result<(), Rv64imBridgeError> {
     encode_digest32_field_words(out, proof.main_decider_proof.decider_target_digest);
     encode_rv64im_main_residual_proof_fields(out, &proof.main_residual_proof);
+    encode_digest32_field_words(out, proof.side_terminal_artifact.digest);
     encode_digest32_field_words(out, proof.side_proof_artifact.digest);
     encode_digest32_field_words(out, proof.opening_artifact.digest);
     encode_digest32_field_words(out, proof.linkage_artifact.digest);
@@ -76,6 +77,7 @@ pub(super) fn decode_rv64im_nightstream_proof_fields(
 ) -> Result<Rv64imNightstreamProof, Rv64imBridgeError> {
     let main_decider_target_digest = decode_digest32_field_words(words, cursor, "main decider decider_target_digest")?;
     let main_residual_proof = decode_rv64im_main_residual_proof_fields(words, cursor)?;
+    let side_terminal_artifact_digest = decode_digest32_field_words(words, cursor, "side terminal artifact digest")?;
     let side_proof_artifact_digest = decode_digest32_field_words(words, cursor, "side proof artifact digest")?;
     let opening_artifact_digest = decode_digest32_field_words(words, cursor, "opening artifact digest")?;
     let linkage_artifact_digest = decode_digest32_field_words(words, cursor, "linkage artifact digest")?;
@@ -133,6 +135,11 @@ pub(super) fn decode_rv64im_nightstream_proof_fields(
     if decoded_transition_digests != main_residual_proof.chunk_transition_digests {
         return Err(Rv64imBridgeError::WitnessDecode(
             "nightstream proof bytes do not match the carried residual transition digests".into(),
+        ));
+    }
+    if proof.side_terminal_artifact.digest != side_terminal_artifact_digest {
+        return Err(Rv64imBridgeError::WitnessDecode(
+            "nightstream proof bytes do not match the carried side-terminal digest".into(),
         ));
     }
     if proof.side_proof_artifact.digest != side_proof_artifact_digest {

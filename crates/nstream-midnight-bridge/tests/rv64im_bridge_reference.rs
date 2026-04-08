@@ -87,6 +87,7 @@ fn rv64im_bridge_reference_verifier_rejects_verifier_context_mismatch() {
     let proof_binding_inputs = NightstreamProofBindingInputs {
         main_decider_proof_digest: proof.main_decider_proof.expected_digest(),
         main_residual_proof_digest: proof.main_residual_proof.expected_digest(),
+        side_terminal_artifact_digest: proof.side_terminal_artifact.digest,
         side_proof_artifact_digest: proof.side_proof_artifact.digest,
         opening_artifact_digest: proof.opening_artifact.digest,
         linkage_artifact_digest: proof.linkage_artifact.digest,

@@ -3,13 +3,13 @@ members = [
   "crates/neo-params", 
   "crates/neo-math", 
   # Implementation crates
-  "crates/nstream-midnight-bridge",
   "crates/spartan2",
   "crates/neo-transcript",
   "crates/neo-ajtai",
   "crates/neo-ccs",
   "crates/neo-reductions",
   "crates/neo-fold-next",
+  "crates/nstream-midnight-bridge",
 ]
 exclude = [
   "external/Spartan2",
