@@ -14,8 +14,8 @@ use neo_transcript::{Poseidon2Transcript, Transcript};
 use serde::{Deserialize, Serialize};
 
 pub use self::build_perf::{
-    build_rv64im_nightstream_from_public_proof_with_perf, Rv64imNightstreamBuildPerf,
-    Rv64imNightstreamVerifiedSeamsBuildPerf,
+    build_rv64im_nightstream_from_public_proof_with_perf, build_rv64im_nightstream_from_published_proof_seam_with_perf,
+    Rv64imNightstreamBuildPerf, Rv64imNightstreamVerifiedSeamsBuildPerf,
 };
 use self::compact_surfaces::{
     kernel_claim_summary_digest_from_surfaces, kernel_opening_binding_bundle_digest_from_surfaces,
@@ -103,8 +103,8 @@ use crate::rv64im::final_relation::{
     verify_rv64im_final_statement_with_output, Rv64imFinalProof, Rv64imFinalStatement,
 };
 use crate::rv64im::kernel::{
-    build_public_kernel_opening_claim_from_compact_surfaces, build_rv64im_accepted_proof_artifact,
-    build_rv64im_eval_claim_witnesses_from_accepted_artifact, build_rv64im_kernel_export_proof_from_accepted_artifact,
+    build_public_kernel_opening_claim_from_compact_surfaces, build_rv64im_eval_claim_witnesses_from_accepted_artifact,
+    build_rv64im_kernel_export_proof_from_accepted_artifact,
     build_rv64im_opening_convergence_artifact_from_phase0_bundle_and_witnesses_trusted_local,
     build_rv64im_opening_convergence_artifact_from_phase0_bundle_and_witnesses_trusted_local_with_perf,
     kernel_claim_bundle_from_statement_and_compact_surfaces, rv64im_public_chunk_digest,

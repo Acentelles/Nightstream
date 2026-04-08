@@ -460,6 +460,55 @@ pub(crate) fn build_rv64im_kernel_export_proof_from_carried_accepted_artifact(
     let (relation, result) = build_rv64im_kernel_export_relation_from_verified_artifact(artifact)?;
     let witness = kernel_export_witness_from_result(&result);
     let source = build_rv64im_kernel_export_source_from_accepted_artifact(artifact)?;
+    build_rv64im_kernel_export_proof_from_carried_parts(source, relation, witness, result)
+}
+
+pub(crate) fn build_rv64im_kernel_export_proof_from_carried_accepted_artifact_with_source(
+    artifact: &Rv64imAcceptedProofArtifact,
+    source: &Rv64imKernelExportSource,
+) -> Result<
+    (
+        Rv64imKernelExportRelation,
+        Rv64imKernelExportProof,
+        Rv64imKernelExportRelationResult,
+    ),
+    SimpleKernelError,
+> {
+    if artifact.digest != artifact.expected_digest() {
+        return Err(SimpleKernelError::Bridge(
+            "RV64IM accepted proof artifact digest mismatch".into(),
+        ));
+    }
+    if artifact.claim.digest != artifact.claim.expected_digest()
+        || artifact.statement.digest != artifact.statement.expected_digest()
+    {
+        return Err(SimpleKernelError::Bridge(
+            "RV64IM accepted proof public claim digest mismatch".into(),
+        ));
+    }
+    if source.digest != source.expected_digest() {
+        return Err(SimpleKernelError::Bridge(
+            "RV64IM carried kernel export source digest mismatch".into(),
+        ));
+    }
+    let (relation, result) = build_rv64im_kernel_export_relation_from_verified_artifact(artifact)?;
+    let witness = kernel_export_witness_from_result(&result);
+    build_rv64im_kernel_export_proof_from_carried_parts(source.clone(), relation, witness, result)
+}
+
+fn build_rv64im_kernel_export_proof_from_carried_parts(
+    source: Rv64imKernelExportSource,
+    relation: Rv64imKernelExportRelation,
+    witness: Rv64imKernelExportWitness,
+    result: Rv64imKernelExportRelationResult,
+) -> Result<
+    (
+        Rv64imKernelExportRelation,
+        Rv64imKernelExportProof,
+        Rv64imKernelExportRelationResult,
+    ),
+    SimpleKernelError,
+> {
     let mut proof = Rv64imKernelExportProof {
         source,
         witness,

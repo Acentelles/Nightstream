@@ -71,5 +71,8 @@ pub use r1cs::R1CSWitness;
 /// Split R1CS shape for bellpepper circuits with precommitted variables
 pub use r1cs::SplitR1CSShape;
 
+/// Sparse-matrix debug stats for a split R1CS shape.
+pub use r1cs::SplitR1CSShapeDebugStats;
+
 /// Split R1CS instance for bellpepper circuits with precommitted variables
 pub use r1cs::SplitR1CSInstance;

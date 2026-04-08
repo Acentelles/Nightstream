@@ -17,10 +17,11 @@ use crate::rv64im::chunk_relation::{
     verify_rv64im_chunk_relation_with_replay,
 };
 use crate::rv64im::kernel::{
-    build_rv64im_kernel_export_proof_from_carried_accepted_artifact, rv64im_cached_root_main_lane_context,
+    build_rv64im_kernel_export_proof_from_carried_accepted_artifact,
+    build_rv64im_kernel_export_proof_from_carried_accepted_artifact_with_source, rv64im_cached_root_main_lane_context,
     rv64im_cached_root_main_lane_optimized_cache, verify_rv64im_kernel_export_proof_with_output,
     verify_rv64im_kernel_export_proof_with_relation_output, Rv64imAcceptedProofArtifact, Rv64imKernelExportProof,
-    Rv64imKernelExportRelationResult, Rv64imVerifiedKernelChunkHandoff, SimpleKernelError,
+    Rv64imKernelExportRelationResult, Rv64imKernelExportSource, Rv64imVerifiedKernelChunkHandoff, SimpleKernelError,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -100,7 +101,6 @@ pub(crate) struct Rv64imFinalBuildPerf {
     pub folded: Rv64imFoldedBuildPerf,
     pub final_proof_ms: f64,
     pub statement_digest_ms: f64,
-    pub total_ms: f64,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -256,9 +256,15 @@ pub(crate) fn prove_rv64im_final_statement_from_accepted_with_output(
 pub(crate) fn prove_rv64im_final_statement_from_accepted_with_output_and_perf(
     artifact: &Rv64imAcceptedProofArtifact,
 ) -> Result<(Rv64imFinalBuildOutput, Rv64imFinalBuildPerf), SimpleKernelError> {
-    let total_started = Instant::now();
+    prove_rv64im_final_statement_from_accepted_with_output_and_perf_and_source(artifact, None)
+}
 
-    let (built, folded_perf) = build_rv64im_folded_statement_from_accepted_with_perf(artifact)?;
+pub(crate) fn prove_rv64im_final_statement_from_accepted_with_output_and_perf_and_source(
+    artifact: &Rv64imAcceptedProofArtifact,
+    kernel_export_source: Option<&Rv64imKernelExportSource>,
+) -> Result<(Rv64imFinalBuildOutput, Rv64imFinalBuildPerf), SimpleKernelError> {
+    let (built, folded_perf) =
+        build_rv64im_folded_statement_from_accepted_with_perf_and_source(artifact, kernel_export_source)?;
 
     let started = Instant::now();
     let (final_proof, component_digests) = build_final_proof(&built.folded, built.chunk_summaries, built.proof)?;
@@ -284,7 +290,6 @@ pub(crate) fn prove_rv64im_final_statement_from_accepted_with_output_and_perf(
             folded: folded_perf,
             final_proof_ms,
             statement_digest_ms,
-            total_ms: elapsed_ms(total_started),
         },
     ))
 }
@@ -332,9 +337,18 @@ fn build_rv64im_folded_statement_from_accepted(
 fn build_rv64im_folded_statement_from_accepted_with_perf(
     artifact: &Rv64imAcceptedProofArtifact,
 ) -> Result<(Rv64imFoldedBuildOutput, Rv64imFoldedBuildPerf), SimpleKernelError> {
+    build_rv64im_folded_statement_from_accepted_with_perf_and_source(artifact, None)
+}
+
+fn build_rv64im_folded_statement_from_accepted_with_perf_and_source(
+    artifact: &Rv64imAcceptedProofArtifact,
+    kernel_export_source: Option<&Rv64imKernelExportSource>,
+) -> Result<(Rv64imFoldedBuildOutput, Rv64imFoldedBuildPerf), SimpleKernelError> {
     let started = Instant::now();
-    let (relation, kernel_export, verified_kernel) =
-        build_rv64im_kernel_export_proof_from_carried_accepted_artifact(artifact)?;
+    let (relation, kernel_export, verified_kernel) = match kernel_export_source {
+        Some(source) => build_rv64im_kernel_export_proof_from_carried_accepted_artifact_with_source(artifact, source)?,
+        None => build_rv64im_kernel_export_proof_from_carried_accepted_artifact(artifact)?,
+    };
     let kernel_export_ms = elapsed_ms(started);
 
     let started = Instant::now();

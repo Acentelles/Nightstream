@@ -507,6 +507,27 @@ pub struct SplitR1CSInstance<E: Engine> {
   pub(crate) challenges: Vec<E::Scalar>,
 }
 
+/// Sparse-matrix debug stats for a split R1CS shape.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SplitR1CSShapeDebugStats {
+  /// Total non-zero entries in the padded `A` matrix.
+  pub a_nnz: usize,
+  /// Total non-zero entries in the padded `B` matrix.
+  pub b_nnz: usize,
+  /// Total non-zero entries in the padded `C` matrix.
+  pub c_nnz: usize,
+  /// Total non-zero entries across `A`, `B`, and `C`.
+  pub total_nnz: usize,
+  /// Maximum non-zero entries in any single padded `A` row.
+  pub max_row_nnz_a: usize,
+  /// Maximum non-zero entries in any single padded `B` row.
+  pub max_row_nnz_b: usize,
+  /// Maximum non-zero entries in any single padded `C` row.
+  pub max_row_nnz_c: usize,
+  /// Maximum combined non-zero entries across `A`, `B`, and `C` for one padded row.
+  pub max_row_nnz_total: usize,
+}
+
 impl<E: Engine> SplitR1CSShape<E> {
   /// Create an object of type `R1CSShape` from the explicitly specified R1CS matrices
   #[allow(clippy::too_many_arguments)]
@@ -725,6 +746,47 @@ impl<E: Engine> SplitR1CSShape<E> {
       self.num_public,
       self.num_challenges,
     ]
+  }
+
+  /// Returns compact sparse-matrix stats for debugging and perf reporting.
+  pub fn debug_stats(&self) -> SplitR1CSShapeDebugStats {
+    let matrix_nnz = |M: &SparseMatrix<E::Scalar>| M.indptr.last().copied().unwrap_or(0);
+    let matrix_max_row_nnz = |M: &SparseMatrix<E::Scalar>| {
+      M.indptr
+        .windows(2)
+        .map(|ptrs| ptrs[1] - ptrs[0])
+        .max()
+        .unwrap_or(0)
+    };
+
+    let a_nnz = matrix_nnz(&self.A);
+    let b_nnz = matrix_nnz(&self.B);
+    let c_nnz = matrix_nnz(&self.C);
+    let max_row_nnz_a = matrix_max_row_nnz(&self.A);
+    let max_row_nnz_b = matrix_max_row_nnz(&self.B);
+    let max_row_nnz_c = matrix_max_row_nnz(&self.C);
+    let max_row_nnz_total = self
+      .A
+      .indptr
+      .windows(2)
+      .zip(self.B.indptr.windows(2))
+      .zip(self.C.indptr.windows(2))
+      .map(|((a_ptrs, b_ptrs), c_ptrs)| {
+        (a_ptrs[1] - a_ptrs[0]) + (b_ptrs[1] - b_ptrs[0]) + (c_ptrs[1] - c_ptrs[0])
+      })
+      .max()
+      .unwrap_or(0);
+
+    SplitR1CSShapeDebugStats {
+      a_nnz,
+      b_nnz,
+      c_nnz,
+      total_nnz: a_nnz + b_nnz + c_nnz,
+      max_row_nnz_a,
+      max_row_nnz_b,
+      max_row_nnz_c,
+      max_row_nnz_total,
+    }
   }
 
   /// Generates public parameters for a Rank-1 Constraint System (R1CS).

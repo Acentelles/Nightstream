@@ -14,7 +14,7 @@ use crate::{
     eq::EqPolynomial,
     multilinear::{MultilinearPolynomial, SparsePolynomial},
   },
-  r1cs::{SparseMatrix, SplitR1CSInstance, SplitR1CSShape},
+  r1cs::{SparseMatrix, SplitR1CSInstance, SplitR1CSShape, SplitR1CSShapeDebugStats},
   start_span,
   sumcheck::SumcheckProof,
   traits::{
@@ -29,7 +29,7 @@ use ff::Field;
 use once_cell::sync::OnceCell;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info, info_span};
+use tracing::{info, info_span};
 
 /// A type that represents the prover's key
 #[derive(Serialize, Deserialize)]
@@ -48,6 +48,11 @@ impl<E: Engine> SpartanProverKey<E> {
   ///  num_public, num_challenges]
   pub fn sizes(&self) -> [usize; 10] {
     self.S.sizes()
+  }
+
+  /// Returns compact sparse-matrix stats for the carried split R1CS shape.
+  pub fn shape_debug_stats(&self) -> SplitR1CSShapeDebugStats {
+    self.S.debug_stats()
   }
 }
 
@@ -178,6 +183,35 @@ impl R1CSSNarkSerializedSizeBreakdown {
   }
 }
 
+/// Timing breakdown for the main proving phases of a direct R1CS Spartan proof.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct SpartanProvePerf {
+  /// Time spent constructing the multilinear tau polynomial for the outer sumcheck.
+  pub prepare_poly_tau_ms: f64,
+  /// Time spent multiplying the split R1CS shape by the witness vector.
+  pub matrix_vector_multiply_ms: f64,
+  /// Time spent materializing the multilinear `Az`, `Bz`, and `Cz` polynomials.
+  pub prepare_multilinear_polys_ms: f64,
+  /// Time spent in the outer sumcheck.
+  pub outer_sumcheck_ms: f64,
+  /// Time spent preparing the inner-claim challenge and transcript fork anchor.
+  pub prepare_inner_claims_ms: f64,
+  /// Time spent evaluating the equality polynomial at the outer sumcheck point.
+  pub compute_eval_rx_ms: f64,
+  /// Time spent evaluating sparse matrix tables at the outer sumcheck point.
+  pub compute_eval_table_sparse_ms: f64,
+  /// Time spent preparing the combined `A + rB + r^2C` polynomial.
+  pub prepare_poly_abc_ms: f64,
+  /// Time spent preparing the carried `Z` polynomial for the inner sumcheck.
+  pub prepare_poly_z_ms: f64,
+  /// Time spent in the inner sumcheck.
+  pub inner_sumcheck_ms: f64,
+  /// Time spent producing the PCS opening proof.
+  pub pcs_prove_ms: f64,
+  /// End-to-end proving time for this direct Spartan proof call.
+  pub total_ms: f64,
+}
+
 impl<E: Engine> R1CSSNARK<E> {
   /// Measures the serialized size of the SNARK and its major carried components.
   pub fn serialized_size_breakdown(
@@ -201,6 +235,309 @@ impl<E: Engine> R1CSSNARK<E> {
       eval_arg: encode("eval_arg", bincode::serialize(&self.eval_arg))?,
       inner_sum_claim: encode("inner_sum_claim", bincode::serialize(&self.claim_inner_sum))?,
     })
+  }
+
+  /// Produces a Spartan proof together with a direct phase timing breakdown.
+  pub fn prove_with_perf<C: SpartanCircuit<E>>(
+    pk: &SpartanProverKey<E>,
+    circuit: C,
+    prep_snark: &PrepSNARK<E>,
+    is_small: bool,
+  ) -> Result<(Self, SpartanProvePerf), SpartanError> {
+    let total_started = std::time::Instant::now();
+    let mut perf = SpartanProvePerf::default();
+    let mut prep_snark = prep_snark.clone(); // make a copy so we can modify it
+
+    let mut transcript = E::TE::new(b"R1CSSNARK");
+    transcript.absorb(b"vk", &pk.vk_digest);
+
+    let public_values = circuit
+      .public_values()
+      .map_err(|e| SpartanError::SynthesisError {
+        reason: format!("Circuit does not provide public IO: {e}"),
+      })?;
+
+    // absorb the public values into the transcript
+    transcript.absorb(b"public_values", &public_values.as_slice());
+
+    let (U, W) = SatisfyingAssignment::r1cs_instance_and_witness(
+      &mut prep_snark.ps,
+      &pk.S,
+      &pk.ck,
+      &circuit,
+      is_small,
+      &mut transcript,
+    )?;
+
+    // Get U_regular for both matrix operations and Z polynomial construction
+    let U_regular = U.to_regular_instance()?;
+
+    let num_vars = pk.S.num_shared + pk.S.num_precommitted + pk.S.num_rest;
+    let (num_rounds_x, num_rounds_y) = (
+      usize::try_from(pk.S.num_cons.ilog2()).unwrap(),
+      (usize::try_from(num_vars.ilog2()).unwrap() + 1),
+    );
+
+    // Check if this is a Hash-MLE engine (needed for both setup check and Z polynomial construction)
+    let engine_name = std::any::type_name::<E>();
+    let is_hash_mle_engine =
+      engine_name.contains("MerkleMle") || engine_name.contains("P3MerkleMle");
+
+    debug_assert_eq!(W.W.len(), num_vars);
+    debug_assert!(
+      U_regular.X.len() <= num_vars,
+      "X vector too long: {} > {}",
+      U_regular.X.len(),
+      num_vars
+    );
+
+    let tau = (0..num_rounds_x)
+      .map(|_i| transcript.squeeze(b"t"))
+      .collect::<Result<EqPolynomial<_>, SpartanError>>()?;
+
+    let (_poly_tau_span, poly_tau_t) = start_span!("prepare_poly_tau");
+    let mut poly_tau = MultilinearPolynomial::new(tau.evals());
+    perf.prepare_poly_tau_ms = poly_tau_t.elapsed().as_secs_f64() * 1_000.0;
+    info!(elapsed_ms = %poly_tau_t.elapsed().as_millis(), "prepare_poly_tau");
+
+    let (_mv_span, mv_t) = start_span!("matrix_vector_multiply");
+    let z = [
+      W.W.clone(),
+      vec![E::Scalar::ONE],
+      U_regular.X.clone(),
+      U.challenges.clone(),
+    ]
+    .concat();
+    let (Az, Bz, Cz) = pk.S.multiply_vec(&z)?;
+    perf.matrix_vector_multiply_ms = mv_t.elapsed().as_secs_f64() * 1_000.0;
+    info!(
+      elapsed_ms = %mv_t.elapsed().as_millis(),
+      constraints = %pk.S.num_cons,
+      vars = %num_vars,
+      "matrix_vector_multiply"
+    );
+
+    let (_mp_span, mp_t) = start_span!("prepare_multilinear_polys");
+    let (mut poly_Az, mut poly_Bz, mut poly_Cz) = (
+      MultilinearPolynomial::new(Az),
+      MultilinearPolynomial::new(Bz),
+      MultilinearPolynomial::new(Cz),
+    );
+    perf.prepare_multilinear_polys_ms = mp_t.elapsed().as_secs_f64() * 1_000.0;
+    info!(elapsed_ms = %mp_t.elapsed().as_millis(), "prepare_multilinear_polys");
+
+    let (_sc_span, sc_t) = start_span!("outer_sumcheck");
+    let comb_func_outer =
+      |poly_A_comp: &E::Scalar,
+       poly_B_comp: &E::Scalar,
+       poly_C_comp: &E::Scalar,
+       poly_D_comp: &E::Scalar|
+       -> E::Scalar { *poly_A_comp * (*poly_B_comp * *poly_C_comp - *poly_D_comp) };
+    let (sc_proof_outer, r_x, claims_outer) = SumcheckProof::prove_cubic_with_additive_term(
+      &E::Scalar::ZERO,
+      num_rounds_x,
+      &mut poly_tau,
+      &mut poly_Az,
+      &mut poly_Bz,
+      &mut poly_Cz,
+      comb_func_outer,
+      &mut transcript,
+    )?;
+    let (claim_Az, claim_Bz, claim_Cz): (E::Scalar, E::Scalar, E::Scalar) =
+      (claims_outer[1], claims_outer[2], claims_outer[3]);
+    transcript.absorb(b"claims_outer", &[claim_Az, claim_Bz, claim_Cz].as_slice());
+    perf.outer_sumcheck_ms = sc_t.elapsed().as_secs_f64() * 1_000.0;
+    info!(elapsed_ms = %sc_t.elapsed().as_millis(), "outer_sumcheck");
+
+    let (_r_span, r_t) = start_span!("prepare_inner_claims");
+    let r = transcript.squeeze(b"r")?;
+    perf.prepare_inner_claims_ms = r_t.elapsed().as_secs_f64() * 1_000.0;
+    info!(elapsed_ms = %r_t.elapsed().as_millis(), "prepare_inner_claims");
+
+    let anchor = transcript.squeeze(b"anchor/inner+pcs")?;
+    let mut t_sc = E::TE::new(b"R1CSSNARK/inner");
+    t_sc.absorb(b"anchor", &anchor);
+    let mut t_pcs = E::TE::new(b"R1CSSNARK/pcs");
+    t_pcs.absorb(b"anchor", &anchor);
+
+    #[cfg(debug_assertions)]
+    debug!("FS anchor created for transcript fork: {:?}", anchor);
+
+    let (_eval_rx_span, eval_rx_t) = start_span!("compute_eval_rx");
+    let evals_rx = EqPolynomial::evals_from_points(&r_x.clone());
+    perf.compute_eval_rx_ms = eval_rx_t.elapsed().as_secs_f64() * 1_000.0;
+    info!(elapsed_ms = %eval_rx_t.elapsed().as_millis(), "compute_eval_rx");
+
+    let (_sparse_span, sparse_t) = start_span!("compute_eval_table_sparse");
+    let (evals_A, evals_B, evals_C) = compute_eval_table_sparse(&pk.S, &evals_rx);
+    perf.compute_eval_table_sparse_ms = sparse_t.elapsed().as_secs_f64() * 1_000.0;
+    info!(elapsed_ms = %sparse_t.elapsed().as_millis(), "compute_eval_table_sparse");
+
+    let (_abc_span, abc_t) = start_span!("prepare_poly_ABC");
+    assert_eq!(evals_A.len(), evals_B.len());
+    assert_eq!(evals_A.len(), evals_C.len());
+    let poly_ABC = if crate::parallel::parallelism_enabled() {
+      (0..evals_A.len())
+        .into_par_iter()
+        .map(|i| evals_A[i] + r * evals_B[i] + r * r * evals_C[i])
+        .collect::<Vec<E::Scalar>>()
+    } else {
+      (0..evals_A.len())
+        .map(|i| evals_A[i] + r * evals_B[i] + r * r * evals_C[i])
+        .collect::<Vec<E::Scalar>>()
+    };
+    perf.prepare_poly_abc_ms = abc_t.elapsed().as_secs_f64() * 1_000.0;
+    info!(elapsed_ms = %abc_t.elapsed().as_millis(), "prepare_poly_ABC");
+
+    let (_z_span, z_t) = start_span!("prepare_poly_z");
+    let poly_z = if is_hash_mle_engine {
+      let mut z = Vec::with_capacity(2 * num_vars);
+
+      let w_len = core::cmp::min(W.W.len(), num_vars);
+      z.extend_from_slice(&W.W[..w_len]);
+      if w_len < num_vars {
+        z.resize(num_vars, E::Scalar::ZERO);
+      }
+
+      match U_regular.X.len() {
+        0 => {
+          z.resize(2 * num_vars, E::Scalar::ONE);
+        }
+        1 => {
+          z.resize(2 * num_vars, U_regular.X[0]);
+        }
+        _ => {
+          z.push(E::Scalar::ONE);
+          let x_len = core::cmp::min(U_regular.X.len(), num_vars.saturating_sub(1));
+          z.extend_from_slice(&U_regular.X[..x_len]);
+          z.resize(2 * num_vars, E::Scalar::ZERO);
+        }
+      }
+
+      z
+    } else {
+      let mut z = Vec::with_capacity(2 * num_vars);
+
+      let w_len = core::cmp::min(W.W.len(), num_vars);
+      z.extend_from_slice(&W.W[..w_len]);
+      if w_len < num_vars {
+        z.resize(num_vars, E::Scalar::ZERO);
+      }
+
+      z.push(E::Scalar::ONE);
+      let x_len = core::cmp::min(U_regular.X.len(), num_vars.saturating_sub(1));
+      z.extend_from_slice(&U_regular.X[..x_len]);
+      z.resize(2 * num_vars, E::Scalar::ZERO);
+
+      z
+    };
+    perf.prepare_poly_z_ms = z_t.elapsed().as_secs_f64() * 1_000.0;
+    info!(elapsed_ms = %z_t.elapsed().as_millis(), "prepare_poly_z");
+
+    let (_sc2_span, sc2_t) = start_span!("inner_sumcheck");
+    let comb_func = |poly_A_comp: &E::Scalar, poly_B_comp: &E::Scalar| -> E::Scalar {
+      *poly_A_comp * *poly_B_comp
+    };
+    let claim_inner_sum: E::Scalar = if crate::parallel::parallelism_enabled() {
+      poly_ABC.par_iter().zip(&poly_z).map(|(a, z)| *a * *z).sum()
+    } else {
+      poly_ABC.iter().zip(&poly_z).map(|(a, z)| *a * *z).sum()
+    };
+
+    #[cfg(debug_assertions)]
+    let _poly_z_for_debug = poly_z.clone();
+    let (sc_proof_inner, r_y, _claims_inner) = SumcheckProof::prove_quad(
+      &claim_inner_sum,
+      num_rounds_y,
+      &mut MultilinearPolynomial::new(poly_ABC),
+      &mut MultilinearPolynomial::new(poly_z),
+      comb_func,
+      &mut t_sc,
+    )?;
+    perf.inner_sumcheck_ms = sc2_t.elapsed().as_secs_f64() * 1_000.0;
+    info!(elapsed_ms = %sc2_t.elapsed().as_millis(), "inner_sumcheck");
+
+    #[cfg(debug_assertions)]
+    debug!(
+      "Prover r_y.len(): {}, y0 (gate) = {:?}",
+      r_y.len(),
+      if r_y.is_empty() {
+        E::Scalar::ZERO
+      } else {
+        r_y[0]
+      }
+    );
+
+    let ry_no_gate: &[E::Scalar] = if r_y.is_empty() { &[] } else { &r_y[1..] };
+
+    #[cfg(debug_assertions)]
+    let gate: E::Scalar = if r_y.is_empty() {
+      E::Scalar::ZERO
+    } else {
+      r_y[0]
+    };
+
+    #[cfg(debug_assertions)]
+    {
+      debug!("PROVER gate bit y0 = {:?}", gate);
+      debug!("PROVER |ry_no_gate| = {}", ry_no_gate.len());
+    }
+
+    let (_pcs_span, pcs_t) = start_span!("pcs_prove");
+    let (eval_W, eval_arg) = E::PCS::prove(
+      &pk.ck,
+      &mut t_pcs,
+      &U_regular.comm_W,
+      &W.W,
+      &W.r_W,
+      ry_no_gate,
+    )?;
+    perf.pcs_prove_ms = pcs_t.elapsed().as_secs_f64() * 1_000.0;
+    info!(elapsed_ms = %pcs_t.elapsed().as_millis(), "pcs_prove");
+
+    #[cfg(debug_assertions)]
+    if is_hash_mle_engine && num_vars > 0 {
+      let eval_X_check = {
+        let mut X_full = vec![E::Scalar::ZERO; num_vars];
+        match U_regular.X.len() {
+          0 => X_full.fill(E::Scalar::ONE),
+          1 => X_full.fill(U_regular.X[0]),
+          _ => {
+            X_full[0] = E::Scalar::ONE;
+            for (i, xi) in U_regular.X.iter().cloned().enumerate() {
+              if i + 1 < num_vars {
+                X_full[i + 1] = xi;
+              }
+            }
+          }
+        }
+        crate::polys::multilinear::MultilinearPolynomial::new(X_full).evaluate(ry_no_gate)
+      };
+
+      let eval_Z_expected = (E::Scalar::ONE - gate) * eval_W + gate * eval_X_check;
+      let eval_Z_table =
+        crate::polys::multilinear::MultilinearPolynomial::new(_poly_z_for_debug.clone())
+          .evaluate(&r_y);
+
+      debug_assert_eq!(
+        eval_Z_expected, eval_Z_table,
+        "Hash-MLE gated Z polynomial mismatch"
+      );
+    }
+
+    perf.total_ms = total_started.elapsed().as_secs_f64() * 1_000.0;
+    Ok((
+      R1CSSNARK {
+        U,
+        sc_proof_outer,
+        claims_outer: (claim_Az, claim_Bz, claim_Cz),
+        sc_proof_inner,
+        eval_W,
+        eval_arg,
+        claim_inner_sum,
+      },
+      perf,
+    ))
   }
 }
 
@@ -260,319 +597,7 @@ impl<E: Engine> R1CSSNARKTrait<E> for R1CSSNARK<E> {
     prep_snark: &Self::PrepSNARK,
     is_small: bool,
   ) -> Result<Self, SpartanError> {
-    let mut prep_snark = prep_snark.clone(); // make a copy so we can modify it
-
-    let mut transcript = E::TE::new(b"R1CSSNARK");
-    transcript.absorb(b"vk", &pk.vk_digest);
-
-    let public_values = circuit
-      .public_values()
-      .map_err(|e| SpartanError::SynthesisError {
-        reason: format!("Circuit does not provide public IO: {e}"),
-      })?;
-
-    // absorb the public values into the transcript
-    transcript.absorb(b"public_values", &public_values.as_slice());
-
-    let (U, W) = SatisfyingAssignment::r1cs_instance_and_witness(
-      &mut prep_snark.ps,
-      &pk.S,
-      &pk.ck,
-      &circuit,
-      is_small,
-      &mut transcript,
-    )?;
-
-    // Get U_regular for both matrix operations and Z polynomial construction
-    let U_regular = U.to_regular_instance()?;
-
-    let num_vars = pk.S.num_shared + pk.S.num_precommitted + pk.S.num_rest;
-    let (num_rounds_x, num_rounds_y) = (
-      usize::try_from(pk.S.num_cons.ilog2()).unwrap(),
-      (usize::try_from(num_vars.ilog2()).unwrap() + 1),
-    );
-
-    // Check if this is a Hash-MLE engine (needed for both setup check and Z polynomial construction)
-    let engine_name = std::any::type_name::<E>();
-    let is_hash_mle_engine =
-      engine_name.contains("MerkleMle") || engine_name.contains("P3MerkleMle");
-
-    // Sanity check lengths to catch regressions
-    debug_assert_eq!(W.W.len(), num_vars);
-    debug_assert!(
-      U_regular.X.len() <= num_vars,
-      "X vector too long: {} > {}",
-      U_regular.X.len(),
-      num_vars
-    );
-
-    // outer sum-check preparation
-    let tau = (0..num_rounds_x)
-      .map(|_i| transcript.squeeze(b"t"))
-      .collect::<Result<EqPolynomial<_>, SpartanError>>()?;
-
-    let (_poly_tau_span, poly_tau_t) = start_span!("prepare_poly_tau");
-    let mut poly_tau = MultilinearPolynomial::new(tau.evals());
-    info!(elapsed_ms = %poly_tau_t.elapsed().as_millis(), "prepare_poly_tau");
-
-    let (_mv_span, mv_t) = start_span!("matrix_vector_multiply");
-    // Build z vector for matrix multiplication (same as before)
-    let z = [
-      W.W.clone(),
-      vec![E::Scalar::ONE],
-      U_regular.X.clone(),
-      U.challenges.clone(),
-    ]
-    .concat();
-    let (Az, Bz, Cz) = pk.S.multiply_vec(&z)?;
-    info!(
-      elapsed_ms = %mv_t.elapsed().as_millis(),
-      constraints = %pk.S.num_cons,
-      vars = %num_vars,
-      "matrix_vector_multiply"
-    );
-
-    let (_mp_span, mp_t) = start_span!("prepare_multilinear_polys");
-    let (mut poly_Az, mut poly_Bz, mut poly_Cz) = (
-      MultilinearPolynomial::new(Az),
-      MultilinearPolynomial::new(Bz),
-      MultilinearPolynomial::new(Cz),
-    );
-    info!(elapsed_ms = %mp_t.elapsed().as_millis(), "prepare_multilinear_polys");
-
-    // outer sum-check
-    let (_sc_span, sc_t) = start_span!("outer_sumcheck");
-
-    let comb_func_outer =
-      |poly_A_comp: &E::Scalar,
-       poly_B_comp: &E::Scalar,
-       poly_C_comp: &E::Scalar,
-       poly_D_comp: &E::Scalar|
-       -> E::Scalar { *poly_A_comp * (*poly_B_comp * *poly_C_comp - *poly_D_comp) };
-    let (sc_proof_outer, r_x, claims_outer) = SumcheckProof::prove_cubic_with_additive_term(
-      &E::Scalar::ZERO, // claim is zero
-      num_rounds_x,
-      &mut poly_tau,
-      &mut poly_Az,
-      &mut poly_Bz,
-      &mut poly_Cz,
-      comb_func_outer,
-      &mut transcript,
-    )?;
-
-    // claims from the end of sum-check
-    let (claim_Az, claim_Bz, claim_Cz): (E::Scalar, E::Scalar, E::Scalar) =
-      (claims_outer[1], claims_outer[2], claims_outer[3]);
-    transcript.absorb(b"claims_outer", &[claim_Az, claim_Bz, claim_Cz].as_slice());
-    info!(elapsed_ms = %sc_t.elapsed().as_millis(), "outer_sumcheck");
-
-    // inner sum-check preparation
-    let (_r_span, r_t) = start_span!("prepare_inner_claims");
-    let r = transcript.squeeze(b"r")?;
-    info!(elapsed_ms = %r_t.elapsed().as_millis(), "prepare_inner_claims");
-
-    // Fork transcript streams from a single anchor to avoid FS interleaving
-    // The anchor commits to the entire FS prefix up to this point.
-    let anchor = transcript.squeeze(b"anchor/inner+pcs")?;
-    // Inner sum-check FS stream
-    let mut t_sc = E::TE::new(b"R1CSSNARK/inner");
-    t_sc.absorb(b"anchor", &anchor);
-    // PCS FS stream
-    let mut t_pcs = E::TE::new(b"R1CSSNARK/pcs");
-    t_pcs.absorb(b"anchor", &anchor);
-
-    #[cfg(debug_assertions)]
-    debug!("FS anchor created for transcript fork: {:?}", anchor);
-
-    let (_eval_rx_span, eval_rx_t) = start_span!("compute_eval_rx");
-    let evals_rx = EqPolynomial::evals_from_points(&r_x.clone());
-    info!(elapsed_ms = %eval_rx_t.elapsed().as_millis(), "compute_eval_rx");
-
-    let (_sparse_span, sparse_t) = start_span!("compute_eval_table_sparse");
-    let (evals_A, evals_B, evals_C) = compute_eval_table_sparse(&pk.S, &evals_rx);
-    info!(elapsed_ms = %sparse_t.elapsed().as_millis(), "compute_eval_table_sparse");
-
-    let (_abc_span, abc_t) = start_span!("prepare_poly_ABC");
-    assert_eq!(evals_A.len(), evals_B.len());
-    assert_eq!(evals_A.len(), evals_C.len());
-    let poly_ABC = if crate::parallel::parallelism_enabled() {
-      (0..evals_A.len())
-        .into_par_iter()
-        .map(|i| evals_A[i] + r * evals_B[i] + r * r * evals_C[i])
-        .collect::<Vec<E::Scalar>>()
-    } else {
-      (0..evals_A.len())
-        .map(|i| evals_A[i] + r * evals_B[i] + r * r * evals_C[i])
-        .collect::<Vec<E::Scalar>>()
-    };
-    info!(elapsed_ms = %abc_t.elapsed().as_millis(), "prepare_poly_ABC");
-
-    let (_z_span, z_t) = start_span!("prepare_poly_z");
-    let poly_z = if is_hash_mle_engine {
-      // Hash-MLE engines need MSB-gated Z polynomial construction
-      // Build W(·) and X(·), then concatenate by the gating bit y0 as MSB
-      // This creates Z(y_0, y) = (1-y_0)*W(y) + y_0*X(y) where y_0 is r_y[0] (MSB convention)
-
-      // Build Z = [W_full..., X_full...] with minimal allocation/zeroing:
-      // - first half: witness W padded to num_vars (zeros)
-      // - second half: "X polynomial" with broadcast semantics (matching verifier)
-      let mut z = Vec::with_capacity(2 * num_vars);
-
-      let w_len = core::cmp::min(W.W.len(), num_vars);
-      z.extend_from_slice(&W.W[..w_len]);
-      if w_len < num_vars {
-        z.resize(num_vars, E::Scalar::ZERO);
-      }
-
-      match U_regular.X.len() {
-        0 => {
-          // no public inputs => X(y) ≡ 1
-          z.resize(2 * num_vars, E::Scalar::ONE);
-        }
-        1 => {
-          // constant X(y) ≡ X[0]
-          z.resize(2 * num_vars, U_regular.X[0]);
-        }
-        _ => {
-          // dense case: (1, X...), then zeros
-          z.push(E::Scalar::ONE);
-          let x_len = core::cmp::min(U_regular.X.len(), num_vars.saturating_sub(1));
-          z.extend_from_slice(&U_regular.X[..x_len]);
-          z.resize(2 * num_vars, E::Scalar::ZERO);
-        }
-      }
-
-      z
-    } else {
-      // Other engines (e.g., Hyrax) use the original concatenation approach
-      let mut z = Vec::with_capacity(2 * num_vars);
-
-      let w_len = core::cmp::min(W.W.len(), num_vars);
-      z.extend_from_slice(&W.W[..w_len]);
-      if w_len < num_vars {
-        z.resize(num_vars, E::Scalar::ZERO);
-      }
-
-      z.push(E::Scalar::ONE);
-      let x_len = core::cmp::min(U_regular.X.len(), num_vars.saturating_sub(1));
-      z.extend_from_slice(&U_regular.X[..x_len]);
-      z.resize(2 * num_vars, E::Scalar::ZERO);
-
-      z
-    };
-    info!(elapsed_ms = %z_t.elapsed().as_millis(), "prepare_poly_z");
-
-    // inner sum-check
-    let (_sc2_span, sc2_t) = start_span!("inner_sumcheck");
-
-    debug!("Proving inner sum-check with {} rounds", num_rounds_y);
-    debug!(
-      "Inner sum-check sizes - poly_ABC: {}, poly_z: {}",
-      poly_ABC.len(),
-      poly_z.len()
-    );
-    let comb_func = |poly_A_comp: &E::Scalar, poly_B_comp: &E::Scalar| -> E::Scalar {
-      *poly_A_comp * *poly_B_comp
-    };
-    // Compute the true dot-product sum as the inner claim
-    let claim_inner_sum: E::Scalar = if crate::parallel::parallelism_enabled() {
-      poly_ABC.par_iter().zip(&poly_z).map(|(a, z)| *a * *z).sum()
-    } else {
-      poly_ABC.iter().zip(&poly_z).map(|(a, z)| *a * *z).sum()
-    };
-
-    // Clone poly_z for debug assertions later.
-    #[cfg(debug_assertions)]
-    let _poly_z_for_debug = poly_z.clone();
-    let (sc_proof_inner, r_y, _claims_inner) = SumcheckProof::prove_quad(
-      &claim_inner_sum, // ✅ correct dot-product sum
-      num_rounds_y,
-      &mut MultilinearPolynomial::new(poly_ABC),
-      &mut MultilinearPolynomial::new(poly_z),
-      comb_func,
-      &mut t_sc,
-    )?;
-    info!(elapsed_ms = %sc2_t.elapsed().as_millis(), "inner_sumcheck");
-
-    #[cfg(debug_assertions)]
-    debug!(
-      "Prover r_y.len(): {}, y0 (gate) = {:?}",
-      r_y.len(),
-      if r_y.is_empty() {
-        E::Scalar::ZERO
-      } else {
-        r_y[0]
-      }
-    );
-
-    // Gate bit is y0 (the first coordinate). MultilinearPolynomial::evaluate folds MSB-first:
-    // the first variable splits the table into left|right halves. Our Z = [W | X] uses this split.
-    let ry_no_gate: &[E::Scalar] = if r_y.is_empty() { &[] } else { &r_y[1..] };
-
-    #[cfg(debug_assertions)]
-    let gate: E::Scalar = if r_y.is_empty() {
-      E::Scalar::ZERO
-    } else {
-      r_y[0]
-    };
-
-    #[cfg(debug_assertions)]
-    {
-      debug!("PROVER gate bit y0 = {:?}", gate);
-      debug!("PROVER |ry_no_gate| = {}", ry_no_gate.len());
-    }
-
-    let (_pcs_span, pcs_t) = start_span!("pcs_prove");
-    let (eval_W, eval_arg) = E::PCS::prove(
-      &pk.ck,
-      &mut t_pcs,
-      &U_regular.comm_W,
-      &W.W,
-      &W.r_W,
-      ry_no_gate,
-    )?;
-    info!(elapsed_ms = %pcs_t.elapsed().as_millis(), "pcs_prove");
-
-    // Debug: Verify Z polynomial consistency (Hash-MLE engines only).
-    #[cfg(debug_assertions)]
-    if is_hash_mle_engine && num_vars > 0 {
-      let eval_X_check = {
-        let mut X_full = vec![E::Scalar::ZERO; num_vars];
-        match U_regular.X.len() {
-          0 => X_full.fill(E::Scalar::ONE),
-          1 => X_full.fill(U_regular.X[0]),
-          _ => {
-            X_full[0] = E::Scalar::ONE;
-            for (i, xi) in U_regular.X.iter().cloned().enumerate() {
-              if i + 1 < num_vars {
-                X_full[i + 1] = xi;
-              }
-            }
-          }
-        }
-        crate::polys::multilinear::MultilinearPolynomial::new(X_full).evaluate(ry_no_gate)
-      };
-
-      let eval_Z_expected = (E::Scalar::ONE - gate) * eval_W + gate * eval_X_check;
-      let eval_Z_table =
-        crate::polys::multilinear::MultilinearPolynomial::new(_poly_z_for_debug.clone())
-          .evaluate(&r_y);
-
-      debug_assert_eq!(
-        eval_Z_expected, eval_Z_table,
-        "Hash-MLE gated Z polynomial mismatch"
-      );
-    }
-
-    Ok(R1CSSNARK {
-      U,
-      sc_proof_outer,
-      claims_outer: (claim_Az, claim_Bz, claim_Cz),
-      sc_proof_inner,
-      eval_W,
-      eval_arg,
-      claim_inner_sum, // ← NEW: store the correct claim
-    })
+    Self::prove_with_perf(pk, circuit, prep_snark, is_small).map(|(proof, _)| proof)
   }
 
   /// verifies a proof of satisfiability of a `RelaxedR1CS` instance

@@ -178,7 +178,8 @@ pub(crate) use proof_bridge::kernel_claim_bundle_from_statement_and_compact_surf
 pub use proof_completeness::{KernelSoundnessAccountingSurface, StepCompositionSurface};
 pub(crate) use proof_export_relation::{
     build_rv64im_kernel_export_proof_from_accepted_artifact,
-    build_rv64im_kernel_export_proof_from_carried_accepted_artifact, rv64im_public_chunk_digest,
+    build_rv64im_kernel_export_proof_from_carried_accepted_artifact,
+    build_rv64im_kernel_export_proof_from_carried_accepted_artifact_with_source, rv64im_public_chunk_digest,
     verify_rv64im_kernel_export_proof_with_output, verify_rv64im_kernel_export_proof_with_relation_output,
     Rv64imKernelExportRelationResult,
 };

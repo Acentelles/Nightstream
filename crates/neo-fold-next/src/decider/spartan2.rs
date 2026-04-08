@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use spartan2::{
     bellpepper::poseidon2::hash_packed_goldilocks_fields,
     provider::{goldi::F as SpartanF, GoldilocksP3MerkleMleEngine},
-    spartan::R1CSSNARK,
+    spartan::{SpartanProvePerf, R1CSSNARK},
     traits::circuit::SpartanCircuit,
     traits::snark::R1CSSNARKTrait,
 };
@@ -151,6 +151,20 @@ impl Spartan2DeciderVerifierKey {
     }
 }
 
+impl Spartan2DeciderProverKey {
+    pub fn shape_digest(&self) -> [u8; 32] {
+        self.shape.digest()
+    }
+
+    pub fn backend_shape_sizes(&self) -> [usize; 10] {
+        self.backend.sizes()
+    }
+
+    pub fn backend_shape_debug_stats(&self) -> spartan2::SplitR1CSShapeDebugStats {
+        self.backend.shape_debug_stats()
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Spartan2DeciderProof {
     pub shape_digest: [u8; 32],
@@ -227,6 +241,21 @@ pub enum Spartan2DeciderError {
     ShapeMismatch,
     #[error("spartan2 decider proof shape digest mismatch")]
     ShapeDigestMismatch,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Spartan2PublicTargetShellProvePerf {
+    pub prep_ms: f64,
+    pub snark_perf: SpartanProvePerf,
+    pub encode_ms: f64,
+    pub total_ms: f64,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Spartan2DeciderProvePerf {
+    pub relation_surface_ms: f64,
+    pub shell: Spartan2PublicTargetShellProvePerf,
+    pub total_ms: f64,
 }
 
 impl Spartan2ChunkTransitionBinding {
@@ -928,14 +957,38 @@ pub fn prove_spartan2_public_target_shell(
     pk: &Spartan2PublicTargetShellProverKey,
     target: &Spartan2DeciderTarget,
 ) -> Result<Spartan2PublicTargetShellProof, Spartan2PublicTargetShellError> {
+    let (proof, _) = prove_spartan2_public_target_shell_with_perf(pk, target)?;
+    Ok(proof)
+}
+
+pub fn prove_spartan2_public_target_shell_with_perf(
+    pk: &Spartan2PublicTargetShellProverKey,
+    target: &Spartan2DeciderTarget,
+) -> Result<(Spartan2PublicTargetShellProof, Spartan2PublicTargetShellProvePerf), Spartan2PublicTargetShellError> {
+    let total_started = std::time::Instant::now();
     let circuit = Spartan2PublicTargetShellCircuit::from_target(target);
+    let started = std::time::Instant::now();
     let prep = Spartan2PublicTargetShellSnark::prep_prove(pk, circuit.clone(), true)
         .map_err(|err| Spartan2PublicTargetShellError::Prepare(err.to_string()))?;
-    let proof = Spartan2PublicTargetShellSnark::prove(pk, circuit, &prep, true)
+    let prep_ms = started.elapsed().as_secs_f64() * 1_000.0;
+    let started = std::time::Instant::now();
+    let (proof, snark_perf) = Spartan2PublicTargetShellSnark::prove_with_perf(pk, circuit, &prep, true)
         .map_err(|err| Spartan2PublicTargetShellError::Prove(err.to_string()))?;
+    let mut snark_perf = snark_perf;
+    snark_perf.total_ms = started.elapsed().as_secs_f64() * 1_000.0;
+    let started = std::time::Instant::now();
     let snark_data =
         bincode::serialize(&proof).map_err(|err| Spartan2PublicTargetShellError::Encode(err.to_string()))?;
-    Ok(Spartan2PublicTargetShellProof { snark_data })
+    let encode_ms = started.elapsed().as_secs_f64() * 1_000.0;
+    Ok((
+        Spartan2PublicTargetShellProof { snark_data },
+        Spartan2PublicTargetShellProvePerf {
+            prep_ms,
+            snark_perf,
+            encode_ms,
+            total_ms: total_started.elapsed().as_secs_f64() * 1_000.0,
+        },
+    ))
 }
 
 pub fn verify_spartan2_public_target_shell(
@@ -1026,20 +1079,38 @@ pub fn prove_spartan2_decider(
     pk: &Spartan2DeciderProverKey,
     target: &Spartan2DeciderTarget,
 ) -> Result<Spartan2DeciderProof, Spartan2DeciderError> {
+    let (proof, _) = prove_spartan2_decider_with_perf(pk, target)?;
+    Ok(proof)
+}
+
+pub fn prove_spartan2_decider_with_perf(
+    pk: &Spartan2DeciderProverKey,
+    target: &Spartan2DeciderTarget,
+) -> Result<(Spartan2DeciderProof, Spartan2DeciderProvePerf), Spartan2DeciderError> {
+    let total_started = std::time::Instant::now();
     if target.shape() != pk.shape {
         return Err(Spartan2DeciderError::ShapeMismatch);
     }
+    let started = std::time::Instant::now();
     let relation = target
         .relation()
         .map_err(|err| Spartan2DeciderError::RelationSurface(err.to_string()))?;
     validate_spartan2_decider_relation_surface(&relation)
         .map_err(|err| Spartan2DeciderError::RelationSurface(err.to_string()))?;
-    let backend = prove_spartan2_public_target_shell(&pk.backend, target)
+    let relation_surface_ms = started.elapsed().as_secs_f64() * 1_000.0;
+    let (backend, shell_perf) = prove_spartan2_public_target_shell_with_perf(&pk.backend, target)
         .map_err(|err| Spartan2DeciderError::Backend(Spartan2BackendBindingShellError::Prove(err.to_string())))?;
-    Ok(Spartan2DeciderProof {
-        shape_digest: pk.shape.digest(),
-        snark_data: backend.snark_data,
-    })
+    Ok((
+        Spartan2DeciderProof {
+            shape_digest: pk.shape.digest(),
+            snark_data: backend.snark_data,
+        },
+        Spartan2DeciderProvePerf {
+            relation_surface_ms,
+            shell: shell_perf,
+            total_ms: total_started.elapsed().as_secs_f64() * 1_000.0,
+        },
+    ))
 }
 
 pub fn verify_spartan2_decider(

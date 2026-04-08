@@ -389,66 +389,70 @@ pub fn build_rv64im_nightstream_from_public_proof_with_perf(
     ),
     SimpleKernelError,
 > {
+    let (published_seam, seam_perf) = crate::rv64im::decider::build_rv64im_published_proof_seam_with_perf(proof)?;
+    build_rv64im_nightstream_from_published_proof_seam_with_perf(&published_seam, &seam_perf)
+}
+
+pub fn build_rv64im_nightstream_from_published_proof_seam_with_perf(
+    published_seam: &crate::rv64im::decider::Rv64imPublishedProofSeam,
+    seam_perf: &crate::rv64im::decider::Rv64imPublishedProofSeamBuildPerf,
+) -> Result<
+    (
+        (NightstreamStatement, Rv64imNightstreamProof),
+        Rv64imNightstreamBuildPerf,
+    ),
+    SimpleKernelError,
+> {
     let total_started = Instant::now();
-
-    let started = Instant::now();
-    let artifact = build_rv64im_accepted_proof_artifact(proof)?;
-    let accepted_artifact_ms = elapsed_ms(started);
-
-    let (
-        crate::rv64im::final_relation::Rv64imFinalBuildOutput {
-            statement: final_statement,
-            proof: final_proof,
-            component_digests: final_component_digests,
-            verified_kernel,
-        },
-        final_statement_perf,
-    ) = crate::rv64im::final_relation::prove_rv64im_final_statement_from_accepted_with_output_and_perf(&artifact)?;
+    let crate::rv64im::decider::Rv64imPublishedProofSeam {
+        accepted_artifact: artifact,
+        final_statement,
+        final_proof,
+        final_component_digests,
+        verified_kernel,
+        ..
+    } = published_seam;
 
     let started = Instant::now();
     let side_proof_bundle =
-        build_rv64im_side_proof_bundle_from_accepted_artifact_and_kernel_export(&artifact, &final_proof.kernel_export)?;
+        build_rv64im_side_proof_bundle_from_accepted_artifact_and_kernel_export(artifact, &final_proof.kernel_export)?;
     let side_proof_bundle_ms = elapsed_ms(started);
 
     let ((statement, nightstream_proof), verified_seams) = build_rv64im_nightstream_from_verified_seams_with_perf(
-        &artifact,
+        artifact,
         rv64im_verifier_context_digest(artifact.statement.root_params_id),
-        &final_statement,
-        &final_proof,
-        &final_component_digests,
-        &verified_kernel,
+        final_statement,
+        final_proof,
+        final_component_digests,
+        verified_kernel,
         side_proof_bundle,
     )?;
 
     Ok((
         (statement, nightstream_proof),
         Rv64imNightstreamBuildPerf {
-            accepted_artifact_ms,
-            final_statement_ms: final_statement_perf.total_ms,
-            final_statement_kernel_export_ms: final_statement_perf.folded.kernel_export_ms,
-            final_statement_recursive_proof_ms: final_statement_perf.folded.recursive.total_ms,
-            final_statement_recursive_prepare_inputs_ms: final_statement_perf.folded.recursive.prepare_inputs_ms,
-            final_statement_recursive_ccs_bind_ms: final_statement_perf.folded.recursive.ccs_bind_ms,
-            final_statement_recursive_ccs_sample_challenges_ms: final_statement_perf
-                .folded
-                .recursive
-                .ccs_sample_challenges_ms,
-            final_statement_recursive_ccs_fe_sumcheck_ms: final_statement_perf.folded.recursive.ccs_fe_sumcheck_ms,
-            final_statement_recursive_ccs_nc_sumcheck_ms: final_statement_perf.folded.recursive.ccs_nc_sumcheck_ms,
-            final_statement_recursive_ccs_output_materialize_ms: final_statement_perf
-                .folded
-                .recursive
-                .ccs_output_materialize_ms,
-            final_statement_recursive_ccs_ms: final_statement_perf.folded.recursive.ccs_ms,
-            final_statement_recursive_dims_ms: final_statement_perf.folded.recursive.dims_ms,
-            final_statement_recursive_rlc_prepare_ms: final_statement_perf.folded.recursive.rlc_prepare_ms,
-            final_statement_recursive_rlc_ms: final_statement_perf.folded.recursive.rlc_ms,
-            final_statement_recursive_dec_split_ms: final_statement_perf.folded.recursive.dec_split_ms,
-            final_statement_recursive_dec_commit_ms: final_statement_perf.folded.recursive.dec_commit_ms,
-            final_statement_recursive_dec_ms: final_statement_perf.folded.recursive.dec_ms,
-            final_statement_folded_digest_ms: final_statement_perf.folded.folded_digest_ms,
-            final_statement_final_proof_ms: final_statement_perf.final_proof_ms,
-            final_statement_statement_digest_ms: final_statement_perf.statement_digest_ms,
+            accepted_artifact_ms: seam_perf.accepted_artifact_ms,
+            final_statement_ms: seam_perf.final_statement_ms,
+            final_statement_kernel_export_ms: seam_perf.final_statement_kernel_export_ms,
+            final_statement_recursive_proof_ms: seam_perf.final_statement_recursive_proof_ms,
+            final_statement_recursive_prepare_inputs_ms: seam_perf.final_statement_recursive_prepare_inputs_ms,
+            final_statement_recursive_ccs_bind_ms: seam_perf.final_statement_recursive_ccs_bind_ms,
+            final_statement_recursive_ccs_sample_challenges_ms: seam_perf
+                .final_statement_recursive_ccs_sample_challenges_ms,
+            final_statement_recursive_ccs_fe_sumcheck_ms: seam_perf.final_statement_recursive_ccs_fe_sumcheck_ms,
+            final_statement_recursive_ccs_nc_sumcheck_ms: seam_perf.final_statement_recursive_ccs_nc_sumcheck_ms,
+            final_statement_recursive_ccs_output_materialize_ms: seam_perf
+                .final_statement_recursive_ccs_output_materialize_ms,
+            final_statement_recursive_ccs_ms: seam_perf.final_statement_recursive_ccs_ms,
+            final_statement_recursive_dims_ms: seam_perf.final_statement_recursive_dims_ms,
+            final_statement_recursive_rlc_prepare_ms: seam_perf.final_statement_recursive_rlc_prepare_ms,
+            final_statement_recursive_rlc_ms: seam_perf.final_statement_recursive_rlc_ms,
+            final_statement_recursive_dec_split_ms: seam_perf.final_statement_recursive_dec_split_ms,
+            final_statement_recursive_dec_commit_ms: seam_perf.final_statement_recursive_dec_commit_ms,
+            final_statement_recursive_dec_ms: seam_perf.final_statement_recursive_dec_ms,
+            final_statement_folded_digest_ms: seam_perf.final_statement_folded_digest_ms,
+            final_statement_final_proof_ms: seam_perf.final_statement_final_proof_ms,
+            final_statement_statement_digest_ms: seam_perf.final_statement_statement_digest_ms,
             side_proof_bundle_ms,
             verified_seams,
             total_ms: elapsed_ms(total_started),
