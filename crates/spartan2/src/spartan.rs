@@ -361,7 +361,7 @@ impl<E: Engine> R1CSSNARK<E> {
     t_pcs.absorb(b"anchor", &anchor);
 
     #[cfg(debug_assertions)]
-    debug!("FS anchor created for transcript fork: {:?}", anchor);
+    tracing::debug!("FS anchor created for transcript fork: {:?}", anchor);
 
     let (_eval_rx_span, eval_rx_t) = start_span!("compute_eval_rx");
     let evals_rx = EqPolynomial::evals_from_points(&r_x.clone());
@@ -458,7 +458,7 @@ impl<E: Engine> R1CSSNARK<E> {
     info!(elapsed_ms = %sc2_t.elapsed().as_millis(), "inner_sumcheck");
 
     #[cfg(debug_assertions)]
-    debug!(
+    tracing::debug!(
       "Prover r_y.len(): {}, y0 (gate) = {:?}",
       r_y.len(),
       if r_y.is_empty() {
@@ -479,8 +479,8 @@ impl<E: Engine> R1CSSNARK<E> {
 
     #[cfg(debug_assertions)]
     {
-      debug!("PROVER gate bit y0 = {:?}", gate);
-      debug!("PROVER |ry_no_gate| = {}", ry_no_gate.len());
+      tracing::debug!("PROVER gate bit y0 = {:?}", gate);
+      tracing::debug!("PROVER |ry_no_gate| = {}", ry_no_gate.len());
     }
 
     let (_pcs_span, pcs_t) = start_span!("pcs_prove");
@@ -668,7 +668,7 @@ impl<E: Engine> R1CSSNARKTrait<E> for R1CSSNARK<E> {
     t_pcs.absorb(b"anchor", &anchor);
 
     #[cfg(debug_assertions)]
-    debug!("FS anchor verified for transcript fork: {:?}", anchor);
+    tracing::debug!("FS anchor verified for transcript fork: {:?}", anchor);
 
     let (claim_inner_final, r_y) =
       self
@@ -676,7 +676,7 @@ impl<E: Engine> R1CSSNARKTrait<E> for R1CSSNARK<E> {
         .verify(self.claim_inner_sum, num_rounds_y, 2, &mut t_sc)?;
 
     #[cfg(debug_assertions)]
-    debug!(
+    tracing::debug!(
       "Verifier r_y[0] (gating bit): {:?}, r_y.len(): {}",
       if r_y.is_empty() {
         E::Scalar::ZERO
@@ -700,8 +700,8 @@ impl<E: Engine> R1CSSNARKTrait<E> for R1CSSNARK<E> {
 
     #[cfg(debug_assertions)]
     {
-      debug!("VERIFIER gate bit y0 = {:?}", gate);
-      debug!("VERIFIER |ry_no_gate| = {}", ry_no_gate.len());
+      tracing::debug!("VERIFIER gate bit y0 = {:?}", gate);
+      tracing::debug!("VERIFIER |ry_no_gate| = {}", ry_no_gate.len());
     }
 
     // Compute eval_Z with gate=y0 and evaluate X on y1..
