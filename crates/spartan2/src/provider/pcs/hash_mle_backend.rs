@@ -23,9 +23,9 @@ use p3_symmetric::Permutation;
 use once_cell::sync::Lazy;
 
 #[cfg(feature = "p3_backend")]
-use rand::SeedableRng;
+use rand_chacha_p3::ChaCha8Rng;
 #[cfg(feature = "p3_backend")]
-use rand_chacha::ChaCha8Rng;
+use rand_chacha_p3::rand_core::SeedableRng;
 
 /// Poseidon2 width (Goldilocks, 64-bit prime). Supported: {8,12,16}. We use 12 to fit domain+len+8 words.
 #[cfg(feature = "p3_backend")]

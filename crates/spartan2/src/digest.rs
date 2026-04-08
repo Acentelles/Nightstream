@@ -13,8 +13,8 @@ use once_cell::sync::Lazy;
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
 use p3_goldilocks::{Goldilocks, Poseidon2Goldilocks};
 use p3_symmetric::Permutation;
-use rand::SeedableRng;
-use rand_chacha::ChaCha8Rng;
+use rand_chacha_p3::ChaCha8Rng;
+use rand_chacha_p3::rand_core::SeedableRng;
 use serde::Serialize;
 use std::io;
 

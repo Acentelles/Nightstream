@@ -3,12 +3,11 @@
 use bellpepper_core::{ConstraintSystem, SynthesisError, num::AllocatedNum};
 use ff::Field;
 use once_cell::sync::Lazy;
-use p3_field::PrimeField64;
+use p3_field::{PrimeCharacteristicRing, PrimeField64};
 use p3_goldilocks::{Goldilocks, MATRIX_DIAG_8_GOLDILOCKS};
 use p3_poseidon2::{ExternalLayerConstants, poseidon2_round_numbers_128};
-use rand::Rng;
-use rand::SeedableRng;
-use rand_chacha::ChaCha8Rng;
+use rand_chacha_p3::ChaCha8Rng;
+use rand_chacha_p3::rand_core::{Rng, SeedableRng};
 
 use crate::provider::goldi::F;
 
@@ -72,7 +71,7 @@ fn build_poseidon2_constants() -> Poseidon2RoundConstants {
   let external =
     ExternalLayerConstants::<Goldilocks, POSEIDON2_WIDTH>::new_from_rng(rounds_f, &mut rng);
   let internal = (0..rounds_p)
-    .map(|_| convert_goldilocks(rng.random::<Goldilocks>()))
+    .map(|_| convert_goldilocks(Goldilocks::from_u64(rng.next_u64())))
     .collect::<Vec<_>>();
 
   Poseidon2RoundConstants {

@@ -656,7 +656,7 @@ pub fn sample_beta_m(tr: &mut Poseidon2Transcript, ell_m: usize) -> Result<Vec<K
 }
 
 pub fn digest_ccs_matrices<F: Field + PrimeField64>(s: &CcsStructure<F>) -> Vec<Goldilocks> {
-    use rand_chacha::{rand_core::SeedableRng, ChaCha8Rng};
+    use rand_chacha_p3::{rand_core::SeedableRng, ChaCha8Rng};
 
     const CCS_DIGEST_SEED: u64 = 0x434353445F4D4154;
     let mut rng = ChaCha8Rng::seed_from_u64(CCS_DIGEST_SEED);
@@ -774,7 +774,7 @@ pub fn digest_ccs_matrices_with_sparse_cache<Ff: Field + PrimeField64>(
     s: &CcsStructure<Ff>,
     sparse: Option<&crate::engines::optimized_engine::oracle::SparseCache<Ff>>,
 ) -> Vec<Goldilocks> {
-    use rand_chacha::{rand_core::SeedableRng, ChaCha8Rng};
+    use rand_chacha_p3::{rand_core::SeedableRng, ChaCha8Rng};
 
     #[inline]
     fn absorb_u64(poseidon2: &Poseidon2Goldilocks<16>, state: &mut [Goldilocks; 16], absorbed: &mut usize, v: u64) {
