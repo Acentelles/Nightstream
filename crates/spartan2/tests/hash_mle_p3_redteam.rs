@@ -19,6 +19,7 @@ use spartan2::{
 };
 
 type F = <E as Engine>::Scalar;
+type P3Transcript = <E as Engine>::TE;
 type PCS = HashMlePcsP3<E>;
 
 fn rand_poly(m: usize, seed: u64) -> Vec<F> {
@@ -53,11 +54,11 @@ fn prove_once(
   let expected = mle.evaluate(&point);
 
   // prove and verify
-  let mut tp = Keccak256Transcript::<E>::new(b"p3-poseidon2");
+  let mut tp = P3Transcript::new(b"p3-poseidon2");
   let (eval, arg) = PCS::prove(&ck, &mut tp, &comm, &poly, &blind, &point).unwrap();
   assert_eq!(eval, expected);
 
-  let mut tv = Keccak256Transcript::<E>::new(b"p3-poseidon2");
+  let mut tv = P3Transcript::new(b"p3-poseidon2");
   PCS::verify(&vk, &mut tv, &comm, &point, &eval, &arg).unwrap();
 
   (comm, arg, eval, point)
@@ -79,18 +80,18 @@ fn p3_tamper_root_fails() {
   let blind = PCS::blind(&ck, poly.len());
 
   let mut comm = PCS::commit(&ck, &poly, &blind, false).unwrap();
-  let mut tp = Keccak256Transcript::<E>::new(b"p3-poseidon2");
+  let mut tp = P3Transcript::new(b"p3-poseidon2");
   let (eval, mut arg) = PCS::prove(&ck, &mut tp, &comm, &poly, &blind, &point).unwrap();
 
   // tamper the base root
   comm.base_root.0[0] ^= 1;
-  let mut tv1 = Keccak256Transcript::<E>::new(b"p3-poseidon2");
+  let mut tv1 = P3Transcript::new(b"p3-poseidon2");
   assert!(PCS::verify(&vk, &mut tv1, &comm, &point, &eval, &arg).is_err());
 
   // restore commitment, tamper layer roots
   let comm2 = PCS::commit(&ck, &poly, &blind, false).unwrap();
   arg.layer_roots[0].0[0] ^= 1;
-  let mut tv2 = Keccak256Transcript::<E>::new(b"p3-poseidon2");
+  let mut tv2 = P3Transcript::new(b"p3-poseidon2");
   assert!(PCS::verify(&vk, &mut tv2, &comm2, &point, &eval, &arg).is_err());
 }
 
@@ -103,7 +104,7 @@ fn p3_tamper_paths_and_next_fails() {
   let blind = PCS::blind(&ck, poly.len());
   let comm = PCS::commit(&ck, &poly, &blind, false).unwrap();
 
-  let mut tp = Keccak256Transcript::<E>::new(b"p3-poseidon2");
+  let mut tp = P3Transcript::new(b"p3-poseidon2");
   let (eval, mut arg) = PCS::prove(&ck, &mut tp, &comm, &poly, &blind, &point).unwrap();
 
   // swap A/B paths in round 0
@@ -113,16 +114,16 @@ fn p3_tamper_paths_and_next_fails() {
   {
     let len = arg.rounds[0].path_a.siblings.len();
     arg.rounds[0].path_a.siblings.swap(0, len - 1);
-    let mut tv1 = Keccak256Transcript::<E>::new(b"p3-poseidon2");
+    let mut tv1 = P3Transcript::new(b"p3-poseidon2");
     assert!(PCS::verify(&vk, &mut tv1, &comm, &point, &eval, &arg).is_err());
   }
 
   // revert and set wrong next
-  let mut tp2 = Keccak256Transcript::<E>::new(b"p3-poseidon2");
+  let mut tp2 = P3Transcript::new(b"p3-poseidon2");
   let (_eval2, mut arg2) = PCS::prove(&ck, &mut tp2, &comm, &poly, &blind, &point).unwrap();
   if !arg2.rounds.is_empty() {
     arg2.rounds[0].next = arg2.rounds[0].a;
-    let mut tv2 = Keccak256Transcript::<E>::new(b"p3-poseidon2");
+    let mut tv2 = P3Transcript::new(b"p3-poseidon2");
     assert!(PCS::verify(&vk, &mut tv2, &comm, &point, &eval, &arg2).is_err());
   }
 }
@@ -136,11 +137,11 @@ fn p3_eval_mismatch_fails() {
   let blind = PCS::blind(&ck, poly.len());
   let comm = PCS::commit(&ck, &poly, &blind, false).unwrap();
 
-  let mut tp = Keccak256Transcript::<E>::new(b"p3-poseidon2");
+  let mut tp = P3Transcript::new(b"p3-poseidon2");
   let (mut eval, arg) = PCS::prove(&ck, &mut tp, &comm, &poly, &blind, &point).unwrap();
   eval = eval + F::ONE; // wrong
 
-  let mut tv = Keccak256Transcript::<E>::new(b"p3-poseidon2");
+  let mut tv = P3Transcript::new(b"p3-poseidon2");
   assert!(PCS::verify(&vk, &mut tv, &comm, &point, &eval, &arg).is_err());
 }
 
@@ -163,7 +164,7 @@ fn p3_compare_keccak_vs_poseidon2() {
   let (ck_p, vk_p) = PCS::setup(b"compare", n);
   let blind_p = PCS::blind(&ck_p, n);
   let com_p = PCS::commit(&ck_p, &poly, &blind_p, false).unwrap();
-  let mut tr_p = Keccak256Transcript::<E>::new(b"compare");
+  let mut tr_p = P3Transcript::new(b"compare");
   let (eval_p, arg_p) = PCS::prove(&ck_p, &mut tr_p, &com_p, &poly, &blind_p, &point).unwrap();
 
   // Evaluations should be the same (same polynomial, same point)
@@ -176,7 +177,7 @@ fn p3_compare_keccak_vs_poseidon2() {
   let mut tr_k_v = Keccak256Transcript::<KeccakEngine>::new(b"compare");
   KeccakPCS::<KeccakEngine>::verify(&vk_k, &mut tr_k_v, &com_k, &point, &eval_k, &arg_k).unwrap();
 
-  let mut tr_p_v = Keccak256Transcript::<E>::new(b"compare");
+  let mut tr_p_v = P3Transcript::new(b"compare");
   PCS::verify(&vk_p, &mut tr_p_v, &com_p, &point, &eval_p, &arg_p).unwrap();
 }
 
@@ -223,16 +224,16 @@ proptest! {
         let blind = PCS::blind(&ck, poly.len());
         let comm = PCS::commit(&ck, &poly, &blind, false).unwrap();
 
-        let mut tp = Keccak256Transcript::<E>::new(b"p3-fuzz");
+        let mut tp = P3Transcript::new(b"p3-fuzz");
         let (eval, mut arg) = PCS::prove(&ck, &mut tp, &comm, &poly, &blind, &point).unwrap();
 
-        let mut tv = Keccak256Transcript::<E>::new(b"p3-fuzz");
+        let mut tv = P3Transcript::new(b"p3-fuzz");
         prop_assert!(PCS::verify(&vk, &mut tv, &comm, &point, &eval, &arg).is_ok());
 
         // negative by truncating next-path depth (round 0)
         if !arg.rounds.is_empty() && !arg.rounds[0].path_next.siblings.is_empty() {
             arg.rounds[0].path_next.siblings.pop();
-            let mut tv2 = Keccak256Transcript::<E>::new(b"p3-fuzz");
+            let mut tv2 = P3Transcript::new(b"p3-fuzz");
             prop_assert!(PCS::verify(&vk, &mut tv2, &comm, &point, &eval, &arg).is_err());
         }
     }
@@ -242,13 +243,11 @@ proptest! {
 #[cfg(feature = "p3_backend")]
 fn p3_tamper_samples_fail() {
   use spartan2::{
-    provider::{
-      GoldilocksP3MerkleMleEngine as E, keccak::Keccak256Transcript,
-      pcs::merkle_mle_pc_p3::HashMlePcsP3,
-    },
+    provider::{GoldilocksP3MerkleMleEngine as E, pcs::merkle_mle_pc_p3::HashMlePcsP3},
     traits::{Engine, pcs::PCSEngineTrait, transcript::TranscriptEngineTrait},
   };
   type F = <E as Engine>::Scalar;
+  type P3Transcript = <E as Engine>::TE;
   let m = 5usize;
   let n = 1usize << m;
   let poly: Vec<F> = (0..n).map(|i| F::from(i as u64)).collect();
@@ -258,12 +257,12 @@ fn p3_tamper_samples_fail() {
   let blind = HashMlePcsP3::<E>::blind(&ck, n);
   let comm = HashMlePcsP3::<E>::commit(&ck, &poly, &blind, false).unwrap();
 
-  let mut tp = Keccak256Transcript::<E>::new(b"p3-sample-tamper");
+  let mut tp = P3Transcript::new(b"p3-sample-tamper");
   let (eval, mut arg) =
     HashMlePcsP3::<E>::prove(&ck, &mut tp, &comm, &poly, &blind, &point).unwrap();
 
   // tamper one sample's next value
   arg.samples[0][0].next = arg.samples[0][0].a;
-  let mut tv = Keccak256Transcript::<E>::new(b"p3-sample-tamper");
+  let mut tv = P3Transcript::new(b"p3-sample-tamper");
   assert!(HashMlePcsP3::<E>::verify(&vk, &mut tv, &comm, &point, &eval, &arg).is_err());
 }

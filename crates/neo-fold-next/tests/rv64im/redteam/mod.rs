@@ -4,8 +4,6 @@ use crate::common::proof_cases::{
     refresh_stage3_semantic_digests,
 };
 use neo_fold_next::rv64im::{verify_rv64im_accepted_proof, Rv64Opcode};
-use neo_math::F;
-use p3_field::PrimeCharacteristicRing;
 
 #[test]
 fn redteam_semantic_input_substitution_fails_without_rebuild() {
@@ -78,13 +76,13 @@ fn redteam_provenance_tamper_fails() {
 }
 
 #[test]
-fn redteam_public_chunk_digest_replay_tamper_fails() {
+fn redteam_row_local_ccs_acceptance_replay_tamper_fails() {
     let input = alu_input();
     let (mut artifact, _) = prove_accepted(&input);
-    artifact.root_execution.public_chunk_digests[0][0] += F::from_u64(1);
+    artifact.root_execution.row_local_ccs_acceptance.digest[0] ^= 1;
     artifact.root_execution.digest = artifact.root_execution.expected_digest();
     refresh_accepted_artifact_digest(&mut artifact);
-    expect_accepted_verify_failure(&artifact, "final statement digest mismatch");
+    expect_accepted_verify_failure(&artifact, "row-local CCS acceptance mismatch");
 }
 
 #[test]

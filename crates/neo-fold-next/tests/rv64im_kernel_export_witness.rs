@@ -46,7 +46,6 @@ fn rv64im_kernel_export_witness_round_trip() {
             );
             assert_eq!(binding.prepared_step_digest, prepared_step_digest(step));
             assert_ne!(binding.row_binding_digest, [0; 32]);
-            assert_ne!(binding.row_opening_digest, [0; 32]);
             assert_ne!(binding.digest, [0; 32]);
         }
     }
