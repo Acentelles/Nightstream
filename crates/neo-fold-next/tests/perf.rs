@@ -35,8 +35,8 @@ use neo_fold_next::rv64im::tables::Rv64FamilyTag;
 use neo_fold_next::rv64im::{
     build_mixed_opcode_perf_source_case, build_parity_case_from_source, build_program,
     build_rv64im_audit_witness_bundle as build_rv64im_proof_witness,
-    build_rv64im_opening_bundle_from_accepted_artifact, build_rv64im_published_proof_seam_with_perf,
-    build_simple_kernel_witness_with_perf, mixed_opcode_perf_expected_x1, prove_rv64im_public_proof_with_perf,
+    build_rv64im_opening_bundle_from_accepted_artifact, build_simple_kernel_witness_with_perf,
+    mixed_opcode_perf_expected_x1, prove_rv64im_public_proof_and_published_seam_with_perf,
     prove_rv64im_spartan2_decider_for_target_with_perf, rv64im_simple_root_params,
     setup_rv64im_spartan2_decider_for_target, validate_rv64im_public_proof_against_input_with_perf,
     verify_rv64im_audit_proof as verify_rv64im_proof, verify_rv64im_public_proof_with_perf, OpeningAccumulator,
@@ -1280,9 +1280,10 @@ fn rv64im_mixed_opcode_perf_snapshot() {
     let (output, build_perf) = build_simple_kernel_witness_with_perf(&input).expect("build simple kernel witness");
     let build_ms = millis_since(build_started);
 
-    let prove_started = Instant::now();
-    let (proof, prove_perf) = prove_rv64im_public_proof_with_perf(&input).expect("prove rv64im public proof");
-    let prove_ms = millis_since(prove_started);
+    let ((proof, published_seam), prove_and_seam_perf) =
+        prove_rv64im_public_proof_and_published_seam_with_perf(&input).expect("prove rv64im public proof and seam");
+    let prove_perf = prove_and_seam_perf.proof;
+    let prove_ms = prove_perf.total_ms;
 
     let verify_started = Instant::now();
     let verify_perf = verify_rv64im_public_proof_with_perf(&proof).expect("verify rv64im public proof");
@@ -1291,8 +1292,7 @@ fn rv64im_mixed_opcode_perf_snapshot() {
     let _ = validate_rv64im_public_proof_against_input_with_perf(&input, &proof)
         .expect("validate rv64im public proof against input");
 
-    let (published_seam, published_seam_perf) =
-        build_rv64im_published_proof_seam_with_perf(&proof).expect("build rv64im published proof seam");
+    let published_seam_perf = prove_and_seam_perf.seam;
     let accepted_artifact = &published_seam.accepted_artifact;
     let final_statement = &published_seam.final_statement;
     let kernel_export_source = published_seam.kernel_export_source();
@@ -1841,6 +1841,9 @@ fn rv64im_mixed_opcode_perf_snapshot() {
             ("root_lane_columns", build_perf.root_lane_columns_ms),
             ("root_lane_commitment", build_perf.root_lane_commitment_ms),
             ("build_simple_kernel", build_ms),
+            ("public.shared_trace", prove_perf.shared_trace_ms),
+            ("public.kernel_projection", prove_perf.simple_kernel.total_ms),
+            ("public.parallel_overlap", -prove_perf.parallel_overlap_ms),
             ("prove_rv64im_public_proof", prove_ms),
             (
                 "build_rv64im_published_seam.accepted_artifact",
@@ -2376,7 +2379,7 @@ fn rv64im_mixed_opcode_perf_snapshot() {
                     .verified_seams
                     .side_terminal_artifact_ms,
             ),
-            ("build_simple_kernel", build_ms),
+            ("public.kernel_projection", prove_perf.simple_kernel.total_ms),
         ],
         8,
     );
@@ -2386,12 +2389,27 @@ fn rv64im_mixed_opcode_perf_snapshot() {
         let max_bar = total;
         tree_header("PROVING BREAKDOWN", total, per_unit(total, total_executed_opcodes));
         tree_row("├─ ", "public proof", prove_ms, max_bar, total, true);
-        tree_row("│  ├─ ", "build_simple_kernel", build_ms, max_bar, total, false);
+        tree_row(
+            "│  ├─ ",
+            "shared trace",
+            prove_perf.shared_trace_ms,
+            max_bar,
+            total,
+            false,
+        );
+        tree_row(
+            "│  ├─ ",
+            "kernel projection",
+            prove_perf.simple_kernel.total_ms,
+            max_bar,
+            total,
+            false,
+        );
 
         let root_prove = &prove_perf.root_main_lane;
         let package_overhead_ms =
             (root_prove.total_ms - root_prove.prepare_steps_ms - root_prove.session.total_ms).max(0.0);
-        tree_row("│  └─ ", "root main lane", root_prove.total_ms, max_bar, total, false);
+        tree_row("│  ├─ ", "root main lane", root_prove.total_ms, max_bar, total, false);
         tree_row("│     ├─ ", "package", package_overhead_ms, max_bar, total, false);
         tree_row("│     ├─ ", "Π_RLC", root_prove.session.rlc_ms(), max_bar, total, false);
         tree_row(
@@ -2420,6 +2438,22 @@ fn rv64im_mixed_opcode_perf_snapshot() {
             max_bar,
             total,
             false,
+        );
+        if prove_perf.parallel_overlap_ms > 0.0 {
+            tree_row_annotated(
+                "│  ├─ ",
+                "parallel overlap",
+                -prove_perf.parallel_overlap_ms,
+                "(kernel projection overlapped with root main lane)",
+            );
+        }
+        tree_row_annotated(
+            "│  └─ ",
+            "other",
+            (prove_ms - prove_perf.shared_trace_ms - prove_perf.simple_kernel.total_ms - root_prove.total_ms
+                + prove_perf.parallel_overlap_ms)
+                .max(0.0),
+            "(main-lane binding + proof export)",
         );
         println!("  │");
 

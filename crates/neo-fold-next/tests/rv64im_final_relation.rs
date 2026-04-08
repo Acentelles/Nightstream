@@ -8,7 +8,8 @@ use neo_fold_next::rv64im::final_relation::{
 use neo_fold_next::rv64im::{
     build_rv64im_accepted_proof_artifact, build_rv64im_kernel_export_source_from_accepted_artifact,
     build_rv64im_kernel_export_witness, parity_source_cases, prove_rv64im_accepted_proof,
-    prove_rv64im_accepted_proof_with_options, prove_rv64im_public_proof, Rv64imProofInput, Rv64imPublicProofOptions,
+    prove_rv64im_accepted_proof_with_options, prove_rv64im_public_proof,
+    prove_rv64im_public_proof_and_published_seam_with_perf, Rv64imProofInput, Rv64imPublicProofOptions,
 };
 
 fn source_case(name: &str) -> neo_fold_next::rv64im::Rv64imParitySourceCase {
@@ -52,6 +53,27 @@ fn rv64im_final_statement_round_trip() {
     assert_ne!(statement.digest, [0; 32]);
 
     verify_rv64im_final_statement(&statement, &proof).expect("verify rv64im final statement");
+}
+
+#[test]
+fn rv64im_direct_prover_seam_matches_reconstructive_final_path() {
+    let input = proof_input("control_flow_jal_skip_ecall");
+    let ((proof, published_seam), _) =
+        prove_rv64im_public_proof_and_published_seam_with_perf(&input).expect("prove rv64im public proof and seam");
+    let artifact = build_rv64im_accepted_proof_artifact(&proof).expect("build accepted rv64im artifact");
+    let (statement, final_proof) =
+        prove_rv64im_final_statement_from_accepted(&artifact).expect("prove rv64im final statement");
+
+    assert_eq!(published_seam.accepted_artifact.digest, artifact.digest);
+    assert_eq!(published_seam.final_statement.digest, statement.digest);
+    assert_eq!(published_seam.final_proof.proof_digest, final_proof.proof_digest);
+    assert_eq!(
+        published_seam.final_proof.kernel_export.digest,
+        final_proof.kernel_export.digest
+    );
+
+    verify_rv64im_final_statement(&published_seam.final_statement, &published_seam.final_proof)
+        .expect("verify rv64im direct final statement");
 }
 
 #[test]
