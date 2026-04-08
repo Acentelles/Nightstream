@@ -47,16 +47,10 @@ impl Rq {
         Self(out)
     }
 
-    /// MUST: constant-time schoolbook mul with reduction mod Phi_{81}(X) = X^54 + X^27 + 1.
-    /// No branches on secret data; loops run fixed D and 2D-1 iterations.
+    /// MUST: constant-time 3-way split mul with reduction mod Phi_{81}(X) = X^54 + X^27 + 1.
+    /// No branches on secret data; loops run fixed D and fixed split sizes.
     pub fn mul(&self, rhs: &Self) -> Self {
-        let mut tmp = [Fq::ZERO; 2 * D - 1];
-        for i in 0..D {
-            let ai = self.0[i];
-            for j in 0..D {
-                tmp[i + j] += ai * rhs.0[j];
-            }
-        }
+        let mut tmp = mul_3way_karatsuba_54(&self.0, &rhs.0);
         reduce_mod_phi_81(&mut tmp);
         let mut out = [Fq::ZERO; D];
         out.copy_from_slice(&tmp[0..D]);
@@ -393,4 +387,146 @@ impl Mul for Rq {
     fn mul(self, rhs: Self) -> Self::Output {
         Self::mul(&self, &rhs)
     }
+}
+
+const KARATSUBA_SPLIT: usize = D / 3;
+const KARATSUBA_CHUNK_OUT: usize = 2 * KARATSUBA_SPLIT - 1;
+
+#[inline]
+fn inv_two() -> Fq {
+    static INV_TWO: OnceLock<Fq> = OnceLock::new();
+    *INV_TWO.get_or_init(|| Fq::from_u64(2).inverse())
+}
+
+#[inline]
+fn inv_six() -> Fq {
+    static INV_SIX: OnceLock<Fq> = OnceLock::new();
+    *INV_SIX.get_or_init(|| Fq::from_u64(6).inverse())
+}
+
+#[inline]
+fn add_chunk<const N: usize>(lhs: &[Fq; N], rhs: &[Fq; N]) -> [Fq; N] {
+    let mut out = [Fq::ZERO; N];
+    for i in 0..N {
+        out[i] = lhs[i] + rhs[i];
+    }
+    out
+}
+
+#[inline]
+fn sub_chunk<const N: usize>(lhs: &[Fq; N], rhs: &[Fq; N]) -> [Fq; N] {
+    let mut out = [Fq::ZERO; N];
+    for i in 0..N {
+        out[i] = lhs[i] - rhs[i];
+    }
+    out
+}
+
+#[inline]
+fn scale_chunk<const N: usize>(lhs: &[Fq; N], scale: Fq) -> [Fq; N] {
+    let mut out = [Fq::ZERO; N];
+    for i in 0..N {
+        out[i] = lhs[i] * scale;
+    }
+    out
+}
+
+#[inline]
+fn add_scaled_chunk<const N: usize>(lhs: &[Fq; N], rhs: &[Fq; N], scale: Fq) -> [Fq; N] {
+    let mut out = [Fq::ZERO; N];
+    for i in 0..N {
+        out[i] = lhs[i] + rhs[i] * scale;
+    }
+    out
+}
+
+#[inline]
+fn sub_assign_chunk<const N: usize>(dst: &mut [Fq; N], src: &[Fq; N]) {
+    for i in 0..N {
+        dst[i] -= src[i];
+    }
+}
+
+#[inline]
+fn add_assign_chunk_at<const N: usize>(dst: &mut [Fq; 2 * D - 1], offset: usize, src: &[Fq; N]) {
+    for i in 0..N {
+        dst[offset + i] += src[i];
+    }
+}
+
+#[inline]
+fn mul_schoolbook_chunk(lhs: &[Fq; KARATSUBA_SPLIT], rhs: &[Fq; KARATSUBA_SPLIT]) -> [Fq; KARATSUBA_CHUNK_OUT] {
+    let mut out = [Fq::ZERO; KARATSUBA_CHUNK_OUT];
+    for i in 0..KARATSUBA_SPLIT {
+        let ai = lhs[i];
+        for j in 0..KARATSUBA_SPLIT {
+            out[i + j] += ai * rhs[j];
+        }
+    }
+    out
+}
+
+#[inline]
+fn mul_3way_karatsuba_54(lhs: &[Fq; D], rhs: &[Fq; D]) -> [Fq; 2 * D - 1] {
+    let mut a0 = [Fq::ZERO; KARATSUBA_SPLIT];
+    let mut a1 = [Fq::ZERO; KARATSUBA_SPLIT];
+    let mut a2 = [Fq::ZERO; KARATSUBA_SPLIT];
+    let mut b0 = [Fq::ZERO; KARATSUBA_SPLIT];
+    let mut b1 = [Fq::ZERO; KARATSUBA_SPLIT];
+    let mut b2 = [Fq::ZERO; KARATSUBA_SPLIT];
+
+    a0.copy_from_slice(&lhs[0..KARATSUBA_SPLIT]);
+    a1.copy_from_slice(&lhs[KARATSUBA_SPLIT..2 * KARATSUBA_SPLIT]);
+    a2.copy_from_slice(&lhs[2 * KARATSUBA_SPLIT..3 * KARATSUBA_SPLIT]);
+    b0.copy_from_slice(&rhs[0..KARATSUBA_SPLIT]);
+    b1.copy_from_slice(&rhs[KARATSUBA_SPLIT..2 * KARATSUBA_SPLIT]);
+    b2.copy_from_slice(&rhs[2 * KARATSUBA_SPLIT..3 * KARATSUBA_SPLIT]);
+
+    let two = Fq::from_u64(2);
+    let four = Fq::from_u64(4);
+    let sixteen = Fq::from_u64(16);
+    let half = inv_two();
+    let sixth = inv_six();
+
+    let a01 = add_chunk(&a0, &a1);
+    let b01 = add_chunk(&b0, &b1);
+    let a012 = add_chunk(&a01, &a2);
+    let b012 = add_chunk(&b01, &b2);
+    let am1 = add_chunk(&sub_chunk(&a0, &a1), &a2);
+    let bm1 = add_chunk(&sub_chunk(&b0, &b1), &b2);
+    let a2eval = add_scaled_chunk(&add_scaled_chunk(&a0, &a1, two), &a2, four);
+    let b2eval = add_scaled_chunk(&add_scaled_chunk(&b0, &b1, two), &b2, four);
+
+    let p0 = mul_schoolbook_chunk(&a0, &b0);
+    let p1 = mul_schoolbook_chunk(&a012, &b012);
+    let pm1 = mul_schoolbook_chunk(&am1, &bm1);
+    let p2 = mul_schoolbook_chunk(&a2eval, &b2eval);
+    let p4 = mul_schoolbook_chunk(&a2, &b2);
+
+    let c0 = p0;
+    let c4 = p4;
+    let mut c2 = scale_chunk(&add_chunk(&p1, &pm1), half);
+    sub_assign_chunk(&mut c2, &c0);
+    sub_assign_chunk(&mut c2, &c4);
+
+    let s = scale_chunk(&sub_chunk(&p1, &pm1), half);
+
+    let mut c3 = p2;
+    sub_assign_chunk(&mut c3, &c0);
+    for i in 0..KARATSUBA_CHUNK_OUT {
+        c3[i] -= c2[i] * four;
+        c3[i] -= c4[i] * sixteen;
+    }
+    c3 = scale_chunk(&sub_chunk(&c3, &scale_chunk(&s, two)), sixth);
+
+    let mut c1 = s;
+    sub_assign_chunk(&mut c1, &c3);
+
+    let mut out = [Fq::ZERO; 2 * D - 1];
+    add_assign_chunk_at(&mut out, 0, &c0);
+    add_assign_chunk_at(&mut out, KARATSUBA_SPLIT, &c1);
+    add_assign_chunk_at(&mut out, 2 * KARATSUBA_SPLIT, &c2);
+    add_assign_chunk_at(&mut out, 3 * KARATSUBA_SPLIT, &c3);
+    add_assign_chunk_at(&mut out, 4 * KARATSUBA_SPLIT, &c4);
+    out
 }
