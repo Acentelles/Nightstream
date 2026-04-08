@@ -102,6 +102,23 @@ pub struct PublicChunk {
     pub steps: Vec<PublicStep>,
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct ProverChunkInput {
+    pub public_chunk: PublicChunk,
+    pub fresh_claims: Vec<CcsClaim<Commitment, F>>,
+    pub fresh_witnesses: Vec<CcsWitness<F>>,
+}
+
+impl ProverChunkInput {
+    pub fn start_index(&self) -> usize {
+        self.public_chunk.start_index
+    }
+
+    pub fn fresh_step_count(&self) -> usize {
+        self.public_chunk.steps.len()
+    }
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Carry {
     pub claims: Vec<CeClaim<Commitment, F, K>>,
@@ -538,6 +555,33 @@ pub fn partition_step_inputs(schedule: FoldSchedule, steps: Vec<StepInput>) -> R
 
 pub fn partition_public_steps(schedule: FoldSchedule, steps: Vec<PublicStep>) -> Result<Vec<PublicChunk>, PiCcsError> {
     partition_items(schedule, steps, |start_index, steps| PublicChunk { start_index, steps })
+}
+
+pub(crate) fn partition_prover_step_inputs(
+    schedule: FoldSchedule,
+    steps: Vec<StepInput>,
+) -> Result<Vec<ProverChunkInput>, PiCcsError> {
+    partition_items(schedule, steps, |start_index, steps| {
+        let mut public_steps = Vec::with_capacity(steps.len());
+        let mut fresh_claims = Vec::with_capacity(steps.len());
+        let mut fresh_witnesses = Vec::with_capacity(steps.len());
+        for StepInput { label, mcs, witness } in steps {
+            public_steps.push(PublicStep {
+                label,
+                mcs: mcs.clone(),
+            });
+            fresh_claims.push(mcs);
+            fresh_witnesses.push(witness);
+        }
+        ProverChunkInput {
+            public_chunk: PublicChunk {
+                start_index,
+                steps: public_steps,
+            },
+            fresh_claims,
+            fresh_witnesses,
+        }
+    })
 }
 
 fn partition_items<T, C, FBuild>(schedule: FoldSchedule, items: Vec<T>, build: FBuild) -> Result<Vec<C>, PiCcsError>

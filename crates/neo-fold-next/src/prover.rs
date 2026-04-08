@@ -15,8 +15,8 @@ use neo_reductions::error::PiCcsError;
 use neo_reductions::optimized_engine::OptimizedStructureCache;
 use neo_transcript::Poseidon2Transcript;
 
-use crate::chunk_relation::compute_chunk_relation_with_perf;
-use crate::proof::{Carry, ChunkInput, ChunkProvePerf, ChunkResult};
+use crate::chunk_relation::{compute_chunk_relation_for_prover_chunk_with_perf, compute_chunk_relation_with_perf};
+use crate::proof::{Carry, ChunkInput, ChunkProvePerf, ChunkResult, ProverChunkInput};
 
 pub use crate::chunk_relation::{ChunkRelationArtifacts, CommitmentMixers};
 
@@ -61,5 +61,38 @@ impl ShardProver {
         let (computation, perf) =
             compute_chunk_relation_with_perf(mode, tr, params, s, chunk, incoming_main, log, mixers, optimized_cache)?;
         Ok((computation.into_chunk_result(chunk), perf))
+    }
+
+    pub(crate) fn prove_prepared_chunk_with_perf<L, MR, MB>(
+        mode: FoldingMode,
+        tr: &mut Poseidon2Transcript,
+        params: &NeoParams,
+        s: &CcsStructure<F>,
+        chunk: &ProverChunkInput,
+        incoming_main: &Carry,
+        log: &L,
+        mixers: CommitmentMixers<MR, MB>,
+        optimized_cache: Option<&OptimizedStructureCache>,
+    ) -> Result<(ChunkResult, ChunkProvePerf), PiCcsError>
+    where
+        L: SModuleHomomorphism<F, Commitment> + Sync,
+        MR: Fn(&[neo_ccs::Mat<F>], &[Commitment]) -> Commitment + Clone + Copy,
+        MB: Fn(&[Commitment], u32) -> Commitment + Clone + Copy,
+    {
+        let (computation, perf) = compute_chunk_relation_for_prover_chunk_with_perf(
+            mode,
+            tr,
+            params,
+            s,
+            chunk,
+            incoming_main,
+            log,
+            mixers,
+            optimized_cache,
+        )?;
+        Ok((
+            computation.into_chunk_result_with_public_chunk(chunk.public_chunk.clone()),
+            perf,
+        ))
     }
 }

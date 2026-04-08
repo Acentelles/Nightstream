@@ -19,8 +19,8 @@ use crate::finalize::{
     verify_finalized_session_with_precomputed_chunk_digests_and_detailed_perf_and_cache, PackagedVerifyPerf,
 };
 use crate::proof::{
-    partition_public_steps, partition_step_inputs, Carry, ChunkInput, FoldSchedule, PackagedProof, PublicChunk,
-    PublicStep, RunProof, RunProvePerf, RunVerifyPerf, StepInput,
+    partition_prover_step_inputs, partition_public_steps, partition_step_inputs, Carry, ChunkInput, FoldSchedule,
+    PackagedProof, ProverChunkInput, PublicChunk, PublicStep, RunProof, RunProvePerf, RunVerifyPerf, StepInput,
 };
 use crate::prover::{CommitmentMixers, ShardProver};
 use crate::verifier::ShardVerifier;
@@ -122,6 +122,61 @@ where
     MB: Fn(&[Commitment], u32) -> Commitment + Clone + Copy,
 {
     prove_chunks_with_perf_and_cache(mode, schedule, params, s, chunks, log, mixers, None)
+}
+
+fn prove_prepared_chunks_with_perf<L, MR, MB>(
+    mode: FoldingMode,
+    schedule: FoldSchedule,
+    params: &NeoParams,
+    s: &CcsStructure<F>,
+    chunks: impl IntoIterator<Item = ProverChunkInput>,
+    log: &L,
+    mixers: CommitmentMixers<MR, MB>,
+) -> Result<(RunProof, RunProvePerf), PiCcsError>
+where
+    L: SModuleHomomorphism<F, Commitment> + Sync,
+    MR: Fn(&[Mat<F>], &[Commitment]) -> Commitment + Clone + Copy,
+    MB: Fn(&[Commitment], u32) -> Commitment + Clone + Copy,
+{
+    let mut tr = Poseidon2Transcript::new(b"neo.fold.next/session");
+    let mut main_carry = Carry::default();
+    let mut session = RunProof {
+        fold_schedule: schedule,
+        ..RunProof::default()
+    };
+    let built_cache = maybe_build_optimized_cache(&mode, s, None)?;
+    let optimized_cache = built_cache.as_ref();
+    let mut perf = RunProvePerf::default();
+
+    for chunk in chunks {
+        let (proved, chunk_perf) = ShardProver::prove_prepared_chunk_with_perf(
+            mode.clone(),
+            &mut tr,
+            params,
+            s,
+            &chunk,
+            &main_carry,
+            log,
+            mixers,
+            optimized_cache,
+        )?;
+        main_carry = proved.next_main;
+        session.chunks.push(proved.proof);
+        tr.append_message(b"neo.fold.next/chunk_done", &[1]);
+        perf.chunks.push(chunk_perf);
+    }
+
+    validate_chunk_layout(
+        schedule,
+        &session
+            .chunks
+            .iter()
+            .map(|chunk| chunk.chunk.clone())
+            .collect::<Vec<_>>(),
+    )?;
+    session.final_main_claims = main_carry.claims;
+    perf.total_ms = perf.chunks.iter().map(|chunk| chunk.total_ms).sum();
+    Ok((session, perf))
 }
 
 pub fn prove_chunks_with_perf_and_cache<L, MR, MB>(
@@ -483,9 +538,12 @@ where
     MB: Fn(&[Commitment], u32) -> Commitment + Clone + Copy,
 {
     let steps_vec: Vec<StepInput> = steps.into_iter().collect();
-    let public_chunks = partition_public_steps(schedule, steps_vec.iter().map(StepInput::instance).collect())?;
-    let input_chunks = partition_step_inputs(schedule, steps_vec)?;
-    let (session, perf) = prove_chunks_with_perf(mode, schedule, params, s, input_chunks, log, mixers)?;
+    let input_chunks = partition_prover_step_inputs(schedule, steps_vec)?;
+    let public_chunks = input_chunks
+        .iter()
+        .map(|chunk| chunk.public_chunk.clone())
+        .collect::<Vec<_>>();
+    let (session, perf) = prove_prepared_chunks_with_perf(mode, schedule, params, s, input_chunks, log, mixers)?;
     let packaged = package_session_proof(public_chunks, session)?;
     Ok((packaged, perf))
 }

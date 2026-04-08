@@ -31,7 +31,8 @@ use std::time::Instant;
 
 use crate::finalize::public_chunk_digest;
 use crate::proof::{
-    Carry, ChunkInput, ChunkProof, ChunkProvePerf, ChunkResult, PiDecArtifact, PiRlcArtifact, PublicChunk,
+    Carry, ChunkInput, ChunkProof, ChunkProvePerf, ChunkResult, PiDecArtifact, PiRlcArtifact, ProverChunkInput,
+    PublicChunk,
 };
 
 #[derive(Clone, Copy)]
@@ -70,6 +71,15 @@ struct ChunkPreparedInputs {
     prepare_inputs_ms: f64,
 }
 
+struct BorrowedChunkPreparedInputs<'a> {
+    start_index: usize,
+    fresh_step_count: usize,
+    fresh_claims: &'a [CcsClaim<Commitment, F>],
+    fresh_witnesses: &'a [CcsWitness<F>],
+    public_chunk_digest: [F; 4],
+    prepare_inputs_ms: f64,
+}
+
 struct CcsTransitionState {
     ccs_outputs: Vec<CeClaim<Commitment, F, K>>,
     parent: CeClaim<Commitment, F, K>,
@@ -91,6 +101,10 @@ impl CcsTransitionState {
 impl ChunkComputation {
     pub(crate) fn into_chunk_result(self, chunk: &ChunkInput) -> ChunkResult {
         chunk_result_from_transition(self.transition, chunk.public(), self.ccs_proof)
+    }
+
+    pub(crate) fn into_chunk_result_with_public_chunk(self, public_chunk: PublicChunk) -> ChunkResult {
+        chunk_result_from_transition(self.transition, public_chunk, self.ccs_proof)
     }
 }
 
@@ -466,6 +480,83 @@ where
     Ok((ChunkComputation { transition, ccs_proof }, perf))
 }
 
+pub(crate) fn compute_chunk_relation_for_prover_chunk_with_perf<L, MR, MB>(
+    mode: FoldingMode,
+    tr: &mut Poseidon2Transcript,
+    params: &NeoParams,
+    s: &CcsStructure<F>,
+    chunk: &ProverChunkInput,
+    incoming_main: &Carry,
+    log: &L,
+    mixers: CommitmentMixers<MR, MB>,
+    optimized_cache: Option<&OptimizedStructureCache>,
+) -> Result<(ChunkComputation, ChunkProvePerf), PiCcsError>
+where
+    L: SModuleHomomorphism<F, Commitment> + Sync,
+    MR: Fn(&[Mat<F>], &[Commitment]) -> Commitment + Clone + Copy,
+    MB: Fn(&[Commitment], u32) -> Commitment + Clone + Copy,
+{
+    let total_started = Instant::now();
+    let prepared = prepare_prover_chunk_ccs_inputs(tr, chunk, incoming_main)?;
+    let ccs_started = Instant::now();
+    let (ccs_outputs, ccs_proof, ccs_perf) = if matches!(mode, FoldingMode::Optimized) {
+        let cache = optimized_cache.ok_or_else(|| {
+            PiCcsError::InvalidInput("missing optimized structure cache for optimized chunk relation".into())
+        })?;
+        optimized_prove_with_cache_and_instance_digest_and_perf(
+            tr,
+            params,
+            s,
+            prepared.fresh_claims,
+            prepared.fresh_witnesses,
+            &incoming_main.claims,
+            &incoming_main.witnesses,
+            prepared.public_chunk_digest,
+            log,
+            cache,
+        )?
+    } else {
+        let (ccs_outputs, ccs_proof) = prove(
+            mode.clone(),
+            tr,
+            params,
+            s,
+            prepared.fresh_claims,
+            prepared.fresh_witnesses,
+            &incoming_main.claims,
+            &incoming_main.witnesses,
+            log,
+        )?;
+        (
+            ccs_outputs,
+            ccs_proof,
+            neo_reductions::optimized_engine::PiCcsProvePerf::default(),
+        )
+    };
+    let ccs_ms = ccs_started.elapsed().as_secs_f64() * 1_000.0;
+    let fold_digest = fold_digest_from_proof(&ccs_proof)?;
+    let (transition, perf) = finish_chunk_transition_with_perf(
+        total_started,
+        mode,
+        tr,
+        params,
+        s,
+        prepared.start_index,
+        prepared.fresh_step_count,
+        incoming_main,
+        log,
+        mixers,
+        optimized_cache,
+        prepared.prepare_inputs_ms,
+        prepared.fresh_witnesses,
+        ccs_outputs,
+        fold_digest,
+        ccs_perf,
+        ccs_ms,
+    )?;
+    Ok((ChunkComputation { transition, ccs_proof }, perf))
+}
+
 fn compute_replay_chunk_relation_with_perf<L, MR, MB>(
     tr: &mut Poseidon2Transcript,
     params: &NeoParams,
@@ -546,6 +637,26 @@ fn prepare_chunk_ccs_inputs(
         fresh_claims,
         fresh_witnesses,
         public_chunk_digest,
+        prepare_inputs_ms: prepare_inputs_started.elapsed().as_secs_f64() * 1_000.0,
+    })
+}
+
+fn prepare_prover_chunk_ccs_inputs<'a>(
+    tr: &mut Poseidon2Transcript,
+    chunk: &'a ProverChunkInput,
+    incoming_main: &Carry,
+) -> Result<BorrowedChunkPreparedInputs<'a>, PiCcsError> {
+    validate_main_carry("replay_chunk_relation", incoming_main)?;
+    validate_public_chunk_input(&chunk.public_chunk)?;
+    append_public_chunk_transcript(tr, &chunk.public_chunk);
+
+    let prepare_inputs_started = Instant::now();
+    Ok(BorrowedChunkPreparedInputs {
+        start_index: chunk.start_index(),
+        fresh_step_count: chunk.fresh_step_count(),
+        fresh_claims: &chunk.fresh_claims,
+        fresh_witnesses: &chunk.fresh_witnesses,
+        public_chunk_digest: public_chunk_digest(&chunk.public_chunk),
         prepare_inputs_ms: prepare_inputs_started.elapsed().as_secs_f64() * 1_000.0,
     })
 }
@@ -681,6 +792,10 @@ where
 }
 
 fn append_chunk_transcript(tr: &mut Poseidon2Transcript, chunk: &ChunkInput) {
+    append_public_chunk_transcript(tr, &chunk.public());
+}
+
+fn append_public_chunk_transcript(tr: &mut Poseidon2Transcript, chunk: &PublicChunk) {
     if chunk.steps.len() == 1 {
         tr.append_u64s(b"neo.fold.next/step_index", &[chunk.start_index as u64]);
         return;
@@ -741,6 +856,10 @@ fn fold_digest_from_proof(ccs_proof: &PiCcsProof) -> Result<[u8; 32], PiCcsError
 }
 
 fn validate_chunk_input(chunk: &ChunkInput) -> Result<(), PiCcsError> {
+    validate_public_chunk_input(&chunk.public())
+}
+
+fn validate_public_chunk_input(chunk: &PublicChunk) -> Result<(), PiCcsError> {
     if chunk.steps.is_empty() {
         return Err(PiCcsError::InvalidInput(
             "chunk relation evaluation requires at least one fresh step".into(),
