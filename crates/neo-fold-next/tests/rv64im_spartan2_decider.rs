@@ -1,5 +1,9 @@
 //! Focused tests for the RV64IM adapter into the generic Spartan2 decider target.
 
+use neo_fold_next::decider::spartan2::{
+    prove_spartan2_decider, setup_spartan2_decider, verify_spartan2_decider, Spartan2BackendBindingShellError,
+    Spartan2DeciderError,
+};
 use neo_fold_next::rv64im::final_relation::prove_rv64im_final_statement_from_accepted;
 use neo_fold_next::rv64im::{
     build_rv64im_accepted_proof_artifact, build_rv64im_decider_relation, build_rv64im_spartan2_decider_target,
@@ -130,4 +134,58 @@ fn rv64im_spartan2_decider_from_public_proof_round_trip() {
     verify_rv64im_spartan2_decider_from_public_proof(&vk, &proof, &decider_proof)
         .expect("verify rv64im spartan2 decider from proof");
     assert!(decider_proof.snark_bytes_len() > 0);
+}
+
+#[test]
+fn rv64im_spartan2_decider_rejects_tampered_base_component_digest() {
+    let input = proof_input("control_flow_jal_skip_ecall");
+    let proof = prove_rv64im_public_proof(&input).expect("prove rv64im public proof");
+    let artifact = build_rv64im_accepted_proof_artifact(&proof).expect("build accepted artifact");
+    let (statement, final_proof) =
+        prove_rv64im_final_statement_from_accepted(&artifact).expect("prove rv64im final statement");
+    let target = build_rv64im_spartan2_decider_target(&statement, &final_proof).expect("build decider target");
+
+    let (pk, vk) = setup_spartan2_decider(&target.shape()).expect("setup generic spartan2 decider");
+    let decider_proof = prove_spartan2_decider(&pk, &target).expect("prove generic spartan2 decider");
+
+    let mut tampered_target = target.clone();
+    tampered_target.witness.base_component_digests[0][0] ^= 1;
+    let err = verify_spartan2_decider(&vk, &tampered_target, &decider_proof)
+        .expect_err("tampered base component digest must fail");
+    assert!(matches!(
+        err,
+        Spartan2DeciderError::RelationDigestMismatch
+            | Spartan2DeciderError::FinalProofDigestMismatch
+            | Spartan2DeciderError::RelationSurface(_)
+            | Spartan2DeciderError::Backend(Spartan2BackendBindingShellError::RelationSurface(_))
+            | Spartan2DeciderError::Backend(Spartan2BackendBindingShellError::PublicIoMismatch)
+            | Spartan2DeciderError::Backend(Spartan2BackendBindingShellError::Verify(_))
+    ));
+}
+
+#[test]
+fn rv64im_spartan2_decider_rejects_tampered_chunk_transition_binding() {
+    let input = proof_input("control_flow_jal_skip_ecall");
+    let proof = prove_rv64im_public_proof(&input).expect("prove rv64im public proof");
+    let artifact = build_rv64im_accepted_proof_artifact(&proof).expect("build accepted artifact");
+    let (statement, final_proof) =
+        prove_rv64im_final_statement_from_accepted(&artifact).expect("prove rv64im final statement");
+    let target = build_rv64im_spartan2_decider_target(&statement, &final_proof).expect("build decider target");
+
+    let (pk, vk) = setup_spartan2_decider(&target.shape()).expect("setup generic spartan2 decider");
+    let decider_proof = prove_spartan2_decider(&pk, &target).expect("prove generic spartan2 decider");
+
+    let mut tampered_target = target.clone();
+    tampered_target.witness.chunk_transition_bindings[0].transition_witness_digest[0] ^= 1;
+    let err = verify_spartan2_decider(&vk, &tampered_target, &decider_proof)
+        .expect_err("tampered chunk transition binding must fail");
+    assert!(matches!(
+        err,
+        Spartan2DeciderError::RelationDigestMismatch
+            | Spartan2DeciderError::FinalProofDigestMismatch
+            | Spartan2DeciderError::RelationSurface(_)
+            | Spartan2DeciderError::Backend(Spartan2BackendBindingShellError::RelationSurface(_))
+            | Spartan2DeciderError::Backend(Spartan2BackendBindingShellError::PublicIoMismatch)
+            | Spartan2DeciderError::Backend(Spartan2BackendBindingShellError::Verify(_))
+    ));
 }

@@ -38,8 +38,8 @@ fn format_breakdown(label: &str, breakdown: R1CSSNarkSerializedSizeBreakdown) ->
     out
 }
 
-fn decode_decider_proof(proof: &Spartan2DeciderProof) -> Spartan2PublicRelationShellSnark {
-    bincode::deserialize(&proof.snark_data).expect("decode public-relation shell snark")
+fn decode_decider_proof(proof: &Spartan2DeciderProof) -> Spartan2BackendBindingShellSnark {
+    bincode::deserialize(&proof.snark_data).expect("decode backend-binding shell snark")
 }
 
 #[test]
@@ -89,7 +89,7 @@ fn rv64im_spartan2_shell_size_snapshot() {
         prove_rv64im_spartan2_decider(&decider_pk, &statement, &final_proof).expect("prove rv64im decider");
 
     println!(
-        "rv64im spartan2 shell size snapshot: base_components={} chunk_transitions={} public_io={} backend_public_io={} public_target_shell={} backend_decider={} side_terminal_base_components={} side_terminal_chunk_transitions={} side_terminal_public_io={} side_terminal_backend_public_io={} side_terminal_public_target_shell={} side_terminal_public_relation_shell={} side_terminal_backend_binding_shell={} side_terminal_backend_proof={}",
+        "rv64im spartan2 shell size snapshot: base_components={} chunk_transitions={} public_io={} backend_public_io={} main_public_target_shell={} main_backend_binding_decider={} side_terminal_base_components={} side_terminal_chunk_transitions={} side_terminal_public_io={} side_terminal_backend_public_io={} side_terminal_public_target_shell={} side_terminal_public_relation_shell={} side_terminal_backend_binding_shell={} side_terminal_backend_proof={}",
         shape.base_component_count,
         shape.chunk_transition_count,
         shape.public_io_len(),
@@ -123,7 +123,7 @@ fn rv64im_spartan2_shell_size_snapshot() {
     println!(
         "{}",
         format_breakdown(
-            "rv64im spartan2 decider breakdown",
+            "rv64im spartan2 backend-binding decider breakdown",
             decider_snark
                 .serialized_size_breakdown()
                 .expect("measure decider shell"),

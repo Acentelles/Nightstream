@@ -137,12 +137,12 @@ impl Spartan2BackendBindingShellProof {
 
 pub struct Spartan2DeciderProverKey {
     shape: Spartan2DeciderShape,
-    backend: Spartan2PublicTargetShellProverKey,
+    backend: Spartan2BackendBindingShellProverKey,
 }
 
 pub struct Spartan2DeciderVerifierKey {
     shape: Spartan2DeciderShape,
-    backend: Spartan2PublicTargetShellVerifierKey,
+    backend: Spartan2BackendBindingShellVerifierKey,
 }
 
 impl Spartan2DeciderVerifierKey {
@@ -252,9 +252,17 @@ pub struct Spartan2PublicTargetShellProvePerf {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Spartan2BackendBindingShellProvePerf {
+    pub prep_ms: f64,
+    pub snark_perf: SpartanProvePerf,
+    pub encode_ms: f64,
+    pub total_ms: f64,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Spartan2DeciderProvePerf {
     pub relation_surface_ms: f64,
-    pub shell: Spartan2PublicTargetShellProvePerf,
+    pub shell: Spartan2BackendBindingShellProvePerf,
     pub total_ms: f64,
 }
 
@@ -1027,15 +1035,40 @@ pub fn prove_spartan2_backend_binding_shell(
     pk: &Spartan2BackendBindingShellProverKey,
     relation: &Spartan2DeciderBackendRelation,
 ) -> Result<Spartan2BackendBindingShellProof, Spartan2BackendBindingShellError> {
+    let (proof, _) = prove_spartan2_backend_binding_shell_with_perf(pk, relation)?;
+    Ok(proof)
+}
+
+pub fn prove_spartan2_backend_binding_shell_with_perf(
+    pk: &Spartan2BackendBindingShellProverKey,
+    relation: &Spartan2DeciderBackendRelation,
+) -> Result<(Spartan2BackendBindingShellProof, Spartan2BackendBindingShellProvePerf), Spartan2BackendBindingShellError>
+{
+    let total_started = std::time::Instant::now();
     validate_spartan2_backend_relation_surface(relation)?;
     let circuit = Spartan2BackendBindingShellCircuit::from_relation(relation);
+    let started = std::time::Instant::now();
     let prep = Spartan2BackendBindingShellSnark::prep_prove(pk, circuit.clone(), true)
         .map_err(|err| Spartan2BackendBindingShellError::Prepare(err.to_string()))?;
-    let proof = Spartan2BackendBindingShellSnark::prove(pk, circuit, &prep, true)
+    let prep_ms = started.elapsed().as_secs_f64() * 1_000.0;
+    let started = std::time::Instant::now();
+    let (proof, snark_perf) = Spartan2BackendBindingShellSnark::prove_with_perf(pk, circuit, &prep, true)
         .map_err(|err| Spartan2BackendBindingShellError::Prove(err.to_string()))?;
+    let mut snark_perf = snark_perf;
+    snark_perf.total_ms = started.elapsed().as_secs_f64() * 1_000.0;
+    let started = std::time::Instant::now();
     let snark_data =
         bincode::serialize(&proof).map_err(|err| Spartan2BackendBindingShellError::Encode(err.to_string()))?;
-    Ok(Spartan2BackendBindingShellProof { snark_data })
+    let encode_ms = started.elapsed().as_secs_f64() * 1_000.0;
+    Ok((
+        Spartan2BackendBindingShellProof { snark_data },
+        Spartan2BackendBindingShellProvePerf {
+            prep_ms,
+            snark_perf,
+            encode_ms,
+            total_ms: total_started.elapsed().as_secs_f64() * 1_000.0,
+        },
+    ))
 }
 
 pub fn verify_spartan2_backend_binding_shell(
@@ -1061,8 +1094,7 @@ pub fn verify_spartan2_backend_binding_shell(
 pub fn setup_spartan2_decider(
     shape: &Spartan2DeciderShape,
 ) -> Result<(Spartan2DeciderProverKey, Spartan2DeciderVerifierKey), Spartan2DeciderError> {
-    let (pk, vk) = setup_spartan2_public_target_shell(shape)
-        .map_err(|err| Spartan2DeciderError::Backend(Spartan2BackendBindingShellError::Setup(err.to_string())))?;
+    let (pk, vk) = setup_spartan2_backend_binding_shell(shape)?;
     Ok((
         Spartan2DeciderProverKey {
             shape: shape.clone(),
@@ -1097,9 +1129,11 @@ pub fn prove_spartan2_decider_with_perf(
         .map_err(|err| Spartan2DeciderError::RelationSurface(err.to_string()))?;
     validate_spartan2_decider_relation_surface(&relation)
         .map_err(|err| Spartan2DeciderError::RelationSurface(err.to_string()))?;
+    let backend_relation = relation.backend_relation();
+    validate_spartan2_backend_relation_surface(&backend_relation).map_err(Spartan2DeciderError::Backend)?;
     let relation_surface_ms = started.elapsed().as_secs_f64() * 1_000.0;
-    let (backend, shell_perf) = prove_spartan2_public_target_shell_with_perf(&pk.backend, target)
-        .map_err(|err| Spartan2DeciderError::Backend(Spartan2BackendBindingShellError::Prove(err.to_string())))?;
+    let (backend, shell_perf) = prove_spartan2_backend_binding_shell_with_perf(&pk.backend, &backend_relation)
+        .map_err(Spartan2DeciderError::Backend)?;
     Ok((
         Spartan2DeciderProof {
             shape_digest: pk.shape.digest(),
@@ -1129,14 +1163,16 @@ pub fn verify_spartan2_decider(
         .map_err(|err| Spartan2DeciderError::RelationSurface(err.to_string()))?;
     validate_spartan2_decider_relation_surface(&relation)
         .map_err(|err| Spartan2DeciderError::RelationSurface(err.to_string()))?;
-    verify_spartan2_public_target_shell(
+    let backend_relation = relation.backend_relation();
+    validate_spartan2_backend_relation_surface(&backend_relation).map_err(Spartan2DeciderError::Backend)?;
+    verify_spartan2_backend_binding_shell(
         &vk.backend,
-        target,
-        &Spartan2PublicTargetShellProof {
+        &backend_relation,
+        &Spartan2BackendBindingShellProof {
             snark_data: proof.snark_data.clone(),
         },
     )
-    .map_err(|err| Spartan2DeciderError::Backend(Spartan2BackendBindingShellError::Verify(err.to_string())))?;
+    .map_err(Spartan2DeciderError::Backend)?;
     Ok(())
 }
 
