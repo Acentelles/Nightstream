@@ -870,6 +870,39 @@ pub fn validate_spartan2_backend_relation_surface(
     Ok(())
 }
 
+fn validate_spartan2_decider_target_surface(target: &Spartan2DeciderTarget) -> Result<(), Spartan2DeciderError> {
+    if target.statement.chunk_count != target.witness.chunk_transition_bindings.len() as u64 {
+        return Err(Spartan2DeciderError::RelationSurface(
+            "public chunk count does not match carried private chunk transition count".into(),
+        ));
+    }
+    if target.statement.chunk_count != target.statement.chunk_summaries.len() as u64 {
+        return Err(Spartan2DeciderError::RelationSurface(
+            "public chunk count does not match carried public chunk summaries".into(),
+        ));
+    }
+    validate_chunk_transition_bindings(
+        &target.statement.chunk_summaries,
+        &target.witness.chunk_transition_bindings,
+    )
+    .map_err(Spartan2DeciderError::RelationSurface)?;
+    validate_fixed_shape_chunk_layout(
+        target.statement.fold_schedule,
+        target.statement.semantic_step_count,
+        &target.statement.chunk_summaries,
+    )
+    .map_err(Spartan2DeciderError::RelationSurface)?;
+    if target.statement.terminal_handle_digest != target.statement.expected_terminal_handle_digest() {
+        return Err(Spartan2DeciderError::RelationSurface(
+            "terminal handle digest does not match the carried chunk summary chain".into(),
+        ));
+    }
+    if target.statement.final_proof_digest != target.expected_final_proof_digest() {
+        return Err(Spartan2DeciderError::FinalProofDigestMismatch);
+    }
+    Ok(())
+}
+
 impl Spartan2DeciderTarget {
     pub fn shape(&self) -> Spartan2DeciderShape {
         Spartan2DeciderShape {
@@ -1123,6 +1156,7 @@ pub fn prove_spartan2_decider_with_perf(
     if target.shape() != pk.shape {
         return Err(Spartan2DeciderError::ShapeMismatch);
     }
+    validate_spartan2_decider_target_surface(target)?;
     let started = std::time::Instant::now();
     let relation = target
         .relation()
@@ -1158,6 +1192,7 @@ pub fn verify_spartan2_decider(
     if proof.shape_digest != vk.shape.digest() {
         return Err(Spartan2DeciderError::ShapeDigestMismatch);
     }
+    validate_spartan2_decider_target_surface(target)?;
     let relation = target
         .relation()
         .map_err(|err| Spartan2DeciderError::RelationSurface(err.to_string()))?;

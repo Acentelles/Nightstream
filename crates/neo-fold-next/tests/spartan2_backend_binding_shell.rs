@@ -83,7 +83,7 @@ fn spartan2_decider_backend_rejects_tampered_target() {
     tampered.statement.final_proof_digest[0] ^= 1;
 
     let err = verify_spartan2_decider(&vk, &tampered, &proof).expect_err("tampered target must fail");
-    assert!(matches!(err, Spartan2DeciderError::Backend(_)));
+    assert!(matches!(err, Spartan2DeciderError::FinalProofDigestMismatch));
 }
 
 #[test]
@@ -112,7 +112,7 @@ fn spartan2_decider_backend_rejects_tampered_public_chunk_count() {
     tampered.statement.chunk_count += 1;
 
     let err = verify_spartan2_decider(&vk, &tampered, &proof).expect_err("tampered chunk count must fail");
-    assert!(matches!(err, Spartan2DeciderError::Backend(_)));
+    assert!(matches!(err, Spartan2DeciderError::RelationSurface(_)));
 }
 
 #[test]
@@ -125,7 +125,7 @@ fn spartan2_decider_backend_rejects_tampered_public_semantic_step_count() {
     tampered.statement.semantic_step_count += 1;
 
     let err = verify_spartan2_decider(&vk, &tampered, &proof).expect_err("tampered semantic step count must fail");
-    assert!(matches!(err, Spartan2DeciderError::Backend(_)));
+    assert!(matches!(err, Spartan2DeciderError::RelationSurface(_)));
 }
 
 #[test]
@@ -138,7 +138,10 @@ fn spartan2_decider_backend_rejects_tampered_public_chunk_summary() {
     tampered.statement.chunk_summaries[0].public_step_count += 1;
 
     let err = verify_spartan2_decider(&vk, &tampered, &proof).expect_err("tampered chunk summary must fail");
-    assert!(matches!(err, Spartan2DeciderError::Backend(_)));
+    assert!(matches!(
+        err,
+        Spartan2DeciderError::RelationSurface(_) | Spartan2DeciderError::FinalProofDigestMismatch
+    ));
 }
 
 #[test]
@@ -153,7 +156,7 @@ fn spartan2_decider_backend_rejects_zero_length_public_chunk_summary() {
     tampered.statement.final_proof_digest = tampered.expected_final_proof_digest();
 
     let err = prove_spartan2_decider(&pk, &tampered).expect_err("zero-length chunk summary must fail at prove time");
-    assert!(matches!(err, Spartan2DeciderError::Backend(_)));
+    assert!(matches!(err, Spartan2DeciderError::RelationSurface(_)));
 }
 
 #[test]
@@ -165,7 +168,7 @@ fn spartan2_decider_backend_rejects_invalid_public_fold_schedule() {
     tampered.statement.fold_schedule = FoldSchedule::RowsPerChunk(0);
 
     let err = prove_spartan2_decider(&pk, &tampered).expect_err("invalid fold schedule must fail at prove time");
-    assert!(matches!(err, Spartan2DeciderError::Backend(_)));
+    assert!(matches!(err, Spartan2DeciderError::RelationSurface(_)));
 }
 
 #[test]
@@ -178,10 +181,7 @@ fn spartan2_decider_backend_rejects_mismatched_private_chunk_relation_binding() 
 
     let err = prove_spartan2_decider(&pk, &tampered)
         .expect_err("private chunk-relation binding mismatch must fail at prove time");
-    assert!(matches!(
-        err,
-        Spartan2DeciderError::Backend(Spartan2BackendBindingShellError::RelationSurface(_))
-    ));
+    assert!(matches!(err, Spartan2DeciderError::RelationSurface(_)));
 }
 
 #[test]
@@ -190,10 +190,7 @@ fn spartan2_decider_backend_rejects_whole_trace_with_multiple_chunk_summaries() 
     let (pk, _vk) = setup_spartan2_decider(&target.shape()).expect("setup decider backend");
 
     let err = prove_spartan2_decider(&pk, &target).expect_err("WholeTrace with multiple chunk summaries must fail");
-    assert!(matches!(
-        err,
-        Spartan2DeciderError::Backend(Spartan2BackendBindingShellError::RelationSurface(_))
-    ));
+    assert!(matches!(err, Spartan2DeciderError::RelationSurface(_)));
 }
 
 #[test]
@@ -203,10 +200,7 @@ fn spartan2_decider_backend_rejects_rows_per_chunk_with_short_non_final_chunk() 
 
     let err =
         prove_spartan2_decider(&pk, &target).expect_err("RowsPerChunk schedule with a short non-final chunk must fail");
-    assert!(matches!(
-        err,
-        Spartan2DeciderError::Backend(Spartan2BackendBindingShellError::RelationSurface(_))
-    ));
+    assert!(matches!(err, Spartan2DeciderError::RelationSurface(_)));
 }
 
 #[test]
@@ -219,7 +213,7 @@ fn spartan2_decider_backend_rejects_tampered_public_terminal_handle() {
     tampered.statement.terminal_handle_digest[0] += F::ONE;
 
     let err = verify_spartan2_decider(&vk, &tampered, &proof).expect_err("tampered terminal handle must fail");
-    assert!(matches!(err, Spartan2DeciderError::Backend(_)));
+    assert!(matches!(err, Spartan2DeciderError::RelationSurface(_)));
 }
 
 #[test]
