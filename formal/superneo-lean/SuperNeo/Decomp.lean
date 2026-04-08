@@ -287,7 +287,7 @@ def recomposeBase2Coeffs (rows : Array Coeffs) : Coeffs :=
 
 /-- Per-entry norm bound predicate for row-wise base-2 decomposition. -/
 def splitBase2RowsWithinBoundProp (z : Coeffs) (k : Nat) : Prop :=
-  ∀ i : Fin k, ∀ j : Fin z.size, normInfF ((splitBase2Coeffs z k)[i.1]![j.1]!) ≤ 1
+  ∀ i : Fin k, ∀ j : Fin z.size, normInfF (((splitBase2Coeffs z k)[i.1]!)[j.1]!) ≤ 1
 
 /-- Vector lift of the scalar decomposition identity. -/
 theorem splitBase2CoeffsDecompositionNat
@@ -331,7 +331,7 @@ theorem splitBase2Coeffs_row_size
 theorem splitBase2Coeffs_digit_le_one
     (z : Coeffs) (k : Nat)
     (i : Fin k) (j : Fin z.size) :
-    (((splitBase2Coeffs z k)[i.1]![j.1]!).val) ≤ 1 := by
+    ((((splitBase2Coeffs z k)[i.1]!)[j.1]!).val) ≤ 1 := by
   have hEq :
       (splitBase2Coeffs z k)[i.1]!
         = z.map (fun a => F.ofNat (bitAt a.val i.1)) := by
@@ -344,14 +344,14 @@ theorem splitBase2Coeffs_digit_le_one
 theorem splitBase2Coeffs_digit_norm_le_one
     (z : Coeffs) (k : Nat)
     (i : Fin k) (j : Fin z.size) :
-    normInfF ((splitBase2Coeffs z k)[i.1]![j.1]!) ≤ 1 := by
-  have hVal : (((splitBase2Coeffs z k)[i.1]![j.1]!).val) ≤ 1 :=
+    normInfF (((splitBase2Coeffs z k)[i.1]!)[j.1]!) ≤ 1 := by
+  have hVal : ((((splitBase2Coeffs z k)[i.1]!)[j.1]!).val) ≤ 1 :=
     splitBase2Coeffs_digit_le_one z k i j
-  have hHalf : (((splitBase2Coeffs z k)[i.1]![j.1]!).val) ≤ Goldilocks.halfQ :=
+  have hHalf : ((((splitBase2Coeffs z k)[i.1]!)[j.1]!).val) ≤ Goldilocks.halfQ :=
     Nat.le_trans hVal Goldilocks.one_le_halfQ
   have hRep :
-      F.centeredRep ((splitBase2Coeffs z k)[i.1]![j.1]!)
-        = Int.ofNat (((splitBase2Coeffs z k)[i.1]![j.1]!).val) :=
+      F.centeredRep (((splitBase2Coeffs z k)[i.1]!)[j.1]!)
+        = Int.ofNat ((((splitBase2Coeffs z k)[i.1]!)[j.1]!).val) :=
     F.centeredRep_eq_of_le_halfQ hHalf
   unfold normInfF F.centeredAbs
   rw [hRep]
@@ -1115,7 +1115,7 @@ def recomposeSplitDigits (digits : Array (Array F)) (b : Nat) : Array F :=
     let width := (digits[0]!).size
     Array.ofFn (fun j : Fin width =>
       (List.range digits.size).foldl
-        (fun acc i => acc + powF (F.ofNat b) i * (digits[i]![j.1]!))
+        (fun acc i => acc + powF (F.ofNat b) i * ((digits[i]!)[j.1]!))
         0)
 
 /-- Vector terminal-zero boundary (per coordinate scalar terminal state). -/
@@ -1149,7 +1149,7 @@ theorem recomposeSplitDigits_splitBalancedVec_entry
   have hkNe : k ≠ 0 := Nat.ne_of_gt hk
   have hInner :
       ∀ i : Nat,
-        (Array.ofFn (fun i : Fin k => z.map (fun a => (splitBalancedScalar a b k)[i.1])))[i]![j.1]! =
+        (((Array.ofFn (fun i : Fin k => z.map (fun a => (splitBalancedScalar a b k)[i.1])))[i]!)[j.1]!) =
           (splitBalancedScalar z[j.1]! b k)[i]! := by
     intro i
     by_cases hi : i < k
@@ -1168,7 +1168,7 @@ theorem recomposeSplitDigits_splitBalancedVec_entry
   have hBody :
       (fun acc i =>
         acc + powF (F.ofNat b) i *
-          (Array.ofFn (fun i : Fin k => z.map (fun a => (splitBalancedScalar a b k)[i.1])))[i]![j.1]!) =
+          (((Array.ofFn (fun i : Fin k => z.map (fun a => (splitBalancedScalar a b k)[i.1])))[i]!)[j.1]!)) =
         (fun acc i => acc + powF (F.ofNat b) i * (splitBalancedScalar z[j.1]! b k)[i]!) := by
     funext acc i
     simp [hInner i]
@@ -1180,16 +1180,16 @@ theorem recomposeSplitDigits_splitBalancedVec_entry
         List.foldl
           (fun acc i =>
             acc + powF (F.ofNat b) i *
-              (Array.ofFn (fun i : Fin k => z.map (fun a => (splitBalancedScalar a b k)[i.1])))[i]![j.1]!)
+              (((Array.ofFn (fun i : Fin k => z.map (fun a => (splitBalancedScalar a b k)[i.1])))[i]!)[j.1]!))
           0 (List.range k)))[j.1]!
         =
-      List.foldl
+          List.foldl
         (fun acc i =>
           acc + powF (F.ofNat b) i *
-            (Array.ofFn (fun i : Fin k => z.map (fun a => (splitBalancedScalar a b k)[i.1])))[i]![j.1]!)
+            (((Array.ofFn (fun i : Fin k => z.map (fun a => (splitBalancedScalar a b k)[i.1])))[i]!)[j.1]!))
         0 (List.range k) := by
           have hWidth :
-              (Array.ofFn (fun i : Fin k => z.map (fun a => (splitBalancedScalar a b k)[i.1])))[0]!.size
+              ((Array.ofFn (fun i : Fin k => z.map (fun a => (splitBalancedScalar a b k)[i.1])))[0]!).size
                 = z.size := by
             have h0 : 0 < k := hk
             simp [h0]

@@ -43,6 +43,10 @@ so that one exact kernel-boundary package yields the canonical
 From exact kernel boundaries one must be able to derive:
 
 - whole-prefix `ExecutionCorrect`,
+- canonical transcript membership for the schedule-owned root main-lane chunk
+  slots induced by the exact chunk layout:
+  `rootChunkStart`, `rootChunkRowLabel`, `rootChunkPiCCS`, `rootChunkPiRLC`,
+  and `rootChunkPiDEC`,
 - exact prepared-step bridge equality at every exported row-binding index,
 - the exact canonical seven-proof opcode-class package carried by the exact kernel boundary,
 - the exact canonical seven-family semantic bundle carried by the exact kernel boundary,

@@ -1,4 +1,6 @@
+import Mathlib.FieldTheory.Finite.Basic
 import SuperNeo.Goldilocks
+import SuperNeo.GoldilocksPrime
 import Init.GrindInstances.Ring.Fin
 
 namespace SuperNeo
@@ -91,8 +93,20 @@ private theorem centeredAbs_eq_distToZero (a : F) :
     calc
       (if h : a.val ≤ Goldilocks.halfQ then Int.ofNat a.val else Int.ofNat a.val - Int.ofNat Goldilocks.q).natAbs
           = (Int.ofNat a.val - Int.ofNat Goldilocks.q).natAbs := by simp [h]
-      _ = (- Int.ofNat (Goldilocks.q - a.val)).natAbs := by rw [hsub]
-      _ = Goldilocks.q - a.val := by simp
+      _ = Goldilocks.q - a.val := by
+            apply Int.ofNat.inj
+            have hqleInt : Int.ofNat a.val ≤ Int.ofNat Goldilocks.q := by
+              exact Int.ofNat_le.mpr hqle
+            have hnatAbs :
+                Int.ofNat (Int.ofNat a.val - Int.ofNat Goldilocks.q).natAbs =
+                  -(Int.ofNat a.val - Int.ofNat Goldilocks.q) :=
+              Int.ofNat_natAbs_of_nonpos (sub_nonpos.mpr hqleInt)
+            calc
+              Int.ofNat (Int.ofNat a.val - Int.ofNat Goldilocks.q).natAbs
+                  = -(Int.ofNat a.val - Int.ofNat Goldilocks.q) := hnatAbs
+              _ = Int.ofNat (Goldilocks.q - a.val) := by
+                    rw [neg_sub]
+                    exact (Int.ofNat_sub hqle).symm
       _ = (if a.val ≤ Goldilocks.halfQ then a.val else Goldilocks.q - a.val) := by simp [h]
 
 private theorem distToZero_le_self_of_lt_q {x : Nat} (hx : x < Goldilocks.q) :
@@ -290,7 +304,7 @@ theorem canonicalCheck_iff (a : F) :
   simp [canonicalRep]
 
 @[simp] theorem canonicalRep_one : canonicalRep (1 : F) = 1 := by
-  simp [canonicalRep]
+  exact val_one
 
 theorem isCanonical_zero : isCanonical (0 : F) := by
   exact canonical (0 : F)
@@ -337,7 +351,8 @@ theorem centeredAbs_eq_zero_iff (a : F) :
     exact Goldilocks.one_le_halfQ
   calc
     centeredRep (1 : F) = Int.ofNat ((1 : F).val) := centeredRep_eq_of_le_halfQ h
-    _ = 1 := by simp
+    _ = Int.ofNat 1 := by rw [val_one]
+    _ = 1 := by rfl
 
 /--
 Total case split for centered representatives: every canonical field value
@@ -404,14 +419,17 @@ private theorem neg_neg_eq (a : F) : -(-a) = a := by
     have hqsub_lt : Goldilocks.q - a.val < Goldilocks.q := Nat.sub_lt Goldilocks.q_pos hpos
     calc
       (-(-a)).val
-          = (Goldilocks.q - ((Goldilocks.q - a.val) % Goldilocks.q)) % Goldilocks.q := by
-              simp [val_neg]
+          = (Goldilocks.q - (-a).val) % Goldilocks.q := by
+              rw [val_neg]
+      _ = (Goldilocks.q - ((Goldilocks.q - a.val) % Goldilocks.q)) % Goldilocks.q := by
+            rw [val_neg]
       _ = (Goldilocks.q - (Goldilocks.q - a.val)) % Goldilocks.q := by
-            simp [Nat.mod_eq_of_lt hqsub_lt]
+            rw [Nat.mod_eq_of_lt hqsub_lt]
       _ = a.val % Goldilocks.q := by
             have hsub : Goldilocks.q - (Goldilocks.q - a.val) = a.val := by omega
-            simp [hsub]
-      _ = a.val := Nat.mod_eq_of_lt a.isLt
+            rw [hsub]
+      _ = a.val := by
+            rw [Nat.mod_eq_of_lt a.isLt]
 
 theorem centeredAbs_neg_eq (a : F) :
     centeredAbs (-a) = centeredAbs a := by
@@ -623,5 +641,211 @@ theorem sub_eq_zero_iff (a b : F) : a - b = 0 ↔ a = b := by
     simp [val_sub]
 
 end F
+
+/-! ## Theorem-Facing Algebraic Structure
+
+These instances keep the concrete `Fin q` arithmetic from `F.*` and expose the
+field structure the rest of the formal development needs. The proofs transport
+the laws through the canonical `ZMod q` view rather than redefining the
+underlying operations. -/
+
+private abbrev FieldBridgeFq := ZMod Goldilocks.q
+
+/-- Canonical `ZMod q` view of a concrete field element. -/
+private def fieldToZMod (a : F) : FieldBridgeFq :=
+  (a.val : FieldBridgeFq)
+
+/-- Rebuild a concrete field element from the canonical `ZMod q` representative. -/
+private noncomputable def zmodToField (z : FieldBridgeFq) : F :=
+  ⟨z.val, z.val_lt⟩
+
+@[simp] private theorem fieldToZMod_zero :
+    fieldToZMod (0 : F) = 0 := by
+  simp [fieldToZMod]
+
+@[simp] private theorem fieldToZMod_one :
+    fieldToZMod (1 : F) = 1 := by
+  simp [fieldToZMod]
+
+@[simp] private theorem fieldToZMod_add (a b : F) :
+    fieldToZMod (a + b) = fieldToZMod a + fieldToZMod b := by
+  change (((a + b).val : FieldBridgeFq) = ((a.val : FieldBridgeFq) + (b.val : FieldBridgeFq)))
+  rw [F.val_add]
+  simp
+
+@[simp] private theorem fieldToZMod_mul (a b : F) :
+    fieldToZMod (a * b) = fieldToZMod a * fieldToZMod b := by
+  change (((a * b).val : FieldBridgeFq) = ((a.val : FieldBridgeFq) * (b.val : FieldBridgeFq)))
+  rw [F.val_mul]
+  simp
+
+@[simp] private theorem fieldToZMod_neg (a : F) :
+    fieldToZMod (-a) = -fieldToZMod a := by
+  change (((-a).val : FieldBridgeFq) = -((a.val : FieldBridgeFq)))
+  rw [F.val_neg]
+  simp
+
+@[simp] private theorem fieldToZMod_sub (a b : F) :
+    fieldToZMod (a - b) = fieldToZMod a - fieldToZMod b := by
+  rw [sub_eq_add_neg, fieldToZMod_add, fieldToZMod_neg, sub_eq_add_neg]
+
+@[simp] private theorem zmodToField_fieldToZMod (a : F) :
+    zmodToField (fieldToZMod a) = a := by
+  apply Fin.ext
+  simp [fieldToZMod, zmodToField, Nat.mod_eq_of_lt a.isLt]
+
+private theorem fieldToZMod_injective : Function.Injective fieldToZMod := by
+  intro a b h
+  have hz : zmodToField (fieldToZMod a) = zmodToField (fieldToZMod b) := by
+    simpa [h]
+  simpa using hz
+
+/-- Public theorem-facing carrier for the exact `ZMod q` bridge used to
+transport `F`'s field structure. -/
+abbrev FBridge := FieldBridgeFq
+
+/-- Public theorem-facing embedding of `F` into `ZMod q`. -/
+def toZMod (a : F) : FBridge :=
+  fieldToZMod a
+
+/-- Public theorem-facing projection back from `ZMod q`. -/
+noncomputable def ofZMod (z : FBridge) : F :=
+  zmodToField z
+
+@[simp] theorem toZMod_zero : toZMod (0 : F) = (0 : FBridge) := by
+  exact fieldToZMod_zero
+
+@[simp] theorem toZMod_one : toZMod (1 : F) = (1 : FBridge) := by
+  exact fieldToZMod_one
+
+@[simp] theorem toZMod_add (a b : F) : toZMod (a + b) = toZMod a + toZMod b := by
+  exact fieldToZMod_add a b
+
+@[simp] theorem toZMod_mul (a b : F) : toZMod (a * b) = toZMod a * toZMod b := by
+  exact fieldToZMod_mul a b
+
+@[simp] theorem toZMod_neg (a : F) : toZMod (-a) = -toZMod a := by
+  exact fieldToZMod_neg a
+
+@[simp] theorem toZMod_sub (a b : F) : toZMod (a - b) = toZMod a - toZMod b := by
+  exact fieldToZMod_sub a b
+
+theorem toZMod_injective : Function.Injective toZMod := by
+  exact fieldToZMod_injective
+
+instance : NatCast F := ⟨F.ofNat⟩
+
+instance : IntCast F := ⟨fun z =>
+  match z with
+  | Int.ofNat n => F.ofNat n
+  | Int.negSucc n => -F.ofNat (n + 1)⟩
+
+instance : Nontrivial F := by
+  refine ⟨⟨0, 1, ?_⟩⟩
+  intro h
+  have h' := congrArg Fin.val h
+  have hq : Goldilocks.q = 1 := by
+    simpa [F.val_zero, F.val_one] using h'
+  have hgt : 1 < Goldilocks.q := Goldilocks.q_gt_one
+  omega
+
+@[simp] private theorem fieldToZMod_ofNat (n : Nat) :
+    fieldToZMod (F.ofNat n) = (n : FieldBridgeFq) := by
+  change (((n % Goldilocks.q) : Nat) : FieldBridgeFq) = (n : FieldBridgeFq)
+  simp
+
+@[simp] private theorem fieldToZMod_natCast (n : Nat) :
+    fieldToZMod (n : F) = (n : FieldBridgeFq) := by
+  show fieldToZMod (F.ofNat n) = (n : FieldBridgeFq)
+  exact fieldToZMod_ofNat n
+
+@[simp] private theorem fieldToZMod_intCast (z : Int) :
+    fieldToZMod (z : F) = (z : FieldBridgeFq) := by
+  cases z with
+  | ofNat n =>
+      show fieldToZMod (F.ofNat n) = (n : FieldBridgeFq)
+      exact fieldToZMod_ofNat n
+  | negSucc n =>
+      have hcastF : ((Int.negSucc n : F)) = -F.ofNat (n + 1) := rfl
+      rw [hcastF, fieldToZMod_neg, fieldToZMod_ofNat]
+      exact (Int.cast_negSucc (R := FieldBridgeFq) n).symm
+
+@[simp] private theorem fieldToZMod_nsmul (n : Nat) (a : F) :
+    fieldToZMod (n • a) = n • fieldToZMod a := by
+  induction n with
+  | zero =>
+      simp [fieldToZMod_zero]
+  | succ n ih =>
+      rw [succ_nsmul, succ_nsmul, fieldToZMod_add, ih]
+
+@[simp] private theorem fieldToZMod_zsmul (n : Int) (a : F) :
+    fieldToZMod (n • a) = n • fieldToZMod a := by
+  cases n with
+  | ofNat m =>
+      simpa using fieldToZMod_nsmul m a
+  | negSucc m =>
+      rw [negSucc_zsmul, negSucc_zsmul, fieldToZMod_neg, fieldToZMod_nsmul]
+
+@[simp] private theorem fieldToZMod_npow (a : F) (n : Nat) :
+    fieldToZMod (a ^ n) = fieldToZMod a ^ n := by
+  induction n with
+  | zero =>
+      simp [fieldToZMod_one]
+  | succ n ih =>
+      simp [pow_succ, fieldToZMod_mul, ih]
+
+@[simp] theorem toZMod_ofNat (n : Nat) : toZMod (F.ofNat n) = (n : FBridge) := by
+  exact fieldToZMod_ofNat n
+
+@[simp] theorem toZMod_natCast (n : Nat) : toZMod (n : F) = (n : FBridge) := by
+  exact fieldToZMod_natCast n
+
+@[simp] theorem toZMod_pow (a : F) (n : Nat) : toZMod (a ^ n) = toZMod a ^ n := by
+  exact fieldToZMod_npow a n
+
+instance : CommRing F :=
+  Function.Injective.commRing fieldToZMod fieldToZMod_injective
+    fieldToZMod_zero fieldToZMod_one fieldToZMod_add fieldToZMod_mul
+    fieldToZMod_neg fieldToZMod_sub fieldToZMod_nsmul fieldToZMod_zsmul
+    fieldToZMod_npow fieldToZMod_natCast fieldToZMod_intCast
+
+/-- The theorem-facing inverse transported from `ZMod q`. This is the inverse
+used by the global `Field F` instance. -/
+private noncomputable def fieldInv (a : F) : F :=
+  zmodToField ((fieldToZMod a)⁻¹)
+
+noncomputable instance : Inv F := ⟨fieldInv⟩
+
+noncomputable instance : Div F := ⟨fun a b => a * b⁻¹⟩
+
+noncomputable instance : NNRatCast F := ⟨NNRat.castRec⟩
+
+noncomputable instance : RatCast F := ⟨Rat.castRec⟩
+
+@[simp] private theorem fieldToZMod_inv (a : F) :
+    fieldToZMod (a⁻¹) = (fieldToZMod a)⁻¹ := by
+  simp [Inv.inv, fieldInv, zmodToField, fieldToZMod]
+
+noncomputable instance : Field F :=
+  Field.mk
+    (div_eq_mul_inv := by
+      intro a b
+      rfl)
+    (zpow := zpowRec)
+    (mul_inv_cancel := by
+      intro a ha
+      apply fieldToZMod_injective
+      rw [fieldToZMod_mul, fieldToZMod_inv]
+      exact mul_inv_cancel₀ (by
+        intro h
+        exact ha (fieldToZMod_injective h)))
+    (inv_zero := by
+      apply fieldToZMod_injective
+      simp)
+    (nnqsmul := fun q a => (q : F) * a)
+    (ratCast_def := by
+      intro q
+      rfl)
+    (qsmul := fun q a => (q : F) * a)
 
 end SuperNeo

@@ -276,4 +276,138 @@ theorem rowBinding_not_mem_rootChunkScheduleFrom
   | cons chunk rest ih =>
       simp [rootChunkScheduleFrom, rootChunkEvents, rootChunkRowLabelEvents, ih]
 
+private theorem event_mem_rootChunkScheduleFrom_of_getElem?
+  {chunks : List Nightstream.ChunkRange}
+  {base chunkIndex : Nat}
+  {chunk : Nightstream.ChunkRange}
+  {event : TranscriptEvent}
+  (hChunk : chunks[chunkIndex]? = some chunk)
+  (hEvent : event ∈ rootChunkEvents (base + chunkIndex) chunk) :
+  event ∈ rootChunkScheduleFrom base chunks := by
+  induction chunks generalizing base chunkIndex with
+  | nil =>
+      cases chunkIndex <;> simp at hChunk
+  | cons chunk0 rest ih =>
+      cases chunkIndex with
+      | zero =>
+          simp only [List.getElem?_cons_zero] at hChunk
+          injection hChunk with hEq
+          subst hEq
+          have hEvent0 : event ∈ rootChunkEvents base chunk0 := by
+            simpa using hEvent
+          have hMem :
+              event ∈
+                rootChunkEvents base chunk0 ++ rootChunkScheduleFrom (base + 1) rest := by
+            exact List.mem_append.mpr (Or.inl hEvent0)
+          simpa [rootChunkScheduleFrom] using hMem
+      | succ chunkIndex =>
+          simp only [List.getElem?_cons_succ] at hChunk
+          have hEvent' :
+              event ∈ rootChunkEvents ((base + 1) + chunkIndex) chunk := by
+            simpa [Nat.add_assoc, Nat.add_left_comm, Nat.add_comm] using hEvent
+          have hTail :
+              event ∈ rootChunkScheduleFrom (base + 1) rest :=
+            ih hChunk hEvent'
+          have hMem :
+              event ∈
+                rootChunkEvents base chunk0 ++ rootChunkScheduleFrom (base + 1) rest := by
+            exact List.mem_append.mpr (Or.inr hTail)
+          simpa [rootChunkScheduleFrom] using hMem
+
+theorem rootChunkStart_mem_rootMainLaneEvents_of_layout
+  {schedule : Nightstream.FoldSchedule}
+  {publicStepCount chunkIndex : Nat}
+  {chunk : Nightstream.ChunkRange}
+  (hChunk :
+    (Nightstream.ChunkLayout.layout schedule publicStepCount)[chunkIndex]? = some chunk) :
+  TranscriptEvent.rootChunkStart chunkIndex chunk.start chunk.stop ∈
+    rootMainLaneEvents schedule publicStepCount := by
+  have hEvent :
+      TranscriptEvent.rootChunkStart chunkIndex chunk.start chunk.stop ∈
+        rootChunkEvents chunkIndex chunk := by
+    simp [rootChunkEvents]
+  have hMem :
+      TranscriptEvent.rootChunkStart chunkIndex chunk.start chunk.stop ∈
+        rootChunkScheduleFrom 0 (Nightstream.ChunkLayout.layout schedule publicStepCount) :=
+    event_mem_rootChunkScheduleFrom_of_getElem? (base := 0) hChunk (by simpa using hEvent)
+  exact List.mem_cons_of_mem _ hMem
+
+theorem rootChunkPiCCS_mem_rootMainLaneEvents_of_layout
+  {schedule : Nightstream.FoldSchedule}
+  {publicStepCount chunkIndex : Nat}
+  {chunk : Nightstream.ChunkRange}
+  (hChunk :
+    (Nightstream.ChunkLayout.layout schedule publicStepCount)[chunkIndex]? = some chunk) :
+  TranscriptEvent.rootChunkPiCCS chunkIndex ∈
+    rootMainLaneEvents schedule publicStepCount := by
+  have hEvent :
+      TranscriptEvent.rootChunkPiCCS chunkIndex ∈
+        rootChunkEvents chunkIndex chunk := by
+    simp [rootChunkEvents]
+  have hMem :
+      TranscriptEvent.rootChunkPiCCS chunkIndex ∈
+        rootChunkScheduleFrom 0 (Nightstream.ChunkLayout.layout schedule publicStepCount) :=
+    event_mem_rootChunkScheduleFrom_of_getElem? (base := 0) hChunk (by simpa using hEvent)
+  exact List.mem_cons_of_mem _ hMem
+
+theorem rootChunkPiRLC_mem_rootMainLaneEvents_of_layout
+  {schedule : Nightstream.FoldSchedule}
+  {publicStepCount chunkIndex : Nat}
+  {chunk : Nightstream.ChunkRange}
+  (hChunk :
+    (Nightstream.ChunkLayout.layout schedule publicStepCount)[chunkIndex]? = some chunk) :
+  TranscriptEvent.rootChunkPiRLC chunkIndex ∈
+    rootMainLaneEvents schedule publicStepCount := by
+  have hEvent :
+      TranscriptEvent.rootChunkPiRLC chunkIndex ∈
+        rootChunkEvents chunkIndex chunk := by
+    simp [rootChunkEvents]
+  have hMem :
+      TranscriptEvent.rootChunkPiRLC chunkIndex ∈
+        rootChunkScheduleFrom 0 (Nightstream.ChunkLayout.layout schedule publicStepCount) :=
+    event_mem_rootChunkScheduleFrom_of_getElem? (base := 0) hChunk (by simpa using hEvent)
+  exact List.mem_cons_of_mem _ hMem
+
+theorem rootChunkPiDEC_mem_rootMainLaneEvents_of_layout
+  {schedule : Nightstream.FoldSchedule}
+  {publicStepCount chunkIndex : Nat}
+  {chunk : Nightstream.ChunkRange}
+  (hChunk :
+    (Nightstream.ChunkLayout.layout schedule publicStepCount)[chunkIndex]? = some chunk) :
+  TranscriptEvent.rootChunkPiDEC chunkIndex ∈
+    rootMainLaneEvents schedule publicStepCount := by
+  have hEvent :
+      TranscriptEvent.rootChunkPiDEC chunkIndex ∈
+        rootChunkEvents chunkIndex chunk := by
+    simp [rootChunkEvents]
+  have hMem :
+      TranscriptEvent.rootChunkPiDEC chunkIndex ∈
+        rootChunkScheduleFrom 0 (Nightstream.ChunkLayout.layout schedule publicStepCount) :=
+    event_mem_rootChunkScheduleFrom_of_getElem? (base := 0) hChunk (by simpa using hEvent)
+  exact List.mem_cons_of_mem _ hMem
+
+theorem rootChunkRowLabel_mem_rootMainLaneEvents_of_layout
+  {schedule : Nightstream.FoldSchedule}
+  {publicStepCount chunkIndex rowIndex : Nat}
+  {chunk : Nightstream.ChunkRange}
+  (hChunk :
+    (Nightstream.ChunkLayout.layout schedule publicStepCount)[chunkIndex]? = some chunk)
+  (hRow : rowIndex ∈ List.range' chunk.start chunk.width) :
+  TranscriptEvent.rootChunkRowLabel chunkIndex rowIndex ∈
+    rootMainLaneEvents schedule publicStepCount := by
+  have hLabel :
+      TranscriptEvent.rootChunkRowLabel chunkIndex rowIndex ∈
+        rootChunkRowLabelEvents chunkIndex chunk := by
+    apply List.mem_map.mpr
+    exact ⟨rowIndex, hRow, by simp⟩
+  have hEvent :
+      TranscriptEvent.rootChunkRowLabel chunkIndex rowIndex ∈
+        rootChunkEvents chunkIndex chunk := by
+    simp [rootChunkEvents, hLabel]
+  have hMem :
+      TranscriptEvent.rootChunkRowLabel chunkIndex rowIndex ∈
+        rootChunkScheduleFrom 0 (Nightstream.ChunkLayout.layout schedule publicStepCount) :=
+    event_mem_rootChunkScheduleFrom_of_getElem? (base := 0) hChunk (by simpa using hEvent)
+  exact List.mem_cons_of_mem _ hMem
+
 end Nightstream.Rv64IM

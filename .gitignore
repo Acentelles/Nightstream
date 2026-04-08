@@ -23,4 +23,8 @@ formal/nightstream-lean/.tmp_tv_test*
 tmp/
 external
 docs/HyperNova.pdf.md
+docs/mpc-domain-text
+docs/plans/*
 .claude/skills
+personal-notes/
+.mco-runs/

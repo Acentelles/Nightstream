@@ -18,8 +18,9 @@ use super::common::{
     partial_eval_flat_k_at_addr_be, prove_address_correctness, prove_raf, read_port_claim, squeeze_k, squeeze_point,
     stage2_address_claims, write_port_claim,
 };
-use super::proof::{AddressCorrectnessProof, Stage2TwistProof};
+use super::proof::{AddressCorrectnessProof, Stage2RamExecutionProof};
 use super::transcript::verify_stage2_address_correctness_transcript;
+use super::Stage2DerivedExecutionSurface;
 
 pub(crate) struct Stage2RamProofArtifacts {
     pub gamma_ram: K,
@@ -208,61 +209,121 @@ pub(crate) fn prove_ram_subsystem<Tr: Transcript>(
     })
 }
 
-pub(crate) fn verify_ram_subsystem<Tr: Transcript>(
-    proof: &Stage2TwistProof,
+pub(crate) fn reconstruct_ram_raf_claims(trace_rows: &[[F; 24]], aux: &[KernelStepAux], cycle_point: &[K]) -> (K, K) {
+    let reads_ram_vals: Vec<F> = aux
+        .iter()
+        .map(|step| if step.reads_ram { F::ONE } else { F::ZERO })
+        .collect();
+    let writes_ram_vals: Vec<F> = aux
+        .iter()
+        .map(|step| if step.writes_ram { F::ONE } else { F::ZERO })
+        .collect();
+    let ram_addr_vals: Vec<F> = trace_rows.iter().map(|row| row[COL_RAM_ADDR]).collect();
+    let masked_ram_read_addr_vals: Vec<F> = reads_ram_vals
+        .iter()
+        .zip(ram_addr_vals.iter())
+        .map(|(&reads, &addr)| reads * addr)
+        .collect();
+    let masked_ram_write_addr_vals: Vec<F> = writes_ram_vals
+        .iter()
+        .zip(ram_addr_vals.iter())
+        .map(|(&writes, &addr)| writes * addr)
+        .collect();
+    (
+        mle_eval_fk(&masked_ram_read_addr_vals, cycle_point),
+        mle_eval_fk(&masked_ram_write_addr_vals, cycle_point),
+    )
+}
+
+pub(crate) fn reconstruct_ram_target_claims(
+    trace_rows: &[[F; 24]],
+    aux: &[KernelStepAux],
+    cycle_point: &[K],
+) -> (K, K) {
+    let reads_ram_vals: Vec<F> = aux
+        .iter()
+        .map(|step| if step.reads_ram { F::ONE } else { F::ZERO })
+        .collect();
+    let writes_ram_vals: Vec<F> = aux
+        .iter()
+        .map(|step| if step.writes_ram { F::ONE } else { F::ZERO })
+        .collect();
+    let mem_value_vals: Vec<F> = trace_rows
+        .iter()
+        .map(|row| row[crate::chip8::spec::COL_MEM_VALUE])
+        .collect();
+    let masked_ram_read_values: Vec<F> = reads_ram_vals
+        .iter()
+        .zip(mem_value_vals.iter())
+        .map(|(&reads, &value)| reads * value)
+        .collect();
+    let masked_ram_write_values: Vec<F> = writes_ram_vals
+        .iter()
+        .zip(mem_value_vals.iter())
+        .map(|(&writes, &value)| writes * value)
+        .collect();
+    (
+        mle_eval_fk(&masked_ram_read_values, cycle_point),
+        mle_eval_fk(&masked_ram_write_values, cycle_point),
+    )
+}
+
+pub(crate) fn verify_ram_execution<Tr: Transcript>(
+    memory: &Stage2RamExecutionProof,
+    surface: &Stage2DerivedExecutionSurface,
     initial_ram: &[u8],
     cycle_bits: usize,
     transcript: &mut Tr,
 ) -> Result<(), SimpleKernelError> {
-    let lane = &proof.lane_values_at_twist;
-    let handoff = &proof.handoff_values_at_twist;
+    let lane = &surface.lane_values_at_twist;
+    let handoff = &surface.handoff_values_at_twist;
 
     let expected_gamma_ram = squeeze_k(transcript, b"stage2/gamma_ram");
-    if proof.gamma_ram != expected_gamma_ram {
+    if surface.gamma_ram != expected_gamma_ram {
         return Err(SimpleKernelError::OpeningFailed("stage2 gamma_ram mismatch".into()));
     }
-    let ram_rw_claim = proof.link_claims.rv_ram + proof.gamma_ram * proof.link_claims.wv_ram;
+    let ram_rw_claim = surface.link_claims.rv_ram + surface.gamma_ram * surface.link_claims.wv_ram;
     transcript.append_fields(b"stage2/ram_rw_claim", &ram_rw_claim.as_coeffs());
     verify_sumcheck_known(
         transcript,
         3,
         ram_rw_claim,
-        &proof.ram_rw_batched_rounds,
+        &memory.ram_rw_batched_rounds,
         "stage2 RAM read/write",
     )?;
     let expected_ram_addr_point = squeeze_point(transcript, b"stage2/r_addr_ram", ADDR_RAM_BITS);
-    if proof.ram_addr_point != expected_ram_addr_point {
+    if surface.ram_addr_point != expected_ram_addr_point {
         return Err(SimpleKernelError::OpeningFailed(
             "stage2 RAM addr point mismatch".into(),
         ));
     }
-    let ram_init_at_point = mle_eval_fk_be(&initial_ram_values(initial_ram), &proof.ram_addr_point);
-    if proof.ram_val_at_point - ram_init_at_point != proof.ram_val_from_inc_claim {
+    let ram_init_at_point = mle_eval_fk_be(&initial_ram_values(initial_ram), &surface.ram_addr_point);
+    if surface.ram_val_at_point - ram_init_at_point != surface.ram_val_from_inc_claim {
         return Err(SimpleKernelError::OpeningFailed(
             "stage2 RAM val-from-inc anchor mismatch".into(),
         ));
     }
-    transcript.append_fields(b"stage2/ram_val_inc_claim", &proof.ram_val_from_inc_claim.as_coeffs());
+    transcript.append_fields(b"stage2/ram_val_inc_claim", &surface.ram_val_from_inc_claim.as_coeffs());
     verify_sumcheck_known(
         transcript,
         3,
-        proof.ram_val_from_inc_claim,
-        &proof.ram_val_from_inc_rounds,
+        surface.ram_val_from_inc_claim,
+        &memory.ram_val_from_inc_rounds,
         "stage2 RAM val-from-inc",
     )?;
 
     verify_sumcheck_known(
         transcript,
         2,
-        proof.ram_raf_read_claim,
-        &proof.ram_raf_read_rounds,
+        surface.ram_raf_read_claim,
+        &memory.ram_raf_read_rounds,
         "stage2 RAM raf-read",
     )?;
     verify_sumcheck_known(
         transcript,
         2,
-        proof.ram_raf_write_claim,
-        &proof.ram_raf_write_rounds,
+        surface.ram_raf_write_claim,
+        &memory.ram_raf_write_rounds,
         "stage2 RAM raf-write",
     )?;
     let (_, _, mapped_ram_claims, raw_ram_claims) = stage2_address_claims(
@@ -270,15 +331,15 @@ pub(crate) fn verify_ram_subsystem<Tr: Transcript>(
         handoff,
         K::ZERO,
         K::ZERO,
-        proof.ram_raf_read_claim,
-        proof.ram_raf_write_claim,
+        surface.ram_raf_read_claim,
+        surface.ram_raf_write_claim,
     );
-    if proof.ram_addr_correctness.len() != 2 {
+    if memory.ram_addr_correctness.len() != 2 {
         return Err(SimpleKernelError::SumcheckFailed(
             "stage2 RAM address correctness proof count must be 2".into(),
         ));
     }
-    for (idx, addr_proof) in proof.ram_addr_correctness.iter().enumerate() {
+    for (idx, addr_proof) in memory.ram_addr_correctness.iter().enumerate() {
         verify_stage2_address_correctness_transcript(
             transcript,
             addr_proof,
@@ -290,6 +351,25 @@ pub(crate) fn verify_ram_subsystem<Tr: Transcript>(
         )?;
     }
     Ok(())
+}
+
+pub(crate) fn reconstruct_ram_value_at_point(
+    aux: &[KernelStepAux],
+    initial_ram: &[u8],
+    cycle_bits: usize,
+    cycle_point: &[K],
+    ram_addr_point: &[K],
+) -> K {
+    let trace_len = 1usize << cycle_bits;
+    let ram_val = compute_ram_val(trace_len, aux, initial_ram);
+    let mut ram_val_flat = vec![K::ZERO; (1usize << ADDR_RAM_BITS) * trace_len];
+    for (addr, addr_values) in ram_val.iter().enumerate() {
+        let base = addr * trace_len;
+        for (cycle, &value) in addr_values.iter().enumerate() {
+            ram_val_flat[base + cycle] = K::from(value);
+        }
+    }
+    mle_eval_flat_k_at_point_be(&ram_val_flat, ram_addr_point, cycle_point, trace_len)
 }
 
 fn initial_ram_values(initial_ram: &[u8]) -> Vec<F> {

@@ -1,15 +1,17 @@
 //! Owns the CHIP-8 simple-kernel proof, witness, and artifact surface types.
 //! It does not own proving logic, transcript scheduling, or digest construction.
 
-use neo_math::F;
+use neo_math::{F, K};
 
-use crate::chip8::{stage1::Stage1ShoutProof, stage2::Stage2TwistProof, stage3::Stage3Proof};
+use crate::chip8::{
+    stage1::{ShoutChannelExecutionProof, Stage1ShoutProof},
+    stage2::{Stage2RamExecutionProof, Stage2RegisterExecutionProof, Stage2TwistProof},
+    stage3::Stage3Proof,
+};
 use crate::opening::TimeOpeningProofSummary;
 use crate::proof::{PublicStep, StepInput};
 
-use super::bridge::KernelBridgeBindingSummary;
-use super::bridge::KernelRowProjectionSummary;
-use super::evidence::KernelSemanticEvidenceSummary;
+use super::bridge::{Chip8BridgeChunkProofBundle, Chip8BridgeChunkRelationWitness};
 use super::joint_opening::KernelJointOpeningFoldBucketProof;
 use super::joint_opening::KernelJointOpeningSummary;
 use super::lane_commitment::{
@@ -67,6 +69,7 @@ pub struct KernelStepAux {
     pub writes_ram: bool,
 }
 
+#[derive(Clone)]
 pub struct SimpleKernelProof {
     pub commitments: KernelCommitments,
     pub lane_commitments: LaneCommitmentSet,
@@ -102,12 +105,11 @@ pub struct SimpleKernelProof {
     pub opening_refinement_summary: KernelOpeningRefinementSummary,
     pub joint_opening_summary: KernelJointOpeningSummary,
     pub joint_opening_fold_bucket_proofs: Vec<KernelJointOpeningFoldBucketProof>,
-    pub row_projection_summary: KernelRowProjectionSummary,
-    pub bridge_binding_summary: KernelBridgeBindingSummary,
-    pub semantic_evidence_summary: KernelSemanticEvidenceSummary,
+    pub bridge_chunk_proof: Chip8BridgeChunkProofBundle,
     pub time_opening_summary: TimeOpeningProofSummary,
 }
 
+#[derive(Clone)]
 pub struct KernelCommitments {
     pub c_lane: [u8; 32],
     pub c_fetch_ra: [u8; 32],
@@ -155,9 +157,263 @@ pub struct SimpleKernelOutput {
     pub kernel_opening_manifest: KernelOpeningManifest,
     pub root_opening_manifest: RootOpeningManifest,
     pub joint_opening_fold_bucket_proofs: Vec<KernelJointOpeningFoldBucketProof>,
-    pub row_projection_summary: KernelRowProjectionSummary,
-    pub bridge_binding_summary: KernelBridgeBindingSummary,
-    pub semantic_evidence_summary: KernelSemanticEvidenceSummary,
+}
+
+#[derive(Clone)]
+struct KernelExecutionObligationWitnesses {
+    reads: KernelReadWitness,
+    twists: KernelTwistWitness,
+    shift: KernelShiftWitness,
+}
+
+#[derive(Clone)]
+struct KernelExecutionHandoffWitness {
+    bridge_chunk_transitions: Vec<Chip8BridgeChunkRelationWitness>,
+}
+
+#[derive(Clone)]
+pub struct KernelExecutionRelationWitness {
+    obligations: KernelExecutionObligationWitnesses,
+    handoff: KernelExecutionHandoffWitness,
+}
+
+#[derive(Clone, Debug)]
+pub struct KernelReadWitness {
+    fetch: ShoutChannelExecutionProof,
+    decode: ShoutChannelExecutionProof,
+    alu: ShoutChannelExecutionProof,
+    eq4: ShoutChannelExecutionProof,
+}
+
+impl KernelReadWitness {
+    pub fn new(
+        fetch: ShoutChannelExecutionProof,
+        decode: ShoutChannelExecutionProof,
+        alu: ShoutChannelExecutionProof,
+        eq4: ShoutChannelExecutionProof,
+    ) -> Self {
+        Self {
+            fetch,
+            decode,
+            alu,
+            eq4,
+        }
+    }
+
+    pub fn fetch(&self) -> &ShoutChannelExecutionProof {
+        &self.fetch
+    }
+
+    pub fn fetch_mut(&mut self) -> &mut ShoutChannelExecutionProof {
+        &mut self.fetch
+    }
+
+    pub fn decode(&self) -> &ShoutChannelExecutionProof {
+        &self.decode
+    }
+
+    pub fn decode_mut(&mut self) -> &mut ShoutChannelExecutionProof {
+        &mut self.decode
+    }
+
+    pub fn alu(&self) -> &ShoutChannelExecutionProof {
+        &self.alu
+    }
+
+    pub fn alu_mut(&mut self) -> &mut ShoutChannelExecutionProof {
+        &mut self.alu
+    }
+
+    pub fn eq4(&self) -> &ShoutChannelExecutionProof {
+        &self.eq4
+    }
+
+    pub fn eq4_mut(&mut self) -> &mut ShoutChannelExecutionProof {
+        &mut self.eq4
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct KernelTwistWitness {
+    register: Stage2RegisterExecutionProof,
+    memory: Stage2RamExecutionProof,
+}
+
+impl KernelTwistWitness {
+    pub fn new(register: Stage2RegisterExecutionProof, memory: Stage2RamExecutionProof) -> Self {
+        Self { register, memory }
+    }
+
+    pub fn register(&self) -> &Stage2RegisterExecutionProof {
+        &self.register
+    }
+
+    pub fn register_mut(&mut self) -> &mut Stage2RegisterExecutionProof {
+        &mut self.register
+    }
+
+    pub fn memory(&self) -> &Stage2RamExecutionProof {
+        &self.memory
+    }
+
+    pub fn memory_mut(&mut self) -> &mut Stage2RamExecutionProof {
+        &mut self.memory
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct KernelShiftWitness {
+    reduction_rounds: Vec<Vec<K>>,
+}
+
+impl KernelShiftWitness {
+    pub fn new(reduction_rounds: Vec<Vec<K>>) -> Self {
+        Self { reduction_rounds }
+    }
+
+    pub fn reduction_rounds(&self) -> &[Vec<K>] {
+        &self.reduction_rounds
+    }
+
+    pub fn reduction_rounds_mut(&mut self) -> &mut [Vec<K>] {
+        &mut self.reduction_rounds
+    }
+}
+
+impl KernelExecutionRelationWitness {
+    pub(crate) fn new(
+        reads: KernelReadWitness,
+        twists: KernelTwistWitness,
+        shift: KernelShiftWitness,
+        bridge_chunk_transitions: Vec<Chip8BridgeChunkRelationWitness>,
+    ) -> Self {
+        Self {
+            obligations: KernelExecutionObligationWitnesses { reads, twists, shift },
+            handoff: KernelExecutionHandoffWitness {
+                bridge_chunk_transitions,
+            },
+        }
+    }
+
+    pub(crate) fn from_simple_kernel_proof(native_proof: SimpleKernelProof) -> Result<Self, SimpleKernelError> {
+        let SimpleKernelProof {
+            commitments: _,
+            lane_commitments: _,
+            fetch_ra_commitments: _,
+            decode_ra_commitments: _,
+            alu_ra_commitments: _,
+            eq4_ra_commitments: _,
+            rom_table_commitments: _,
+            decode_table_commitments: _,
+            alu_table_commitments: _,
+            eq4_table_commitments: _,
+            decode_handoff_commitments: _,
+            reg_twist_commitments: _,
+            ram_twist_commitments: _,
+            meta_pub: _,
+            stage1,
+            stage2,
+            stage3,
+            kernel_opening_manifest: _,
+            root_opening_manifest,
+            lane_opening_proofs: _,
+            fetch_ra_opening_proofs: _,
+            decode_ra_opening_proofs: _,
+            alu_ra_opening_proofs: _,
+            eq4_ra_opening_proofs: _,
+            rom_table_opening_proofs: _,
+            decode_table_opening_proofs: _,
+            alu_table_opening_proofs: _,
+            eq4_table_opening_proofs: _,
+            decode_handoff_opening_proofs: _,
+            reg_twist_opening_proofs: _,
+            ram_twist_opening_proofs: _,
+            opening_refinement_summary: _,
+            joint_opening_summary: _,
+            joint_opening_fold_bucket_proofs: _,
+            bridge_chunk_proof,
+            time_opening_summary: _,
+        } = native_proof;
+        if root_opening_manifest != RootOpeningManifest::new() {
+            return Err(SimpleKernelError::OpeningFailed(
+                "simple kernel export requires a canonical empty root opening manifest".into(),
+            ));
+        }
+        let reads = KernelReadWitness::new(
+            ShoutChannelExecutionProof {
+                sumcheck_rounds: stage1.fetch_proof.sumcheck_rounds,
+                addr_correctness_rounds: stage1.fetch_proof.addr_correctness_rounds,
+            },
+            ShoutChannelExecutionProof {
+                sumcheck_rounds: stage1.decode_proof.sumcheck_rounds,
+                addr_correctness_rounds: stage1.decode_proof.addr_correctness_rounds,
+            },
+            ShoutChannelExecutionProof {
+                sumcheck_rounds: stage1.alu_proof.sumcheck_rounds,
+                addr_correctness_rounds: stage1.alu_proof.addr_correctness_rounds,
+            },
+            ShoutChannelExecutionProof {
+                sumcheck_rounds: stage1.eq4_proof.sumcheck_rounds,
+                addr_correctness_rounds: stage1.eq4_proof.addr_correctness_rounds,
+            },
+        );
+        let twists = KernelTwistWitness::new(
+            Stage2RegisterExecutionProof {
+                reg_rw_batched_rounds: stage2.reg_rw_batched_rounds,
+                reg_val_from_inc_rounds: stage2.reg_val_from_inc_rounds,
+                reg_addr_correctness: stage2.reg_addr_correctness,
+                reg_ra_y_target_rounds: stage2.reg_ra_y_target_proof.rounds,
+                reg_wa_addr_target_rounds: stage2.reg_wa_addr_target_proof.rounds,
+                reg_write_x_target_rounds: stage2.reg_write_x_target_proof.rounds,
+                reg_write_i_target_rounds: stage2.reg_write_i_target_proof.rounds,
+            },
+            Stage2RamExecutionProof {
+                ram_rw_batched_rounds: stage2.ram_rw_batched_rounds,
+                ram_val_from_inc_rounds: stage2.ram_val_from_inc_rounds,
+                ram_raf_read_rounds: stage2.ram_raf_read_rounds,
+                ram_raf_write_rounds: stage2.ram_raf_write_rounds,
+                ram_read_target_rounds: stage2.ram_read_target_proof.rounds,
+                ram_write_target_rounds: stage2.ram_write_target_proof.rounds,
+                ram_write_matches_x_zero_rounds: stage2.ram_write_matches_x_zero_proof.rounds,
+                ram_idle_mem_zero_rounds: stage2.ram_idle_mem_zero_proof.rounds,
+                ram_addr_correctness: stage2.ram_addr_correctness,
+            },
+        );
+        let shift = KernelShiftWitness::new(stage3.shift_proof.reduction_rounds);
+        Ok(Self::new(reads, twists, shift, bridge_chunk_proof.chunk_transitions))
+    }
+
+    pub fn reads(&self) -> &KernelReadWitness {
+        &self.obligations.reads
+    }
+
+    pub fn reads_mut(&mut self) -> &mut KernelReadWitness {
+        &mut self.obligations.reads
+    }
+
+    pub fn twists(&self) -> &KernelTwistWitness {
+        &self.obligations.twists
+    }
+
+    pub fn twists_mut(&mut self) -> &mut KernelTwistWitness {
+        &mut self.obligations.twists
+    }
+
+    pub fn shift(&self) -> &KernelShiftWitness {
+        &self.obligations.shift
+    }
+
+    pub fn shift_mut(&mut self) -> &mut KernelShiftWitness {
+        &mut self.obligations.shift
+    }
+
+    pub fn bridge_chunk_transitions(&self) -> &[Chip8BridgeChunkRelationWitness] {
+        &self.handoff.bridge_chunk_transitions
+    }
+
+    pub fn bridge_chunk_transitions_mut(&mut self) -> &mut [Chip8BridgeChunkRelationWitness] {
+        &mut self.handoff.bridge_chunk_transitions
+    }
 }
 
 #[derive(Debug)]

@@ -269,6 +269,346 @@ theorem rowBinding_mem_transcriptEvents_iff
     rowBinding_mem_stage3RowBindingEvents_iff,
     rowBinding_not_mem_rootChunkScheduleFrom]
 
+private theorem rootMainLane_event_mem_transcript_of_exactKernelBoundaries
+  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
+    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
+    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
+    PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
+    BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
+    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding :
+    Type _} [OfNat Limb 0]
+  (boundaries :
+    ExactKernelBoundaries
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep
+      ProgramImage
+      LoweringVersion
+      RomTable
+      BytecodeTable
+      RomCommit
+      BytecodeCommit
+      Source
+      CommitmentId
+      Point
+      PolynomialId
+      Value
+      Digest
+      ExactOpeningWitness
+      OpeningRefinement
+      RowProjectionWitness
+      BridgeBinding)
+  {event : TranscriptEvent}
+  (hEvent :
+    event ∈
+      rootMainLaneEvents
+        boundaries.trace.mainLane.schedule
+        boundaries.trace.mainLane.preparedSteps.length) :
+  event ∈ boundaries.transcript := by
+  rcases kernelTranscriptSchedule_rootMainLane_prefix boundaries.transcriptSchedule with
+    ⟨rest, hPrefix⟩
+  rw [hPrefix]
+  exact List.mem_append.mpr <|
+    Or.inl <| List.mem_append.mpr <| Or.inr hEvent
+
+theorem rootChunkStart_mem_transcript_of_exactKernelBoundaries
+  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
+    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
+    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
+    PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
+    BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
+    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding :
+    Type _} [OfNat Limb 0]
+  (boundaries :
+    ExactKernelBoundaries
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep
+      ProgramImage
+      LoweringVersion
+      RomTable
+      BytecodeTable
+      RomCommit
+      BytecodeCommit
+      Source
+      CommitmentId
+      Point
+      PolynomialId
+      Value
+      Digest
+      ExactOpeningWitness
+      OpeningRefinement
+      RowProjectionWitness
+      BridgeBinding)
+  {chunkIndex : Nat}
+  {chunk : Nightstream.ChunkRange}
+  (hChunk :
+    (Nightstream.ChunkLayout.layout
+      boundaries.trace.mainLane.schedule
+      boundaries.trace.mainLane.preparedSteps.length)[chunkIndex]? = some chunk) :
+  TranscriptEvent.rootChunkStart chunkIndex chunk.start chunk.stop ∈ boundaries.transcript := by
+  apply rootMainLane_event_mem_transcript_of_exactKernelBoundaries
+  exact rootChunkStart_mem_rootMainLaneEvents_of_layout hChunk
+
+theorem rootChunkPiCCS_mem_transcript_of_exactKernelBoundaries
+  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
+    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
+    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
+    PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
+    BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
+    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding :
+    Type _} [OfNat Limb 0]
+  (boundaries :
+    ExactKernelBoundaries
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep
+      ProgramImage
+      LoweringVersion
+      RomTable
+      BytecodeTable
+      RomCommit
+      BytecodeCommit
+      Source
+      CommitmentId
+      Point
+      PolynomialId
+      Value
+      Digest
+      ExactOpeningWitness
+      OpeningRefinement
+      RowProjectionWitness
+      BridgeBinding)
+  {chunkIndex : Nat}
+  {chunk : Nightstream.ChunkRange}
+  (hChunk :
+    (Nightstream.ChunkLayout.layout
+      boundaries.trace.mainLane.schedule
+      boundaries.trace.mainLane.preparedSteps.length)[chunkIndex]? = some chunk) :
+  TranscriptEvent.rootChunkPiCCS chunkIndex ∈ boundaries.transcript := by
+  apply rootMainLane_event_mem_transcript_of_exactKernelBoundaries
+  exact rootChunkPiCCS_mem_rootMainLaneEvents_of_layout hChunk
+
+theorem rootChunkPiRLC_mem_transcript_of_exactKernelBoundaries
+  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
+    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
+    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
+    PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
+    BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
+    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding :
+    Type _} [OfNat Limb 0]
+  (boundaries :
+    ExactKernelBoundaries
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep
+      ProgramImage
+      LoweringVersion
+      RomTable
+      BytecodeTable
+      RomCommit
+      BytecodeCommit
+      Source
+      CommitmentId
+      Point
+      PolynomialId
+      Value
+      Digest
+      ExactOpeningWitness
+      OpeningRefinement
+      RowProjectionWitness
+      BridgeBinding)
+  {chunkIndex : Nat}
+  {chunk : Nightstream.ChunkRange}
+  (hChunk :
+    (Nightstream.ChunkLayout.layout
+      boundaries.trace.mainLane.schedule
+      boundaries.trace.mainLane.preparedSteps.length)[chunkIndex]? = some chunk) :
+  TranscriptEvent.rootChunkPiRLC chunkIndex ∈ boundaries.transcript := by
+  apply rootMainLane_event_mem_transcript_of_exactKernelBoundaries
+  exact rootChunkPiRLC_mem_rootMainLaneEvents_of_layout hChunk
+
+theorem rootChunkPiDEC_mem_transcript_of_exactKernelBoundaries
+  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
+    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
+    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
+    PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
+    BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
+    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding :
+    Type _} [OfNat Limb 0]
+  (boundaries :
+    ExactKernelBoundaries
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep
+      ProgramImage
+      LoweringVersion
+      RomTable
+      BytecodeTable
+      RomCommit
+      BytecodeCommit
+      Source
+      CommitmentId
+      Point
+      PolynomialId
+      Value
+      Digest
+      ExactOpeningWitness
+      OpeningRefinement
+      RowProjectionWitness
+      BridgeBinding)
+  {chunkIndex : Nat}
+  {chunk : Nightstream.ChunkRange}
+  (hChunk :
+    (Nightstream.ChunkLayout.layout
+      boundaries.trace.mainLane.schedule
+      boundaries.trace.mainLane.preparedSteps.length)[chunkIndex]? = some chunk) :
+  TranscriptEvent.rootChunkPiDEC chunkIndex ∈ boundaries.transcript := by
+  apply rootMainLane_event_mem_transcript_of_exactKernelBoundaries
+  exact rootChunkPiDEC_mem_rootMainLaneEvents_of_layout hChunk
+
+theorem rootChunkRowLabel_mem_transcript_of_exactKernelBoundaries
+  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
+    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
+    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
+    PreparedStep ProgramImage LoweringVersion RomTable BytecodeTable RomCommit
+    BytecodeCommit Source CommitmentId Point PolynomialId Value Digest
+    ExactOpeningWitness OpeningRefinement RowProjectionWitness BridgeBinding :
+    Type _} [OfNat Limb 0]
+  (boundaries :
+    ExactKernelBoundaries
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      PreparedStep
+      ProgramImage
+      LoweringVersion
+      RomTable
+      BytecodeTable
+      RomCommit
+      BytecodeCommit
+      Source
+      CommitmentId
+      Point
+      PolynomialId
+      Value
+      Digest
+      ExactOpeningWitness
+      OpeningRefinement
+      RowProjectionWitness
+      BridgeBinding)
+  {chunkIndex rowIndex : Nat}
+  {chunk : Nightstream.ChunkRange}
+  (hChunk :
+    (Nightstream.ChunkLayout.layout
+      boundaries.trace.mainLane.schedule
+      boundaries.trace.mainLane.preparedSteps.length)[chunkIndex]? = some chunk)
+  (hRow : rowIndex ∈ List.range' chunk.start chunk.width) :
+  TranscriptEvent.rootChunkRowLabel chunkIndex rowIndex ∈ boundaries.transcript := by
+  apply rootMainLane_event_mem_transcript_of_exactKernelBoundaries
+  exact rootChunkRowLabel_mem_rootMainLaneEvents_of_layout hChunk hRow
+
 def exactKernelBoundaries_of_minimalKernelInputs
   {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
     RamAddr Word StateLocation RegisterTimeline RamTimeline Limb

@@ -3,7 +3,7 @@
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use serde::{Deserialize, Serialize};
 
-use crate::rv64im::stage1::{stage1_row_digest, Stage1Summary};
+use crate::rv64im::stage1::{stage1_row_digest, Stage1RowBinding, Stage1Summary};
 
 use super::{
     simple::SimpleKernelError,
@@ -67,30 +67,34 @@ pub(super) fn build_stage1_selected_opening_claim(
     claim: &Stage1ClaimSurface,
     rows: &Stage1CanonicalRowBundle,
 ) -> Result<Stage1SelectedOpeningClaim, SimpleKernelError> {
-    let first = stage1
-        .rows
+    build_stage1_selected_opening_claim_from_rows(&stage1.rows, claim, rows)
+}
+
+pub(super) fn build_stage1_selected_opening_claim_from_rows(
+    rows: &[Stage1RowBinding],
+    claim: &Stage1ClaimSurface,
+    row_bundle: &Stage1CanonicalRowBundle,
+) -> Result<Stage1SelectedOpeningClaim, SimpleKernelError> {
+    let first = rows
         .first()
         .ok_or_else(|| SimpleKernelError::Bridge("rv64im/stage1 selected claim missing first row".into()))?;
-    let effect_position = stage1
-        .rows
+    let effect_position = rows
         .iter()
         .position(|row| row.is_effect_row)
         .ok_or_else(|| SimpleKernelError::Bridge("rv64im/stage1 selected claim missing effect row".into()))?;
-    let commit_position = stage1
-        .rows
+    let commit_position = rows
         .iter()
         .position(|row| row.is_commit_row)
         .ok_or_else(|| SimpleKernelError::Bridge("rv64im/stage1 selected claim missing commit row".into()))?;
-    let effect = &stage1.rows[effect_position];
-    let commit = &stage1.rows[commit_position];
-    let last_position = stage1.rows.len().saturating_sub(1);
-    let last = stage1
-        .rows
+    let effect = &rows[effect_position];
+    let commit = &rows[commit_position];
+    let last_position = rows.len().saturating_sub(1);
+    let last = rows
         .last()
         .ok_or_else(|| SimpleKernelError::Bridge("rv64im/stage1 selected claim missing last row".into()))?;
-    let object = selected_opening_object(AjtaiFamilyKind::Stage1Rows, rows.rows_digest);
+    let object = selected_opening_object(AjtaiFamilyKind::Stage1Rows, row_bundle.rows_digest);
     let selected = Stage1SelectedOpeningClaim {
-        rows_family_digest: rows.rows_digest,
+        rows_family_digest: row_bundle.rows_digest,
         row_count: claim.row_count as u64,
         effect_row_count: claim.effect_row_count as u64,
         commit_row_count: claim.commit_row_count as u64,

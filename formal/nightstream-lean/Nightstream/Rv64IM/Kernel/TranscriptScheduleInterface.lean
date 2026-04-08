@@ -32,6 +32,16 @@ abbrev transcriptSchedule_events := @Nightstream.Rv64IM.transcriptSchedule_event
 abbrev rootMainLaneEvents_prefix := @Nightstream.Rv64IM.rootMainLaneEvents_prefix
 abbrev kernelTranscriptSchedule_rootMainLane_prefix :=
   @Nightstream.Rv64IM.kernelTranscriptSchedule_rootMainLane_prefix
+abbrev rootChunkStart_mem_rootMainLaneEvents_of_layout :=
+  @Nightstream.Rv64IM.rootChunkStart_mem_rootMainLaneEvents_of_layout
+abbrev rootChunkPiCCS_mem_rootMainLaneEvents_of_layout :=
+  @Nightstream.Rv64IM.rootChunkPiCCS_mem_rootMainLaneEvents_of_layout
+abbrev rootChunkPiRLC_mem_rootMainLaneEvents_of_layout :=
+  @Nightstream.Rv64IM.rootChunkPiRLC_mem_rootMainLaneEvents_of_layout
+abbrev rootChunkPiDEC_mem_rootMainLaneEvents_of_layout :=
+  @Nightstream.Rv64IM.rootChunkPiDEC_mem_rootMainLaneEvents_of_layout
+abbrev rootChunkRowLabel_mem_rootMainLaneEvents_of_layout :=
+  @Nightstream.Rv64IM.rootChunkRowLabel_mem_rootMainLaneEvents_of_layout
 
 end TranscriptScheduleInterface
 

@@ -108,15 +108,26 @@ pub(super) fn divrem_sequence(step: &ExecutedStep) -> Option<InlineTracePlan> {
     let rs1 = step.decoded.rs1;
     let rs2 = step.decoded.rs2;
     let rd = step.decoded.rd;
-    match step.decoded.opcode {
-        Rv64Opcode::Div => Some(div::sequence(step.rs1_value, step.rs2_value, rs1, rs2, rd)),
-        Rv64Opcode::Rem => Some(rem::sequence(step.rs1_value, step.rs2_value, rs1, rs2, rd)),
-        Rv64Opcode::Divw => Some(divw::sequence(step.rs1_value, step.rs2_value, rs1, rs2, rd)),
-        Rv64Opcode::Remw => Some(remw::sequence(step.rs1_value, step.rs2_value, rs1, rs2, rd)),
-        Rv64Opcode::Divu => Some(divu::sequence(step.rs1_value, step.rs2_value, rs1, rs2, rd)),
-        Rv64Opcode::Remu => Some(remu::sequence(step.rs1_value, step.rs2_value, rs1, rs2, rd)),
-        Rv64Opcode::Divuw => Some(divuw::sequence(step.rs1_value, step.rs2_value, rs1, rs2, rd)),
-        Rv64Opcode::Remuw => Some(remuw::sequence(step.rs1_value, step.rs2_value, rs1, rs2, rd)),
+    sequence_for_opcode(step.decoded.opcode, step.rs1_value, step.rs2_value, rs1, rs2, rd)
+}
+
+pub(super) fn sequence_for_opcode(
+    opcode: Rv64Opcode,
+    rs1_value: u64,
+    rs2_value: u64,
+    rs1: u8,
+    rs2: u8,
+    rd: u8,
+) -> Option<InlineTracePlan> {
+    match opcode {
+        Rv64Opcode::Div => Some(div::sequence(rs1_value, rs2_value, rs1, rs2, rd)),
+        Rv64Opcode::Rem => Some(rem::sequence(rs1_value, rs2_value, rs1, rs2, rd)),
+        Rv64Opcode::Divw => Some(divw::sequence(rs1_value, rs2_value, rs1, rs2, rd)),
+        Rv64Opcode::Remw => Some(remw::sequence(rs1_value, rs2_value, rs1, rs2, rd)),
+        Rv64Opcode::Divu => Some(divu::sequence(rs1_value, rs2_value, rs1, rs2, rd)),
+        Rv64Opcode::Remu => Some(remu::sequence(rs1_value, rs2_value, rs1, rs2, rd)),
+        Rv64Opcode::Divuw => Some(divuw::sequence(rs1_value, rs2_value, rs1, rs2, rd)),
+        Rv64Opcode::Remuw => Some(remuw::sequence(rs1_value, rs2_value, rs1, rs2, rd)),
         _ => None,
     }
 }

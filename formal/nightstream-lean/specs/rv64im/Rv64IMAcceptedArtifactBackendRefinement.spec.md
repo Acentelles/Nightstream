@@ -12,7 +12,9 @@
 - Exported public-step counts agree across the public statement and main-lane proof bindings.
 - Lean recomputes the chunk layout from the theorem-owned fold schedule and prepared-step count.
 - Lean’s replayed prepared-step count exactly matches the exported public-step count.
+- Lean recomputes the schedule-owned owning root chunk for every replayed prepared step, including `rowsPerChunk k` multi-chunk schedules.
 - The accepted artifact exposes low-level chunk/backend proof payload surfaces rather than only summary digests.
+- A separate theorem-owned backend payload surface owner states exactly which exported low-level payload objects must exist before backend refinement can close.
 - The exported main-lane, stage, and kernel-opening bundles expose theorem-bearing payloads rather than digest-only placeholders.
 - The artifact carries theorem-bearing payloads sufficient to refine into:
   - `Π_CCS`
@@ -33,6 +35,7 @@
 
 - **Depends on**:
   - `Nightstream/ChunkLayout.lean`
+  - `Nightstream/Rv64IM/Kernel/RequiredBackendPayloadSurface.lean`
   - `Nightstream/Rv64IM/Generated/AcceptedProofArtifactTypes.lean`
   - `Nightstream/Rv64IM/Checks.lean`
 - **Consumed by**:

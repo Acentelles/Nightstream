@@ -17,12 +17,22 @@ abbrev rootPreparedStepAtIndex_of_kernelDesignBridge :=
   @Nightstream.Rv64IM.rootPreparedStepAtIndex_of_kernelDesignBridge
 abbrev selectedPreparedStepCoveredByChunk_of_kernelDesignBridge :=
   @Nightstream.Rv64IM.selectedPreparedStepCoveredByChunk_of_kernelDesignBridge
+abbrev selectedPreparedStepOwnedByScheduledChunk_of_kernelDesignBridge :=
+  @Nightstream.Rv64IM.selectedPreparedStepOwnedByScheduledChunk_of_kernelDesignBridge
+abbrev selectedPreparedStepRoutedToScheduledChunk_of_kernelDesignBridge :=
+  @Nightstream.Rv64IM.selectedPreparedStepRoutedToScheduledChunk_of_kernelDesignBridge
 abbrev piCCS_atSelectedIndex_of_kernelDesignBridge :=
   @Nightstream.Rv64IM.piCCS_atSelectedIndex_of_kernelDesignBridge
 abbrev piRLC_atSelectedIndex_of_kernelDesignBridge :=
   @Nightstream.Rv64IM.piRLC_atSelectedIndex_of_kernelDesignBridge
 abbrev piDEC_atSelectedIndex_of_kernelDesignBridge :=
   @Nightstream.Rv64IM.piDEC_atSelectedIndex_of_kernelDesignBridge
+abbrev piCCS_atScheduledChunk_of_kernelDesignBridge :=
+  @Nightstream.Rv64IM.piCCS_atScheduledChunk_of_kernelDesignBridge
+abbrev piRLC_atScheduledChunk_of_kernelDesignBridge :=
+  @Nightstream.Rv64IM.piRLC_atScheduledChunk_of_kernelDesignBridge
+abbrev piDEC_atScheduledChunk_of_kernelDesignBridge :=
+  @Nightstream.Rv64IM.piDEC_atScheduledChunk_of_kernelDesignBridge
 abbrev executionCorrect_of_kernelDesignBridge :=
   @Nightstream.Rv64IM.executionCorrect_of_kernelDesignBridge
 abbrev stage2AuthenticatedHistorySemantics_of_kernelDesignBridge :=

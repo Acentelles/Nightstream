@@ -1,6 +1,7 @@
 import Nightstream.ChunkLayout
 import Nightstream.Rv64IM.Generated.AcceptedProofArtifactCorpus
 import Nightstream.Rv64IM.Checks
+import Nightstream.Rv64IM.Kernel.RequiredBackendPayloadSurface
 import Nightstream.Rv64IM.ProofBoundaryChecks
 
 /-!
@@ -21,6 +22,7 @@ inductive BackendRefinementField where
   | publicStepCountAlignment
   | chunkLayoutRecomputed
   | replayedPublicStepCount
+  | scheduleOwnedChunkRoutingRecomputed
   | lowLevelChunkPayloadSurface
   | mainLanePayloadSurface
   | stageClaimPayloadSurface
@@ -43,6 +45,8 @@ def backendRefinementFieldName : BackendRefinementField → String
   | .publicStepCountAlignment => "public_step_count_alignment"
   | .chunkLayoutRecomputed => "chunk_layout_recomputed"
   | .replayedPublicStepCount => "replayed_public_step_count"
+  | .scheduleOwnedChunkRoutingRecomputed =>
+      "schedule_owned_chunk_routing_recomputed"
   | .lowLevelChunkPayloadSurface => "low_level_chunk_payload_surface"
   | .mainLanePayloadSurface => "main_lane_payload_surface"
   | .stageClaimPayloadSurface => "stage_claim_payload_surface"
@@ -64,6 +68,7 @@ def requiredBackendRefinementFields : List BackendRefinementField :=
   , .publicStepCountAlignment
   , .chunkLayoutRecomputed
   , .replayedPublicStepCount
+  , .scheduleOwnedChunkRoutingRecomputed
   , .lowLevelChunkPayloadSurface
   , .mainLanePayloadSurface
   , .stageClaimPayloadSurface
@@ -122,35 +127,34 @@ private def recomputedChunkLayoutMatchesExported (artifact : AcceptedProofArtifa
         count = artifact.exportedStatement.chunkCount &&
         layout.length = Nightstream.FoldSchedule.chunkCount schedule preparedStepCount
 
-/-
-The current Rust-exported RV64IM artifact is still summary-shaped. These checks
-therefore fail structurally, not because of a digest mismatch:
+private def scheduleOwnedChunkRoutingRecomputedFromSource
+    (artifact : AcceptedProofArtifactView) : Bool :=
+  match replayedPreparedStepCount? artifact with
+  | none => false
+  | some preparedStepCount =>
+      let schedule := artifact.kernelProof.mainLane.binding.foldSchedule
+      let chunkCount := artifact.kernelProof.mainLane.binding.chunkCount
+      recomputedChunkLayoutMatchesExported artifact &&
+        (List.range preparedStepCount).all fun rowIndex =>
+          decide (Nightstream.ChunkLayout.chunkIndexOf schedule rowIndex < chunkCount)
 
-* `AcceptedProofArtifactView` carries `source`, `derived`, and digest bundles,
-  but no theorem-bearing chunk or backend proof payloads.
-* `MainLaneProofBundleView` carries only `binding`, `statementDigest`,
-  `proofDigest`, and `digest`.
-* `StageClaimProofBundleView`, `StagePackageProofBundleView`, and
-  `KernelOpeningProofBundleView` expose digests and binding summaries, not the
-  proof objects Lean would need to refine into `Π_CCS / Π_RLC / Π_DEC`.
--/
-private def lowLevelChunkPayloadSurfacePresent (_artifact : AcceptedProofArtifactView) : Bool :=
-  false
+private def lowLevelChunkPayloadSurfacePresent (artifact : AcceptedProofArtifactView) : Bool :=
+  requiredBackendPayloadFieldPresent artifact .chunkPayloadList
 
-private def mainLanePayloadSurfacePresent (_artifact : AcceptedProofArtifactView) : Bool :=
-  false
+private def mainLanePayloadSurfacePresent (artifact : AcceptedProofArtifactView) : Bool :=
+  requiredBackendPayloadFieldPresent artifact .mainLanePiCCSPayload
 
-private def stageClaimPayloadSurfacePresent (_artifact : AcceptedProofArtifactView) : Bool :=
-  false
+private def stageClaimPayloadSurfacePresent (artifact : AcceptedProofArtifactView) : Bool :=
+  requiredBackendPayloadFieldPresent artifact .stageClaimPiRLCPayload
 
-private def stagePackagePayloadSurfacePresent (_artifact : AcceptedProofArtifactView) : Bool :=
-  false
+private def stagePackagePayloadSurfacePresent (artifact : AcceptedProofArtifactView) : Bool :=
+  requiredBackendPayloadFieldPresent artifact .stagePackagePiRLCPayload
 
-private def kernelOpeningPayloadSurfacePresent (_artifact : AcceptedProofArtifactView) : Bool :=
-  false
+private def kernelOpeningPayloadSurfacePresent (artifact : AcceptedProofArtifactView) : Bool :=
+  requiredBackendPayloadFieldPresent artifact .kernelOpeningPiDECPayload
 
 private def piCCSContextReconstructible (artifact : AcceptedProofArtifactView) : Bool :=
-  recomputedChunkLayoutMatchesExported artifact &&
+  scheduleOwnedChunkRoutingRecomputedFromSource artifact &&
     lowLevelChunkPayloadSurfacePresent artifact &&
     mainLanePayloadSurfacePresent artifact
 
@@ -172,6 +176,8 @@ def backendRefinementFieldPresent
   | .publicStepCountAlignment => exportedPublicStepCountAligned artifact
   | .chunkLayoutRecomputed => recomputedChunkLayoutMatchesExported artifact
   | .replayedPublicStepCount => replayedPublicStepCountMatchesExported artifact
+  | .scheduleOwnedChunkRoutingRecomputed =>
+      scheduleOwnedChunkRoutingRecomputedFromSource artifact
   | .lowLevelChunkPayloadSurface => lowLevelChunkPayloadSurfacePresent artifact
   | .mainLanePayloadSurface => mainLanePayloadSurfacePresent artifact
   | .stageClaimPayloadSurface => stageClaimPayloadSurfacePresent artifact
@@ -211,25 +217,7 @@ deriving Repr
 
 def backendRefinementRustExportBlockers
     (artifact : AcceptedProofArtifactView) : List String :=
-  let blockers : List (String × Bool) :=
-    [ ( "accepted_artifact_view_missing_chunk_payload_list"
-      , lowLevelChunkPayloadSurfacePresent artifact
-      )
-    , ( "main_lane_bundle_missing_theorem_bearing_pi_ccs_payload"
-      , mainLanePayloadSurfacePresent artifact
-      )
-    , ( "stage_claim_bundle_missing_theorem_bearing_pi_rlc_claim_payload"
-      , stageClaimPayloadSurfacePresent artifact
-      )
-    , ( "stage_package_bundle_missing_theorem_bearing_pi_rlc_package_payload"
-      , stagePackagePayloadSurfacePresent artifact
-      )
-    , ( "kernel_opening_bundle_missing_theorem_bearing_pi_dec_payload"
-      , kernelOpeningPayloadSurfacePresent artifact
-      )
-    ]
-  blockers.filterMap fun (name, ok) =>
-    if ok then none else some name
+  requiredBackendPayloadRustExportBlockers artifact
 
 def uniqueBackendRefinementRustExportBlockers : List String :=
   Generated.AcceptedProofArtifacts.cases.foldl

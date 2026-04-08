@@ -112,7 +112,12 @@ def proofStatementDigest (statement : ProofStatementView) : List Byte :=
     , .appendMessage "rv64im/proof_statement/main_lane_surface_digest" statement.mainLaneSurfaceDigest
     , .appendMessage "rv64im/proof_statement/root_lane_columns_digest" statement.rootLaneColumnsDigest
     , .appendU64s "rv64im/proof_statement/meta"
-        [statement.chunkCount, statement.publicStepCount, statement.finalPc, boolWord statement.halted]
+        [ statement.chunkCount
+        , statement.publicStepCount
+        , statement.initialPc
+        , statement.finalPc
+        , boolWord statement.halted
+        ]
     ]
 
 def acceptedProofStatementBindingDigest (binding : AcceptedProofStatementBindingView) : List Byte :=

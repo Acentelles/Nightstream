@@ -4,18 +4,21 @@ use neo_math::K;
 
 use crate::chip8::spec::{COL_BURST_LAST, COL_IS_MEMOP, COL_PC, COL_PC_NEXT, COL_X_IDX};
 
+#[derive(Clone, Debug)]
 pub struct LaneShiftProof {
     pub source_point: Vec<K>,
     pub claimed_shift_values: [K; 3],
     pub reduction_rounds: Vec<Vec<K>>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
 pub struct RowBindingClaim {
     pub row_index: usize,
     pub row_bits: Vec<bool>,
     pub opened_values: Vec<K>,
 }
 
+#[derive(Clone, Debug)]
 pub struct Stage3Proof {
     pub shift_proof: LaneShiftProof,
     pub shift_opening_values: [K; 5],

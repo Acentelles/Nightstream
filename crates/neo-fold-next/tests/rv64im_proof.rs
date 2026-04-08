@@ -1,11 +1,15 @@
 //! Focused tests for the final public RV64IM proof API.
 
+use std::sync::{LazyLock, Mutex, MutexGuard};
+
 use neo_fold_next::proof::FoldSchedule;
 use neo_fold_next::rv64im::{
-    build_main_lane_surface, parity_source_cases, prove_rv64im_audit_proof as prove_rv64im_proof,
-    prove_rv64im_public_proof, prove_rv64im_public_proof_with_options, validate_rv64im_public_proof_against_input,
-    verify_rv64im_audit_proof as verify_rv64im_proof, verify_rv64im_public_proof, Rv64imProofInput,
-    Rv64imPublicProofOptions,
+    build_main_lane_surface, build_rv64im_accepted_proof_artifact,
+    build_rv64im_kernel_export_source_from_accepted_artifact, parity_source_cases,
+    prove_rv64im_audit_proof as prove_rv64im_proof, prove_rv64im_public_proof, prove_rv64im_public_proof_with_options,
+    validate_rv64im_public_proof_against_input, verify_rv64im_audit_proof as verify_rv64im_proof,
+    verify_rv64im_kernel_export_source, verify_rv64im_public_proof, Rv64imProof, Rv64imProofInput,
+    Rv64imProofWitnessBundle, Rv64imPublicProofOptions,
 };
 use neo_fold_next::rv64im::{
     Rv64imKernelClaimProofBundle, Rv64imKernelProofBundle, Rv64imStageClaimDigestBundle, Rv64imStageClaimProofBundle,
@@ -25,6 +29,50 @@ fn proof_input(name: &str) -> Rv64imProofInput {
     let max_steps = source.program_words.len();
     Rv64imProofInput { source, max_steps }
 }
+
+fn proof_test_guard() -> MutexGuard<'static, ()> {
+    static RV64IM_PROOF_TEST_MUTEX: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+    RV64IM_PROOF_TEST_MUTEX
+        .lock()
+        .expect("serialize rv64im_proof tests")
+}
+
+fn rows_per_chunk_7_options() -> Rv64imPublicProofOptions {
+    Rv64imPublicProofOptions {
+        root_fold_schedule: FoldSchedule::RowsPerChunk(7),
+    }
+}
+
+static CONTROL_FLOW_AUDIT_PROOF: LazyLock<(Rv64imProofWitnessBundle, Rv64imProof)> = LazyLock::new(|| {
+    let input = proof_input("control_flow_jal_skip_ecall");
+    prove_rv64im_proof(&input).expect("prove control-flow rv64im audit proof")
+});
+
+static CONTROL_FLOW_PUBLIC_PROOF: LazyLock<Rv64imProof> = LazyLock::new(|| {
+    let input = proof_input("control_flow_jal_skip_ecall");
+    prove_rv64im_public_proof(&input).expect("prove control-flow rv64im public proof")
+});
+
+static CONTROL_FLOW_CHUNKED_PUBLIC_PROOF: LazyLock<Rv64imProof> = LazyLock::new(|| {
+    let input = proof_input("control_flow_jal_skip_ecall");
+    prove_rv64im_public_proof_with_options(&input, rows_per_chunk_7_options())
+        .expect("prove control-flow chunked rv64im public proof")
+});
+
+static CONTROL_FLOW_ECALL_ONLY_AUDIT_PROOF: LazyLock<(Rv64imProofWitnessBundle, Rv64imProof)> = LazyLock::new(|| {
+    let input = proof_input("control_flow_ecall_only");
+    prove_rv64im_proof(&input).expect("prove control-flow ecall-only rv64im audit proof")
+});
+
+static NATIVE_ADD_CHAIN_AUDIT_PROOF: LazyLock<(Rv64imProofWitnessBundle, Rv64imProof)> = LazyLock::new(|| {
+    let input = proof_input("native_add_chain_x0_ecall");
+    prove_rv64im_proof(&input).expect("prove native add-chain rv64im audit proof")
+});
+
+static NATIVE_LOGIC_COMPARE_AUDIT_PROOF: LazyLock<(Rv64imProofWitnessBundle, Rv64imProof)> = LazyLock::new(|| {
+    let input = proof_input("native_logic_compare_chain_ecall");
+    prove_rv64im_proof(&input).expect("prove native logic-compare rv64im audit proof")
+});
 
 fn stage_witness_summary_digest(summary: &Rv64imStageWitnessSummaryBundle) -> [u8; 32] {
     let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/stage_witness_summary_bundle");
@@ -133,11 +181,11 @@ fn kernel_proof_bundle_digest(bundle: &Rv64imKernelProofBundle) -> [u8; 32] {
 
 #[test]
 fn rv64im_proof_roundtrip_matches_kernel_export() {
-    let input = proof_input("control_flow_jal_skip_ecall");
-
-    let (witness, proof) = prove_rv64im_proof(&input).expect("prove rv64im proof");
+    let _serial = proof_test_guard();
+    let (witness, proof) = CONTROL_FLOW_AUDIT_PROOF.clone();
     let verified = verify_rv64im_proof(&proof).expect("verify rv64im proof");
-    validate_rv64im_public_proof_against_input(&input, &proof).expect("proof matches public input");
+    validate_rv64im_public_proof_against_input(&proof_input("control_flow_jal_skip_ecall"), &proof)
+        .expect("proof matches public input");
 
     assert_ne!(proof.claim.digest, [0; 32]);
     assert_ne!(proof.claim.main_lane.digest, [0; 32]);
@@ -335,9 +383,8 @@ fn rv64im_proof_roundtrip_matches_kernel_export() {
 
 #[test]
 fn rv64im_public_proof_defaults_to_whole_trace_root_chunk() {
-    let input = proof_input("control_flow_jal_skip_ecall");
-
-    let proof = prove_rv64im_public_proof(&input).expect("prove public proof");
+    let _serial = proof_test_guard();
+    let proof = CONTROL_FLOW_PUBLIC_PROOF.clone();
     verify_rv64im_public_proof(&proof).expect("verify public proof");
 
     assert_eq!(proof.statement.fold_schedule, FoldSchedule::WholeTrace);
@@ -354,12 +401,8 @@ fn rv64im_public_proof_defaults_to_whole_trace_root_chunk() {
 
 #[test]
 fn rv64im_public_proof_rows_per_chunk_schedule_is_contiguous() {
-    let input = proof_input("control_flow_jal_skip_ecall");
-    let options = Rv64imPublicProofOptions {
-        root_fold_schedule: FoldSchedule::RowsPerChunk(7),
-    };
-
-    let proof = prove_rv64im_public_proof_with_options(&input, options).expect("prove chunked public proof");
+    let _serial = proof_test_guard();
+    let proof = CONTROL_FLOW_CHUNKED_PUBLIC_PROOF.clone();
     verify_rv64im_public_proof(&proof).expect("verify chunked public proof");
 
     assert_eq!(proof.statement.fold_schedule, FoldSchedule::RowsPerChunk(7));
@@ -399,8 +442,8 @@ fn rv64im_public_proof_rows_per_chunk_schedule_is_contiguous() {
 
 #[test]
 fn rv64im_proof_rejects_tampered_root_main_lane_packaged_proof() {
-    let input = proof_input("control_flow_jal_skip_ecall");
-    let (_, mut proof) = prove_rv64im_proof(&input).expect("prove rv64im proof");
+    let _serial = proof_test_guard();
+    let (_, mut proof) = CONTROL_FLOW_AUDIT_PROOF.clone();
 
     proof.kernel.main_lane.packaged.proof.proof_digest[0] ^= 1;
 
@@ -409,18 +452,12 @@ fn rv64im_proof_rejects_tampered_root_main_lane_packaged_proof() {
 
 #[test]
 fn rv64im_public_proof_rejects_tampered_fold_schedule_and_chunk_layout() {
-    let input = proof_input("control_flow_jal_skip_ecall");
-    let options = Rv64imPublicProofOptions {
-        root_fold_schedule: FoldSchedule::RowsPerChunk(7),
-    };
-
-    let mut tampered_schedule =
-        prove_rv64im_public_proof_with_options(&input, options).expect("prove chunked public proof");
+    let _serial = proof_test_guard();
+    let mut tampered_schedule = CONTROL_FLOW_CHUNKED_PUBLIC_PROOF.clone();
     tampered_schedule.statement.fold_schedule = FoldSchedule::WholeTrace;
     verify_rv64im_public_proof(&tampered_schedule).expect_err("tampered public statement fold schedule must fail");
 
-    let mut tampered_chunk_count =
-        prove_rv64im_public_proof_with_options(&input, options).expect("prove chunked public proof");
+    let mut tampered_chunk_count = CONTROL_FLOW_CHUNKED_PUBLIC_PROOF.clone();
     tampered_chunk_count
         .kernel
         .main_lane
@@ -429,8 +466,7 @@ fn rv64im_public_proof_rejects_tampered_fold_schedule_and_chunk_layout() {
         .chunk_count += 1;
     verify_rv64im_public_proof(&tampered_chunk_count).expect_err("tampered packaged chunk count must fail");
 
-    let mut tampered_start_index =
-        prove_rv64im_public_proof_with_options(&input, options).expect("prove chunked public proof");
+    let mut tampered_start_index = CONTROL_FLOW_CHUNKED_PUBLIC_PROOF.clone();
     tampered_start_index
         .kernel
         .main_lane
@@ -443,8 +479,8 @@ fn rv64im_public_proof_rejects_tampered_fold_schedule_and_chunk_layout() {
 
 #[test]
 fn rv64im_proof_rejects_tampered_stage_package_proof() {
-    let input = proof_input("control_flow_jal_skip_ecall");
-    let (_, mut proof) = prove_rv64im_proof(&input).expect("prove rv64im proof");
+    let _serial = proof_test_guard();
+    let (_, mut proof) = CONTROL_FLOW_AUDIT_PROOF.clone();
 
     proof
         .kernel
@@ -460,8 +496,8 @@ fn rv64im_proof_rejects_tampered_stage_package_proof() {
 
 #[test]
 fn rv64im_proof_rejects_tampered_kernel_opening_proof() {
-    let input = proof_input("control_flow_jal_skip_ecall");
-    let (_, mut proof) = prove_rv64im_proof(&input).expect("prove rv64im proof");
+    let _serial = proof_test_guard();
+    let (_, mut proof) = CONTROL_FLOW_AUDIT_PROOF.clone();
 
     proof
         .kernel
@@ -476,10 +512,35 @@ fn rv64im_proof_rejects_tampered_kernel_opening_proof() {
 }
 
 #[test]
-fn rv64im_proof_rejects_tampered_stage_claim_packaged_proof() {
-    let input = proof_input("control_flow_jal_skip_ecall");
+fn rv64im_kernel_export_source_roundtrip_matches_accepted_artifact() {
+    let _serial = proof_test_guard();
+    let (_, proof) = CONTROL_FLOW_AUDIT_PROOF.clone();
+    let accepted_artifact = build_rv64im_accepted_proof_artifact(&proof).expect("build rv64im accepted artifact");
+    let source = build_rv64im_kernel_export_source_from_accepted_artifact(&accepted_artifact)
+        .expect("build rv64im kernel export source");
 
-    let (_, mut proof) = prove_rv64im_proof(&input).expect("prove rv64im proof");
+    verify_rv64im_kernel_export_source(&source).expect("verify rv64im kernel export source");
+    assert_ne!(source.digest, [0; 32]);
+    assert_eq!(source.root_execution.digest, accepted_artifact.root_execution.digest);
+}
+
+#[test]
+fn rv64im_kernel_export_source_rejects_tampered_digest() {
+    let _serial = proof_test_guard();
+    let (_, proof) = CONTROL_FLOW_AUDIT_PROOF.clone();
+    let accepted_artifact = build_rv64im_accepted_proof_artifact(&proof).expect("build rv64im accepted artifact");
+    let mut source = build_rv64im_kernel_export_source_from_accepted_artifact(&accepted_artifact)
+        .expect("build rv64im kernel export source");
+
+    source.digest[0] ^= 1;
+    let err = verify_rv64im_kernel_export_source(&source).expect_err("tampered source digest must fail");
+    assert!(format!("{err}").contains("kernel export source"));
+}
+
+#[test]
+fn rv64im_proof_rejects_tampered_stage_claim_packaged_proof() {
+    let _serial = proof_test_guard();
+    let (_, mut proof) = CONTROL_FLOW_AUDIT_PROOF.clone();
     proof.kernel.stage_claims.packaged.proof.proof_digest[0] ^= 1;
     proof.kernel.stage_claims.digest = stage_claim_proof_digest(&proof.kernel.stage_claims);
     proof.kernel.digest = kernel_proof_bundle_digest(&proof.kernel);
@@ -489,9 +550,8 @@ fn rv64im_proof_rejects_tampered_stage_claim_packaged_proof() {
 
 #[test]
 fn rv64im_proof_rejects_tampered_kernel_claim_packaged_proof() {
-    let input = proof_input("control_flow_jal_skip_ecall");
-
-    let (_, mut proof) = prove_rv64im_proof(&input).expect("prove rv64im proof");
+    let _serial = proof_test_guard();
+    let (_, mut proof) = CONTROL_FLOW_AUDIT_PROOF.clone();
     proof.kernel.kernel_claims.packaged.proof.proof_digest[0] ^= 1;
     proof.kernel.kernel_claims.digest = kernel_claim_proof_digest(&proof.kernel.kernel_claims);
     proof.kernel.digest = kernel_proof_bundle_digest(&proof.kernel);
@@ -501,9 +561,9 @@ fn rv64im_proof_rejects_tampered_kernel_claim_packaged_proof() {
 
 #[test]
 fn rv64im_proof_rejects_proof_from_different_public_input() {
+    let _serial = proof_test_guard();
     let expected_input = proof_input("vertical_add_sd_ld_ecall");
-    let foreign_input = proof_input("control_flow_ecall_only");
-    let (_, foreign_proof) = prove_rv64im_proof(&foreign_input).expect("foreign proof");
+    let (_, foreign_proof) = CONTROL_FLOW_ECALL_ONLY_AUDIT_PROOF.clone();
     verify_rv64im_proof(&foreign_proof).expect("theorem-facing proof verification");
     validate_rv64im_public_proof_against_input(&expected_input, &foreign_proof)
         .expect_err("proof for a different public input must fail audit consistency");
@@ -511,9 +571,8 @@ fn rv64im_proof_rejects_proof_from_different_public_input() {
 
 #[test]
 fn rv64im_proof_rejects_tampered_kernel_and_main_lane_surfaces() {
-    let input = proof_input("native_add_chain_x0_ecall");
-
-    let (_witness, proof) = prove_rv64im_proof(&input).expect("prove rv64im proof");
+    let _serial = proof_test_guard();
+    let (_witness, proof) = NATIVE_ADD_CHAIN_AUDIT_PROOF.clone();
 
     let mut tampered_kernel = proof.clone();
     tampered_kernel
@@ -732,9 +791,8 @@ fn rv64im_proof_rejects_tampered_kernel_and_main_lane_surfaces() {
 
 #[test]
 fn rv64im_proof_rejects_export_surface_mismatches_with_recomputed_digests() {
-    let input = proof_input("native_logic_compare_chain_ecall");
-
-    let (_witness, proof) = prove_rv64im_proof(&input).expect("prove rv64im proof");
+    let _serial = proof_test_guard();
+    let (_witness, proof) = NATIVE_LOGIC_COMPARE_AUDIT_PROOF.clone();
 
     let mut tampered_stage_summary = proof.clone();
     tampered_stage_summary

@@ -11,7 +11,7 @@ It targets CCS over the **Goldilocks** field; uses a degree‑2 extension for su
 
 Nightstream implements the protocol from the Neo paper "Lattice‑based folding scheme for CCS over small fields" (Nguyen & Setty, 2025), extended with Twist & Shout memory arguments.
 
-> **🚧 Status**: Research prototype. Shard folding loop and Twist/Shout integration (including two-lane obligations) are implemented. Verifier returns `ShardObligations { main, val }`; both must be enforced by the final layer. Not production-ready.
+> **🚧 Status**: Research prototype. Shard folding loop and Twist/Shout integration (including two-lane obligations) are implemented, and `neo-fold-next` now has a compact published Nightstream boundary for RV64IM and CHIP-8. Chain-facing final verification and deployment are still unfinished. Not production-ready.
 
 ---
 
@@ -20,10 +20,31 @@ Nightstream implements the protocol from the Neo paper "Lattice‑based folding 
 - ✅ Shard prove/verify loop with shared transcript binding
 - ✅ Twist/Shout integrated per chunk, including two-lane obligations
 - ✅ End-to-end integration tests proving and verifying shards
-- ⚠️ Final obligation finalizer (outer SNARK / recursion layer) is WIP
+- ✅ Compact published Nightstream boundary in `neo-fold-next`
+- ⚠️ Chain-facing final verification / deployment path is still WIP
 - ⚠️ No audit; research-grade performance/side-channel posture
 
 **Obligations** = ME (single-point evaluation) claims emitted by shard verification that must be checked by the final proof layer.
+
+### Current Nightstream Boundary (`neo-fold-next`)
+
+The current published Nightstream boundary in `crates/neo-fold-next/src/nightstream/`
+is already compact for both ISAs:
+
+- RV64IM carried Nightstream artifact: `524 bytes`
+- CHIP-8 carried Nightstream artifact: `548 bytes`
+
+These numbers refer to the carried published boundary, not the larger internal
+proofs used below export. In the current design, the separately measured
+Spartan proof is backend-accounted and verifier-relevant, but it is not carried
+inside the published Nightstream artifact itself.
+
+Measured via:
+
+```bash
+NS_DEBUG_N=1000 cargo test -p neo-fold-next --release --test perf -- --ignored --nocapture rv64im_mixed_opcode_perf_snapshot
+cargo test -p neo-fold-next --release --test perf -- --ignored --nocapture chip8_nightstream_perf_snapshot
+```
 
 ---
 
@@ -514,14 +535,15 @@ cargo test -p neo-fold twist_shout_soundness --release -- --nocapture
 * Potential side-channel issues (Rust big-int / norm computations, etc.)
 * Parameter selection not hardened for production
 * Transcript domain separation is implemented but still research-grade
-* Final obligation verification layer is WIP
+* Chain-facing final obligation verification / deployment layer is still WIP
 
 ---
 
 ## Roadmap
 
 ### Near Term
-- [ ] Complete Spartan2 final SNARK layer using hash-MLE (obligation finalization)
+- [ ] Finish the chain-facing verifier/deployment story for the current `neo-fold-next` Nightstream boundary
+- [ ] Decide which backend-accounted proof material must become explicitly carried for chain verification
 - [ ] Add criterion benchmarks
 - [ ] Sparse weight optimizations in bridge
 

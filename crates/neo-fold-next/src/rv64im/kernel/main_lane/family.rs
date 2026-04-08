@@ -2,6 +2,7 @@
 
 use neo_math::F;
 use neo_transcript::{Poseidon2Transcript, Transcript, TranscriptProtocol};
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use super::canonical_openings::{AjtaiFamilyKind, AjtaiObjectId, SelectedOpeningRef};
@@ -40,6 +41,10 @@ pub fn public_step_digest(step: &PublicStep) -> [u8; 32] {
     tr.digest32()
 }
 
+pub(crate) fn public_step_digests(public_steps: &[PublicStep]) -> Vec<[u8; 32]> {
+    parallel_step_digests(public_steps, public_step_digest)
+}
+
 pub fn same_public_step(lhs: &PublicStep, rhs: &PublicStep) -> bool {
     lhs.label == rhs.label
         && lhs.mcs.m_in == rhs.mcs.m_in
@@ -63,17 +68,22 @@ pub fn prepared_step_digest(step: &StepInput) -> [u8; 32] {
     tr.digest32()
 }
 
+pub(crate) fn prepared_step_digests(steps: &[StepInput]) -> Vec<[u8; 32]> {
+    parallel_step_digests(steps, prepared_step_digest)
+}
+
 pub fn public_step_family_digest(public_steps: &[PublicStep]) -> [u8; 32] {
+    public_step_family_digest_from_digests(&public_step_digests(public_steps))
+}
+
+pub(crate) fn public_step_family_digest_from_digests(step_digests: &[[u8; 32]]) -> [u8; 32] {
     let mut tr = Poseidon2Transcript::new(b"neo.fold.next/rv64im/main_lane_public_step_family");
     tr.append_u64s(
         b"rv64im/main_lane_public_step_family/count",
-        &[public_steps.len() as u64],
+        &[step_digests.len() as u64],
     );
-    for step in public_steps {
-        tr.append_message(
-            b"rv64im/main_lane_public_step_family/public_step_digest",
-            &public_step_digest(step),
-        );
+    for digest in step_digests {
+        tr.append_message(b"rv64im/main_lane_public_step_family/public_step_digest", digest);
     }
     tr.digest32()
 }
@@ -134,30 +144,37 @@ impl MainLaneFamilySummary {
 }
 
 pub fn build_main_lane_family_summary(public_steps: &[PublicStep]) -> MainLaneFamilySummary {
-    let family_digest = public_step_family_digest(public_steps);
+    let step_digests = public_step_digests(public_steps);
+    let family_digest = public_step_family_digest_from_digests(&step_digests);
     let object = AjtaiObjectId::new(
         AjtaiFamilyKind::RootMainLanePublicSteps,
         family_digest,
         RV64IM_MAIN_LANE_LAYOUT_V1,
     );
-    let first_public_step = public_steps.first().map(|step| {
-        SelectedOpeningRef::from_parts(
-            AjtaiFamilyKind::RootMainLanePublicSteps,
-            family_digest,
-            RV64IM_MAIN_LANE_LAYOUT_V1,
-            0,
-            public_step_digest(step),
-        )
-    });
-    let last_public_step = public_steps.last().map(|step| {
-        SelectedOpeningRef::from_parts(
-            AjtaiFamilyKind::RootMainLanePublicSteps,
-            family_digest,
-            RV64IM_MAIN_LANE_LAYOUT_V1,
-            public_steps.len().saturating_sub(1) as u64,
-            public_step_digest(step),
-        )
-    });
+    let first_public_step = public_steps
+        .first()
+        .zip(step_digests.first())
+        .map(|(_step, digest)| {
+            SelectedOpeningRef::from_parts(
+                AjtaiFamilyKind::RootMainLanePublicSteps,
+                family_digest,
+                RV64IM_MAIN_LANE_LAYOUT_V1,
+                0,
+                *digest,
+            )
+        });
+    let last_public_step = public_steps
+        .last()
+        .zip(step_digests.last())
+        .map(|(_step, digest)| {
+            SelectedOpeningRef::from_parts(
+                AjtaiFamilyKind::RootMainLanePublicSteps,
+                family_digest,
+                RV64IM_MAIN_LANE_LAYOUT_V1,
+                public_steps.len().saturating_sub(1) as u64,
+                *digest,
+            )
+        });
     let summary = MainLaneFamilySummary {
         object,
         row_width: RV64IM_ROOT_ROW_WIDTH as u64,
@@ -171,4 +188,18 @@ pub fn build_main_lane_family_summary(public_steps: &[PublicStep]) -> MainLaneFa
         digest: summary.expected_digest(),
         ..summary
     }
+}
+
+fn parallel_step_digests<T: Sync>(items: &[T], digest: fn(&T) -> [u8; 32]) -> Vec<[u8; 32]> {
+    #[cfg(not(target_arch = "wasm32"))]
+    let allow_parallel = rayon::current_num_threads() > 1 && rayon::current_thread_index().is_none();
+    #[cfg(target_arch = "wasm32")]
+    let _allow_parallel = false;
+
+    #[cfg(not(target_arch = "wasm32"))]
+    if allow_parallel && items.len() >= 8 {
+        return items.par_iter().map(digest).collect();
+    }
+
+    items.iter().map(digest).collect()
 }

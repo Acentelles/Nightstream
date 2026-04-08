@@ -14,19 +14,20 @@ const INLINE_SCRATCH_REGISTER_BASE: u8 = ARCHITECTURAL_REGISTER_COUNT + RESERVED
 const INLINE_SCRATCH_REGISTER_COUNT: u8 = 8;
 const WORD_MASK32: u64 = (1u64 << 32) - 1;
 
-#[derive(Clone, Copy)]
-struct TraceInstructionSpec {
-    opcode: Rv64TraceOpcode,
-    rd: u8,
-    rs1: u8,
-    rs2: u8,
-    imm: i64,
-    hint: Option<u64>,
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct TraceInstructionSpec {
+    pub(crate) opcode: Rv64TraceOpcode,
+    pub(crate) rd: u8,
+    pub(crate) rs1: u8,
+    pub(crate) rs2: u8,
+    pub(crate) imm: i64,
+    pub(crate) hint: Option<u64>,
 }
 
-struct InlineTracePlan {
-    steps: Vec<TraceInstructionSpec>,
-    effect_index: usize,
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct InlineTracePlan {
+    pub(crate) steps: Vec<TraceInstructionSpec>,
+    pub(crate) effect_index: usize,
 }
 
 #[derive(Clone)]
@@ -266,6 +267,13 @@ fn inline_rows(step: &ExecutedStep, trace_index_start: usize, plan: &InlineTrace
                 Rv64TraceOpcode::Virtual(opcode) => Some(opcode),
             },
             family: step.family,
+            arch_rs1: step.decoded.rs1,
+            arch_rs1_value: step.rs1_value,
+            arch_rs2: step.decoded.rs2,
+            arch_rs2_value: step.rs2_value,
+            arch_rd: step.decoded.rd,
+            arch_rd_before: step.rd_before,
+            arch_imm: step.decoded.imm,
             rs1: spec.rs1,
             rs1_value,
             rs2: spec.rs2,
@@ -305,4 +313,28 @@ pub(crate) fn lower_inline_rows(step: &ExecutedStep, trace_index_start: usize) -
     mul::multiply_sequence(step)
         .or_else(|| divrem::divrem_sequence(step))
         .map(|plan| inline_rows(step, trace_index_start, &plan))
+}
+
+pub(crate) fn canonical_trace_plan(
+    opcode: Rv64Opcode,
+    rs1_value: u64,
+    rs2_value: u64,
+    rs1: u8,
+    rs2: u8,
+    rd: u8,
+) -> Option<InlineTracePlan> {
+    match opcode {
+        Rv64Opcode::Mulh | Rv64Opcode::Mulhsu | Rv64Opcode::Mulw | Rv64Opcode::Mul | Rv64Opcode::Mulhu => {
+            mul::sequence_for_opcode(opcode, rs1, rs2, rd)
+        }
+        Rv64Opcode::Div
+        | Rv64Opcode::Divu
+        | Rv64Opcode::Divw
+        | Rv64Opcode::Divuw
+        | Rv64Opcode::Rem
+        | Rv64Opcode::Remu
+        | Rv64Opcode::Remw
+        | Rv64Opcode::Remuw => divrem::sequence_for_opcode(opcode, rs1_value, rs2_value, rs1, rs2, rd),
+        _ => None,
+    }
 }

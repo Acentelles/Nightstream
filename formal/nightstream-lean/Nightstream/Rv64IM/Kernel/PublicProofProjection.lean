@@ -40,6 +40,7 @@ def projectedProofStatementOfAcceptedArtifact
     , mainLaneSurfaceDigest := mainLaneSurface.digest
     , rootLaneColumnsDigest := rootLaneColumns.digest
     , publicStepCount := rootLaneColumns.timeLen
+    , initialPc := artifact.source.startPc
     , finalPc := artifact.derived.kernel.finalPc
     , halted := artifact.derived.kernel.halted
     , digest := []

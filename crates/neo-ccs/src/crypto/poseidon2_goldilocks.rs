@@ -24,8 +24,8 @@ use once_cell::sync::Lazy;
 use p3_field::PrimeCharacteristicRing;
 use p3_goldilocks::{Goldilocks, Poseidon2Goldilocks};
 use p3_symmetric::Permutation;
-use rand::SeedableRng;
-use rand_chacha::ChaCha8Rng;
+use rand_chacha_p3::rand_core::SeedableRng;
+use rand_chacha_p3::ChaCha8Rng;
 
 // Import parameters from neo-params (single source of truth)
 pub use neo_params::poseidon2_goldilocks::{CAPACITY, DIGEST_LEN, RATE, SEED, WIDTH};

@@ -5,7 +5,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::rv64im::stage2::{
     ram_event_digest, ram_event_words, register_read_event_digest, register_read_words, register_write_event_digest,
-    register_write_words, twist_link_event_digest, twist_link_words, RamAccessKind, Stage2Summary,
+    register_write_words, twist_link_event_digest, twist_link_words, RamAccessKind, RamEvent, RegisterReadEvent,
+    RegisterWriteEvent, Stage2Summary, TwistLinkEvent,
 };
 
 use super::{
@@ -145,17 +146,33 @@ pub(super) fn build_stage2_selected_opening_claim(
     claim: &Stage2ClaimSurface,
     families: &Stage2CanonicalFamilyBundle,
 ) -> Stage2SelectedOpeningClaim {
+    build_stage2_selected_opening_claim_from_events(
+        &stage2.register_reads,
+        &stage2.register_writes,
+        &stage2.ram_events,
+        &stage2.twist_links,
+        claim,
+        families,
+    )
+}
+
+pub(super) fn build_stage2_selected_opening_claim_from_events(
+    register_reads: &[RegisterReadEvent],
+    register_writes: &[RegisterWriteEvent],
+    ram_events: &[RamEvent],
+    twist_links: &[TwistLinkEvent],
+    claim: &Stage2ClaimSurface,
+    families: &Stage2CanonicalFamilyBundle,
+) -> Stage2SelectedOpeningClaim {
     let read_object = selected_opening_object(AjtaiFamilyKind::Stage2RegisterReads, families.register_reads_digest);
     let write_object = selected_opening_object(AjtaiFamilyKind::Stage2RegisterWrites, families.register_writes_digest);
     let ram_object = selected_opening_object(AjtaiFamilyKind::Stage2RamEvents, families.ram_events_digest);
     let twist_object = selected_opening_object(AjtaiFamilyKind::Stage2TwistLinks, families.twist_links_digest);
-    let (first_read, last_read) =
-        first_last_selected_refs(&stage2.register_reads, &read_object, register_read_event_digest);
+    let (first_read, last_read) = first_last_selected_refs(register_reads, &read_object, register_read_event_digest);
     let (first_write, last_write) =
-        first_last_selected_refs(&stage2.register_writes, &write_object, register_write_event_digest);
-    let (first_ram, last_ram) = first_last_selected_refs(&stage2.ram_events, &ram_object, ram_event_digest);
-    let (first_twist, last_twist) =
-        first_last_selected_refs(&stage2.twist_links, &twist_object, twist_link_event_digest);
+        first_last_selected_refs(register_writes, &write_object, register_write_event_digest);
+    let (first_ram, last_ram) = first_last_selected_refs(ram_events, &ram_object, ram_event_digest);
+    let (first_twist, last_twist) = first_last_selected_refs(twist_links, &twist_object, twist_link_event_digest);
     let selected = Stage2SelectedOpeningClaim {
         register_reads_family_digest: families.register_reads_digest,
         register_writes_family_digest: families.register_writes_digest,

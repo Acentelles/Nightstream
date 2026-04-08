@@ -10,7 +10,7 @@ use crate::optimized_engine::{OptimizedStructureCache, PiCcsProof, PiCcsProofVar
 use neo_ajtai::Commitment as Cmt;
 use neo_ccs::{CcsClaim, CcsStructure, CeClaim};
 use neo_math::KExtensions;
-use neo_math::{D, F, K};
+use neo_math::{F, K};
 use neo_params::NeoParams;
 use neo_transcript::Poseidon2Transcript;
 use neo_transcript::Transcript;
@@ -57,6 +57,46 @@ pub fn optimized_verify_with_cache_and_perf(
     proof: &PiCcsProof,
     cache: &OptimizedStructureCache,
 ) -> Result<(bool, PiCcsVerifyPerf), PiCcsError> {
+    optimized_verify_with_cache_and_public_instance_digest_impl(
+        tr, params, s, mcs_list, me_inputs, me_outputs, proof, cache, None,
+    )
+}
+
+pub fn optimized_verify_with_cache_and_instance_digest_and_perf(
+    tr: &mut Poseidon2Transcript,
+    params: &NeoParams,
+    s: &CcsStructure<F>,
+    mcs_list: &[CcsClaim<Cmt, F>],
+    me_inputs: &[CeClaim<Cmt, F, K>],
+    me_outputs: &[CeClaim<Cmt, F, K>],
+    proof: &PiCcsProof,
+    cache: &OptimizedStructureCache,
+    public_instance_digest: [F; 4],
+) -> Result<(bool, PiCcsVerifyPerf), PiCcsError> {
+    optimized_verify_with_cache_and_public_instance_digest_impl(
+        tr,
+        params,
+        s,
+        mcs_list,
+        me_inputs,
+        me_outputs,
+        proof,
+        cache,
+        Some(public_instance_digest),
+    )
+}
+
+fn optimized_verify_with_cache_and_public_instance_digest_impl(
+    tr: &mut Poseidon2Transcript,
+    params: &NeoParams,
+    s: &CcsStructure<F>,
+    mcs_list: &[CcsClaim<Cmt, F>],
+    me_inputs: &[CeClaim<Cmt, F, K>],
+    me_outputs: &[CeClaim<Cmt, F, K>],
+    proof: &PiCcsProof,
+    cache: &OptimizedStructureCache,
+    public_instance_digest: Option<[F; 4]>,
+) -> Result<(bool, PiCcsVerifyPerf), PiCcsError> {
     let total_started = std::time::Instant::now();
     if mcs_list.is_empty() {
         return Err(PiCcsError::InvalidInput("optimized_verify: empty mcs_list".into()));
@@ -64,10 +104,27 @@ pub fn optimized_verify_with_cache_and_perf(
 
     let bind_started = std::time::Instant::now();
     let dims = utils::build_dims_and_policy(params, s)?;
-    utils::bind_header_and_instances_with_digest(tr, params, s, mcs_list, dims, cache.mat_digest())?;
+    let bind_header_instances_started = std::time::Instant::now();
+    let bind_header_perf = if let Some(public_instance_digest) = public_instance_digest {
+        utils::bind_header_and_instance_digest_with_digest(
+            tr,
+            params,
+            s,
+            dims,
+            cache.mat_digest(),
+            &public_instance_digest,
+        )?
+    } else {
+        utils::bind_header_and_instances_with_digest(tr, params, s, mcs_list, dims, cache.mat_digest())?
+    };
+    let bind_header_instances_ms = bind_header_instances_started.elapsed().as_secs_f64() * 1_000.0;
+    let bind_me_inputs_started = std::time::Instant::now();
     utils::bind_me_inputs(tr, me_inputs)?;
+    let bind_me_inputs_ms = bind_me_inputs_started.elapsed().as_secs_f64() * 1_000.0;
+    let bind_sample_challenges_started = std::time::Instant::now();
     let mut ch = utils::sample_challenges(tr, dims.ell_d, dims.ell)?;
     ch.beta_m = utils::sample_beta_m(tr, dims.ell_m)?;
+    let bind_sample_challenges_ms = bind_sample_challenges_started.elapsed().as_secs_f64() * 1_000.0;
     let bind_ms = bind_started.elapsed().as_secs_f64() * 1_000.0;
 
     // Compute the public claimed sum T from ME inputs and α
@@ -156,94 +213,7 @@ pub fn optimized_verify_with_cache_and_perf(
     let r_inputs = utils::shared_me_input_r(me_inputs, dims.ell_n)?;
 
     // Strictly enforce NC channel presence and transcript-derived points.
-    let d_pad = 1usize
-        .checked_shl(dims.ell_d as u32)
-        .ok_or_else(|| PiCcsError::ProtocolError("d_pad shift overflow".into()))?;
-    let want_outputs = mcs_list
-        .len()
-        .checked_add(me_inputs.len())
-        .ok_or_else(|| PiCcsError::ProtocolError("mcs_list.len() + me_inputs.len() overflow".into()))?;
-    if me_outputs.len() != want_outputs {
-        return Err(PiCcsError::InvalidInput(format!(
-            "split Π_CCS: me_outputs.len()={}, expected {} (= |mcs_list| + |me_inputs|)",
-            me_outputs.len(),
-            want_outputs
-        )));
-    }
-    for (idx, out) in me_outputs.iter().enumerate() {
-        if out.r.as_slice() != r_prime {
-            return Err(PiCcsError::ProtocolError(format!(
-                "split Π_CCS: me_outputs[{idx}].r does not match FE r'"
-            )));
-        }
-        if out.s_col.as_slice() != s_col_prime {
-            return Err(PiCcsError::ProtocolError(format!(
-                "split Π_CCS: me_outputs[{idx}].s_col does not match NC s'"
-            )));
-        }
-        if out.y_zcol.len() != d_pad {
-            return Err(PiCcsError::ProtocolError(format!(
-                "split Π_CCS: me_outputs[{idx}].y_zcol.len()={}, expected {}",
-                out.y_zcol.len(),
-                d_pad
-            )));
-        }
-
-        // Outputs must be aligned with their corresponding input instances.
-        if idx < mcs_list.len() {
-            let inst = &mcs_list[idx];
-            if out.c != inst.c {
-                return Err(PiCcsError::ProtocolError(format!(
-                    "split Π_CCS: me_outputs[{idx}].c does not match mcs_list[{idx}].c"
-                )));
-            }
-            if out.m_in != inst.m_in {
-                return Err(PiCcsError::ProtocolError(format!(
-                    "split Π_CCS: me_outputs[{idx}].m_in={}, expected {}",
-                    out.m_in, inst.m_in
-                )));
-            }
-            if inst.x.len() != inst.m_in {
-                return Err(PiCcsError::InvalidInput(format!(
-                    "split Π_CCS: mcs_list[{idx}].x.len()={}, expected m_in={}",
-                    inst.x.len(),
-                    inst.m_in
-                )));
-            }
-            if out.X.rows() != D || out.X.cols() != inst.m_in {
-                return Err(PiCcsError::ProtocolError(format!(
-                    "split Π_CCS: me_outputs[{idx}].X shape mismatch (got {}×{}, expected {}×{})",
-                    out.X.rows(),
-                    out.X.cols(),
-                    D,
-                    inst.m_in
-                )));
-            }
-        } else {
-            let me_idx = idx - mcs_list.len();
-            let inp = &me_inputs[me_idx];
-            if out.c != inp.c {
-                return Err(PiCcsError::ProtocolError(format!(
-                    "split Π_CCS: me_outputs[{idx}].c does not match me_inputs[{me_idx}].c"
-                )));
-            }
-            if out.m_in != inp.m_in {
-                return Err(PiCcsError::ProtocolError(format!(
-                    "split Π_CCS: me_outputs[{idx}].m_in={}, expected {}",
-                    out.m_in, inp.m_in
-                )));
-            }
-            if out.X != inp.X {
-                return Err(PiCcsError::ProtocolError(format!(
-                    "split Π_CCS: me_outputs[{idx}].X does not match me_inputs[{me_idx}].X"
-                )));
-            }
-        }
-    }
-
-    utils::validate_ct_constant_term(s, params, me_outputs)?;
-    // MCS-derived outputs must expose X consistent with public x.
-    utils::validate_mcs_output_x_recomposition(params, s.m, mcs_list, me_outputs)?;
+    utils::validate_me_outputs_against_inputs(s, params, mcs_list, me_inputs, me_outputs, r_prime, s_col_prime)?;
     let output_checks_ms = output_checks_started.elapsed().as_secs_f64() * 1_000.0;
 
     // RHS assembly (FE-only; NC is verified separately)
@@ -282,6 +252,12 @@ pub fn optimized_verify_with_cache_and_perf(
 
     let perf = PiCcsVerifyPerf {
         bind_ms,
+        bind_header_instances_ms,
+        bind_header_prefix_ms: bind_header_perf.prefix_ms,
+        bind_header_poly_ms: bind_header_perf.poly_ms,
+        bind_header_public_instances_ms: bind_header_perf.public_instances_ms,
+        bind_me_inputs_ms,
+        bind_sample_challenges_ms,
         fe_sumcheck_ms,
         nc_sumcheck_ms,
         output_checks_ms,

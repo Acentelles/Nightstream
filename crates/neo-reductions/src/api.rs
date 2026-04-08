@@ -17,6 +17,7 @@ use neo_transcript::Poseidon2Transcript;
 use p3_field::PrimeCharacteristicRing;
 #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-threads"))]
 use rayon::prelude::*;
+use std::time::Instant;
 
 use crate::engines::PiCcsEngine;
 use crate::error::PiCcsError;
@@ -771,7 +772,6 @@ where
     };
 
     let ct = crate::common::ct_from_y_ring_for_ccs_m(&y_ring, params, s.m);
-
     let c = mix_rhos_commits(&rho_mats, &inputs.iter().map(|m| m.c.clone()).collect::<Vec<_>>());
 
     // aux_openings: field-linear mix using the scalar projection of each ρ_i.
@@ -801,6 +801,20 @@ where
     })
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RlcPublicVerifyPerf {
+    pub rho_mats_ms: f64,
+    pub rho_k_lift_ms: f64,
+    pub x_ms: f64,
+    pub y_ms: f64,
+    pub y_zcol_ms: f64,
+    pub aux_ms: f64,
+    pub commitment_collect_ms: f64,
+    pub commitment_mix_ms: f64,
+    pub commitment_ms: f64,
+    pub total_ms: f64,
+}
+
 /// Witness-free RLC verification without materializing the recomputed parent claim.
 ///
 /// This checks the exact same public relation as `rlc_public(...)? == *expected`, but avoids
@@ -817,6 +831,57 @@ pub fn rlc_public_matches<MR>(
 where
     MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt,
 {
+    Ok(rlc_public_matches_with_perf(s, params, rhos, inputs, expected, mix_rhos_commits, ell_d)?.0)
+}
+
+pub fn rlc_public_matches_with_perf<MR>(
+    s: &CcsStructure<F>,
+    params: &NeoParams,
+    rhos: &[RotRho],
+    inputs: &[CeClaim<Cmt, F, K>],
+    expected: &CeClaim<Cmt, F, K>,
+    mix_rhos_commits: MR,
+    ell_d: usize,
+) -> Result<(bool, RlcPublicVerifyPerf), PiCcsError>
+where
+    MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt,
+{
+    rlc_public_matches_with_perf_impl(s, params, rhos, inputs, expected, mix_rhos_commits, ell_d, true)
+}
+
+/// Fast verifier path for callers that already established `inputs` as valid Π_CCS outputs.
+///
+/// This checks the same public RLC relation as `rlc_public_matches_with_perf`, but skips
+/// revalidating input-side CE invariants that Π_CCS verification already proved.
+pub fn rlc_public_matches_verified_inputs_with_perf<MR>(
+    s: &CcsStructure<F>,
+    params: &NeoParams,
+    rhos: &[RotRho],
+    inputs: &[CeClaim<Cmt, F, K>],
+    expected: &CeClaim<Cmt, F, K>,
+    mix_rhos_commits: MR,
+    ell_d: usize,
+) -> Result<(bool, RlcPublicVerifyPerf), PiCcsError>
+where
+    MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt,
+{
+    rlc_public_matches_with_perf_impl(s, params, rhos, inputs, expected, mix_rhos_commits, ell_d, false)
+}
+
+fn rlc_public_matches_with_perf_impl<MR>(
+    s: &CcsStructure<F>,
+    params: &NeoParams,
+    rhos: &[RotRho],
+    inputs: &[CeClaim<Cmt, F, K>],
+    expected: &CeClaim<Cmt, F, K>,
+    mix_rhos_commits: MR,
+    ell_d: usize,
+    validate_input_ce_invariants: bool,
+) -> Result<(bool, RlcPublicVerifyPerf), PiCcsError>
+where
+    MR: Fn(&[Mat<F>], &[Cmt]) -> Cmt,
+{
+    let total_started = Instant::now();
     ensure_superneo_width(s)?;
     if inputs.is_empty() {
         return Err(PiCcsError::InvalidInput("rlc_public_matches: empty inputs".into()));
@@ -828,18 +893,21 @@ where
             rhos.len()
         )));
     }
-
+    let rho_mats_started = Instant::now();
     let rho_mats = crate::common::rot_rhos_to_mats(rhos);
-    for (idx, inst) in inputs.iter().enumerate() {
-        if inst.m_in > s.m {
-            return Err(PiCcsError::InvalidInput(format!(
-                "rlc_public_matches: inputs[{idx}].m_in={} exceeds CCS width m={}",
-                inst.m_in, s.m
-            )));
+    let rho_mats_ms = rho_mats_started.elapsed().as_secs_f64() * 1_000.0;
+    if validate_input_ce_invariants {
+        for (idx, inst) in inputs.iter().enumerate() {
+            if inst.m_in > s.m {
+                return Err(PiCcsError::InvalidInput(format!(
+                    "rlc_public_matches: inputs[{idx}].m_in={} exceeds CCS width m={}",
+                    inst.m_in, s.m
+                )));
+            }
         }
+        crate::engines::utils::validate_ct_constant_term(s, params, inputs)?;
+        let _ = crate::engines::utils::shared_me_input_r(inputs, inputs[0].r.len())?;
     }
-    crate::engines::utils::validate_ct_constant_term(s, params, inputs)?;
-    let _ = crate::engines::utils::shared_me_input_r(inputs, inputs[0].r.len())?;
 
     let m_in = inputs[0].m_in;
     let d_pad = 1usize
@@ -907,9 +975,10 @@ where
         || expected.ct.len() != t
         || expected.aux_openings.len() != aux_len
     {
-        return Ok(false);
+        return Ok((false, RlcPublicVerifyPerf::default()));
     }
 
+    let x_started = Instant::now();
     for rho in 0..D {
         for c in 0..m_in {
             let mut want = F::ZERO;
@@ -919,11 +988,13 @@ where
                 }
             }
             if expected.X[(rho, c)] != want {
-                return Ok(false);
+                return Ok((false, RlcPublicVerifyPerf::default()));
             }
         }
     }
+    let x_ms = x_started.elapsed().as_secs_f64() * 1_000.0;
 
+    let rho_k_lift_started = Instant::now();
     let rho_k_mats: Vec<[K; D * D]> = rho_mats
         .iter()
         .map(|rho| {
@@ -936,11 +1007,13 @@ where
             flat
         })
         .collect();
+    let rho_k_lift_ms = rho_k_lift_started.elapsed().as_secs_f64() * 1_000.0;
 
+    let y_started = Instant::now();
     let mut y_row = vec![K::ZERO; d_pad];
     for (j, expected_row) in expected.y_ring.iter().enumerate() {
         if expected_row.len() != d_pad {
-            return Ok(false);
+            return Ok((false, RlcPublicVerifyPerf::default()));
         }
         y_row.fill(K::ZERO);
         for (rho_k, inst) in rho_k_mats.iter().zip(inputs.iter()) {
@@ -957,19 +1030,21 @@ where
             }
         }
         if expected_row != y_row.as_slice() {
-            return Ok(false);
+            return Ok((false, RlcPublicVerifyPerf::default()));
         }
         if expected.ct[j] != crate::common::ct_from_y_digits(&y_row) {
-            return Ok(false);
+            return Ok((false, RlcPublicVerifyPerf::default()));
         }
     }
+    let y_ms = y_started.elapsed().as_secs_f64() * 1_000.0;
 
+    let y_zcol_started = Instant::now();
     let wants_nc_channel = inputs
         .iter()
         .any(|m| !(m.s_col.is_empty() && m.y_zcol.is_empty()));
     if wants_nc_channel {
         if expected.y_zcol.len() != d_pad {
-            return Ok(false);
+            return Ok((false, RlcPublicVerifyPerf::default()));
         }
         for (idx, inst) in inputs.iter().enumerate() {
             if inst.s_col.is_empty() || inst.y_zcol.is_empty() {
@@ -978,7 +1053,7 @@ where
                 )));
             }
             if inst.s_col != inputs[0].s_col || inst.y_zcol.len() != d_pad {
-                return Ok(false);
+                return Ok((false, RlcPublicVerifyPerf::default()));
             }
         }
         y_row.fill(K::ZERO);
@@ -995,25 +1070,50 @@ where
             }
         }
         if expected.y_zcol != y_row {
-            return Ok(false);
+            return Ok((false, RlcPublicVerifyPerf::default()));
         }
     } else if !(expected.s_col.is_empty() && expected.y_zcol.is_empty()) {
-        return Ok(false);
+        return Ok((false, RlcPublicVerifyPerf::default()));
     }
+    let y_zcol_ms = y_zcol_started.elapsed().as_secs_f64() * 1_000.0;
 
+    let aux_started = Instant::now();
     let mut aux_openings = vec![K::ZERO; aux_len];
-    for (rho, inst) in rho_mats.iter().zip(inputs.iter()) {
-        let w = K::from(rho[(0, 0)]);
+    for (rho_mat, inst) in rho_mats.iter().zip(inputs.iter()) {
+        let w = K::from(rho_mat[(0, 0)]);
         for (dst, src) in aux_openings.iter_mut().zip(inst.aux_openings.iter()) {
             *dst += w * *src;
         }
     }
     if expected.aux_openings != aux_openings {
-        return Ok(false);
+        return Ok((false, RlcPublicVerifyPerf::default()));
     }
+    let aux_ms = aux_started.elapsed().as_secs_f64() * 1_000.0;
 
+    let commitment_started = Instant::now();
+    let commitment_collect_started = Instant::now();
     let commitments: Vec<_> = inputs.iter().map(|m| m.c.clone()).collect();
-    Ok(mix_rhos_commits(&rho_mats, &commitments) == expected.c)
+    let commitment_collect_ms = commitment_collect_started.elapsed().as_secs_f64() * 1_000.0;
+    let commitment_mix_started = Instant::now();
+    let commitment_ok = mix_rhos_commits(&rho_mats, &commitments) == expected.c;
+    let commitment_mix_ms = commitment_mix_started.elapsed().as_secs_f64() * 1_000.0;
+    let commitment_ms = commitment_started.elapsed().as_secs_f64() * 1_000.0;
+
+    Ok((
+        commitment_ok,
+        RlcPublicVerifyPerf {
+            rho_mats_ms,
+            rho_k_lift_ms,
+            x_ms,
+            y_ms,
+            y_zcol_ms,
+            aux_ms,
+            commitment_collect_ms,
+            commitment_mix_ms,
+            commitment_ms,
+            total_ms: total_started.elapsed().as_secs_f64() * 1_000.0,
+        },
+    ))
 }
 
 /// DEC public verification: Check that parent ?= Σ b^i · child_i (X, y, c).

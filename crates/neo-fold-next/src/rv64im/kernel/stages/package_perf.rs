@@ -199,7 +199,7 @@ pub(super) fn build_public_stage_package_bundle_with_perf(
     ))
 }
 
-pub(super) fn verify_stage_package_bundle_with_perf(
+pub(crate) fn verify_stage_package_bundle_with_perf(
     stage1: &Stage1Summary,
     stage2: &Stage2Summary,
     stage3: &Stage3Summary,

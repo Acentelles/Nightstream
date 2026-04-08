@@ -9,11 +9,14 @@ use crate::chip8::spec::{
     COL_I_NEXT, COL_MEM_VALUE, COL_REG_X, COL_REG_X_NEXT, COL_WRITES_LOOKUP_TO_X, COL_WRITES_MEM_TO_X,
     COL_WRITES_NNN_TO_I, COL_X_IDX, COL_Y_IDX, WITNESS_WIDTH,
 };
-use crate::chip8::stage2::{AddressCorrectnessProof, Stage2TwistProof};
+use crate::chip8::stage2::{
+    stage2_execution_surface_from_proof, AddressCorrectnessProof, Stage2DerivedExecutionSurface,
+    Stage2RamExecutionProof, Stage2RegisterExecutionProof, Stage2TwistProof,
+};
 use crate::chip8::tables::{build_unmap_ram, build_unmap_reg, RAM_SINK_ADDR, REG_SINK_ADDR};
 
 use super::super::verify_common::verify_sumcheck_known_with_terminal;
-use super::super::{expect_equal_k, KernelStepAux, SimpleKernelError};
+use super::super::{expect_equal_k, expect_equal_k_slice, KernelStepAux, SimpleKernelError};
 use super::{
     build_lt_table, initial_ram_domain, initial_reg_domain, lane_col, lifted_bools, raw_index_mle_le, sample_k,
     sample_point, split_stage2_total_point, value_surface_at_point_le, ADDR_RAM_BITS, ADDR_REG_BITS,
@@ -86,8 +89,10 @@ fn verify_stage2_address_terminals<Tr: Transcript>(
     Ok(())
 }
 
-pub(crate) fn verify_kernel_stage2_sumcheck_terminals(
-    proof: &Stage2TwistProof,
+pub(crate) fn verify_kernel_stage2_sumcheck_terminals_from_execution(
+    register: &Stage2RegisterExecutionProof,
+    memory: &Stage2RamExecutionProof,
+    surface: &Stage2DerivedExecutionSurface,
     trace_rows: &[[F; WITNESS_WIDTH]],
     aux: &[KernelStepAux],
     initial_registers: &[u8; 16],
@@ -95,7 +100,7 @@ pub(crate) fn verify_kernel_stage2_sumcheck_terminals(
     initial_ram: &[u8],
     transcript: &mut Poseidon2Transcript,
 ) -> Result<(), SimpleKernelError> {
-    let cycle_bits = proof.cycle_point.len();
+    let cycle_bits = surface.cycle_point.len();
     let trace_len = 1usize << cycle_bits;
     if aux.len() != trace_len {
         return Err(SimpleKernelError::SumcheckFailed(format!(
@@ -145,19 +150,20 @@ pub(crate) fn verify_kernel_stage2_sumcheck_terminals(
     let unmap_reg = build_unmap_reg();
     let unmap_ram = build_unmap_ram();
 
-    let _ = sample_point(transcript, b"stage2/r_cycle", cycle_bits);
+    let cycle_point = sample_point(transcript, b"stage2/r_cycle", cycle_bits);
+    expect_equal_k_slice(&surface.cycle_point, &cycle_point, "stage2 cycle point")?;
     let _ = sample_k(transcript, b"stage2/gamma_reg");
 
-    let reg_rw_claim = proof.link_claims.wv_reg
-        + proof.gamma_reg * proof.link_claims.rv_x
-        + proof.gamma_reg * proof.gamma_reg * proof.link_claims.rv_y
-        + proof.gamma_reg * proof.gamma_reg * proof.gamma_reg * proof.link_claims.rv_i;
+    let reg_rw_claim = surface.link_claims.wv_reg
+        + surface.gamma_reg * surface.link_claims.rv_x
+        + surface.gamma_reg * surface.gamma_reg * surface.link_claims.rv_y
+        + surface.gamma_reg * surface.gamma_reg * surface.gamma_reg * surface.link_claims.rv_i;
     transcript.append_fields(b"stage2/reg_rw_claim", &reg_rw_claim.as_coeffs());
     let (reg_rw_point, reg_rw_terminal) = verify_sumcheck_known_with_terminal(
         transcript,
         3,
         reg_rw_claim,
-        &proof.reg_rw_batched_rounds,
+        &register.reg_rw_batched_rounds,
         "stage2 register read/write",
     )?;
     let (reg_rw_cycle_point, reg_rw_addr_point) = split_stage2_total_point(&reg_rw_point, cycle_bits, ADDR_REG_BITS)?;
@@ -173,25 +179,25 @@ pub(crate) fn verify_kernel_stage2_sumcheck_terminals(
     let reg_ra_x_terminal = open_onehot_at_point_le(&reg_ra_x_addrs, reg_rw_addr_point, reg_rw_cycle_point);
     let reg_ra_y_terminal = open_onehot_at_point_le(&reg_ra_y_addrs, reg_rw_addr_point, reg_rw_cycle_point);
     let reg_ra_i_terminal = open_onehot_at_point_le(&reg_ra_i_addrs, reg_rw_addr_point, reg_rw_cycle_point);
-    let reg_rw_expected = eq_eval_le(&proof.cycle_point, reg_rw_cycle_point)
+    let reg_rw_expected = eq_eval_le(&surface.cycle_point, reg_rw_cycle_point)
         * (reg_wa_terminal * (reg_inc_terminal + reg_val_terminal)
-            + proof.gamma_reg * reg_ra_x_terminal * reg_val_terminal
-            + proof.gamma_reg * proof.gamma_reg * reg_ra_y_terminal * reg_val_terminal
-            + proof.gamma_reg * proof.gamma_reg * proof.gamma_reg * reg_ra_i_terminal * reg_val_terminal);
+            + surface.gamma_reg * reg_ra_x_terminal * reg_val_terminal
+            + surface.gamma_reg * surface.gamma_reg * reg_ra_y_terminal * reg_val_terminal
+            + surface.gamma_reg * surface.gamma_reg * surface.gamma_reg * reg_ra_i_terminal * reg_val_terminal);
     expect_equal_k(reg_rw_terminal, reg_rw_expected, "stage2 register read/write terminal")?;
 
     let _ = sample_point(transcript, b"stage2/r_addr_reg", ADDR_REG_BITS);
-    transcript.append_fields(b"stage2/reg_val_inc_claim", &proof.reg_val_from_inc_claim.as_coeffs());
+    transcript.append_fields(b"stage2/reg_val_inc_claim", &surface.reg_val_from_inc_claim.as_coeffs());
     let (reg_val_point, reg_val_terminal) = verify_sumcheck_known_with_terminal(
         transcript,
         3,
-        proof.reg_val_from_inc_claim,
-        &proof.reg_val_from_inc_rounds,
+        surface.reg_val_from_inc_claim,
+        &register.reg_val_from_inc_rounds,
         "stage2 register val-from-inc",
     )?;
-    let reg_lt = build_lt_table(cycle_bits, &proof.cycle_point);
+    let reg_lt = build_lt_table(cycle_bits, &surface.cycle_point);
     let reg_val_expected = mle_eval_f_be(&reg_inc, &reg_val_point)
-        * open_onehot_at_point_be_be(&reg_wa_addrs, &proof.reg_addr_point, &reg_val_point)
+        * open_onehot_at_point_be_be(&reg_wa_addrs, &surface.reg_addr_point, &reg_val_point)
         * mle_eval_k_be(&reg_lt, &reg_val_point);
     expect_equal_k(
         reg_val_terminal,
@@ -201,16 +207,16 @@ pub(crate) fn verify_kernel_stage2_sumcheck_terminals(
 
     transcript.append_fields(
         b"stage2/reg_ra_y_target/claim",
-        &proof.reg_ra_y_target_proof.claim.as_coeffs(),
+        &surface.reg_ra_y_target_claim.as_coeffs(),
     );
     let (reg_ra_y_target_point, reg_ra_y_target_terminal) = verify_sumcheck_known_with_terminal(
         transcript,
         3,
-        proof.reg_ra_y_target_proof.claim,
-        &proof.reg_ra_y_target_proof.rounds,
+        surface.reg_ra_y_target_claim,
+        &register.reg_ra_y_target_rounds,
         "stage2 register ra_y target",
     )?;
-    let reg_ra_y_target_expected = eq_eval_le(&proof.cycle_point, &reg_ra_y_target_point)
+    let reg_ra_y_target_expected = eq_eval_le(&surface.cycle_point, &reg_ra_y_target_point)
         * mle_eval_f_le(&uses_y_vals, &reg_ra_y_target_point)
         * mle_eval_f_le(&y_idx_vals, &reg_ra_y_target_point);
     expect_equal_k(
@@ -221,16 +227,16 @@ pub(crate) fn verify_kernel_stage2_sumcheck_terminals(
 
     transcript.append_fields(
         b"stage2/reg_wa_x_addr_target/claim",
-        &proof.reg_wa_addr_target_proof.claim.as_coeffs(),
+        &surface.reg_wa_addr_target_claim.as_coeffs(),
     );
     let (reg_wa_target_point, reg_wa_target_terminal) = verify_sumcheck_known_with_terminal(
         transcript,
         3,
-        proof.reg_wa_addr_target_proof.claim,
-        &proof.reg_wa_addr_target_proof.rounds,
+        surface.reg_wa_addr_target_claim,
+        &register.reg_wa_addr_target_rounds,
         "stage2 register wa-address target",
     )?;
-    let reg_wa_target_expected = eq_eval_le(&proof.cycle_point, &reg_wa_target_point)
+    let reg_wa_target_expected = eq_eval_le(&surface.cycle_point, &reg_wa_target_point)
         * mle_eval_f_le(&write_x_target_flag, &reg_wa_target_point)
         * mle_eval_f_le(&x_idx_vals, &reg_wa_target_point);
     expect_equal_k(
@@ -240,28 +246,32 @@ pub(crate) fn verify_kernel_stage2_sumcheck_terminals(
     )?;
 
     let reg_wa_mapped_claim =
-        proof.reg_wa_addr_target_proof.claim + proof.lane_values_at_twist[9] * K::from(F::from_u64(16u64));
+        surface.reg_wa_addr_target_claim + surface.lane_values_at_twist[9] * K::from(F::from_u64(16u64));
     let mapped_reg_claims = [
-        proof.lane_values_at_twist[11],
-        proof.reg_ra_y_target_proof.claim,
+        surface.lane_values_at_twist[11],
+        surface.reg_ra_y_target_claim,
         K::from(F::from_u64(16u64)),
         reg_wa_mapped_claim,
     ];
     let raw_reg_claims = [
         mapped_reg_claims[0],
-        mapped_reg_claims[1] + (K::ONE - proof.handoff_values_at_twist[0]) * K::from(F::from_u64(REG_SINK_ADDR as u64)),
+        mapped_reg_claims[1]
+            + (K::ONE - surface.handoff_values_at_twist[0]) * K::from(F::from_u64(REG_SINK_ADDR as u64)),
         mapped_reg_claims[2],
         mapped_reg_claims[3]
-            + (K::ONE - proof.lane_values_at_twist[6] - proof.lane_values_at_twist[7] - proof.lane_values_at_twist[9])
+            + (K::ONE
+                - surface.lane_values_at_twist[6]
+                - surface.lane_values_at_twist[7]
+                - surface.lane_values_at_twist[9])
                 * K::from(F::from_u64(REG_SINK_ADDR as u64)),
     ];
     verify_stage2_address_terminals(
         transcript,
-        &proof.reg_addr_correctness[0],
+        &register.reg_addr_correctness[0],
         cycle_bits,
         ADDR_REG_BITS,
         &reg_ra_x_addrs,
-        &proof.cycle_point,
+        &surface.cycle_point,
         mapped_reg_claims[0],
         raw_reg_claims[0],
         &unmap_reg,
@@ -269,11 +279,11 @@ pub(crate) fn verify_kernel_stage2_sumcheck_terminals(
     )?;
     verify_stage2_address_terminals(
         transcript,
-        &proof.reg_addr_correctness[1],
+        &register.reg_addr_correctness[1],
         cycle_bits,
         ADDR_REG_BITS,
         &reg_ra_y_addrs,
-        &proof.cycle_point,
+        &surface.cycle_point,
         mapped_reg_claims[1],
         raw_reg_claims[1],
         &unmap_reg,
@@ -281,11 +291,11 @@ pub(crate) fn verify_kernel_stage2_sumcheck_terminals(
     )?;
     verify_stage2_address_terminals(
         transcript,
-        &proof.reg_addr_correctness[2],
+        &register.reg_addr_correctness[2],
         cycle_bits,
         ADDR_REG_BITS,
         &reg_ra_i_addrs,
-        &proof.cycle_point,
+        &surface.cycle_point,
         mapped_reg_claims[2],
         raw_reg_claims[2],
         &unmap_reg,
@@ -293,11 +303,11 @@ pub(crate) fn verify_kernel_stage2_sumcheck_terminals(
     )?;
     verify_stage2_address_terminals(
         transcript,
-        &proof.reg_addr_correctness[3],
+        &register.reg_addr_correctness[3],
         cycle_bits,
         ADDR_REG_BITS,
         &reg_wa_addrs,
-        &proof.cycle_point,
+        &surface.cycle_point,
         mapped_reg_claims[3],
         raw_reg_claims[3],
         &unmap_reg,
@@ -305,13 +315,13 @@ pub(crate) fn verify_kernel_stage2_sumcheck_terminals(
     )?;
 
     let _ = sample_k(transcript, b"stage2/gamma_ram");
-    let ram_rw_claim = proof.link_claims.rv_ram + proof.gamma_ram * proof.link_claims.wv_ram;
+    let ram_rw_claim = surface.link_claims.rv_ram + surface.gamma_ram * surface.link_claims.wv_ram;
     transcript.append_fields(b"stage2/ram_rw_claim", &ram_rw_claim.as_coeffs());
     let (ram_rw_point, ram_rw_terminal) = verify_sumcheck_known_with_terminal(
         transcript,
         3,
         ram_rw_claim,
-        &proof.ram_rw_batched_rounds,
+        &memory.ram_rw_batched_rounds,
         "stage2 RAM read/write",
     )?;
     let (ram_rw_cycle_point, ram_rw_addr_point) = split_stage2_total_point(&ram_rw_point, cycle_bits, ADDR_RAM_BITS)?;
@@ -325,34 +335,34 @@ pub(crate) fn verify_kernel_stage2_sumcheck_terminals(
     let ram_inc_terminal = mle_eval_f_le(&ram_inc, ram_rw_cycle_point);
     let ram_ra_terminal = open_onehot_at_point_le(&ram_ra_addrs, ram_rw_addr_point, ram_rw_cycle_point);
     let ram_wa_terminal = open_onehot_at_point_le(&ram_wa_addrs, ram_rw_addr_point, ram_rw_cycle_point);
-    let ram_rw_expected = eq_eval_le(&proof.cycle_point, ram_rw_cycle_point)
+    let ram_rw_expected = eq_eval_le(&surface.cycle_point, ram_rw_cycle_point)
         * (ram_ra_terminal * ram_val_terminal
-            + proof.gamma_ram * ram_wa_terminal * (ram_inc_terminal + ram_val_terminal));
+            + surface.gamma_ram * ram_wa_terminal * (ram_inc_terminal + ram_val_terminal));
     expect_equal_k(ram_rw_terminal, ram_rw_expected, "stage2 RAM read/write terminal")?;
 
     let _ = sample_point(transcript, b"stage2/r_addr_ram", ADDR_RAM_BITS);
-    transcript.append_fields(b"stage2/ram_val_inc_claim", &proof.ram_val_from_inc_claim.as_coeffs());
+    transcript.append_fields(b"stage2/ram_val_inc_claim", &surface.ram_val_from_inc_claim.as_coeffs());
     let (ram_val_point, ram_val_terminal) = verify_sumcheck_known_with_terminal(
         transcript,
         3,
-        proof.ram_val_from_inc_claim,
-        &proof.ram_val_from_inc_rounds,
+        surface.ram_val_from_inc_claim,
+        &memory.ram_val_from_inc_rounds,
         "stage2 RAM val-from-inc",
     )?;
-    let ram_lt = build_lt_table(cycle_bits, &proof.cycle_point);
+    let ram_lt = build_lt_table(cycle_bits, &surface.cycle_point);
     let ram_val_expected = mle_eval_f_be(&ram_inc, &ram_val_point)
-        * open_onehot_at_point_be_be(&ram_wa_addrs, &proof.ram_addr_point, &ram_val_point)
+        * open_onehot_at_point_be_be(&ram_wa_addrs, &surface.ram_addr_point, &ram_val_point)
         * mle_eval_k_be(&ram_lt, &ram_val_point);
     expect_equal_k(ram_val_terminal, ram_val_expected, "stage2 RAM val-from-inc terminal")?;
 
     let (ram_raf_read_point, ram_raf_read_terminal) = verify_sumcheck_known_with_terminal(
         transcript,
         2,
-        proof.ram_raf_read_claim,
-        &proof.ram_raf_read_rounds,
+        surface.ram_raf_read_claim,
+        &memory.ram_raf_read_rounds,
         "stage2 RAM raf-read",
     )?;
-    let ram_raf_read_expected = open_onehot_at_point_le(&ram_ra_addrs, &ram_raf_read_point, &proof.cycle_point)
+    let ram_raf_read_expected = open_onehot_at_point_le(&ram_ra_addrs, &ram_raf_read_point, &surface.cycle_point)
         * mle_eval_f_le(&unmap_ram, &ram_raf_read_point);
     expect_equal_k(
         ram_raf_read_terminal,
@@ -363,11 +373,11 @@ pub(crate) fn verify_kernel_stage2_sumcheck_terminals(
     let (ram_raf_write_point, ram_raf_write_terminal) = verify_sumcheck_known_with_terminal(
         transcript,
         2,
-        proof.ram_raf_write_claim,
-        &proof.ram_raf_write_rounds,
+        surface.ram_raf_write_claim,
+        &memory.ram_raf_write_rounds,
         "stage2 RAM raf-write",
     )?;
-    let ram_raf_write_expected = open_onehot_at_point_le(&ram_wa_addrs, &ram_raf_write_point, &proof.cycle_point)
+    let ram_raf_write_expected = open_onehot_at_point_le(&ram_wa_addrs, &ram_raf_write_point, &surface.cycle_point)
         * mle_eval_f_le(&unmap_ram, &ram_raf_write_point);
     expect_equal_k(
         ram_raf_write_terminal,
@@ -375,18 +385,20 @@ pub(crate) fn verify_kernel_stage2_sumcheck_terminals(
         "stage2 RAM raf-write terminal",
     )?;
 
-    let mapped_ram_claims = [proof.ram_raf_read_claim, proof.ram_raf_write_claim];
+    let mapped_ram_claims = [surface.ram_raf_read_claim, surface.ram_raf_write_claim];
     let raw_ram_claims = [
-        mapped_ram_claims[0] + (K::ONE - proof.handoff_values_at_twist[1]) * K::from(F::from_u64(RAM_SINK_ADDR as u64)),
-        mapped_ram_claims[1] + (K::ONE - proof.handoff_values_at_twist[2]) * K::from(F::from_u64(RAM_SINK_ADDR as u64)),
+        mapped_ram_claims[0]
+            + (K::ONE - surface.handoff_values_at_twist[1]) * K::from(F::from_u64(RAM_SINK_ADDR as u64)),
+        mapped_ram_claims[1]
+            + (K::ONE - surface.handoff_values_at_twist[2]) * K::from(F::from_u64(RAM_SINK_ADDR as u64)),
     ];
     verify_stage2_address_terminals(
         transcript,
-        &proof.ram_addr_correctness[0],
+        &memory.ram_addr_correctness[0],
         cycle_bits,
         ADDR_RAM_BITS,
         &ram_ra_addrs,
-        &proof.cycle_point,
+        &surface.cycle_point,
         mapped_ram_claims[0],
         raw_ram_claims[0],
         &unmap_ram,
@@ -394,11 +406,11 @@ pub(crate) fn verify_kernel_stage2_sumcheck_terminals(
     )?;
     verify_stage2_address_terminals(
         transcript,
-        &proof.ram_addr_correctness[1],
+        &memory.ram_addr_correctness[1],
         cycle_bits,
         ADDR_RAM_BITS,
         &ram_wa_addrs,
-        &proof.cycle_point,
+        &surface.cycle_point,
         mapped_ram_claims[1],
         raw_ram_claims[1],
         &unmap_ram,
@@ -407,16 +419,16 @@ pub(crate) fn verify_kernel_stage2_sumcheck_terminals(
 
     transcript.append_fields(
         b"stage2/reg_write_x_target/claim",
-        &proof.reg_write_x_target_proof.claim.as_coeffs(),
+        &surface.reg_write_x_target_claim.as_coeffs(),
     );
     let (reg_write_x_point, reg_write_x_terminal) = verify_sumcheck_known_with_terminal(
         transcript,
         3,
-        proof.reg_write_x_target_proof.claim,
-        &proof.reg_write_x_target_proof.rounds,
+        surface.reg_write_x_target_claim,
+        &register.reg_write_x_target_rounds,
         "stage2 register write-to-x target",
     )?;
-    let reg_write_x_expected = eq_eval_le(&proof.cycle_point, &reg_write_x_point)
+    let reg_write_x_expected = eq_eval_le(&surface.cycle_point, &reg_write_x_point)
         * mle_eval_f_le(&write_x_target_flag, &reg_write_x_point)
         * mle_eval_f_le(&reg_x_next_vals, &reg_write_x_point);
     expect_equal_k(
@@ -427,16 +439,16 @@ pub(crate) fn verify_kernel_stage2_sumcheck_terminals(
 
     transcript.append_fields(
         b"stage2/reg_write_i_target/claim",
-        &proof.reg_write_i_target_proof.claim.as_coeffs(),
+        &surface.reg_write_i_target_claim.as_coeffs(),
     );
     let (reg_write_i_point, reg_write_i_terminal) = verify_sumcheck_known_with_terminal(
         transcript,
         3,
-        proof.reg_write_i_target_proof.claim,
-        &proof.reg_write_i_target_proof.rounds,
+        surface.reg_write_i_target_claim,
+        &register.reg_write_i_target_rounds,
         "stage2 register write-to-i target",
     )?;
-    let reg_write_i_expected = eq_eval_le(&proof.cycle_point, &reg_write_i_point)
+    let reg_write_i_expected = eq_eval_le(&surface.cycle_point, &reg_write_i_point)
         * mle_eval_f_le(&writes_nnn_to_i, &reg_write_i_point)
         * mle_eval_f_le(&i_next_vals, &reg_write_i_point);
     expect_equal_k(
@@ -447,32 +459,32 @@ pub(crate) fn verify_kernel_stage2_sumcheck_terminals(
 
     transcript.append_fields(
         b"stage2/ram_read_target/claim",
-        &proof.ram_read_target_proof.claim.as_coeffs(),
+        &surface.ram_read_target_claim.as_coeffs(),
     );
     let (ram_read_point, ram_read_terminal) = verify_sumcheck_known_with_terminal(
         transcript,
         3,
-        proof.ram_read_target_proof.claim,
-        &proof.ram_read_target_proof.rounds,
+        surface.ram_read_target_claim,
+        &memory.ram_read_target_rounds,
         "stage2 RAM read target",
     )?;
-    let ram_read_expected = eq_eval_le(&proof.cycle_point, &ram_read_point)
+    let ram_read_expected = eq_eval_le(&surface.cycle_point, &ram_read_point)
         * mle_eval_f_le(&reads_ram_vals, &ram_read_point)
         * mle_eval_f_le(&mem_value_vals, &ram_read_point);
     expect_equal_k(ram_read_terminal, ram_read_expected, "stage2 RAM read target terminal")?;
 
     transcript.append_fields(
         b"stage2/ram_write_target/claim",
-        &proof.ram_write_target_proof.claim.as_coeffs(),
+        &surface.ram_write_target_claim.as_coeffs(),
     );
     let (ram_write_point, ram_write_terminal) = verify_sumcheck_known_with_terminal(
         transcript,
         3,
-        proof.ram_write_target_proof.claim,
-        &proof.ram_write_target_proof.rounds,
+        surface.ram_write_target_claim,
+        &memory.ram_write_target_rounds,
         "stage2 RAM write target",
     )?;
-    let ram_write_expected = eq_eval_le(&proof.cycle_point, &ram_write_point)
+    let ram_write_expected = eq_eval_le(&surface.cycle_point, &ram_write_point)
         * mle_eval_f_le(&writes_ram_vals, &ram_write_point)
         * mle_eval_f_le(&mem_value_vals, &ram_write_point);
     expect_equal_k(
@@ -481,18 +493,15 @@ pub(crate) fn verify_kernel_stage2_sumcheck_terminals(
         "stage2 RAM write target terminal",
     )?;
 
-    transcript.append_fields(
-        b"stage2/ram_write_matches_x_zero/claim",
-        &proof.ram_write_matches_x_zero_proof.claim.as_coeffs(),
-    );
+    transcript.append_fields(b"stage2/ram_write_matches_x_zero/claim", &K::ZERO.as_coeffs());
     let (ram_write_x_point, ram_write_x_terminal) = verify_sumcheck_known_with_terminal(
         transcript,
         3,
-        proof.ram_write_matches_x_zero_proof.claim,
-        &proof.ram_write_matches_x_zero_proof.rounds,
+        K::ZERO,
+        &memory.ram_write_matches_x_zero_rounds,
         "stage2 RAM write matches REG_X",
     )?;
-    let ram_write_x_expected = eq_eval_le(&proof.cycle_point, &ram_write_x_point)
+    let ram_write_x_expected = eq_eval_le(&surface.cycle_point, &ram_write_x_point)
         * mle_eval_f_le(&writes_ram_vals, &ram_write_x_point)
         * mle_eval_f_le(&mem_minus_reg_x, &ram_write_x_point);
     expect_equal_k(
@@ -501,18 +510,15 @@ pub(crate) fn verify_kernel_stage2_sumcheck_terminals(
         "stage2 RAM write matches REG_X terminal",
     )?;
 
-    transcript.append_fields(
-        b"stage2/ram_idle_mem_zero/claim",
-        &proof.ram_idle_mem_zero_proof.claim.as_coeffs(),
-    );
+    transcript.append_fields(b"stage2/ram_idle_mem_zero/claim", &K::ZERO.as_coeffs());
     let (ram_idle_point, ram_idle_terminal) = verify_sumcheck_known_with_terminal(
         transcript,
         3,
-        proof.ram_idle_mem_zero_proof.claim,
-        &proof.ram_idle_mem_zero_proof.rounds,
+        K::ZERO,
+        &memory.ram_idle_mem_zero_rounds,
         "stage2 MEM_VALUE zero on idle rows",
     )?;
-    let ram_idle_expected = eq_eval_le(&proof.cycle_point, &ram_idle_point)
+    let ram_idle_expected = eq_eval_le(&surface.cycle_point, &ram_idle_point)
         * mle_eval_f_le(&idle_ram_flag, &ram_idle_point)
         * mle_eval_f_le(&mem_value_vals, &ram_idle_point);
     expect_equal_k(
@@ -522,4 +528,47 @@ pub(crate) fn verify_kernel_stage2_sumcheck_terminals(
     )?;
 
     Ok(())
+}
+
+pub(crate) fn verify_kernel_stage2_sumcheck_terminals(
+    proof: &Stage2TwistProof,
+    trace_rows: &[[F; WITNESS_WIDTH]],
+    aux: &[KernelStepAux],
+    initial_registers: &[u8; 16],
+    initial_i: u16,
+    initial_ram: &[u8],
+    transcript: &mut Poseidon2Transcript,
+) -> Result<(), SimpleKernelError> {
+    let register = Stage2RegisterExecutionProof {
+        reg_rw_batched_rounds: proof.reg_rw_batched_rounds.clone(),
+        reg_val_from_inc_rounds: proof.reg_val_from_inc_rounds.clone(),
+        reg_addr_correctness: proof.reg_addr_correctness.clone(),
+        reg_ra_y_target_rounds: proof.reg_ra_y_target_proof.rounds.clone(),
+        reg_wa_addr_target_rounds: proof.reg_wa_addr_target_proof.rounds.clone(),
+        reg_write_x_target_rounds: proof.reg_write_x_target_proof.rounds.clone(),
+        reg_write_i_target_rounds: proof.reg_write_i_target_proof.rounds.clone(),
+    };
+    let memory = Stage2RamExecutionProof {
+        ram_rw_batched_rounds: proof.ram_rw_batched_rounds.clone(),
+        ram_val_from_inc_rounds: proof.ram_val_from_inc_rounds.clone(),
+        ram_raf_read_rounds: proof.ram_raf_read_rounds.clone(),
+        ram_raf_write_rounds: proof.ram_raf_write_rounds.clone(),
+        ram_read_target_rounds: proof.ram_read_target_proof.rounds.clone(),
+        ram_write_target_rounds: proof.ram_write_target_proof.rounds.clone(),
+        ram_write_matches_x_zero_rounds: proof.ram_write_matches_x_zero_proof.rounds.clone(),
+        ram_idle_mem_zero_rounds: proof.ram_idle_mem_zero_proof.rounds.clone(),
+        ram_addr_correctness: proof.ram_addr_correctness.clone(),
+    };
+    let surface = stage2_execution_surface_from_proof(proof);
+    verify_kernel_stage2_sumcheck_terminals_from_execution(
+        &register,
+        &memory,
+        &surface,
+        trace_rows,
+        aux,
+        initial_registers,
+        initial_i,
+        initial_ram,
+        transcript,
+    )
 }

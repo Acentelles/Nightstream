@@ -6,10 +6,17 @@ use p3_field::{PrimeCharacteristicRing, PrimeField64};
 
 use crate::chip8::poly::{mle_eval_f_le, open_onehot_at_point_be as poly_open_onehot_at_point_be};
 use crate::chip8::spec::CommitmentId;
+use crate::chip8::stage3;
 use crate::chip8::{
-    stage1::{Stage1ShoutProof, DECODE_HANDOFF_POLY_IDS, STAGE1_LANE_OPEN_COLS},
-    stage2::{Stage2TwistProof, RAM_TWIST_POLY_IDS, REG_TWIST_POLY_IDS, STAGE2_LANE_OPEN_COLS},
-    stage3::{Stage3Proof, STAGE3_FINAL_BOUNDARY_COLS, STAGE3_SHIFT_OPEN_COLS, STAGE3_START_BOUNDARY_COLS},
+    stage1::{Stage1DerivedExecutionSurface, Stage1ShoutProof, DECODE_HANDOFF_POLY_IDS, STAGE1_LANE_OPEN_COLS},
+    stage2::{
+        stage2_execution_surface_from_proof, Stage2DerivedExecutionSurface, Stage2TwistProof, RAM_TWIST_POLY_IDS,
+        REG_TWIST_POLY_IDS, STAGE2_LANE_OPEN_COLS,
+    },
+    stage3::{
+        RowBindingClaim, Stage3DerivedExecutionSurface, Stage3Proof, STAGE3_FINAL_BOUNDARY_COLS,
+        STAGE3_SHIFT_OPEN_COLS, STAGE3_START_BOUNDARY_COLS,
+    },
 };
 use crate::opening::{OpeningClaim, OpeningDomain, OpeningSource};
 
@@ -41,6 +48,43 @@ pub struct KernelOpeningManifest {
 pub struct RootOpeningManifest {
     pub claims: Vec<KernelOpeningClaim>,
     pub digest: [u8; 32],
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct KernelReadOpeningSurface {
+    pub cycle_point: Vec<K>,
+    pub lane_values_at_lookup: Vec<K>,
+    pub fetch_addr_point: Vec<K>,
+    pub fetch_address_opening_value: K,
+    pub fetch_table_opening_values: Vec<K>,
+    pub decode_addr_point: Vec<K>,
+    pub decode_address_opening_value: K,
+    pub decode_handoff_values: Vec<K>,
+    pub decode_table_opening_values: Vec<K>,
+    pub alu_addr_point: Vec<K>,
+    pub alu_address_opening_value: K,
+    pub alu_table_opening_values: Vec<K>,
+    pub eq4_addr_point: Vec<K>,
+    pub eq4_address_opening_value: K,
+    pub eq4_table_opening_values: Vec<K>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct KernelTwistOpeningSurface {
+    pub cycle_point: Vec<K>,
+    pub lane_values_at_twist: Vec<K>,
+    pub handoff_values_at_twist: Vec<K>,
+    pub reg_addr_point: Vec<K>,
+    pub ram_addr_point: Vec<K>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct KernelShiftOpeningSurface {
+    pub source_point: Vec<K>,
+    pub shift_opening_values: [K; 5],
+    pub start_boundary_values: [K; 2],
+    pub final_boundary_values: [K; 2],
+    pub row_bindings: Vec<stage3::RowBindingClaim>,
 }
 
 fn opening_source_tag(source: KernelOpeningSource) -> u64 {
@@ -407,113 +451,109 @@ pub(crate) fn build_kernel_opening_manifest(
     aux: &[KernelStepAux],
     active_rows: usize,
     cycle_bits: usize,
-    stage1: &Stage1ShoutProof,
-    stage2: &Stage2TwistProof,
-    stage3: &Stage3Proof,
+    reads: &KernelReadOpeningSurface,
+    twists: &KernelTwistOpeningSurface,
+    shift: &KernelShiftOpeningSurface,
 ) -> KernelOpeningManifest {
     let mut manifest = KernelOpeningManifest::new();
 
     manifest.push_kernel(
         CommitmentId::Lane,
-        stage1.cycle_point.clone(),
+        reads.cycle_point.clone(),
         lane_poly_ids(&STAGE1_LANE_OPEN_COLS),
-        stage1.lane_values_at_lookup.clone(),
+        reads.lane_values_at_lookup.clone(),
     );
     manifest.push_kernel(
         CommitmentId::FetchRa,
-        stage1
-            .fetch_proof
-            .addr_point
+        reads
+            .fetch_addr_point
             .iter()
             .copied()
-            .chain(stage1.cycle_point.iter().copied())
+            .chain(reads.cycle_point.iter().copied())
             .collect(),
         vec![0],
-        vec![stage1.fetch_proof.address_opening_value],
+        vec![reads.fetch_address_opening_value],
     );
     manifest.push_kernel(
         CommitmentId::DecodeRa,
-        stage1
-            .decode_proof
-            .addr_point
+        reads
+            .decode_addr_point
             .iter()
             .copied()
-            .chain(stage1.cycle_point.iter().copied())
+            .chain(reads.cycle_point.iter().copied())
             .collect(),
         vec![0],
-        vec![stage1.decode_proof.address_opening_value],
+        vec![reads.decode_address_opening_value],
     );
     manifest.push_kernel(
         CommitmentId::AluRa,
-        stage1
-            .alu_proof
-            .addr_point
+        reads
+            .alu_addr_point
             .iter()
             .copied()
-            .chain(stage1.cycle_point.iter().copied())
+            .chain(reads.cycle_point.iter().copied())
             .collect(),
         vec![0],
-        vec![stage1.alu_proof.address_opening_value],
+        vec![reads.alu_address_opening_value],
     );
     manifest.push_kernel(
         CommitmentId::Eq4Ra,
-        stage1
-            .eq4_proof
-            .addr_point
+        reads
+            .eq4_addr_point
             .iter()
             .copied()
-            .chain(stage1.cycle_point.iter().copied())
+            .chain(reads.cycle_point.iter().copied())
             .collect(),
         vec![0],
-        vec![stage1.eq4_proof.address_opening_value],
+        vec![reads.eq4_address_opening_value],
     );
     manifest.push_kernel(
         CommitmentId::DecodeHandoff,
-        stage1.cycle_point.clone(),
+        reads.cycle_point.clone(),
         DECODE_HANDOFF_POLY_IDS.to_vec(),
-        stage1.decode_handoff_values.clone(),
+        reads.decode_handoff_values.clone(),
     );
     manifest.push_kernel(
         CommitmentId::RomTable,
-        stage1.fetch_proof.addr_point.clone(),
+        reads.fetch_addr_point.clone(),
         vec![0],
-        stage1.fetch_proof.table_opening_values.clone(),
+        reads.fetch_table_opening_values.clone(),
     );
     manifest.push_kernel(
         CommitmentId::DecodeTable,
-        stage1.decode_proof.addr_point.clone(),
-        (0..stage1.decode_proof.table_opening_values.len()).collect(),
-        stage1.decode_proof.table_opening_values.clone(),
+        reads.decode_addr_point.clone(),
+        (0..reads.decode_table_opening_values.len()).collect(),
+        reads.decode_table_opening_values.clone(),
     );
     manifest.push_kernel(
         CommitmentId::AluTable,
-        stage1.alu_proof.addr_point[2..].to_vec(),
+        reads.alu_addr_point[2..].to_vec(),
         vec![0],
-        stage1.alu_proof.table_opening_values.clone(),
+        reads.alu_table_opening_values.clone(),
     );
     manifest.push_kernel(
         CommitmentId::Eq4Table,
-        stage1.eq4_proof.addr_point.clone(),
+        reads.eq4_addr_point.clone(),
         vec![0],
-        stage1.eq4_proof.table_opening_values.clone(),
+        reads.eq4_table_opening_values.clone(),
     );
     manifest.push_kernel(
         CommitmentId::Lane,
-        stage2.cycle_point.clone(),
+        twists.cycle_point.clone(),
         lane_poly_ids(&STAGE2_LANE_OPEN_COLS),
-        stage2.lane_values_at_twist.clone(),
+        twists.lane_values_at_twist.clone(),
     );
     manifest.push_kernel(
         CommitmentId::DecodeHandoff,
-        stage2.cycle_point.clone(),
+        twists.cycle_point.clone(),
         DECODE_HANDOFF_POLY_IDS.to_vec(),
-        stage2.handoff_values_at_twist.clone(),
+        twists.handoff_values_at_twist.clone(),
     );
-    let reg_point: Vec<K> = stage2
+    let reg_point: Vec<K> = twists
         .reg_addr_point
         .iter()
         .copied()
-        .chain(stage2.cycle_point.iter().copied())
+        .chain(twists.cycle_point.iter().copied())
         .collect();
     manifest.push_kernel(
         CommitmentId::RegTwist,
@@ -522,41 +562,41 @@ pub(crate) fn build_kernel_opening_manifest(
         vec![
             mle_eval_vec(
                 &aux.iter().map(|step| step.reg_inc).collect::<Vec<_>>(),
-                &stage2.cycle_point,
+                &twists.cycle_point,
             ),
             open_onehot_at_point_be(
                 &aux.iter()
                     .map(|step| step.reg_ra_x_addr)
                     .collect::<Vec<_>>(),
-                &stage2.reg_addr_point,
-                &stage2.cycle_point,
+                &twists.reg_addr_point,
+                &twists.cycle_point,
             ),
             open_onehot_at_point_be(
                 &aux.iter()
                     .map(|step| step.reg_ra_y_addr)
                     .collect::<Vec<_>>(),
-                &stage2.reg_addr_point,
-                &stage2.cycle_point,
+                &twists.reg_addr_point,
+                &twists.cycle_point,
             ),
             open_onehot_at_point_be(
                 &aux.iter()
                     .map(|step| step.reg_ra_i_addr)
                     .collect::<Vec<_>>(),
-                &stage2.reg_addr_point,
-                &stage2.cycle_point,
+                &twists.reg_addr_point,
+                &twists.cycle_point,
             ),
             open_onehot_at_point_be(
                 &aux.iter().map(|step| step.reg_wa_addr).collect::<Vec<_>>(),
-                &stage2.reg_addr_point,
-                &stage2.cycle_point,
+                &twists.reg_addr_point,
+                &twists.cycle_point,
             ),
         ],
     );
-    let ram_point: Vec<K> = stage2
+    let ram_point: Vec<K> = twists
         .ram_addr_point
         .iter()
         .copied()
-        .chain(stage2.cycle_point.iter().copied())
+        .chain(twists.cycle_point.iter().copied())
         .collect();
     manifest.push_kernel(
         CommitmentId::RamTwist,
@@ -565,31 +605,31 @@ pub(crate) fn build_kernel_opening_manifest(
         vec![
             mle_eval_vec(
                 &aux.iter().map(|step| step.ram_inc).collect::<Vec<_>>(),
-                &stage2.cycle_point,
+                &twists.cycle_point,
             ),
             open_onehot_at_point_be(
                 &aux.iter().map(|step| step.ram_ra_addr).collect::<Vec<_>>(),
-                &stage2.ram_addr_point,
-                &stage2.cycle_point,
+                &twists.ram_addr_point,
+                &twists.cycle_point,
             ),
             open_onehot_at_point_be(
                 &aux.iter().map(|step| step.ram_wa_addr).collect::<Vec<_>>(),
-                &stage2.ram_addr_point,
-                &stage2.cycle_point,
+                &twists.ram_addr_point,
+                &twists.cycle_point,
             ),
         ],
     );
     manifest.push_kernel(
         CommitmentId::Lane,
-        stage3.shift_proof.source_point.clone(),
+        shift.source_point.clone(),
         lane_poly_ids(&STAGE3_SHIFT_OPEN_COLS),
-        stage3.shift_opening_values.to_vec(),
+        shift.shift_opening_values.to_vec(),
     );
     manifest.push_kernel(
         CommitmentId::Lane,
         vec![K::ZERO; cycle_bits],
         lane_poly_ids(&STAGE3_START_BOUNDARY_COLS),
-        stage3.start_boundary_values.to_vec(),
+        shift.start_boundary_values.to_vec(),
     );
 
     let last_row = active_rows - 1;
@@ -597,11 +637,11 @@ pub(crate) fn build_kernel_opening_manifest(
         CommitmentId::Lane,
         bits_point(last_row, cycle_bits),
         lane_poly_ids(&STAGE3_FINAL_BOUNDARY_COLS),
-        stage3.final_boundary_values.to_vec(),
+        shift.final_boundary_values.to_vec(),
     );
 
     let row_binding_ids: Vec<usize> = (1..=23).collect();
-    for row in &stage3.row_bindings {
+    for row in &shift.row_bindings {
         manifest.push_kernel(
             CommitmentId::Lane,
             row.row_bits
@@ -615,6 +655,75 @@ pub(crate) fn build_kernel_opening_manifest(
 
     manifest.canonicalize();
     manifest
+}
+
+pub(crate) fn kernel_read_opening_surface(stage1: &Stage1ShoutProof) -> KernelReadOpeningSurface {
+    kernel_read_opening_surface_from_execution(&crate::chip8::stage1::stage1_execution_surface_from_proof(stage1))
+}
+
+pub(crate) fn kernel_read_opening_surface_from_execution(
+    stage1: &Stage1DerivedExecutionSurface,
+) -> KernelReadOpeningSurface {
+    KernelReadOpeningSurface {
+        cycle_point: stage1.cycle_point.clone(),
+        lane_values_at_lookup: stage1.lane_values_at_lookup.clone(),
+        fetch_addr_point: stage1.fetch.addr_point.clone(),
+        fetch_address_opening_value: stage1.fetch.address_opening_value,
+        fetch_table_opening_values: stage1.fetch.table_opening_values.clone(),
+        decode_addr_point: stage1.decode.addr_point.clone(),
+        decode_address_opening_value: stage1.decode.address_opening_value,
+        decode_handoff_values: stage1.decode_handoff_values.clone(),
+        decode_table_opening_values: stage1.decode.table_opening_values.clone(),
+        alu_addr_point: stage1.alu.addr_point.clone(),
+        alu_address_opening_value: stage1.alu.address_opening_value,
+        alu_table_opening_values: stage1.alu.table_opening_values.clone(),
+        eq4_addr_point: stage1.eq4.addr_point.clone(),
+        eq4_address_opening_value: stage1.eq4.address_opening_value,
+        eq4_table_opening_values: stage1.eq4.table_opening_values.clone(),
+    }
+}
+
+pub(crate) fn kernel_twist_opening_surface(stage2: &Stage2TwistProof) -> KernelTwistOpeningSurface {
+    kernel_twist_opening_surface_from_execution(&stage2_execution_surface_from_proof(stage2))
+}
+
+pub(crate) fn kernel_twist_opening_surface_from_execution(
+    stage2: &Stage2DerivedExecutionSurface,
+) -> KernelTwistOpeningSurface {
+    KernelTwistOpeningSurface {
+        cycle_point: stage2.cycle_point.clone(),
+        lane_values_at_twist: stage2.lane_values_at_twist.clone(),
+        handoff_values_at_twist: stage2.handoff_values_at_twist.clone(),
+        reg_addr_point: stage2.reg_addr_point.clone(),
+        ram_addr_point: stage2.ram_addr_point.clone(),
+    }
+}
+
+pub(crate) fn kernel_shift_opening_surface(stage3: &Stage3Proof) -> KernelShiftOpeningSurface {
+    kernel_shift_opening_surface_from_execution(
+        &Stage3DerivedExecutionSurface {
+            source_point: stage3.shift_proof.source_point.clone(),
+            claimed_shift_values: stage3.shift_proof.claimed_shift_values,
+            shift_opening_values: stage3.shift_opening_values,
+            continuity_check_value: stage3.continuity_check_value,
+            start_boundary_values: stage3.start_boundary_values,
+            final_boundary_values: stage3.final_boundary_values,
+        },
+        &stage3.row_bindings,
+    )
+}
+
+pub(crate) fn kernel_shift_opening_surface_from_execution(
+    stage3: &Stage3DerivedExecutionSurface,
+    row_bindings: &[RowBindingClaim],
+) -> KernelShiftOpeningSurface {
+    KernelShiftOpeningSurface {
+        source_point: stage3.source_point.clone(),
+        shift_opening_values: stage3.shift_opening_values,
+        start_boundary_values: stage3.start_boundary_values,
+        final_boundary_values: stage3.final_boundary_values,
+        row_bindings: row_bindings.to_vec(),
+    }
 }
 
 use neo_ajtai::Commitment;

@@ -12,6 +12,7 @@ def implementationModule : String := "Nightstream.Rv64IM.AcceptedArtifactBackend
 
 def exportedModuleNames : List String :=
   [ "Nightstream.Rv64IM.Generated.AcceptedProofArtifactCorpus"
+  , "Nightstream.Rv64IM.Kernel.RequiredBackendPayloadSurface"
   , "Nightstream.Rv64IM.AcceptedArtifactBackendRefinement"
   ]
 
@@ -19,6 +20,10 @@ abbrev backendRefinementRustExportBlockers :=
   Nightstream.Rv64IM.backendRefinementRustExportBlockers
 abbrev uniqueBackendRefinementRustExportBlockers :=
   Nightstream.Rv64IM.uniqueBackendRefinementRustExportBlockers
+abbrev requiredBackendPayloadRustExportBlockers :=
+  Nightstream.Rv64IM.requiredBackendPayloadRustExportBlockers
+abbrev uniqueRequiredBackendPayloadRustExportBlockers :=
+  Nightstream.Rv64IM.uniqueRequiredBackendPayloadRustExportBlockers
 
 def entrypointContract : Prop := True
 

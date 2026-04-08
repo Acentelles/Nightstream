@@ -1,7 +1,9 @@
 import Nightstream.Rv64IM.AcceptedArtifactRootExecutionClosure
 import Nightstream.Rv64IM.AcceptedArtifactRootLane
+import Nightstream.ChunkLayout
 import Nightstream.Rv64IM.Generated.AcceptedProofArtifactCorpus
 import Nightstream.Rv64IM.Checks
+import Nightstream.Rv64IM.Kernel.RequiredRootExecutionSemanticsSurface
 
 /-!
 Executable audit for whether the exported RV64IM accepted artifact is strong
@@ -19,6 +21,7 @@ inductive RootExecutionSemanticsClosureField where
   | replayedExecutionRows
   | semanticRowEmbeddingRecomputed
   | rootLaneProtocolBindingsRecomputed
+  | scheduleOwnedChunkRoutingRecomputed
   | rowLocalRootEncodeWitnessSurface
   | rowLocalCCSAcceptanceSurface
   | executionSemanticsRefinementSurface
@@ -31,6 +34,8 @@ def rootExecutionSemanticsClosureFieldName :
   | .semanticRowEmbeddingRecomputed => "semantic_row_embedding_recomputed"
   | .rootLaneProtocolBindingsRecomputed =>
       "root_lane_protocol_bindings_recomputed"
+  | .scheduleOwnedChunkRoutingRecomputed =>
+      "schedule_owned_chunk_routing_recomputed"
   | .rowLocalRootEncodeWitnessSurface =>
       "row_local_root_encode_witness_surface"
   | .rowLocalCCSAcceptanceSurface =>
@@ -45,6 +50,7 @@ def requiredRootExecutionSemanticsClosureFields :
   [ .replayedExecutionRows
   , .semanticRowEmbeddingRecomputed
   , .rootLaneProtocolBindingsRecomputed
+  , .scheduleOwnedChunkRoutingRecomputed
   , .rowLocalRootEncodeWitnessSurface
   , .rowLocalCCSAcceptanceSurface
   , .executionSemanticsRefinementSurface
@@ -75,28 +81,44 @@ private def rootLaneProtocolBindingsRecomputedFromSource
   | some recomputed =>
       recomputedRootLaneProtocolBindingsMatchArtifact recomputed artifact
 
-/-
-The current RV64IM accepted artifact still stops short of the theorem-bearing
-execution-semantics bridge required by the kernel spec:
+private def scheduleOwnedChunkRoutingRecomputedFromSource
+    (artifact : AcceptedProofArtifactView) : Bool :=
+  match recomputeDerivedCase? artifact.source with
+  | none => false
+  | some derived =>
+      let preparedStepCount := derived.executionRows.length
+      let schedule := artifact.kernelProof.mainLane.binding.foldSchedule
+      let chunkCount := artifact.kernelProof.mainLane.binding.chunkCount
+      rootLaneProtocolBindingsRecomputedFromSource artifact &&
+        artifact.exportedStatement.foldSchedule = schedule &&
+        artifact.exportedStatement.chunkCount = chunkCount &&
+        artifact.exportedKernelProof.mainLane.binding.foldSchedule = schedule &&
+        artifact.exportedKernelProof.mainLane.binding.chunkCount = chunkCount &&
+        (List.range preparedStepCount).all fun rowIndex =>
+          decide (Nightstream.ChunkLayout.chunkIndexOf schedule rowIndex < chunkCount)
 
-* Lean can replay execution rows and rebuild semantic-row/root-lane bindings.
-* The artifact still does not expose row-local `RootEncode(z_j)` witnesses.
-* The artifact still does not expose theorem-bearing row-local CCS acceptance
-  objects for the unique chunk under the carried `FoldSchedule`.
-* The artifact still does not expose a theorem-bearing refinement from those
-  accepted row-local root execution objects back to RV64IM `ExecutionCorrect`.
+/-!
+This closure layer combines three ingredients:
+
+* replayed execution rows and semantic-row/root-lane recomputation,
+* schedule-owned owning-chunk routing recovered from the carried fold schedule,
+* exported row-local root-execution surfaces at the accepted-artifact boundary.
+
+The accepted artifact only clears this closure when all three surfaces are
+present together: row-local root-encode witnesses, row-local CCS-acceptance
+objects, and row-local execution-semantics refinement objects.
 -/
 private def rowLocalRootEncodeWitnessSurfacePresent
-    (_artifact : AcceptedProofArtifactView) : Bool :=
-  false
+    (artifact : AcceptedProofArtifactView) : Bool :=
+  requiredRootExecutionSemanticsFieldPresent artifact .rowLocalRootEncodeWitness
 
 private def rowLocalCCSAcceptanceSurfacePresent
-    (_artifact : AcceptedProofArtifactView) : Bool :=
-  false
+    (artifact : AcceptedProofArtifactView) : Bool :=
+  requiredRootExecutionSemanticsFieldPresent artifact .rowLocalCCSAcceptance
 
 private def executionSemanticsRefinementSurfacePresent
-    (_artifact : AcceptedProofArtifactView) : Bool :=
-  false
+    (artifact : AcceptedProofArtifactView) : Bool :=
+  requiredRootExecutionSemanticsFieldPresent artifact .executionSemanticsRefinement
 
 def rootExecutionSemanticsClosureFieldPresent
     (artifact : AcceptedProofArtifactView)
@@ -107,6 +129,8 @@ def rootExecutionSemanticsClosureFieldPresent
       semanticRowEmbeddingRecomputedFromSource artifact
   | .rootLaneProtocolBindingsRecomputed =>
       rootLaneProtocolBindingsRecomputedFromSource artifact
+  | .scheduleOwnedChunkRoutingRecomputed =>
+      scheduleOwnedChunkRoutingRecomputedFromSource artifact
   | .rowLocalRootEncodeWitnessSurface =>
       rowLocalRootEncodeWitnessSurfacePresent artifact
   | .rowLocalCCSAcceptanceSurface =>
@@ -117,6 +141,7 @@ def rootExecutionSemanticsClosureFieldPresent
       rootExecutionClosureAccepted artifact &&
         semanticRowEmbeddingRecomputedFromSource artifact &&
         rootLaneProtocolBindingsRecomputedFromSource artifact &&
+        scheduleOwnedChunkRoutingRecomputedFromSource artifact &&
         rowLocalRootEncodeWitnessSurfacePresent artifact &&
         rowLocalCCSAcceptanceSurfacePresent artifact &&
         executionSemanticsRefinementSurfacePresent artifact
@@ -145,19 +170,7 @@ deriving Repr
 
 def rootExecutionSemanticsRustExportBlockers
     (artifact : AcceptedProofArtifactView) : List String :=
-  let blockers : List (String × Bool) :=
-    [ ( "root_execution_rows_missing_row_local_root_encode_witnesses"
-      , rowLocalRootEncodeWitnessSurfacePresent artifact
-      )
-    , ( "root_execution_rows_missing_row_local_ccs_acceptance_objects"
-      , rowLocalCCSAcceptanceSurfacePresent artifact
-      )
-    , ( "root_execution_rows_missing_execution_correct_refinement_objects"
-      , executionSemanticsRefinementSurfacePresent artifact
-      )
-    ]
-  blockers.filterMap fun (name, ok) =>
-    if ok then none else some name
+  requiredRootExecutionSemanticsRustExportBlockers artifact
 
 def uniqueRootExecutionSemanticsRustExportBlockers : List String :=
   Generated.AcceptedProofArtifacts.cases.foldl

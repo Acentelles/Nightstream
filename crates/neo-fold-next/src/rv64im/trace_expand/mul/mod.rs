@@ -13,7 +13,11 @@ pub(super) fn multiply_sequence(step: &ExecutedStep) -> Option<InlineTracePlan> 
     let rs1 = step.decoded.rs1;
     let rs2 = step.decoded.rs2;
     let rd = step.decoded.rd;
-    match step.decoded.opcode {
+    sequence_for_opcode(step.decoded.opcode, rs1, rs2, rd)
+}
+
+pub(super) fn sequence_for_opcode(opcode: Rv64Opcode, rs1: u8, rs2: u8, rd: u8) -> Option<InlineTracePlan> {
+    match opcode {
         Rv64Opcode::Mul => None,
         Rv64Opcode::Mulhu => None,
         Rv64Opcode::Mulw => Some(mulw::sequence(rs1, rs2, rd)),

@@ -1,6 +1,7 @@
 import SuperNeo.Ring
 import SuperNeo.Thm3Core
 import SuperNeo.Decomp
+import SuperNeo.ExtensionField
 import SuperNeo.Generated.NeoFoldArtifacts
 
 namespace SuperNeo
@@ -10,43 +11,8 @@ open SuperNeo.Generated
 
 private abbrev FMatrix := Array (Array F)
 
-structure KExt where
-  re : F
-  im : F
-deriving Repr, Inhabited, DecidableEq
-
-namespace KExt
-
-def ofKNat (x : KNat) : KExt :=
-  { re := F.ofNat x.c0, im := F.ofNat x.c1 }
-
-def ofF (x : F) : KExt :=
-  { re := x, im := 0 }
-
-instance : Zero KExt := ⟨{ re := 0, im := 0 }⟩
-instance : One KExt := ⟨{ re := 1, im := 0 }⟩
-instance : Add KExt := ⟨fun a b => { re := a.re + b.re, im := a.im + b.im }⟩
-instance : Neg KExt := ⟨fun a => { re := -a.re, im := -a.im }⟩
-instance : Sub KExt := ⟨fun a b => a + (-b)⟩
-
-private def w : F := F.ofNat 7
-
-instance : Mul KExt := ⟨fun a b =>
-  { re := a.re * b.re + w * (a.im * b.im)
-    im := a.re * b.im + a.im * b.re }⟩
-
-def scaleBase (a : F) (x : KExt) : KExt :=
-  { re := a * x.re, im := a * x.im }
-
-def pow (x : KExt) (n : Nat) : KExt := Id.run do
-  let mut acc : KExt := 1
-  let mut i := 0
-  while i < n do
-    acc := acc * x
-    i := i + 1
-  return acc
-
-end KExt
+private def kextOfKNat (x : KNat) : KExt :=
+  KExt.ofCoeffs (F.ofNat x.c0) (F.ofNat x.c1)
 
 private def toF (x : Nat) : F := F.ofNat x
 
@@ -54,7 +20,7 @@ private def toFArray (xs : Array Nat) : Array F :=
   xs.map toF
 
 private def toKArray (xs : Array KNat) : Array KExt :=
-  xs.map KExt.ofKNat
+  xs.map kextOfKNat
 
 private def fAt (m : Array (Array F)) (row col : Nat) : F :=
   if hRow : row < m.size then
@@ -86,7 +52,7 @@ private def takeDFieldCoeffs (row : Array Nat) : Coeffs :=
 private def takeDKCoeffs (row : Array KNat) : Array KExt :=
   Array.ofFn fun i : Fin D =>
     if h : i.1 < row.size then
-      KExt.ofKNat (row[i.1]'h)
+      kextOfKNat (row[i.1]'h)
     else
       0
 
@@ -167,11 +133,11 @@ private def sumcheckComputedFinal?
 
 private def transcriptChecks (t : NeoFoldTranscriptCase) : Bool :=
   match sumcheckComputedFinal?
-      (KExt.ofKNat t.claimedSum)
+      (kextOfKNat t.claimedSum)
       t.degreeBound
       (t.roundPolys.map toKArray)
-      (t.challenges.map KExt.ofKNat) with
-  | some finalValue => decide (finalValue = KExt.ofKNat t.finalSum)
+      (t.challenges.map kextOfKNat) with
+  | some finalValue => decide (finalValue = kextOfKNat t.finalSum)
   | none => false
 
 private def optionalTranscriptChecks (t : NeoFoldTranscriptCase) : Bool :=
@@ -186,8 +152,8 @@ private def batchedTimeShapeChecks (t : NeoFoldBatchedTimeCase) : Bool :=
     decide (t.claimedSums.size = t.roundPolys.size)
 
 private def batchedClaimChecks (t : NeoFoldBatchedTimeCase) : Bool :=
-  let claimed := t.claimedSums.map KExt.ofKNat
-  let shared := t.sharedChallenges.map KExt.ofKNat
+  let claimed := t.claimedSums.map kextOfKNat
+  let shared := t.sharedChallenges.map kextOfKNat
   (List.range claimed.size).all fun idx =>
     match sumcheckComputedFinal?
         claimed[idx]!
@@ -1222,7 +1188,7 @@ private def mixAuxOpeningsRLC
       Array.ofFn fun i : Fin first.auxOpenings.size =>
         (List.range claims.size).foldl
           (fun acc idx =>
-            acc + KExt.scaleBase (toF ((rhoCoeffs[idx]!)[0]!)) (KExt.ofKNat ((claims[idx]!.auxOpenings)[i.1]!)))
+            acc + KExt.scaleBase (toF ((rhoCoeffs[idx]!)[0]!)) (kextOfKNat ((claims[idx]!.auxOpenings)[i.1]!)))
           0
 
 private def mixYZcolRLC
@@ -1546,9 +1512,9 @@ private def decCtChecks (b : Nat) (children : Array NeoFoldClaimCase) (parent : 
     let want :=
       (List.range children.size).foldl
         (fun acc childIdx =>
-          acc + kPow bK childIdx * KExt.ofKNat ((children[childIdx]!.ct)[idx]!))
+          acc + kPow bK childIdx * kextOfKNat ((children[childIdx]!.ct)[idx]!)
         0
-    decide (KExt.ofKNat (parent.ct[idx]!) = want)
+    decide (kextOfKNat (parent.ct[idx]!) = want)
 
 private def decCommitmentChecks (b : Nat) (children : Array NeoFoldClaimCase) (parent : NeoFoldClaimCase) : Bool :=
   let kappa := parent.commitment.cols.size
@@ -1584,9 +1550,9 @@ private def decYChecks (b : Nat) (children : Array NeoFoldClaimCase) (parent : N
           let want :=
             (List.range children.size).foldl
               (fun acc childIdx =>
-                acc + kPow bK childIdx * KExt.ofKNat ((children[childIdx]!.yRing[j]!)[idx]!))
+                acc + kPow bK childIdx * kextOfKNat ((children[childIdx]!.yRing[j]!)[idx]!)
               0
-          decide (KExt.ofKNat ((parent.yRing[j]!)[idx]!) = want)
+          decide (kextOfKNat ((parent.yRing[j]!)[idx]!) = want)
 
 private def decAuxChecks (b : Nat) (children : Array NeoFoldClaimCase) (parent : NeoFoldClaimCase) : Bool :=
   let bK := KExt.ofF (toF b)
@@ -1594,9 +1560,9 @@ private def decAuxChecks (b : Nat) (children : Array NeoFoldClaimCase) (parent :
     let want :=
       (List.range children.size).foldl
         (fun acc childIdx =>
-          acc + kPow bK childIdx * KExt.ofKNat ((children[childIdx]!.auxOpenings)[idx]!))
+          acc + kPow bK childIdx * kextOfKNat ((children[childIdx]!.auxOpenings)[idx]!)
         0
-    decide (KExt.ofKNat (parent.auxOpenings[idx]!) = want)
+    decide (kextOfKNat (parent.auxOpenings[idx]!) = want)
 
 private def decYZcolChecks (b : Nat) (children : Array NeoFoldClaimCase) (parent : NeoFoldClaimCase) : Bool :=
   if parent.yZcol.isEmpty then

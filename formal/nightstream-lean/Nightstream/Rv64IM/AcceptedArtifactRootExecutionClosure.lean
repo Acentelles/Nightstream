@@ -17,6 +17,7 @@ inductive RootExecutionClosureField where
   | replayedExecutionRows
   | rootLaneProtocolBindingsRecomputed
   | chunkLayoutAlignment
+  | scheduleOwnedChunkRoutingRecomputed
   | lowLevelChunkPayloadSurface
   | mainLanePayloadSurface
   | piCCSContextReconstructible
@@ -29,6 +30,8 @@ def rootExecutionClosureFieldName : RootExecutionClosureField → String
   | .replayedExecutionRows => "replayed_execution_rows"
   | .rootLaneProtocolBindingsRecomputed => "root_lane_protocol_bindings_recomputed"
   | .chunkLayoutAlignment => "chunk_layout_alignment"
+  | .scheduleOwnedChunkRoutingRecomputed =>
+      "schedule_owned_chunk_routing_recomputed"
   | .lowLevelChunkPayloadSurface => "low_level_chunk_payload_surface"
   | .mainLanePayloadSurface => "main_lane_payload_surface"
   | .piCCSContextReconstructible => "pi_ccs_context_reconstructible"
@@ -40,6 +43,7 @@ def requiredRootExecutionClosureFields : List RootExecutionClosureField :=
   [ .replayedExecutionRows
   , .rootLaneProtocolBindingsRecomputed
   , .chunkLayoutAlignment
+  , .scheduleOwnedChunkRoutingRecomputed
   , .lowLevelChunkPayloadSurface
   , .mainLanePayloadSurface
   , .piCCSContextReconstructible
@@ -65,6 +69,7 @@ private def chunkedRootProofConstructible
   replayedExecutionRowsPresent artifact &&
     rootLaneProtocolBindingsRecomputed artifact &&
     backendRefinementFieldPresent artifact .chunkLayoutRecomputed &&
+    backendRefinementFieldPresent artifact .scheduleOwnedChunkRoutingRecomputed &&
     backendRefinementFieldPresent artifact .lowLevelChunkPayloadSurface &&
     backendRefinementFieldPresent artifact .mainLanePayloadSurface &&
     backendRefinementFieldPresent artifact .piCCSContextReconstructible &&
@@ -79,6 +84,8 @@ def rootExecutionClosureFieldPresent
   | .rootLaneProtocolBindingsRecomputed => rootLaneProtocolBindingsRecomputed artifact
   | .chunkLayoutAlignment =>
       backendRefinementFieldPresent artifact .chunkLayoutRecomputed
+  | .scheduleOwnedChunkRoutingRecomputed =>
+      backendRefinementFieldPresent artifact .scheduleOwnedChunkRoutingRecomputed
   | .lowLevelChunkPayloadSurface =>
       backendRefinementFieldPresent artifact .lowLevelChunkPayloadSurface
   | .mainLanePayloadSurface =>

@@ -82,6 +82,48 @@ pub struct StagePackageBundleVerifyPerf {
 }
 
 #[derive(Clone, Copy, Debug, Default)]
+pub struct AcceptedStage2VerifyPerf {
+    pub semantics_ms: f64,
+    pub temporal_ms: f64,
+    pub family_digests_ms: f64,
+    pub selected_opening_ms: f64,
+    pub total_ms: f64,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct AcceptedStage1VerifyPerf {
+    pub sem_inputs_surface_ms: f64,
+    pub semantics_verify_ms: f64,
+    pub row_bindings_surface_ms: f64,
+    pub surface_digest_checks_ms: f64,
+    pub selected_opening_ms: f64,
+    pub total_ms: f64,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct AcceptedStagePackageVerifyPerf {
+    pub stage1_ms: f64,
+    pub stage1_breakdown: AcceptedStage1VerifyPerf,
+    pub stage2_ms: f64,
+    pub stage2_breakdown: AcceptedStage2VerifyPerf,
+    pub stage3_ms: f64,
+    pub total_ms: f64,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct AcceptedRootExecutionVerifyPerf {
+    pub preflight_ms: f64,
+    pub semantic_rows_ms: f64,
+    pub prepared_step_bindings_ms: f64,
+    pub kernel_claim_bindings_ms: f64,
+    pub row_chunk_routes_ms: f64,
+    pub row_local_ccs_acceptance_ms: f64,
+    pub semantics_refinement_ms: f64,
+    pub statement_chunk_layout_ms: f64,
+    pub total_ms: f64,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
 pub struct KernelOpeningBundleVerifyPerf {
     pub claim_rebuild_ms: f64,
     pub bindings_ms: f64,
@@ -112,7 +154,9 @@ pub struct PackagedSimpleKernelVerifyPerf {
 
 #[derive(Clone, Debug, Default)]
 pub struct Rv64imProofProvePerf {
+    pub shared_trace_ms: f64,
     pub simple_kernel: SimpleKernelBuildPerf,
+    pub parallel_overlap_ms: f64,
     pub main_lane_ms: f64,
     pub root_main_lane: RootMainLanePackagedProofProvePerf,
     pub public_export_ms: f64,
@@ -124,10 +168,14 @@ pub struct Rv64imPublicProofVerifyPerf {
     pub public_claim_digests_ms: f64,
     pub public_bundle_digests_ms: f64,
     pub public_bundle_bindings_ms: f64,
+    pub native_stage_bundle_verify_ms: f64,
     pub public_kernel_build: SimpleKernelBuildPerf,
+    pub root_execution_verify_ms: f64,
     pub root_main_lane_proof_ms: f64,
     pub root_main_lane: RootMainLanePackagedProofVerifyPerf,
     pub stage_package_verify_ms: f64,
+    pub accepted_stage_package: AcceptedStagePackageVerifyPerf,
+    pub accepted_root_execution: AcceptedRootExecutionVerifyPerf,
     pub kernel_opening_verify_ms: f64,
     pub summary_consistency_ms: f64,
     pub total_ms: f64,
@@ -152,6 +200,14 @@ pub struct RootMainLaneRunProofProvePerf {
 pub struct RootMainLanePackagedProofVerifyPerf {
     pub prepare_public_steps_ms: f64,
     pub public_chunk_match_ms: f64,
+    pub packaged_statement_digest_ms: f64,
+    pub packaged_chunk_digests_ms: f64,
+    pub packaged_final_main_claim_digests_ms: f64,
+    pub packaged_statement_hash_ms: f64,
+    pub packaged_schedule_checks_ms: f64,
+    pub packaged_proof_digest_ms: f64,
+    pub packaged_final_claim_match_ms: f64,
+    pub packaged_total_ms: f64,
     pub session: RunVerifyPerf,
     pub total_ms: f64,
 }

@@ -67,6 +67,10 @@ import Nightstream.Rv64IM.Kernel.ProgramBindingInterface
 import Nightstream.Rv64IM.Kernel.OpeningProvenanceInterface
 import Nightstream.Rv64IM.Kernel.ChunkedRootProofInterface
 import Nightstream.Rv64IM.Kernel.RootExecutionSemanticsInterface
+import Nightstream.Rv64IM.Kernel.RequiredBackendPayloadSurfaceInterface
+import Nightstream.Rv64IM.Kernel.RequiredRootExecutionSemanticsSurfaceInterface
+import Nightstream.Rv64IM.Kernel.RequiredKernelDesignBridgeSurfaceInterface
+import Nightstream.Rv64IM.Kernel.RequiredProofCompleteRustExportSurfaceInterface
 import Nightstream.Rv64IM.Kernel.TranscriptScheduleInterface
 import Nightstream.Rv64IM.Kernel.SoundnessAccountingInterface
 import Nightstream.Rv64IM.Kernel.BridgeBindingInterface

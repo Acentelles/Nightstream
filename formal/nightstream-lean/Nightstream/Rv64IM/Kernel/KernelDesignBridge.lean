@@ -84,9 +84,16 @@ structure SelectedRowRootRoutingWitness
   exportedPreparedStepEq :
     opening.exportedBinding.preparedStep = rootPreparedStep
   chunkIndex : Nat
+  chunkIndexMatchesSchedule :
+    chunkIndex =
+      Nightstream.ChunkLayout.chunkIndexOf
+        rootExecution.root.mainLane.schedule
+        rootPreparedStep.rowIndex
   backendPkg : RootChunkBackendProofPackage
   chunkProofAtIndex :
     rootExecution.root.chunkProofs[chunkIndex]? = some backendPkg
+  backendChunkAtIndex :
+    rootExecution.root.mainLane.chunks[chunkIndex]? = some backendPkg.chunk
   rowIndexCovered : rootPreparedStep.rowIndex ∈ backendPkg.rowLabels
 
 def KernelDesignBridgeBound
@@ -476,6 +483,112 @@ theorem selectedPreparedStepCoveredByChunk_of_kernelDesignBridge
     ⟨routing, hRouting, _⟩
   exact ⟨routing, hRouting, routing.rowIndexCovered⟩
 
+theorem selectedPreparedStepOwnedByScheduledChunk_of_kernelDesignBridge
+  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
+    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
+    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
+    Source CommitmentId Point PolynomialId Value Digest ExactOpeningWitness
+    OpeningRefinement RowProjectionWitness BridgeBinding : Type _}
+  [OfNat Limb 0]
+  {pkg :
+    KernelDesignBridgePackage
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      Source
+      CommitmentId
+      Point
+      PolynomialId
+      Value
+      Digest
+      ExactOpeningWitness
+      OpeningRefinement
+      RowProjectionWitness
+      BridgeBinding}
+  {j : Nat}
+  (hJ : j < pkg.rootExecution.trace.stage3Refinement.stage3.rowBindings.length) :
+  ∃ routing,
+    pkg.routings[j]? = some routing ∧
+      routing.chunkIndex =
+        Nightstream.ChunkLayout.chunkIndexOf
+          pkg.rootExecution.root.mainLane.schedule
+          routing.rootPreparedStep.rowIndex := by
+  rcases selectedRoutingWitnessAtIndex_of_kernelDesignBridge (pkg := pkg) hJ with
+    ⟨routing, hRouting, _⟩
+  exact ⟨routing, hRouting, routing.chunkIndexMatchesSchedule⟩
+
+theorem selectedPreparedStepRoutedToScheduledChunk_of_kernelDesignBridge
+  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
+    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
+    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
+    Source CommitmentId Point PolynomialId Value Digest ExactOpeningWitness
+    OpeningRefinement RowProjectionWitness BridgeBinding : Type _}
+  [OfNat Limb 0]
+  {pkg :
+    KernelDesignBridgePackage
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      Source
+      CommitmentId
+      Point
+      PolynomialId
+      Value
+      Digest
+      ExactOpeningWitness
+      OpeningRefinement
+      RowProjectionWitness
+      BridgeBinding}
+  {j : Nat}
+  (hJ : j < pkg.rootExecution.trace.stage3Refinement.stage3.rowBindings.length) :
+  ∃ routing,
+    pkg.routings[j]? = some routing ∧
+      pkg.rootExecution.root.chunkProofs[
+          Nightstream.ChunkLayout.chunkIndexOf
+            pkg.rootExecution.root.mainLane.schedule
+            routing.rootPreparedStep.rowIndex]? = some routing.backendPkg ∧
+      pkg.rootExecution.root.mainLane.chunks[
+          Nightstream.ChunkLayout.chunkIndexOf
+            pkg.rootExecution.root.mainLane.schedule
+            routing.rootPreparedStep.rowIndex]? = some routing.backendPkg.chunk := by
+  rcases selectedRoutingWitnessAtIndex_of_kernelDesignBridge (pkg := pkg) hJ with
+    ⟨routing, hRouting, _⟩
+  refine ⟨routing, hRouting, ?_, ?_⟩
+  · simpa [routing.chunkIndexMatchesSchedule] using routing.chunkProofAtIndex
+  · simpa [routing.chunkIndexMatchesSchedule] using routing.backendChunkAtIndex
+
 theorem piCCS_atSelectedIndex_of_kernelDesignBridge
   {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
     RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
@@ -617,6 +730,164 @@ theorem piDEC_atSelectedIndex_of_kernelDesignBridge
     ⟨routing, hRouting, _⟩
   exact
     ⟨routing, hRouting, SuperNeo.PiDECInterface.piDEC_of_weak routing.backendPkg.piRLCWeak⟩
+
+theorem piCCS_atScheduledChunk_of_kernelDesignBridge
+  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
+    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
+    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
+    Source CommitmentId Point PolynomialId Value Digest ExactOpeningWitness
+    OpeningRefinement RowProjectionWitness BridgeBinding : Type _}
+  [OfNat Limb 0]
+  {pkg :
+    KernelDesignBridgePackage
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      Source
+      CommitmentId
+      Point
+      PolynomialId
+      Value
+      Digest
+      ExactOpeningWitness
+      OpeningRefinement
+      RowProjectionWitness
+      BridgeBinding}
+  {j : Nat}
+  (hJ : j < pkg.rootExecution.trace.stage3Refinement.stage3.rowBindings.length) :
+  ∃ routing,
+    pkg.routings[j]? = some routing ∧
+      pkg.rootExecution.root.chunkProofs[
+          Nightstream.ChunkLayout.chunkIndexOf
+            pkg.rootExecution.root.mainLane.schedule
+            routing.rootPreparedStep.rowIndex]? = some routing.backendPkg ∧
+      Nightstream.SuperNeoPiCCSStrongStatement routing.backendPkg.protocolTarget := by
+  rcases selectedRoutingWitnessAtIndex_of_kernelDesignBridge (pkg := pkg) hJ with
+    ⟨routing, hRouting, _⟩
+  refine ⟨routing, hRouting, ?_, routing.backendPkg.piCCSStrong⟩
+  simpa [routing.chunkIndexMatchesSchedule] using routing.chunkProofAtIndex
+
+theorem piRLC_atScheduledChunk_of_kernelDesignBridge
+  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
+    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
+    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
+    Source CommitmentId Point PolynomialId Value Digest ExactOpeningWitness
+    OpeningRefinement RowProjectionWitness BridgeBinding : Type _}
+  [OfNat Limb 0]
+  {pkg :
+    KernelDesignBridgePackage
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      Source
+      CommitmentId
+      Point
+      PolynomialId
+      Value
+      Digest
+      ExactOpeningWitness
+      OpeningRefinement
+      RowProjectionWitness
+      BridgeBinding}
+  {j : Nat}
+  (hJ : j < pkg.rootExecution.trace.stage3Refinement.stage3.rowBindings.length) :
+  ∃ routing,
+    pkg.routings[j]? = some routing ∧
+      pkg.rootExecution.root.chunkProofs[
+          Nightstream.ChunkLayout.chunkIndexOf
+            pkg.rootExecution.root.mainLane.schedule
+            routing.rootPreparedStep.rowIndex]? = some routing.backendPkg ∧
+      Nightstream.SuperNeoPiRLCWeakStatement routing.backendPkg.protocolTarget := by
+  rcases selectedRoutingWitnessAtIndex_of_kernelDesignBridge (pkg := pkg) hJ with
+    ⟨routing, hRouting, _⟩
+  refine ⟨routing, hRouting, ?_, routing.backendPkg.piRLCWeak⟩
+  simpa [routing.chunkIndexMatchesSchedule] using routing.chunkProofAtIndex
+
+theorem piDEC_atScheduledChunk_of_kernelDesignBridge
+  {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind
+    RamAddr Word StateLocation RegisterTimeline RamTimeline Limb
+    ArchitecturalInputs AuthenticatedReads WitnessAssignment Output StateEffect
+    Source CommitmentId Point PolynomialId Value Digest ExactOpeningWitness
+    OpeningRefinement RowProjectionWitness BridgeBinding : Type _}
+  [OfNat Limb 0]
+  {pkg :
+    KernelDesignBridgePackage
+      BytecodeAddr
+      Pc
+      RegIdx
+      VirtualOpcode
+      AluOp
+      BranchOp
+      MemWidth
+      DivRemKind
+      RamAddr
+      Word
+      StateLocation
+      RegisterTimeline
+      RamTimeline
+      Limb
+      ArchitecturalInputs
+      AuthenticatedReads
+      WitnessAssignment
+      Output
+      StateEffect
+      Source
+      CommitmentId
+      Point
+      PolynomialId
+      Value
+      Digest
+      ExactOpeningWitness
+      OpeningRefinement
+      RowProjectionWitness
+      BridgeBinding}
+  {j : Nat}
+  (hJ : j < pkg.rootExecution.trace.stage3Refinement.stage3.rowBindings.length) :
+  ∃ routing,
+    pkg.routings[j]? = some routing ∧
+      pkg.rootExecution.root.chunkProofs[
+          Nightstream.ChunkLayout.chunkIndexOf
+            pkg.rootExecution.root.mainLane.schedule
+            routing.rootPreparedStep.rowIndex]? = some routing.backendPkg ∧
+      Nightstream.SuperNeoPiDECKnowledgeStatement routing.backendPkg.protocolTarget := by
+  rcases selectedRoutingWitnessAtIndex_of_kernelDesignBridge (pkg := pkg) hJ with
+    ⟨routing, hRouting, _⟩
+  refine
+    ⟨routing, hRouting, ?_,
+      SuperNeo.PiDECInterface.piDEC_of_weak routing.backendPkg.piRLCWeak⟩
+  simpa [routing.chunkIndexMatchesSchedule] using routing.chunkProofAtIndex
 
 theorem executionCorrect_of_kernelDesignBridge
   {BytecodeAddr Pc RegIdx VirtualOpcode AluOp BranchOp MemWidth DivRemKind

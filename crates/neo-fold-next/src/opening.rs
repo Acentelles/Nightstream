@@ -18,6 +18,7 @@ pub enum OpeningSource {
     MainLane,
     Chip8Kernel,
     Chip8Root,
+    Rv64imKernel,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -47,11 +48,16 @@ pub struct TimeOpeningGroupSummary {
     pub reduced_digest: [u8; 32],
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct TimeOpeningUnificationProof {
     pub claimed_sum: K,
     pub round_polys: Vec<Vec<K>>,
     pub r_unify: Vec<K>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct TimeOpeningCompactProof {
+    pub unification: TimeOpeningUnificationProof,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

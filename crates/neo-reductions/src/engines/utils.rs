@@ -28,6 +28,13 @@ pub struct Dims {
 
 pub use crate::optimized_engine::Challenges;
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct PiCcsBindHeaderPerf {
+    pub prefix_ms: f64,
+    pub poly_ms: f64,
+    pub public_instances_ms: f64,
+}
+
 #[inline]
 fn degree_bound_nc(params: &NeoParams) -> usize {
     // `range_product` has degree (2b-1) in `y` for the symmetric range [-(b-1), ..., (b-1)].
@@ -89,7 +96,8 @@ pub fn bind_header_and_instances(
     dims: Dims,
 ) -> Result<(), PiCcsError> {
     let digest = digest_ccs_matrices(s);
-    bind_header_and_instances_with_digest(tr, params, s, mcs_list, dims, &digest)
+    bind_header_and_instances_with_digest(tr, params, s, mcs_list, dims, &digest)?;
+    Ok(())
 }
 
 /// Bind CCS header and MCS instances to transcript, using a precomputed CCS matrix digest.
@@ -102,7 +110,9 @@ pub fn bind_header_and_instances_with_digest(
     mcs_list: &[CcsClaim<Cmt, F>],
     dims: Dims,
     mat_digest: &[Goldilocks],
-) -> Result<(), PiCcsError> {
+) -> Result<PiCcsBindHeaderPerf, PiCcsError> {
+    let mut perf = PiCcsBindHeaderPerf::default();
+    let prefix_started = std::time::Instant::now();
     tr.append_message(tr_labels::PI_CCS, b"");
 
     let ext = params
@@ -153,26 +163,106 @@ pub fn bind_header_and_instances_with_digest(
         F::from_u64(mat_digest[3].as_canonical_u64()),
     ];
     tr.append_fields(b"mat_digest", &mat_digest_fields);
+    perf.prefix_ms = prefix_started.elapsed().as_secs_f64() * 1_000.0;
 
+    let poly_started = std::time::Instant::now();
     absorb_sparse_polynomial(tr, &s.f);
+    perf.poly_ms = poly_started.elapsed().as_secs_f64() * 1_000.0;
 
+    let public_instances_started = std::time::Instant::now();
     if !mcs_list.is_empty() {
-        let mut encoded_instances = Vec::with_capacity(
-            1 + mcs_list
-                .iter()
-                .map(|inst| 4 + inst.x.len() + inst.c.data.len())
-                .sum::<usize>(),
+        let encoded_len = 1 + mcs_list
+            .iter()
+            .map(|inst| 3 + inst.x.len() + inst.c.data.len())
+            .sum::<usize>();
+        tr.append_fields_iter(
+            b"mcs_instances/v2",
+            encoded_len,
+            core::iter::once(F::from_u64(mcs_list.len() as u64)).chain(mcs_list.iter().flat_map(|inst| {
+                core::iter::once(F::from_u64(inst.x.len() as u64))
+                    .chain(inst.x.iter().copied())
+                    .chain(core::iter::once(F::from_u64(inst.m_in as u64)))
+                    .chain(core::iter::once(F::from_u64(inst.c.data.len() as u64)))
+                    .chain(inst.c.data.iter().copied())
+            })),
         );
-        encoded_instances.push(F::from_u64(mcs_list.len() as u64));
-        for inst in mcs_list.iter() {
-            extend_f_slice(&mut encoded_instances, &inst.x);
-            encoded_instances.push(F::from_u64(inst.m_in as u64));
-            extend_f_slice(&mut encoded_instances, &inst.c.data);
-        }
-        tr.append_fields(b"mcs_instances/v2", &encoded_instances);
     }
+    perf.public_instances_ms = public_instances_started.elapsed().as_secs_f64() * 1_000.0;
 
-    Ok(())
+    Ok(perf)
+}
+
+pub fn bind_header_and_instance_digest_with_digest(
+    tr: &mut Poseidon2Transcript,
+    params: &NeoParams,
+    s: &CcsStructure<F>,
+    dims: Dims,
+    mat_digest: &[Goldilocks],
+    public_instance_digest: &[F; 4],
+) -> Result<PiCcsBindHeaderPerf, PiCcsError> {
+    let mut perf = PiCcsBindHeaderPerf::default();
+    let prefix_started = std::time::Instant::now();
+    tr.append_message(tr_labels::PI_CCS, b"");
+
+    let ext = params
+        .extension_check(dims.ell_max as u32, dims.d_sc as u32)
+        .map_err(|e| PiCcsError::ExtensionPolicyFailed(e.to_string()))?;
+
+    tr.append_message(b"neo/ccs/header/v1", b"");
+    tr.append_message(b"neo/pi_ccs/variant/v1", b"SplitNcV1");
+
+    tr.append_u64s(
+        b"ccs/header",
+        &[
+            64,
+            ext.s_supported as u64,
+            params.lambda as u64,
+            dims.ell as u64,
+            dims.ell_nc as u64,
+            dims.ell_max as u64,
+            dims.d_sc as u64,
+            ext.slack_bits.unsigned_abs() as u64,
+        ],
+    );
+    tr.append_message(b"ccs/slack_sign", &[if ext.slack_bits >= 0 { 1 } else { 0 }]);
+
+    tr.append_message(b"neo/ccs/instances", b"");
+    tr.append_u64s(
+        b"dims/v2",
+        &[
+            s.n as u64,
+            s.m as u64,
+            s.t() as u64,
+            dims.ell_d as u64,
+            dims.ell_n as u64,
+            dims.ell_m as u64,
+        ],
+    );
+
+    if mat_digest.len() != 4 {
+        return Err(PiCcsError::InvalidInput(format!(
+            "CCS matrix digest must have len 4, got {}",
+            mat_digest.len()
+        )));
+    }
+    let mat_digest_fields = [
+        F::from_u64(mat_digest[0].as_canonical_u64()),
+        F::from_u64(mat_digest[1].as_canonical_u64()),
+        F::from_u64(mat_digest[2].as_canonical_u64()),
+        F::from_u64(mat_digest[3].as_canonical_u64()),
+    ];
+    tr.append_fields(b"mat_digest", &mat_digest_fields);
+    perf.prefix_ms = prefix_started.elapsed().as_secs_f64() * 1_000.0;
+
+    let poly_started = std::time::Instant::now();
+    absorb_sparse_polynomial(tr, &s.f);
+    perf.poly_ms = poly_started.elapsed().as_secs_f64() * 1_000.0;
+
+    let public_instances_started = std::time::Instant::now();
+    tr.append_fields(b"mcs_instances_digest/v1", public_instance_digest);
+    perf.public_instances_ms = public_instances_started.elapsed().as_secs_f64() * 1_000.0;
+
+    Ok(perf)
 }
 
 /// Bind ME inputs to transcript
@@ -417,6 +507,108 @@ where
     Ok(())
 }
 
+/// Validate that replay/prove ME outputs are aligned with their corresponding public inputs.
+pub fn validate_me_outputs_against_inputs<Ff>(
+    s: &CcsStructure<Ff>,
+    params: &NeoParams,
+    mcs_list: &[CcsClaim<Cmt, Ff>],
+    me_inputs: &[CeClaim<Cmt, Ff, K>],
+    me_outputs: &[CeClaim<Cmt, Ff, K>],
+    r_prime: &[K],
+    s_col_prime: &[K],
+) -> Result<(), PiCcsError>
+where
+    Ff: Field + PrimeCharacteristicRing + Copy,
+    K: From<Ff>,
+{
+    let d_pad = D.next_power_of_two();
+    let want_outputs = mcs_list
+        .len()
+        .checked_add(me_inputs.len())
+        .ok_or_else(|| PiCcsError::ProtocolError("mcs_list.len() + me_inputs.len() overflow".into()))?;
+    if me_outputs.len() != want_outputs {
+        return Err(PiCcsError::InvalidInput(format!(
+            "split Π_CCS: me_outputs.len()={}, expected {} (= |mcs_list| + |me_inputs|)",
+            me_outputs.len(),
+            want_outputs
+        )));
+    }
+
+    for (idx, out) in me_outputs.iter().enumerate() {
+        if out.r.as_slice() != r_prime {
+            return Err(PiCcsError::ProtocolError(format!(
+                "split Π_CCS: me_outputs[{idx}].r does not match FE r'"
+            )));
+        }
+        if out.s_col.as_slice() != s_col_prime {
+            return Err(PiCcsError::ProtocolError(format!(
+                "split Π_CCS: me_outputs[{idx}].s_col does not match NC s'"
+            )));
+        }
+        if out.y_zcol.len() != d_pad {
+            return Err(PiCcsError::ProtocolError(format!(
+                "split Π_CCS: me_outputs[{idx}].y_zcol.len()={}, expected {}",
+                out.y_zcol.len(),
+                d_pad
+            )));
+        }
+
+        if idx < mcs_list.len() {
+            let inst = &mcs_list[idx];
+            if out.c != inst.c {
+                return Err(PiCcsError::ProtocolError(format!(
+                    "split Π_CCS: me_outputs[{idx}].c does not match mcs_list[{idx}].c"
+                )));
+            }
+            if out.m_in != inst.m_in {
+                return Err(PiCcsError::ProtocolError(format!(
+                    "split Π_CCS: me_outputs[{idx}].m_in={}, expected {}",
+                    out.m_in, inst.m_in
+                )));
+            }
+            if inst.x.len() != inst.m_in {
+                return Err(PiCcsError::InvalidInput(format!(
+                    "split Π_CCS: mcs_list[{idx}].x.len()={}, expected m_in={}",
+                    inst.x.len(),
+                    inst.m_in
+                )));
+            }
+            if out.X.rows() != D || out.X.cols() != inst.m_in {
+                return Err(PiCcsError::ProtocolError(format!(
+                    "split Π_CCS: me_outputs[{idx}].X shape mismatch (got {}×{}, expected {}×{})",
+                    out.X.rows(),
+                    out.X.cols(),
+                    D,
+                    inst.m_in
+                )));
+            }
+        } else {
+            let me_idx = idx - mcs_list.len();
+            let inp = &me_inputs[me_idx];
+            if out.c != inp.c {
+                return Err(PiCcsError::ProtocolError(format!(
+                    "split Π_CCS: me_outputs[{idx}].c does not match me_inputs[{me_idx}].c"
+                )));
+            }
+            if out.m_in != inp.m_in {
+                return Err(PiCcsError::ProtocolError(format!(
+                    "split Π_CCS: me_outputs[{idx}].m_in={}, expected {}",
+                    out.m_in, inp.m_in
+                )));
+            }
+            if out.X != inp.X {
+                return Err(PiCcsError::ProtocolError(format!(
+                    "split Π_CCS: me_outputs[{idx}].X does not match me_inputs[{me_idx}].X"
+                )));
+            }
+        }
+    }
+
+    validate_ct_constant_term(s, params, me_outputs)?;
+    validate_mcs_output_x_recomposition(params, s.m, mcs_list, me_outputs)?;
+    Ok(())
+}
+
 /// Sample challenges α, β, γ from transcript
 pub fn sample_challenges(tr: &mut Poseidon2Transcript, ell_d: usize, ell: usize) -> Result<Challenges, PiCcsError> {
     tr.append_message(b"neo/ccs/chals/v1", b"");
@@ -464,7 +656,7 @@ pub fn sample_beta_m(tr: &mut Poseidon2Transcript, ell_m: usize) -> Result<Vec<K
 }
 
 pub fn digest_ccs_matrices<F: Field + PrimeField64>(s: &CcsStructure<F>) -> Vec<Goldilocks> {
-    use rand_chacha::{rand_core::SeedableRng, ChaCha8Rng};
+    use rand_chacha_p3::{rand_core::SeedableRng, ChaCha8Rng};
 
     const CCS_DIGEST_SEED: u64 = 0x434353445F4D4154;
     let mut rng = ChaCha8Rng::seed_from_u64(CCS_DIGEST_SEED);
@@ -582,7 +774,7 @@ pub fn digest_ccs_matrices_with_sparse_cache<Ff: Field + PrimeField64>(
     s: &CcsStructure<Ff>,
     sparse: Option<&crate::engines::optimized_engine::oracle::SparseCache<Ff>>,
 ) -> Vec<Goldilocks> {
-    use rand_chacha::{rand_core::SeedableRng, ChaCha8Rng};
+    use rand_chacha_p3::{rand_core::SeedableRng, ChaCha8Rng};
 
     #[inline]
     fn absorb_u64(poseidon2: &Poseidon2Goldilocks<16>, state: &mut [Goldilocks; 16], absorbed: &mut usize, v: u64) {

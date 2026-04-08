@@ -31,8 +31,17 @@ abbrev F_one := SuperNeo.F.one
 /-- [Role: Theorem-Target] Curated re-export of `F.pow`. -/
 abbrev F_pow := SuperNeo.F.pow
 
-/-- [Role: Theorem-Target] Curated re-export of `F.inv`. -/
-abbrev F_inv := SuperNeo.F.inv
+/-- [Role: Theorem-Target] Curated re-export of the theorem-facing field inverse. -/
+noncomputable abbrev F_inv := (Inv.inv : SuperNeo.F → SuperNeo.F)
+
+/-- [Role: Theorem-Target] Curated re-export of the exact `ZMod q` bridge carrier. -/
+abbrev F_Bridge := SuperNeo.FBridge
+
+/-- [Role: Theorem-Target] Curated re-export of the theorem-facing `F -> ZMod q` map. -/
+abbrev F_toZMod := SuperNeo.toZMod
+
+/-- [Role: Theorem-Target] Curated re-export of the theorem-facing `ZMod q -> F` map. -/
+noncomputable abbrev F_ofZMod := SuperNeo.ofZMod
 
 /-- [Role: Theorem-Target] Curated re-export of `F.canonicalRep`. -/
 abbrev F_canonicalRep := SuperNeo.F.canonicalRep
@@ -108,6 +117,18 @@ abbrev F_val_neg := SuperNeo.F.val_neg
 abbrev F_canonicalRep_add := SuperNeo.F.canonicalRep_add
 abbrev F_canonicalRep_mul := SuperNeo.F.canonicalRep_mul
 abbrev F_canonicalRep_neg := SuperNeo.F.canonicalRep_neg
+
+/-- [Role: Theorem-Target] Curated rewrite surfaces for the `ZMod q` bridge. -/
+abbrev F_toZMod_zero := SuperNeo.toZMod_zero
+abbrev F_toZMod_one := SuperNeo.toZMod_one
+abbrev F_toZMod_add := SuperNeo.toZMod_add
+abbrev F_toZMod_mul := SuperNeo.toZMod_mul
+abbrev F_toZMod_neg := SuperNeo.toZMod_neg
+abbrev F_toZMod_sub := SuperNeo.toZMod_sub
+abbrev F_toZMod_ofNat := SuperNeo.toZMod_ofNat
+abbrev F_toZMod_natCast := SuperNeo.toZMod_natCast
+abbrev F_toZMod_pow := SuperNeo.toZMod_pow
+abbrev F_toZMod_injective := SuperNeo.toZMod_injective
 
 end FieldInterface
 

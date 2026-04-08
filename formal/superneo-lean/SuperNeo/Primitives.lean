@@ -1,5 +1,8 @@
 import SuperNeo.Goldilocks
 import SuperNeo.Field
+import SuperNeo.ExtensionField
+import SuperNeo.ExtensionMLE
+import SuperNeo.ExtensionSumCheckPaper
 import SuperNeo.Dimensions
 import SuperNeo.Ring
 import SuperNeo.CoeffMaps

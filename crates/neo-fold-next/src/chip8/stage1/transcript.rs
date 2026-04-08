@@ -4,21 +4,19 @@ use neo_math::K;
 use neo_transcript::Transcript;
 use p3_field::PrimeCharacteristicRing;
 
-use crate::chip8::kernel::{
-    expect_equal_k_slice, replay_sumcheck_unchecked, split_round_groups, verify_sumcheck_known, SimpleKernelError,
-};
+use crate::chip8::kernel::{replay_sumcheck_unchecked, split_round_groups, verify_sumcheck_known, SimpleKernelError};
 
-use super::proof::ShoutChannelProof;
+use super::proof::ShoutChannelExecutionProof;
 
-pub(crate) fn verify_stage1_channel_transcript<Tr: Transcript>(
+pub(crate) fn replay_stage1_channel_transcript<Tr: Transcript>(
     transcript: &mut Tr,
-    proof: &ShoutChannelProof,
+    proof: &ShoutChannelExecutionProof,
     initial_sum: K,
     addr_bits: usize,
     cycle_bits: usize,
     decode_consistency_claim: Option<K>,
     label: &str,
-) -> Result<(), SimpleKernelError> {
+) -> Result<Vec<K>, SimpleKernelError> {
     let core_point = verify_sumcheck_known(
         transcript,
         2,
@@ -26,7 +24,6 @@ pub(crate) fn verify_stage1_channel_transcript<Tr: Transcript>(
         &proof.sumcheck_rounds,
         &format!("{label} core"),
     )?;
-    expect_equal_k_slice(&proof.addr_point, &core_point, &format!("{label} addr point"))?;
 
     let total_bits = addr_bits + cycle_bits;
     let (bool_rounds, hamming_rounds, decode_rounds) = split_round_groups(
@@ -55,5 +52,5 @@ pub(crate) fn verify_stage1_channel_transcript<Tr: Transcript>(
     } else {
         replay_sumcheck_unchecked(transcript, 2, decode_rounds, &format!("{label} decode consistency"))?;
     }
-    Ok(())
+    Ok(core_point)
 }

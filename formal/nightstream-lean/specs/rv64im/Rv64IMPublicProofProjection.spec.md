@@ -33,3 +33,12 @@ Normative consequences:
   authenticated rows, stage obligations, or kernel-opening semantics.
 
 Every projected object that Rust also exports must match exactly.
+
+## Invariants
+
+- Public-proof projection is a derived packaging owner only.
+- Exact projection equality may not substitute for the separate root
+  execution-semantics theorem owner.
+- Exact projection equality may not substitute for the Nightstream bridge
+  theorem binding authenticated selection, root execution, stage obligations,
+  and kernel openings.

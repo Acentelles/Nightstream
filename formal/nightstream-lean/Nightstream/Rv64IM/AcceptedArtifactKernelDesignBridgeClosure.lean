@@ -1,5 +1,6 @@
 import Nightstream.Rv64IM.Generated.AcceptedProofArtifactCorpus
 import Nightstream.Rv64IM.AcceptedArtifactRootExecutionSemanticsClosure
+import Nightstream.Rv64IM.Kernel.RequiredKernelDesignBridgeSurface
 
 /-!
 Executable audit for whether the exported RV64IM accepted artifact is strong
@@ -16,7 +17,7 @@ inductive KernelDesignBridgeClosureField where
   | rootExecutionSemanticsClosure
   | authenticatedSelectionPayloadSurface
   | selectedRowPreparedStepBindingSurface
-  | selectedRowChunkRoutingSurface
+  | selectedRowScheduledChunkRoutingSurface
   | stage1ObligationPayloadSurface
   | stage2ObligationPayloadSurface
   | stage3ObligationPayloadSurface
@@ -30,8 +31,8 @@ def kernelDesignBridgeClosureFieldName : KernelDesignBridgeClosureField → Stri
       "authenticated_selection_payload_surface"
   | .selectedRowPreparedStepBindingSurface =>
       "selected_row_prepared_step_binding_surface"
-  | .selectedRowChunkRoutingSurface =>
-      "selected_row_chunk_routing_surface"
+  | .selectedRowScheduledChunkRoutingSurface =>
+      "selected_row_scheduled_chunk_routing_surface"
   | .stage1ObligationPayloadSurface => "stage1_obligation_payload_surface"
   | .stage2ObligationPayloadSurface => "stage2_obligation_payload_surface"
   | .stage3ObligationPayloadSurface => "stage3_obligation_payload_surface"
@@ -43,7 +44,7 @@ def requiredKernelDesignBridgeClosureFields :
   [ .rootExecutionSemanticsClosure
   , .authenticatedSelectionPayloadSurface
   , .selectedRowPreparedStepBindingSurface
-  , .selectedRowChunkRoutingSurface
+  , .selectedRowScheduledChunkRoutingSurface
   , .stage1ObligationPayloadSurface
   , .stage2ObligationPayloadSurface
   , .stage3ObligationPayloadSurface
@@ -65,32 +66,32 @@ The current exported accepted artifact is still summary-shaped:
 This audit therefore hard-fails the missing theorem-bearing bridge surfaces.
 -/
 private def authenticatedSelectionPayloadSurfacePresent
-    (_artifact : AcceptedProofArtifactView) : Bool :=
-  false
+    (artifact : AcceptedProofArtifactView) : Bool :=
+  requiredKernelDesignBridgeFieldPresent artifact .authenticatedSelectionPayload
 
 private def selectedRowPreparedStepBindingSurfacePresent
-    (_artifact : AcceptedProofArtifactView) : Bool :=
-  false
+    (artifact : AcceptedProofArtifactView) : Bool :=
+  requiredKernelDesignBridgeFieldPresent artifact .selectedRowPreparedStepBinding
 
-private def selectedRowChunkRoutingSurfacePresent
-    (_artifact : AcceptedProofArtifactView) : Bool :=
-  false
+private def selectedRowScheduledChunkRoutingSurfacePresent
+    (artifact : AcceptedProofArtifactView) : Bool :=
+  requiredKernelDesignBridgeFieldPresent artifact .selectedRowScheduledChunkRouting
 
 private def stage1ObligationPayloadSurfacePresent
-    (_artifact : AcceptedProofArtifactView) : Bool :=
-  false
+    (artifact : AcceptedProofArtifactView) : Bool :=
+  requiredKernelDesignBridgeFieldPresent artifact .stage1ObligationPayload
 
 private def stage2ObligationPayloadSurfacePresent
-    (_artifact : AcceptedProofArtifactView) : Bool :=
-  false
+    (artifact : AcceptedProofArtifactView) : Bool :=
+  requiredKernelDesignBridgeFieldPresent artifact .stage2ObligationPayload
 
 private def stage3ObligationPayloadSurfacePresent
-    (_artifact : AcceptedProofArtifactView) : Bool :=
-  false
+    (artifact : AcceptedProofArtifactView) : Bool :=
+  requiredKernelDesignBridgeFieldPresent artifact .stage3ObligationPayload
 
 private def kernelOpeningProvenanceSurfacePresent
-    (_artifact : AcceptedProofArtifactView) : Bool :=
-  false
+    (artifact : AcceptedProofArtifactView) : Bool :=
+  requiredKernelDesignBridgeFieldPresent artifact .kernelOpeningProvenance
 
 def kernelDesignBridgeClosureFieldPresent
     (artifact : AcceptedProofArtifactView)
@@ -102,8 +103,8 @@ def kernelDesignBridgeClosureFieldPresent
       authenticatedSelectionPayloadSurfacePresent artifact
   | .selectedRowPreparedStepBindingSurface =>
       selectedRowPreparedStepBindingSurfacePresent artifact
-  | .selectedRowChunkRoutingSurface =>
-      selectedRowChunkRoutingSurfacePresent artifact
+  | .selectedRowScheduledChunkRoutingSurface =>
+      selectedRowScheduledChunkRoutingSurfacePresent artifact
   | .stage1ObligationPayloadSurface =>
       stage1ObligationPayloadSurfacePresent artifact
   | .stage2ObligationPayloadSurface =>
@@ -116,7 +117,7 @@ def kernelDesignBridgeClosureFieldPresent
       rootExecutionSemanticsClosureAccepted artifact &&
         authenticatedSelectionPayloadSurfacePresent artifact &&
         selectedRowPreparedStepBindingSurfacePresent artifact &&
-        selectedRowChunkRoutingSurfacePresent artifact &&
+        selectedRowScheduledChunkRoutingSurfacePresent artifact &&
         stage1ObligationPayloadSurfacePresent artifact &&
         stage2ObligationPayloadSurfacePresent artifact &&
         stage3ObligationPayloadSurfacePresent artifact &&
@@ -145,31 +146,7 @@ deriving Repr
 
 def kernelDesignBridgeRustExportBlockers
     (artifact : AcceptedProofArtifactView) : List String :=
-  let blockers : List (String × Bool) :=
-    [ ( "twist_shout_selected_rows_missing_authenticated_selection_payloads"
-      , authenticatedSelectionPayloadSurfacePresent artifact
-      )
-    , ( "twist_shout_selected_rows_missing_selected_row_prepared_step_bindings"
-      , selectedRowPreparedStepBindingSurfacePresent artifact
-      )
-    , ( "selected_rows_missing_root_chunk_routing_bindings"
-      , selectedRowChunkRoutingSurfacePresent artifact
-      )
-    , ( "stage1_missing_theorem_bearing_obligation_payloads"
-      , stage1ObligationPayloadSurfacePresent artifact
-      )
-    , ( "stage2_missing_theorem_bearing_obligation_payloads"
-      , stage2ObligationPayloadSurfacePresent artifact
-      )
-    , ( "stage3_missing_theorem_bearing_obligation_payloads"
-      , stage3ObligationPayloadSurfacePresent artifact
-      )
-    , ( "kernel_openings_missing_provenance_chains"
-      , kernelOpeningProvenanceSurfacePresent artifact
-      )
-    ]
-  blockers.filterMap fun (name, ok) =>
-    if ok then none else some name
+  requiredKernelDesignBridgeRustExportBlockers artifact
 
 def uniqueKernelDesignBridgeRustExportBlockers : List String :=
   Generated.AcceptedProofArtifacts.cases.foldl

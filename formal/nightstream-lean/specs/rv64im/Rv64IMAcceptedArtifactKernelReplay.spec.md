@@ -44,3 +44,7 @@ The component exposes:
 - Higher-level exported statement/claim/proof bundles are parity targets only.
 - The completeness/audit lanes may not treat Rust-provided derived kernel
   digests as authoritative when the source replay can rebuild them.
+- Kernel replay is not an execution-correctness theorem and may not discharge
+  the root main-lane execution semantics owner.
+- Kernel replay is not a bridge theorem and may not substitute for
+  authenticated selected-row / stage / opening proof objects.

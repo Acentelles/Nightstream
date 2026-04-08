@@ -22,6 +22,10 @@ abbrev rootExecutionSemanticsRustExportBlockers :=
   Nightstream.Rv64IM.rootExecutionSemanticsRustExportBlockers
 abbrev uniqueRootExecutionSemanticsRustExportBlockers :=
   Nightstream.Rv64IM.uniqueRootExecutionSemanticsRustExportBlockers
+abbrev requiredRootExecutionSemanticsRustExportBlockers :=
+  Nightstream.Rv64IM.requiredRootExecutionSemanticsRustExportBlockers
+abbrev uniqueRequiredRootExecutionSemanticsRustExportBlockers :=
+  Nightstream.Rv64IM.uniqueRequiredRootExecutionSemanticsRustExportBlockers
 abbrev Rv64imRootExecutionSemanticsClosureReport :=
   Nightstream.Rv64IM.Rv64imRootExecutionSemanticsClosureReport
 abbrev rv64imAcceptedArtifactRootExecutionSemanticsClosureChecks :=

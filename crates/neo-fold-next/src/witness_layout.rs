@@ -23,29 +23,33 @@ fn balanced_divrem(value: i128, base: i128) -> (i128, i128) {
     (remainder, quotient)
 }
 
-pub fn commit_cols_for_ccs_m(ccs_m: usize) -> usize {
-    ccs_m.div_ceil(D)
+/// Returns the number of packed Ajtai commitment columns for a witness of
+/// length `full_width` (= word_count * 4 + 1, including the leading ONE).
+pub fn commit_cols_for_full_width(full_width: usize) -> usize {
+    full_width.div_ceil(D)
 }
 
-pub fn encode_vector_for_ccs_m(
+/// Packs a witness vector of length `full_width` into a D×cols ring-element
+/// matrix for Ajtai commitment.
+pub fn encode_vector_for_full_width(
     params: &NeoParams,
-    ccs_m: usize,
+    full_width: usize,
     witness: &[BaseField],
 ) -> Result<Mat<BaseField>, String> {
-    if witness.len() != ccs_m {
+    if witness.len() != full_width {
         return Err(format!(
-            "encode_vector_for_ccs_m: witness length {} != ccs_m {}",
+            "encode_vector_for_full_width: witness length {} != full_width {}",
             witness.len(),
-            ccs_m
+            full_width
         ));
     }
-    if ccs_m == 0 {
-        return Err("encode_vector_for_ccs_m: ccs_m must be > 0".into());
+    if full_width == 0 {
+        return Err("encode_vector_for_full_width: full_width must be > 0".into());
     }
-    validate_packed_vector_nc_range(params, ccs_m, witness, "encode_vector_for_ccs_m")?;
-    let cols = ccs_m.div_ceil(D);
+    validate_packed_vector_nc_range(params, full_width, witness, "encode_vector_for_full_width")?;
+    let cols = full_width.div_ceil(D);
     let mut out = Mat::zero(D, cols, BaseField::ZERO);
-    for column in 0..ccs_m {
+    for column in 0..full_width {
         let block = column / D;
         let rho = column % D;
         out[(rho, block)] = witness[column];
@@ -53,47 +57,49 @@ pub fn encode_vector_for_ccs_m(
     Ok(out)
 }
 
-pub fn decode_vector_for_ccs_m<F: PrimeField>(
+/// Unpacks a D×cols ring-element matrix back to a witness vector of length
+/// `full_width`. Validates that all padding positions are zero.
+pub fn decode_vector_for_full_width<F: PrimeField>(
     _params: &NeoParams,
-    ccs_m: usize,
+    full_width: usize,
     mat: &Mat<F>,
 ) -> Result<Vec<F>, String> {
     if mat.rows() != D {
         return Err(format!(
-            "decode_vector_for_ccs_m: mat.rows()={} expected D={D}",
+            "decode_vector_for_full_width: mat.rows()={} expected D={D}",
             mat.rows()
         ));
     }
-    if ccs_m == 0 {
-        return Err("decode_vector_for_ccs_m: ccs_m must be > 0".into());
+    if full_width == 0 {
+        return Err("decode_vector_for_full_width: full_width must be > 0".into());
     }
-    let expected_cols = ccs_m.div_ceil(D);
+    let expected_cols = full_width.div_ceil(D);
     if mat.cols() != expected_cols {
         return Err(format!(
-            "decode_vector_for_ccs_m: packed layout expects cols={} for ccs_m={}, got {}",
+            "decode_vector_for_full_width: packed layout expects cols={} for full_width={}, got {}",
             expected_cols,
-            ccs_m,
+            full_width,
             mat.cols()
         ));
     }
 
-    let pad_start = ccs_m;
+    let pad_start = full_width;
     let pad_end = expected_cols
         .checked_mul(D)
-        .ok_or_else(|| "decode_vector_for_ccs_m: expected_cols*D overflow".to_string())?;
+        .ok_or_else(|| "decode_vector_for_full_width: expected_cols*D overflow".to_string())?;
     for column in pad_start..pad_end {
         let block = column / D;
         let rho = column % D;
         if mat[(rho, block)] != F::ZERO {
             return Err(format!(
-                "decode_vector_for_ccs_m: non-zero padded coefficient at logical index {} (blk={}, rho={})",
+                "decode_vector_for_full_width: non-zero padded coefficient at logical index {} (blk={}, rho={})",
                 column, block, rho
             ));
         }
     }
 
-    let mut out = Vec::with_capacity(ccs_m);
-    for column in 0..ccs_m {
+    let mut out = Vec::with_capacity(full_width);
+    for column in 0..full_width {
         let block = column / D;
         let rho = column % D;
         out.push(mat[(rho, block)]);
@@ -103,15 +109,19 @@ pub fn decode_vector_for_ccs_m<F: PrimeField>(
 
 fn validate_packed_vector_nc_range(
     params: &NeoParams,
-    ccs_m: usize,
+    full_width: usize,
     witness: &[BaseField],
     label: &str,
 ) -> Result<(), String> {
-    if witness.len() != ccs_m {
-        return Err(format!("{label}: witness length {} != ccs_m {}", witness.len(), ccs_m));
+    if witness.len() != full_width {
+        return Err(format!(
+            "{label}: witness length {} != full_width {}",
+            witness.len(),
+            full_width
+        ));
     }
-    if ccs_m == 0 {
-        return Err(format!("{label}: ccs_m must be > 0"));
+    if full_width == 0 {
+        return Err(format!("{label}: full_width must be > 0"));
     }
     if params.b < 2 {
         return Err(format!("{label}: invalid b={} (must be >= 2)", params.b));

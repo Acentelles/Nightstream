@@ -3,7 +3,10 @@ use neo_transcript::{Poseidon2Transcript, Transcript};
 use p3_field::PrimeCharacteristicRing;
 
 use crate::chip8::poly::{mle_eval_f_be, mle_eval_f_le, open_onehot_at_point_be, open_onehot_at_point_be_be};
-use crate::chip8::stage1::{ShoutChannelProof, Stage1ShoutProof};
+use crate::chip8::stage1::{
+    stage1_execution_surface_from_proof, ShoutChannelExecutionProof, Stage1DerivedChannelSurface,
+    Stage1DerivedExecutionSurface, Stage1ShoutProof,
+};
 
 use super::super::verify_common::{split_round_groups, verify_sumcheck_known_with_terminal};
 use super::super::{batch_values, expect_equal_k, expect_equal_k_slice, KernelStepAux, SimpleKernelError};
@@ -14,9 +17,10 @@ fn stage1_eq4_claim(lane_values_at_lookup: &[K], decode_values: &[K]) -> K {
     sixteen * lane_values_at_lookup[14] + decode_values[21]
 }
 
-fn verify_stage1_channel_terminals<Tr: Transcript>(
+fn verify_stage1_channel_terminals_from_execution<Tr: Transcript>(
     transcript: &mut Tr,
-    proof: &ShoutChannelProof,
+    execution: &ShoutChannelExecutionProof,
+    surface: &Stage1DerivedChannelSurface,
     initial_sum: K,
     addr_bits: usize,
     cycle_bits: usize,
@@ -30,19 +34,19 @@ fn verify_stage1_channel_terminals<Tr: Transcript>(
         transcript,
         2,
         initial_sum,
-        &proof.sumcheck_rounds,
+        &execution.sumcheck_rounds,
         &format!("{label} core"),
     )?;
-    expect_equal_k_slice(&core_point, &proof.addr_point, &format!("{label} addr point"))?;
+    expect_equal_k_slice(&core_point, &surface.addr_point, &format!("{label} addr point"))?;
     expect_equal_k(
         core_terminal,
-        proof.address_opening_value * core_table_value,
+        surface.address_opening_value * core_table_value,
         &format!("{label} core terminal"),
     )?;
 
     let total_bits = addr_bits + cycle_bits;
     let (bool_rounds, hamming_rounds, decode_rounds) = split_round_groups(
-        &proof.addr_correctness_rounds,
+        &execution.addr_correctness_rounds,
         total_bits,
         addr_bits,
         addr_bits,
@@ -84,44 +88,50 @@ fn verify_stage1_channel_terminals<Tr: Transcript>(
     Ok(())
 }
 
-pub(crate) fn verify_kernel_stage1_sumcheck_terminals(
-    proof: &Stage1ShoutProof,
+pub(crate) fn verify_kernel_stage1_sumcheck_terminals_from_execution(
+    fetch: &ShoutChannelExecutionProof,
+    decode: &ShoutChannelExecutionProof,
+    alu: &ShoutChannelExecutionProof,
+    eq4: &ShoutChannelExecutionProof,
+    surface: &Stage1DerivedExecutionSurface,
     aux: &[KernelStepAux],
     rom_table: &[F],
     alu_table: &[F],
     eq4_table: &[F],
     transcript: &mut Poseidon2Transcript,
 ) -> Result<(), SimpleKernelError> {
-    let cycle_bits = proof.cycle_point.len();
+    let cycle_bits = surface.cycle_point.len();
     let cycle_point = sample_point(transcript, b"stage1/r_lookup", cycle_bits);
-    expect_equal_k_slice(&cycle_point, &proof.cycle_point, "stage1 cycle point")?;
+    expect_equal_k_slice(&cycle_point, &surface.cycle_point, "stage1 cycle point")?;
 
     let fetch_addrs: Vec<_> = aux.iter().map(|step| step.fetch_addr).collect();
-    verify_stage1_channel_terminals(
+    verify_stage1_channel_terminals_from_execution(
         transcript,
-        &proof.fetch_proof,
-        proof.fetch_proof.read_values_at_cycle[0],
+        fetch,
+        &surface.fetch,
+        surface.fetch.read_values_at_cycle[0],
         ROM_ADDR_BITS,
         cycle_bits,
-        proof.lane_values_at_lookup[0],
+        surface.lane_values_at_lookup[0],
         &fetch_addrs,
-        mle_eval_f_be(rom_table, &proof.fetch_proof.addr_point),
-        &proof.cycle_point,
+        mle_eval_f_be(rom_table, &surface.fetch.addr_point),
+        &surface.cycle_point,
         "stage1 fetch",
     )?;
 
     let decode_alpha = sample_k(transcript, b"shout/decode_alpha");
     let decode_addrs: Vec<_> = aux.iter().map(|step| step.decode_addr as usize).collect();
-    verify_stage1_channel_terminals(
+    verify_stage1_channel_terminals_from_execution(
         transcript,
-        &proof.decode_proof,
-        batch_values(&proof.decode_proof.read_values_at_cycle, decode_alpha),
+        decode,
+        &surface.decode,
+        batch_values(&surface.decode.read_values_at_cycle, decode_alpha),
         16,
         cycle_bits,
-        proof.fetch_proof.read_values_at_cycle[0],
+        surface.fetch.read_values_at_cycle[0],
         &decode_addrs,
-        batch_values(&proof.decode_proof.table_opening_values, decode_alpha),
-        &proof.cycle_point,
+        batch_values(&surface.decode.table_opening_values, decode_alpha),
+        &surface.cycle_point,
         "stage1 decode",
     )?;
 
@@ -131,32 +141,64 @@ pub(crate) fn verify_kernel_stage1_sumcheck_terminals(
         .iter()
         .map(|step| F::from_u64(step.alu_key as u64))
         .collect();
-    verify_stage1_channel_terminals(
+    verify_stage1_channel_terminals_from_execution(
         transcript,
-        &proof.alu_proof,
-        proof.alu_proof.read_values_at_cycle[0],
+        alu,
+        &surface.alu,
+        surface.alu.read_values_at_cycle[0],
         18,
         cycle_bits,
-        mle_eval_f_le(&alu_expected, &proof.cycle_point),
+        mle_eval_f_le(&alu_expected, &surface.cycle_point),
         &alu_addrs,
-        mle_eval_f_be(&alu_mixed_table, &proof.alu_proof.addr_point),
-        &proof.cycle_point,
+        mle_eval_f_be(&alu_mixed_table, &surface.alu.addr_point),
+        &surface.cycle_point,
         "stage1 alu",
     )?;
 
     let eq4_addrs: Vec<_> = aux.iter().map(|step| step.eq4_key as usize).collect();
-    verify_stage1_channel_terminals(
+    verify_stage1_channel_terminals_from_execution(
         transcript,
-        &proof.eq4_proof,
-        proof.eq4_proof.read_values_at_cycle[0],
+        eq4,
+        &surface.eq4,
+        surface.eq4.read_values_at_cycle[0],
         8,
         cycle_bits,
-        stage1_eq4_claim(&proof.lane_values_at_lookup, &proof.decode_proof.read_values_at_cycle),
+        stage1_eq4_claim(&surface.lane_values_at_lookup, &surface.decode.read_values_at_cycle),
         &eq4_addrs,
-        mle_eval_f_be(eq4_table, &proof.eq4_proof.addr_point),
-        &proof.cycle_point,
+        mle_eval_f_be(eq4_table, &surface.eq4.addr_point),
+        &surface.cycle_point,
         "stage1 eq4",
     )?;
 
     Ok(())
+}
+
+pub(crate) fn verify_kernel_stage1_sumcheck_terminals(
+    proof: &Stage1ShoutProof,
+    aux: &[KernelStepAux],
+    rom_table: &[F],
+    alu_table: &[F],
+    eq4_table: &[F],
+    transcript: &mut Poseidon2Transcript,
+) -> Result<(), SimpleKernelError> {
+    let surface = stage1_execution_surface_from_proof(proof);
+    let fetch = ShoutChannelExecutionProof {
+        sumcheck_rounds: proof.fetch_proof.sumcheck_rounds.clone(),
+        addr_correctness_rounds: proof.fetch_proof.addr_correctness_rounds.clone(),
+    };
+    let decode = ShoutChannelExecutionProof {
+        sumcheck_rounds: proof.decode_proof.sumcheck_rounds.clone(),
+        addr_correctness_rounds: proof.decode_proof.addr_correctness_rounds.clone(),
+    };
+    let alu = ShoutChannelExecutionProof {
+        sumcheck_rounds: proof.alu_proof.sumcheck_rounds.clone(),
+        addr_correctness_rounds: proof.alu_proof.addr_correctness_rounds.clone(),
+    };
+    let eq4 = ShoutChannelExecutionProof {
+        sumcheck_rounds: proof.eq4_proof.sumcheck_rounds.clone(),
+        addr_correctness_rounds: proof.eq4_proof.addr_correctness_rounds.clone(),
+    };
+    verify_kernel_stage1_sumcheck_terminals_from_execution(
+        &fetch, &decode, &alu, &eq4, &surface, aux, rom_table, alu_table, eq4_table, transcript,
+    )
 }
