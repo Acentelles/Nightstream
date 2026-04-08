@@ -1,5 +1,6 @@
 use crate::common::proof_cases::{
-    expect_accepted_verify_failure, memory_input, parity_input, prove_accepted, refresh_stage1_semantic_digests,
+    accepted_memory, accepted_multiply_high, accepted_test_guard, expect_accepted_verify_failure,
+    refresh_stage1_semantic_digests,
 };
 use neo_fold_next::rv64im::layout::{
     RV64IM_PARITY_LOWERING_VERSION_ID, RV64IM_PARITY_PROTOCOL_VERSION_ID, RV64_REGISTER_COUNT,
@@ -13,8 +14,8 @@ use neo_fold_next::rv64im::{
 
 #[test]
 fn accepted_stage2_bundle_tracks_register_and_ram_timelines() {
-    let input = memory_input();
-    let (artifact, _) = prove_accepted(&input);
+    let _serial = accepted_test_guard();
+    let (artifact, _) = accepted_memory();
     verify_rv64im_accepted_proof(&artifact).expect("accepted proof verifies");
     assert!(!artifact.stage2.register.writes.is_empty());
     assert!(!artifact.stage2.ram.events.is_empty());
@@ -23,24 +24,24 @@ fn accepted_stage2_bundle_tracks_register_and_ram_timelines() {
 
 #[test]
 fn accepted_stage2_rejects_tampered_register_history() {
-    let input = memory_input();
-    let (mut artifact, _) = prove_accepted(&input);
+    let _serial = accepted_test_guard();
+    let (mut artifact, _) = accepted_memory();
     artifact.stage2.register.reads[0].value += 1;
-    expect_accepted_verify_failure(&artifact, "stage2 event surface mismatch");
+    expect_accepted_verify_failure(&artifact, "stage2 register");
 }
 
 #[test]
 fn accepted_stage2_rejects_tampered_ram_history() {
-    let input = memory_input();
-    let (mut artifact, _) = prove_accepted(&input);
+    let _serial = accepted_test_guard();
+    let (mut artifact, _) = accepted_memory();
     artifact.stage2.ram.events[0].next += 1;
-    expect_accepted_verify_failure(&artifact, "stage2 event surface mismatch");
+    expect_accepted_verify_failure(&artifact, "stage2 RAM");
 }
 
 #[test]
 fn accepted_stage2_rejects_public_initial_register_history_tamper() {
-    let input = memory_input();
-    let (mut artifact, _) = prove_accepted(&input);
+    let _serial = accepted_test_guard();
+    let (mut artifact, _) = accepted_memory();
     let addi_row = artifact
         .root_execution
         .execution_rows
@@ -66,8 +67,8 @@ fn accepted_stage2_rejects_public_initial_register_history_tamper() {
 
 #[test]
 fn accepted_stage2_rejects_public_initial_memory_history_tamper() {
-    let input = memory_input();
-    let (mut artifact, _) = prove_accepted(&input);
+    let _serial = accepted_test_guard();
+    let (mut artifact, _) = accepted_memory();
     let store_row = artifact
         .root_execution
         .execution_rows
@@ -101,6 +102,7 @@ fn accepted_stage2_rejects_public_initial_memory_history_tamper() {
 
 #[test]
 fn public_stage2_accepts_narrow_memory_backing_word_history() {
+    let _serial = accepted_test_guard();
     let mut registers = [0u64; RV64_REGISTER_COUNT];
     registers[10] = 0x3000;
     let input = Rv64imProofInput {
@@ -139,7 +141,7 @@ fn public_stage2_accepts_narrow_memory_backing_word_history() {
 
 #[test]
 fn accepted_stage2_accepts_multiply_high_temporary_register_reset() {
-    let input = parity_input("multiply_high_mulh_mulhu_mulhsu_ecall");
-    let (artifact, _) = prove_accepted(&input);
+    let _serial = accepted_test_guard();
+    let (artifact, _) = accepted_multiply_high();
     verify_rv64im_accepted_proof(&artifact).expect("accepted proof verifies");
 }

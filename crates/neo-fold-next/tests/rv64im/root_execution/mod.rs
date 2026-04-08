@@ -1,5 +1,5 @@
 use crate::common::proof_cases::{
-    branch_input, expect_accepted_verify_failure, prove_accepted, refresh_step_composition_surface_digest,
+    accepted_branch, accepted_test_guard, expect_accepted_verify_failure, refresh_step_composition_surface_digest,
 };
 use neo_fold_next::rv64im::Rv64imAcceptedProofArtifact;
 use neo_math::F;
@@ -43,8 +43,8 @@ fn refresh_execution_semantics_refinement_summary(artifact: &mut Rv64imAcceptedP
 
 #[test]
 fn accepted_root_execution_rejects_tampered_semantic_row_values() {
-    let input = branch_input();
-    let (mut artifact, _) = prove_accepted(&input);
+    let _serial = accepted_test_guard();
+    let (mut artifact, _) = accepted_branch();
     artifact.root_execution.semantic_rows[0].values[0] += F::ONE;
 
     expect_accepted_verify_failure(&artifact, "root execution semantic-row digest mismatch");
@@ -52,8 +52,8 @@ fn accepted_root_execution_rejects_tampered_semantic_row_values() {
 
 #[test]
 fn accepted_root_execution_rejects_tampered_binding_row_opening_digest() {
-    let input = branch_input();
-    let (mut artifact, _) = prove_accepted(&input);
+    let _serial = accepted_test_guard();
+    let (mut artifact, _) = accepted_branch();
     artifact.root_execution.prepared_step_bindings.bindings[0].row_opening_digest[0] ^= 1;
 
     expect_accepted_verify_failure(&artifact, "root execution prepared-step bindings mismatch");
@@ -61,8 +61,8 @@ fn accepted_root_execution_rejects_tampered_binding_row_opening_digest() {
 
 #[test]
 fn accepted_root_execution_rejects_tampered_acceptance_public_step_digest_after_rebinding() {
-    let input = branch_input();
-    let (mut artifact, _) = prove_accepted(&input);
+    let _serial = accepted_test_guard();
+    let (mut artifact, _) = accepted_branch();
     let acceptance = &mut artifact.root_execution.row_local_ccs_acceptance.acceptances[0];
     acceptance.public_step_digest[0] ^= 1;
     acceptance.digest = acceptance.expected_digest();
@@ -73,8 +73,8 @@ fn accepted_root_execution_rejects_tampered_acceptance_public_step_digest_after_
 
 #[test]
 fn accepted_root_execution_rejects_tampered_refinement_semantic_row_digest_after_rebinding() {
-    let input = branch_input();
-    let (mut artifact, _) = prove_accepted(&input);
+    let _serial = accepted_test_guard();
+    let (mut artifact, _) = accepted_branch();
     let refinement = &mut artifact
         .root_execution
         .execution_semantics_refinement

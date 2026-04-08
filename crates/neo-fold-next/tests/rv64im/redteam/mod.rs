@@ -1,5 +1,5 @@
 use crate::common::proof_cases::{
-    alu_input, branch_input, divu_input, expect_accepted_verify_failure, memory_input, prove_accepted,
+    accepted_alu, accepted_branch, accepted_divu, accepted_memory, accepted_test_guard, expect_accepted_verify_failure,
     refresh_accepted_artifact_digest, refresh_soundness_accounting_surface_digest, refresh_stage1_semantic_digests,
     refresh_stage3_semantic_digests,
 };
@@ -7,24 +7,24 @@ use neo_fold_next::rv64im::{verify_rv64im_accepted_proof, Rv64Opcode};
 
 #[test]
 fn redteam_semantic_input_substitution_fails_without_rebuild() {
-    let input = alu_input();
-    let (mut artifact, _) = prove_accepted(&input);
+    let _serial = accepted_test_guard();
+    let (mut artifact, _) = accepted_alu();
     artifact.stage1.sem_inputs[0].rs2_value ^= 1;
     expect_accepted_verify_failure(&artifact, "stage1 semantic inputs mismatch");
 }
 
 #[test]
 fn redteam_bytecode_auth_mismatch_fails() {
-    let input = alu_input();
-    let (mut artifact, _) = prove_accepted(&input);
+    let _serial = accepted_test_guard();
+    let (mut artifact, _) = accepted_alu();
     artifact.stage1.row_bindings[0].fetched_word ^= 1;
     expect_accepted_verify_failure(&artifact, "stage1");
 }
 
 #[test]
 fn redteam_branch_target_forgery_fails() {
-    let input = branch_input();
-    let (mut artifact, _) = prove_accepted(&input);
+    let _serial = accepted_test_guard();
+    let (mut artifact, _) = accepted_branch();
     let effect_row = artifact
         .stage1
         .row_bindings
@@ -37,48 +37,48 @@ fn redteam_branch_target_forgery_fails() {
 
 #[test]
 fn redteam_register_history_forgery_fails() {
-    let input = memory_input();
-    let (mut artifact, _) = prove_accepted(&input);
+    let _serial = accepted_test_guard();
+    let (mut artifact, _) = accepted_memory();
     artifact.stage2.register.writes[0].next ^= 1;
     expect_accepted_verify_failure(&artifact, "stage2 register write surface mismatch");
 }
 
 #[test]
 fn redteam_ram_history_forgery_fails() {
-    let input = memory_input();
-    let (mut artifact, _) = prove_accepted(&input);
+    let _serial = accepted_test_guard();
+    let (mut artifact, _) = accepted_memory();
     artifact.stage2.ram.events[0].previous ^= 1;
     expect_accepted_verify_failure(&artifact, "stage2 RAM event surface mismatch");
 }
 
 #[test]
 fn redteam_continuity_evasion_fails() {
-    let input = branch_input();
-    let (mut artifact, _) = prove_accepted(&input);
+    let _serial = accepted_test_guard();
+    let (mut artifact, _) = accepted_branch();
     artifact.stage3.bridge.continuity[0].continuity_holds = false;
     expect_accepted_verify_failure(&artifact, "stage3 continuity surface mismatch");
 }
 
 #[test]
 fn redteam_transcript_tamper_fails() {
-    let input = alu_input();
-    let (mut artifact, _) = prove_accepted(&input);
+    let _serial = accepted_test_guard();
+    let (mut artifact, _) = accepted_alu();
     artifact.transcript.events[0].message.push(0xA5);
     expect_accepted_verify_failure(&artifact, "accepted proof artifact digest mismatch");
 }
 
 #[test]
 fn redteam_provenance_tamper_fails() {
-    let input = alu_input();
-    let (mut artifact, _) = prove_accepted(&input);
+    let _serial = accepted_test_guard();
+    let (mut artifact, _) = accepted_alu();
     artifact.root_execution.row_chunk_routes[0].chunk_index ^= 1;
     expect_accepted_verify_failure(&artifact, "row-to-chunk routing mismatch");
 }
 
 #[test]
 fn redteam_row_local_ccs_acceptance_replay_tamper_fails() {
-    let input = alu_input();
-    let (mut artifact, _) = prove_accepted(&input);
+    let _serial = accepted_test_guard();
+    let (mut artifact, _) = accepted_alu();
     artifact.root_execution.row_local_ccs_acceptance.digest[0] ^= 1;
     artifact.root_execution.digest = artifact.root_execution.expected_digest();
     refresh_accepted_artifact_digest(&mut artifact);
@@ -87,8 +87,8 @@ fn redteam_row_local_ccs_acceptance_replay_tamper_fails() {
 
 #[test]
 fn redteam_rebuild_dependence_check_fails_without_audit_mode() {
-    let input = alu_input();
-    let (mut artifact, _) = prove_accepted(&input);
+    let _serial = accepted_test_guard();
+    let (mut artifact, _) = accepted_alu();
     artifact.root_execution.prepared_step_bindings.bindings[0].row_digest = [0x5A; 32];
     assert!(
         verify_rv64im_accepted_proof(&artifact).is_err(),
@@ -98,8 +98,8 @@ fn redteam_rebuild_dependence_check_fails_without_audit_mode() {
 
 #[test]
 fn redteam_nonselected_divu_helper_tamper_fails() {
-    let input = divu_input();
-    let (mut artifact, _) = prove_accepted(&input);
+    let _serial = accepted_test_guard();
+    let (mut artifact, _) = accepted_divu();
     let helper_row = artifact
         .stage1
         .row_bindings
@@ -112,8 +112,8 @@ fn redteam_nonselected_divu_helper_tamper_fails() {
 
 #[test]
 fn redteam_register_history_against_public_seed_fails() {
-    let input = memory_input();
-    let (mut artifact, _) = prove_accepted(&input);
+    let _serial = accepted_test_guard();
+    let (mut artifact, _) = accepted_memory();
     let addi_row = artifact
         .root_execution
         .execution_rows
@@ -139,8 +139,8 @@ fn redteam_register_history_against_public_seed_fails() {
 
 #[test]
 fn redteam_memory_history_against_public_seed_fails() {
-    let input = memory_input();
-    let (mut artifact, _) = prove_accepted(&input);
+    let _serial = accepted_test_guard();
+    let (mut artifact, _) = accepted_memory();
     let store_row = artifact
         .root_execution
         .execution_rows
@@ -174,8 +174,8 @@ fn redteam_memory_history_against_public_seed_fails() {
 
 #[test]
 fn redteam_stage3_start_boundary_tamper_fails() {
-    let input = branch_input();
-    let (mut artifact, _) = prove_accepted(&input);
+    let _serial = accepted_test_guard();
+    let (mut artifact, _) = accepted_branch();
     artifact.stage3.semantics.initial_pc = artifact.stage3.semantics.initial_pc.wrapping_add(4);
     refresh_stage3_semantic_digests(&mut artifact);
     expect_accepted_verify_failure(&artifact, "stage3 semantic bridge mismatch");
@@ -183,8 +183,8 @@ fn redteam_stage3_start_boundary_tamper_fails() {
 
 #[test]
 fn redteam_soundness_accounting_tamper_fails() {
-    let input = alu_input();
-    let (mut artifact, _) = prove_accepted(&input);
+    let _serial = accepted_test_guard();
+    let (mut artifact, _) = accepted_alu();
     artifact.soundness_accounting.scalar_terms[0] = "bogus_term".into();
     refresh_soundness_accounting_surface_digest(&mut artifact);
     expect_accepted_verify_failure(&artifact, "soundness accounting surface mismatch");

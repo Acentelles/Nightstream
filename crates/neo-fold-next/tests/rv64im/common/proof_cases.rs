@@ -1,3 +1,5 @@
+use std::sync::{LazyLock, Mutex, MutexGuard};
+
 use neo_transcript::{Poseidon2Transcript, Transcript};
 
 use neo_fold_next::rv64im::layout::{RV64IM_PARITY_LOWERING_VERSION_ID, RV64IM_PARITY_PROTOCOL_VERSION_ID};
@@ -10,6 +12,7 @@ use neo_fold_next::rv64im::{
 
 const START_PC: u64 = 0x1000;
 const MAX_STEPS: usize = 32;
+type AcceptedFixture = (Rv64imAcceptedProofArtifact, Rv64imAuditBundle);
 
 fn manifest(name: &str, fixture_id: &str, family_tags: Vec<Rv64FamilyTag>) -> Rv64imParityCaseManifest {
     Rv64imParityCaseManifest {
@@ -133,8 +136,61 @@ pub fn parity_input(name: &str) -> Rv64imProofInput {
     Rv64imProofInput { source, max_steps }
 }
 
+#[allow(dead_code)]
+pub fn accepted_test_guard() -> MutexGuard<'static, ()> {
+    static ACCEPTED_TEST_MUTEX: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+    ACCEPTED_TEST_MUTEX
+        .lock()
+        .unwrap_or_else(|err| err.into_inner())
+}
+
 pub fn prove_accepted(input: &Rv64imProofInput) -> (Rv64imAcceptedProofArtifact, Rv64imAuditBundle) {
     prove_rv64im_accepted_proof(input).expect("prove accepted rv64im proof")
+}
+
+#[allow(dead_code)]
+pub fn accepted_alu() -> AcceptedFixture {
+    static FIXTURE: LazyLock<AcceptedFixture> = LazyLock::new(|| {
+        let input = alu_input();
+        prove_accepted(&input)
+    });
+    FIXTURE.clone()
+}
+
+#[allow(dead_code)]
+pub fn accepted_branch() -> AcceptedFixture {
+    static FIXTURE: LazyLock<AcceptedFixture> = LazyLock::new(|| {
+        let input = branch_input();
+        prove_accepted(&input)
+    });
+    FIXTURE.clone()
+}
+
+#[allow(dead_code)]
+pub fn accepted_memory() -> AcceptedFixture {
+    static FIXTURE: LazyLock<AcceptedFixture> = LazyLock::new(|| {
+        let input = memory_input();
+        prove_accepted(&input)
+    });
+    FIXTURE.clone()
+}
+
+#[allow(dead_code)]
+pub fn accepted_divu() -> AcceptedFixture {
+    static FIXTURE: LazyLock<AcceptedFixture> = LazyLock::new(|| {
+        let input = divu_input();
+        prove_accepted(&input)
+    });
+    FIXTURE.clone()
+}
+
+#[allow(dead_code)]
+pub fn accepted_multiply_high() -> AcceptedFixture {
+    static FIXTURE: LazyLock<AcceptedFixture> = LazyLock::new(|| {
+        let input = parity_input("multiply_high_mulh_mulhu_mulhsu_ecall");
+        prove_accepted(&input)
+    });
+    FIXTURE.clone()
 }
 
 pub fn expect_accepted_verify_failure(artifact: &Rv64imAcceptedProofArtifact, needle: &str) {

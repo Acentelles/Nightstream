@@ -1,12 +1,13 @@
 use crate::common::proof_cases::{
-    alu_input, branch_input, divu_input, expect_accepted_verify_failure, parity_input, prove_accepted,
+    accepted_alu, accepted_branch, accepted_divu, accepted_multiply_high, accepted_test_guard,
+    expect_accepted_verify_failure,
 };
 use neo_fold_next::rv64im::verify_rv64im_accepted_proof;
 
 #[test]
 fn accepted_stage1_bundle_tracks_sem_inputs_and_selected_opening() {
-    let input = alu_input();
-    let (artifact, _) = prove_accepted(&input);
+    let _serial = accepted_test_guard();
+    let (artifact, _) = accepted_alu();
     verify_rv64im_accepted_proof(&artifact).expect("accepted proof verifies");
     assert_eq!(
         artifact.stage1.sem_inputs.len(),
@@ -20,16 +21,16 @@ fn accepted_stage1_bundle_tracks_sem_inputs_and_selected_opening() {
 
 #[test]
 fn accepted_stage1_rejects_tampered_sem_inputs() {
-    let input = alu_input();
-    let (mut artifact, _) = prove_accepted(&input);
+    let _serial = accepted_test_guard();
+    let (mut artifact, _) = accepted_alu();
     artifact.stage1.sem_inputs[0].rs1_value += 1;
     expect_accepted_verify_failure(&artifact, "stage1 semantic inputs mismatch");
 }
 
 #[test]
 fn accepted_stage1_rejects_tampered_branch_binding() {
-    let input = branch_input();
-    let (mut artifact, _) = prove_accepted(&input);
+    let _serial = accepted_test_guard();
+    let (mut artifact, _) = accepted_branch();
     let effect_row = artifact
         .stage1
         .row_bindings
@@ -42,8 +43,8 @@ fn accepted_stage1_rejects_tampered_branch_binding() {
 
 #[test]
 fn accepted_stage1_rejects_tampered_nonselected_divu_helper_row() {
-    let input = divu_input();
-    let (mut artifact, _) = prove_accepted(&input);
+    let _serial = accepted_test_guard();
+    let (mut artifact, _) = accepted_divu();
     let helper_row = artifact
         .stage1
         .row_bindings
@@ -56,7 +57,7 @@ fn accepted_stage1_rejects_tampered_nonselected_divu_helper_row() {
 
 #[test]
 fn accepted_stage1_accepts_multiply_high_parity_case() {
-    let input = parity_input("multiply_high_mulh_mulhu_mulhsu_ecall");
-    let (artifact, _) = prove_accepted(&input);
+    let _serial = accepted_test_guard();
+    let (artifact, _) = accepted_multiply_high();
     verify_rv64im_accepted_proof(&artifact).expect("accepted proof verifies");
 }
