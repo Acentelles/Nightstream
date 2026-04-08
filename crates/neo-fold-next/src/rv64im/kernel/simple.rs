@@ -1,10 +1,11 @@
+use crate::finalize::package_session_proof;
 use crate::proof::{
     partition_public_steps, Carry, ChunkInput, FoldSchedule, PackagedProof, PublicChunk, PublicStep, RunProof,
     RunProvePerf, RunVerifyPerf, StepInput,
 };
 use crate::prover::{CommitmentMixers, ShardProver};
 use crate::run::{
-    prove_and_package_with_perf, verify_packaged_with_detailed_perf_and_cache,
+    prove_chunks_from_slice_with_perf_and_cache, verify_packaged_with_detailed_perf_and_cache,
     verify_packaged_with_precomputed_chunk_digests_and_detailed_perf_and_cache,
 };
 use crate::rv64im::ccs::{rv64im_root_main_lane_ccs, semantic_row_from_execution_row, RV64IM_ROOT_ROW_WIDTH};
@@ -181,7 +182,7 @@ impl Deref for SimpleKernelAuditOutput {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub(super) struct PublicSimpleKernelOutput {
+pub(crate) struct PublicSimpleKernelOutput {
     pub trace: Rv64imTraceProjectionBundle,
     pub stages: Rv64imStageWitnessProjectionBundle,
     pub stage_claims: SimpleKernelStageClaimBundle,
@@ -280,7 +281,7 @@ struct PublicSimpleKernelBuildSeed {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub(super) struct PublicSimpleKernelWitnessSidecar {
+pub(crate) struct PublicSimpleKernelWitnessSidecar {
     pub trace: SimpleKernelTraceWitness,
     pub stages: SimpleKernelStageWitnessBundle,
 }
@@ -584,26 +585,42 @@ pub fn prove_root_main_lane_packaged_proof_with_perf(
     rows: &[Rv64ExpandedRow],
     schedule: FoldSchedule,
 ) -> Result<(PackagedProof, RootMainLanePackagedProofProvePerf), SimpleKernelError> {
+    let (packaged, _, perf) = prove_root_main_lane_packaged_proof_with_inputs_and_perf(rows, schedule)?;
+    Ok((packaged, perf))
+}
+
+pub(crate) fn prove_root_main_lane_packaged_proof_with_inputs_and_perf(
+    rows: &[Rv64ExpandedRow],
+    schedule: FoldSchedule,
+) -> Result<(PackagedProof, Vec<ChunkInput>, RootMainLanePackagedProofProvePerf), SimpleKernelError> {
     let total_started = Instant::now();
     let root_context = cached_simple_kernel_root_context()?;
     let ccs = cached_root_main_lane_ccs()?;
     let prepare_steps_started = Instant::now();
     let steps = build_prepared_steps_from_execution_rows(rows)?;
     let prepare_steps_ms = millis_since(prepare_steps_started);
-    let (packaged, session) = prove_and_package_with_perf(
+    let chunk_inputs = crate::proof::partition_step_inputs(schedule, steps)?;
+    let public_chunks = chunk_inputs
+        .iter()
+        .map(ChunkInput::public)
+        .collect::<Vec<_>>();
+    let (session, session_perf) = prove_chunks_from_slice_with_perf_and_cache(
         FoldingMode::Optimized,
         schedule,
         root_context.params(),
         ccs,
-        steps,
+        &chunk_inputs,
         root_context.log(),
         rv64im_ajtai_mixers(),
+        None,
     )?;
+    let packaged = package_session_proof(public_chunks, session)?;
     Ok((
         packaged,
+        chunk_inputs,
         RootMainLanePackagedProofProvePerf {
             prepare_steps_ms,
-            session,
+            session: session_perf,
             total_ms: millis_since(total_started),
         },
     ))
@@ -860,17 +877,6 @@ pub(crate) fn build_prepared_step_binding_summary(
     )
 }
 
-pub(crate) fn materialize_prepared_step_binding_summary(
-    rows: &[Rv64ExpandedRow],
-    root_lane_columns: &RootLaneColumns,
-) -> Result<PreparedStepBindingSummary, SimpleKernelError> {
-    let semantic_rows = rows
-        .iter()
-        .map(semantic_row_from_execution_row)
-        .collect::<Vec<_>>();
-    build_prepared_step_binding_summary(rows, &semantic_rows, root_lane_columns, true)
-}
-
 pub(super) fn build_public_root_lane_witness_and_binding_summary(
     rows: &[Rv64ExpandedRow],
 ) -> (RootLanePublicWitness, PreparedStepBindingSummary) {
@@ -1002,7 +1008,7 @@ fn build_simple_kernel_seed_and_witness_with_perf(
 ) -> Result<((SimpleKernelBuildSeed, RootLaneWitness), SimpleKernelBuildPerf), SimpleKernelError> {
     let total_started = Instant::now();
     let (_, derived) = build_parity_case_from_source(public.source.clone(), public.max_steps)?;
-    let root_context = SimpleKernelRootContext::new()?;
+    let root_context = cached_simple_kernel_root_context()?;
 
     let root_lane_witness_started = Instant::now();
     let root_lane_witness = build_root_lane_witness(&derived.execution_rows);
@@ -1135,7 +1141,8 @@ fn build_packaged_simple_kernel_output_with_perf(
 fn build_public_simple_kernel_seed_from_derived_with_perf(
     derived: &Rv64imParityDerivedCase,
 ) -> Result<(PublicSimpleKernelBuildSeed, SimpleKernelBuildPerf), SimpleKernelError> {
-    let root_context = SimpleKernelRootContext::new()?;
+    let total_started = Instant::now();
+    let root_context = cached_simple_kernel_root_context()?;
 
     let root_lane_witness_started = Instant::now();
     let (root_lane_witness, prepared_step_bindings) =
@@ -1201,7 +1208,7 @@ fn build_public_simple_kernel_seed_from_derived_with_perf(
             stage_claim_bundle,
             stage_package_bundle,
             kernel_opening_bundle,
-            total_ms: 0.0,
+            total_ms: millis_since(total_started),
         },
     ))
 }
@@ -1247,11 +1254,24 @@ pub(super) fn build_public_simple_kernel_output_and_witness_with_perf(
 > {
     let total_started = Instant::now();
     let (_, derived) = build_parity_case_from_source(public.source.clone(), public.max_steps)?;
-    let (seed, mut perf) = build_public_simple_kernel_seed_from_derived_with_perf(&derived)?;
+    let ((output, sidecar), mut perf) = build_public_simple_kernel_output_and_witness_from_derived_with_perf(&derived)?;
     perf.total_ms = millis_since(total_started);
+    Ok(((output, sidecar), perf))
+}
+
+pub(super) fn build_public_simple_kernel_output_and_witness_from_derived_with_perf(
+    derived: &Rv64imParityDerivedCase,
+) -> Result<
+    (
+        (PublicSimpleKernelOutput, PublicSimpleKernelWitnessSidecar),
+        SimpleKernelBuildPerf,
+    ),
+    SimpleKernelError,
+> {
+    let (seed, perf) = build_public_simple_kernel_seed_from_derived_with_perf(derived)?;
     let sidecar = PublicSimpleKernelWitnessSidecar {
-        trace: trace_witness_from_derived(&derived),
-        stages: stage_witness_bundle_from_derived(&derived),
+        trace: trace_witness_from_derived(derived),
+        stages: stage_witness_bundle_from_derived(derived),
     };
     Ok(((public_simple_kernel_output_from_seed(seed), sidecar), perf))
 }
@@ -1532,7 +1552,9 @@ pub fn prove_packaged_simple_kernel_with_perf(
     Ok((
         (output, SimpleKernelPackagedProof { kernel, main_lane }),
         Rv64imProofProvePerf {
+            shared_trace_ms: 0.0,
             simple_kernel,
+            parallel_overlap_ms: 0.0,
             main_lane_ms: millis_since(main_lane_started),
             root_main_lane: RootMainLanePackagedProofProvePerf::default(),
             public_export_ms: 0.0,

@@ -124,6 +124,64 @@ where
     prove_chunks_with_perf_and_cache(mode, schedule, params, s, chunks, log, mixers, None)
 }
 
+pub(crate) fn prove_chunks_from_slice_with_perf_and_cache<L, MR, MB>(
+    mode: FoldingMode,
+    schedule: FoldSchedule,
+    params: &NeoParams,
+    s: &CcsStructure<F>,
+    chunks: &[ChunkInput],
+    log: &L,
+    mixers: CommitmentMixers<MR, MB>,
+    provided_cache: Option<&OptimizedStructureCache>,
+) -> Result<(RunProof, RunProvePerf), PiCcsError>
+where
+    L: SModuleHomomorphism<F, Commitment> + Sync,
+    MR: Fn(&[Mat<F>], &[Commitment]) -> Commitment + Clone + Copy,
+    MB: Fn(&[Commitment], u32) -> Commitment + Clone + Copy,
+{
+    let total_started = Instant::now();
+    schedule.validate()?;
+    let mut tr = Poseidon2Transcript::new(b"neo.fold.next/session");
+    let mut main_carry = Carry::default();
+    let mut session = RunProof {
+        fold_schedule: schedule,
+        ..RunProof::default()
+    };
+    let mut perf = RunProvePerf::default();
+    let built_cache = maybe_build_optimized_cache(&mode, s, provided_cache)?;
+    let optimized_cache = provided_cache.or(built_cache.as_ref());
+
+    for chunk in chunks {
+        let (proved, chunk_perf) = ShardProver::prove_chunk_with_perf(
+            mode.clone(),
+            &mut tr,
+            params,
+            s,
+            chunk,
+            &main_carry,
+            log,
+            mixers,
+            optimized_cache,
+        )?;
+        main_carry = proved.next_main;
+        session.chunks.push(proved.proof);
+        perf.chunks.push(chunk_perf);
+        tr.append_message(b"neo.fold.next/chunk_done", &[1]);
+    }
+
+    validate_chunk_layout(
+        schedule,
+        &session
+            .chunks
+            .iter()
+            .map(|chunk| chunk.chunk.clone())
+            .collect::<Vec<_>>(),
+    )?;
+    session.final_main_claims = main_carry.claims;
+    perf.total_ms = total_started.elapsed().as_secs_f64() * 1_000.0;
+    Ok((session, perf))
+}
+
 fn prove_prepared_chunks_with_perf<L, MR, MB>(
     mode: FoldingMode,
     schedule: FoldSchedule,

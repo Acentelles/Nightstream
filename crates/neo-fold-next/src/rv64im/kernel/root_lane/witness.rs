@@ -401,38 +401,41 @@ pub(crate) fn build_root_lane_witness(rows: &[Rv64ExpandedRow]) -> RootLaneWitne
     }
 }
 
-pub(crate) fn build_root_execution_semantic_rows(rows: &[Rv64ExpandedRow]) -> Vec<RootSemanticRow> {
+pub(crate) fn build_root_execution_semantic_row_values(rows: &[Rv64ExpandedRow]) -> Vec<[F; RV64IM_ROOT_ROW_WIDTH]> {
     if allow_parallel_root_execution_build(rows.len()) {
         rows.par_iter()
-            .map(|row| {
-                let semantic_row = semantic_row_from_execution_row(row);
-                let semantic_row = RootSemanticRow {
-                    trace_index: row.trace_index,
-                    values: semantic_row.to_vec(),
-                    row_digest: root_lane_row_digest(row.trace_index as u64, &semantic_row),
-                    digest: [0; 32],
-                };
-                RootSemanticRow {
-                    digest: semantic_row.expected_digest(),
-                    ..semantic_row
-                }
-            })
+            .map(semantic_row_from_execution_row)
+            .collect()
+    } else {
+        rows.iter().map(semantic_row_from_execution_row).collect()
+    }
+}
+
+pub(crate) fn build_root_execution_semantic_rows_from_values(
+    rows: &[Rv64ExpandedRow],
+    semantic_rows: &[[F; RV64IM_ROOT_ROW_WIDTH]],
+) -> Vec<RootSemanticRow> {
+    let build_row = |(row, semantic_row): (&Rv64ExpandedRow, &[F; RV64IM_ROOT_ROW_WIDTH])| {
+        let semantic_row = RootSemanticRow {
+            trace_index: row.trace_index,
+            values: semantic_row.to_vec(),
+            row_digest: root_lane_row_digest(row.trace_index as u64, semantic_row),
+            digest: [0; 32],
+        };
+        RootSemanticRow {
+            digest: semantic_row.expected_digest(),
+            ..semantic_row
+        }
+    };
+    if allow_parallel_root_execution_build(rows.len()) {
+        rows.par_iter()
+            .zip(semantic_rows.par_iter())
+            .map(build_row)
             .collect()
     } else {
         rows.iter()
-            .map(|row| {
-                let semantic_row = semantic_row_from_execution_row(row);
-                let semantic_row = RootSemanticRow {
-                    trace_index: row.trace_index,
-                    values: semantic_row.to_vec(),
-                    row_digest: root_lane_row_digest(row.trace_index as u64, &semantic_row),
-                    digest: [0; 32],
-                };
-                RootSemanticRow {
-                    digest: semantic_row.expected_digest(),
-                    ..semantic_row
-                }
-            })
+            .zip(semantic_rows.iter())
+            .map(build_row)
             .collect()
     }
 }

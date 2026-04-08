@@ -21,12 +21,14 @@ mod trace_expand;
 pub use builder::{build_program, Rv64ProgramBuild};
 pub use decider::{
     build_rv64im_published_proof_seam, build_rv64im_published_proof_seam_with_perf,
-    build_rv64im_spartan2_decider_target, prove_rv64im_spartan2_decider, prove_rv64im_spartan2_decider_for_target,
-    prove_rv64im_spartan2_decider_for_target_with_perf, prove_rv64im_spartan2_decider_from_public_proof,
-    setup_rv64im_spartan2_decider, setup_rv64im_spartan2_decider_for_target,
-    setup_rv64im_spartan2_decider_from_public_proof, verify_rv64im_spartan2_decider,
-    verify_rv64im_spartan2_decider_for_target, verify_rv64im_spartan2_decider_from_public_proof,
-    Rv64imPublishedProofSeam, Rv64imPublishedProofSeamBuildPerf,
+    build_rv64im_spartan2_decider_target, prove_rv64im_public_proof_and_published_seam_with_options_and_perf,
+    prove_rv64im_public_proof_and_published_seam_with_perf, prove_rv64im_spartan2_decider,
+    prove_rv64im_spartan2_decider_for_target, prove_rv64im_spartan2_decider_for_target_with_perf,
+    prove_rv64im_spartan2_decider_from_public_proof, setup_rv64im_spartan2_decider,
+    setup_rv64im_spartan2_decider_for_target, setup_rv64im_spartan2_decider_from_public_proof,
+    verify_rv64im_spartan2_decider, verify_rv64im_spartan2_decider_for_target,
+    verify_rv64im_spartan2_decider_from_public_proof, Rv64imPublicProofAndSeamBuildPerf, Rv64imPublishedProofSeam,
+    Rv64imPublishedProofSeamBuildPerf,
 };
 pub use decider_relation::{
     build_rv64im_decider_relation, validate_rv64im_decider_relation_surface, verify_rv64im_decider_relation,

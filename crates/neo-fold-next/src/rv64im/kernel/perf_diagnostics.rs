@@ -154,7 +154,9 @@ pub struct PackagedSimpleKernelVerifyPerf {
 
 #[derive(Clone, Debug, Default)]
 pub struct Rv64imProofProvePerf {
+    pub shared_trace_ms: f64,
     pub simple_kernel: SimpleKernelBuildPerf,
+    pub parallel_overlap_ms: f64,
     pub main_lane_ms: f64,
     pub root_main_lane: RootMainLanePackagedProofProvePerf,
     pub public_export_ms: f64,

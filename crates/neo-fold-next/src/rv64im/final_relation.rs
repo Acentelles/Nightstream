@@ -11,14 +11,14 @@ use std::time::Instant;
 
 use crate::chunk_relation::ChunkReplayWitness;
 use crate::finalize::{digest_fixed_shape_final_proof, fixed_shape_recursive_seed, FixedShapeChunkSummary};
-use crate::proof::{Carry, ChunkProvePerf, FoldSchedule};
+use crate::proof::{Carry, ChunkInput, ChunkProvePerf, FoldSchedule};
 use crate::rv64im::chunk_relation::{
     prove_rv64im_chunk_transition_with_perf, rv64im_chunk_replay_witness_digest, rv64im_step_handle,
     verify_rv64im_chunk_relation_with_replay,
 };
 use crate::rv64im::kernel::{
-    build_rv64im_kernel_export_proof_from_carried_accepted_artifact,
-    build_rv64im_kernel_export_proof_from_carried_accepted_artifact_with_source, rv64im_cached_root_main_lane_context,
+    build_rv64im_kernel_export_build_output_from_carried_accepted_artifact_with_source_and_chunk_inputs,
+    build_rv64im_kernel_export_proof_from_carried_accepted_artifact, rv64im_cached_root_main_lane_context,
     rv64im_cached_root_main_lane_optimized_cache, verify_rv64im_kernel_export_proof_with_output,
     verify_rv64im_kernel_export_proof_with_relation_output, Rv64imAcceptedProofArtifact, Rv64imKernelExportProof,
     Rv64imKernelExportRelationResult, Rv64imKernelExportSource, Rv64imVerifiedKernelChunkHandoff, SimpleKernelError,
@@ -256,15 +256,16 @@ pub(crate) fn prove_rv64im_final_statement_from_accepted_with_output(
 pub(crate) fn prove_rv64im_final_statement_from_accepted_with_output_and_perf(
     artifact: &Rv64imAcceptedProofArtifact,
 ) -> Result<(Rv64imFinalBuildOutput, Rv64imFinalBuildPerf), SimpleKernelError> {
-    prove_rv64im_final_statement_from_accepted_with_output_and_perf_and_source(artifact, None)
+    prove_rv64im_final_statement_from_accepted_with_output_and_perf_and_source(artifact, None, None)
 }
 
 pub(crate) fn prove_rv64im_final_statement_from_accepted_with_output_and_perf_and_source(
     artifact: &Rv64imAcceptedProofArtifact,
-    kernel_export_source: Option<&Rv64imKernelExportSource>,
+    kernel_export_source: Option<Rv64imKernelExportSource>,
+    chunk_inputs: Option<Vec<ChunkInput>>,
 ) -> Result<(Rv64imFinalBuildOutput, Rv64imFinalBuildPerf), SimpleKernelError> {
     let (built, folded_perf) =
-        build_rv64im_folded_statement_from_accepted_with_perf_and_source(artifact, kernel_export_source)?;
+        build_rv64im_folded_statement_from_accepted_with_perf_and_source(artifact, kernel_export_source, chunk_inputs)?;
 
     let started = Instant::now();
     let (final_proof, component_digests) = build_final_proof(&built.folded, built.chunk_summaries, built.proof)?;
@@ -337,16 +338,25 @@ fn build_rv64im_folded_statement_from_accepted(
 fn build_rv64im_folded_statement_from_accepted_with_perf(
     artifact: &Rv64imAcceptedProofArtifact,
 ) -> Result<(Rv64imFoldedBuildOutput, Rv64imFoldedBuildPerf), SimpleKernelError> {
-    build_rv64im_folded_statement_from_accepted_with_perf_and_source(artifact, None)
+    build_rv64im_folded_statement_from_accepted_with_perf_and_source(artifact, None, None)
 }
 
 fn build_rv64im_folded_statement_from_accepted_with_perf_and_source(
     artifact: &Rv64imAcceptedProofArtifact,
-    kernel_export_source: Option<&Rv64imKernelExportSource>,
+    kernel_export_source: Option<Rv64imKernelExportSource>,
+    chunk_inputs: Option<Vec<ChunkInput>>,
 ) -> Result<(Rv64imFoldedBuildOutput, Rv64imFoldedBuildPerf), SimpleKernelError> {
     let started = Instant::now();
     let (relation, kernel_export, verified_kernel) = match kernel_export_source {
-        Some(source) => build_rv64im_kernel_export_proof_from_carried_accepted_artifact_with_source(artifact, source)?,
+        Some(source) => {
+            let built =
+                build_rv64im_kernel_export_build_output_from_carried_accepted_artifact_with_source_and_chunk_inputs(
+                    artifact,
+                    source,
+                    chunk_inputs,
+                )?;
+            (built.relation, built.proof, built.result)
+        }
         None => build_rv64im_kernel_export_proof_from_carried_accepted_artifact(artifact)?,
     };
     let kernel_export_ms = elapsed_ms(started);

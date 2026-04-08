@@ -7,14 +7,18 @@ use crate::decider::spartan2::{
     Spartan2DeciderProof, Spartan2DeciderProvePerf, Spartan2DeciderProverKey, Spartan2DeciderTarget,
     Spartan2DeciderVerifierKey,
 };
-use crate::rv64im::decider_relation::build_rv64im_decider_relation_from_final;
+use crate::rv64im::decider_relation::{
+    build_rv64im_decider_relation_from_final, build_rv64im_decider_relation_from_verified_final_with_component_digests,
+};
 use crate::rv64im::final_relation::{
     prove_rv64im_final_statement_from_accepted_with_output_and_perf_and_source, Rv64imFinalBuildOutput,
     Rv64imFinalProof, Rv64imFinalProofComponentDigests, Rv64imFinalStatement,
 };
 use crate::rv64im::kernel::{
-    build_rv64im_accepted_proof_artifact, build_rv64im_kernel_export_source_from_accepted_artifact,
+    accepted_proof_artifact_from_prover_materials, build_rv64im_accepted_proof_artifact,
+    build_rv64im_kernel_export_source_from_accepted_artifact, prove_rv64im_public_proof_prover_seam_with_perf,
     Rv64imAcceptedProofArtifact, Rv64imKernelExportRelationResult, Rv64imKernelExportSource, Rv64imProof,
+    Rv64imProofInput, Rv64imProofProvePerf, Rv64imPublicProofOptions,
 };
 use crate::rv64im::SimpleKernelError;
 
@@ -53,12 +57,17 @@ pub struct Rv64imPublishedProofSeam {
     pub decider_target: Spartan2DeciderTarget,
     pub(crate) final_component_digests: Rv64imFinalProofComponentDigests,
     pub(crate) verified_kernel: Rv64imKernelExportRelationResult,
-    kernel_export_source: Rv64imKernelExportSource,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct Rv64imPublicProofAndSeamBuildPerf {
+    pub proof: Rv64imProofProvePerf,
+    pub seam: Rv64imPublishedProofSeamBuildPerf,
 }
 
 impl Rv64imPublishedProofSeam {
     pub fn kernel_export_source(&self) -> &Rv64imKernelExportSource {
-        &self.kernel_export_source
+        &self.final_proof.kernel_export.source
     }
 }
 
@@ -95,12 +104,19 @@ pub fn build_rv64im_published_proof_seam_with_perf(
         final_perf,
     ) = prove_rv64im_final_statement_from_accepted_with_output_and_perf_and_source(
         &accepted_artifact,
-        Some(&kernel_export_source),
+        Some(kernel_export_source),
+        None,
     )?;
     let final_statement_ms = elapsed_ms(started);
 
     let started = Instant::now();
-    let decider_target = build_rv64im_spartan2_decider_target(&final_statement, &final_proof)?;
+    let decider_relation = build_rv64im_decider_relation_from_verified_final_with_component_digests(
+        &final_statement,
+        &final_proof,
+        &verified_kernel,
+        &final_component_digests,
+    )?;
+    let decider_target = decider_relation.target();
     let decider_target_ms = elapsed_ms(started);
 
     Ok((
@@ -111,7 +127,6 @@ pub fn build_rv64im_published_proof_seam_with_perf(
             decider_target,
             final_component_digests,
             verified_kernel,
-            kernel_export_source,
         },
         Rv64imPublishedProofSeamBuildPerf {
             accepted_artifact_ms,
@@ -137,6 +152,121 @@ pub fn build_rv64im_published_proof_seam_with_perf(
             final_statement_statement_digest_ms: final_perf.statement_digest_ms,
             decider_target_ms,
             total_ms: elapsed_ms(total_started),
+        },
+    ))
+}
+
+pub fn prove_rv64im_public_proof_and_published_seam_with_perf(
+    input: &Rv64imProofInput,
+) -> Result<
+    (
+        (Rv64imProof, Rv64imPublishedProofSeam),
+        Rv64imPublicProofAndSeamBuildPerf,
+    ),
+    SimpleKernelError,
+> {
+    prove_rv64im_public_proof_and_published_seam_with_options_and_perf(input, Rv64imPublicProofOptions::default())
+}
+
+pub fn prove_rv64im_public_proof_and_published_seam_with_options_and_perf(
+    input: &Rv64imProofInput,
+    options: Rv64imPublicProofOptions,
+) -> Result<
+    (
+        (Rv64imProof, Rv64imPublishedProofSeam),
+        Rv64imPublicProofAndSeamBuildPerf,
+    ),
+    SimpleKernelError,
+> {
+    let (built, proof_perf) = prove_rv64im_public_proof_prover_seam_with_perf(input, options)?;
+
+    let total_started = Instant::now();
+
+    let started = Instant::now();
+    let accepted_artifact = accepted_proof_artifact_from_prover_materials(
+        &built.proof.claim,
+        &built.proof.statement,
+        &built.kernel,
+        &built.sidecar,
+        &built.proof.kernel.main_lane,
+        &built.proof.kernel.stage_claims,
+        &built.proof.kernel.stage_packages,
+        &built.proof.kernel.kernel_opening,
+        &built.proof.kernel.kernel_claims,
+        &built.proof.kernel.root_lane_columns,
+        &built.proof.kernel.root_lane_commitment,
+    )?;
+    let accepted_artifact_ms = elapsed_ms(started);
+
+    let started = Instant::now();
+    let kernel_export_source = build_rv64im_kernel_export_source_from_accepted_artifact(&accepted_artifact)?;
+    let kernel_export_source_ms = elapsed_ms(started);
+
+    let started = Instant::now();
+    let (
+        Rv64imFinalBuildOutput {
+            statement: final_statement,
+            proof: final_proof,
+            component_digests: final_component_digests,
+            verified_kernel,
+        },
+        final_perf,
+    ) = prove_rv64im_final_statement_from_accepted_with_output_and_perf_and_source(
+        &accepted_artifact,
+        Some(kernel_export_source),
+        Some(built.main_lane_inputs),
+    )?;
+    let final_statement_ms = elapsed_ms(started);
+
+    let started = Instant::now();
+    let decider_relation = build_rv64im_decider_relation_from_verified_final_with_component_digests(
+        &final_statement,
+        &final_proof,
+        &verified_kernel,
+        &final_component_digests,
+    )?;
+    let decider_target = decider_relation.target();
+    let decider_target_ms = elapsed_ms(started);
+
+    let seam = Rv64imPublishedProofSeam {
+        accepted_artifact,
+        final_statement,
+        final_proof,
+        decider_target,
+        final_component_digests,
+        verified_kernel,
+    };
+    let seam_perf = Rv64imPublishedProofSeamBuildPerf {
+        accepted_artifact_ms,
+        kernel_export_source_ms,
+        final_statement_ms,
+        final_statement_kernel_export_ms: final_perf.folded.kernel_export_ms,
+        final_statement_recursive_proof_ms: final_perf.folded.recursive.total_ms,
+        final_statement_recursive_prepare_inputs_ms: final_perf.folded.recursive.prepare_inputs_ms,
+        final_statement_recursive_ccs_bind_ms: final_perf.folded.recursive.ccs_bind_ms,
+        final_statement_recursive_ccs_sample_challenges_ms: final_perf.folded.recursive.ccs_sample_challenges_ms,
+        final_statement_recursive_ccs_fe_sumcheck_ms: final_perf.folded.recursive.ccs_fe_sumcheck_ms,
+        final_statement_recursive_ccs_nc_sumcheck_ms: final_perf.folded.recursive.ccs_nc_sumcheck_ms,
+        final_statement_recursive_ccs_output_materialize_ms: final_perf.folded.recursive.ccs_output_materialize_ms,
+        final_statement_recursive_ccs_ms: final_perf.folded.recursive.ccs_ms,
+        final_statement_recursive_dims_ms: final_perf.folded.recursive.dims_ms,
+        final_statement_recursive_rlc_prepare_ms: final_perf.folded.recursive.rlc_prepare_ms,
+        final_statement_recursive_rlc_ms: final_perf.folded.recursive.rlc_ms,
+        final_statement_recursive_dec_split_ms: final_perf.folded.recursive.dec_split_ms,
+        final_statement_recursive_dec_commit_ms: final_perf.folded.recursive.dec_commit_ms,
+        final_statement_recursive_dec_ms: final_perf.folded.recursive.dec_ms,
+        final_statement_folded_digest_ms: final_perf.folded.folded_digest_ms,
+        final_statement_final_proof_ms: final_perf.final_proof_ms,
+        final_statement_statement_digest_ms: final_perf.statement_digest_ms,
+        decider_target_ms,
+        total_ms: elapsed_ms(total_started),
+    };
+
+    Ok((
+        (built.proof, seam),
+        Rv64imPublicProofAndSeamBuildPerf {
+            proof: proof_perf,
+            seam: seam_perf,
         },
     ))
 }

@@ -108,6 +108,13 @@ pub struct Rv64imKernelExportProof {
 }
 
 #[derive(Clone, Debug)]
+pub(crate) struct Rv64imKernelExportBuildOutput {
+    pub relation: Rv64imKernelExportRelation,
+    pub proof: Rv64imKernelExportProof,
+    pub result: Rv64imKernelExportRelationResult,
+}
+
+#[derive(Clone, Debug)]
 pub struct Rv64imKernelExportRelationResult {
     pub fold_schedule: FoldSchedule,
     pub chunk_handoffs: Vec<Rv64imVerifiedKernelChunkHandoff>,
@@ -445,35 +452,25 @@ pub(crate) fn build_rv64im_kernel_export_proof_from_carried_accepted_artifact(
     ),
     SimpleKernelError,
 > {
-    if artifact.digest != artifact.expected_digest() {
-        return Err(SimpleKernelError::Bridge(
-            "RV64IM accepted proof artifact digest mismatch".into(),
-        ));
-    }
-    if artifact.claim.digest != artifact.claim.expected_digest()
-        || artifact.statement.digest != artifact.statement.expected_digest()
-    {
-        return Err(SimpleKernelError::Bridge(
-            "RV64IM accepted proof public claim digest mismatch".into(),
-        ));
-    }
-    let (relation, result) = build_rv64im_kernel_export_relation_from_verified_artifact(artifact)?;
-    let witness = kernel_export_witness_from_result(&result);
     let source = build_rv64im_kernel_export_source_from_accepted_artifact(artifact)?;
-    build_rv64im_kernel_export_proof_from_carried_parts(source, relation, witness, result)
+    let built = build_rv64im_kernel_export_build_output_from_carried_accepted_artifact_with_source(artifact, source)?;
+    Ok((built.relation, built.proof, built.result))
 }
 
-pub(crate) fn build_rv64im_kernel_export_proof_from_carried_accepted_artifact_with_source(
+pub(crate) fn build_rv64im_kernel_export_build_output_from_carried_accepted_artifact_with_source(
     artifact: &Rv64imAcceptedProofArtifact,
-    source: &Rv64imKernelExportSource,
-) -> Result<
-    (
-        Rv64imKernelExportRelation,
-        Rv64imKernelExportProof,
-        Rv64imKernelExportRelationResult,
-    ),
-    SimpleKernelError,
-> {
+    source: Rv64imKernelExportSource,
+) -> Result<Rv64imKernelExportBuildOutput, SimpleKernelError> {
+    build_rv64im_kernel_export_build_output_from_carried_accepted_artifact_with_source_and_chunk_inputs(
+        artifact, source, None,
+    )
+}
+
+pub(crate) fn build_rv64im_kernel_export_build_output_from_carried_accepted_artifact_with_source_and_chunk_inputs(
+    artifact: &Rv64imAcceptedProofArtifact,
+    source: Rv64imKernelExportSource,
+    chunk_inputs: Option<Vec<ChunkInput>>,
+) -> Result<Rv64imKernelExportBuildOutput, SimpleKernelError> {
     if artifact.digest != artifact.expected_digest() {
         return Err(SimpleKernelError::Bridge(
             "RV64IM accepted proof artifact digest mismatch".into(),
@@ -491,9 +488,44 @@ pub(crate) fn build_rv64im_kernel_export_proof_from_carried_accepted_artifact_wi
             "RV64IM carried kernel export source digest mismatch".into(),
         ));
     }
-    let (relation, result) = build_rv64im_kernel_export_relation_from_verified_artifact(artifact)?;
+    let (final_pc, halted) = kernel_export_terminal_row(&source)?;
+    if source.root_execution.digest != artifact.root_execution.digest
+        || source.main_lane.packaged.statement.digest != artifact.main_lane.packaged.statement.digest
+        || source.kernel_claims.final_state_digest() != artifact.statement.final_state_digest
+        || final_pc != artifact.statement.final_pc
+        || halted != artifact.statement.halted
+    {
+        return Err(SimpleKernelError::Bridge(
+            "RV64IM carried kernel export source does not match the accepted artifact".into(),
+        ));
+    }
+    let (relation, result) = match chunk_inputs {
+        Some(chunk_inputs) => build_rv64im_kernel_export_relation_from_verified_parts_and_chunk_inputs(
+            source.main_lane.packaged.statement.fold_schedule,
+            &source.main_lane.packaged.statement.chunks,
+            chunk_inputs,
+            &source.root_execution,
+            artifact.statement.final_state_digest,
+            artifact.statement.final_pc,
+            artifact.statement.halted,
+        )?,
+        None => build_rv64im_kernel_export_relation_from_verified_parts(
+            source.main_lane.packaged.statement.fold_schedule,
+            &source.main_lane.packaged.statement.chunks,
+            &source.root_execution,
+            artifact.statement.final_state_digest,
+            artifact.statement.final_pc,
+            artifact.statement.halted,
+        )?,
+    };
     let witness = kernel_export_witness_from_result(&result);
-    build_rv64im_kernel_export_proof_from_carried_parts(source.clone(), relation, witness, result)
+    let (relation, proof, result) =
+        build_rv64im_kernel_export_proof_from_carried_parts(source, relation, witness, result)?;
+    Ok(Rv64imKernelExportBuildOutput {
+        relation,
+        proof,
+        result,
+    })
 }
 
 fn build_rv64im_kernel_export_proof_from_carried_parts(
@@ -940,7 +972,72 @@ fn build_rv64im_kernel_export_relation_from_verified_artifact(
 fn build_rv64im_kernel_export_relation_from_verified_core(
     core: &Rv64imVerifiedKernelExportCore,
 ) -> Result<(Rv64imKernelExportRelation, Rv64imKernelExportRelationResult), SimpleKernelError> {
-    let result = build_export_relation_result_from_core(core)?;
+    build_rv64im_kernel_export_relation_from_verified_parts(
+        core.fold_schedule,
+        &core.public_chunks,
+        &core.root_execution,
+        core.final_state_digest,
+        core.final_pc,
+        core.halted,
+    )
+}
+
+fn build_rv64im_kernel_export_relation_from_verified_parts(
+    fold_schedule: FoldSchedule,
+    public_chunks: &[PublicChunk],
+    root_execution: &RootExecutionBundle,
+    final_state_digest: [u8; 32],
+    final_pc: u64,
+    halted: bool,
+) -> Result<(Rv64imKernelExportRelation, Rv64imKernelExportRelationResult), SimpleKernelError> {
+    let result = build_export_relation_result_from_parts(
+        fold_schedule,
+        public_chunks,
+        root_execution,
+        final_state_digest,
+        final_pc,
+        halted,
+    )?;
+    let mut relation = Rv64imKernelExportRelation {
+        fold_schedule: result.fold_schedule,
+        chunk_count: result.chunk_handoffs.len() as u64,
+        public_step_count: result
+            .chunk_handoffs
+            .iter()
+            .map(|handoff| handoff.public_chunk.steps.len() as u64)
+            .sum(),
+        final_state_digest: result.final_state_digest,
+        final_pc: result.final_pc,
+        halted: result.halted,
+        chunk_surfaces: result
+            .chunk_handoffs
+            .iter()
+            .map(chunk_export_surface)
+            .collect(),
+        digest: [0; 32],
+    };
+    relation.digest = relation.expected_digest();
+    Ok((relation, result))
+}
+
+fn build_rv64im_kernel_export_relation_from_verified_parts_and_chunk_inputs(
+    fold_schedule: FoldSchedule,
+    public_chunks: &[PublicChunk],
+    chunk_inputs: Vec<ChunkInput>,
+    root_execution: &RootExecutionBundle,
+    final_state_digest: [u8; 32],
+    final_pc: u64,
+    halted: bool,
+) -> Result<(Rv64imKernelExportRelation, Rv64imKernelExportRelationResult), SimpleKernelError> {
+    let result = build_export_relation_result_from_partitioned_chunks(
+        fold_schedule,
+        public_chunks,
+        chunk_inputs,
+        root_execution,
+        final_state_digest,
+        final_pc,
+        halted,
+    )?;
     let mut relation = Rv64imKernelExportRelation {
         fold_schedule: result.fold_schedule,
         chunk_count: result.chunk_handoffs.len() as u64,
@@ -991,14 +1088,36 @@ fn kernel_export_core_from_accepted_artifact(artifact: &Rv64imAcceptedProofArtif
     }
 }
 
-fn build_export_relation_result_from_core(
-    core: &Rv64imVerifiedKernelExportCore,
+fn build_export_relation_result_from_parts(
+    fold_schedule: FoldSchedule,
+    public_chunks: &[PublicChunk],
+    root_execution: &RootExecutionBundle,
+    final_state_digest: [u8; 32],
+    final_pc: u64,
+    halted: bool,
 ) -> Result<Rv64imKernelExportRelationResult, SimpleKernelError> {
-    let prepared_steps = build_prepared_steps_from_execution_rows(&core.root_execution.execution_rows)?;
-    let fold_schedule = core.fold_schedule;
+    let prepared_steps = build_prepared_steps_from_execution_rows(&root_execution.execution_rows)?;
     let chunk_inputs = partition_step_inputs(fold_schedule, prepared_steps)?;
-    let public_chunks = core.public_chunks.clone();
+    build_export_relation_result_from_partitioned_chunks(
+        fold_schedule,
+        public_chunks,
+        chunk_inputs,
+        root_execution,
+        final_state_digest,
+        final_pc,
+        halted,
+    )
+}
 
+fn build_export_relation_result_from_partitioned_chunks(
+    fold_schedule: FoldSchedule,
+    public_chunks: &[PublicChunk],
+    chunk_inputs: Vec<ChunkInput>,
+    root_execution: &RootExecutionBundle,
+    final_state_digest: [u8; 32],
+    final_pc: u64,
+    halted: bool,
+) -> Result<Rv64imKernelExportRelationResult, SimpleKernelError> {
     if chunk_inputs.len() != public_chunks.len() {
         return Err(SimpleKernelError::Bridge(
             "RV64IM kernel export chunk partition does not match the verified main-lane statement".into(),
@@ -1006,7 +1125,7 @@ fn build_export_relation_result_from_core(
     }
 
     let total_public_steps: usize = public_chunks.iter().map(|chunk| chunk.steps.len()).sum();
-    if total_public_steps != core.root_execution.prepared_step_bindings.bindings.len() {
+    if total_public_steps != root_execution.prepared_step_bindings.bindings.len() {
         return Err(SimpleKernelError::Bridge(
             "RV64IM kernel export prepared-step count does not match root-execution bindings".into(),
         ));
@@ -1014,7 +1133,7 @@ fn build_export_relation_result_from_core(
     let mut chunk_handoffs = Vec::with_capacity(public_chunks.len());
     for (chunk_index, (chunk_input, public_chunk)) in chunk_inputs
         .into_iter()
-        .zip(public_chunks.into_iter())
+        .zip(public_chunks.iter().cloned())
         .enumerate()
     {
         let public_chunk_surface_digest = rv64im_public_chunk_digest(&public_chunk);
@@ -1026,7 +1145,7 @@ fn build_export_relation_result_from_core(
         }
         let prepared_step_digests = prepared_step_digests(&chunk_input.steps);
         let bridge_handoff = build_chunk_bridge_handoff(
-            &core.root_execution,
+            root_execution,
             chunk_index as u64,
             &chunk_input,
             &public_chunk,
@@ -1045,9 +1164,9 @@ fn build_export_relation_result_from_core(
     Ok(Rv64imKernelExportRelationResult {
         fold_schedule,
         chunk_handoffs,
-        final_state_digest: core.final_state_digest,
-        final_pc: core.final_pc,
-        halted: core.halted,
+        final_state_digest,
+        final_pc,
+        halted,
     })
 }
 

@@ -2,16 +2,16 @@
 
 use neo_transcript::{Poseidon2Transcript, Transcript};
 use serde::{Deserialize, Serialize};
-use std::time::Instant;
+use std::{thread, time::Instant};
 
-use crate::proof::{FoldSchedule, PackagedProof};
+use crate::proof::{ChunkInput, FoldSchedule, PackagedProof};
 
 use super::main_lane_artifact::build_simple_kernel_main_lane_artifact_from_summary;
 use super::proof_accepted::{
-    accepted_proof_artifact_from_legacy_proof, audit_bundle_from_legacy_proof, Rv64imAcceptedProofArtifact,
-    Rv64imAuditBundle,
+    accepted_proof_artifact_from_legacy_proof, accepted_proof_artifact_from_prover_materials,
+    audit_bundle_from_legacy_proof, Rv64imAcceptedProofArtifact, Rv64imAuditBundle,
 };
-use super::proof_bridge::proof_from_public_kernel_and_artifact;
+use super::proof_bridge::{main_lane_proof_bundle_from_artifact, proof_from_public_kernel_and_main_lane_bundle};
 use super::proof_staged_verify::verify_accepted_proof_artifact_with_perf;
 use super::proof_verify::{
     validate_public_proof_against_input_with_perf, verify_kernel_output_from_public_proof_with_perf,
@@ -22,11 +22,12 @@ use super::proof_witness::{
     Rv64imStagePackageProofBundle, Rv64imStageWitnessProjectionBundle, Rv64imTraceProjectionBundle,
 };
 use super::simple::{
-    build_public_simple_kernel_output_and_witness_with_perf, prove_root_main_lane_packaged_proof_with_perf,
+    build_public_simple_kernel_output_and_witness_from_derived_with_perf,
+    build_public_simple_kernel_output_and_witness_with_perf, prove_root_main_lane_packaged_proof_with_inputs_and_perf,
 };
 use super::{
-    RootLaneColumns, RootLaneCommitmentSummaryArtifact, Rv64imProofProvePerf, Rv64imPublicProofVerifyPerf,
-    SimpleKernelError, SimpleKernelPublicInput,
+    build_parity_case_from_source, RootLaneColumns, RootLaneCommitmentSummaryArtifact, Rv64imProofProvePerf,
+    Rv64imPublicProofVerifyPerf, SimpleKernelError, SimpleKernelPublicInput,
 };
 
 pub type Rv64imProofInput = SimpleKernelPublicInput;
@@ -226,6 +227,28 @@ pub struct Rv64imProof {
     pub statement: Rv64imProofStatement,
     pub kernel: Rv64imKernelProofBundle,
     pub witness: Rv64imProofWitnessBundle,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct Rv64imPublicProofProverSeam {
+    pub proof: Rv64imProof,
+    pub kernel: super::simple::PublicSimpleKernelOutput,
+    pub sidecar: super::simple::PublicSimpleKernelWitnessSidecar,
+    pub main_lane_inputs: Vec<ChunkInput>,
+}
+
+fn allow_public_proof_parallel_branches() -> bool {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        thread::available_parallelism()
+            .map(|parallelism| parallelism.get() > 1)
+            .unwrap_or(false)
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        false
+    }
 }
 
 impl Rv64imProofStatement {
@@ -639,29 +662,89 @@ fn prove_rv64im_public_proof_and_sidecar_with_perf(
     ),
     SimpleKernelError,
 > {
+    let (built, perf) = prove_rv64im_public_proof_prover_seam_with_perf(input, options)?;
+    let Rv64imPublicProofProverSeam {
+        proof, kernel, sidecar, ..
+    } = built;
+    Ok(((kernel, sidecar), proof, perf))
+}
+
+pub(crate) fn prove_rv64im_public_proof_prover_seam_with_perf(
+    input: &Rv64imProofInput,
+    options: Rv64imPublicProofOptions,
+) -> Result<(Rv64imPublicProofProverSeam, Rv64imProofProvePerf), SimpleKernelError> {
     let total_started = Instant::now();
-    let ((kernel, sidecar), simple_kernel) = build_public_simple_kernel_output_and_witness_with_perf(input)?;
+    let shared_trace_started = Instant::now();
+    let (_, derived) = build_parity_case_from_source(input.source.clone(), input.max_steps)?;
+    let shared_trace_ms = shared_trace_started.elapsed().as_secs_f64() * 1_000.0;
+
+    let ((kernel, sidecar), simple_kernel, root_main_lane, main_lane_inputs, root_main_lane_perf) =
+        if allow_public_proof_parallel_branches() {
+            thread::scope(|scope| {
+                let root_rows = &derived.execution_rows;
+                let schedule = options.root_fold_schedule;
+                let root_handle =
+                    scope.spawn(move || prove_root_main_lane_packaged_proof_with_inputs_and_perf(root_rows, schedule));
+                let ((kernel, sidecar), simple_kernel) =
+                    build_public_simple_kernel_output_and_witness_from_derived_with_perf(&derived)?;
+                let (root_main_lane, main_lane_inputs, root_main_lane_perf) = root_handle
+                    .join()
+                    .map_err(|_| SimpleKernelError::Proof("RV64IM root main-lane worker panicked".into()))??;
+                Ok::<_, SimpleKernelError>((
+                    (kernel, sidecar),
+                    simple_kernel,
+                    root_main_lane,
+                    main_lane_inputs,
+                    root_main_lane_perf,
+                ))
+            })?
+        } else {
+            let ((kernel, sidecar), simple_kernel) =
+                build_public_simple_kernel_output_and_witness_from_derived_with_perf(&derived)?;
+            let (root_main_lane, main_lane_inputs, root_main_lane_perf) =
+                prove_root_main_lane_packaged_proof_with_inputs_and_perf(
+                    &sidecar.trace.execution_rows,
+                    options.root_fold_schedule,
+                )?;
+            (
+                (kernel, sidecar),
+                simple_kernel,
+                root_main_lane,
+                main_lane_inputs,
+                root_main_lane_perf,
+            )
+        };
+    let parallel_overlap_ms = simple_kernel.total_ms.min(root_main_lane_perf.total_ms);
     let main_lane_started = Instant::now();
     let main_lane = build_simple_kernel_main_lane_artifact_from_summary(
         &kernel.root_lane_columns,
         &kernel.root_lane_commitment,
         options.root_fold_schedule,
     )?;
-    let (root_main_lane, root_main_lane_perf) =
-        prove_root_main_lane_packaged_proof_with_perf(&sidecar.trace.execution_rows, options.root_fold_schedule)?;
     let main_lane_ms = main_lane_started.elapsed().as_secs_f64() * 1_000.0;
     let export_started = Instant::now();
     let witness = proof_witness_bundle_from_public_kernel_and_trace_stages(&kernel, &sidecar.trace, &sidecar.stages)?;
-    let proof = proof_from_public_kernel_and_artifact(&kernel, &main_lane, root_main_lane, witness)?;
+    let main_lane_bundle = main_lane_proof_bundle_from_artifact(&main_lane, root_main_lane);
+    let proof = proof_from_public_kernel_and_main_lane_bundle(&kernel, main_lane_bundle, witness)?;
     let public_export_ms = export_started.elapsed().as_secs_f64() * 1_000.0;
     let perf = Rv64imProofProvePerf {
+        shared_trace_ms,
         simple_kernel,
+        parallel_overlap_ms,
         main_lane_ms,
         root_main_lane: root_main_lane_perf,
         public_export_ms,
         total_ms: total_started.elapsed().as_secs_f64() * 1_000.0,
     };
-    Ok(((kernel, sidecar), proof, perf))
+    Ok((
+        Rv64imPublicProofProverSeam {
+            proof,
+            kernel,
+            sidecar,
+            main_lane_inputs,
+        },
+        perf,
+    ))
 }
 
 pub fn prove_rv64im_public_proof(input: &Rv64imProofInput) -> Result<Rv64imProof, SimpleKernelError> {
@@ -716,9 +799,21 @@ pub fn prove_rv64im_accepted_proof_with_options_and_perf(
     input: &Rv64imProofInput,
     options: Rv64imPublicProofOptions,
 ) -> Result<((Rv64imAcceptedProofArtifact, Rv64imAuditBundle), Rv64imProofProvePerf), SimpleKernelError> {
-    let ((_, _), proof, perf) = prove_rv64im_public_proof_and_sidecar_with_perf(input, options)?;
-    let artifact = build_rv64im_accepted_proof_artifact(&proof)?;
-    let audit = build_rv64im_audit_bundle(&proof);
+    let (built, perf) = prove_rv64im_public_proof_prover_seam_with_perf(input, options)?;
+    let artifact = accepted_proof_artifact_from_prover_materials(
+        &built.proof.claim,
+        &built.proof.statement,
+        &built.kernel,
+        &built.sidecar,
+        &built.proof.kernel.main_lane,
+        &built.proof.kernel.stage_claims,
+        &built.proof.kernel.stage_packages,
+        &built.proof.kernel.kernel_opening,
+        &built.proof.kernel.kernel_claims,
+        &built.proof.kernel.root_lane_columns,
+        &built.proof.kernel.root_lane_commitment,
+    )?;
+    let audit = build_rv64im_audit_bundle(&built.proof);
     Ok(((artifact, audit), perf))
 }
 

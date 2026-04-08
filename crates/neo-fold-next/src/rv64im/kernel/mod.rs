@@ -157,7 +157,9 @@ pub use perf_diagnostics::{
     SimpleKernelBuildPerf, SimpleKernelVerifyPerf, StageClaimBundleBuildPerf, StagePackageBundleBuildPerf,
     StagePackageBundleVerifyPerf,
 };
+pub(crate) use proof_accepted::accepted_proof_artifact_from_prover_materials;
 pub use proof_accepted::{Rv64imAcceptedProofArtifact, Rv64imAuditBundle};
+pub(crate) use proof_api::prove_rv64im_public_proof_prover_seam_with_perf;
 pub use proof_api::{
     audit_rv64im_accepted_proof_against_input, audit_rv64im_accepted_proof_against_input_with_perf,
     build_rv64im_accepted_proof_artifact, build_rv64im_audit_bundle, build_rv64im_audit_witness_bundle,
@@ -177,9 +179,9 @@ pub use proof_api::{
 pub(crate) use proof_bridge::kernel_claim_bundle_from_statement_and_compact_surfaces;
 pub use proof_completeness::{KernelSoundnessAccountingSurface, StepCompositionSurface};
 pub(crate) use proof_export_relation::{
+    build_rv64im_kernel_export_build_output_from_carried_accepted_artifact_with_source_and_chunk_inputs,
     build_rv64im_kernel_export_proof_from_accepted_artifact,
-    build_rv64im_kernel_export_proof_from_carried_accepted_artifact,
-    build_rv64im_kernel_export_proof_from_carried_accepted_artifact_with_source, rv64im_public_chunk_digest,
+    build_rv64im_kernel_export_proof_from_carried_accepted_artifact, rv64im_public_chunk_digest,
     verify_rv64im_kernel_export_proof_with_output, verify_rv64im_kernel_export_proof_with_relation_output,
     Rv64imKernelExportRelationResult,
 };

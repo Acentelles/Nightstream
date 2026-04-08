@@ -438,14 +438,12 @@ fn kernel_proof_bundle_from_public_kernel(
     }
 }
 
-pub(super) fn proof_from_public_kernel_and_artifact(
+pub(super) fn proof_from_public_kernel_and_main_lane_bundle(
     kernel: &PublicSimpleKernelOutput,
-    main_lane_artifact: &SimpleKernelMainLaneArtifact,
-    root_main_lane: PackagedProof,
+    main_lane: Rv64imMainLaneProofBundle,
     witness: Rv64imProofWitnessBundle,
 ) -> Result<Rv64imProof, super::simple::SimpleKernelError> {
     let main_lane_surface = build_main_lane_surface(&kernel.root_lane_columns);
-    let main_lane = main_lane_proof_bundle_from_artifact(main_lane_artifact, root_main_lane);
     let trace = witness.trace.projection();
     let stages = witness.stages.projection_bundle();
     let stage_claims = witness.stage_claims.clone();

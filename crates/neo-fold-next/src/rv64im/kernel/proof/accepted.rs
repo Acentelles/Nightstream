@@ -17,14 +17,13 @@ use super::proof_witness::{
     Rv64imStageClaimProofBundle, Rv64imStagePackageProofBundle,
 };
 use super::root_lane_witness::{
-    build_root_execution_row_chunk_routes, build_root_execution_semantic_rows,
-    build_root_execution_semantics_refinement_summary, build_root_row_local_ccs_acceptance_summary,
-    root_execution_public_step_digests, root_execution_row_chunk_routes_digest, root_execution_semantic_rows_digest,
-    RootExecutionBundle,
+    build_root_execution_row_chunk_routes, build_root_execution_semantic_row_values,
+    build_root_execution_semantic_rows_from_values, build_root_execution_semantics_refinement_summary,
+    build_root_row_local_ccs_acceptance_summary, root_execution_public_step_digests,
+    root_execution_row_chunk_routes_digest, root_execution_semantic_rows_digest, RootExecutionBundle,
 };
 use super::simple::{
-    materialize_prepared_step_binding_summary, PublicSimpleKernelOutput, PublicSimpleKernelWitnessSidecar,
-    SimpleKernelError,
+    build_prepared_step_binding_summary, PublicSimpleKernelOutput, PublicSimpleKernelWitnessSidecar, SimpleKernelError,
 };
 use super::{RootLaneColumns, RootLaneCommitmentSummaryArtifact, TranscriptRecord};
 
@@ -60,11 +59,17 @@ fn build_root_execution_bundle(
     sidecar: &PublicSimpleKernelWitnessSidecar,
     main_lane: &Rv64imMainLaneProofBundle,
 ) -> Result<RootExecutionBundle, SimpleKernelError> {
-    let semantic_rows = build_root_execution_semantic_rows(&sidecar.trace.execution_rows);
+    let semantic_row_values = build_root_execution_semantic_row_values(&sidecar.trace.execution_rows);
+    let semantic_rows =
+        build_root_execution_semantic_rows_from_values(&sidecar.trace.execution_rows, &semantic_row_values);
     let public_step_digests = root_execution_public_step_digests(&main_lane.packaged.statement);
     let row_chunk_routes = build_root_execution_row_chunk_routes(&main_lane.packaged.statement);
-    let prepared_step_bindings =
-        materialize_prepared_step_binding_summary(&sidecar.trace.execution_rows, &kernel.root_lane_columns)?;
+    let prepared_step_bindings = build_prepared_step_binding_summary(
+        &sidecar.trace.execution_rows,
+        &semantic_row_values,
+        &kernel.root_lane_columns,
+        true,
+    )?;
     let row_local_ccs_acceptance =
         build_root_row_local_ccs_acceptance_summary(&prepared_step_bindings, &row_chunk_routes, &public_step_digests)?;
     let execution_semantics_refinement = build_root_execution_semantics_refinement_summary(
@@ -169,46 +174,74 @@ pub(crate) fn accepted_proof_artifact_from_legacy_proof(
         trace: proof.witness.trace.trace.clone(),
         stages: proof.witness.stages.stages.clone(),
     };
+    accepted_proof_artifact_from_prover_materials(
+        &proof.claim,
+        &proof.statement,
+        &kernel,
+        &sidecar,
+        &proof.kernel.main_lane,
+        &proof.kernel.stage_claims,
+        &proof.kernel.stage_packages,
+        &proof.kernel.kernel_opening,
+        &proof.kernel.kernel_claims,
+        &proof.kernel.root_lane_columns,
+        &proof.kernel.root_lane_commitment,
+    )
+}
+
+pub(crate) fn accepted_proof_artifact_from_prover_materials(
+    claim: &Rv64imKernelClaimBundle,
+    statement: &Rv64imProofStatement,
+    kernel: &PublicSimpleKernelOutput,
+    sidecar: &PublicSimpleKernelWitnessSidecar,
+    main_lane: &Rv64imMainLaneProofBundle,
+    stage_claims: &Rv64imStageClaimProofBundle,
+    stage_packages: &Rv64imStagePackageProofBundle,
+    kernel_opening: &Rv64imKernelOpeningProofBundle,
+    kernel_claims: &Rv64imKernelClaimProofBundle,
+    root_lane_columns: &RootLaneColumns,
+    root_lane_commitment: &RootLaneCommitmentSummaryArtifact,
+) -> Result<Rv64imAcceptedProofArtifact, SimpleKernelError> {
     let stage1 = build_stage1_proof_bundle(
         &sidecar.trace.execution_rows,
         &sidecar.stages.stage1,
-        &proof.kernel.stage_claims.claims.stage1,
-        &proof.kernel.stage_packages.packages.stage1,
+        &stage_claims.claims.stage1,
+        &stage_packages.packages.stage1,
     );
     let stage2 = build_stage2_proof_bundle(
         &sidecar.stages.stage2,
-        &proof.kernel.stage_claims.claims.stage2,
-        &proof.kernel.stage_packages.packages.stage2,
+        &stage_claims.claims.stage2,
+        &stage_packages.packages.stage2,
     );
-    let root_execution = build_root_execution_bundle(&kernel, &sidecar, &proof.kernel.main_lane)?;
+    let root_execution = build_root_execution_bundle(kernel, sidecar, main_lane)?;
     let stage3 = build_stage3_proof_bundle(
         &sidecar.stages.stage3,
-        &proof.kernel.stage_claims.claims.stage3,
+        &stage_claims.claims.stage3,
         &root_execution,
         stage2.temporal.digest,
-        proof.statement.initial_pc,
-        proof.statement.final_pc,
-        &proof.kernel.stage_packages.packages.stage3,
+        statement.initial_pc,
+        statement.final_pc,
+        &stage_packages.packages.stage3,
     );
     let step_composition = build_step_composition_surface(
         &stage1,
         &stage2,
         &stage3,
         &root_execution,
-        proof.statement.initial_pc,
-        proof.statement.final_pc,
+        statement.initial_pc,
+        statement.final_pc,
     );
     let soundness_accounting = canonical_kernel_soundness_accounting_surface();
     let artifact = Rv64imAcceptedProofArtifact {
-        claim: proof.claim.clone(),
-        statement: proof.statement.clone(),
-        stage_claims: proof.kernel.stage_claims.clone(),
-        stage_packages: proof.kernel.stage_packages.clone(),
-        kernel_opening: proof.kernel.kernel_opening.clone(),
-        kernel_claims: proof.kernel.kernel_claims.clone(),
-        root_lane_columns: proof.kernel.root_lane_columns.clone(),
-        root_lane_commitment: proof.kernel.root_lane_commitment.clone(),
-        main_lane: proof.kernel.main_lane.clone(),
+        claim: claim.clone(),
+        statement: statement.clone(),
+        stage_claims: stage_claims.clone(),
+        stage_packages: stage_packages.clone(),
+        kernel_opening: kernel_opening.clone(),
+        kernel_claims: kernel_claims.clone(),
+        root_lane_columns: root_lane_columns.clone(),
+        root_lane_commitment: root_lane_commitment.clone(),
+        main_lane: main_lane.clone(),
         transcript: sidecar.stages.transcript.clone(),
         stage1,
         stage2,
