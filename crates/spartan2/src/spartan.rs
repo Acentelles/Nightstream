@@ -843,6 +843,7 @@ impl<E: Engine> R1CSSNARKTrait<E> for R1CSSNARK<E> {
 mod tests {
   use super::*;
   use bellpepper_core::{ConstraintSystem, SynthesisError, num::AllocatedNum};
+  use std::sync::Once;
   use tracing_subscriber::EnvFilter;
 
   #[derive(Clone, Debug, Default)]
@@ -911,13 +912,20 @@ mod tests {
     }
   }
 
+  fn init_test_tracing() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+      let _ = tracing_subscriber::fmt()
+        .with_target(false)
+        .with_ansi(true)
+        .with_env_filter(EnvFilter::from_default_env())
+        .try_init();
+    });
+  }
+
   #[test]
   fn test_snark() {
-    tracing_subscriber::fmt()
-    .with_target(false)
-    .with_ansi(true)                // no bold colour codes
-    .with_env_filter(EnvFilter::from_default_env())
-    .init();
+    init_test_tracing();
 
     type E = crate::provider::PallasHyraxEngine;
     type S = R1CSSNARK<E>;
@@ -934,11 +942,7 @@ mod tests {
     // This specifically exercises Hash-MLE engines where transcript interleaving
     // between inner sumcheck and PCS could cause different r_y values
 
-    tracing_subscriber::fmt()
-      .with_target(false)
-      .with_ansi(true)
-      .with_env_filter(EnvFilter::from_default_env())
-      .init();
+    init_test_tracing();
 
     type E = crate::provider::GoldilocksMerkleMleEngine;
     type S = R1CSSNARK<E>;
