@@ -3,6 +3,7 @@
 use rwasm::Tracer;
 
 use super::adapters::rwasm::traces_from_rwasm_tracer;
+use super::adapters::wasmtime::WasmtimeTraceStep;
 use super::ir::{WasmBuildError, WasmStepTrace};
 
 pub type WasmExecutionStep = WasmStepTrace;
@@ -26,6 +27,12 @@ impl WasmTraceSource for [WasmExecutionStep] {
 impl WasmTraceSource for Vec<WasmExecutionStep> {
     fn lower_to_wasm_ir(&self) -> Result<Vec<WasmExecutionStep>, WasmBuildError> {
         Ok(self.clone())
+    }
+}
+
+impl WasmTraceSource for WasmtimeTraceStep {
+    fn lower_to_wasm_ir(&self) -> Result<Vec<WasmExecutionStep>, WasmBuildError> {
+        super::adapters::wasmtime::traces_from_wasmtime_steps(core::slice::from_ref(self))
     }
 }
 

@@ -16,6 +16,10 @@ pub mod tables;
 pub mod trace;
 
 pub use adapters::rwasm::{traces_from_rwasm_instr_states, traces_from_rwasm_tracer};
+pub use adapters::wasmtime::{
+    collect_wasmtime_steps, traces_from_wasmtime_steps, traces_from_wasmtime_wasm_bytes, WasmtimeTraceMemoryAccess,
+    WasmtimeTraceRun, WasmtimeTraceStep,
+};
 pub use builder::WasmTraceBuilder;
 pub use ccs::WasmVmSpec;
 pub use ir::{boundary_states, StackLaneAccess, WasmBoundaryState, WasmBuildError, WasmStepTrace};

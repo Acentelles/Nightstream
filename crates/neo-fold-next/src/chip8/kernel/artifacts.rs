@@ -104,18 +104,21 @@ pub struct KernelStagedExecutionDigestBundle {
     pub digests: Vec<KernelStagedExecutionDigest>,
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq)]
 pub struct KernelReleaseArtifact {
     pub kernel_digest: KernelExecutionDigest,
     pub staged_bundle: KernelStagedExecutionDigestBundle,
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KernelRoot0CommitmentBinding {
     pub id: CommitmentId,
     pub digest: [u8; 32],
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq)]
 pub struct KernelTraceDigestSource {
     pub stage1_digest: [u8; 32],
@@ -124,6 +127,7 @@ pub struct KernelTraceDigestSource {
     pub semantic_evidence_summary_digest: [u8; 32],
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq)]
 pub struct KernelExternalReleaseArtifact {
     pub root0_bindings: Vec<KernelRoot0CommitmentBinding>,
