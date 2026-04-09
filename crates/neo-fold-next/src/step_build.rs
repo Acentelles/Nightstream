@@ -39,6 +39,14 @@ pub struct RamAccessRecord {
     pub value: u8,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ShoutLookupRecord {
+    pub shout_id: u32,
+    pub input0: u32,
+    pub input1: u32,
+    pub output: u32,
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct StepExtensionData {
     pub bytecode_fetch: Option<BytecodeFetchRecord>,
@@ -46,6 +54,7 @@ pub struct StepExtensionData {
     pub register_writes: Vec<RegisterAccessRecord>,
     pub ram_reads: Vec<RamAccessRecord>,
     pub ram_writes: Vec<RamAccessRecord>,
+    pub shout_lookup: Option<ShoutLookupRecord>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

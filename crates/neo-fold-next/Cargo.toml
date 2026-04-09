@@ -23,6 +23,7 @@ bincode = { workspace = true }
 bellpepper-core = { workspace = true }
 p3-field = { workspace = true }
 rayon = { workspace = true }
+rwasm = { git = "https://github.com/ecioppettini/rwasm", branch = "nightstream-wip", default-features = false, features = ["tracing"] }
 serde = { workspace = true }
 spartan2 = { workspace = true }
 thiserror = { workspace = true }

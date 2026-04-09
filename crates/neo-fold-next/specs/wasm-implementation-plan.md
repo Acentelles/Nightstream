@@ -1,19 +1,55 @@
-# RWASM Implementation Plan For `neo-fold-next`
+# WASM Implementation Plan For `neo-fold-next`
 
 ## Purpose
 
 This document is a detailed implementation plan for rebuilding the historical
-RWASM prototype on top of the `neo-fold-next` architecture.
+WASM prototype on top of the `neo-fold-next` architecture.
 
 It is based on:
 
-- the historical RWASM proving strategy,
+- the historical WASM proving strategy,
 - the current `neo-fold-next` VM/frontend contracts,
 - the CHIP-8 implementation as the primary frontend reference,
 - and the maintained RV64 path as the main reference for soundness boundaries
   and machine-data preparation discipline.
 
 This is an implementation plan, not a theorem spec.
+
+## Progress Checklist
+
+- [x] Add clean-room WASM strategy doc under `neo-fold-next/specs/`.
+- [x] Add `neo-fold-next`-specific implementation plan under `neo-fold-next/specs/`.
+- [x] Create a dedicated `src/wasm/` frontend subtree in `neo-fold-next`.
+- [x] Wire `neo-fold-next` crate exports for the new WASM frontend.
+- [x] Define WASM opcode taxonomy and supported phase-1 subset.
+- [x] Define frontend-local normalized trace records and builder error types.
+- [x] Define a fixed-width WASM row layout and a minimal `CoreCcsSpec`.
+- [x] Implement `RwasmVmSpec`.
+- [x] Implement `RwasmTraceBuilder` that packages rows into `StepBuild`.
+- [x] Add one end-to-end prove/verify test through the generic `neo-fold-next` spine.
+- [x] Add direct tests for tracer normalization from concrete `wasm::Tracer` rows.
+- [x] Move WASM test coverage into `tests/` rather than inline impl-file tests.
+- [x] Bind selectors to concrete opcode bytes in the real WASM CCS.
+- [x] Enforce stack-address discipline for the phase-1 supported row shapes.
+- [x] Enforce direct arithmetic semantics for `i32.add` and `i32.sub`.
+- [x] Enforce basic shout metadata consistency for lookup-backed rows.
+- [x] Emit frontend-owned lookup payloads for the historical lookup-routed opcode family.
+- [x] Start a dedicated `wasm/stage1/` module for Shout-channel ownership and stage-1 summary extraction.
+- [x] Add the first transcripted Stage-1 prover/verifier slice for one real WASM channel (`i32.eqz`).
+- [x] Generalize the transcripted Stage-1 slice to the binary lookup-routed WASM channels.
+- [x] Start a dedicated `wasm/stage2/` module for stack-memory ownership and summary extraction.
+- [x] Add the first transcripted Stage-2 prover/verifier slice for WASM stack replay consistency.
+- [x] Add a dedicated `wasm/stage3/` module for continuity / bridge ownership.
+- [x] Add the first transcripted Stage-3 prover/verifier slice for WASM boundary continuity.
+- [x] Strengthen Stage 2 toward a Twist-style shape with shared stack access families and value-from-inc claims.
+- [x] Add a minimal `wasm/kernel/` owner surface above Stage 1 / 2 / 3.
+- [x] Add a verifier-checked kernel-opening summary with selected row / step references and stage digests.
+- [x] Add a folded root-run bridge from the WASM kernel into the generic `neo-fold-next` CCS proving path.
+- [ ] Flesh out remaining direct row-local semantics beyond the initial phase-1 subset.
+- [ ] Reintroduce packed auxiliary lookup semantics for the historical WASM ALU subset.
+- [ ] Strengthen the current Stage-2 linkage batching beyond the present exact-row / recomputed-summary shape.
+- [ ] Replace the execution-source wording with a normalized WASM trace interface and keep `wasm` as one adapter.
+- [ ] Decide whether phase 2 should remain frontend-owned or continue growing the staged WASM kernel now in place.
 
 ## Assumptions
 
@@ -25,8 +61,8 @@ These are the assumptions used in the plan:
 3. The initial target is a frontend-integrated proving path that can build
    `StepBuild` records and run through the generic `neo-fold-next` proving
    spine.
-4. A full RWASM kernel comparable to the CHIP-8 or RV64 kernel is out of scope
-   for phase 1.
+4. A full WASM kernel comparable to the CHIP-8 or RV64 kernel is still out of
+   scope for phase 1, but the phase-1 surface should be compatible with one.
 5. The branch should remain lean. New code should be added only where it has a
    clear ownership boundary in the `neo-fold-next` structure.
 
@@ -38,24 +74,25 @@ These are conventions and not necessities:
 
 ## Executive Recommendation
 
-Implement RWASM in two phases:
+Implement WASM in two phases:
 
 ### Phase 1
 
-Build a **frontend-owned RWASM row builder** inside `neo-fold-next` that:
+Build a **frontend-owned WASM row builder** inside `neo-fold-next` that:
 
 - owns opcode metadata,
-- owns trace normalization from `rwasm::Tracer`,
+- owns trace normalization from `wasm::Tracer`,
 - owns a fixed-width core CCS spec,
 - builds `StepBuild` records directly,
 - and proves the historical narrow subset through the generic `neo-fold-next`
   run/prove/verify flow.
 
-This phase should not attempt to build a full staged kernel.
+This phase should not attempt to build a full staged kernel, but it should own
+enough structure to preserve the old prototype's proof split.
 
 ### Phase 2
 
-After phase 1 is stable, decide whether RWASM should:
+After phase 1 is stable, decide whether WASM should:
 
 - stay as a lightweight frontend with only generic `neo-fold-next` proof
   packaging,
@@ -63,6 +100,180 @@ After phase 1 is stable, decide whether RWASM should:
   commitment/opening stages.
 
 This split keeps the initial rewrite tractable.
+
+## Migration Status
+
+The migration from the historical branch is not complete yet.
+
+What is already in place:
+
+- normalized per-step trace records,
+- fixed-width main-lane CCS,
+- lookup payload extraction,
+- Stage 1 ownership for the current lookup-routed subset,
+- a stronger Stage 2 ownership boundary with access-family and value-from-inc summaries,
+- a first Stage 3 continuity / bridge slice,
+- a minimal staged `wasm/kernel/` owner boundary,
+- a verifier-checked kernel-opening summary,
+- and a folded root-run bridge into the generic `neo-fold-next` proving spine.
+
+What is still missing before the old prototype should be considered migrated:
+
+- the remaining direct row-local opcode semantics,
+- the packed auxiliary lookup route used by the historical ALU subset,
+- a stronger Stage-2 linkage/oracle story than the current exact-row replay summaries,
+- fuller opening/package artifacts if CHIP-8-level packaging parity is desired,
+- and a cleaner execution-source abstraction so `wasm` is only one adapter.
+
+So the current branch should be read as:
+
+- substantial migration of the proving architecture,
+- but not full semantic parity with the old branch yet.
+
+## Proof Strategy Split
+
+The long-term WASM proof surface should mirror the CHIP-8 split even if the
+execution source eventually changes.
+
+### Main-Lane CCS
+
+Owner:
+
+- `crates/neo-fold-next/src/wasm/ccs.rs`
+
+Purpose:
+
+- prove row-local structure cheaply,
+- keep the generic folded CCS pipeline responsible for exported per-step rows.
+
+Current scope:
+
+- selector booleanness and one-hotness,
+- selector-to-opcode-byte binding,
+- stack-pointer update,
+- direct stack-address formulas for the supported row shapes,
+- simple PC update rules for the currently supported non-branch rows,
+- direct arithmetic for `i32.add` and `i32.sub`,
+- the simplified boolean-guarded `select` relation,
+- and shout metadata consistency for lookup-backed rows.
+
+This layer should remain local. It should not attempt to prove table/memory
+consistency by itself.
+
+### Stage 1 / Shout
+
+Owner:
+
+- `crates/neo-fold-next/src/wasm/stage1/`
+
+Purpose:
+
+- prove lookup-routed read-only opcode semantics.
+
+Current scope:
+
+- `i32.eqz`
+- `i32.eq`
+- `i32.ne`
+- `i32.lt_s`
+- `i32.lt_u`
+- `i32.and`
+- `i32.or`
+- `i32.xor`
+- `i32.mul`
+
+Current proof style:
+
+- transcript-bound batched semantic checks per shout channel over exact exported
+  lookup rows.
+
+Future direction:
+
+- replace the current exact-row batch with a proper shout/table argument once
+  the kernel story is chosen.
+
+### Stage 2 / Twist
+
+Owner:
+
+- `crates/neo-fold-next/src/wasm/stage2/`
+
+Purpose:
+
+- prove mutable shared stack-memory consistency.
+
+Current scope:
+
+- exact replay of stack reads/writes against one shared stack map,
+- explicit access-family summaries for `read0`, `read1`, `read2`, and `write1`,
+- a value-from-inc surface over the shared stack state,
+- final stack snapshot export,
+- transcript-bound batched read consistency,
+- and a first transcripted linkage batch over the exported Stage-2 claims.
+
+Future direction:
+
+- move toward a real Twist-style argument with access families, batched
+  read/write claims, and value-from-inc semantics.
+
+### Stage 3 / Continuity And Bridge
+
+Owner:
+
+- `crates/neo-fold-next/src/wasm/stage3/`
+
+Purpose:
+
+- prove adjacent-row boundary continuity,
+- own row bindings for future root export.
+
+Current scope:
+
+- boundary continuity across `pc`, `sp`, and `halted`,
+- start/end boundary summaries,
+- row binding export for future root packaging.
+
+### Folded Proofs And Openings
+
+Owner:
+
+- generic `neo-fold-next` root proving and opening layers.
+
+Purpose:
+
+- prove/export the folded CCS session over prepared WASM steps,
+- compress opening obligations.
+
+Current scope:
+
+- a staged kernel proof bundle (`Stage 1`, `Stage 2`, `Stage 3`),
+- a verifier-checked kernel-opening summary over stage rows and prepared steps,
+- and a `prove_kernel_run` / `verify_kernel_run` bridge into the generic folded CCS session.
+
+Important non-goal:
+
+- these folded/opening layers are not where WASM opcode or memory semantics
+  should live.
+
+## Execution Boundary
+
+The stable proving boundary should be a **normalized WASM execution trace**,
+not a hard dependency on `wasm::Tracer`.
+
+Current adapter:
+
+- `wasm::Tracer` via `execute.rs` / `lower.rs`
+
+Future adapters:
+
+- Wasmtime debug tracing
+- any other concrete runtime trace that can be normalized into the same
+  frontend-owned step shape
+
+The key architectural rule is:
+
+- execution-source differences should terminate at the normalization boundary;
+  the CCS and Stage 1 / 2 / 3 layers should consume the normalized trace shape.
 
 ## Mapping The Historical Design To The New Architecture
 
@@ -76,8 +287,8 @@ Old role:
 
 New owner:
 
-- `crates/neo-fold-next/src/rwasm/isa.rs`
-- `crates/neo-fold-next/src/rwasm/tables.rs`
+- `crates/neo-fold-next/src/wasm/isa.rs`
+- `crates/neo-fold-next/src/wasm/tables.rs`
 
 Reason:
 
@@ -92,8 +303,8 @@ Old role:
 
 New owner:
 
-- `crates/neo-fold-next/src/rwasm/execute.rs`
-- `crates/neo-fold-next/src/rwasm/lower.rs`
+- `crates/neo-fold-next/src/wasm/execute.rs`
+- `crates/neo-fold-next/src/wasm/lower.rs`
 
 Reason:
 
@@ -109,8 +320,8 @@ Old role:
 
 New owner:
 
-- `crates/neo-fold-next/src/rwasm/layout.rs`
-- `crates/neo-fold-next/src/rwasm/ccs.rs`
+- `crates/neo-fold-next/src/wasm/layout.rs`
+- `crates/neo-fold-next/src/wasm/ccs.rs`
 
 Reason:
 
@@ -126,7 +337,7 @@ Old role:
 
 New owner:
 
-- `crates/neo-fold-next/src/rwasm/builder.rs`
+- `crates/neo-fold-next/src/wasm/builder.rs`
 
 Reason:
 
@@ -142,20 +353,20 @@ Old role:
 
 New owner:
 
-- `crates/neo-fold-next/src/rwasm/spec.rs`
-- `crates/neo-fold-next/src/rwasm/mod.rs`
+- `crates/neo-fold-next/src/wasm/spec.rs`
+- `crates/neo-fold-next/src/wasm/mod.rs`
 
 Reason:
 
 - CHIP-8 exposes `Chip8VmSpec` and a thin compatibility surface.
-- RWASM should have an explicit `RwasmVmSpec` implementing `VmSpec`.
+- WASM should have an explicit `RwasmVmSpec` implementing `VmSpec`.
 
 ## Proposed File Structure
 
 Add a new frontend subtree:
 
 ```text
-crates/neo-fold-next/src/rwasm/
+crates/neo-fold-next/src/wasm/
 ├── mod.rs
 ├── spec.rs
 ├── isa.rs
@@ -173,7 +384,7 @@ crates/neo-fold-next/src/rwasm/
 `mod.rs`
 
 - owns the frontend barrel,
-- exports only the curated public RWASM frontend surface.
+- exports only the curated public WASM frontend surface.
 
 `spec.rs`
 
@@ -207,7 +418,7 @@ crates/neo-fold-next/src/rwasm/
 
 `execute.rs`
 
-- owns direct translation from `rwasm::Tracer` rows into frontend-local trace
+- owns direct translation from `wasm::Tracer` rows into frontend-local trace
   records.
 
 `lower.rs`
@@ -243,19 +454,19 @@ Tasks:
 
 Exit condition:
 
-- reviewers can point to one obvious intended ownership structure for RWASM.
+- reviewers can point to one obvious intended ownership structure for WASM.
 
 ## Phase 1: Frontend Skeleton
 
 Goal:
 
-- create a compilable RWASM frontend skeleton inside `neo-fold-next`.
+- create a compilable WASM frontend skeleton inside `neo-fold-next`.
 
 Tasks:
 
-1. Add `src/rwasm/mod.rs`.
-2. Add `src/rwasm/spec.rs`.
-3. Wire `pub mod rwasm;` into `crates/neo-fold-next/src/lib.rs`.
+1. Add `src/wasm/mod.rs`.
+2. Add `src/wasm/spec.rs`.
+3. Wire `pub mod wasm;` into `crates/neo-fold-next/src/lib.rs`.
 4. Re-export:
    - `RwasmVmSpec`,
    - `RwasmTraceBuilder`,
@@ -267,7 +478,7 @@ Design constraint:
 
 Exit condition:
 
-- `neo-fold-next` exposes a placeholder RWASM frontend namespace with no proving
+- `neo-fold-next` exposes a placeholder WASM frontend namespace with no proving
   logic yet.
 
 ## Phase 2: Opcode And Trace Taxonomy
@@ -325,7 +536,7 @@ Tasks:
    - halted flag.
 2. Keep this frontend-local rather than forcing direct use of
    `neo-vm-trace::StepTrace`.
-3. Implement translation from `rwasm::Tracer` to `Vec<RwasmStepTrace>`.
+3. Implement translation from `wasm::Tracer` to `Vec<RwasmStepTrace>`.
 
 Why not use `neo-vm-trace` directly here:
 
@@ -343,7 +554,7 @@ Exit condition:
 
 Goal:
 
-- define the fixed-width row shape for the RWASM main lane.
+- define the fixed-width row shape for the WASM main lane.
 
 Tasks:
 
@@ -367,19 +578,19 @@ Recommended policy:
 
 Exit condition:
 
-- one file owns the canonical row shape for the RWASM frontend.
+- one file owns the canonical row shape for the WASM frontend.
 
 ## Phase 5: Core CCS Spec
 
 Goal:
 
-- make RWASM a real `VmSpec`.
+- make WASM a real `VmSpec`.
 
 Tasks:
 
 1. In `ccs.rs`, define `RwasmVmSpec { core: CoreCcsSpec, ... }`.
 2. Implement `VmSpec`:
-   - `name() -> "rwasm"`,
+   - `name() -> "wasm"`,
    - `state_spec()`,
    - `shout_tables()`,
    - `twist_tables()`,
@@ -424,7 +635,7 @@ Tasks:
    - emit `StepInput`,
    - wrap as `StepBuild`.
 3. Define a label format that is stable and trace-friendly, for example:
-   - `rwasm@pc:<pc>:op:<opcode>`
+   - `wasm@pc:<pc>:op:<opcode>`
 4. Populate `extension_data` conservatively.
 
 Recommended phase-1 extension mapping:
@@ -440,7 +651,7 @@ Recommended phase-1 extension mapping:
 Important point:
 
 - CHIP-8’s `StepExtensionData` is optimized for CHIP-8 audit data.
-- RWASM should not contort itself to overuse these fields if the semantics do
+- WASM should not contort itself to overuse these fields if the semantics do
   not fit. Keep them shallow in phase 1.
 
 Exit condition:
@@ -466,7 +677,7 @@ Tasks:
 
 Exit condition:
 
-- external callers can discover RWASM through one curated frontend surface.
+- external callers can discover WASM through one curated frontend surface.
 
 ## Phase 8: Phase-1 Tests
 
@@ -558,7 +769,7 @@ Cons:
 
 Recommendation:
 
-- choose Option B if the team is committed to a future RWASM kernel,
+- choose Option B if the team is committed to a future WASM kernel,
 - choose Option A only if the near-term goal is proving the historical subset as
   quickly as possible with minimal architecture work.
 
@@ -616,7 +827,7 @@ through the older `neo-fold` session/shared-bus entrypoints.
 
 ### Milestone 1: Skeleton
 
-- `rwasm/` subtree exists,
+- `wasm/` subtree exists,
 - `RwasmVmSpec` compiles,
 - tracer normalization compiles,
 - no proof tests yet.
@@ -635,15 +846,15 @@ through the older `neo-fold` session/shared-bus entrypoints.
 
 - decide whether to:
   - stay frontend-only for now,
-  - or begin a true staged `rwasm/kernel/` subtree.
+  - or begin a true staged `wasm/kernel/` subtree.
 
 ## Future Kernelization Path
 
-If phase 1 succeeds and the project decides to grow RWASM into a first-class
+If phase 1 succeeds and the project decides to grow WASM into a first-class
 kernel, the natural next structure is:
 
 ```text
-crates/neo-fold-next/src/rwasm/
+crates/neo-fold-next/src/wasm/
 ├── mod.rs
 ├── spec.rs
 ├── isa.rs
@@ -666,7 +877,7 @@ But phase 1 should not create those directories prematurely.
 
 A practical first coding sequence is:
 
-1. Add `src/rwasm/mod.rs`, `spec.rs`, `isa.rs`.
+1. Add `src/wasm/mod.rs`, `spec.rs`, `isa.rs`.
 2. Add `layout.rs` with a fresh contiguous witness layout.
 3. Add `ccs.rs` with `RwasmVmSpec` and only direct-op row-local constraints.
 4. Add `execute.rs` with tracer normalization and stack-pointer replay.
@@ -683,7 +894,7 @@ The right first implementation on `neo-fold-next` is not “port the old files�
 
 It is:
 
-- build a new RWASM frontend in the CHIP-8 style,
+- build a new WASM frontend in the CHIP-8 style,
 - keep the main lane row-local and narrow,
 - preserve the historical trace and stack semantics,
 - preserve the direct-vs-auxiliary split,

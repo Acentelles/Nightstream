@@ -1,9 +1,9 @@
-# RWASM Implementation Strategy
+# WASM Implementation Strategy
 
 ## Purpose
 
 This document extracts the proving strategy implemented on the historical
-`enzo/rwasm-bindings` branch into a clean-room specification.
+`enzo/wasm-bindings` branch into a clean-room specification.
 
 It is not a migration guide for the old file layout.
 
@@ -15,18 +15,18 @@ It is a description of:
 - the shared memory / lookup strategy,
 - and the intentional shortcuts.
 
-The target consumer is an engineer or agent re-implementing RWASM on top of the
+The target consumer is an engineer or agent re-implementing WASM on top of the
 current architecture without depending on the old branch structure.
 
 ## Objective
 
-The historical RWASM path aimed to prove a narrow subset of rWASM execution
+The historical WASM path aimed to prove a narrow subset of rWASM execution
 using Nightstream’s generic proving stack, with the smallest possible amount of
 new machinery.
 
 The core objective was:
 
-1. accept concrete `rwasm::Tracer` output as the execution boundary,
+1. accept concrete `wasm::Tracer` output as the execution boundary,
 2. normalize that into generic Nightstream step traces,
 3. prove one machine step per CCS step,
 4. directly arithmetize a small stack-local i32 subset,
@@ -104,7 +104,7 @@ Important property:
 
 Purpose:
 
-- convert `rwasm::Tracer` rows into generic per-step execution records.
+- convert `wasm::Tracer` rows into generic per-step execution records.
 
 Each normalized step carries:
 
@@ -172,11 +172,115 @@ Important property:
 - linear memory and table writes were traced but not part of the authenticated
   state transition in the prototype.
 
+## Proof Strategy Split
+
+The historical prototype and the current rewrite are easiest to reason about if
+they are separated into the same proof layers used by CHIP-8.
+
+### Main-lane CCS
+
+Purpose:
+
+- prove local row shape,
+- keep only cheap per-row arithmetic in the main lane.
+
+Typical obligations:
+
+- selector booleanness,
+- selector-to-opcode binding,
+- stack-pointer deltas,
+- stack-address formulas,
+- direct arithmetic for the cheapest operators,
+- and the historical simplified boolean-guarded `select` relation.
+
+### Stage 1 / Shout
+
+Purpose:
+
+- prove lookup-routed read-only operators.
+
+Historical role:
+
+- route comparison / ALU subset rows through the lookup path instead of
+  expanding them into direct row-local arithmetic.
+
+Current rewrite status:
+
+- implemented as transcript-bound exact-row channel checks for the current
+  lookup-routed subset,
+- with `i32.eqz` handled as a unary channel and the comparison / ALU subset
+  handled as binary channels.
+
+### Stage 2 / Twist
+
+Purpose:
+
+- prove mutable shared stack-memory consistency.
+
+Historical role:
+
+- authenticate the evolving stack state rather than only proving row-local
+  address formulas.
+
+Current rewrite status:
+
+- owns one shared stack memory,
+- exports explicit access families over that shared memory,
+- checks replay consistency,
+- and exports a value-from-inc style summary,
+- but still uses exact-row recomputation rather than a full committed oracle
+  argument.
+
+### Stage 3 / Continuity And Bridge
+
+Purpose:
+
+- prove adjacent-row boundary continuity,
+- prepare the row-binding/export surface consumed by the root proof.
+
+Historical role:
+
+- mostly implicit or absent in the original prototype.
+
+Rewrite target:
+
+- make this owner boundary explicit.
+
+Current rewrite status:
+
+- implemented as a transcript-bound boundary continuity check over `pc`, `sp`,
+  `cycle`, and `trace_index`,
+- plus exported start/final boundary summaries and row bindings.
+
+### Folded Proofs And Openings
+
+Purpose:
+
+- fold/export the generic CCS session,
+- aggregate and compress opening claims.
+
+Important property:
+
+- these are packaging layers, not the owner of WASM opcode semantics.
+
+Current rewrite status:
+
+- a minimal staged `wasm/kernel/` surface now exists,
+- it exports a verifier-checked kernel-opening summary with stage digests and
+  selected row / prepared-step references,
+- and it can drive the generic folded CCS session through a root-run bridge.
+
 ## Trace Boundary
 
 ### Input
 
-The execution boundary is `rwasm::Tracer`.
+The architectural execution boundary should be a normalized WASM execution
+trace.
+
+The historical implementation used `wasm::Tracer` as the concrete source.
+
+That should be treated as an adapter choice, not a requirement of the proving
+design.
 
 Every tracer row is treated as one semantic step with:
 
@@ -300,7 +404,7 @@ A rewrite should preserve stable ids so plan/debug output stays interpretable.
 ### Packed-key relation strategy
 
 The historical implementation did **not** use dense bit-addressed lookup tables
-for the supported RWASM ALU families.
+for the supported WASM ALU families.
 
 Instead it used metadata-driven packed relations:
 
@@ -464,7 +568,7 @@ That was useful because it separated:
 
 A rewrite should preserve these compatibility points:
 
-- the trace boundary is concrete `rwasm::Tracer`,
+- the trace boundary is concrete `wasm::Tracer`,
 - stack pointer is replayed from opcode arity,
 - the three-lane stack convention remains explicit unless deliberately changed,
 - stable lookup ids remain stable,
@@ -482,7 +586,7 @@ The following may safely change:
 
 ## Summary
 
-The historical RWASM branch should be understood as:
+The historical WASM branch should be understood as:
 
 - a concrete tracer adapter,
 - a narrow fixed-width step-lane arithmetization,

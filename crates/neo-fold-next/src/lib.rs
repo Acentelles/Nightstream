@@ -10,6 +10,7 @@
 //! - `witness_layout`: shared local packed witness layout helpers
 //! - `vm`: static VM contracts
 //! - `chip8`: current VM frontend and staged kernel
+//! - `wasm`: frontend-owned WASM proving scaffold
 
 pub mod chip8;
 pub mod chunk_relation;
@@ -25,4 +26,5 @@ pub mod step_build;
 pub mod time_opening;
 pub mod verifier;
 pub mod vm;
+pub mod wasm;
 pub mod witness_layout;
