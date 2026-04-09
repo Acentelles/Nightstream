@@ -1,7 +1,7 @@
 use neo_ajtai::Commitment;
 use neo_ccs::traits::SModuleHomomorphism;
 use neo_ccs::{CcsStructure, Mat, SparsePoly};
-use neo_fold_next::proof::StepInput;
+use neo_fold_next::proof::{FoldSchedule, StepInput};
 use neo_fold_next::prover::CommitmentMixers;
 use neo_fold_next::run::{prove_run, verify_run};
 use neo_fold_next::vm::VmSpec;
@@ -172,6 +172,7 @@ fn wasm_frontend_scaffold_runs_through_generic_spine() {
     let params = NeoParams::goldilocks_auto_r1cs_ccs(ccs.m).expect("params");
     let proof = prove_run(
         FoldingMode::Optimized,
+        FoldSchedule::RowsPerChunk(1),
         &params,
         &ccs,
         step_inputs.clone(),
@@ -180,6 +181,6 @@ fn wasm_frontend_scaffold_runs_through_generic_spine() {
     )
     .expect("prove");
 
-    let verified = verify_run(FoldingMode::Optimized, &params, &ccs, public_steps, &proof, mixers()).expect("verify");
+    let verified = verify_run(FoldingMode::Optimized, &params, &ccs, &public_steps, &proof, mixers()).expect("verify");
     assert_eq!(verified, proof.final_main_claims);
 }
