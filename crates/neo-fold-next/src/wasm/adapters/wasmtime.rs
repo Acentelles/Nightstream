@@ -22,7 +22,15 @@ pub struct WasmtimeTraceStep {
     pub function: String,
     pub function_index: Option<u32>,
     pub pc: Option<u32>,
+    /// Human-readable opcode label from wasmparser's Debug format, for display only.
     pub opcode: Option<String>,
+    /// Structurally decoded opcode, populated at trace-collection time from
+    /// `wasmparser::Operator`. Not serialized (runtime-only).
+    #[serde(skip)]
+    pub opcode_decoded: Option<WasmOpcode>,
+    /// Immediate value for `i32.const`, decoded at collection time.
+    #[serde(default)]
+    pub immediate_i32: Option<u32>,
     pub memory: Option<WasmtimeTraceMemoryAccess>,
     pub locals: Vec<String>,
     pub operand_stack: Vec<String>,
@@ -58,6 +66,8 @@ struct WasmtimeTraceState {
 struct DecodedOpcode {
     text: String,
     memory: Option<DecodedMemoryOpcode>,
+    /// Structurally decoded from `wasmparser::Operator` at map-build time.
+    decoded: Option<(WasmOpcode, Option<u32>)>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -224,6 +234,8 @@ impl DebugHandler for WasmtimeDebugHandler {
                         function_index: None,
                         pc: None,
                         opcode: None,
+                        opcode_decoded: None,
+                        immediate_i32: None,
                         memory: None,
                         locals: vec![error.to_string()],
                         operand_stack: Vec::new(),
@@ -245,12 +257,16 @@ fn normalize_supported_row(row: &WasmtimeTraceStep) -> Result<Option<SupportedRo
     let Some(pc) = row.pc else {
         return Ok(None);
     };
-    let Some(opcode_text) = row.opcode.as_deref() else {
-        return Ok(None);
+
+    let (opcode, immediate_i32) = match row.opcode_decoded {
+        Some(op) => (op, row.immediate_i32),
+        None => return Ok(None),
     };
-    let Some((opcode, immediate_i32)) = parse_supported_opcode(opcode_text)? else {
+
+    if matches!(opcode, WasmOpcode::Trap | WasmOpcode::Unsupported) {
         return Ok(None);
-    };
+    }
+
     let operand_stack = row
         .operand_stack
         .iter()
@@ -288,6 +304,10 @@ fn capture_frame(
         .zip(pc)
         .and_then(|key| store.data().opcode_map.get(&key).cloned());
     let opcode = decoded_opcode.as_ref().map(|decoded| decoded.text.clone());
+    let (opcode_decoded, immediate_i32) = decoded_opcode
+        .as_ref()
+        .and_then(|d| d.decoded)
+        .map_or((None, None), |(op, imm)| (Some(op), imm));
 
     let num_locals = frame
         .num_locals(&mut *store)
@@ -319,6 +339,8 @@ fn capture_frame(
         function_index,
         pc,
         opcode,
+        opcode_decoded,
+        immediate_i32,
         memory,
         locals,
         operand_stack,
@@ -345,6 +367,7 @@ fn build_opcode_map(wasm_bytes: &[u8]) -> Result<BTreeMap<(u32, u32), DecodedOpc
                         DecodedOpcode {
                             text: format!("{operator:?}"),
                             memory: decode_memory_opcode(&operator),
+                            decoded: decode_opcode(&operator),
                         },
                     );
                 }
@@ -355,6 +378,33 @@ fn build_opcode_map(wasm_bytes: &[u8]) -> Result<BTreeMap<(u32, u32), DecodedOpc
     }
 
     Ok(map)
+}
+
+/// Decode a `wasmparser::Operator` into a `(WasmOpcode, immediate)` pair.
+/// Returns `None` for unsupported operators. Called once per instruction at
+/// map-build time so the normalization path never parses strings.
+fn decode_opcode(operator: &wasmparser::Operator<'_>) -> Option<(WasmOpcode, Option<u32>)> {
+    match operator {
+        wasmparser::Operator::I32Const { value } => Some((WasmOpcode::I32Const, Some(*value as u32))),
+        wasmparser::Operator::I32Add => Some((WasmOpcode::I32Add, None)),
+        wasmparser::Operator::I32Sub => Some((WasmOpcode::I32Sub, None)),
+        wasmparser::Operator::I32Popcnt => Some((WasmOpcode::I32Popcnt, None)),
+        wasmparser::Operator::I32Eqz => Some((WasmOpcode::I32Eqz, None)),
+        wasmparser::Operator::I32Eq => Some((WasmOpcode::I32Eq, None)),
+        wasmparser::Operator::I32Ne => Some((WasmOpcode::I32Ne, None)),
+        wasmparser::Operator::I32LtS => Some((WasmOpcode::I32LtS, None)),
+        wasmparser::Operator::I32LtU => Some((WasmOpcode::I32LtU, None)),
+        wasmparser::Operator::I32And => Some((WasmOpcode::I32And, None)),
+        wasmparser::Operator::I32Or => Some((WasmOpcode::I32Or, None)),
+        wasmparser::Operator::I32Xor => Some((WasmOpcode::I32Xor, None)),
+        wasmparser::Operator::I32Mul => Some((WasmOpcode::I32Mul, None)),
+        wasmparser::Operator::Select => Some((WasmOpcode::Select, None)),
+        wasmparser::Operator::TypedSelect { .. } => Some((WasmOpcode::Select, None)),
+        wasmparser::Operator::BrIf { .. } => Some((WasmOpcode::BrIfEqz, None)),
+        wasmparser::Operator::Return => Some((WasmOpcode::Return, None)),
+        wasmparser::Operator::End => Some((WasmOpcode::Return, None)),
+        _ => None,
+    }
 }
 
 fn decode_memory_opcode(operator: &wasmparser::Operator<'_>) -> Option<DecodedMemoryOpcode> {
@@ -433,42 +483,6 @@ fn capture_memory_access(
         effective_address,
         value_i32,
     }))
-}
-
-fn parse_supported_opcode(opcode_text: &str) -> Result<Option<(WasmOpcode, Option<u32>)>, WasmBuildError> {
-    if let Some(value) = parse_i32_const(opcode_text)? {
-        return Ok(Some((WasmOpcode::I32Const, Some(value))));
-    }
-
-    let opcode = match opcode_text {
-        "I32Add" => WasmOpcode::I32Add,
-        "I32Sub" => WasmOpcode::I32Sub,
-        "I32Popcnt" => WasmOpcode::I32Popcnt,
-        "I32Eqz" => WasmOpcode::I32Eqz,
-        "I32Eq" => WasmOpcode::I32Eq,
-        "I32Ne" => WasmOpcode::I32Ne,
-        "I32LtS" => WasmOpcode::I32LtS,
-        "I32LtU" => WasmOpcode::I32LtU,
-        "I32And" => WasmOpcode::I32And,
-        "I32Or" => WasmOpcode::I32Or,
-        "I32Xor" => WasmOpcode::I32Xor,
-        "I32Mul" => WasmOpcode::I32Mul,
-        "Select" => WasmOpcode::Select,
-        text if text.starts_with("BrIf ") || text.starts_with("BrIf {") => WasmOpcode::BrIfEqz,
-        "Return" | "End" => WasmOpcode::Return,
-        _ => return Ok(None),
-    };
-
-    Ok(Some((opcode, None)))
-}
-
-fn parse_i32_const(opcode_text: &str) -> Result<Option<u32>, WasmBuildError> {
-    const PREFIX: &str = "I32Const { value: ";
-    if !opcode_text.starts_with(PREFIX) || !opcode_text.ends_with(" }") {
-        return Ok(None);
-    }
-    let value_text = &opcode_text[PREFIX.len()..opcode_text.len() - 2];
-    Ok(Some(parse_signed_u32(value_text)?))
 }
 
 fn parse_stack_word(value: &str) -> Result<u32, WasmBuildError> {
