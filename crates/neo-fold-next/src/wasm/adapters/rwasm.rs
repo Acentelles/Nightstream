@@ -25,6 +25,14 @@ pub fn traces_from_rwasm_instr_states(
                 row.opcode.code()
             )));
         }
+        if matches!(
+            info.opcode,
+            WasmOpcode::LocalGet | WasmOpcode::LocalSet | WasmOpcode::LocalTee
+        ) {
+            return Err(WasmBuildError::Unsupported(format!(
+                "local.get/set/tee at row {idx}: use the wasmtime adapter for programs with locals"
+            )));
+        }
 
         let pc_before = u64::from(row.program_counter);
         let pc_after = rows
@@ -66,6 +74,10 @@ pub fn traces_from_rwasm_instr_states(
             stack_read2,
             stack_write1,
             halted,
+            locals_fbp: 0,
+            local_index: None,
+            local_read_value: None,
+            local_write_value: None,
         });
         sp = sp_after;
     }

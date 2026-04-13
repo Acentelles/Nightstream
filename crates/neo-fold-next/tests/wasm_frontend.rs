@@ -113,6 +113,10 @@ fn wasm_frontend_scaffold_runs_through_generic_spine() {
             stack_read2: None,
             stack_write1: Some(StackLaneAccess { addr: 0, value: 7 }),
             halted: false,
+            locals_fbp: 0,
+            local_index: None,
+            local_read_value: None,
+            local_write_value: None,
         },
         WasmStepTrace {
             cycle: 1,
@@ -128,6 +132,10 @@ fn wasm_frontend_scaffold_runs_through_generic_spine() {
             stack_read2: None,
             stack_write1: Some(StackLaneAccess { addr: 1, value: 9 }),
             halted: false,
+            locals_fbp: 0,
+            local_index: None,
+            local_read_value: None,
+            local_write_value: None,
         },
         WasmStepTrace {
             cycle: 2,
@@ -143,6 +151,10 @@ fn wasm_frontend_scaffold_runs_through_generic_spine() {
             stack_read2: None,
             stack_write1: Some(StackLaneAccess { addr: 0, value: 16 }),
             halted: false,
+            locals_fbp: 0,
+            local_index: None,
+            local_read_value: None,
+            local_write_value: None,
         },
         WasmStepTrace {
             cycle: 3,
@@ -158,6 +170,10 @@ fn wasm_frontend_scaffold_runs_through_generic_spine() {
             stack_read2: None,
             stack_write1: None,
             halted: true,
+            locals_fbp: 0,
+            local_index: None,
+            local_read_value: None,
+            local_write_value: None,
         },
     ];
 

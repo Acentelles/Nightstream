@@ -17,6 +17,7 @@ use super::super::lower::WasmTraceSource;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct WasmtimeTraceStep {
+    /// The cycle for twist and shout
     pub step: u64,
     pub frame_depth: usize,
     pub function: String,
@@ -172,6 +173,20 @@ pub fn traces_from_wasmtime_steps(rows: &[WasmtimeTraceStep]) -> Result<Vec<Wasm
         let stack_write1 = write_lane(current, next, sp_after)?;
         let halted = matches!(current.opcode, WasmOpcode::Return) || next.is_none();
 
+        // local_read_value: the local's value before this step (local.get: pushed onto stack).
+        // local_write_value: the value being stored into the local (local.set / local.tee:
+        //   the top of operand stack at this step, captured before execution).
+        let local_read_value = if matches!(current.opcode, WasmOpcode::LocalGet) {
+            current.local_value
+        } else {
+            None
+        };
+        let local_write_value = if matches!(current.opcode, WasmOpcode::LocalSet | WasmOpcode::LocalTee) {
+            current.operand_stack.last().copied()
+        } else {
+            None
+        };
+
         out.push(WasmStepTrace {
             cycle: current.cycle,
             pc_before,
@@ -186,6 +201,13 @@ pub fn traces_from_wasmtime_steps(rows: &[WasmtimeTraceStep]) -> Result<Vec<Wasm
             stack_read2,
             stack_write1,
             halted,
+            // FBP is 0 for single-function programs. Multi-function support requires
+            // tracking call/return to update FBP by the callee's local count (see
+            // function-info ROM in wasm-implementation-plan.md).
+            locals_fbp: 0,
+            local_index: current.local_index,
+            local_read_value,
+            local_write_value,
         });
     }
 
@@ -206,6 +228,11 @@ struct SupportedRow {
     info: super::super::isa::WasmOpcodeInfo,
     operand_stack: Vec<u32>,
     immediate_i32: Option<u32>,
+    /// For local.get / local.set / local.tee: the 0-based local index.
+    local_index: Option<u32>,
+    /// For local.get: the value of local[local_index] before this step executes
+    /// (captured from the wasmtime frame's locals snapshot).
+    local_value: Option<u32>,
 }
 
 impl DebugHandler for WasmtimeDebugHandler {
@@ -274,6 +301,18 @@ fn normalize_supported_row(row: &WasmtimeTraceStep) -> Result<Option<SupportedRo
         .collect::<Result<Vec<_>, _>>()?;
     let code = opcode_code(opcode);
 
+    // For local.get / local.set / local.tee the immediate holds the local index.
+    // The frame's locals snapshot (captured before execution) gives the pre-step value.
+    let local_index = match opcode {
+        WasmOpcode::LocalGet | WasmOpcode::LocalSet | WasmOpcode::LocalTee => immediate_i32,
+        _ => None,
+    };
+    let local_value = local_index.and_then(|idx| {
+        row.locals
+            .get(idx as usize)
+            .and_then(|v| parse_stack_word(v).ok())
+    });
+
     Ok(Some(SupportedRow {
         cycle: row.step,
         pc,
@@ -281,6 +320,8 @@ fn normalize_supported_row(row: &WasmtimeTraceStep) -> Result<Option<SupportedRo
         info: opcode_info_from_code(code),
         operand_stack,
         immediate_i32,
+        local_index,
+        local_value,
     }))
 }
 
@@ -403,6 +444,10 @@ fn decode_opcode(operator: &wasmparser::Operator<'_>) -> Option<(WasmOpcode, Opt
         wasmparser::Operator::BrIf { .. } => Some((WasmOpcode::BrIfEqz, None)),
         wasmparser::Operator::Return => Some((WasmOpcode::Return, None)),
         wasmparser::Operator::End => Some((WasmOpcode::Return, None)),
+        // Local index stored as immediate; locals value captured at runtime from frame snapshot.
+        wasmparser::Operator::LocalGet { local_index } => Some((WasmOpcode::LocalGet, Some(*local_index))),
+        wasmparser::Operator::LocalSet { local_index } => Some((WasmOpcode::LocalSet, Some(*local_index))),
+        wasmparser::Operator::LocalTee { local_index } => Some((WasmOpcode::LocalTee, Some(*local_index))),
         _ => None,
     }
 }
@@ -527,6 +572,14 @@ fn write_lane(
                 "missing Wasmtime immediate for i32.const at cycle {}",
                 current.cycle
             ))
+        })?,
+        // local.get pushes the local's pre-execution value; no post-step stack needed.
+        WasmOpcode::LocalGet => current.local_value.ok_or_else(|| {
+            WasmBuildError::Trace(format!("missing local value for local.get at cycle {}", current.cycle))
+        })?,
+        // local.tee leaves the current top of stack unchanged on the stack.
+        WasmOpcode::LocalTee => current.operand_stack.last().copied().ok_or_else(|| {
+            WasmBuildError::Trace(format!("missing stack top for local.tee at cycle {}", current.cycle))
         })?,
         _ => next
             .and_then(|row| row.operand_stack.last().copied())

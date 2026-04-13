@@ -23,6 +23,10 @@ fn step(opcode: WasmOpcode, cycle: u64, lhs: u32, rhs: u32, output: u32) -> Wasm
         stack_read2: None,
         stack_write1: Some(StackLaneAccess { addr: 0, value: output }),
         halted: false,
+        locals_fbp: 0,
+        local_index: None,
+        local_read_value: None,
+        local_write_value: None,
     }
 }
 

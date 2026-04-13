@@ -88,12 +88,15 @@ pub enum WasmOpcode {
     Select,
     BrIfEqz,
     Return,
+    LocalGet,
+    LocalSet,
+    LocalTee,
     Trap,
     Unsupported,
 }
 
 impl WasmOpcode {
-    pub fn supported() -> [Self; 16] {
+    pub fn supported() -> [Self; 19] {
         [
             Self::I32Const,
             Self::I32Add,
@@ -111,6 +114,9 @@ impl WasmOpcode {
             Self::Select,
             Self::BrIfEqz,
             Self::Return,
+            Self::LocalGet,
+            Self::LocalSet,
+            Self::LocalTee,
         ]
     }
 
@@ -132,6 +138,9 @@ impl WasmOpcode {
             Self::Select => Some(13),
             Self::BrIfEqz => Some(14),
             Self::Return => Some(15),
+            Self::LocalGet => Some(16),
+            Self::LocalSet => Some(17),
+            Self::LocalTee => Some(18),
             Self::Trap | Self::Unsupported => None,
         }
     }
@@ -154,6 +163,9 @@ impl WasmOpcode {
             Self::Select => "select",
             Self::BrIfEqz => "br_if_eqz",
             Self::Return => "return",
+            Self::LocalGet => "local_get",
+            Self::LocalSet => "local_set",
+            Self::LocalTee => "local_tee",
             Self::Trap => "trap",
             Self::Unsupported => "unsupported",
         }
@@ -177,6 +189,9 @@ impl WasmOpcode {
             ConcreteOpcode::Select => Self::Select,
             ConcreteOpcode::BrIfEqz(_) => Self::BrIfEqz,
             ConcreteOpcode::Return => Self::Return,
+            ConcreteOpcode::LocalGet(_) => Self::LocalGet,
+            ConcreteOpcode::LocalSet(_) => Self::LocalSet,
+            ConcreteOpcode::LocalTee(_) => Self::LocalTee,
             ConcreteOpcode::Trap(_) => Self::Trap,
             _ => Self::Unsupported,
         }
@@ -222,6 +237,11 @@ pub fn opcode_info_from_code(code: u16) -> WasmOpcodeInfo {
         Op::Select => info(op, code, Class::ControlFlow, 3, 1, false, None),
         Op::BrIfEqz => info(op, code, Class::ControlFlow, 1, 0, false, None),
         Op::Return => info(op, code, Class::System, 0, 0, false, None),
+        // stack_reads/writes are the operand stack effects only; local memory accesses
+        // are tracked separately via local_read_value / local_write_value in the IR.
+        Op::LocalGet => info(op, code, Class::System, 0, 1, false, None),
+        Op::LocalSet => info(op, code, Class::System, 1, 0, false, None),
+        Op::LocalTee => info(op, code, Class::System, 1, 1, false, None),
         Op::Trap => info(op, code, Class::System, 0, 0, false, None),
         Op::Unsupported => info(op, code, Class::Unknown, 0, 0, false, None),
     }
@@ -245,6 +265,9 @@ pub fn opcode_code(op: WasmOpcode) -> u16 {
         WasmOpcode::Select => concrete_code(ConcreteOpcode::Select),
         WasmOpcode::BrIfEqz => concrete_code(ConcreteOpcode::BrIfEqz(0i32.into())),
         WasmOpcode::Return => concrete_code(ConcreteOpcode::Return),
+        WasmOpcode::LocalGet => concrete_code(ConcreteOpcode::LocalGet(0)),
+        WasmOpcode::LocalSet => concrete_code(ConcreteOpcode::LocalSet(0)),
+        WasmOpcode::LocalTee => concrete_code(ConcreteOpcode::LocalTee(0)),
         WasmOpcode::Trap => concrete_code(ConcreteOpcode::Trap(TrapCode::ExecutionHalted)),
         WasmOpcode::Unsupported => concrete_code(ConcreteOpcode::Trap(TrapCode::ExecutionHalted)),
     }
@@ -289,6 +312,9 @@ fn code_to_concrete(code: u16) -> ConcreteOpcode {
         x if x == opcode_code(WasmOpcode::Select) => ConcreteOpcode::Select,
         x if x == opcode_code(WasmOpcode::BrIfEqz) => ConcreteOpcode::BrIfEqz(0i32.into()),
         x if x == opcode_code(WasmOpcode::Return) => ConcreteOpcode::Return,
+        x if x == opcode_code(WasmOpcode::LocalGet) => ConcreteOpcode::LocalGet(0),
+        x if x == opcode_code(WasmOpcode::LocalSet) => ConcreteOpcode::LocalSet(0),
+        x if x == opcode_code(WasmOpcode::LocalTee) => ConcreteOpcode::LocalTee(0),
         x if x == opcode_code(WasmOpcode::Trap) => ConcreteOpcode::Trap(TrapCode::ExecutionHalted),
         _ => ConcreteOpcode::Trap(TrapCode::ExecutionHalted),
     }

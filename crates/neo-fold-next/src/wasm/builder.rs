@@ -13,10 +13,10 @@ use crate::vm::{VmSpec, VmTraceBuilder};
 use super::ccs::WasmVmSpec;
 use super::ir::{WasmBoundaryState, WasmBuildError, WasmStepTrace};
 use super::layout::{
-    selector_col, COL_AUX0, COL_AUX1, COL_HALTED, COL_ONE, COL_OPCODE_CODE, COL_PC_AFTER, COL_PC_BEFORE,
-    COL_READ0_ADDR, COL_READ0_VALUE, COL_READ1_ADDR, COL_READ1_VALUE, COL_READ2_ADDR, COL_READ2_VALUE,
-    COL_SHOUT_ENABLED, COL_SHOUT_ID, COL_SHOUT_VALUE, COL_SP_AFTER, COL_SP_BEFORE, COL_STACK_READS, COL_STACK_WRITES,
-    COL_WRITE1_ADDR, COL_WRITE1_VALUE, PUBLIC_INPUTS, WITNESS_WIDTH,
+    selector_col, COL_AUX0, COL_AUX1, COL_HALTED, COL_LOCALS_FBP, COL_LOCAL_INDEX, COL_LOCAL_VALUE, COL_ONE,
+    COL_OPCODE_CODE, COL_PC_AFTER, COL_PC_BEFORE, COL_READ0_ADDR, COL_READ0_VALUE, COL_READ1_ADDR, COL_READ1_VALUE,
+    COL_READ2_ADDR, COL_READ2_VALUE, COL_SHOUT_ENABLED, COL_SHOUT_ID, COL_SHOUT_VALUE, COL_SP_AFTER, COL_SP_BEFORE,
+    COL_STACK_READS, COL_STACK_WRITES, COL_WRITE1_ADDR, COL_WRITE1_VALUE, PUBLIC_INPUTS, WITNESS_WIDTH,
 };
 use super::lower::{normalize_source, WasmTraceSource};
 use super::tables::lookup_payload;
@@ -180,6 +180,20 @@ pub fn build_row(trace: &WasmStepTrace) -> Vec<F> {
     if let Some(shout) = trace.info.shout_opcode {
         row[COL_SHOUT_ID] = F::from_u64(u64::from(shout.to_shout_id()));
         row[COL_SHOUT_VALUE] = F::from_u64(trace.stack_write1.map(|w| u64::from(w.value)).unwrap_or(0));
+    }
+    if matches!(
+        trace.opcode,
+        super::isa::WasmOpcode::LocalGet | super::isa::WasmOpcode::LocalSet | super::isa::WasmOpcode::LocalTee
+    ) {
+        row[COL_LOCALS_FBP] = F::from_u64(trace.locals_fbp);
+        if let Some(idx) = trace.local_index {
+            row[COL_LOCAL_INDEX] = F::from_u64(u64::from(idx));
+        }
+        let local_value = trace
+            .local_read_value
+            .or(trace.local_write_value)
+            .unwrap_or(0);
+        row[COL_LOCAL_VALUE] = F::from_u64(u64::from(local_value));
     }
     if matches!(trace.opcode, super::isa::WasmOpcode::Select) {
         let read0 = trace.stack_read0.map(|lane| lane.value).unwrap_or(0);

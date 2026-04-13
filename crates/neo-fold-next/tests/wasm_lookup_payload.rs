@@ -52,6 +52,10 @@ fn step(opcode: WasmOpcode, lhs: u32, rhs: Option<u32>, out: u32) -> WasmStepTra
         stack_read2: None,
         stack_write1: (info.stack_writes > 0).then_some(StackLaneAccess { addr: 0, value: out }),
         halted: false,
+        locals_fbp: 0,
+        local_index: None,
+        local_read_value: None,
+        local_write_value: None,
     }
 }
 

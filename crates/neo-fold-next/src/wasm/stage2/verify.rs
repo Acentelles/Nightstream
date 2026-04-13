@@ -23,8 +23,10 @@ pub fn verify_stage2_stack<Tr: Transcript>(
         batched_read_claim,
         family_claims,
         value_from_inc_claim,
+        locals_value_from_inc_claim,
         linkage_batch_value: _,
         final_slots,
+        locals_final_slots,
     } = replay_stack_rows(&proof.rows, alpha)?;
 
     if proof.batched_read_claim != batched_read_claim {
@@ -42,8 +44,15 @@ pub fn verify_stage2_stack<Tr: Transcript>(
         b"wasm/stage2/value_from_inc_claim",
         &proof.value_from_inc_claim.as_coeffs(),
     );
+    transcript.append_fields(
+        b"wasm/stage2/locals_value_from_inc_claim",
+        &proof.locals_value_from_inc_claim.as_coeffs(),
+    );
     if proof.value_from_inc_claim != value_from_inc_claim {
         return Err("wasm stage2 value-from-inc claim mismatch".into());
+    }
+    if proof.locals_value_from_inc_claim != locals_value_from_inc_claim {
+        return Err("wasm stage2 locals value-from-inc claim mismatch".into());
     }
 
     let expected_gamma = sample_k(transcript, b"wasm/stage2/gamma_twist_link");
@@ -59,6 +68,9 @@ pub fn verify_stage2_stack<Tr: Transcript>(
     }
     if proof.final_slots != final_slots {
         return Err("wasm stage2 final stack snapshot mismatch".into());
+    }
+    if proof.locals_final_slots != locals_final_slots {
+        return Err("wasm stage2 final locals snapshot mismatch".into());
     }
 
     Ok(())

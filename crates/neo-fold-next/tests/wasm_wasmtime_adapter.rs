@@ -109,3 +109,56 @@ fn wasmtime_runtime_trace_normalizes_supported_rows() {
         .iter()
         .any(|step| step.opcode.as_deref() == Some("I32Add")));
 }
+
+#[test]
+fn wasmtime_trace_normalizes_local_get_and_set() {
+    // A no-argument function that stores constants into locals then reads them back.
+    let wasm = wat::parse_str(
+        r#"(module
+            (func (export "run") (result i32)
+                (local i32 i32)
+                i32.const 7
+                local.set 0
+                i32.const 9
+                local.set 1
+                local.get 0
+                local.get 1
+                i32.add)
+        )"#,
+    )
+    .expect("wat");
+
+    let trace = traces_from_wasmtime_wasm_bytes(&wasm, "run").expect("normalize");
+    let opcodes: Vec<_> = trace.iter().map(|r| r.opcode).collect();
+    assert!(
+        opcodes.contains(&WasmOpcode::LocalGet),
+        "expected local.get in trace: {opcodes:?}"
+    );
+    assert!(
+        opcodes.contains(&WasmOpcode::LocalSet),
+        "expected local.set in trace: {opcodes:?}"
+    );
+
+    // All local.get rows must have a local_index and local_read_value.
+    for row in trace.iter().filter(|r| r.opcode == WasmOpcode::LocalGet) {
+        assert!(row.local_index.is_some(), "local.get missing local_index");
+        assert!(row.local_read_value.is_some(), "local.get missing local_read_value");
+        // The pushed value must match the local's pre-step value.
+        assert_eq!(
+            row.stack_write1.map(|w| w.value),
+            row.local_read_value,
+            "local.get write != local_read_value"
+        );
+    }
+    // All local.set rows must have a local_index and local_write_value.
+    for row in trace.iter().filter(|r| r.opcode == WasmOpcode::LocalSet) {
+        assert!(row.local_index.is_some(), "local.set missing local_index");
+        assert!(row.local_write_value.is_some(), "local.set missing local_write_value");
+        // The consumed stack value must match what is stored.
+        assert_eq!(
+            row.stack_read0.map(|r| r.value),
+            row.local_write_value,
+            "local.set read0 != local_write_value"
+        );
+    }
+}

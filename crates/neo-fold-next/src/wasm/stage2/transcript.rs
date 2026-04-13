@@ -23,6 +23,10 @@ pub(crate) fn append_stage2_rows<Tr: Transcript>(transcript: &mut Tr, rows: &[St
                 lane_value(row.read2),
                 lane_addr(row.write1),
                 lane_value(row.write1),
+                lane_addr(row.local_read),
+                lane_value(row.local_read),
+                lane_addr(row.local_write),
+                lane_value(row.local_write),
             ],
         );
     }

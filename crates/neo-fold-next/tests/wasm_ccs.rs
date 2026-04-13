@@ -53,6 +53,10 @@ fn step(
         stack_read2,
         stack_write1,
         halted,
+        locals_fbp: 0,
+        local_index: None,
+        local_read_value: None,
+        local_write_value: None,
     }
 }
 

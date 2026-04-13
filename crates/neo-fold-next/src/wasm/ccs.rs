@@ -11,10 +11,10 @@ use crate::vm::{CoreCcsSpec, ShoutTableSpec, TwistTableSpec, VmSpec};
 
 use super::isa::{opcode_code, opcode_info_from_code, WasmOpcode, WasmOpcodeClass, WasmShoutOpcode};
 use super::layout::{
-    selector_col, BOOLEAN_COLS, COL_AUX0, COL_AUX1, COL_HALTED, COL_ONE, COL_OPCODE_CODE, COL_PC_AFTER, COL_PC_BEFORE,
-    COL_READ0_ADDR, COL_READ0_VALUE, COL_READ1_ADDR, COL_READ1_VALUE, COL_READ2_ADDR, COL_READ2_VALUE, COL_SEL_RETURN,
-    COL_SHOUT_ENABLED, COL_SHOUT_ID, COL_SHOUT_VALUE, COL_SP_AFTER, COL_SP_BEFORE, COL_STACK_READS, COL_STACK_WRITES,
-    COL_WRITE1_ADDR, COL_WRITE1_VALUE, SELECTOR_COLS, WITNESS_WIDTH,
+    selector_col, BOOLEAN_COLS, COL_AUX0, COL_AUX1, COL_HALTED, COL_LOCAL_VALUE, COL_ONE, COL_OPCODE_CODE,
+    COL_PC_AFTER, COL_PC_BEFORE, COL_READ0_ADDR, COL_READ0_VALUE, COL_READ1_ADDR, COL_READ1_VALUE, COL_READ2_ADDR,
+    COL_READ2_VALUE, COL_SEL_RETURN, COL_SHOUT_ENABLED, COL_SHOUT_ID, COL_SHOUT_VALUE, COL_SP_AFTER, COL_SP_BEFORE,
+    COL_STACK_READS, COL_STACK_WRITES, COL_WRITE1_ADDR, COL_WRITE1_VALUE, SELECTOR_COLS, WITNESS_WIDTH,
 };
 
 #[derive(Clone, Debug)]
@@ -185,6 +185,18 @@ fn build_core_ccs_spec() -> Result<CoreCcsSpec, String> {
                 selector_col(WasmOpcode::Return).unwrap(),
                 -f_u16(opcode_code(WasmOpcode::Return)),
             ),
+            (
+                selector_col(WasmOpcode::LocalGet).unwrap(),
+                -f_u16(opcode_code(WasmOpcode::LocalGet)),
+            ),
+            (
+                selector_col(WasmOpcode::LocalSet).unwrap(),
+                -f_u16(opcode_code(WasmOpcode::LocalSet)),
+            ),
+            (
+                selector_col(WasmOpcode::LocalTee).unwrap(),
+                -f_u16(opcode_code(WasmOpcode::LocalTee)),
+            ),
         ]
         .into_iter(),
     );
@@ -307,6 +319,9 @@ fn build_core_ccs_spec() -> Result<CoreCcsSpec, String> {
         WasmOpcode::I32Mul,
         WasmOpcode::Select,
         WasmOpcode::Return,
+        WasmOpcode::LocalGet,
+        WasmOpcode::LocalSet,
+        WasmOpcode::LocalTee,
     ] {
         let sel = selector_col(op).unwrap();
         push_gated_linear_zero(
@@ -315,6 +330,56 @@ fn build_core_ccs_spec() -> Result<CoreCcsSpec, String> {
             [(COL_PC_AFTER, F::ONE), (COL_PC_BEFORE, -F::ONE), (COL_ONE, -F::ONE)],
         );
     }
+
+    // Stack address constraints for local opcodes.
+    // local.get: no stack reads; write1 goes to sp_before (new top).
+    push_gated_linear_zero(
+        &mut b,
+        selector_col(WasmOpcode::LocalGet).unwrap(),
+        [(COL_WRITE1_ADDR, F::ONE), (COL_SP_BEFORE, -F::ONE)],
+    );
+    // local.set: reads top of stack (sp_before - 1); no stack write.
+    push_gated_linear_zero(
+        &mut b,
+        selector_col(WasmOpcode::LocalSet).unwrap(),
+        [(COL_READ0_ADDR, F::ONE), (COL_SP_BEFORE, -F::ONE), (COL_ONE, F::ONE)],
+    );
+    // local.tee: reads and writes back to the same top position (sp_before - 1).
+    push_gated_linear_zero(
+        &mut b,
+        selector_col(WasmOpcode::LocalTee).unwrap(),
+        [(COL_READ0_ADDR, F::ONE), (COL_SP_BEFORE, -F::ONE), (COL_ONE, F::ONE)],
+    );
+    push_gated_linear_zero(
+        &mut b,
+        selector_col(WasmOpcode::LocalTee).unwrap(),
+        [(COL_WRITE1_ADDR, F::ONE), (COL_SP_BEFORE, -F::ONE), (COL_ONE, F::ONE)],
+    );
+
+    // Local value constraints (row-local only; cross-step consistency belongs in Stage 2).
+    // local.get: the value pushed onto the stack equals the local's pre-step value.
+    push_gated_linear_zero(
+        &mut b,
+        selector_col(WasmOpcode::LocalGet).unwrap(),
+        [(COL_WRITE1_VALUE, F::ONE), (COL_LOCAL_VALUE, -F::ONE)],
+    );
+    // local.set: the value popped from the stack equals what is stored in the local.
+    push_gated_linear_zero(
+        &mut b,
+        selector_col(WasmOpcode::LocalSet).unwrap(),
+        [(COL_READ0_VALUE, F::ONE), (COL_LOCAL_VALUE, -F::ONE)],
+    );
+    // local.tee: the stack top value and the locally stored value are the same.
+    push_gated_linear_zero(
+        &mut b,
+        selector_col(WasmOpcode::LocalTee).unwrap(),
+        [(COL_READ0_VALUE, F::ONE), (COL_LOCAL_VALUE, -F::ONE)],
+    );
+    push_gated_linear_zero(
+        &mut b,
+        selector_col(WasmOpcode::LocalTee).unwrap(),
+        [(COL_WRITE1_VALUE, F::ONE), (COL_LOCAL_VALUE, -F::ONE)],
+    );
 
     push_gated_linear_zero(
         &mut b,

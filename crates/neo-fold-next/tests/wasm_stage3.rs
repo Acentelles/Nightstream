@@ -28,6 +28,10 @@ fn step(
         stack_read2: None,
         stack_write1: None,
         halted,
+        locals_fbp: 0,
+        local_index: None,
+        local_read_value: None,
+        local_write_value: None,
     }
 }
 

@@ -30,6 +30,16 @@ pub struct WasmStepTrace {
     pub stack_read2: Option<StackLaneAccess>,
     pub stack_write1: Option<StackLaneAccess>,
     pub halted: bool,
+    /// Frame base pointer for the locals address space. Absolute local address
+    /// is `locals_fbp + local_index`. Always 0 in single-function scope; advances
+    /// by the callee's local count on each call.
+    pub locals_fbp: u64,
+    /// Index of the local variable accessed (for local.get / local.set / local.tee).
+    pub local_index: Option<u32>,
+    /// Value of the local before this step (populated for local.get: the value pushed).
+    pub local_read_value: Option<u32>,
+    /// Value written into the local this step (populated for local.set / local.tee).
+    pub local_write_value: Option<u32>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
