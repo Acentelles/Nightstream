@@ -45,11 +45,116 @@ This is an implementation plan, not a theorem spec.
 - [x] Add a minimal `wasm/kernel/` owner surface above Stage 1 / 2 / 3.
 - [x] Add a verifier-checked kernel-opening summary with selected row / step references and stage digests.
 - [x] Add a folded root-run bridge from the WASM kernel into the generic `neo-fold-next` CCS proving path.
+- [x] Replace Wasmtime adapter string-based opcode parsing with structural decode from `wasmparser::Operator`.
+- [x] Add `local.get`, `local.set`, `local.tee` opcodes to the ISA, IR, layout, CCS, and adapters.
+- [x] Add `COL_LOCALS_FBP`, `COL_LOCAL_INDEX`, `COL_LOCAL_VALUE` columns and row-local CCS constraints for locals.
+- [ ] Add Stage-2 locals access family (`local_read` / `local_write`) alongside the stack family.
+- [ ] Implement the function-info ROM for FBP updates and bounds checking (multi-function / recursion support).
+- [ ] Implement the label ROM for stack-depth tracking on control-flow branches.
 - [ ] Flesh out remaining direct row-local semantics beyond the initial phase-1 subset.
 - [ ] Reintroduce packed auxiliary lookup semantics for the historical WASM ALU subset.
 - [ ] Strengthen the current Stage-2 linkage batching beyond the present exact-row / recomputed-summary shape.
 - [ ] Replace the execution-source wording with a normalized WASM trace interface and keep `wasm` as one adapter.
 - [ ] Decide whether phase 2 should remain frontend-owned or continue growing the staged WASM kernel now in place.
+
+## Module ROMs
+
+WASM execution relies on two categories of static per-module data that cannot be
+derived from the execution trace alone and must be supplied as read-only lookup
+tables (ROMs) to the proving layers.
+
+### Function-info ROM
+
+**Purpose:** Supply the number of locals declared by each function in the module.
+
+**Use cases:**
+
+- **Locals FBP update on call/return:** When a function is called, the locals
+  frame base pointer (FBP) advances by `num_locals[callee]`. On return it
+  retreats by `num_locals[current_function]`. This is the multi-function
+  generalisation of the single-function case where FBP is always 0.
+- **Bounds checking:** Each `local.get/set/tee` must satisfy
+  `local_index < num_locals[current_function]`. The function-info ROM supplies
+  `num_locals` per function for this check.
+
+**Current status:** Not yet implemented. In the current single-function scope,
+FBP is always 0 and bounds checking is deferred. The columns `COL_LOCALS_FBP`
+and `COL_LOCAL_INDEX` are present in the layout to make the future extension
+straightforward. A note about this deferral appears in the adapters.
+
+**Shape:** `(function_index: u32) → (base_addr: u64, num_locals: u32)`
+
+### Label ROM (Control Flow)
+
+**Purpose:** Supply the operand stack depth at each branch label in the module.
+
+**Use cases:**
+
+- **Stack unwinding on `br` / `br_if`:** When a branch target has a different
+  stack depth than the current depth, the stack must be unwound by
+  `current_depth - target_depth` elements before jumping. The label ROM gives
+  the target depth without requiring the prover to trace the full control-flow
+  graph.
+- **`block` / `loop` / `if` exit depths:** Each structured control block carries
+  an expected stack depth at its exit. The ROM canonicalises this per label index.
+
+**Current status:** Not yet implemented. Control flow support (`br`, `br_if`,
+`loop`, `block`) is out of scope for phase 1.
+
+**Shape:** `(function_index: u32, label_index: u32) → stack_depth: u32`
+
+---
+
+Both ROMs are immutable for the lifetime of a module. They are natural candidates
+for Twist-style read-only memory arguments rather than interactive lookup tables,
+since each entry is read many times but never written.
+
+## Known Technical Debt
+
+These are engineering-quality issues identified in Phase 1 review. They do not block
+Phase 1 correctness but must be addressed before any soundness claim is made.
+
+### Semantic gaps
+
+- **Lookup-routed ops have no end-to-end semantic verification** (`ccs.rs`,
+  `stage1/`): For `i32.mul`, `i32.and`, `i32.or`, `i32.xor`, `i32.eqz`,
+  `i32.eq`, `i32.ne`, `i32.lt_s`, `i32.lt_u`, the CCS only validates that a
+  shout claim exists, not what it computes. Real arithmetic truth lives in the
+  backend lookup table and is not end-to-end verified in Phase 1. The Stage-1
+  prover batches claim consistency but does not connect to a ground-truth table.
+  Must be closed in Phase 2 before any soundness claim.
+
+- **Opening summary is structural, not cryptographic** (`kernel/openings.rs`):
+  The kernel opening summary builds digests and counts but does not perform
+  cryptographic opening verification. This is the gap between "a kernel exists"
+  and "the kernel is sound." Must be closed before production use.
+
+### Soundness assumptions that must be documented or strengthened
+
+- **Stage 2 oracle is additive, not ordered** (`stage2/`): The value-from-increment
+  claim checks `final = init + Σwrites - Σreads` per address family but does not
+  verify access order. This is sound only under strict LIFO stack discipline. Any
+  future opcode that touches the same address out of LIFO order would produce a
+  false trace the prover would accept. Either document this assumption explicitly
+  in the module header or strengthen the oracle before non-stack memory is added.
+
+- **Stage 3 verifies endpoints only** (`stage3/`): Per-step boundary continuity
+  is enforced in the CCS, not in Stage 3. Stage 3 checks only the start and end
+  state. This is architecturally correct but a reader of the stage in isolation
+  may assume it covers the full trace. Add a module-level comment stating the
+  boundary.
+
+### Engineering quality
+
+- **`Select` auxiliary constraints are hardcoded** (`builder.rs`): `COL_AUX0`
+  and `COL_AUX1` are filled inside a hard-coded `if matches!(opcode, Select)`
+  block. Does not scale to additional opcodes needing auxiliary columns. Needs a
+  metadata-driven dispatch before any new opcode with aux constraints is added.
+
+- **Opcode↔code round-trip has no single source of truth** (`isa.rs`):
+  `code_to_concrete` uses a chain of `if x == opcode_code(...)` guards. A
+  static lookup table would remove the duplicated inverse-mapping logic and
+  make exhaustiveness checking easier.
 
 ## Assumptions
 
