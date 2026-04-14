@@ -14,8 +14,8 @@ use super::builder::WasmTraceBuilder;
 use super::ccs::WasmVmSpec;
 use super::isa::WasmShoutOpcode;
 use super::stage1::{
-    build_stage1_summary, prove_stage1_binary, prove_stage1_eqz, verify_stage1_binary, verify_stage1_eqz,
-    Stage1BinaryProof,
+    build_stage1_summary, digest_pc_rom, prove_stage1_binary, prove_stage1_eqz, verify_stage1_binary,
+    verify_stage1_eqz, Stage1BinaryProof,
 };
 use super::stage2::{build_stage2_summary, prove_stage2_stack, verify_stage2_stack};
 use super::stage3::{build_stage3_summary, prove_stage3_boundaries, verify_stage3_boundaries};
@@ -51,6 +51,9 @@ where
     let public_steps: Vec<PublicStep> = prepared_steps.iter().map(StepInput::instance).collect();
 
     let mut transcript = new_wasm_kernel_transcript(&input.public.transcript_seed);
+
+    let rom_digest = digest_pc_rom(&input.pc_rom);
+    transcript.append_message(b"wasm/kernel/pc_rom_digest", &rom_digest);
 
     let stage1_summary = build_stage1_summary(input.trace);
     let stage1_eqz = prove_stage1_eqz(&stage1_summary, &mut transcript).map_err(WasmKernelError::Stage1)?;
@@ -110,6 +113,9 @@ where
     let public_steps: Vec<PublicStep> = prepared_steps.iter().map(StepInput::instance).collect();
 
     let mut transcript = new_wasm_kernel_transcript(&input.public.transcript_seed);
+
+    let rom_digest = digest_pc_rom(&input.pc_rom);
+    transcript.append_message(b"wasm/kernel/pc_rom_digest", &rom_digest);
 
     let stage1_summary = build_stage1_summary(input.trace);
     verify_stage1_eqz(&stage1_summary, &proof.stage1.eqz, &mut transcript).map_err(WasmKernelError::Stage1)?;

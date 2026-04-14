@@ -1,4 +1,6 @@
-//! Owns the exact Stage 1 lookup-row summary for WASM.
+//! Owns the exact Stage 1 lookup-row summary and next-PC ROM digest for WASM.
+
+use neo_transcript::{Poseidon2Transcript, Transcript};
 
 use super::super::ir::WasmStepTrace;
 use super::super::isa::{WasmOpcode, WasmShoutOpcode};
@@ -41,6 +43,16 @@ pub struct Stage1BinaryProof {
     pub channel: WasmShoutOpcode,
     pub rows: Vec<Stage1LookupRowBinding>,
     pub batched_claim: neo_math::K,
+}
+
+/// Compute a Poseidon2 digest of the next-PC ROM entries (sorted by pc_before).
+pub fn digest_pc_rom(rom: &[(u64, u64)]) -> [u8; 32] {
+    let mut tr = Poseidon2Transcript::new(b"wasm/pc_rom");
+    tr.append_u64s(b"wasm/pc_rom/count", &[rom.len() as u64]);
+    for (pc_before, pc_after) in rom {
+        tr.append_u64s(b"wasm/pc_rom/entry", &[*pc_before, *pc_after]);
+    }
+    tr.digest32()
 }
 
 pub fn build_stage1_summary(steps: &[WasmStepTrace]) -> Stage1Summary {

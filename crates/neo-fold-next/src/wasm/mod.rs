@@ -17,8 +17,8 @@ pub mod trace;
 
 pub use adapters::rwasm::{traces_from_rwasm_instr_states, traces_from_rwasm_tracer};
 pub use adapters::wasmtime::{
-    collect_wasmtime_steps, traces_from_wasmtime_steps, traces_from_wasmtime_wasm_bytes, WasmtimeTraceMemoryAccess,
-    WasmtimeTraceRun, WasmtimeTraceStep,
+    build_pc_rom_from_binary, collect_wasmtime_steps, traces_from_wasmtime_steps, traces_from_wasmtime_wasm_bytes,
+    WasmtimeTraceMemoryAccess, WasmtimeTraceRun, WasmtimeTraceStep,
 };
 pub use builder::WasmTraceBuilder;
 pub use ccs::WasmVmSpec;
@@ -32,7 +32,7 @@ pub use kernel::{
 };
 pub use lower::{build_row_traces, normalize_source, normalize_tracer, WasmExecutionStep, WasmTraceSource};
 pub use stage1::{
-    build_stage1_summary, prove_stage1_binary, prove_stage1_eqz, stage1_channel_label, stage1_mix_label,
+    build_stage1_summary, digest_pc_rom, prove_stage1_binary, prove_stage1_eqz, stage1_channel_label, stage1_mix_label,
     verify_stage1_binary, verify_stage1_eqz, Stage1BinaryProof, Stage1ChannelSummary, Stage1EqzProof,
     Stage1LookupRowBinding, Stage1Summary,
 };

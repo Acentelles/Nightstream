@@ -12,9 +12,9 @@ use crate::vm::{CoreCcsSpec, ShoutTableSpec, TwistTableSpec, VmSpec};
 use super::isa::{opcode_code, opcode_info_from_code, WasmOpcode, WasmOpcodeClass, WasmShoutOpcode};
 use super::layout::{
     selector_col, BOOLEAN_COLS, COL_AUX0, COL_AUX1, COL_HALTED, COL_LOCAL_VALUE, COL_ONE, COL_OPCODE_CODE,
-    COL_PC_AFTER, COL_PC_BEFORE, COL_READ0_ADDR, COL_READ0_VALUE, COL_READ1_ADDR, COL_READ1_VALUE, COL_READ2_ADDR,
-    COL_READ2_VALUE, COL_SEL_RETURN, COL_SHOUT_ENABLED, COL_SHOUT_ID, COL_SHOUT_VALUE, COL_SP_AFTER, COL_SP_BEFORE,
-    COL_STACK_READS, COL_STACK_WRITES, COL_WRITE1_ADDR, COL_WRITE1_VALUE, SELECTOR_COLS, WITNESS_WIDTH,
+    COL_READ0_ADDR, COL_READ0_VALUE, COL_READ1_ADDR, COL_READ1_VALUE, COL_READ2_ADDR, COL_READ2_VALUE, COL_SEL_RETURN,
+    COL_SHOUT_ENABLED, COL_SHOUT_ID, COL_SHOUT_VALUE, COL_SP_AFTER, COL_SP_BEFORE, COL_STACK_READS, COL_STACK_WRITES,
+    COL_WRITE1_ADDR, COL_WRITE1_VALUE, SELECTOR_COLS, WITNESS_WIDTH,
 };
 
 #[derive(Clone, Debug)]
@@ -302,34 +302,6 @@ fn build_core_ccs_spec() -> Result<CoreCcsSpec, String> {
         sel_select,
         [(COL_WRITE1_ADDR, F::ONE), (COL_SP_BEFORE, -F::ONE), (COL_ONE, f_u64(3))],
     );
-
-    for op in [
-        WasmOpcode::I32Const,
-        WasmOpcode::I32Add,
-        WasmOpcode::I32Sub,
-        WasmOpcode::I32Popcnt,
-        WasmOpcode::I32Eqz,
-        WasmOpcode::I32Eq,
-        WasmOpcode::I32Ne,
-        WasmOpcode::I32LtS,
-        WasmOpcode::I32LtU,
-        WasmOpcode::I32And,
-        WasmOpcode::I32Or,
-        WasmOpcode::I32Xor,
-        WasmOpcode::I32Mul,
-        WasmOpcode::Select,
-        WasmOpcode::Return,
-        WasmOpcode::LocalGet,
-        WasmOpcode::LocalSet,
-        WasmOpcode::LocalTee,
-    ] {
-        let sel = selector_col(op).unwrap();
-        push_gated_linear_zero(
-            &mut b,
-            sel,
-            [(COL_PC_AFTER, F::ONE), (COL_PC_BEFORE, -F::ONE), (COL_ONE, -F::ONE)],
-        );
-    }
 
     // Stack address constraints for local opcodes.
     // local.get: no stack reads; write1 goes to sp_before (new top).

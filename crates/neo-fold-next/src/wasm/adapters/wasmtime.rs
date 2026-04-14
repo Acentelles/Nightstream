@@ -388,6 +388,43 @@ fn capture_frame(
     })
 }
 
+/// Build the next-PC ROM from WASM bytecode: maps each instruction's binary offset to the
+/// offset of the following instruction. Terminal instructions (End, Return) are excluded since
+/// they have no meaningful successor — the caller must handle the halted case separately.
+/// Entries are sorted by (function_index, pc_before) and deduplicated.
+pub fn build_pc_rom_from_binary(wasm_bytes: &[u8]) -> Result<Vec<(u64, u64)>, WasmBuildError> {
+    let mut rom = Vec::new();
+    let mut defined_function_index = 0_u32;
+
+    for payload in Parser::new(0).parse_all(wasm_bytes) {
+        match payload.map_err(|err| WasmBuildError::Trace(format!("failed to parse wasm payload: {err}")))? {
+            Payload::CodeSectionEntry(body) => {
+                let mut reader = body
+                    .get_operators_reader()
+                    .map_err(|err| WasmBuildError::Trace(format!("failed to read wasm operators: {err}")))?;
+                while !reader.eof() {
+                    let pc_before = reader.original_position() as u64;
+                    let operator = reader
+                        .read()
+                        .map_err(|err| WasmBuildError::Trace(format!("failed to decode wasm operator: {err}")))?;
+                    let pc_after = reader.original_position() as u64;
+                    match operator {
+                        wasmparser::Operator::End | wasmparser::Operator::Return => {}
+                        _ => rom.push((pc_before, pc_after)),
+                    }
+                }
+                defined_function_index += 1;
+            }
+            _ => {}
+        }
+    }
+    let _ = defined_function_index;
+
+    rom.sort_unstable_by_key(|&(pc, _)| pc);
+    rom.dedup_by_key(|&mut (pc, _)| pc);
+    Ok(rom)
+}
+
 fn build_opcode_map(wasm_bytes: &[u8]) -> Result<BTreeMap<(u32, u32), DecodedOpcode>, WasmBuildError> {
     let mut map = BTreeMap::new();
     let mut defined_function_index = 0_u32;

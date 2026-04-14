@@ -14,11 +14,16 @@ pub struct WasmKernelPublicInput {
 pub struct WasmKernelProverInput<'a> {
     pub public: WasmKernelPublicInput,
     pub trace: &'a [WasmStepTrace],
+    /// Next-PC ROM: sorted (pc_before, pc_after) pairs derived from the WASM binary.
+    /// Built via `build_pc_rom_from_binary`; committed to the transcript before Stage 1 challenges.
+    pub pc_rom: Vec<(u64, u64)>,
 }
 
 pub struct WasmKernelVerifierInput<'a> {
     pub public: WasmKernelPublicInput,
     pub trace: &'a [WasmStepTrace],
+    /// Next-PC ROM: same ROM the prover used, derived from the same WASM binary.
+    pub pc_rom: Vec<(u64, u64)>,
 }
 
 pub struct WasmKernelOutput {

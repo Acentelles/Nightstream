@@ -6,8 +6,8 @@ mod transcript;
 mod verify;
 
 pub use proof::{
-    build_stage1_summary, Stage1BinaryProof, Stage1ChannelSummary, Stage1EqzProof, Stage1LookupRowBinding,
-    Stage1Summary,
+    build_stage1_summary, digest_pc_rom, Stage1BinaryProof, Stage1ChannelSummary, Stage1EqzProof,
+    Stage1LookupRowBinding, Stage1Summary,
 };
 pub use prove::{prove_stage1_binary, prove_stage1_eqz};
 pub use transcript::{stage1_channel_label, stage1_mix_label};
