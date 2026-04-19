@@ -9,10 +9,10 @@
 //! - time-opening summary surfaces
 //! - VM-specific trace execution
 
-use neo_ajtai::Commitment;
 use neo_ccs::{CcsClaim, CcsWitness, CeClaim, Mat};
 use neo_math::{F, K};
 use neo_reductions::api::PiCcsProof;
+use neo_reductions::commitment::Commitment;
 use neo_reductions::error::PiCcsError;
 use serde::{Deserialize, Serialize};
 

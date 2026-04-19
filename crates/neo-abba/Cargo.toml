@@ -33,7 +33,7 @@ neo-ajtai = { path = "../neo-ajtai" }
 criterion = { workspace = true }
 
 [features]
-default = []
+default = ["serde"]
 serde = ["dep:serde"]
 testing = []
 

@@ -1,3 +1,4 @@
+#![cfg_attr(feature = "abba", allow(dead_code))]
 //! Owns the active Rust proving path for `neo-fold-next`.
 //!
 //! Ownership:
@@ -11,15 +12,18 @@
 //! - `vm`: static VM contracts
 //! - `chip8`: current VM frontend and staged kernel
 
+#[cfg(not(feature = "abba"))]
 pub mod chip8;
 pub mod chunk_relation;
 pub mod decider;
 pub mod finalize;
+#[cfg(not(feature = "abba"))]
 pub mod nightstream;
 pub mod opening;
 pub mod proof;
 pub mod prover;
 pub mod run;
+#[cfg(not(feature = "abba"))]
 pub mod rv64im;
 pub mod step_build;
 pub mod time_opening;

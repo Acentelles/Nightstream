@@ -25,9 +25,11 @@ prove-diagnostics = ["serde_json", "flate2", "hex", "chrono"]
 # Enable CBOR format for diagnostics (smaller but less readable)
 prove-diagnostics-cbor = ["prove-diagnostics", "serde_cbor"]
 wasm-threads = ["neo-ajtai/wasm-threads", "neo-ccs/wasm-threads"]
+abba = ["neo-abba"]
 
 [dependencies]
 neo-math = { path = "../neo-math" }
+neo-abba = { path = "../neo-abba", optional = true }
 neo-ajtai = { path = "../neo-ajtai" }
 neo-ccs = { path = "../neo-ccs" }
 neo-params = { path = "../neo-params" }

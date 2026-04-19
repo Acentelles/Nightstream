@@ -10,6 +10,7 @@
 pub mod commit;
 pub mod decomp;
 pub mod error;
+pub mod s_module;
 pub mod types;
 
 pub use commit::{
@@ -18,4 +19,5 @@ pub use commit::{
 };
 pub use decomp::{assert_range_b, decomp_b, split_b, DecompStyle};
 pub use error::{AbbaError, AbbaResult};
+pub use s_module::AbbaSModule;
 pub use types::{Commitment, PP};

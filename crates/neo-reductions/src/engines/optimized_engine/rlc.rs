@@ -2,7 +2,7 @@
 //!
 //! It does not own paper-exact cross-check formulas or DEC.
 
-use neo_ajtai::Commitment as Cmt;
+use crate::commitment::Commitment as Cmt;
 use neo_ccs::{CcsStructure, CeClaim, Mat};
 use neo_math::{D, K};
 use neo_params::NeoParams;

@@ -765,6 +765,21 @@ pub fn sample_rot_rhos_n(
         // Lift to field F
         let a_coeffs_f: Vec<F> = coeffs_i8.iter().map(|&c| f_from_i64(c as i64)).collect();
 
+        // For ABBA: project to O_K via a + θ(a) so the challenge commutes with u.
+        // This ensures the homomorphic property Com(ρ·z) = ρ·Com(z) holds.
+        #[cfg(feature = "abba")]
+        let a_coeffs_f = {
+            use neo_math::quaternion::theta;
+            use neo_math::ring::Rq;
+            let mut arr = [F::ZERO; D];
+            for (j, &v) in a_coeffs_f.iter().enumerate() {
+                arr[j] = v;
+            }
+            let rq = Rq(arr);
+            let projected = rq + theta(&rq); // a + θ(a) ∈ O_K
+            projected.0.to_vec()
+        };
+
         // Build rotation matrix rot(a_i)
         let rho = rot_from_coeffs(&a_coeffs_f, ring.phi_coeffs);
         out.push(rho);

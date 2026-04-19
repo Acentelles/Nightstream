@@ -22,7 +22,7 @@ pub struct PP {
 ///
 /// Layout: data[c * T0_DIM + i] = i-th field element of the c-th T_0 slot.
 /// Total length: kappa * T0_DIM.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Commitment {
     pub d: usize,
     pub kappa: usize,

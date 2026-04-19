@@ -1,7 +1,7 @@
 //! Owns the final opening manifest, reduction, and unification proof for the active pipeline.
 
-use neo_ajtai::Commitment;
 use neo_math::{from_complex, KExtensions, F, K};
+use neo_reductions::commitment::Commitment;
 use neo_reductions::error::PiCcsError;
 use neo_reductions::sumcheck::{run_sumcheck_prover, verify_sumcheck_rounds, RoundOracle};
 use neo_transcript::{Poseidon2Transcript, Transcript};

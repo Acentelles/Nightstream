@@ -11,9 +11,11 @@ workspace = true
 [features]
 default = []
 chip8-audit = []
+abba = ["neo-abba", "neo-reductions/abba"]
 
 [dependencies]
 neo-ajtai = { path = "../neo-ajtai" }
+neo-abba = { path = "../neo-abba", optional = true }
 neo-ccs = { path = "../neo-ccs" }
 neo-math = { path = "../neo-math" }
 neo-params = { path = "../neo-params" }
