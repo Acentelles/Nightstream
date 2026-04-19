@@ -891,3 +891,151 @@ fn phi128_density_sweep() {
         kappa * T0_DIM_128
     );
 }
+
+/// Simulate Neo folding at Phi_128: commit + s_mul + accumulate for N steps.
+/// This benchmarks the operations that dominate the real pipeline
+/// (Pi_CCS commit, Pi_RLC s_mul accumulation, Pi_DEC scale+sum).
+#[test]
+fn phi128_simulated_folding_bench() {
+    use std::time::Instant;
+
+    let mut rng = ChaCha8Rng::seed_from_u64(200);
+    let kappa = 16;
+    let density = 0.5;
+
+    println!("\n=== Phi_128 simulated folding (commit + s_mul + accumulate) ===");
+
+    for &(n_steps, m_per_step) in &[(2, 16), (5, 16), (10, 16), (5, 32)] {
+        let total_bits_ajtai = D128 * m_per_step;
+        let total_bits_abba = DK * m_per_step * 2; // ABBA needs 2x columns for same bits
+
+        let m_ajtai = m_per_step;
+        let m_abba = m_per_step * 2;
+
+        // --- Ajtai setup ---
+        let ajtai_pp: Vec<Vec<Rq128>> = (0..kappa)
+            .map(|_| (0..m_ajtai).map(|_| Rq128::random(&mut rng)).collect())
+            .collect();
+
+        // --- ABBA setup ---
+        let abba_raw: Vec<Vec<QuatK>> = (0..kappa)
+            .map(|_| (0..m_abba).map(|_| QuatK::random(&mut rng)).collect())
+            .collect();
+        let abba_pp: Vec<Vec<PrecompKey>> = abba_raw
+            .iter()
+            .map(|row| row.iter().map(|q| PrecompKey::from_quat(q)).collect())
+            .collect();
+
+        // Generate step witnesses
+        let mut rng_w = ChaCha8Rng::seed_from_u64(300);
+        let ajtai_witnesses: Vec<Vec<Fq>> = (0..n_steps)
+            .map(|_| {
+                (0..total_bits_ajtai)
+                    .map(|_| {
+                        if rng_w.random_bool(density) {
+                            Fq::ONE
+                        } else {
+                            Fq::ZERO
+                        }
+                    })
+                    .collect()
+            })
+            .collect();
+
+        let mut rng_w2 = ChaCha8Rng::seed_from_u64(400);
+        let abba_witnesses: Vec<Vec<Fq>> = (0..n_steps)
+            .map(|_| {
+                (0..total_bits_abba)
+                    .map(|_| {
+                        if rng_w2.random_bool(density) {
+                            Fq::ONE
+                        } else {
+                            Fq::ZERO
+                        }
+                    })
+                    .collect()
+            })
+            .collect();
+
+        // --- Bench Ajtai: commit all steps + simulate RLC accumulation ---
+        let n_iters = 20;
+
+        let ajtai_fold = || {
+            let mut commitments: Vec<Vec<Rq128>> = Vec::with_capacity(n_steps);
+            // Commit each step
+            for w in &ajtai_witnesses {
+                let c = ajtai_commit_128(&ajtai_pp, w, kappa, m_ajtai);
+                commitments.push(c);
+            }
+            // RLC: accumulate c_acc += rho * c_step
+            let mut acc = vec![Rq128::zero(); kappa];
+            let rho = Rq128::random(&mut ChaCha8Rng::seed_from_u64(999));
+            for c in &commitments {
+                for i in 0..kappa {
+                    // s_mul: rho * c[i] (ring multiply)
+                    let scaled = rho.mul(c[i]);
+                    acc[i] = acc[i].add(scaled);
+                }
+            }
+            acc
+        };
+
+        // Warmup
+        for _ in 0..3 {
+            let _ = ajtai_fold();
+        }
+        let start = Instant::now();
+        for _ in 0..n_iters {
+            let _ = ajtai_fold();
+        }
+        let ajtai_us = start.elapsed().as_micros() / n_iters as u128;
+
+        // --- Bench ABBA: commit all steps + simulate RLC accumulation ---
+        let abba_fold = || {
+            let mut commitments: Vec<Vec<(RqK, RqK)>> = Vec::with_capacity(n_steps);
+            for w in &abba_witnesses {
+                let c = abba_commit_128_opt(&abba_pp, w, kappa, m_abba);
+                commitments.push(c);
+            }
+            // RLC: accumulate with O_K scalar
+            let r = RqK::random(&mut ChaCha8Rng::seed_from_u64(999));
+            let rho = r.add(theta_k(&r)); // project to O_K
+            let mut acc = vec![(RqK::zero(), RqK::zero()); kappa];
+            for c in &commitments {
+                for i in 0..kappa {
+                    // s_mul: rho * T_0 element
+                    let scaled_0 = rho.mul(c[i].0);
+                    let scaled_1 = rho.mul(c[i].1);
+                    acc[i].0 = acc[i].0.add(scaled_0);
+                    acc[i].1 = acc[i].1.add(scaled_1);
+                }
+            }
+            acc
+        };
+
+        for _ in 0..3 {
+            let _ = abba_fold();
+        }
+        let start = Instant::now();
+        for _ in 0..n_iters {
+            let _ = abba_fold();
+        }
+        let abba_us = start.elapsed().as_micros() / n_iters as u128;
+
+        let ajtai_commit_size = kappa * D128;
+        let abba_commit_size = kappa * T0_DIM_128;
+
+        println!(
+            "  {}x{} ({}b): Ajtai {:.2}ms, ABBA {:.2}ms, ratio {:.2}x | size {} vs {} Fq ({:.0}%)",
+            n_steps,
+            m_per_step,
+            total_bits_ajtai,
+            ajtai_us as f64 / 1000.0,
+            abba_us as f64 / 1000.0,
+            abba_us as f64 / ajtai_us as f64,
+            ajtai_commit_size,
+            abba_commit_size,
+            (1.0 - abba_commit_size as f64 / ajtai_commit_size as f64) * 100.0
+        );
+    }
+}

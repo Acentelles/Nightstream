@@ -207,3 +207,74 @@ fn fibonacci_abba_ten_steps() {
 
     println!("ABBA fibonacci: 10 steps, prove + verify OK");
 }
+
+#[test]
+fn fibonacci_abba_metrics() {
+    use std::time::Instant;
+
+    for &(n_steps, transitions_per_chunk, k_rho) in &[
+        (2usize, 5usize, 12u32),
+        (5, 5, 12),
+        (10, 5, 12),
+        (5, 10, 13),
+    ] {
+        let trace_len = transitions_per_chunk + 2;
+        let traces: Vec<Vec<u64>> = (1..=n_steps as u64)
+            .map(|seed| {
+                let mut t = vec![seed, seed + 1];
+                while t.len() < trace_len {
+                    t.push(t[t.len() - 2] + t[t.len() - 1]);
+                }
+                t
+            })
+            .collect();
+
+        let mut params = NeoParams::goldilocks_auto_r1cs_ccs(transitions_per_chunk).expect("params");
+        params.k_rho = k_rho;
+        params.B = 1u64.checked_shl(k_rho).expect("B fits");
+        let ccs = fibonacci_trace_ccs(trace_len);
+        let log = make_abba_module(&params, 1);
+
+        let steps: Vec<StepInput> = traces
+            .iter()
+            .enumerate()
+            .map(|(idx, values)| fibonacci_step(&log, &format!("abba_m_{idx}"), values))
+            .collect();
+        let public_steps: Vec<_> = steps.iter().map(|s| s.public()).collect();
+
+        // Prove
+        let prove_start = Instant::now();
+        let proof = prove_run(
+            FoldingMode::Optimized,
+            FoldSchedule::RowsPerChunk(1),
+            &params,
+            &ccs,
+            steps.clone(),
+            &log,
+            abba_mixers(),
+        )
+        .expect("ABBA prove");
+        let prove_ms = prove_start.elapsed().as_secs_f64() * 1000.0;
+
+        // Verify
+        let verify_start = Instant::now();
+        let _verified = verify_run(
+            FoldingMode::Optimized,
+            &params,
+            &ccs,
+            &public_steps,
+            &proof,
+            abba_mixers(),
+        )
+        .expect("ABBA verify");
+        let verify_ms = verify_start.elapsed().as_secs_f64() * 1000.0;
+
+        let proof_bytes = bincode::serialize(&proof).expect("serialize").len();
+
+        println!(
+            "ABBA_metrics steps={} trans/chunk={} k_rho={} prove_ms={:.3} verify_ms={:.3} proof_bytes={} claims={}",
+            n_steps, transitions_per_chunk, k_rho, prove_ms, verify_ms, proof_bytes,
+            proof.final_main_claims.len()
+        );
+    }
+}
