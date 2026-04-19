@@ -9,6 +9,7 @@
 
 pub mod balanced;
 pub mod field;
+pub mod quaternion;
 pub mod ring;
 pub mod s_action;
 
@@ -20,6 +21,7 @@ pub enum SActionError {
 }
 
 pub use field::{from_complex, Fq, KExtensions, K};
+pub use quaternion::{QuatEl, TracelessEl, N_REAL, T0_DIM};
 pub use ring::{cf, cf_inv, ct, superneo_bar_block, superneo_bar_matrix, superneo_bar_vec, Rq, D, ETA};
 pub use s_action::SAction;
 

@@ -6,6 +6,7 @@ members = [
   "crates/spartan2",
   "crates/neo-transcript",
   "crates/neo-ajtai",
+  "crates/neo-abba",
   "crates/neo-ccs",
   "crates/neo-reductions",
   "crates/neo-fold-next",

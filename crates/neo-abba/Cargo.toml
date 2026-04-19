@@ -1,0 +1,42 @@
+[package]
+name = "neo-abba"
+version = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+license = "Apache-2.0"
+description = "ABBA commitments from commutators for Nightstream (drop-in replacement for neo-ajtai)"
+
+[lints]
+workspace = true
+
+[dependencies]
+neo-math = { path = "../neo-math" }
+neo-ccs = { path = "../neo-ccs" }
+
+p3-field = { workspace = true }
+p3-goldilocks = { workspace = true }
+
+rand = { workspace = true }
+rand_chacha = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true, optional = true, features = ["derive"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rayon = { workspace = true }
+
+[dev-dependencies]
+rand = { workspace = true }
+rand_chacha = { workspace = true }
+proptest = { workspace = true }
+neo-ajtai = { path = "../neo-ajtai" }
+criterion = { workspace = true }
+
+[features]
+default = []
+serde = ["dep:serde"]
+testing = []
+
+[[bench]]
+name = "commit_bench"
+harness = false
