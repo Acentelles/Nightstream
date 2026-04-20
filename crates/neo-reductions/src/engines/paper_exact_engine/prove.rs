@@ -6,10 +6,10 @@
 
 #![allow(non_snake_case)]
 
+use crate::commitment::Commitment as Cmt;
 use crate::error::PiCcsError;
 use crate::optimized_engine::{PiCcsProof, PiCcsProofVariant};
 use crate::sumcheck::RoundOracle;
-use neo_ajtai::Commitment as Cmt;
 use neo_ccs::{CcsClaim, CcsStructure, CcsWitness, CeClaim, Mat};
 use neo_math::KExtensions;
 use neo_math::{F, K};

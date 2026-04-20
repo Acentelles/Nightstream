@@ -2,7 +2,6 @@
 //!
 //! This mirrors the real `Π_CCS -> Π_RLC -> Π_DEC` spine.
 
-use neo_ajtai::Commitment;
 use neo_ccs::CcsStructure;
 use neo_math::{F, K};
 use neo_params::NeoParams;
@@ -10,6 +9,7 @@ use neo_reductions::api::{
     rlc_public_matches_verified_inputs_with_perf, sample_rot_rhos_n_typed, verify, verify_dec_public, FoldingMode,
     RotRing,
 };
+use neo_reductions::commitment::Commitment;
 use neo_reductions::engines::utils;
 use neo_reductions::error::PiCcsError;
 use neo_reductions::optimized_engine::{

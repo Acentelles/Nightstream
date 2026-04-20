@@ -4,8 +4,8 @@
 
 #![allow(non_snake_case)]
 
+use crate::commitment::Commitment as Cmt;
 use crate::error::PiCcsError;
-use neo_ajtai::Commitment as Cmt;
 use neo_ccs::{CcsClaim, CcsMatrix, CcsStructure, CeClaim, SparsePoly};
 use neo_math::{KExtensions, D, F, K};
 use neo_params::NeoParams;

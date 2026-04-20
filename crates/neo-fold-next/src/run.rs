@@ -2,12 +2,12 @@
 //!
 //! This layer threads the main carry and transcript across prepared steps.
 
-use neo_ajtai::Commitment;
 use neo_ccs::traits::SModuleHomomorphism;
 use neo_ccs::{CcsStructure, CeClaim, Mat};
 use neo_math::{F, K};
 use neo_params::NeoParams;
 use neo_reductions::api::FoldingMode;
+use neo_reductions::commitment::Commitment;
 use neo_reductions::error::PiCcsError;
 use neo_reductions::optimized_engine::OptimizedStructureCache;
 use neo_transcript::{Poseidon2Transcript, Transcript};

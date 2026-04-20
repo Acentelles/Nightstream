@@ -48,7 +48,7 @@ pub struct PiCcsProvePerf {
 
 #[derive(Debug, Clone)]
 pub struct PiCcsReplayTerminalState {
-    pub me_outputs: Vec<neo_ccs::CeClaim<neo_ajtai::Commitment, neo_math::F, neo_math::K>>,
+    pub me_outputs: Vec<neo_ccs::CeClaim<crate::commitment::Commitment, neo_math::F, neo_math::K>>,
     pub challenges_public: Challenges,
     pub row_chals: Vec<K>,
     pub alpha_prime: Vec<K>,
@@ -62,14 +62,14 @@ pub struct PiCcsReplayTerminalState {
 
 #[derive(Debug, Clone)]
 pub struct PiCcsReplayOutputs {
-    pub me_outputs: Vec<neo_ccs::CeClaim<neo_ajtai::Commitment, neo_math::F, neo_math::K>>,
+    pub me_outputs: Vec<neo_ccs::CeClaim<crate::commitment::Commitment, neo_math::F, neo_math::K>>,
     pub fold_digest: [u8; 32],
     pub perf: PiCcsProvePerf,
 }
 
 #[derive(Debug, Clone)]
 pub struct PiCcsReplayWitnessOutputs {
-    pub me_outputs: Vec<neo_ccs::CeClaim<neo_ajtai::Commitment, neo_math::F, neo_math::K>>,
+    pub me_outputs: Vec<neo_ccs::CeClaim<crate::commitment::Commitment, neo_math::F, neo_math::K>>,
     pub replay_proof: PiCcsReplayProofWitness,
     pub perf: PiCcsProvePerf,
 }

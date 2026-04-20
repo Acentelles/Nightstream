@@ -6,11 +6,11 @@
 
 #![allow(non_snake_case)]
 
+use crate::commitment::Commitment as Cmt;
 use crate::engines::optimized_engine::PiCcsProof;
 use crate::engines::PiCcsEngine;
 use crate::error::PiCcsError;
 use crate::optimized_engine::PiCcsProofVariant;
-use neo_ajtai::Commitment as Cmt;
 use neo_ccs::{CcsClaim, CcsStructure, CcsWitness, CeClaim, Mat};
 use neo_math::{F, K};
 use neo_params::NeoParams;

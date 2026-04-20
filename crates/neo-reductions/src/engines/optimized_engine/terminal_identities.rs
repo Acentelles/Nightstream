@@ -5,8 +5,8 @@
 
 #![allow(non_snake_case)]
 
+use crate::commitment::Commitment as Cmt;
 use crate::Challenges;
-use neo_ajtai::Commitment as Cmt;
 use neo_ccs::{CcsStructure, CeClaim};
 use neo_math::K;
 use neo_params::NeoParams;

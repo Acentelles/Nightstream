@@ -447,3 +447,61 @@ fn fibonacci_fold_metrics_five_ten_transition_chunks_with_higher_k_rho() {
         proof.final_main_claims.len(),
     );
 }
+
+#[test]
+fn ajtai_metrics_sweep() {
+    for &(n_steps, transitions_per_chunk, k_rho) in &[
+        (2usize, 5usize, 12u32),
+        (5, 5, 12),
+        (10, 5, 12),
+        (5, 10, 13),
+    ] {
+        let trace_len = transitions_per_chunk + 2;
+        let traces: Vec<Vec<u64>> = (1..=n_steps as u64)
+            .map(|seed| fibonacci_trace_from_seeds(seed, seed + 1, trace_len))
+            .collect();
+        let params = base2_params_with_k_rho(transitions_per_chunk, k_rho);
+        let ccs = fibonacci_trace_ccs(trace_len);
+        let log = make_ajtai_module(&params, 1);
+
+        let steps: Vec<StepInput> = traces
+            .iter()
+            .enumerate()
+            .map(|(idx, values)| fibonacci_step(&log, &format!("ajtai_m_{idx}"), values))
+            .collect();
+        let public_steps: Vec<_> = steps.iter().map(|s| s.public()).collect();
+
+        let prove_start = Instant::now();
+        let proof = prove_run(
+            FoldingMode::Optimized,
+            FoldSchedule::RowsPerChunk(1),
+            &params,
+            &ccs,
+            steps.clone(),
+            &log,
+            ajtai_mixers(),
+        )
+        .expect("Ajtai prove");
+        let prove_ms = prove_start.elapsed().as_secs_f64() * 1000.0;
+
+        let verify_start = Instant::now();
+        let _verified = verify_run(
+            FoldingMode::Optimized,
+            &params,
+            &ccs,
+            &public_steps,
+            &proof,
+            ajtai_mixers(),
+        )
+        .expect("Ajtai verify");
+        let verify_ms = verify_start.elapsed().as_secs_f64() * 1000.0;
+
+        let proof_bytes = bincode::serialize(&proof).expect("serialize").len();
+
+        println!(
+            "Ajtai_metrics steps={} trans/chunk={} k_rho={} prove_ms={:.3} verify_ms={:.3} proof_bytes={} claims={}",
+            n_steps, transitions_per_chunk, k_rho, prove_ms, verify_ms, proof_bytes,
+            proof.final_main_claims.len()
+        );
+    }
+}

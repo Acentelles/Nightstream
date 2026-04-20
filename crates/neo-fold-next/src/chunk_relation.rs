@@ -6,7 +6,6 @@
 //! - does not own theorem-facing proof export surfaces
 //! - does not own session/run orchestration
 
-use neo_ajtai::Commitment;
 use neo_ccs::traits::SModuleHomomorphism;
 use neo_ccs::{CcsClaim, CcsStructure, CcsWitness, CeClaim, Mat};
 use neo_math::{F, K};
@@ -15,6 +14,7 @@ use neo_reductions::api::{
     dec_children_with_commit, prove, rlc_with_commit, sample_rot_rhos_n_typed, split_b_matrix_k_with_nonzero_flags,
     FoldingMode, PiCcsProof, RotRing,
 };
+use neo_reductions::commitment::Commitment;
 use neo_reductions::engines::utils::{self, me_digest_poseidon};
 use neo_reductions::error::PiCcsError;
 use neo_reductions::optimized_engine::{

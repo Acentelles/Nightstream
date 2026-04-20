@@ -53,6 +53,7 @@ pub struct StepBuild {
     pub prepared: StepInput,
     pub public_step: PublicStep,
     pub extension_data: StepExtensionData,
+    #[cfg(not(feature = "abba"))]
     #[serde(skip_serializing, skip_deserializing, default)]
     pub kernel_aux: Option<crate::chip8::kernel::KernelStepAux>,
 }

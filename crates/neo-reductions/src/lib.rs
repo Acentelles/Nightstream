@@ -5,6 +5,14 @@
 
 #![allow(non_snake_case)]
 
+/// Commitment type alias, switchable via `--features abba`.
+pub mod commitment {
+    #[cfg(feature = "abba")]
+    pub use neo_abba::Commitment;
+    #[cfg(not(feature = "abba"))]
+    pub use neo_ajtai::Commitment;
+}
+
 // Public modules
 pub mod api; // public API for Π_CCS folding and RLC/DEC operations
 pub mod common; // shared utilities and helper functions

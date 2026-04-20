@@ -5,11 +5,11 @@
 //! - binds the package with Poseidon2 digests
 //! - does not redefine `Π_CCS -> Π_RLC -> Π_DEC`
 
-use neo_ajtai::Commitment;
 use neo_ccs::{CcsClaim, CcsStructure, CeClaim, Mat};
 use neo_math::{F, K};
 use neo_params::NeoParams;
 use neo_reductions::api::FoldingMode;
+use neo_reductions::commitment::Commitment;
 use neo_reductions::engines::utils::me_digest_poseidon_into;
 use neo_reductions::error::PiCcsError;
 use neo_reductions::optimized_engine::OptimizedStructureCache;
